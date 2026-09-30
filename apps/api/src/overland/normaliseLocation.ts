@@ -6,8 +6,8 @@ import {
   batteryLevelOf,
   batteryStateOf,
   extraOf,
-  finiteOrNull,
-  nonNegativeOrNull,
+  nonNegativeRealOrNull,
+  realOrNull,
   stringArrayOf,
   wifiOf,
 } from "./overlandValues";
@@ -64,7 +64,7 @@ export function normaliseLocation(
   if (!time.ok) return rejected(time.reason);
 
   // A negative vertical accuracy means the altitude itself is invalid.
-  const rawVertical = finiteOrNull(properties["vertical_accuracy"]);
+  const rawVertical = realOrNull(properties["vertical_accuracy"]);
   const altitudeValid = rawVertical === null || rawVertical >= 0;
 
   return {
@@ -73,13 +73,13 @@ export function normaliseLocation(
       recordedAt: time.value,
       lat: geometry.lat,
       lon: geometry.lon,
-      altitude: altitudeValid ? finiteOrNull(properties["altitude"]) : null,
-      speed: nonNegativeOrNull(properties["speed"]),
-      course: nonNegativeOrNull(properties["course"]),
-      horizontalAccuracy: nonNegativeOrNull(properties["horizontal_accuracy"]),
+      altitude: altitudeValid ? realOrNull(properties["altitude"]) : null,
+      speed: nonNegativeRealOrNull(properties["speed"]),
+      course: nonNegativeRealOrNull(properties["course"]),
+      horizontalAccuracy: nonNegativeRealOrNull(properties["horizontal_accuracy"]),
       verticalAccuracy: altitudeValid ? rawVertical : null,
-      speedAccuracy: nonNegativeOrNull(properties["speed_accuracy"]),
-      courseAccuracy: nonNegativeOrNull(properties["course_accuracy"]),
+      speedAccuracy: nonNegativeRealOrNull(properties["speed_accuracy"]),
+      courseAccuracy: nonNegativeRealOrNull(properties["course_accuracy"]),
       motion: stringArrayOf(properties["motion"]),
       batteryLevel: batteryLevelOf(properties["battery_level"]),
       batteryState: batteryStateOf(properties["battery_state"]),

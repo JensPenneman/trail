@@ -1,8 +1,9 @@
 import { type BatteryReading, batteryReading } from "./batteryReading";
 import { type Normalised, rejected } from "./normalised";
-import { asRecord, extraOf, nonNegativeOrNull } from "./overlandValues";
+import { asRecord, countOrNull, extraOf, nonNegativeOrNull, textOrNull } from "./overlandValues";
 import { parseOverlandTimestamp } from "./parseOverlandTimestamp";
 import { recordTime } from "./recordTime";
+import { storableJson } from "./storableJson";
 
 export interface NormalisedTrip {
   startedAt: Date;
@@ -45,23 +46,24 @@ export function normaliseTrip(record: unknown, receivedAt: Date): Normalised<Nor
   if (end === null) return rejected("trip end: missing or invalid timestamp");
   if (end.getTime() < start.value.getTime()) return rejected("trip ends before it starts");
 
-  const steps = nonNegativeOrNull(properties["steps"]);
   const extra = extraOf(properties, mapped);
   return {
     ok: true,
     value: {
       startedAt: start.value,
       endedAt: end,
-      mode: typeof properties["mode"] === "string" ? properties["mode"] : "unknown",
+      mode: textOrNull(properties["mode"]) ?? "unknown",
       distanceM: nonNegativeOrNull(properties["distance"]),
       durationS: nonNegativeOrNull(properties["duration"]),
-      steps: steps === null ? null : Math.round(steps),
+      steps: countOrNull(properties["steps"]),
       stoppedAutomatically: properties["stopped_automatically"] === true,
-      startLocation: properties["start_location"] ?? null,
-      endLocation: properties["end_location"] ?? null,
+      startLocation: storableJson(properties["start_location"] ?? null),
+      endLocation: storableJson(properties["end_location"] ?? null),
       // The trip's own point is its end position; keep it rather than drop it.
       extra:
-        feature["geometry"] === undefined ? extra : { ...extra, geometry: feature["geometry"] },
+        feature["geometry"] === undefined
+          ? extra
+          : { ...extra, geometry: storableJson(feature["geometry"], 1) },
       battery: batteryReading(properties, end),
     },
   };

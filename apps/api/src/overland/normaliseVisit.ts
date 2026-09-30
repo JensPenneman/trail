@@ -1,6 +1,6 @@
 import { type BatteryReading, batteryReading } from "./batteryReading";
 import { type Normalised, rejected } from "./normalised";
-import { asRecord, extraOf, nonNegativeOrNull } from "./overlandValues";
+import { asRecord, extraOf, nonNegativeRealOrNull } from "./overlandValues";
 import { parseOverlandTimestamp } from "./parseOverlandTimestamp";
 import { parsePointGeometry } from "./parsePointGeometry";
 import { recordTime } from "./recordTime";
@@ -56,7 +56,7 @@ export function normaliseVisit(record: unknown, receivedAt: Date): Normalised<No
       departedAt: visitDate(properties["departure_date"], receivedAt),
       lat: geometry.lat,
       lon: geometry.lon,
-      horizontalAccuracy: nonNegativeOrNull(properties["horizontal_accuracy"]),
+      horizontalAccuracy: nonNegativeRealOrNull(properties["horizontal_accuracy"]),
       extra: extraOf(properties, mapped),
       battery: batteryReading(properties, time.value),
     },

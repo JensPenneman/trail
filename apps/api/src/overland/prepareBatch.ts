@@ -1,6 +1,7 @@
 import type { StoredLiveTrip } from "../db/schema/devices";
 import type { BatteryReading } from "./batteryReading";
 import { classifyRecord } from "./classifyRecord";
+import { deadLetterRecord } from "./deadLetterRecord";
 import { type NormalisedEvent, normaliseEvent } from "./normaliseEvent";
 import { normaliseLiveTrip } from "./normaliseLiveTrip";
 import { type NormalisedLocation, normaliseLocation } from "./normaliseLocation";
@@ -32,14 +33,6 @@ export interface PreparedBatch {
   battery: BatteryReading | null;
 }
 
-/* A dead-letter row keeps the record for inspection, not an arbitrarily large blob. */
-const maxRejectBytes = 16_384;
-
-const cappedRecord = (record: unknown): unknown => {
-  const json = JSON.stringify(record) ?? "null";
-  return json.length <= maxRejectBytes ? record : { truncated: true, preview: json.slice(0, 2000) };
-};
-
 export function prepareBatch(payload: OverlandPayload, receivedAt: Date): PreparedBatch {
   const locations = new Map<number, NormalisedLocation>();
   const visits = new Map<number, NormalisedVisit>();
@@ -55,7 +48,7 @@ export function prepareBatch(payload: OverlandPayload, receivedAt: Date): Prepar
     }
   };
   const reject = (reason: string, record: unknown) => {
-    rejects.push({ reason, record: cappedRecord(record) });
+    rejects.push({ reason, record: deadLetterRecord(record) });
   };
 
   for (const record of payload.locations) {
@@ -120,7 +113,7 @@ export function prepareBatch(payload: OverlandPayload, receivedAt: Date): Prepar
     events: [...events.values()],
     rejects,
     current,
-    liveTrip: normaliseLiveTrip(payload.trip),
+    liveTrip: normaliseLiveTrip(payload.trip, receivedAt),
     battery,
   };
 }

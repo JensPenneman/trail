@@ -229,9 +229,117 @@ describe("normaliseEvent", () => {
 describe("normaliseLiveTrip", () => {
   it("reads the payload's trip in progress", () => {
     expect(
-      normaliseLiveTrip({ mode: "car", start: "2026-09-30T07:00:00Z", distance: 1234.5 }),
+      normaliseLiveTrip(
+        { mode: "car", start: "2026-09-30T07:00:00Z", distance: 1234.5 },
+        receivedAt,
+      ),
     ).toEqual({ mode: "car", startedAt: "2026-09-30T07:00:00.000Z", distanceM: 1234.5 });
-    expect(normaliseLiveTrip({ mode: "car", start: "soon" })).toBeNull();
-    expect(normaliseLiveTrip(undefined)).toBeNull();
+    expect(normaliseLiveTrip({ mode: "car", start: "soon" }, receivedAt)).toBeNull();
+    expect(normaliseLiveTrip(undefined, receivedAt)).toBeNull();
+  });
+
+  it("drops a trip whose start cannot be a real one", () => {
+    expect(
+      normaliseLiveTrip({ mode: "car", start: "0000-06-01T00:00:00Z" }, receivedAt),
+    ).toBeNull();
+    expect(
+      normaliseLiveTrip({ mode: "car", start: "2027-09-30T07:00:00Z" }, receivedAt),
+    ).toBeNull();
+    expect(
+      normaliseLiveTrip({ mode: "car\u0000\ud800", start: "2026-09-30T07:00:00Z" }, receivedAt)
+        ?.mode,
+    ).toBe("car\ufffd");
+  });
+});
+
+/*
+ * Values that JavaScript accepts but Postgres refuses would fail the whole
+ * upload, and Overland would resend that batch forever: the normalisers make
+ * every stored value storable, or reject the record.
+ */
+describe("values Postgres could not store", () => {
+  it("cleans text and numbers of a location instead of failing the upload", () => {
+    const result = normaliseLocation(
+      point({
+        wifi: "Home\u0000Net\udc00",
+        motion: ["walk\u0000ing", "\ud83d"],
+        speed: 3.5e38,
+        course: 1e-40,
+        altitude: -4e38,
+        horizontal_accuracy: 1e-39,
+        vertical_accuracy: 5e38,
+        speed_accuracy: Number.MIN_VALUE,
+        course_accuracy: 0,
+        battery_level: 1e-45,
+        "odd\u0000key": { nested: ["\udbff", "fine \ud83d\ude00"] },
+      }),
+      receivedAt,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toMatchObject({
+      wifi: "HomeNet\ufffd",
+      motion: ["walking", "\ufffd"],
+      speed: null,
+      course: null,
+      altitude: null,
+      horizontalAccuracy: null,
+      verticalAccuracy: null,
+      speedAccuracy: null,
+      courseAccuracy: 0,
+      batteryLevel: null,
+      extra: { oddkey: { nested: ["\ufffd", "fine \ud83d\ude00"] } },
+    });
+  });
+
+  it("rejects timestamps before 1990, which year 0000 is too", () => {
+    for (const timestamp of [
+      "0000-06-01T00:00:00Z",
+      "0001-01-01T00:00:00Z",
+      "1989-12-31T23:59:59Z",
+    ]) {
+      expect(normaliseLocation(point({ timestamp }), receivedAt)).toEqual({
+        ok: false,
+        reason: "timestamp is before 1990",
+      });
+    }
+    expect(normaliseLocation(point({ timestamp: "1990-01-01T00:00:00Z" }), receivedAt).ok).toBe(
+      true,
+    );
+  });
+
+  it("keeps a trip's counts within their columns and its text storable", () => {
+    const result = normaliseTrip(
+      {
+        type: "Feature",
+        properties: {
+          type: "trip",
+          mode: "\u0000",
+          start: "2026-09-30T07:00:00Z",
+          end: "2026-09-30T08:00:00Z",
+          steps: 2 ** 31,
+          start_location: { properties: { name: "\ud800" } },
+        },
+      },
+      receivedAt,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toMatchObject({
+      mode: "unknown",
+      steps: null,
+      startLocation: { properties: { name: "\ufffd" } },
+    });
+  });
+
+  it("rejects an event whose action cannot be a real one", () => {
+    expect(normaliseEvent(point({ action: "x".repeat(101) }), receivedAt)).toEqual({
+      ok: false,
+      reason: "action is too long",
+    });
+    expect(normaliseEvent(point({ action: "\u0000" }), receivedAt)).toEqual({
+      ok: false,
+      reason: "missing action",
+    });
   });
 });
