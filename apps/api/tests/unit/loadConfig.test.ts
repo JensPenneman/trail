@@ -29,7 +29,7 @@ describe("loadConfig", () => {
       allowedOrigins: ["https://trail.example.com"],
       ingestUrl: "https://trail.example.com/api/overland",
       signupAllowlist: [],
-      trustProxy: "loopback, linklocal, uniquelocal",
+      trustProxy: false,
       sessionTtlDays: 30,
       liveWindowMinutes: 15,
       staleAfterHours: 12,

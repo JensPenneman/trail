@@ -175,6 +175,11 @@ recommended Overland settings and iOS permissions: [overland.md](overland.md).
 - The Live page on the laptop shows each device's last upload; Devices > a
   device shows every upload in its ingest log.
 - Leave `TRAIL_HTTP_BIND=0.0.0.0` so phones can reach port 8080.
+- Everything that reaches port 8080 arrives from Docker's own address, and
+  the app believes no `X-Forwarded-For` from there: every phone and browser
+  shares one address for the per-address rate limits
+  ([architecture.md](architecture.md) §12), and nobody on the network can
+  pretend to be someone else.
 
 When uploads have arrived reliably for a while, go public.
 
@@ -228,7 +233,8 @@ positions and session cookies. If that is not acceptable, use B.
    `https://trail.jenspenneman.com/api/health/live` answers.
 
 Client addresses stay correct: Cloudflare and cloudflared pass them in
-`X-Forwarded-For`, which the app trusts from the Docker network.
+`X-Forwarded-For`, which the app believes only from the tunnel container
+(its fixed address `10.201.8.10` on the stack's `edge` network, `TRUST_PROXY`).
 
 ### B. Direct: Caddy and Let's Encrypt on the laptop
 
@@ -491,3 +497,4 @@ and coordinates never appear in the app's logs at the default level.
 | `backup` restarts with "pg_dump failed" | The database is not reachable; the log line before it shows why. |
 | Backups happen at the wrong hour | `TZ` in `.env`. |
 | Port 8080 is already in use | Set `TRAIL_HTTP_PORT` and change `PUBLIC_URL` and `INGEST_BASE_URL` with it. |
+| `docker compose up` fails with "Pool overlaps with other one on this address space" | Another Docker network uses `10.201.8.0/24`. Pick a free subnet for `edge` in `compose.yaml` and move the `ipv4_address` of cloudflared and caddy and the default of `TRUST_PROXY` with it. |

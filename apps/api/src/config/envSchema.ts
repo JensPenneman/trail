@@ -69,7 +69,9 @@ export const envSchema = z
     SIGNUP_ALLOWLIST: env(
       z.string().transform(splitList).pipe(z.array(allowlistEntrySchema)).default([]),
     ),
-    TRUST_PROXY: env(z.string().default("loopback, linklocal, uniquelocal")),
+    // Nobody by default: a trusted peer decides the client address (per-IP limits, session
+    // IPs) and the protocol through X-Forwarded-*. deploy/compose.yaml names its proxies.
+    TRUST_PROXY: env(z.string().default("false")),
     SESSION_TTL_DAYS: env(intSchema(1, 365).default(30)),
     LIVE_WINDOW_MINUTES: env(intSchema(1, 1440).default(15)),
     STALE_AFTER_HOURS: env(intSchema(1, 720).default(12)),

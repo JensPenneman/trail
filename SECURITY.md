@@ -49,7 +49,8 @@ yourself: location data is personal data.
   `HttpOnly`, `SameSite=Lax` and `__Host-`/`Secure` on HTTPS.
 - **Requests**: origin checks against cross-site requests, input validation of
   every request with zod, body size limits, rate limits per IP and per device
-  token.
+  token; client addresses and HTTPS are taken from forwarded headers of the
+  stack's own proxies only.
 - **Headers**: a strict Content Security Policy without inline scripts or
   styles, HSTS on HTTPS, `frame-ancestors 'none'`, COOP/CORP, a
   Permissions-Policy that denies everything except passkeys.
