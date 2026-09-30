@@ -92,8 +92,9 @@ watchtower: polls the registries every 5 min, recreates every labelled service w
 `deploy/compose.yaml` services: `app` (GHCR image), `db`, `backup`,
 `watchtower`, and exposure profiles `tunnel` (cloudflared) and `direct`
 (Caddy + Cloudflare DDNS). Networks: `edge` (app, proxies, watchtower; internet
-access) and `backend` (app, db, backup; `internal`, no route out). See §13 and
-the runbook `docs/operations.md`.
+access; subnet `10.201.8.0/24` with cloudflared at `.10` and Caddy at `.11`,
+the addresses the app trusts, others from `.128/25`) and `backend` (app, db,
+backup; `internal`, no route out). See §13 and the runbook `docs/operations.md`.
 
 ## 4. Configuration (API environment)
 
@@ -109,7 +110,7 @@ All configuration is environment variables, validated at boot with zod
 | `ADDITIONAL_ORIGINS` | empty | More allowed origins, comma-separated (e.g. `http://localhost:8080`) |
 | `INGEST_BASE_URL` | `PUBLIC_URL` | Base URL shown to phones; endpoint = `<base>/api/overland` |
 | `SIGNUP_ALLOWLIST` | empty | Emails (or `*@domain`) that may create an account without an invite |
-| `TRUST_PROXY` | `loopback, linklocal, uniquelocal` | Express `trust proxy` (reverse proxy / tunnel on the Docker network) |
+| `TRUST_PROXY` | `false` (nobody) | Express `trust proxy`: the proxies whose `X-Forwarded-For`/`-Proto` decide client address and HTTPS; `deploy/compose.yaml` names its tunnel and Caddy (§12) |
 | `SESSION_TTL_DAYS` | `30` | Sliding session lifetime |
 | `LIVE_WINDOW_MINUTES` | `15` | "live" status window |
 | `STALE_AFTER_HOURS` | `12` | "stale" status + silent-device alert threshold |
@@ -250,7 +251,8 @@ header and those query params).
 - Optional `set` object in the ok-response pushes settings to the app (§6.3).
 - Timestamps: current app sends `YYYY-MM-DDTHH:MM:SSZ`; old versions sent
   offsets without a colon (`2015-10-01T08:00:00-0700`). Accept `Z`, `±HH:MM`,
-  `±HHMM`, optional fractions. Reject anything else.
+  `±HHMM`, optional fractions. Reject anything else, and anything before 1990
+  (a reset clock or iOS's `distantPast`; year 0000 is not even a Postgres date).
 - Invalid-value sentinels are negative numbers: `speed`, `course`,
   `*_accuracy`, `battery_level` < 0 → null; `vertical_accuracy` < 0 → altitude
   null too. Coordinates truncated to 7 decimals by the app.
@@ -286,10 +288,22 @@ Every record also carries metadata `device_id`, `wifi`, `battery_*`.
   `400 {"error":"Expected Overland JSON with a \"locations\" array. In Overland set Logging Mode to “All Data”."}`
   (OwnTracks mode sends a single object — tell the user to switch).
 - An individual invalid record (bad geometry, lat/lon out of range, exactly
-  0,0, unparseable timestamp, timestamp > now + 24 h) → stored in
-  `ingest_rejects` with a reason; the batch is still acknowledged so the
-  phone's queue never gets stuck on one bad record. A rejected record larger
-  than 16 kB is kept as a 2 000-character preview.
+  0,0, unparseable timestamp, timestamp before 1990 or > now + 24 h, an event
+  action over 100 characters) → stored in `ingest_rejects` with a reason; the
+  batch is still acknowledged so the phone's queue never gets stuck on one bad
+  record. A rejected record larger than 16 kB is kept as a 2 000-character
+  preview.
+- Every stored value is one Postgres accepts — a value it refuses would fail
+  the whole upload, and Overland resends an unacknowledged batch forever. Text
+  (columns, `extra`, trip locations, the dead letter; keys too) loses NUL
+  characters and has lone UTF-16 surrogates replaced by U+FFFD; readings for
+  `real` columns outside float4's normal range become null, trip steps beyond
+  `integer` too; JSON nested deeper than 16 levels is cut off.
+- Should Postgres still refuse a value (SQLSTATE class 22, 23502, 23514,
+  54000), the upload is stored again in a new transaction, record by record,
+  each in its own savepoint: a refused record goes to `ingest_rejects` with
+  its SQLSTATE, a refused device update is retried without the newest
+  readings, and the batch is acknowledged.
 - Log events keep an unusable geometry in `extra` instead of being rejected;
   visit dates before 1990 or more than a year ahead (iOS `distantPast` /
   `distantFuture`) become null.
@@ -465,13 +479,18 @@ JSON `404 not_found`. Stack traces are logged, never sent.
   rebuilds the device's heat cells, recomputes the touched days' statistics,
   decrements `points_total` and refreshes the cached position when it was
   deleted.
-- **Export** streams page by page (keyset on `recorded_at`) with
-  backpressure and stops querying when the client disconnects. GeoJSON uses
-  Overland's property names (+ `device_name`, `device_id` = Device ID) so an
-  export can be replayed into an Overland receiver; GPX has one `<trk>` per
-  device and a `<trkseg>` per `trackSegments()` segment with `<ele>`/`<time>`;
-  CSV has a header row, CRLF line ends, `motion` joined with `;`, and text
-  cells starting like a formula prefixed with `'`. File name
+- **Export** streams the points page by page (keyset on `recorded_at`) with
+  backpressure and stops querying when the client disconnects; the devices'
+  visits (recorded in the range, arrival and departure reports merged) and
+  trips (started in the range) come first. GeoJSON uses Overland's property
+  names (+ `device_name`, `device_id` = Device ID) so an export can be
+  replayed into an Overland receiver: points, visits (`action: "visit"`) and
+  trips (`type: "trip"`), each with `kind` = `location` | `visit` | `trip`;
+  GPX has the visits as `<wpt>` (time = arrival, `<type>visit</type>`), then
+  one `<trk>` per device and a `<trkseg>` per `trackSegments()` segment with
+  `<ele>`/`<time>`; CSV has the points only (one kind of row per table), a
+  header row, CRLF line ends, `motion` joined with `;`, and text cells
+  starting like a formula prefixed with `'`. File name
   `trail-<first local day>_<last local day>.<ext>`.
 
 ### 8.1 Tracks, distance, simplification
@@ -491,9 +510,13 @@ JSON `404 not_found`. Stack traces are logged, never sent.
   segment first/last points kept); the distance always uses every point.
 - `distanceM`: haversine over the unsimplified filtered points with jitter
   suppression — accumulate from an anchor point, count a step only when it
-  exceeds `max(15 m, (acc_anchor + acc_point) / 2)`, and skip glitches implying
-  more than 350 m/s. `daily_stats.distance_m` uses the same function (with
-  `maxAccuracy` 100 m).
+  exceeds `max(15 m, (acc_anchor + acc_point) / 2)`, and ignore glitches: a
+  fix implying more than 350 m/s from the fix before it (never from the
+  anchor, which stays put while the phone stands still). A fix is used once
+  the next one agrees with it, so a far-off glitch that looks plausible after
+  a gap is dropped when the phone reports from where it is; the newest fix
+  counts as long as nothing contradicts it. `daily_stats.distance_m` uses the
+  same function (with `maxAccuracy` 100 m).
 
 ### 8.2 Heatmap
 
@@ -510,7 +533,10 @@ idle streams after ~100 s). A stream starts with `retry: 5000` and a `hello`
 event. In-process event bus keyed by user id (the app is a single instance).
 At most 10 streams per user (the 11th → `429 rate_limited`). Logout, session
 revocation and account deletion close the affected streams at once, and every
-ping re-checks the session; a client with more than 1 MB unsent is dropped.
+ping re-checks the session; such a stream first gets a `session-ended` event,
+so the page shows the sign-in page instead of checking the session (a 401)
+and reconnecting. A shutdown closes streams without it (clients reconnect). A
+client with more than 1 MB unsent is dropped.
 `ingest` is published for every accepted upload (also when everything was a
 duplicate), followed by a `device` event with the fresh summary. The web app
 replaces device cache entries from `device` events and appends
@@ -570,20 +596,32 @@ invalid value).
   every page. COOP `same-origin`, CORP `same-origin`, `Origin-Agent-Cluster:
   ?1`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, every
   response tagged with `X-Request-Id` (a well-formed incoming one is kept).
-- `trust proxy` from `TRUST_PROXY`; client IP from `X-Forwarded-For` of trusted
-  hops (Cloudflare adds `CF-Connecting-IP`, Caddy `X-Forwarded-For`).
+- `trust proxy` from `TRUST_PROXY`, by default nobody: the client address (per-IP
+  rate limits, session IPs) and HTTPS (`req.secure`: the `__Host-` cookie, HSTS)
+  come from `X-Forwarded-For`/`-Proto` of trusted hops only, otherwise anyone
+  could claim a new address per request. `deploy/compose.yaml` trusts exactly
+  its tunnel and Caddy at their fixed addresses on `edge` (§13); everything
+  reaching the published port arrives from Docker's gateway, which stays
+  untrusted, so on the LAN every client shares one address.
 - Rate limits: auth routes ~20/min/IP (all `/api/auth/*` except the session
   probe); ingest ~300/min/token and ~30 failed tokens/10 min/IP; everything
   else ~600/min/IP (`/api/health*` and `/api/config` excluded). `429
   rate_limited` (ingest: Overland's `{"error"}`), IETF `RateLimit` headers.
-  Configurable (§4).
+  Configurable (§4). The failed-token limit is consulted after the token
+  lookup and only for requests without a valid token: a scanner sharing the
+  phones' address (NAT, proxy) never locks out a valid device.
 - Database statements time out after 120 s; deleting a device or an account
   and rebuilding derived data lift that limit for their own transaction.
 - Body limits: 100 kB default, 5 MB on the ingest route.
 - pino-http redacts `authorization`, `cookie`, `set-cookie` and token query
   params; coordinates are never logged above `debug`. The access log keeps
-  method, redacted URL, status, client address and user agent only; database
-  errors are logged without query parameters or failing-row details.
+  method, redacted URL, status, client address and user agent only. The URL is
+  redacted from its parsed parts, as the routers read them (decoded,
+  case-insensitive): device tokens in `token`/`access_token` and the one-time
+  tokens of `/link/…`, `/invite/…` and `/api/auth/link/…`. Database errors are
+  logged without query parameters or failing-row details; for an error from
+  Postgres only its SQLSTATE, routine and the names of what failed (constraint,
+  table, column), because its message can quote the refused value.
 - Graceful shutdown (SIGTERM/SIGINT): stop accepting, end SSE streams, stop
   jobs, let in-flight requests finish for up to 10 s (then cut them), flush
   pending daily statistics and background work (≤ 2 s each), close the pool.
@@ -715,7 +753,8 @@ Routes: `/login`, `/invite/:token`, `/link/:token` (public); `/` Live,
 Quality bar: responsive from 320 px (phone-first, bottom tab bar on phones,
 safe-area insets), keyboard and screen-reader accessible (landmarks, focus
 management on navigation, labelled controls, text alternatives for map-only
-information), 44 px targets, WCAG AAA text contrast where feasible, dark mode,
+information, scrolling panels and wide tables reachable by keyboard while
+they scroll), 44 px targets, WCAG AAA text contrast where feasible, dark mode,
 `prefers-contrast: more`, `forced-colors`, `prefers-reduced-motion`. The
 map chunk is lazy-loaded. PWA manifest + icons (home-screen app on iPhone).
 
@@ -749,7 +788,21 @@ on green CI once branch protection requires the checks.
   with a software authenticator (ES256, `none` attestation, CBOR via
   `@levischuck/tiny-cbor`).
 - `apps/web/tests` — Vitest + Testing Library (jsdom).
-- `tests/e2e` — Playwright against the built stack (`trail_e2e`): sign up with
-  a CDP virtual authenticator, add a device, post an Overland batch, see it
-  live, history, sign out/in, settings; axe accessibility scan; no console or
-  CSP errors.
+- `tests/e2e` — Playwright against the built stack. `playwright.config.ts`
+  starts `scripts/e2e-server.mjs`: it empties the `trail_e2e` database
+  (`E2E_DATABASE_URL`; any database not named `trail…e2e` is refused) and runs
+  the built `apps/api/dist/main.mjs` on port 4190 in production mode with the
+  whole API environment set (raised rate limits). `E2E_BASE_URL` runs the same
+  suite against a deployment that is already up, e.g. the Docker stack. Projects:
+  desktop Chromium and an iPhone-sized Chromium (the CDP virtual authenticator
+  holds the passkeys), plus WebKit for the signed-out pages where the port
+  allows (WebKit refuses 4190). A setup project signs up the first account
+  (the admin) for the invitation tests. Every test fails on a console error,
+  an uncaught exception or a CSP violation; map styles are stubbed, other
+  third-party requests refused. The Overland fixture is shifted to today.
+  Scenarios: sign-up and refusal, device setup and the live upload, ingest log
+  and raw points, remote settings, token rotation, History and its scrubber,
+  the heatmap, sign-in by email, passkey button and autofill, invitations and
+  isolation, passkeys and passkey links, sessions, export, deleting a period
+  and the account, Overland's protocol, static files and headers, axe (WCAG
+  2.0 A–AAA, 2.1/2.2 AA, best practices), keyboard use and 320 px screens.
