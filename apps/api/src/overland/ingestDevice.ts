@@ -15,7 +15,12 @@ export function setIngestDevice(req: Request, device: IngestDevice): void {
   deviceByRequest.set(req, device);
 }
 
-/** The authenticated device; routes behind `authenticateDevice` always have one. */
+/** Whether the request carried the valid token of a device (see `identifyDevice`). */
+export function hasIngestDevice(req: Request): boolean {
+  return deviceByRequest.has(req);
+}
+
+/** The authenticated device; routes behind `requireIngestDevice` always have one. */
 export function ingestDeviceOf(req: Request): IngestDevice {
   const device = deviceByRequest.get(req);
   if (device === undefined) throw new Error("Ingest route reached without an authenticated device");

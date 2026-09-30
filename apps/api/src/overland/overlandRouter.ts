@@ -4,12 +4,13 @@ import { rateLimit } from "express-rate-limit";
 import type { AppContext } from "../appContext";
 import { rateLimitLogger } from "../http/rateLimitLogger";
 import { afterIngest } from "./afterIngest";
-import { authenticateDevice } from "./authenticateDevice";
-import { ingestDeviceOf } from "./ingestDevice";
+import { identifyDevice } from "./identifyDevice";
+import { hasIngestDevice, ingestDeviceOf } from "./ingestDevice";
 import { ingestUpload } from "./ingestUpload";
 import { overlandErrorHandler } from "./overlandErrorHandler";
 import { isOverlandPayload, payloadShapeError } from "./overlandPayload";
 import { presetSettings } from "./overlandPresets";
+import { requireIngestDevice } from "./requireIngestDevice";
 import { invalidTokenMessage, sendOverlandError } from "./sendOverlandError";
 
 /**
@@ -24,12 +25,13 @@ export function overlandRouter(ctx: AppContext): Router {
     sendOverlandError(res, 429, "Too many requests — try again in a minute");
   };
 
-  // Counts only rejected tokens, per IP: guessing tokens gets slow, phones are unaffected.
+  // Counts, and refuses, only requests without a valid token, per IP: guessing tokens gets
+  // slow, while a phone with its valid token is never locked out by a scanner that shares
+  // its address (behind NAT or a proxy every client can have the same one).
   const failedTokens = rateLimit({
     windowMs: 10 * 60_000,
     limit: limits.ingestFailedPer10Minutes,
-    skipSuccessfulRequests: true,
-    requestWasSuccessful: (_req, res) => res.statusCode !== 401,
+    skip: hasIngestDevice,
     standardHeaders: "draft-8",
     legacyHeaders: false,
     logger: rateLimitLogger(ctx.logger),
@@ -46,13 +48,14 @@ export function overlandRouter(ctx: AppContext): Router {
   });
   // Batches of 1000 points are ~600 kB; 5 MB leaves room without inviting abuse.
   const json = express.json({ limit: "5mb" });
+  const authenticated = [identifyDevice(ctx.db), failedTokens, requireIngestDevice];
 
   // Overland's account probe, and a handy connectivity test.
-  router.get("/", failedTokens, authenticateDevice(ctx.db), (req, res) => {
+  router.get("/", ...authenticated, (req, res) => {
     res.json({ name: ingestDeviceOf(req).name });
   });
 
-  router.post("/", failedTokens, authenticateDevice(ctx.db), perDevice, json, async (req, res) => {
+  router.post("/", ...authenticated, perDevice, json, async (req, res) => {
     const device = ingestDeviceOf(req);
     if (!isOverlandPayload(req.body)) {
       sendOverlandError(res, 400, payloadShapeError);
