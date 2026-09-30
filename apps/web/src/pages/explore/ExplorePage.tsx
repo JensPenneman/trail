@@ -21,6 +21,7 @@ import { PlainList } from "../../ui/PlainList";
 import { Skeleton } from "../../ui/Skeleton";
 import { Spinner } from "../../ui/Spinner";
 import { useDebouncedValue } from "../../ui/useDebouncedValue";
+import { useScrollableFocus } from "../../ui/useScrollableFocus";
 import { DeviceFilter } from "../history/DeviceFilter";
 import { HeatLegend } from "./HeatLegend";
 import "./ExplorePage.css";
@@ -33,6 +34,7 @@ export function ExplorePage() {
   const format = useFormatter();
   const totalsId = useId();
   const busiestId = useId();
+  const scrollable = useScrollableFocus();
   const devices = useDevices();
   const colors = useDeviceColors();
   const { styleUrl, dark } = useMapStyle();
@@ -128,7 +130,8 @@ export function ExplorePage() {
         ) : null}
       </div>
 
-      <div className="map-layout__body">
+      {/* Beside the map on wide screens this panel scrolls by itself. */}
+      <section className="map-layout__body" aria-label="Totals and busiest places" ref={scrollable}>
         {deviceList.length > 1 ? (
           <DeviceFilter
             devices={deviceList}
@@ -238,7 +241,7 @@ export function ExplorePage() {
             </PlainList>
           )}
         </section>
-      </div>
+      </section>
     </div>
   );
 }

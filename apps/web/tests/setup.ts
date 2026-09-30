@@ -13,6 +13,13 @@ HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
   this.dispatchEvent(new Event("close"));
 };
 
+/** Layout never changes in jsdom; tests that care call the callback themselves. */
+class StillResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
 class SilentEventSource extends EventTarget {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
@@ -46,6 +53,7 @@ beforeEach(() => {
       }) as MediaQueryList,
   );
   vi.stubGlobal("EventSource", SilentEventSource);
+  vi.stubGlobal("ResizeObserver", StillResizeObserver);
 });
 
 afterEach(() => {

@@ -1,6 +1,7 @@
 import { useId, useMemo, useState } from "react";
 import { useFormatter } from "../../format/useFormatter";
 import { Icon } from "../../ui/Icon";
+import { useScrollableFocus } from "../../ui/useScrollableFocus";
 import type { ActivitySlot } from "./activitySlots";
 import "./ActivitySparkline.css";
 
@@ -25,6 +26,7 @@ const rugY = 50;
 export function ActivitySparkline({ slots, colorSlot, deviceName }: ActivitySparklineProps) {
   const format = useFormatter();
   const tableId = useId();
+  const scrollable = useScrollableFocus();
   const [hovered, setHovered] = useState<number | null>(null);
   const max = Math.max(1, ...slots.map((slot) => slot.recorded));
   const slotWidth = width / Math.max(1, slots.length);
@@ -141,7 +143,11 @@ export function ActivitySparkline({ slots, colorSlot, deviceName }: ActivitySpar
         {busyHours.length === 0 ? (
           <p className="muted">Nothing recorded or uploaded in this period.</p>
         ) : (
-          <div className="table-scroll">
+          <section
+            className="table-scroll"
+            aria-label={`Hourly numbers of ${deviceName}`}
+            ref={scrollable}
+          >
             <table className="table" id={tableId}>
               <thead>
                 <tr>
@@ -164,7 +170,7 @@ export function ActivitySparkline({ slots, colorSlot, deviceName }: ActivitySpar
                 ))}
               </tbody>
             </table>
-          </div>
+          </section>
         )}
       </details>
     </figure>

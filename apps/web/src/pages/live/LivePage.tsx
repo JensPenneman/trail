@@ -23,6 +23,7 @@ import { LoadingBlock } from "../../ui/LoadingBlock";
 import { PageHeader } from "../../ui/PageHeader";
 import { PlainList } from "../../ui/PlainList";
 import { Skeleton } from "../../ui/Skeleton";
+import { useScrollableFocus } from "../../ui/useScrollableFocus";
 import { activitySlots } from "./activitySlots";
 import { DeviceCard } from "./DeviceCard";
 import { LiveSummary } from "./LiveSummary";
@@ -40,6 +41,7 @@ export function LivePage() {
   const user = useSessionUser();
   const format = useFormatter();
   const devicesHeadingId = useId();
+  const scrollable = useScrollableFocus();
   const config = useConfig();
   const devices = useDevices();
   const colors = useDeviceColors();
@@ -139,7 +141,8 @@ export function LivePage() {
         )}
       </div>
 
-      <div className="map-layout__body">
+      {/* Beside the map on wide screens this panel scrolls by itself. */}
+      <section className="map-layout__body" aria-label="Devices and uploads" ref={scrollable}>
         <section className="section" aria-labelledby={devicesHeadingId}>
           <h2 className="visually-hidden" id={devicesHeadingId}>
             Devices
@@ -212,7 +215,7 @@ export function LivePage() {
         </section>
 
         {deviceList.length === 0 ? null : <UploadFeed devices={deviceList} slotOf={colors.slot} />}
-      </div>
+      </section>
     </div>
   );
 }

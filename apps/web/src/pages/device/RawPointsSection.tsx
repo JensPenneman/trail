@@ -7,6 +7,7 @@ import { ErrorState } from "../../ui/ErrorState";
 import { LoadingBlock } from "../../ui/LoadingBlock";
 import { Notice } from "../../ui/Notice";
 import { Skeleton } from "../../ui/Skeleton";
+import { useScrollableFocus } from "../../ui/useScrollableFocus";
 
 interface RawPointsSectionProps {
   deviceId: string;
@@ -18,6 +19,8 @@ interface RawPointsSectionProps {
 export function RawPointsSection({ deviceId, lastSeenAt }: RawPointsSectionProps) {
   const format = useFormatter();
   const headingId = useId();
+  const captionId = useId();
+  const scrollable = useScrollableFocus();
   const pages = useLocationPages(deviceId);
   const rows = pages.data?.pages.flatMap((page) => page.items) ?? [];
   const newer =
@@ -61,9 +64,15 @@ export function RawPointsSection({ deviceId, lastSeenAt }: RawPointsSectionProps
         </div>
       ) : (
         <>
-          <div className="card card--flush table-scroll">
+          <section
+            className="card card--flush table-scroll"
+            aria-labelledby={captionId}
+            ref={scrollable}
+          >
             <table className="table">
-              <caption className="visually-hidden">Stored points of this device</caption>
+              <caption className="visually-hidden" id={captionId}>
+                Stored points of this device
+              </caption>
               <thead>
                 <tr>
                   <th scope="col">Recorded</th>
@@ -103,7 +112,7 @@ export function RawPointsSection({ deviceId, lastSeenAt }: RawPointsSectionProps
                 ))}
               </tbody>
             </table>
-          </div>
+          </section>
           <div className="cluster">
             {pages.hasNextPage ? (
               <Button

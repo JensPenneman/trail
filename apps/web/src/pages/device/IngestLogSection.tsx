@@ -6,6 +6,7 @@ import { EmptyState } from "../../ui/EmptyState";
 import { ErrorState } from "../../ui/ErrorState";
 import { LoadingBlock } from "../../ui/LoadingBlock";
 import { Skeleton } from "../../ui/Skeleton";
+import { useScrollableFocus } from "../../ui/useScrollableFocus";
 
 interface IngestLogSectionProps {
   deviceId: string;
@@ -17,6 +18,8 @@ const collapsedRows = 10;
 export function IngestLogSection({ deviceId }: IngestLogSectionProps) {
   const format = useFormatter();
   const headingId = useId();
+  const captionId = useId();
+  const scrollable = useScrollableFocus();
   const log = useIngestLog(deviceId, 50);
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? (log.data ?? []) : (log.data ?? []).slice(0, collapsedRows);
@@ -46,9 +49,15 @@ export function IngestLogSection({ deviceId }: IngestLogSectionProps) {
           </EmptyState>
         </div>
       ) : (
-        <div className="card card--flush table-scroll">
+        <section
+          className="card card--flush table-scroll"
+          aria-labelledby={captionId}
+          ref={scrollable}
+        >
           <table className="table">
-            <caption className="visually-hidden">Uploads of this device</caption>
+            <caption className="visually-hidden" id={captionId}>
+              Uploads of this device
+            </caption>
             <thead>
               <tr>
                 <th scope="col">Received</th>
@@ -106,7 +115,7 @@ export function IngestLogSection({ deviceId }: IngestLogSectionProps) {
               ))}
             </tbody>
           </table>
-        </div>
+        </section>
       )}
       {log.data !== undefined && log.data.length > collapsedRows ? (
         <div className="cluster">

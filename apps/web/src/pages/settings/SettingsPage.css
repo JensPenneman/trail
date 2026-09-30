@@ -63,10 +63,11 @@
   vertical-align: 0.1em;
 }
 
+/* Full text colour: the secondary one is below 7:1 on this background (WCAG AAA). */
 .settings__tag--used,
 .settings__tag--expired {
   background: var(--color-surface-3);
-  color: var(--color-text-2);
+  color: var(--color-text);
 }
 
 .settings__tag--open {

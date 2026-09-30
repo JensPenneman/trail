@@ -1,4 +1,3 @@
-import { useNavigate } from "react-router";
 import { useFormatter } from "../../format/useFormatter";
 import { useConfig } from "../../queries/useConfig";
 import { useSignOut } from "../../queries/useSignOut";
@@ -10,7 +9,6 @@ export function AboutSection({ headingId }: { headingId: string }) {
   const format = useFormatter();
   const config = useConfig();
   const signOut = useSignOut();
-  const navigate = useNavigate();
   return (
     <section className="section" aria-labelledby={headingId}>
       <h2 className="section__title" id={headingId}>
@@ -43,15 +41,7 @@ export function AboutSection({ headingId }: { headingId: string }) {
         )}
         {signOut.isError ? <ErrorState title="Signing out failed" error={signOut.error} /> : null}
         <div className="cluster">
-          <Button
-            icon="signOut"
-            busy={signOut.isPending}
-            onClick={() =>
-              signOut.mutate(undefined, {
-                onSuccess: () => void navigate("/login", { replace: true }),
-              })
-            }
-          >
+          <Button icon="signOut" busy={signOut.isPending} onClick={() => signOut.mutate()}>
             Sign out
           </Button>
         </div>

@@ -23,6 +23,7 @@ import { LoadingBlock } from "../../ui/LoadingBlock";
 import { PageHeader } from "../../ui/PageHeader";
 import { Skeleton } from "../../ui/Skeleton";
 import { Spinner } from "../../ui/Spinner";
+import { useScrollableFocus } from "../../ui/useScrollableFocus";
 import { DeviceFilter } from "./DeviceFilter";
 import { HistoryControls } from "./HistoryControls";
 import { type CalendarDay, MonthCalendar } from "./MonthCalendar";
@@ -42,6 +43,7 @@ export function HistoryPage() {
   const user = useSessionUser();
   const format = useFormatter();
   const calendarId = useId();
+  const scrollable = useScrollableFocus();
   const { selection, today, showDay, showRange, showDevices } = useHistorySelection();
   const devices = useDevices();
   const colors = useDeviceColors();
@@ -250,7 +252,8 @@ export function HistoryPage() {
         )}
       </div>
 
-      <div className="map-layout__body">
+      {/* Beside the map on wide screens this panel scrolls by itself. */}
+      <section className="map-layout__body" aria-label="Totals, visits and trips" ref={scrollable}>
         {deviceList.length > 1 ? (
           <DeviceFilter
             devices={deviceList}
@@ -346,7 +349,7 @@ export function HistoryPage() {
             }
           }}
         />
-      </div>
+      </section>
     </div>
   );
 }

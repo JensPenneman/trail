@@ -1,4 +1,5 @@
 import type { Invite } from "@trail/contracts/invite";
+import { useId } from "react";
 import { useFormatter } from "../../format/useFormatter";
 import { useAdminUsers } from "../../queries/useAdminUsers";
 import { useInvites } from "../../queries/useInvites";
@@ -10,6 +11,7 @@ import { LoadingBlock } from "../../ui/LoadingBlock";
 import { PlainList } from "../../ui/PlainList";
 import { Skeleton } from "../../ui/Skeleton";
 import { useAnnounce } from "../../ui/useAnnounce";
+import { useScrollableFocus } from "../../ui/useScrollableFocus";
 import { CreateInviteForm } from "./CreateInviteForm";
 
 function inviteState(invite: Invite, now: number): "used" | "expired" | "open" {
@@ -20,6 +22,8 @@ function inviteState(invite: Invite, now: number): "used" | "expired" | "open" {
 /** Admins only: who has an account on this server, and invitations for new people. */
 export function PeopleSection({ headingId }: { headingId: string }) {
   const format = useFormatter();
+  const accountsId = useId();
+  const scrollable = useScrollableFocus();
   const invites = useInvites(true);
   const users = useAdminUsers(true);
   const revoke = useRevokeInvite();
@@ -94,7 +98,9 @@ export function PeopleSection({ headingId }: { headingId: string }) {
       </div>
 
       <div className="card card--flush">
-        <h3 className="settings__subtitle settings__subtitle--padded">Accounts</h3>
+        <h3 className="settings__subtitle settings__subtitle--padded" id={accountsId}>
+          Accounts
+        </h3>
         {users.isPending ? (
           <LoadingBlock label="Loading accounts">
             <Skeleton height="3rem" />
@@ -108,7 +114,7 @@ export function PeopleSection({ headingId }: { headingId: string }) {
             />
           </div>
         ) : (
-          <div className="table-scroll">
+          <section className="table-scroll" aria-labelledby={accountsId} ref={scrollable}>
             <table className="table">
               <thead>
                 <tr>
@@ -142,7 +148,7 @@ export function PeopleSection({ headingId }: { headingId: string }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </section>
         )}
       </div>
     </section>
