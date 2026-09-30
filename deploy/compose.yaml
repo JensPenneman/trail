@@ -1,0 +1,364 @@
+# Trail production stack. Runbook: docs/operations.md.
+#
+#   copy .env.example to .env and fill it in, then:
+#   docker compose up -d                     app, db, backup, watchtower
+#   docker compose --profile tunnel up -d    + Cloudflare Tunnel (recommended exposure)
+#   docker compose --profile direct up -d    + Caddy on ports 80/443 and Cloudflare DDNS
+# COMPOSE_PROFILES in .env makes a profile part of every plain command.
+#
+# `$$` below is a literal `$` for the containers; a single `$` is filled in by
+# Compose from .env. The configs at the bottom are written into containers at
+# creation, so those containers cannot have a read-only root filesystem, and
+# they name each file in a watchtower copy-file label: Watchtower recreates
+# containers from their inspect data and would lose the files otherwise. It
+# copies into the file's directory, which must already exist in the image
+# (hence /etc/trail-backup.sh rather than a directory of its own).
+
+name: trail
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+services:
+  app:
+    image: ghcr.io/jenspenneman/trail:${TRAIL_IMAGE_TAG:-latest}
+    # Local build from the repository (`docker compose build app`); normally
+    # the image comes from GHCR, built by CI.
+    build:
+      context: ..
+    restart: unless-stopped
+    init: true
+    # the app's graceful shutdown (draining requests and SSE, flushing
+    # statistics) takes up to 13 s; Docker's default is 10 s
+    stop_grace_period: 15s
+    depends_on:
+      db:
+        condition: service_healthy
+    # An explicit list instead of env_file: the app never sees the tunnel,
+    # DNS or notification tokens that live in the same .env. Entries without
+    # a value are passed only when .env sets them, so the app's own defaults
+    # (docs/architecture.md section 4) apply otherwise.
+    environment:
+      DATABASE_URL: postgres://trail:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/trail
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
+      ADDITIONAL_ORIGINS:
+      INGEST_BASE_URL:
+      SIGNUP_ALLOWLIST:
+      TRUST_PROXY:
+      SESSION_TTL_DAYS:
+      LIVE_WINDOW_MINUTES:
+      STALE_AFTER_HOURS:
+      ALERT_NTFY_URL:
+      ALERT_NTFY_TOKEN:
+      DEFAULT_TIMEZONE:
+      MAP_STYLE_LIGHT:
+      MAP_STYLE_DARK:
+      MAP_CONNECT_SRC:
+      LOG_LEVEL:
+    ports:
+      # Plain HTTP on the LAN for phones and for the dashboard at
+      # http://localhost:8080 on the laptop itself. Set TRAIL_HTTP_BIND to
+      # 127.0.0.1 once phones use the public address.
+      - "${TRAIL_HTTP_BIND:-0.0.0.0}:${TRAIL_HTTP_PORT:-8080}:8080"
+    networks: [edge, backend]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+    healthcheck:
+      # same probe as the image's HEALTHCHECK: liveness only, no database
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/api/health/live || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    logging: *logging
+
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trail
+      POSTGRES_DB: trail
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # libc-independent collation, as in development: the data directory
+      # stays valid if the image ever moves between Alpine (musl) and Debian
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8
+    volumes:
+      # Postgres 18+ images keep the cluster in /var/lib/postgresql/18/docker,
+      # so a future major version can sit next to it for pg_upgrade
+      - trail-db:/var/lib/postgresql
+    networks: [backend]
+    shm_size: 256mb
+    stop_grace_period: 60s
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trail -d trail"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    labels:
+      # the tag only moves within Postgres 18; a new major needs a manual
+      # dump and restore (docs/operations.md)
+      com.centurylinklabs.watchtower.enable: "true"
+    logging: *logging
+
+  backup:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/etc/trail-backup.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-Europe/Brussels}
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_ON_START: ${BACKUP_ON_START:-false}
+      PGHOST: db
+      PGUSER: trail
+      PGDATABASE: trail
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PGCONNECT_TIMEOUT: "10"
+    configs:
+      - source: backup-script
+        target: /etc/trail-backup.sh
+    volumes:
+      - ${BACKUP_DIR:-./backups}:/backups
+    # The image declares a volume for a database this container never runs;
+    # a tmpfs keeps Docker from creating (and Watchtower from leaving behind)
+    # an anonymous volume on every recreate.
+    tmpfs:
+      - /var/lib/postgresql
+    networks: [backend]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.copy-file: /etc/trail-backup.sh
+    logging: *logging
+
+  watchtower:
+    # The maintained fork: containrrr/watchtower was archived in December 2025
+    # and fails against Docker Engine 29 and newer.
+    image: nickfedor/watchtower:1
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Europe/Brussels}
+      WATCHTOWER_POLL_INTERVAL: "300"
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_ROLLING_RESTART: "true"
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
+      # Rolling restarts refuse to run when a watched container has
+      # dependencies, and Compose's depends_on (app -> db) counts as one.
+      # The app reconnects to the database on its own.
+      WATCHTOWER_USE_COMPOSE_DEPENDS_ON: "false"
+      WATCHTOWER_TIMEOUT: 60s
+      # optional, e.g. ntfy://ntfy.sh/your-topic (only passed when .env sets it)
+      WATCHTOWER_NOTIFICATION_URL:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Private GHCR package only: registry credentials for pulling
+      # (docs/operations.md, "Private image"):
+      # - ./secrets/watchtower-config.json:/config.json:ro
+    networks: [edge]
+    mem_limit: 256m
+    labels:
+      # updates itself within major version 1
+      com.centurylinklabs.watchtower.enable: "true"
+    logging: *logging
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: [tunnel]
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      # token of a remotely managed tunnel (Cloudflare Zero Trust dashboard);
+      # its public hostname points at http://app:8080
+      TUNNEL_TOKEN:
+    networks: [edge]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    logging: *logging
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: [direct]
+    restart: unless-stopped
+    environment:
+      TRAIL_DOMAIN:
+      ACME_EMAIL:
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.copy-file: /etc/caddy/Caddyfile
+    logging: *logging
+
+  ddns:
+    # keeps the DNS-only A record of TRAIL_DOMAIN on the current home IP
+    image: favonia/cloudflare-ddns:1
+    profiles: [direct]
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      CLOUDFLARE_API_TOKEN:
+      DOMAINS: ${TRAIL_DOMAIN:-}
+      PROXIED: "false"
+      # IPv6 off: without an AAAA record nobody tries an address the router
+      # does not forward. Set DDNS_IP6_PROVIDER=cloudflare.trace to manage one.
+      IP6_PROVIDER: ${DDNS_IP6_PROVIDER:-none}
+      TZ: ${TZ:-Europe/Brussels}
+    networks: [edge]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    logging: *logging
+
+networks:
+  # app, proxies and everything that needs the internet
+  edge: {}
+  # app, db and backup only; no route out
+  backend:
+    internal: true
+
+volumes:
+  trail-db:
+  caddy-data:
+  caddy-config:
+
+configs:
+  caddyfile:
+    content: |
+      {
+      	email "{$$ACME_EMAIL}"
+      	# Let's Encrypt only: the domain's CAA record allows letsencrypt.org,
+      	# so Caddy's default ZeroSSL fallback must never be tried
+      	cert_issuer acme
+      }
+
+      {$$TRAIL_DOMAIN} {
+      	# No `encode`: compressing would buffer the /api/events SSE stream.
+      	# Caddy flushes event streams immediately and adds X-Forwarded-*.
+      	reverse_proxy app:8080
+      }
+  backup-script:
+    content: |
+      #!/bin/sh
+      # Database backups for the `backup` service (see docs/operations.md).
+      # Once a day at BACKUP_HOUR local time (TZ), pg_dump writes a custom-format
+      # dump to /backups/trail-<UTC timestamp>.dump and deletes dumps older than
+      # BACKUP_KEEP_DAYS days. It also dumps right after starting when the newest
+      # dump is more than a day old (first start, the laptop was off, a failed run)
+      # or when BACKUP_ON_START=true. Any failure exits non-zero: Docker restarts the
+      # container and the restart retries.
+      set -eu
+
+      dir=/backups
+      hour=$${BACKUP_HOUR:-3}
+      keep_days=$${BACKUP_KEEP_DAYS:-14}
+      on_start=$${BACKUP_ON_START:-false}
+      stop=0
+
+      log() {
+        printf '%s %s\n' "$$(date +%Y-%m-%dT%H:%M:%S%z)" "$$*"
+      }
+
+      die() {
+        log "ERROR: $$*"
+        exit 1
+      }
+
+      # dump_within MINUTES: true when a finished dump younger than that exists
+      dump_within() {
+        [ -n "$$(find "$$dir" -maxdepth 1 -type f -name 'trail-*.dump' -mmin "-$$1" | head -n 1)" ]
+      }
+
+      backup() {
+        stamp=$$(date -u +%Y%m%dT%H%M%SZ)
+        file="$$dir/trail-$$stamp.dump"
+        # written under a temporary name and renamed when complete, so a dump that
+        # carries the final name is never partial
+        partial="$$dir/.trail-$$stamp.dump.partial"
+        started=$$(date +%s)
+        log "dumping database $${PGDATABASE:-} to $${file##*/}"
+        if ! pg_dump --format=custom --file="$$partial"; then
+          rm -f "$$partial"
+          die "pg_dump failed; the container restarts and tries again"
+        fi
+        mv "$$partial" "$$file"
+        log "backup complete: $${file##*/}, $$(du -k "$$file" | cut -f1) KiB in $$(($$(date +%s) - started)) s"
+        find "$$dir" -maxdepth 1 -type f -name 'trail-*.dump' -mmin "+$$((keep_days * 1440))" |
+          while read -r old; do
+            rm -f "$$old"
+            log "deleted $${old##*/} (older than $$keep_days days)"
+          done
+      }
+
+      case $$hour in
+        '' | *[!0-9]*) die "BACKUP_HOUR must be an hour from 0 to 23, got '$$hour'" ;;
+      esac
+      hour=$${hour#0}
+      hour=$${hour:-0}
+      [ "$$hour" -le 23 ] || die "BACKUP_HOUR must be an hour from 0 to 23, got '$$hour'"
+      case $$keep_days in
+        '' | *[!0-9]* | 0) die "BACKUP_KEEP_DAYS must be a whole number of days (1 or more), got '$$keep_days'" ;;
+      esac
+      if [ ! -d "$$dir" ] || [ ! -w "$$dir" ]; then
+        die "$$dir is not a writable directory; check BACKUP_DIR in .env"
+      fi
+
+      # SIGTERM (docker stop) lets a running dump finish, then leaves the loop
+      trap 'stop=1' TERM INT
+
+      # leftovers of a dump that was interrupted
+      find "$$dir" -maxdepth 1 -type f -name '.trail-*.dump.partial' -exec rm -f {} +
+
+      log "daily backups at $$hour:00 $${TZ:-UTC} to BACKUP_DIR, keeping $$keep_days days"
+      if [ "$$on_start" = true ] || ! dump_within 1440; then
+        backup
+      fi
+
+      while [ "$$stop" -eq 0 ]; do
+        now=$$(date +%H)
+        now=$${now#0}
+        if [ "$${now:-0}" -eq "$$hour" ] && ! dump_within 60; then
+          backup
+        fi
+        # sleeping in the background keeps the shell responsive to SIGTERM
+        sleep 60 &
+        wait $$! || true
+      done
+      log "stopped"

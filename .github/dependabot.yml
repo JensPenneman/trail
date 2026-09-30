@@ -1,0 +1,122 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Brussels
+    commit-message:
+      prefix: "chore(deps)"
+    # auto-merge lands minor/patch on green CI; the cooldown is the window in
+    # which a bad release can be yanked before it reaches main
+    cooldown:
+      default-days: 3
+    ignore:
+      # @types/node follows the Node major the project runs on (the current
+      # LTS, see .nvmrc); it moves together with the LTS, not on its own
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    # A dependency joins the first group it matches, so the families come
+    # first: they carry no update-types and therefore hold for majors too,
+    # because a package and its types/plugins/runner have to move in one PR or
+    # the tree does not build. The rest falls through to minor-and-patch;
+    # majors of ungrouped packages get a PR of their own.
+    groups:
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+      playwright:
+        patterns:
+          - "@playwright/test"
+          - "playwright"
+          - "playwright-core"
+          - "@axe-core/playwright"
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      react-router:
+        patterns:
+          - "react-router"
+          - "@react-router/*"
+      tanstack:
+        patterns:
+          - "@tanstack/*"
+      simplewebauthn:
+        patterns:
+          - "@simplewebauthn/*"
+      drizzle:
+        patterns:
+          - "drizzle-orm"
+          - "drizzle-kit"
+      biome:
+        patterns:
+          - "@biomejs/*"
+      commitlint:
+        patterns:
+          - "@commitlint/*"
+      testing-library:
+        patterns:
+          - "@testing-library/*"
+      types:
+        patterns:
+          - "@types/*"
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Brussels
+    commit-message:
+      prefix: "chore(ci)"
+    cooldown:
+      default-days: 3
+    groups:
+      actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 3
+
+  # Dockerfile: the node:lts-alpine digest. A new digest is the current LTS
+  # with fresh Alpine and Node patches; it auto-merges on green CI and CI then
+  # publishes the image the server picks up.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Brussels
+    commit-message:
+      prefix: "chore(docker)"
+    open-pull-requests-limit: 3
+
+  # Compose files: the images there float on tags that Watchtower follows
+  # (postgres:18-alpine, caddy:2-alpine, favonia/cloudflare-ddns:1,
+  # nickfedor/watchtower:1), so the only PRs here are new major versions,
+  # which never auto-merge. A Postgres major needs a dump and restore of the
+  # production database first (docs/operations.md, "Postgres major upgrade").
+  - package-ecosystem: docker-compose
+    directories:
+      - /
+      - /deploy
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Brussels
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      compose:
+        patterns: ["*"]
+    open-pull-requests-limit: 3

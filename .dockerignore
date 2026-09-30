@@ -1,0 +1,33 @@
+# Build context of the production image. Only sources, manifests and the
+# lockfile go in: installed modules and build output are recreated inside the
+# build, and secrets (every .env, deploy/) must never reach an image layer.
+
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/.DS_Store
+
+# secrets and the production stack
+**/.env
+**/.env.*
+deploy
+
+# repository metadata and tooling that the build does not use
+.git
+.github
+.vscode
+docs
+tests
+coverage
+playwright-report
+test-results
+blob-report
+*.md
+Dockerfile
+.dockerignore
+compose.yaml
+lefthook.yml
+lefthook-local.yml
+commitlint.config.mjs
+knip.json
+biome.json
