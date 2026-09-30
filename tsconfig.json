@@ -3,6 +3,8 @@
    * (apps/*, packages/*) has its own tsconfig and typecheck script. */
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    /* DOM: E2E tests hand functions to the browser (page.evaluate, init scripts) */
+    "lib": ["ESNext", "DOM"],
     "types": ["node"],
     "allowJs": true,
     "checkJs": true

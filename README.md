@@ -116,6 +116,12 @@ TEST_DATABASE_URL=postgres://trail:trail@127.0.0.1:54329/trail_test npm run test
 E2E_DATABASE_URL=postgres://trail:trail@127.0.0.1:54329/trail_e2e npm run test:e2e
 ```
 
+`npm run test:e2e` empties `trail_e2e` and starts the built server on port
+4190 itself (run `npm run build` first). To run the same suite against a
+deployment that is already up, such as a local Docker stack, point it there:
+`E2E_BASE_URL=http://localhost:8080 npm run test:e2e`. The invitation tests
+need the first account on that server, so they run on a fresh one only.
+
 For coverage, pass the flag to the workspaces directly:
 `npm run test --workspaces --if-present -- --coverage`.
 
