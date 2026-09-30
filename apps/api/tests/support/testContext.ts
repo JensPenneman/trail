@@ -1,4 +1,5 @@
 import { createServer, type Server } from "node:http";
+import type { DestinationStream } from "pino";
 import type { AppContext } from "../../src/appContext";
 import { loadConfig } from "../../src/config/loadConfig";
 import { createAppContext } from "../../src/createAppContext";
@@ -25,12 +26,20 @@ export interface TestContext {
  * request instead.
  */
 export async function createTestContext(
-  options: { env?: Record<string, string>; webDistDir?: string } = {},
+  options: {
+    env?: Record<string, string>;
+    webDistDir?: string;
+    /** Receives the app's log lines (level info) instead of discarding them. */
+    logDestination?: DestinationStream;
+  } = {},
 ): Promise<TestContext> {
   const config = loadConfig(testEnvironment(options.env), {
     webDistDir: options.webDistDir ?? "/nonexistent/web/dist",
   });
-  const logger = createLogger({ level: "silent" });
+  const logger =
+    options.logDestination === undefined
+      ? createLogger({ level: "silent" })
+      : createLogger({ level: "info", destination: options.logDestination });
   const pool = createPool(config.databaseUrl, logger, { statementTimeoutMs: 30_000, max: 5 });
   const alerts: Alert[] = [];
   const ctx = createAppContext({

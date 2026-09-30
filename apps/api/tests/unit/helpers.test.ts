@@ -58,6 +58,43 @@ describe("logging safety", () => {
     );
   });
 
+  it("recognises token parameters the way the query parser reads them", () => {
+    // `%74oken` is `token` to the router, so it authenticates — and must not be logged.
+    expect(redactUrl("/api/overland?%74oken=trl_secret")).toBe("/api/overland?token=[redacted]");
+    expect(redactUrl("/api/overland?TOKEN=trl_a&Access_Token=trl_b&x=a%20b")).toBe(
+      "/api/overland?TOKEN=[redacted]&Access_Token=[redacted]&x=a%20b",
+    );
+  });
+
+  it("removes one-time link and invite tokens from logged paths", () => {
+    expect(redactUrl("/link/5JqNf3kP0xY")).toBe("/link/[redacted]");
+    expect(redactUrl("/invite/5JqNf3kP0xY?from=mail")).toBe("/invite/[redacted]?from=mail");
+    expect(redactUrl("/api/auth/link/5JqNf3kP0xY")).toBe("/api/auth/link/[redacted]");
+    expect(redactUrl("/api/auth/link/5JqNf3kP0xY/start")).toBe("/api/auth/link/[redacted]/start");
+    // Routing ignores case and the SPA decodes the path: those spellings reach the same pages.
+    expect(redactUrl("/API/Auth/LINK/5JqNf3kP0xY")).toBe("/API/Auth/LINK/[redacted]");
+    expect(redactUrl("/%6Cink/5JqNf3kP0xY")).toBe("/%6Cink/[redacted]");
+    expect(redactUrl("/devices/01926f3a?x=1")).toBe("/devices/01926f3a?x=1");
+    expect(redactUrl("/link")).toBe("/link");
+  });
+
+  it("keeps only what names the failure of a Postgres error, never the refused value", () => {
+    const refused = Object.assign(
+      new Error('invalid input syntax for type double precision: "51.0543 3.7174"'),
+      {
+        severity: "ERROR",
+        code: "22P02",
+        routine: "float8in_internal",
+        where: "unnamed portal parameter $1 = '51.0543 3.7174'",
+        hint: "check 51.0543",
+      },
+    );
+    const serialized = JSON.stringify(serializeError(new Error("wrapped", { cause: refused })));
+    expect(serialized).toContain("22P02");
+    expect(serialized).toContain("float8in_internal");
+    expect(serialized).not.toContain("51.0543");
+  });
+
   it("never logs query parameters or failing rows of database errors", () => {
     const cause = Object.assign(new Error("null value violates not-null constraint"), {
       code: "23502",

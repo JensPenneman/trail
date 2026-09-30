@@ -29,19 +29,46 @@ const originalError = (value: unknown): unknown => {
   return value;
 };
 
+/* A Postgres error message can quote the value it refused ("invalid input syntax for
+ * type double precision: …"): of those only the fields that name what failed are kept. */
+const postgresKeys = new Set([
+  "code",
+  "severity",
+  "routine",
+  "constraint",
+  "schema",
+  "table",
+  "column",
+  "dataType",
+]);
+
+/** An error sent by the Postgres server (pg's DatabaseError), recognised by its fields. */
+const isPostgresError = (error: Error): boolean =>
+  "routine" in error &&
+  "severity" in error &&
+  "code" in error &&
+  typeof error.code === "string" &&
+  /^[0-9A-Z]{5}$/.test(error.code);
+
+const messageOf = (error: Error): string => {
+  if (error instanceof DrizzleQueryError) return `Failed query: ${error.query}`;
+  if (isPostgresError(error) && "code" in error) return `Postgres error ${String(error.code)}`;
+  return error.message;
+};
+
 /** pino `err` serializer that keeps codes, messages and stacks but never query parameters. */
 export function serializeError(value: unknown): unknown {
   const error = originalError(value);
   if (!(error instanceof Error)) return error;
-  const message =
-    error instanceof DrizzleQueryError ? `Failed query: ${error.query}` : error.message;
+  const message = messageOf(error);
+  const fromPostgres = isPostgresError(error);
   const serialized: Record<string, unknown> = {
     type: error.constructor.name,
     message,
     stack: `${error.constructor.name}: ${message}\n${stackFrames(error.stack)}`,
   };
   for (const [key, entry] of Object.entries(error)) {
-    if (droppedKeys.has(key)) continue;
+    if (droppedKeys.has(key) || (fromPostgres && !postgresKeys.has(key))) continue;
     if (entry === null || ["string", "number", "boolean"].includes(typeof entry)) {
       serialized[key] = entry;
     }
