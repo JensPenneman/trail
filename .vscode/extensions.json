@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "biomejs.biome",
+    "vitest.explorer",
+    "ms-playwright.playwright",
+    "editorconfig.editorconfig",
+    "ms-azuretools.vscode-containers"
+  ],
+  "unwantedRecommendations": ["esbenp.prettier-vscode", "dbaeumer.vscode-eslint"]
+}

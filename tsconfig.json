@@ -1,0 +1,12 @@
+{
+  /* Root project: repo scripts, E2E tests and config files. Each workspace
+   * (apps/*, packages/*) has its own tsconfig and typecheck script. */
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true
+  },
+  "include": ["scripts/**/*.mjs", "tests/**/*.ts", "*.config.ts", "*.config.mjs"],
+  "exclude": ["node_modules", "**/dist", "coverage", "playwright-report", "test-results"]
+}

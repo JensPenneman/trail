@@ -1,0 +1,81 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": ["**", "!**/package-lock.json", "!**/drizzle/meta"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all",
+      "arrowParentheses": "always"
+    }
+  },
+  "css": {
+    "formatter": { "enabled": true },
+    "linter": { "enabled": true }
+  },
+  "json": {
+    "formatter": { "enabled": true }
+  },
+  "assist": {
+    "actions": {
+      "source": { "organizeImports": "on" }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "a11y": { "preset": "recommended" },
+      "security": { "preset": "recommended" },
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "noUnusedFunctionParameters": "error"
+      },
+      "style": {
+        "useImportType": "error",
+        "useExportType": "error",
+        "useConst": "error",
+        "useTemplate": "error",
+        "noNonNullAssertion": "error",
+        "noParameterAssign": "error",
+        "useNodejsImportProtocol": "error"
+      },
+      "suspicious": {
+        "noConsole": "error",
+        "noExplicitAny": "error"
+      },
+      "complexity": {
+        "noForEach": "error",
+        "useLiteralKeys": "off"
+      },
+      "performance": {
+        "noBarrelFile": "error",
+        "noReExportAll": "error"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["scripts/**", "apps/api/src/cli/**", "deploy/**"],
+      "linter": {
+        "rules": {
+          "suspicious": { "noConsole": "off" }
+        }
+      }
+    }
+  ]
+}
