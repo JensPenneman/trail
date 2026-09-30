@@ -23,12 +23,18 @@ const header = [
   "wifi",
 ];
 
-/** CSV with a header row and CRLF line ends (RFC 4180); `motion` values are joined with ";". */
+/**
+ * The points as CSV with a header row and CRLF line ends (RFC 4180); `motion`
+ * values are joined with ";". One table holds one kind of row: visits and trips
+ * are in the GeoJSON (and the visits in the GPX) export.
+ */
 export function csvFormatter(): ExportFormatter {
   return {
     contentType: "text/csv; charset=utf-8",
     extension: "csv",
     begin: () => `${header.join(",")}\r\n`,
+    visits: () => "",
+    trips: () => "",
     rows: (device, rows) =>
       rows
         .map(

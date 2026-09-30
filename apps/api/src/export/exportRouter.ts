@@ -8,6 +8,8 @@ import { parseQuery } from "../http/parseInput";
 import { localDate } from "../lib/localDate";
 import { writeChunk } from "../lib/writeChunk";
 import { csvFormatter } from "./csvFormatter";
+import { deviceTrips } from "./deviceTrips";
+import { deviceVisits } from "./deviceVisits";
 import type { ExportFormatter } from "./exportFormatter";
 import { geojsonFormatter } from "./geojsonFormatter";
 import { gpxFormatter } from "./gpxFormatter";
@@ -25,9 +27,9 @@ const formatterFor = (format: "geojson" | "gpx" | "csv", now: Date): ExportForma
 };
 
 /**
- * `GET /api/export` — the user's points as a download, streamed page by page
- * with backpressure: memory stays flat for any range, and the database is not
- * queried further once the client has gone.
+ * `GET /api/export` — the user's points, visits and trips as a download. The
+ * points stream page by page with backpressure: memory stays flat for any
+ * range, and the database is not queried further once the client has gone.
  */
 export function exportRouter(ctx: AppContext): Router {
   const router = express.Router();
@@ -47,6 +49,11 @@ export function exportRouter(ctx: AppContext): Router {
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 
     if (!(await writeChunk(res, formatter.begin()))) return;
+    for (const device of owned) {
+      const visits = formatter.visits(device, await deviceVisits(ctx.db, device.id, { from, to }));
+      const trips = formatter.trips(device, await deviceTrips(ctx.db, device.id, { from, to }));
+      if (!(await writeChunk(res, visits + trips))) return;
+    }
     for (const device of owned) {
       for await (const rows of streamDevicePoints(ctx.db, device.id, { from, to })) {
         if (!(await writeChunk(res, formatter.rows(device, rows)))) return;

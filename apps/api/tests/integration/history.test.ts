@@ -285,13 +285,56 @@ describe("export", () => {
       features: Array<{ geometry: { coordinates: number[] }; properties: Record<string, unknown> }>;
     };
     expect(collection.type).toBe("FeatureCollection");
-    expect(collection.features).toHaveLength(30);
-    expect(collection.features[0]?.properties).toMatchObject({
+    // The day's visit, then its 30 points.
+    expect(collection.features).toHaveLength(31);
+    expect(collection.features[1]?.properties).toMatchObject({
+      kind: "location",
       timestamp: "2026-09-29T06:30:15.000Z",
       device_name: "iPhone",
       motion: ["cycling"],
       unique_id: "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
     });
+  });
+
+  it("puts the visits and trips into the GeoJSON, replayable into an Overland receiver", async () => {
+    const twoDays = { from: "2026-09-28T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" };
+    const response = await owner
+      .get(`${apiPaths.export}?${query({ ...twoDays, format: "geojson", deviceIds: rideId })}`)
+      .buffer(true)
+      .expect(200);
+    const { features } = JSON.parse(response.text) as {
+      features: Array<{ geometry: unknown; properties: Record<string, unknown> }>;
+    };
+    const kinds = features.map((feature) => feature.properties["kind"]);
+    expect(kinds.filter((kind) => kind === "location")).toHaveLength(30);
+    expect(features.find((feature) => feature.properties["kind"] === "visit")).toMatchObject({
+      geometry: { type: "Point", coordinates: [3.725, 51.0445] },
+      properties: {
+        action: "visit",
+        timestamp: "2026-09-29T06:29:10.000Z",
+        arrival_date: "2026-09-28T17:48:12.000Z",
+        departure_date: "2026-09-29T06:29:05.000Z",
+        horizontal_accuracy: 35,
+        device_name: "iPhone",
+      },
+    });
+    expect(features.find((feature) => feature.properties["kind"] === "trip")).toMatchObject({
+      geometry: { type: "Point", coordinates: [3.7249, 51.0443] },
+      properties: {
+        type: "trip",
+        mode: "bicycle",
+        start: "2026-09-28T17:02:31.000Z",
+        end: "2026-09-28T17:47:55.000Z",
+      },
+    });
+
+    const copy = await createDevice(owner, { name: "Replayed" });
+    await postOverland(t.app, copy.credentials.accessToken, { locations: features }).expect(200);
+    const log = await owner
+      .get(`${apiPaths.devices.ingestLog(copy.device.id)}?limit=1`)
+      .expect(200);
+    expect(log.body.entries[0]).toMatchObject({ locations: 30, visits: 1, trips: 1, rejected: 0 });
+    await owner.delete(apiPaths.devices.one(copy.device.id)).set("Origin", testOrigin).expect(204);
   });
 
   it("streams GPX 1.1 with a segment per continuous stretch", async () => {
@@ -303,6 +346,12 @@ describe("export", () => {
     expect(gpx.match(/<trkseg>/g)).toHaveLength(1);
     expect(gpx.match(/<trkpt /g)).toHaveLength(30);
     expect(gpx).toContain("<name>iPhone</name>");
+    // GPX 1.1 wants waypoints before tracks: the visit, at its arrival.
+    expect(gpx.indexOf("<wpt ")).toBeLessThan(gpx.indexOf("<trk>"));
+    expect(gpx).toContain(
+      '<wpt lat="51.0445" lon="3.725"><time>2026-09-28T17:48:12.000Z</time><name>Visit · iPhone</name>' +
+        "<desc>arrived 2026-09-28T17:48:12.000Z, left 2026-09-29T06:29:05.000Z</desc><type>visit</type></wpt>",
+    );
     expect(gpx).toContain(
       '<trkpt lat="51.0357334" lon="3.7108"><ele>9</ele><time>2026-09-29T06:30:15.000Z</time></trkpt>',
     );

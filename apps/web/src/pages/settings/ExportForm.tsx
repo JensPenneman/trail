@@ -12,9 +12,9 @@ import { SelectField } from "../../ui/SelectField";
 import { TextField } from "../../ui/TextField";
 
 const formatLabels: Record<(typeof exportFormats)[number], string> = {
-  geojson: "GeoJSON — for GIS tools and scripts",
-  gpx: "GPX 1.1 — for mapping and fitness apps",
-  csv: "CSV — for spreadsheets",
+  geojson: "GeoJSON — points, visits and trips, for GIS tools and scripts",
+  gpx: "GPX 1.1 — tracks and visits, for mapping and fitness apps",
+  csv: "CSV — the points, for spreadsheets",
 };
 
 /**
