@@ -1,13 +1,11 @@
 import type { DeviceSummary } from "@trail/contracts/device";
 import { type FormEvent, useState } from "react";
-import { useNavigate } from "react-router";
 import { useFormatter } from "../../format/useFormatter";
 import { useDeleteDevice } from "../../queries/useDeleteDevice";
 import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
 import { ErrorState } from "../../ui/ErrorState";
 import { TextField } from "../../ui/TextField";
-import { useAnnounce } from "../../ui/useAnnounce";
 
 interface DeleteDeviceDialogProps {
   device: DeviceSummary;
@@ -18,9 +16,7 @@ interface DeleteDeviceDialogProps {
 /** Deleting removes every point the device ever recorded, so the name must be typed to confirm. */
 export function DeleteDeviceDialog({ device, open, onClose }: DeleteDeviceDialogProps) {
   const format = useFormatter();
-  const remove = useDeleteDevice(device.id);
-  const navigate = useNavigate();
-  const announce = useAnnounce();
+  const remove = useDeleteDevice(device);
   const [typed, setTyped] = useState("");
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
@@ -32,12 +28,7 @@ export function DeleteDeviceDialog({ device, open, onClose }: DeleteDeviceDialog
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!matches) return;
-    remove.mutate(undefined, {
-      onSuccess: () => {
-        announce(`${device.name} was deleted.`);
-        void navigate("/devices", { replace: true });
-      },
-    });
+    remove.mutate();
   };
 
   return (

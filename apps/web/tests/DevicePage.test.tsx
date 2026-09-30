@@ -1,6 +1,7 @@
-import { screen } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { removeDeviceFromCache } from "../src/devices/removeDeviceFromCache";
 import { DevicePage } from "../src/pages/device/DevicePage";
 import { ids, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
@@ -34,6 +35,55 @@ describe("DevicePage", () => {
     expect(confirm).toBeDisabled();
     await person.type(screen.getByLabelText("Type “iPhone 16” to confirm"), "iPhone 16");
     expect(confirm).toBeEnabled();
+  });
+
+  it("leaves for the device list after deleting, without asking for the gone device", async () => {
+    let answerDelete: () => void = () => undefined;
+    const { calls } = mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { queryClient, router } = renderPage(<DevicePage />, {
+      path: "/devices/:deviceId",
+      url: `/devices/${ids.phone}`,
+      user,
+    });
+    await person.click(await screen.findByRole("button", { name: "Delete" }));
+    await person.type(screen.getByLabelText("Type “iPhone 16” to confirm"), "iPhone 16");
+    // The server's `device-removed` event may clear the cache before the deletion returns.
+    const held = new Promise<void>((resolve) => {
+      answerDelete = resolve;
+    });
+    const fetchMock = vi.mocked(fetch);
+    const answered = fetchMock.getMockImplementation();
+    let deleted = false;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (init?.method === "DELETE") {
+        deleted = true;
+        await held;
+        return new Response(null, { status: 204 });
+      }
+      // Gone on the server as soon as the deletion ran there.
+      if (deleted && String(input).endsWith(`/api/devices/${ids.phone}`)) {
+        calls.push({ method: "GET", path: `/api/devices/${ids.phone}`, body: undefined });
+        return new Response(
+          JSON.stringify({ error: { code: "not_found", message: "No such device." } }),
+          { status: 404 },
+        );
+      }
+      return answered === undefined ? new Response(null, { status: 500 }) : answered(input, init);
+    });
+    await person.click(screen.getByRole("button", { name: "Delete device" }));
+    act(() => removeDeviceFromCache(queryClient, ids.phone));
+    // The page lost its device: the confirmation dialog that started the deletion is gone.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    act(() => answerDelete());
+
+    expect(await screen.findByText("Elsewhere")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/devices");
+    expect(await screen.findByText("iPhone 16 was deleted.")).toBeInTheDocument();
+    const reads = calls.filter(
+      (call) => call.method === "GET" && call.path === `/api/devices/${ids.phone}`,
+    );
+    expect(reads.length).toBeLessThanOrEqual(1);
   });
 
   it("explains an unknown device", async () => {

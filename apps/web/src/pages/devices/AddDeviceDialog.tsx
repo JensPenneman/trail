@@ -19,14 +19,17 @@ interface AddDeviceDialogProps {
  */
 export function AddDeviceDialog({ open, onClose }: AddDeviceDialogProps) {
   const [created, setCreated] = useState<DeviceWithCredentialsResponse | null>(null);
-  const close = () => {
-    onClose();
-    setCreated(null);
-  };
+  // Forgotten once the dialog is closed: `open` follows the URL, which changes a moment
+  // after the close, and in between the dialog must not show the name form again.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (!open) setCreated(null);
+  }
   return (
     <Dialog
       open={open}
-      onClose={close}
+      onClose={onClose}
       title={created === null ? "Add a device" : `Set up ${created.device.name}`}
       description={
         created === null
@@ -36,7 +39,7 @@ export function AddDeviceDialog({ open, onClose }: AddDeviceDialogProps) {
       size={created === null ? "s" : "l"}
     >
       {created === null ? (
-        <AddDeviceNameForm onCreated={setCreated} onCancel={close} />
+        <AddDeviceNameForm onCreated={setCreated} onCancel={onClose} />
       ) : (
         <>
           <CredentialsView
@@ -52,10 +55,10 @@ export function AddDeviceDialog({ open, onClose }: AddDeviceDialogProps) {
             }
           />
           <div className="dialog__actions">
-            <LinkButton to={`/devices/${created.device.id}`} onClick={close}>
+            <LinkButton to={`/devices/${created.device.id}`} onClick={onClose}>
               Open device page
             </LinkButton>
-            <Button variant="primary" onClick={close}>
+            <Button variant="primary" onClick={onClose}>
               Done
             </Button>
           </div>
