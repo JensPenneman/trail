@@ -86,12 +86,14 @@ Browser ───────────┼─▶ Cloudflare Tunnel (cloudflare
                    └─▶ or: router :443 → Caddy (Let's Encrypt) ─┼─▶ app :8080 ──▶ db (postgres:18-alpine)
 LAN (before the domain is live): http://<laptop-ip>:8080 ─┘            │
                                                              backup ──┘ (pg_dump → host folder)
-watchtower: polls GHCR every 5 min, recreates app/cloudflared/caddy/db with new images
+watchtower: polls the registries every 5 min, recreates every labelled service with its new image
 ```
 
 `deploy/compose.yaml` services: `app` (GHCR image), `db`, `backup`,
 `watchtower`, and exposure profiles `tunnel` (cloudflared) and `direct`
-(Caddy + Cloudflare DDNS). See §13.
+(Caddy + Cloudflare DDNS). Networks: `edge` (app, proxies, watchtower; internet
+access) and `backend` (app, db, backup; `internal`, no route out). See §13 and
+the runbook `docs/operations.md`.
 
 ## 4. Configuration (API environment)
 
@@ -117,12 +119,23 @@ All configuration is environment variables, validated at boot with zod
 | `MAP_STYLE_LIGHT` | `https://tiles.openfreemap.org/styles/liberty` | MapLibre style URL |
 | `MAP_STYLE_DARK` | `https://tiles.openfreemap.org/styles/dark` | MapLibre style URL |
 | `MAP_CONNECT_SRC` | `https://tiles.openfreemap.org` | Extra CSP `connect-src`/`img-src` origins for the map (comma-separated) |
-| `WEB_DIST_DIR` | `../web/dist` relative to the API bundle | Built SPA to serve; missing dir = API only |
+| `WEB_DIST_DIR` | `apps/web/dist` (`../../web/dist` from the bundle in `apps/api/dist`) | Built SPA to serve; missing `index.html` = API only |
 | `LOG_LEVEL` | `info` | pino level |
-| `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` | from package.json / `dev` / null | Baked into the image by the Dockerfile |
+| `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` | root package.json version / `dev` / null | Baked into the image by the Dockerfile |
+| `RATE_LIMIT_AUTH_PER_MINUTE` | `20` | Auth routes, per IP (§12) |
+| `RATE_LIMIT_API_PER_MINUTE` | `600` | Every other `/api` route, per IP |
+| `RATE_LIMIT_INGEST_PER_MINUTE` | `300` | Accepted uploads, per device token |
+| `RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES` | `30` | Uploads with an unknown token, per IP |
+| `NODE_ENV` | `development` | `production` in the image (see below) |
 
 Development safety: when `NODE_ENV !== "production"` the API refuses to start
 (or migrate) against a database whose name does not start with `trail`.
+`NODE_ENV=development` also switches the logs to pino-pretty (a dev
+dependency), so the image must set `NODE_ENV=production`.
+
+Runtime paths resolve relative to the running entry module: migrations at
+`../drizzle`, the SPA at `../../web/dist` — the same for the bundle
+(`apps/api/dist/*.mjs`) and for `tsx` in development (`apps/api/src/*.ts`).
 
 ## 5. Data model (PostgreSQL 18)
 
@@ -242,7 +255,11 @@ header and those query params).
   `*_accuracy`, `battery_level` < 0 → null; `vertical_accuracy` < 0 → altitude
   null too. Coordinates truncated to 7 decimals by the app.
 - `GET /api/overland` with a valid token → `{"name": "<device name>"}` (Overland
-  account-info probe; also a handy connectivity test).
+  account-info probe; also a handy connectivity test). Other methods →
+  `405 {"error":"Method not allowed"}`.
+- The token is checked before the body is parsed, so an unauthenticated
+  request never costs a 5 MB JSON parse. Errors of this route always use
+  Overland's `{"error":"…"}` body (413 `Payload too large`, 429, 500, 503).
 
 **Record kinds** in `locations[]` (classification by properties):
 1. `properties.action === "visit"` → **visit** (`arrival_date`,
@@ -271,12 +288,18 @@ Every record also carries metadata `device_id`, `wifi`, `battery_*`.
 - An individual invalid record (bad geometry, lat/lon out of range, exactly
   0,0, unparseable timestamp, timestamp > now + 24 h) → stored in
   `ingest_rejects` with a reason; the batch is still acknowledged so the
-  phone's queue never gets stuck on one bad record.
+  phone's queue never gets stuck on one bad record. A rejected record larger
+  than 16 kB is kept as a 2 000-character preview.
+- Log events keep an unusable geometry in `extra` instead of being rejected;
+  visit dates before 1990 or more than a year ahead (iOS `distantPast` /
+  `distantFuture`) become null.
 - Database unavailable → `503 {"error":"Server temporarily unavailable"}` so
   the phone keeps the data and retries.
 
 ### 6.2 Processing (one transaction)
 
+0. Lock the device row (`SELECT … FOR UPDATE`): concurrent uploads of one
+   phone never interleave their cache updates.
 1. Insert locations (`ON CONFLICT DO NOTHING RETURNING`) + upsert heat cells;
    insert visits / trips / events (`ON CONFLICT DO NOTHING`); insert rejects.
 2. Update the device: `last_seen_at = now()`, `points_total += inserted`,
@@ -286,9 +309,12 @@ Every record also carries metadata `device_id`, `wifi`, `battery_*`.
    `live_trip` from the payload's `trip` (null when absent).
 3. Insert the `ingest_log` row.
 4. Respond `{"result":"ok"}` (plus `set` when a preset is pending, §6.3).
-5. After commit: publish SSE events (`ingest`, `device`), schedule
-   daily-stats recomputation for touched days, and if `stale_alerted_at` was
-   set send the "sending data again" alert and clear it.
+   `duplicates` = valid location records − inserted points (repeats within
+   one batch count too).
+5. After commit and the response: publish SSE events (`ingest`, `device`),
+   schedule daily-stats recomputation for touched days, and if
+   `stale_alerted_at` was set send the "sending data again" alert (the stamp
+   is cleared in step 2).
 
 ### 6.3 Remote settings presets
 
@@ -330,7 +356,8 @@ Passkeys only (no passwords), SimpleWebAuthn v14 on both ends.
   - new address and (`SIGNUP_ALLOWLIST` matches or a valid invite whose email
     is null or equal) → `register` options (new random `webauthn_user_id`,
     `residentKey: "required"`, `userVerification: "required"`,
-    `attestationType: "none"`, default algorithms incl. Ed25519/ES256/RS256);
+    `attestationType: "none"`, algorithms Ed25519/ES256/RS256 — ML-DSA-44 is
+    left out while Node marks it experimental);
   - otherwise → `403 signup_not_allowed`.
 - **Usernameless** `POST /api/auth/passkey` → discoverable request options
   (empty allowCredentials) for conditional UI (autofill) and "Use a passkey".
@@ -340,16 +367,24 @@ Passkeys only (no passwords), SimpleWebAuthn v14 on both ends.
   first) + passkey in one transaction and consumes the invite; authentication
   checks the credential belongs to the user (targeted) or resolves the user
   from the credential (discoverable), updates `counter`/`last_used_at`. Then
-  creates a session and sets the cookie. A credential the server does not know
-  (deleted passkey) → `401 unknown_credential`, so the client can call the
-  WebAuthn Signal API (`signalUnknownCredential`) and the password manager
-  forgets it.
+  creates a session and sets the cookie (a session the browser already had is
+  deleted). A credential the server does not know (deleted passkey) →
+  `401 unknown_credential`, so the client can call the WebAuthn Signal API
+  (`signalUnknownCredential`) and the password manager forgets it. The finish
+  request must come from the origin the ceremony started on (else `403
+  origin_not_allowed`). `add_passkey` ceremonies (normally finished through
+  `POST /api/me/passkeys`) can also be finished here by the signed-in user;
+  they keep the current session. Any verification failure is `400
+  webauthn_failed` (details only in the debug log), a consumed or expired
+  ceremony `400 ceremony_expired`.
 - **Ceremonies** expire after 5 min, are single use, bound to origin + RP ID.
 - **Sessions.** Token = 32 random bytes base64url in cookie
   `__Host-trail_session` (`Secure; HttpOnly; SameSite=Lax; Path=/`) on HTTPS,
   or `trail_session` (no `Secure`) on plain-HTTP localhost. DB keeps only the
   SHA-256. Sliding expiry `SESSION_TTL_DAYS`; `last_seen_at` updated at most
-  every 5 min. Logout deletes the row.
+  every 5 min (the cookie is re-sent then). Logout deletes the row. On HTTPS
+  only the `__Host-` cookie is read, on HTTP only the plain one; an unknown or
+  expired cookie is cleared.
 - **CSRF.** Cookie-authenticated unsafe methods require an allowed `Origin`
   header (and `Sec-Fetch-Site` `same-origin` when present) and a JSON body
   where there is one. The ingest route is exempt (bearer token, no cookies).
@@ -411,13 +446,49 @@ no-store` unless stated.
 Ownership: every device-scoped query is filtered by the session user's
 devices; a foreign or unknown id is `404 not_found` (never 403, no probing).
 
+Status codes: creations answer `201` (devices, invites, passkeys, passkey
+links), deletions and logout `204`; `PATCH /api/me/passkeys/:id` answers
+`addPasskeyResponse`, `POST /api/me/sessions/revoke-others` the remaining
+sessions. Invalid input → `400 validation_failed` with `fields`; malformed JSON
+→ `400 bad_request`; a non-JSON body → `415 bad_request`; too large → `413
+payload_too_large`; database down → `503 unavailable`; unknown `/api` route →
+JSON `404 not_found`. Stack traces are logged, never sent.
+
+- **Visits** returned are those recorded, arrived or departed inside the
+  range, or spanning it; iOS reports a visit on arrival and again on
+  departure, and the two reports are merged (the one knowing the departure
+  wins). **Trips** overlap the range.
+- **Activity** buckets are dense: every UTC hour × requested device, zeros
+  included.
+- **Delete** (`POST /api/locations/delete`) removes points, visits, trips and
+  events in `[from, to)` in one transaction; `deleted` counts all of them. It
+  rebuilds the device's heat cells, recomputes the touched days' statistics,
+  decrements `points_total` and refreshes the cached position when it was
+  deleted.
+- **Export** streams page by page (keyset on `recorded_at`) with
+  backpressure and stops querying when the client disconnects. GeoJSON uses
+  Overland's property names (+ `device_name`, `device_id` = Device ID) so an
+  export can be replayed into an Overland receiver; GPX has one `<trk>` per
+  device and a `<trkseg>` per `trackSegments()` segment with `<ele>`/`<time>`;
+  CSV has a header row, CRLF line ends, `motion` joined with `;`, and text
+  cells starting like a formula prefixed with `'`. File name
+  `trail-<first local day>_<last local day>.<ext>`.
+
 ### 8.1 Tracks, distance, simplification
 
 - Points in `[from, to)` with `horizontal_accuracy <= maxAccuracy` (or null),
   ordered by `recorded_at`, split into segments with `trackSegments()`
   (contracts: gap > 600 s), simplified with Ramer–Douglas–Peucker on a local
-  equirectangular projection (metres), binary-searching one tolerance so the
-  whole track fits `maxPoints`; segment end points are always kept.
+  equirectangular projection (metres) with one tolerance for the whole track,
+  so it fits `maxPoints`; segment end points are always kept. The tolerance is
+  found exactly rather than by bisection: each point's RDP importance (the
+  largest tolerance at which it survives) is computed once, and the
+  (budget + 1)-th largest importance is the smallest tolerance that fits —
+  what a binary search converges to. If segment end points alone exceed
+  `maxPoints`, points are sampled evenly instead.
+- Points are read in pages of 20 000. A track holding more than 200 000
+  points in memory is thinned first (minimum spacing doubling up to 300 s,
+  segment first/last points kept); the distance always uses every point.
 - `distanceM`: haversine over the unsimplified filtered points with jitter
   suppression — accumulate from an anchor point, count a step only when it
   exceeds `max(15 m, (acc_anchor + acc_point) / 2)`, and skip glitches implying
@@ -435,21 +506,34 @@ antimeridian when `west > east`) summed across the requested devices, at most
 
 `GET /api/events` — `text/event-stream`, `Cache-Control: no-store`,
 `X-Accel-Buffering: no`, never compressed, `: ping` every 20 s (proxies drop
-idle streams after ~100 s). In-process event bus keyed by user id (the app is a
-single instance). At most 10 streams per user. The web app replaces device
-cache entries from `device` events and appends `ingest.points` to today's
-track.
+idle streams after ~100 s). A stream starts with `retry: 5000` and a `hello`
+event. In-process event bus keyed by user id (the app is a single instance).
+At most 10 streams per user (the 11th → `429 rate_limited`). Logout, session
+revocation and account deletion close the affected streams at once, and every
+ping re-checks the session; a client with more than 1 MB unsent is dropped.
+`ingest` is published for every accepted upload (also when everything was a
+duplicate), followed by a `device` event with the fresh summary. The web app
+replaces device cache entries from `device` events and appends
+`ingest.points` to today's track.
 
 ## 10. Background jobs (in-process, single instance)
 
-- every 5 min — silent-device check: alerts-enabled devices whose
-  `last_seen_at` is older than `STALE_AFTER_HOURS` and not yet alerted → ntfy
-  message ("<device> has sent nothing for 12 h — last upload …"), stamp
-  `stale_alerted_at`. Recovery alert when data resumes (§6.2).
+- every 5 min (only when `ALERT_NTFY_URL` is set) — silent-device check:
+  alerts-enabled devices whose `last_seen_at` is older than
+  `STALE_AFTER_HOURS` and not yet alerted → ntfy message ("<device> (<owner>)
+  has sent nothing for 12 h — last upload …" in the owner's time zone; `Title`,
+  `Tags`, `Priority` headers, RFC 2047 for non-ASCII titles, `Authorization:
+  Bearer` when `ALERT_NTFY_TOKEN` is set), then stamp `stale_alerted_at` —
+  only after delivery, so an unreachable ntfy is retried next run. Recovery
+  alert when data resumes (§6.2). Turning a device's alerts off clears its
+  stamp.
 - hourly — delete expired sessions, ceremonies, links, invites (used/expired
   > 30 days); prune `ingest_log` (> 90 d) and `ingest_rejects` (> 30 d).
-- debounced — daily-stats recomputation per touched (device, day).
-Jobs must never crash the process; failures are logged.
+- debounced (10 s) — daily-stats recomputation per touched (device, day), in
+  the owner's time zone at run time; a failed pass is retried with the next.
+  Changing the time zone (`PATCH /api/me`) rebuilds every day of the user's
+  devices in the background.
+Jobs must never crash the process; failures are logged. Runs never overlap.
 
 ## 11. CLI
 
@@ -462,6 +546,12 @@ the image, so `docker compose exec app trail <command>`):
 - `users` — list accounts
 - `recompute [--device <id>]` — rebuild heat cells + daily stats
 - `prune` — run the retention cleanup now
+- `help` / `--help`
+
+Every command applies pending migrations first (same advisory lock as the
+server). Output on stdout, logs on stderr. Exit codes: 0 success, 1 failure
+(including invalid configuration), 2 wrong usage (unknown command or option,
+invalid value).
 
 ## 12. Security
 
@@ -472,20 +562,39 @@ the image, so `docker compose exec app trail <command>`):
   frame-ancestors 'none'` (+ `upgrade-insecure-requests` on HTTPS). No inline
   scripts or styles in HTML; CSSOM style changes (React `style`, MapLibre) are
   allowed by CSP. HSTS (2 years, includeSubDomains) on HTTPS only.
-  `Referrer-Policy: same-origin`, `Permissions-Policy` denying everything
-  except `publickey-credentials-get/create=(self)`, COOP `same-origin`, CORP
-  `same-origin`, `Origin-Agent-Cluster: ?1`, `X-Content-Type-Options: nosniff`.
+  `Referrer-Policy: same-origin`, `Permissions-Policy` denying the powerful
+  features (camera, microphone, geolocation, payment, USB, …) and allowing
+  only `publickey-credentials-get/create`, `clipboard-write` (the copy buttons
+  of the device setup) and `fullscreen` (map) for the page itself — only
+  feature names Chromium knows are listed, an unknown one is a console error on
+  every page. COOP `same-origin`, CORP `same-origin`, `Origin-Agent-Cluster:
+  ?1`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, every
+  response tagged with `X-Request-Id` (a well-formed incoming one is kept).
 - `trust proxy` from `TRUST_PROXY`; client IP from `X-Forwarded-For` of trusted
   hops (Cloudflare adds `CF-Connecting-IP`, Caddy `X-Forwarded-For`).
-- Rate limits: auth routes ~20/min/IP; ingest ~300/min/token and ~30 failed
-  tokens/10 min/IP; everything else ~600/min/IP. `429 rate_limited`.
+- Rate limits: auth routes ~20/min/IP (all `/api/auth/*` except the session
+  probe); ingest ~300/min/token and ~30 failed tokens/10 min/IP; everything
+  else ~600/min/IP (`/api/health*` and `/api/config` excluded). `429
+  rate_limited` (ingest: Overland's `{"error"}`), IETF `RateLimit` headers.
+  Configurable (§4).
+- Database statements time out after 120 s; deleting a device or an account
+  and rebuilding derived data lift that limit for their own transaction.
 - Body limits: 100 kB default, 5 MB on the ingest route.
 - pino-http redacts `authorization`, `cookie`, `set-cookie` and token query
-  params; coordinates are never logged above `debug`.
+  params; coordinates are never logged above `debug`. The access log keeps
+  method, redacted URL, status, client address and user agent only; database
+  errors are logged without query parameters or failing-row details.
+- Graceful shutdown (SIGTERM/SIGINT): stop accepting, end SSE streams, stop
+  jobs, let in-flight requests finish for up to 10 s (then cut them), flush
+  pending daily statistics and background work (≤ 2 s each), close the pool.
+  A hung shutdown exits after 13 s, so the container's stop grace period
+  should be at least 15 s.
 - Tokens (device, session, invite, link) are stored hashed only.
 - The container runs as the unprivileged `node` user on a read-only root
   filesystem (`tmpfs /tmp`), `no-new-privileges`, all capabilities dropped.
 - Postgres is not published outside the Docker network in production.
+- The app container receives an explicit list of its own variables (§4), not
+  the whole `deploy/.env`: tunnel, DNS and notification tokens never reach it.
 
 ## 13. Deployment
 
@@ -493,23 +602,41 @@ the image, so `docker compose exec app trail <command>`):
 
 `Dockerfile` (repo root), multi-stage; build stages run on `$BUILDPLATFORM`
 (pure JS, no native modules) so the multi-arch image (`linux/amd64`,
-`linux/arm64`) needs no emulation. Runtime: `node:lts-alpine` (digest-pinned,
-Dependabot keeps it current), production `node_modules` of the API only,
-`apps/api/dist`, `apps/api/drizzle`, `apps/web/dist`; `USER node`;
-`EXPOSE 8080`; `HEALTHCHECK` on `/api/health/live`; OCI labels
+`linux/arm64`) needs no emulation, and the final stage has no `RUN` step.
+Runtime: `node:lts-alpine` (digest-pinned, Dependabot keeps it current),
+production `node_modules` of the API only (`npm ci --omit=dev --workspace
+@trail/api`, installed on the build platform — which is why the API's runtime
+dependencies must stay pure JavaScript; the build fails on a `.node` addon),
+`apps/api/dist`, `apps/api/drizzle`, `apps/web/dist`, the CLI wrapper
+`/usr/local/bin/trail`; `USER 1000:1000` (`node`); `EXPOSE 8080`;
+`HEALTHCHECK` on `/api/health/live` (busybox `wget`); OCI labels
 (`org.opencontainers.image.source` links the GHCR package to the repo);
-build args `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` → env.
+build args `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` → env (CI sets the
+package.json or tag version, the 7-character commit that matches the
+`sha-<short>` tag, and an ISO UTC time; empty means unset).
 
 ### 13.2 Updates
 
 GitHub Actions: on every push to `main` (after lint/typecheck/unit/
 integration/E2E pass) build and push `ghcr.io/jenspenneman/trail` tags
-`latest`, `sha-<short>`, `main` with provenance + SBOM attestations; a weekly
-scheduled rebuild picks up base-image patches. On the server, Watchtower
-(`nickfedor/watchtower`, the maintained fork — `containrrr/watchtower` was
+`latest`, `sha-<short>`, `main` (a `v*` tag adds `<version>` and
+`<major>.<minor>`, never `latest`) with BuildKit provenance (`mode=max`) and
+SBOM attestations, plus a signed GitHub build provenance attestation when the
+repository is public (GitHub offers those on private repositories only with
+Enterprise Cloud). Base-image patches arrive as Dependabot digest updates of
+the Dockerfile, auto-merged on green CI; the weekly scheduled run (Monday
+03:00 UTC) rebuilds and republishes `main`. On the server, Watchtower
+(`nickfedor/watchtower:1`, the maintained fork — `containrrr/watchtower` was
 archived in Dec 2025 and breaks on Docker ≥ 29) polls every 5 min with
-`--label-enable`, `--cleanup`, `--rolling-restart`; only containers labelled
-`com.centurylinklabs.watchtower.enable=true` update. The app migrates the
+`--label-enable`, `--cleanup`, `--rolling-restart`, `--include-restarting`;
+only containers labelled `com.centurylinklabs.watchtower.enable=true` update
+(all services, Watchtower itself included). Two fork specifics shape the
+compose file: rolling restarts refuse to start while a watched container has
+a dependency, so `WATCHTOWER_USE_COMPOSE_DEPENDS_ON=false` makes it ignore
+Compose's `depends_on` (the app reconnects to the database by itself); and a
+recreated container loses files that Compose `configs` wrote into it, so
+`backup` and `caddy` list theirs in `com.centurylinklabs.watchtower.copy-file`
+labels (the file's directory must exist in the image). The app migrates the
 database on boot. Rollback = pin `TRAIL_IMAGE_TAG=sha-<short>` in
 `deploy/.env` and `docker compose up -d`.
 
@@ -522,10 +649,14 @@ database on boot. Rollback = pin `TRAIL_IMAGE_TAG=sha-<short>` in
   DNS-only; Cloudflare then adds its own CAA records). TLS terminates at
   Cloudflare.
 - `direct` profile (end-to-end TLS, no third party in the path): Caddy
-  (`caddy:2-alpine`, Let's Encrypt via TLS-ALPN, CAA already allows
-  `letsencrypt.org`) on host ports 80/443 + `favonia/cloudflare-ddns` keeping
-  the DNS-only `trail` A record on the home IP. Needs a router port-forward and
-  NAT loopback (or a local DNS override) at home.
+  (`caddy:2-alpine`, Let's Encrypt as the only issuer — HTTP-01 or TLS-ALPN-01;
+  CAA already allows `letsencrypt.org`, and Caddy's default ZeroSSL fallback
+  is disabled; no `encode`, so SSE is never buffered) on host ports 80/443
+  (TCP) and 443 (UDP, HTTP/3) + `favonia/cloudflare-ddns` keeping the DNS-only
+  `trail` A record on the home IP (IPv6 off by default). Needs a router
+  port-forward and NAT loopback (or a local DNS override) at home. Docker
+  Desktop's port forwarding does not preserve client addresses, so behind
+  Caddy every visitor shares one IP for the per-IP rate limits.
 
 Before either is live, phones on the home Wi-Fi can post to
 `http://<laptop-ip>:8080/api/overland` (Overland allows plain HTTP) and the
@@ -534,9 +665,14 @@ needs a secure context: HTTPS or localhost — never a bare LAN IP).
 
 ### 13.4 Backups
 
-`backup` service (same Postgres image): `pg_dump -Fc` daily to a host folder
-(`BACKUP_DIR`, e.g. a OneDrive folder for an off-site copy), keeps
-`BACKUP_KEEP_DAYS` (14). Restore with `pg_restore --clean --if-exists`.
+`backup` service (same Postgres image, a POSIX `sh` loop from a Compose
+config): `pg_dump -Fc` daily at `BACKUP_HOUR` (3, local time in `TZ`) to
+`BACKUP_DIR/trail-<UTC timestamp>.dump` (e.g. a OneDrive folder for an
+off-site copy), written to a temporary name and renamed when complete; keeps
+`BACKUP_KEEP_DAYS` (14). It also dumps at start when the newest dump is older
+than a day, or always with `BACKUP_ON_START=true`. A failure exits non-zero
+and the restart retries. Restore with `pg_restore --clean --if-exists
+--single-transaction` (runbook in `docs/operations.md`).
 
 ## 14. Web app
 
@@ -585,13 +721,23 @@ map chunk is lazy-loaded. PWA manifest + icons (home-screen app on iPhone).
 
 ## 15. CI/CD
 
-`.github/workflows/ci.yml`: `quality` (biome, typecheck, knip, unit tests with
-coverage) → `integration` (API tests against a Postgres service) → `e2e`
-(Playwright container + Postgres service, Chromium virtual authenticator) →
-`image` (buildx multi-arch; pushes to GHCR only on `main` / tags / schedule;
-builds without pushing on PRs). Actions pinned by commit SHA. Dependabot
-(weekly, Monday 07:00 Europe/Brussels) for npm, GitHub Actions and Docker,
-minor/patch auto-merge on green CI.
+`.github/workflows/ci.yml` (push to `main`, `v*` tags, pull requests, Monday
+03:00 UTC schedule, manual): `quality` (biome, typecheck, knip, unit tests
+with coverage via `npm run test --workspaces --if-present -- --coverage`,
+because the root `test` script would swallow the flag) → `integration` (API
+tests against a `postgres:18-alpine` service, `TEST_DATABASE_URL` →
+`trail_test`) → `e2e` (Playwright container whose tag comes from the locked
+`@playwright/test` version, Chromium virtual authenticator, Postgres service
+reachable as `postgres`, `E2E_DATABASE_URL` → `trail_e2e`, `npm run build` then `npm run test:e2e`;
+the report is uploaded on failure) → `image` (buildx multi-arch with the GHA
+cache; pushes to GHCR only from `main` — pushes, schedule, manual runs — and
+`v*` tags; builds without pushing on PRs). Actions pinned by commit SHA;
+per-job least-privilege permissions (`packages`, `id-token`, `attestations`
+write only in `image`). Dependabot (weekly, Monday 07:00 Europe/Brussels) for
+npm (family groups), GitHub Actions, the Dockerfile digest and the compose
+files (only major tags change there; majors never auto-merge);
+`dependabot-auto-merge.yml` enables auto-merge for minor/patch, which lands
+on green CI once branch protection requires the checks.
 
 ## 16. Testing
 
