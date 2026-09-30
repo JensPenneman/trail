@@ -1,0 +1,302 @@
+/* Page-level layout shared by every screen. */
+
+.page {
+  display: grid;
+  align-content: start;
+  gap: var(--space-6);
+  width: 100%;
+  max-width: calc(var(--page-width) + var(--safe-left) + var(--safe-right));
+  margin: 0 auto;
+  padding: var(--space-6) calc(var(--space-4) + var(--safe-right)) var(--space-10)
+    calc(var(--space-4) + var(--safe-left));
+}
+
+.page--narrow {
+  max-width: calc(var(--reading-width) + var(--safe-left) + var(--safe-right));
+}
+
+@media (min-width: 48rem) {
+  .page {
+    padding: var(--space-8) calc(var(--space-8) + var(--safe-right)) var(--space-12)
+      calc(var(--space-8) + var(--safe-left));
+  }
+}
+
+/* A titled block of a page: h2 plus a card or list. */
+.section {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.section__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.section__title {
+  font-size: var(--text-l);
+}
+
+.section__description {
+  color: var(--color-text-2);
+}
+
+.card {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-5);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-l);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1);
+}
+
+.card--flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* Label/value pairs, e.g. device facts. */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: var(--space-4) var(--space-5);
+  margin: 0;
+}
+
+.facts > div {
+  display: grid;
+  align-content: start;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.facts dt {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}
+
+.facts dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.facts dd.mono {
+  font-weight: 500;
+}
+
+/* Tables scroll sideways inside their card instead of widening the page. */
+.table-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.table {
+  width: 100%;
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+}
+
+.table th,
+.table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-width) solid var(--color-border);
+  text-align: start;
+  white-space: nowrap;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  background: var(--color-surface-2);
+  color: var(--color-text-2);
+  font-weight: 650;
+}
+
+.table td.table__number,
+.table th.table__number {
+  text-align: end;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table caption {
+  padding: var(--space-3) var(--space-4) 0;
+  color: var(--color-text-2);
+  text-align: start;
+}
+
+/*
+ * Map screens: header, map and the rest of the panel. Wide screens put the
+ * panel beside a full-height map; phones stack header, map, then content, and
+ * the page scrolls as a whole.
+ */
+.map-layout {
+  display: grid;
+  grid-template-areas:
+    "head"
+    "map"
+    "body";
+  grid-template-rows: auto auto auto;
+  min-width: 0;
+}
+
+.map-layout__head {
+  grid-area: head;
+  padding: var(--space-5) calc(var(--space-4) + var(--safe-right)) var(--space-4)
+    calc(var(--space-4) + var(--safe-left));
+}
+
+.map-layout__map {
+  position: relative;
+  grid-area: map;
+  height: min(52vh, 28rem);
+  min-height: 16rem;
+  border-block: var(--border-width) solid var(--color-border);
+}
+
+.map-layout__body {
+  display: grid;
+  align-content: start;
+  gap: var(--space-6);
+  grid-area: body;
+  min-width: 0;
+  padding: var(--space-5) calc(var(--space-4) + var(--safe-right)) var(--space-8)
+    calc(var(--space-4) + var(--safe-left));
+}
+
+@media (min-width: 64rem) {
+  .map-layout {
+    grid-template-areas:
+      "head map"
+      "body map";
+    grid-template-columns: var(--panel-width) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    height: calc(100dvh - var(--header-height) - var(--safe-top));
+  }
+
+  .map-layout__head,
+  .map-layout__body {
+    border-inline-end: var(--border-width) solid var(--color-border);
+    background: var(--color-bg);
+  }
+
+  .map-layout__head {
+    padding: var(--space-6) var(--space-6) var(--space-4) calc(var(--space-6) + var(--safe-left));
+  }
+
+  .map-layout__body {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-2) var(--space-6) var(--space-8) calc(var(--space-6) + var(--safe-left));
+  }
+
+  .map-layout__map {
+    height: auto;
+    min-height: 0;
+    border-block: 0;
+  }
+}
+
+@media (min-width: 90rem) {
+  .map-layout {
+    --panel-width: 28rem;
+  }
+}
+
+/* A small status chip floating over a map (e.g. "Updating"). */
+.map-layout__chip {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  font-size: var(--text-s);
+  font-weight: 600;
+}
+
+.table td.table__warning {
+  color: var(--color-stale);
+  font-weight: 650;
+}
+
+.table td.table__muted {
+  color: var(--color-text-2);
+}
+
+/* Headline numbers: a small label over a large value. */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.stats__item {
+  display: grid;
+  align-content: start;
+  gap: 0.125rem;
+}
+
+.stats__item dt {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}
+
+.stats__item dd {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+/* <details> with a chevron: the native marker is gone once the summary is a flex row. */
+.disclosure > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--target);
+  border-radius: var(--radius-s);
+  color: var(--color-accent);
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure__chevron {
+  transition: rotate var(--duration-fast) ease;
+}
+
+.disclosure[open] > summary .disclosure__chevron {
+  rotate: 180deg;
+}

@@ -1,0 +1,78 @@
+.upload-feed__list {
+  gap: 0;
+  margin: 0;
+}
+
+.upload-feed__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.upload-feed__item:last-child {
+  border-bottom: 0;
+}
+
+.upload-feed__item.is-live {
+  background: color-mix(in srgb, var(--color-live-soft) 60%, var(--color-surface));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .upload-feed__item.is-live {
+    animation: upload-arrive 600ms var(--ease-out);
+  }
+}
+
+@keyframes upload-arrive {
+  from {
+    opacity: 0;
+    translate: 0 -0.5rem;
+  }
+}
+
+.upload-feed__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.upload-feed__line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.upload-feed__device {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-feed__count {
+  flex-shrink: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.upload-feed__meta {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+}
+
+.upload-feed__rejected {
+  color: var(--color-stale);
+  font-weight: 600;
+}
+
+.upload-feed__badge {
+  flex-shrink: 0;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-live-soft);
+  color: var(--color-live);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}

@@ -1,0 +1,4 @@
+.loading-block {
+  display: grid;
+  gap: var(--space-3);
+}

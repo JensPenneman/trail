@@ -1,0 +1,36 @@
+.spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  opacity: 0.8;
+  animation: spinner-turn 0.8s linear infinite;
+}
+
+.spinner--s {
+  width: 1rem;
+  height: 1rem;
+}
+
+.spinner--l {
+  width: 2rem;
+  height: 2rem;
+  border-width: 3px;
+}
+
+@keyframes spinner-turn {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* Without motion the ring would freeze into a broken circle; a pulse of opacity reads as "busy". */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    border-inline-end-color: currentColor;
+    opacity: 0.45;
+  }
+}

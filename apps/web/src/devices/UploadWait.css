@@ -1,0 +1,47 @@
+.upload-wait {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--border-width) dashed var(--color-border-strong);
+  border-radius: var(--radius-l);
+  background: var(--color-surface-2);
+}
+
+.upload-wait--done {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--color-live-mark) 45%, transparent);
+  background: var(--color-live-soft);
+}
+
+.upload-wait__icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  color: var(--color-accent);
+}
+
+.upload-wait--done .upload-wait__icon {
+  border-radius: 50%;
+  background: var(--color-live-mark);
+  color: #fff;
+}
+
+.upload-wait__title {
+  font-weight: 650;
+}
+
+.upload-wait--done .upload-wait__title {
+  color: var(--color-live);
+}
+
+.upload-wait__text {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}
+
+.upload-wait--done .upload-wait__text {
+  color: var(--color-text);
+}

@@ -1,0 +1,22 @@
+.trail-mark {
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.trail-mark__dot,
+.trail-mark__head {
+  fill: var(--color-accent);
+}
+
+.trail-mark__halo {
+  fill: var(--color-accent);
+  opacity: 0.18;
+}
+
+@media (forced-colors: active) {
+  .trail-mark__dot,
+  .trail-mark__halo,
+  .trail-mark__head {
+    fill: CanvasText;
+  }
+}

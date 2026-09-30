@@ -1,0 +1,20 @@
+.account-menu {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.account-menu__name {
+  overflow: hidden;
+  max-width: 12rem;
+  color: var(--color-text-2);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 63.99rem) {
+  .account-menu {
+    display: none;
+  }
+}

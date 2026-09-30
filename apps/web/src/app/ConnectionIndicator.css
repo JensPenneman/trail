@@ -1,0 +1,63 @@
+.connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  min-height: 2rem;
+  padding: 0 0.75rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-2);
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.connection__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--color-idle-mark);
+}
+
+.connection--open {
+  background: var(--color-live-soft);
+  color: var(--color-live);
+}
+
+.connection--open .connection__dot {
+  background: var(--color-live-mark);
+}
+
+.connection--reconnecting {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.connection--reconnecting .connection__dot {
+  background: currentColor;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .connection--connecting .connection__dot,
+  .connection--reconnecting .connection__dot {
+    animation: connection-blink 1.2s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes connection-blink {
+  to {
+    opacity: 0.25;
+  }
+}
+
+@media (forced-colors: active) {
+  .connection {
+    border: 1px solid CanvasText;
+  }
+
+  /* System colours replace backgrounds in this mode; the dot keeps its shape in text colour. */
+  .connection .connection__dot {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+}

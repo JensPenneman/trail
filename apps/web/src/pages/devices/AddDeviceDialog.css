@@ -1,0 +1,9 @@
+.add-device {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.add-device__advanced {
+  display: grid;
+  gap: var(--space-3);
+}

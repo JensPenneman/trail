@@ -1,0 +1,15 @@
+.qr-code {
+  width: 100%;
+  max-width: 18rem;
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: var(--radius-m);
+  box-shadow: 0 0 0 1px var(--color-border);
+}
+
+@media (forced-colors: active) {
+  /* The code must keep its real colours to stay scannable. */
+  .qr-code {
+    forced-color-adjust: none;
+  }
+}

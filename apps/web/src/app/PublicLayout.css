@@ -1,0 +1,45 @@
+.public-layout {
+  isolation: isolate;
+  display: grid;
+  min-height: 100dvh;
+  padding: calc(var(--space-6) + var(--safe-top)) calc(var(--space-4) + var(--safe-right))
+    calc(var(--space-6) + var(--safe-bottom)) calc(var(--space-4) + var(--safe-left));
+}
+
+.public-layout__main {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: var(--space-6);
+  width: 100%;
+  max-width: 28rem;
+  margin: 0 auto;
+}
+
+.public-layout__main:focus {
+  outline: none;
+}
+
+.public-layout__card {
+  display: grid;
+  gap: var(--space-5);
+  width: 100%;
+  padding: var(--space-8) var(--space-6);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+}
+
+.public-layout__footer {
+  max-width: 22rem;
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  text-align: center;
+}
+
+@media (max-width: 26rem) {
+  .public-layout__card {
+    padding: var(--space-6) var(--space-5);
+  }
+}

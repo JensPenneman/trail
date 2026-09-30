@@ -1,0 +1,40 @@
+.battery {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.battery__icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+
+.battery__case {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.battery__fill {
+  fill: currentColor;
+  opacity: 0.85;
+}
+
+.battery__bolt {
+  fill: none;
+  stroke: var(--color-surface);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.battery__state {
+  color: var(--color-text-2);
+}
+
+.battery--low {
+  color: var(--color-stale);
+}

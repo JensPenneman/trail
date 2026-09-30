@@ -1,0 +1,41 @@
+.period-summary {
+  gap: 0;
+  margin: 0;
+}
+
+.period-summary__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.period-summary__row:last-child {
+  border-bottom: 0;
+}
+
+.period-summary__main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.period-summary__name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.period-summary__meta {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+}
+
+.period-summary__distance {
+  flex-shrink: 0;
+  font-size: var(--text-l);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}

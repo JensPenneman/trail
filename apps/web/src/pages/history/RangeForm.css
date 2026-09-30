@@ -1,0 +1,35 @@
+.range-form {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.range-form__dates {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-3);
+}
+
+.range-form__apply {
+  margin-top: calc(var(--text-s) * 1.5 + var(--space-1));
+}
+
+.range-form__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-1);
+  margin: 0 calc(var(--space-3) * -1);
+  padding: 0;
+  border: 0;
+}
+
+@media (max-width: 26rem) {
+  .range-form__dates {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .range-form__apply {
+    grid-column: 1 / -1;
+    margin-top: 0;
+  }
+}

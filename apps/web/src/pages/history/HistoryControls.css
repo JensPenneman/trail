@@ -1,0 +1,63 @@
+.history-controls {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.history-controls > .range-form {
+  justify-self: stretch;
+}
+
+.history-controls__day {
+  display: flex;
+  flex-wrap: wrap;
+  justify-self: stretch;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.history-controls__date {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--target);
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-m);
+  background: var(--color-surface);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-controls__stepper {
+  display: flex;
+  flex: 1 1 15rem;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 24rem;
+}
+
+.history-controls__date-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-controls__date:hover {
+  background: var(--color-surface-2);
+}
+
+.history-controls__date .icon {
+  color: var(--color-text-2);
+}
+
+.history-controls__chevron {
+  transition: rotate var(--duration-fast) ease;
+}
+
+.history-controls__date[aria-expanded="true"] .history-controls__chevron {
+  rotate: 180deg;
+}

@@ -1,0 +1,11 @@
+.live-page__cards {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+}
+
+@media (min-width: 40rem) and (max-width: 63.99rem) {
+  .live-page__cards {
+    grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  }
+}

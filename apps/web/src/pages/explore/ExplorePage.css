@@ -1,0 +1,8 @@
+.explore-page__totals {
+  gap: var(--space-3);
+}
+
+.explore-page__note {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}

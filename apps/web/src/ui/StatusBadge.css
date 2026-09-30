@@ -1,0 +1,82 @@
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 1.75rem;
+  padding: 0 0.625rem;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-s);
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.status-badge .icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.status-badge--live {
+  background: var(--color-live-soft);
+  color: var(--color-live);
+}
+
+.status-badge--idle {
+  background: var(--color-idle-soft);
+  color: var(--color-idle);
+}
+
+.status-badge--stale {
+  background: var(--color-stale-soft);
+  color: var(--color-stale);
+}
+
+.status-badge--never {
+  border-color: var(--color-border-strong);
+  border-style: dashed;
+  color: var(--color-text-2);
+}
+
+.status-badge__pulse {
+  position: relative;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin: 0 0.125rem;
+  border-radius: 50%;
+  background: var(--color-live-mark);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .status-badge__pulse::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--color-live-mark);
+    animation: status-pulse 2s var(--ease-out) infinite;
+  }
+}
+
+@keyframes status-pulse {
+  from {
+    opacity: 0.7;
+    scale: 1;
+  }
+
+  to {
+    opacity: 0;
+    scale: 2.6;
+  }
+}
+
+@media (forced-colors: active) {
+  .status-badge {
+    border-color: CanvasText;
+  }
+
+  .status-badge .status-badge__pulse {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+}

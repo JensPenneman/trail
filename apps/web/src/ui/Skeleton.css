@@ -1,0 +1,32 @@
+.skeleton {
+  display: block;
+  border-radius: var(--radius-m);
+  background: var(--color-surface-3);
+}
+
+.skeleton--round {
+  border-radius: var(--radius-pill);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton {
+    background: linear-gradient(
+      100deg,
+      var(--color-surface-3) 40%,
+      var(--color-surface-2) 50%,
+      var(--color-surface-3) 60%
+    );
+    background-size: 300% 100%;
+    animation: skeleton-sheen 1.6s linear infinite;
+  }
+}
+
+@keyframes skeleton-sheen {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: 0 0;
+  }
+}

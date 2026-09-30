@@ -1,0 +1,31 @@
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+}
+
+.page-header__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.page-header__eyebrow {
+  margin-bottom: var(--space-1);
+}
+
+.page-header__title {
+  font-size: var(--text-2xl);
+}
+
+.page-header__description {
+  color: var(--color-text-2);
+}
+
+.page-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

@@ -1,0 +1,50 @@
+.segmented {
+  display: inline-flex;
+  margin: 0;
+  padding: 0.1875rem;
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-m);
+  background: var(--color-surface-2);
+}
+
+.segmented__option {
+  position: relative;
+  display: inline-flex;
+}
+
+.segmented__option input {
+  position: absolute;
+  /* Reaches into the track padding so each option keeps a 44 px hit area. */
+  inset: -0.1875rem 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.segmented__option span {
+  display: inline-flex;
+  align-items: center;
+  min-height: calc(var(--target) - 0.375rem);
+  padding: 0 var(--space-4);
+  border-radius: calc(var(--radius-m) - 0.1875rem);
+  color: var(--color-text-2);
+  font-weight: 600;
+  font-size: var(--text-s);
+}
+
+.segmented__option input:checked + span {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-1);
+}
+
+.segmented__option input:focus-visible + span {
+  outline: var(--focus-width) solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+@media (forced-colors: active) {
+  .segmented__option input:checked + span {
+    outline: 2px solid Highlight;
+  }
+}

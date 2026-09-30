@@ -1,0 +1,45 @@
+.heat-legend {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.heat-legend__ramp {
+  display: block;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    90deg,
+    rgb(129 125 235 / 35%),
+    rgb(96 90 222 / 58%),
+    rgb(66 58 196 / 76%),
+    rgb(45 38 150 / 88%),
+    rgb(28 22 104 / 95%)
+  );
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+.heat-legend__labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--color-text-2);
+  font-size: var(--text-xs);
+}
+
+@media (prefers-color-scheme: dark) {
+  .heat-legend__ramp {
+    background: linear-gradient(
+      90deg,
+      rgb(84 78 170 / 42%),
+      rgb(122 115 222 / 60%),
+      rgb(166 158 250 / 78%),
+      rgb(208 203 255 / 90%),
+      rgb(246 244 255 / 96%)
+    );
+  }
+}
+
+@media (forced-colors: active) {
+  .heat-legend__ramp {
+    forced-color-adjust: none;
+  }
+}

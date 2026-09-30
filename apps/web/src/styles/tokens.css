@@ -1,0 +1,251 @@
+/*
+ * Design tokens. Colours are defined in CIE LCH (perceptually even steps, and
+ * more vivid on wide-gamut screens) with an sRGB hex fallback declared first
+ * for browsers without lch(). Every text pairing meets WCAG AAA (7:1); marks
+ * and control borders meet 3:1. Dark mode follows the operating system.
+ */
+:root {
+  color-scheme: light dark;
+
+  --color-bg: #f8f6f3;
+  --color-surface: #ffffff;
+  --color-surface-2: #f4f2ef;
+  --color-surface-3: #eae8e3;
+  --color-border: #dfdcd7;
+  --color-border-strong: #8c8882;
+  --color-text: #1d1b19;
+  --color-text-2: #53504a;
+  --color-accent: #3d3db2;
+  --color-accent-hover: #2d309b;
+  --color-accent-soft: #f2efff;
+  --color-on-accent: #ffffff;
+  --color-live: #035522;
+  --color-live-soft: #def3e0;
+  --color-live-mark: #14a148;
+  --color-idle: #474f56;
+  --color-idle-soft: #e7ecf0;
+  --color-idle-mark: #7c8893;
+  --color-stale: #882021;
+  --color-stale-soft: #ffebe7;
+  --color-stale-mark: #cc3b3a;
+  --color-warning: #6c4408;
+  --color-warning-soft: #faefda;
+  --color-danger: #9f1825;
+  --color-danger-hover: #89081c;
+  --color-danger-soft: #fff0ee;
+  --color-on-danger: #ffffff;
+
+  /* Device identity colours (see src/devices/devicePalette.ts). */
+  --device-0: #2a78d6;
+  --device-1: #eb6834;
+  --device-2: #1baf7a;
+  --device-3: #eda100;
+  --device-4: #e87ba4;
+  --device-5: #008300;
+  --device-6: #4a3aa7;
+  --device-7: #e34948;
+
+  --font-sans:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --text-xs: 0.75rem;
+  --text-s: 0.875rem;
+  --text-m: 1rem;
+  --text-l: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  --radius-s: 0.375rem;
+  --radius-m: 0.625rem;
+  --radius-l: 0.875rem;
+  --radius-xl: 1.25rem;
+  --radius-pill: 999px;
+
+  --shadow-1: 0 1px 2px rgb(29 27 25 / 6%), 0 1px 1px rgb(29 27 25 / 4%);
+  --shadow-2: 0 8px 24px rgb(29 27 25 / 10%), 0 2px 6px rgb(29 27 25 / 6%);
+  --shadow-3: 0 24px 64px rgb(29 27 25 / 18%), 0 4px 16px rgb(29 27 25 / 8%);
+
+  --target: 2.75rem;
+  --focus-width: 3px;
+  --border-width: 1px;
+  --header-height: 3.5rem;
+  --tabbar-height: 4rem;
+  --panel-width: 25rem;
+  --page-width: 72rem;
+  --reading-width: 46rem;
+
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --duration-fast: 120ms;
+  --duration-medium: 220ms;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+@supports (color: lch(0% 0 0)) {
+  :root {
+    --color-bg: lch(97% 1.5 85);
+    --color-surface: lch(100% 0 0);
+    --color-surface-2: lch(95.5% 1.8 85);
+    --color-surface-3: lch(92% 2.4 85);
+    --color-border: lch(88% 3 85);
+    --color-border-strong: lch(57% 4 85);
+    --color-text: lch(10% 2 85);
+    --color-text-2: lch(34% 4 85);
+    --color-accent: lch(32% 70 295);
+    --color-accent-hover: lch(26% 66 295);
+    --color-accent-soft: lch(95% 8 295);
+    --color-on-accent: lch(100% 0 0);
+    --color-live: lch(31% 40 145);
+    --color-live-soft: lch(94% 12 145);
+    --color-live-mark: lch(58% 62 145);
+    --color-idle: lch(33% 6 250);
+    --color-idle-soft: lch(93% 3 250);
+    --color-idle-mark: lch(56% 8 250);
+    --color-stale: lch(31% 52 32);
+    --color-stale-soft: lch(94.5% 8.5 32);
+    --color-stale-mark: lch(48% 68 32);
+    --color-warning: lch(33% 42 70);
+    --color-warning-soft: lch(95% 12 85);
+    --color-danger: lch(35% 62 30);
+    --color-danger-hover: lch(29% 58 30);
+    --color-danger-soft: lch(96% 6 30);
+    --color-on-danger: lch(100% 0 0);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #151618;
+    --color-surface: #1c1e20;
+    --color-surface-2: #242629;
+    --color-surface-3: #2f3035;
+    --color-border: #37393e;
+    --color-border-strong: #74777e;
+    --color-text: #f2f0ed;
+    --color-text-2: #bebbb6;
+    --color-accent: #b5aefe;
+    --color-accent-hover: #cac3ff;
+    --color-accent-soft: #2a2741;
+    --color-on-accent: #1e1d39;
+    --color-live: #91e49e;
+    --color-live-soft: #1e3823;
+    --color-live-mark: #52cd70;
+    --color-idle: #c1cbd4;
+    --color-idle-soft: #2e3338;
+    --color-idle-mark: #919da8;
+    --color-stale: #ffbab0;
+    --color-stale-soft: #4c2824;
+    --color-stale-mark: #fe796d;
+    --color-warning: #f6ca73;
+    --color-warning-soft: #43311c;
+    --color-danger: #ffa19b;
+    --color-danger-hover: #ffbab4;
+    --color-danger-soft: #412421;
+    --color-on-danger: #2f1a18;
+
+    --device-0: #3987e5;
+    --device-1: #d95926;
+    --device-2: #199e70;
+    --device-3: #c98500;
+    --device-4: #d55181;
+    --device-5: #008300;
+    --device-6: #9085e9;
+    --device-7: #e66767;
+
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
+    --shadow-2: 0 8px 24px rgb(0 0 0 / 45%), 0 2px 6px rgb(0 0 0 / 30%);
+    --shadow-3: 0 24px 64px rgb(0 0 0 / 60%), 0 4px 16px rgb(0 0 0 / 40%);
+  }
+
+  @supports (color: lch(0% 0 0)) {
+    :root {
+      --color-bg: lch(7% 1.5 270);
+      --color-surface: lch(11% 2 270);
+      --color-surface-2: lch(15% 2.5 270);
+      --color-surface-3: lch(20% 3 270);
+      --color-border: lch(24% 3 270);
+      --color-border-strong: lch(50% 4 270);
+      --color-text: lch(95% 2 85);
+      --color-text-2: lch(76% 3 85);
+      --color-accent: lch(74% 42 292);
+      --color-accent-hover: lch(81% 34 292);
+      --color-accent-soft: lch(17% 17 292);
+      --color-on-accent: lch(12% 20 292);
+      --color-live: lch(84% 45 145);
+      --color-live-soft: lch(21% 18 145);
+      --color-live-mark: lch(74% 62 145);
+      --color-idle: lch(81% 6 250);
+      --color-idle-soft: lch(21% 4 250);
+      --color-idle-mark: lch(64% 8 250);
+      --color-stale: lch(82% 36 32);
+      --color-stale-soft: lch(21% 20 32);
+      --color-stale-mark: lch(67% 60 32);
+      --color-warning: lch(84% 50 80);
+      --color-warning-soft: lch(22% 18 70);
+      --color-danger: lch(76% 44 28);
+      --color-danger-hover: lch(82% 36 28);
+      --color-danger-soft: lch(18% 16 30);
+      --color-on-danger: lch(12% 12 30);
+    }
+  }
+}
+
+/* More contrast: borders at control strength, secondary text as strong as body text. */
+@media (prefers-contrast: more) {
+  :root {
+    --color-border: var(--color-border-strong);
+    --color-text-2: var(--color-text);
+    --focus-width: 4px;
+    --border-width: 2px;
+  }
+}
+
+/* Device swatches and track keys: the class carries identity, the name beside it the meaning. */
+.device-color-0 {
+  --device-color: var(--device-0);
+}
+
+.device-color-1 {
+  --device-color: var(--device-1);
+}
+
+.device-color-2 {
+  --device-color: var(--device-2);
+}
+
+.device-color-3 {
+  --device-color: var(--device-3);
+}
+
+.device-color-4 {
+  --device-color: var(--device-4);
+}
+
+.device-color-5 {
+  --device-color: var(--device-5);
+}
+
+.device-color-6 {
+  --device-color: var(--device-6);
+}
+
+.device-color-7 {
+  --device-color: var(--device-7);
+}

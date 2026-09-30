@@ -6,11 +6,12 @@
       "project": ["scripts/**", "tests/**"]
     },
     "apps/api": {
-      "entry": ["src/main.ts", "src/cli.ts", "tests/**/*.ts", "*.config.ts"],
-      "project": ["src/**", "tests/**"]
+      "entry": ["tests/**/*.ts", "*.config.ts"],
+      "project": ["src/**", "tests/**"],
+      "ignoreDependencies": ["pino-pretty"]
     },
     "apps/web": {
-      "entry": ["src/main.tsx", "tests/**/*.{ts,tsx}", "*.config.ts"],
+      "entry": ["tests/**/*.{ts,tsx}", "*.config.ts"],
       "project": ["src/**", "tests/**"]
     },
     "packages/contracts": {

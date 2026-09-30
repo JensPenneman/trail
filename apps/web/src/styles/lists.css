@@ -1,0 +1,38 @@
+/* Rows of events or places inside a card: text on the left, an action on the right. */
+
+.row-list {
+  gap: 0;
+  margin: 0;
+}
+
+.row-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.row-list__item:last-child {
+  border-bottom: 0;
+}
+
+.row-list__main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.row-list__title {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.row-list__meta {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+}
+
+.row-list__item .button {
+  flex-shrink: 0;
+}

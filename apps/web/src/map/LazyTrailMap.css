@@ -1,0 +1,15 @@
+.map-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--color-surface-2);
+  color: var(--color-text-2);
+}
+
+.map-loading__message {
+  max-width: 24rem;
+  padding: var(--space-4);
+  color: var(--color-text);
+  text-align: center;
+}

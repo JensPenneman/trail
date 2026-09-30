@@ -1,0 +1,120 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--target);
+  min-width: var(--target);
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-m);
+  background: none;
+  font-size: var(--text-m);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.button:hover {
+  text-decoration: none;
+}
+
+.button:disabled {
+  opacity: 0.55;
+}
+
+.button[aria-busy="true"] {
+  opacity: 0.8;
+  cursor: progress;
+}
+
+.button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.button--primary {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  box-shadow: var(--shadow-1);
+}
+
+.button--primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  color: var(--color-on-accent);
+}
+
+.button--secondary {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.button--secondary:hover:not(:disabled) {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+
+.button--ghost {
+  color: var(--color-accent);
+}
+
+.button--ghost:hover:not(:disabled) {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+}
+
+.button--danger {
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+}
+
+.button--danger:hover:not(:disabled) {
+  background: var(--color-danger-hover);
+  color: var(--color-on-danger);
+}
+
+.button--danger-outline {
+  border-color: color-mix(in srgb, var(--color-danger) 55%, transparent);
+  background: var(--color-surface);
+  color: var(--color-danger);
+}
+
+.button--danger-outline:hover:not(:disabled) {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.button--icon-only {
+  padding: 0;
+  width: var(--target);
+}
+
+.button--wide {
+  width: 100%;
+}
+
+.button .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+@media (forced-colors: active) {
+  .button {
+    border-color: ButtonText;
+  }
+
+  .button--primary,
+  .button--danger {
+    border-width: 2px;
+  }
+}

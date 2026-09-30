@@ -1,0 +1,57 @@
+.history-page__head {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* Phones: the map, then the slider below it, in the page flow. */
+.history-page__map-area {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  min-height: 0;
+  border-block: 0;
+}
+
+.history-page__map {
+  position: relative;
+  height: min(52vh, 28rem);
+  min-height: 16rem;
+  border-block: var(--border-width) solid var(--color-border);
+}
+
+.history-page__scrubber {
+  padding: var(--space-4) calc(var(--space-4) + var(--safe-right)) 0
+    calc(var(--space-4) + var(--safe-left));
+}
+
+.history-page__scrubber .scrubber {
+  box-shadow: var(--shadow-1);
+}
+
+/* Wide screens: the slider floats over the bottom of the full-height map, above the attribution. */
+@media (min-width: 64rem) {
+  .history-page__map-area {
+    position: relative;
+  }
+
+  .history-page__map {
+    position: absolute;
+    inset: 0;
+    height: auto;
+    min-height: 0;
+    border-block: 0;
+  }
+
+  .history-page__scrubber {
+    position: absolute;
+    inset: auto var(--space-6) 2.75rem;
+    z-index: 3;
+    width: min(100% - 2 * var(--space-6), 38rem);
+    margin: 0 auto;
+    padding: 0;
+  }
+
+  .history-page__scrubber .scrubber {
+    box-shadow: var(--shadow-3);
+  }
+}

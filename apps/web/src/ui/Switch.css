@@ -1,0 +1,78 @@
+.switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.switch__label {
+  font-weight: 600;
+}
+
+.switch__description {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}
+
+/* The native checkbox stays the control (keyboard, forms, forced colours); only its look changes. */
+.switch__control {
+  appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 3.25rem;
+  height: 2rem;
+  margin: 0.375rem 0;
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-3);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease;
+}
+
+/* Keeps a 44 px hit area around the 32 px track. */
+.switch__control::after {
+  content: "";
+  position: absolute;
+  inset: -0.375rem -0.125rem;
+}
+
+.switch__control::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0.1875rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1);
+  translate: 0 -50%;
+  transition: translate var(--duration-medium) var(--ease-out);
+}
+
+.switch__control:checked {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+
+.switch__control:checked::before {
+  translate: 1.25rem -50%;
+}
+
+.switch__control:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (forced-colors: active) {
+  .switch__control {
+    appearance: auto;
+    width: auto;
+    height: auto;
+  }
+
+  .switch__control::before,
+  .switch__control::after {
+    display: none;
+  }
+}

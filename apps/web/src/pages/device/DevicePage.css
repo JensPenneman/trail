@@ -1,0 +1,40 @@
+.device-page__back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--target);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.device-page__status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-1);
+  color: var(--color-text-2);
+}
+
+.device-page__danger {
+  gap: 0;
+  padding: 0;
+}
+
+.device-page__danger-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.device-page__danger-row:last-child {
+  border-bottom: 0;
+}
+
+.device-page__danger-title {
+  font-weight: 650;
+}
