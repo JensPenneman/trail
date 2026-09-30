@@ -1,0 +1,1023 @@
+{
+  "locations": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.725, 51.0445]
+      },
+      "properties": {
+        "action": "visit",
+        "timestamp": "2026-09-29T06:29:10Z",
+        "arrival_date": "2026-09-28T17:48:12Z",
+        "departure_date": "2026-09-29T06:29:05Z",
+        "horizontal_accuracy": 35,
+        "device_id": "iphone-jens",
+        "wifi": "Telenet-8F2A",
+        "battery_state": "unplugged",
+        "battery_level": 0.82
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.7244, 51.0441]
+      },
+      "properties": {
+        "action": "exited_pause_region",
+        "timestamp": "2026-09-29T06:29:40Z",
+        "device_id": "iphone-jens",
+        "wifi": "Telenet-8F2A",
+        "battery_state": "unplugged",
+        "battery_level": 0.82
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "action": "did_enter_background",
+        "timestamp": "2026-09-29T06:31:02Z",
+        "device_id": "iphone-jens",
+        "wifi": "Telenet-8F2A",
+        "battery_state": "unplugged",
+        "battery_level": 0.82
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.7108, 51.0357334]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:30:15Z",
+        "altitude": 9,
+        "speed": 5.3,
+        "course": 246,
+        "horizontal_accuracy": 5,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "Telenet-8F2A",
+        "battery_state": "unplugged",
+        "battery_level": 0.82
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.7054122, 51.0335581]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:31:45Z",
+        "altitude": 9.8,
+        "speed": 5.8,
+        "course": 244,
+        "horizontal_accuracy": 6,
+        "vertical_accuracy": 4,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "Telenet-8F2A",
+        "battery_state": "unplugged",
+        "battery_level": 0.82
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6996214, 51.031182]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:33:15Z",
+        "altitude": 10.5,
+        "speed": 5.85,
+        "course": 240,
+        "horizontal_accuracy": 7,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.82
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6938837, 51.0285321]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:34:45Z",
+        "altitude": 11.1,
+        "speed": 5.38,
+        "course": 233,
+        "horizontal_accuracy": 8,
+        "vertical_accuracy": 4,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.82
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6882586, 51.0264298]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:36:15Z",
+        "altitude": 11.4,
+        "speed": 4.85,
+        "course": 226,
+        "horizontal_accuracy": 5,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.81
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6824327, 51.0245787]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:37:45Z",
+        "altitude": 11.5,
+        "speed": 4.72,
+        "course": 221,
+        "horizontal_accuracy": 6,
+        "vertical_accuracy": 4,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.81
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6762823, 51.0223784]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:39:15Z",
+        "altitude": 11.3,
+        "speed": 5.13,
+        "course": 218,
+        "horizontal_accuracy": 7,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.81
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6704163, 51.0200169]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:40:45Z",
+        "altitude": 10.8,
+        "speed": 5.69,
+        "course": 219,
+        "horizontal_accuracy": 8,
+        "vertical_accuracy": 4,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.81
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6647056, 51.0181568]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:42:15Z",
+        "altitude": 10.1,
+        "speed": 5.89,
+        "course": 223,
+        "horizontal_accuracy": 5,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.81
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6586363, 51.0163682]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:43:45Z",
+        "altitude": 9.4,
+        "speed": 5.55,
+        "course": 229,
+        "horizontal_accuracy": 6,
+        "vertical_accuracy": 4,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.81
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6524057, 51.0141734]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:45:15Z",
+        "altitude": 8.5,
+        "speed": 4.97,
+        "course": 236,
+        "horizontal_accuracy": 7,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.81
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6465658, 51.0120226]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:46:45Z",
+        "altitude": 7.7,
+        "speed": -1,
+        "course": -1,
+        "horizontal_accuracy": 8,
+        "vertical_accuracy": 4,
+        "speed_accuracy": -1,
+        "course_accuracy": -1,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.8
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6407865, 51.0102668]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:48:15Z",
+        "altitude": 7.1,
+        "speed": 4.98,
+        "course": 245,
+        "horizontal_accuracy": 5,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.8
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6346017, 51.0083654]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:49:45Z",
+        "altitude": 6.7,
+        "speed": 5.55,
+        "course": 246,
+        "horizontal_accuracy": 6,
+        "vertical_accuracy": 4,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.8
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6284613, 51.0061066]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:51:15Z",
+        "altitude": 6.5,
+        "speed": 5.89,
+        "course": 243,
+        "horizontal_accuracy": 7,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.8
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6227157, 51.0040859]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:52:45Z",
+        "altitude": 6.6,
+        "speed": 5.69,
+        "course": 237,
+        "horizontal_accuracy": 8,
+        "vertical_accuracy": 4,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.8
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6168243, 51.0023612]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:54:15Z",
+        "altitude": 7,
+        "speed": 5.13,
+        "course": 230,
+        "horizontal_accuracy": 5,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.8
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6105755, 51.0003222]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:55:45Z",
+        "altitude": 7.6,
+        "speed": 4.72,
+        "course": 224,
+        "horizontal_accuracy": 6,
+        "vertical_accuracy": -1,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.79
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.6042419, 50.9985233]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:57:15Z",
+        "altitude": 8.3,
+        "speed": 4.85,
+        "course": 219,
+        "horizontal_accuracy": 7,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.79
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.5981629, 50.9971525]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:58:45Z",
+        "altitude": 9.1,
+        "speed": 5.39,
+        "course": 218,
+        "horizontal_accuracy": 8,
+        "vertical_accuracy": 4,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.79
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.5917696, 50.9959014]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T07:00:15Z",
+        "altitude": 9.9,
+        "speed": 5.85,
+        "course": 220,
+        "horizontal_accuracy": 5,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.79
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.5851613, 50.9942498]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T07:01:45Z",
+        "altitude": 10.6,
+        "speed": 5.8,
+        "course": 225,
+        "horizontal_accuracy": 6,
+        "vertical_accuracy": 4,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.79
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.5788882, 50.9926518]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T07:03:15Z",
+        "altitude": 11.2,
+        "speed": 5.29,
+        "course": 232,
+        "horizontal_accuracy": 7,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.79
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.5725556, 50.9918226]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T07:04:45Z",
+        "altitude": 11.5,
+        "speed": 4.79,
+        "course": 239,
+        "horizontal_accuracy": 8,
+        "vertical_accuracy": 4,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.79
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.5658225, 50.9909057]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T07:06:15Z",
+        "altitude": 11.5,
+        "speed": 4.76,
+        "course": 244,
+        "horizontal_accuracy": 5,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.78
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.5590728, 50.9896067]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T07:07:45Z",
+        "altitude": 11.2,
+        "speed": 5.22,
+        "course": 246,
+        "horizontal_accuracy": 6,
+        "vertical_accuracy": 4,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.78
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.552728, 50.9884939]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T07:09:15Z",
+        "altitude": 10.7,
+        "speed": 5.76,
+        "course": 245,
+        "horizontal_accuracy": 7,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.78
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.5462953, 50.9877152]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T07:10:45Z",
+        "altitude": 10,
+        "speed": 5.87,
+        "course": 240,
+        "horizontal_accuracy": 8,
+        "vertical_accuracy": 4,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.78
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.5394805, 50.9866642]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T07:12:15Z",
+        "altitude": 9.2,
+        "speed": 5.46,
+        "course": 234,
+        "horizontal_accuracy": 5,
+        "vertical_accuracy": 3,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.78
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.532852, 50.9853492]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T07:13:45Z",
+        "altitude": 8.4,
+        "speed": 4.9,
+        "course": 227,
+        "horizontal_accuracy": 6,
+        "vertical_accuracy": 4,
+        "speed_accuracy": 0.6,
+        "course_accuracy": 9.5,
+        "motion": ["cycling"],
+        "pauses": false,
+        "activity": "fitness",
+        "desired_accuracy": 100,
+        "deferred": 0,
+        "significant_change": "disabled",
+        "locations_in_payload": 30,
+        "unique_id": "5E0B7C1A-8A7D-4C49-9E62-3B2F1D6A0C44",
+        "device_id": "iphone-jens",
+        "wifi": "",
+        "battery_state": "unplugged",
+        "battery_level": 0.78
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.7249, 51.0443]
+      },
+      "properties": {
+        "type": "trip",
+        "mode": "bicycle",
+        "start": "2026-09-28T17:02:31Z",
+        "end": "2026-09-28T17:47:55Z",
+        "timestamp": "2026-09-28T17:47:55Z",
+        "duration": 2724,
+        "distance": 14873.4,
+        "steps": 0,
+        "stopped_automatically": false,
+        "start_location": {
+          "type": "Feature",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [3.5331, 50.9856]
+          },
+          "properties": {
+            "timestamp": "2026-09-28T17:02:31Z",
+            "horizontal_accuracy": 8,
+            "altitude": 10,
+            "speed": 0,
+            "course": -1
+          }
+        },
+        "end_location": {
+          "type": "Feature",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [3.7249, 51.0443]
+          },
+          "properties": {
+            "timestamp": "2026-09-28T17:47:55Z",
+            "horizontal_accuracy": 8,
+            "altitude": 10,
+            "speed": 0,
+            "course": -1
+          }
+        },
+        "device_id": "iphone-jens",
+        "wifi": "Telenet-8F2A",
+        "battery_state": "unplugged",
+        "battery_level": 0.82
+      }
+    }
+  ],
+  "current": {
+    "type": "Feature",
+    "geometry": {
+      "type": "Point",
+      "coordinates": [3.5309, 50.9851]
+    },
+    "properties": {
+      "timestamp": "2026-09-29T07:15:00Z",
+      "altitude": 12.4,
+      "speed": 4.9,
+      "course": 251,
+      "horizontal_accuracy": 6,
+      "vertical_accuracy": 3,
+      "speed_accuracy": 0.5,
+      "course_accuracy": 8,
+      "motion": ["cycling"],
+      "device_id": "iphone-jens",
+      "wifi": "",
+      "battery_state": "unplugged",
+      "battery_level": 0.77
+    }
+  },
+  "trip": {
+    "mode": "bicycle",
+    "start": "2026-09-29T06:30:12Z",
+    "distance": 14120.6,
+    "start_location": {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.7108, 51.0359]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T06:30:12Z",
+        "horizontal_accuracy": 8,
+        "altitude": 10,
+        "speed": 0,
+        "course": -1
+      }
+    },
+    "current_location": {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [3.533, 50.9855]
+      },
+      "properties": {
+        "timestamp": "2026-09-29T07:13:45Z",
+        "horizontal_accuracy": 8,
+        "altitude": 10,
+        "speed": 0,
+        "course": -1
+      }
+    }
+  }
+}
