@@ -84,6 +84,7 @@ export async function signInWithPasskey(
 export async function signUpWithCookie(
   app: Server,
   email: string,
+  authenticator = new SoftwareAuthenticator(),
 ): Promise<{ agent: Agent; cookie: string }> {
   const agent = agentFor(app);
   const started = await agent.post("/api/auth/start").set("Origin", testOrigin).send({ email });
@@ -94,7 +95,33 @@ export async function signUpWithCookie(
     .set("Origin", testOrigin)
     .send({
       ceremonyId: start.ceremonyId,
-      response: new SoftwareAuthenticator().createCredential(start.options, testOrigin),
+      response: authenticator.createCredential(start.options, testOrigin),
+    })
+    .expect(200);
+  const cookie = String(finished.headers["set-cookie"]).split(";")[0] ?? "";
+  return { agent, cookie };
+}
+
+/** Signs in once more with the authenticator's passkey: a second session, as from another browser. */
+export async function signInWithCookie(
+  app: Server,
+  authenticator: SoftwareAuthenticator,
+  email: string,
+): Promise<{ agent: Agent; cookie: string }> {
+  const agent = agentFor(app);
+  const started = await agent
+    .post("/api/auth/start")
+    .set("Origin", testOrigin)
+    .send({ email })
+    .expect(200);
+  const start = startAuthResponseSchema.parse(started.body);
+  if (start.flow !== "authenticate") throw new Error(`Expected a sign-in, got ${start.flow}`);
+  const finished = await agent
+    .post("/api/auth/finish")
+    .set("Origin", testOrigin)
+    .send({
+      ceremonyId: start.ceremonyId,
+      response: authenticator.getAssertion(start.options, testOrigin),
     })
     .expect(200);
   const cookie = String(finished.headers["set-cookie"]).split(";")[0] ?? "";

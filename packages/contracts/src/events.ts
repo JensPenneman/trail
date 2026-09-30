@@ -22,6 +22,12 @@ export const serverEventSchema = z.discriminatedUnion("type", [
     rejected: z.number().int().nonnegative(),
     points: z.array(trackPointSchema),
   }),
+  /**
+   * The session behind this stream ended — signed out, revoked from another
+   * browser, expired, or the account was deleted. The server closes the stream
+   * next; reconnecting would only be refused.
+   */
+  z.object({ type: z.literal("session-ended") }),
 ]);
 export type ServerEvent = z.infer<typeof serverEventSchema>;
 export type ServerEventType = ServerEvent["type"];

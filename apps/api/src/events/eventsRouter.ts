@@ -69,7 +69,9 @@ export function eventsRouter(ctx: AppContext): Router {
       write(": ping\n\n");
       isSessionActive(ctx.db, sessionId)
         .then((active) => {
-          if (!active) close();
+          if (active) return;
+          write(formatServerEvent({ type: "session-ended" }));
+          close();
         })
         .catch((error: unknown) => {
           ctx.logger.warn({ err: error }, "could not re-check the session of a live stream");

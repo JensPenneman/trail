@@ -1,5 +1,4 @@
 import { type FormEvent, useState } from "react";
-import { useNavigate } from "react-router";
 import { useSessionUser } from "../../app/useSessionUser";
 import { useDeleteAccount } from "../../queries/useDeleteAccount";
 import { Button } from "../../ui/Button";
@@ -16,7 +15,6 @@ interface DeleteAccountDialogProps {
 export function DeleteAccountDialog({ open, onClose }: DeleteAccountDialogProps) {
   const user = useSessionUser();
   const remove = useDeleteAccount();
-  const navigate = useNavigate();
   const [typed, setTyped] = useState("");
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
@@ -28,10 +26,7 @@ export function DeleteAccountDialog({ open, onClose }: DeleteAccountDialogProps)
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!matches) return;
-    remove.mutate(
-      { confirmEmail: typed.trim() },
-      { onSuccess: () => void navigate("/login", { replace: true }) },
-    );
+    remove.mutate({ confirmEmail: typed.trim() });
   };
 
   return (

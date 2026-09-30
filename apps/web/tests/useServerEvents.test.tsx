@@ -94,6 +94,42 @@ describe("useServerEvents", () => {
     expect(source.closed).toBe(true);
   });
 
+  it("stays closed once the server says the session ended", () => {
+    const { queryClient } = setup();
+    queryClient.setQueryData(queryKeys.session, { id: "signed-in" });
+    act(() => latest().open());
+    const source = latest();
+    act(() => source.send("session-ended", { type: "session-ended" }));
+    expect(source.closed).toBe(true);
+    expect(queryClient.getQueryData(queryKeys.session)).toBeNull();
+    // No reconnect (it could only be refused) — not after a while, nor when the tab returns.
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(FakeEventSource.instances).toHaveLength(1);
+  });
+
+  it("does not ask about the session while this browser is signing out", () => {
+    const { queryClient } = setup();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    act(() => latest().open());
+    const failAndCheckedSession = () => {
+      act(() => latest().fail());
+      return invalidate.mock.calls.some(([filters]) => filters?.queryKey === queryKeys.session);
+    };
+    // A sign-out under way: the server may cut the stream before the request returns.
+    void queryClient
+      .getMutationCache()
+      .build(queryClient, {
+        mutationKey: queryKeys.endSession,
+        mutationFn: () => new Promise<never>(() => undefined),
+      })
+      .execute(undefined);
+    expect(failAndCheckedSession()).toBe(false);
+  });
+
   it("records uploads announced by the stream", () => {
     const { store } = setup();
     act(() => latest().open());

@@ -13,6 +13,7 @@ const eventTypes = [
   "device",
   "device-removed",
   "ingest",
+  "session-ended",
 ] as const satisfies readonly ServerEventType[];
 
 /** Appended points are drawn at once; the server's distance and simplification follow this much later. */
@@ -34,7 +35,8 @@ function backoffMs(attempt: number): number {
  * into the caches. Reconnects with jittered exponential backoff (the browser's
  * own retry gives up for good on an HTTP error), immediately when the tab
  * becomes visible or the network returns, and resynchronises after any gap —
- * events sent while disconnected are lost.
+ * events sent while disconnected are lost. When the server says the session
+ * ended, the stream stays closed: a reconnect could only be refused.
  */
 export function useServerEvents(store: LiveStore): void {
   const queryClient = useQueryClient();
@@ -47,6 +49,7 @@ export function useServerEvents(store: LiveStore): void {
     let resyncTimer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     let openedBefore = false;
+    let sessionEnded = false;
     let lastResync = 0;
     let hiddenSince: number | null = null;
 
@@ -72,6 +75,11 @@ export function useServerEvents(store: LiveStore): void {
     const onMessage = (message: MessageEvent<unknown>): void => {
       const event = parseServerEvent(message.data);
       if (event === null) return;
+      if (event.type === "session-ended") {
+        sessionEnded = true;
+        for (const timer of [retryTimer, graceTimer, resyncTimer]) clearTimeout(timer);
+        close();
+      }
       applyServerEvent(queryClient, store, event);
       if (event.type === "ingest") {
         clearTimeout(refreshTimer);
@@ -94,6 +102,7 @@ export function useServerEvents(store: LiveStore): void {
     const connect = (): void => {
       clearTimeout(retryTimer);
       close();
+      if (sessionEnded) return;
       if (!openedBefore) store.setConnection("connecting");
       source = new EventSource(apiPaths.events);
       source.addEventListener("open", onOpen);
@@ -107,7 +116,11 @@ export function useServerEvents(store: LiveStore): void {
       clearTimeout(graceTimer);
       graceTimer = setTimeout(() => store.setConnection("reconnecting"), reconnectGraceMs);
       // A stream that keeps failing may mean the session ended; the guard reacts to a 401.
-      if (failures % 5 === 0) void queryClient.invalidateQueries({ queryKey: queryKeys.session });
+      // Not while this browser is ending the session itself: the answer is known (and a 401).
+      const endingSession = queryClient.isMutating({ mutationKey: queryKeys.endSession }) > 0;
+      if (failures % 5 === 0 && !endingSession) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.session });
+      }
       retryTimer = setTimeout(connect, backoffMs(failures));
       failures += 1;
     }

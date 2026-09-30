@@ -37,6 +37,13 @@ describe("applyServerEvent", () => {
     );
   });
 
+  it("signs the page out when the server ends the session", () => {
+    const { queryClient, store } = setup();
+    queryClient.setQueryData(queryKeys.session, { id: "signed-in" });
+    applyServerEvent(queryClient, store, { type: "session-ended" });
+    expect(queryClient.getQueryData(queryKeys.session)).toBeNull();
+  });
+
   it("forgets a removed device", () => {
     const { queryClient, store } = setup();
     queryClient.setQueryData<DeviceResponse>(queryKeys.device(ids.car), { device: car() });

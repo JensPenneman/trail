@@ -1,5 +1,8 @@
 import type { ServerEvent } from "@trail/contracts/events";
 
+/** Told to a stream whose session is gone, right before it is closed. */
+const sessionEnded: ServerEvent = { type: "session-ended" };
+
 export interface EventSubscriber {
   /** Session behind the stream, so logout and revocation can cut it off. */
   sessionId: string;
@@ -36,21 +39,29 @@ export class EventBus {
     for (const subscriber of this.#byUser.get(userId) ?? []) subscriber.send(event);
   }
 
+  /** Logout or revocation: the streams of that session learn why, then close. */
   disconnectSession(sessionId: string): void {
     for (const subscribers of this.#byUser.values()) {
       for (const subscriber of [...subscribers]) {
-        if (subscriber.sessionId === sessionId) subscriber.close();
+        if (subscriber.sessionId === sessionId) endSession(subscriber);
       }
     }
   }
 
+  /** Account deletion: every stream of the user learns its session ended, then closes. */
   disconnectUser(userId: string): void {
-    for (const subscriber of [...(this.#byUser.get(userId) ?? [])]) subscriber.close();
+    for (const subscriber of [...(this.#byUser.get(userId) ?? [])]) endSession(subscriber);
   }
 
+  /** Shutdown: streams close without a reason, so clients reconnect to the next instance. */
   disconnectAll(): void {
     for (const subscribers of [...this.#byUser.values()]) {
       for (const subscriber of [...subscribers]) subscriber.close();
     }
   }
+}
+
+function endSession(subscriber: EventSubscriber): void {
+  subscriber.send(sessionEnded);
+  subscriber.close();
 }

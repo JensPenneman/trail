@@ -58,4 +58,7 @@ export const queryKeys = {
   invites: ["invites"],
   adminUsers: ["admin-users"],
   linkInfo: (token: string) => ["link-info", token] as const,
+  /** Mutations that end the session on purpose: signing out, deleting the account. */
+  endSession: ["end-session"],
+  deleteDevice: (deviceId: string) => ["delete-device", deviceId] as const,
 } as const;

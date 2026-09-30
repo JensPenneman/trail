@@ -26,6 +26,10 @@ export function applyServerEvent(
     case "device-removed":
       removeDeviceFromCache(queryClient, event.deviceId);
       return;
+    case "session-ended":
+      // The route guard takes the person to the sign-in page, with a way back here.
+      queryClient.setQueryData(queryKeys.session, null);
+      return;
     case "ingest": {
       store.addUpload({
         deviceId: event.deviceId,
