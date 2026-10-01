@@ -27,7 +27,7 @@ export const remoteSettingsPresetInfo: Record<
   "balanced-plus": {
     label: "Balanced+",
     description:
-      "GPS-quality points (10 m) for clean tracks that still pause when you stand still and resume within 100 m; significant-location changes wake Overland if iOS stops it. No blue location indicator. Sends every 5 minutes.",
+      "Every point at best accuracy while you move; nothing while you stand still: tracking pauses after about 10 minutes and resumes within 100 m of leaving. Significant-location changes wake Overland if iOS stops it. No blue location indicator. Sends every 5 minutes.",
   },
   "high-resolution": {
     label: "High resolution",

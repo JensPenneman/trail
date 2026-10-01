@@ -34,14 +34,14 @@ describe("presetSettings", () => {
       main: {
         tracking_mode: "both",
         visit_tracking: true,
-        desired_accuracy: "10m",
+        desired_accuracy: "best",
         activity_type: "other",
         background_indicator: false,
         pause_automatically: true,
         resume_with_geofence: "100m",
         logging_mode: "all",
         batch_size: 500,
-        min_distance: "10m",
+        min_distance: "off",
         min_time: "1s",
       },
     });

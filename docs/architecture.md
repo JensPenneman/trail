@@ -345,10 +345,10 @@ next ok-response, then cleared and `settings_applied_at` stamped. Mapping
   `logging_mode "all"`, `batch_size 200`, `min_distance "10m"`,
   `min_time "5s"`.
 - **balanced-plus** — `send_interval "5m"`; main: `tracking_mode "both"`,
-  `visit_tracking true`, `desired_accuracy "10m"`, `activity_type "other"`,
+  `visit_tracking true`, `desired_accuracy "best"`, `activity_type "other"`,
   `background_indicator false`, `pause_automatically true`,
   `resume_with_geofence "100m"`, `logging_mode "all"`, `batch_size 500`,
-  `min_distance "10m"`, `min_time "1s"`. GPS-quality fixes that still pause;
+  `min_distance "off"`, `min_time "1s"`. Full detail while moving, still pauses;
   significant-change monitoring (`both`) relaunches tracking if iOS suspends
   it, which is what lets the blue background indicator stay off.
 - **high-resolution** — `send_interval "1m"`; main: `tracking_mode

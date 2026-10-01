@@ -64,21 +64,25 @@ which device a point belongs to; the Device ID is stored for reference.
 Trail offers four presets that match these settings. Pick one on the device
 page (Remote settings) and Trail sends it to the phone in the reply to its next
 upload, so the phone does not have to be at hand. **Balanced** is the
-everyday default; **Balanced+** trades a little battery for GPS-quality tracks.
+everyday default; **Balanced+** records every point at best accuracy while you
+move and nothing while you stand still (iOS pauses after about 10 minutes; the
+100 m exit geofence resumes it, so the first 100–200 m after leaving can be
+thin). Its battery use is close to High resolution's while moving and near zero
+while paused.
 
 | Overland setting | Balanced | Balanced+ | High resolution | Battery saver |
 |---|---|---|---|---|
 | Send Interval | 5 min | 5 min | 1 min | 10 min |
 | Continuous Tracking Mode | Standard | Both | Standard | Significant Location |
 | Visit Tracking | on | on | on | on |
-| Desired Accuracy | 100m | 10m | Best | 100m |
+| Desired Accuracy | 100m | Best | Best | 100m |
 | Activity Type | Other | Other | Other | Other |
 | Show Background Location Indicator | (unchanged) | Never | Always | (unchanged) |
 | Pause Updates Automatically | on | on | off | on |
 | Resume with Geofence | 200m | 100m | off | 500m |
 | Logging Mode | All Data | All Data | All Data | All Data |
 | Locations per Batch | 200 | 500 | 500 | 200 |
-| Min Distance Between Points | 10m | 10m | off | off |
+| Min Distance Between Points | 10m | off | off | off |
 | Min Time Between Points | 5s | 1s | 1s | 1s |
 
 Whatever else you change, keep these:
