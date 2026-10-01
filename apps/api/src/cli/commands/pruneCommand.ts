@@ -10,5 +10,4 @@ export async function pruneCommand(ctx: CliContext): Promise<void> {
   console.log(`  old passkey links       ${pruned.passkeyLinks}`);
   console.log(`  old invites             ${pruned.invites}`);
   console.log(`  upload log (> 90 days)  ${pruned.ingestLog}`);
-  console.log(`  rejects (> 30 days)     ${pruned.ingestRejects}`);
 }

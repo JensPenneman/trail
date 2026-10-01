@@ -7,13 +7,14 @@ export interface PruneResult {
   passkeyLinks: number;
   invites: number;
   ingestLog: number;
-  ingestRejects: number;
 }
 
 /**
  * Retention (docs/architecture.md §10): expired sessions and ceremonies go
  * immediately, used or expired links and invites after 30 days (so the admin
- * list still shows recent ones), upload logs after 90 days, rejects after 30.
+ * list still shows recent ones), upload logs after 90 days. Recorded data is
+ * never pruned: points, visits, trips, events and the dead letter of rejected
+ * records (raw phone data that may still be recovered) are kept forever.
  */
 export async function pruneExpiredData(db: Executor): Promise<PruneResult> {
   const count = async (statement: ReturnType<typeof sql>) =>
@@ -31,9 +32,6 @@ export async function pruneExpiredData(db: Executor): Promise<PruneResult> {
     `),
     ingestLog: await count(
       sql`DELETE FROM ingest_log WHERE received_at < now() - interval '90 days'`,
-    ),
-    ingestRejects: await count(
-      sql`DELETE FROM ingest_rejects WHERE received_at < now() - interval '30 days'`,
     ),
   };
 }
