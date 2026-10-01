@@ -290,6 +290,38 @@ Two things to know about this setup:
   the per-IP rate limits are shared by all clients. The tunnel does not have
   this limitation.
 
+### C. Several apps on one server (shared reverse proxy)
+
+When the laptop hosts more than Trail, one reverse proxy owns ports 80 and 443
+for every app and routes by host name; each app gets a subdomain instead of a
+port forward. Trail then runs without its own `direct`/`tunnel` profile and
+joins the proxy's Docker network (`deploy/compose.proxy.yaml`):
+
+1. Start the shared proxy first. It must create an external Docker network
+   (here `proxy`) and give itself a fixed address on it (here `10.200.0.2`).
+   Its site for Trail is a plain `reverse_proxy trail:8080`, without `encode`
+   (compression would buffer the `/api/events` stream).
+2. **`.env`:**
+   ```ini
+   COMPOSE_FILE=compose.yaml;compose.proxy.yaml   # Windows; elsewhere use ':'
+   COMPOSE_PROFILES=
+   TRAIL_PROXY_NETWORK=proxy
+   TRUST_PROXY=10.200.0.2
+   TRAIL_HTTP_BIND=127.0.0.1
+   TRAIL_HTTP_PORT=20100                          # any free host port
+   ADDITIONAL_ORIGINS=http://localhost:20100
+   ```
+   `TRUST_PROXY` must name exactly the proxy's address: it decides the client
+   address of the rate limits and whether a request arrived over HTTPS.
+3. `docker compose up -d`. If the stack ran with the `direct` profile before,
+   remove its proxy first: `docker compose rm -sf caddy ddns` and
+   `docker volume rm trail_caddy-data trail_caddy-config`.
+
+The router forwards TCP 80, TCP 443 and UDP 443 to the laptop once, for all
+apps. For IPv6 there is no forwarding: allow the same three ports to the
+laptop's stable (not temporary) IPv6 address in the router's IPv6 firewall and
+add an `AAAA` record next to the `A` record once IPv6 works end to end.
+
 ### After the address changes
 
 Passkeys are bound to a host name, so the passkey created on `localhost` does

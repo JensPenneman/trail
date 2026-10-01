@@ -1,0 +1,23 @@
+# Optional: run Trail behind a reverse proxy that serves several apps on the
+# same Docker host, instead of the stack's own `direct`/`tunnel` profiles.
+# docs/operations.md, "Several apps on one server", walks through it.
+#
+# The app joins the proxy's external network under the alias `trail`, so the
+# proxy forwards to http://trail:8080. Enable it in .env:
+#
+#   COMPOSE_FILE=compose.yaml:compose.proxy.yaml   (Windows: separate with ;)
+#   TRAIL_PROXY_NETWORK=proxy                       the proxy's network name
+#   TRUST_PROXY=10.200.0.2                          the proxy's fixed address on it
+#
+# Leave COMPOSE_PROFILES empty: the shared proxy owns ports 80 and 443.
+
+services:
+  app:
+    networks:
+      shared-proxy:
+        aliases: [trail]
+
+networks:
+  shared-proxy:
+    name: ${TRAIL_PROXY_NETWORK:-proxy}
+    external: true
