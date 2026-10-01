@@ -86,6 +86,8 @@ services:
       retries: 3
     labels:
       com.centurylinklabs.watchtower.enable: "true"
+      # every image of the app passed CI (unit, integration, E2E): no waiting
+      com.centurylinklabs.watchtower.cooldown-delay: "0"
     logging: *logging
 
   db:
@@ -102,6 +104,8 @@ services:
       # Postgres 18+ images keep the cluster in /var/lib/postgresql/18/docker,
       # so a future major version can sit next to it for pg_upgrade
       - trail-db:/var/lib/postgresql
+      # only for the dump Watchtower takes before replacing this container
+      - ${BACKUP_DIR:-./backups}:/backups
     networks: [backend]
     shm_size: 256mb
     stop_grace_period: 60s
@@ -117,6 +121,21 @@ services:
       # the tag only moves within Postgres 18; a new major needs a manual
       # dump and restore (docs/operations.md)
       com.centurylinklabs.watchtower.enable: "true"
+      # a new Postgres image waits three days, time for a broken release to be pulled
+      com.centurylinklabs.watchtower.cooldown-delay: "72h"
+      # Before Watchtower replaces this container it dumps the database to
+      # BACKUP_DIR/pre-update and checks that the dump can be read back. Any
+      # failure aborts the update and the running database stays as it is.
+      com.centurylinklabs.watchtower.lifecycle.pre-update: >-
+        set -e;
+        dir=/backups/pre-update;
+        mkdir -p "$$dir";
+        stamp=$$(date -u +%Y%m%dT%H%M%SZ);
+        partial="$$dir/.trail-$$stamp.dump.partial";
+        pg_dump --username=trail --dbname=trail --format=custom --file="$$partial";
+        pg_restore --list "$$partial" > /dev/null;
+        mv "$$partial" "$$dir/trail-$$stamp.dump"
+      com.centurylinklabs.watchtower.lifecycle.pre-update-timeout: "30"
     logging: *logging
 
   backup:
@@ -130,6 +149,8 @@ services:
       TZ: ${TZ:-Europe/Brussels}
       BACKUP_HOUR: ${BACKUP_HOUR:-3}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_KEEP_MONTHS: ${BACKUP_KEEP_MONTHS:-12}
+      BACKUP_KEEP_YEARS: ${BACKUP_KEEP_YEARS:-0}
       BACKUP_ON_START: ${BACKUP_ON_START:-false}
       PGHOST: db
       PGUSER: trail
@@ -152,6 +173,7 @@ services:
     mem_limit: 512m
     labels:
       com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.cooldown-delay: "72h"
       com.centurylinklabs.watchtower.copy-file: /etc/trail-backup.sh
     logging: *logging
 
@@ -172,6 +194,8 @@ services:
       # The app reconnects to the database on its own.
       WATCHTOWER_USE_COMPOSE_DEPENDS_ON: "false"
       WATCHTOWER_TIMEOUT: 60s
+      # runs the pre-update backup of the db container
+      WATCHTOWER_LIFECYCLE_HOOKS: "true"
       # optional, e.g. ntfy://ntfy.sh/your-topic (only passed when .env sets it)
       WATCHTOWER_NOTIFICATION_URL:
     volumes:
@@ -184,6 +208,7 @@ services:
     labels:
       # updates itself within major version 1
       com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.cooldown-delay: "72h"
     logging: *logging
 
   cloudflared:
@@ -205,6 +230,7 @@ services:
     mem_limit: 256m
     labels:
       com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.cooldown-delay: "72h"
     logging: *logging
 
   caddy:
@@ -234,6 +260,7 @@ services:
     mem_limit: 256m
     labels:
       com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.cooldown-delay: "72h"
       com.centurylinklabs.watchtower.copy-file: /etc/caddy/Caddyfile
     logging: *logging
 
@@ -258,6 +285,7 @@ services:
     mem_limit: 64m
     labels:
       com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.cooldown-delay: "72h"
     logging: *logging
 
 networks:
@@ -273,7 +301,12 @@ networks:
     internal: true
 
 volumes:
+  # The location history. External: created once with `docker volume create
+  # trail-db` (docs/operations.md) and never removed by Compose — not by
+  # `docker compose down -v` either. TRAIL_DB_VOLUME names an existing volume.
   trail-db:
+    name: ${TRAIL_DB_VOLUME:-trail-db}
+    external: true
   caddy-data:
   caddy-config:
 
@@ -297,16 +330,22 @@ configs:
       #!/bin/sh
       # Database backups for the `backup` service (see docs/operations.md).
       # Once a day at BACKUP_HOUR local time (TZ), pg_dump writes a custom-format
-      # dump to /backups/trail-<UTC timestamp>.dump and deletes dumps older than
-      # BACKUP_KEEP_DAYS days. It also dumps right after starting when the newest
-      # dump is more than a day old (first start, the laptop was off, a failed run)
-      # or when BACKUP_ON_START=true. Any failure exits non-zero: Docker restarts the
-      # container and the restart retries.
+      # dump to /backups/trail-<UTC timestamp>.dump; it counts only once
+      # pg_restore can read it back. The first dump of every month is also kept in
+      # monthly/ and the first of every year in yearly/. Daily dumps (and the
+      # pre-update/ dumps of the db container) are deleted after BACKUP_KEEP_DAYS
+      # days, monthly ones after BACKUP_KEEP_MONTHS months, yearly ones after
+      # BACKUP_KEEP_YEARS years; 0 keeps them forever. It also dumps right after
+      # starting when the newest dump is more than a day old (first start, the
+      # laptop was off, a failed run) or when BACKUP_ON_START=true. Any failure
+      # exits non-zero: Docker restarts the container and the restart retries.
       set -eu
 
       dir=/backups
       hour=$${BACKUP_HOUR:-3}
       keep_days=$${BACKUP_KEEP_DAYS:-14}
+      keep_months=$${BACKUP_KEEP_MONTHS:-12}
+      keep_years=$${BACKUP_KEEP_YEARS:-0}
       on_start=$${BACKUP_ON_START:-false}
       stop=0
 
@@ -324,6 +363,28 @@ configs:
         [ -n "$$(find "$$dir" -maxdepth 1 -type f -name 'trail-*.dump' -mmin "-$$1" | head -n 1)" ]
       }
 
+      # prune DIR DAYS: deletes the dumps in DIR older than DAYS days
+      prune() {
+        [ -d "$$1" ] || return 0
+        find "$$1" -maxdepth 1 -type f -name 'trail-*.dump' -mmin "+$$(($$2 * 1440))" |
+          while read -r old; do
+            rm -f "$$old"
+            log "deleted $${old#"$$dir"/} (older than $$2 days)"
+          done
+      }
+
+      # keep_copy KIND PERIOD FILE: keeps the first dump of a month or year
+      keep_copy() {
+        target="$$dir/$$1/trail-$$2.dump"
+        if [ -e "$$target" ]; then
+          return 0
+        fi
+        mkdir -p "$$dir/$$1"
+        cp "$$3" "$$dir/$$1/.trail-$$2.dump.partial"
+        mv "$$dir/$$1/.trail-$$2.dump.partial" "$$target"
+        log "kept $${target#"$$dir"/}"
+      }
+
       backup() {
         stamp=$$(date -u +%Y%m%dT%H%M%SZ)
         file="$$dir/trail-$$stamp.dump"
@@ -336,13 +397,23 @@ configs:
           rm -f "$$partial"
           die "pg_dump failed; the container restarts and tries again"
         fi
+        # a dump only counts once it can be read back
+        if ! pg_restore --list "$$partial" > /dev/null; then
+          rm -f "$$partial"
+          die "the new dump cannot be read back; the container restarts and tries again"
+        fi
         mv "$$partial" "$$file"
         log "backup complete: $${file##*/}, $$(du -k "$$file" | cut -f1) KiB in $$(($$(date +%s) - started)) s"
-        find "$$dir" -maxdepth 1 -type f -name 'trail-*.dump' -mmin "+$$((keep_days * 1440))" |
-          while read -r old; do
-            rm -f "$$old"
-            log "deleted $${old##*/} (older than $$keep_days days)"
-          done
+        keep_copy monthly "$$(date -u +%Y-%m)" "$$file"
+        keep_copy yearly "$$(date -u +%Y)" "$$file"
+        prune "$$dir" "$$keep_days"
+        prune "$$dir/pre-update" "$$keep_days"
+        if [ "$$keep_months" -gt 0 ]; then
+          prune "$$dir/monthly" "$$((keep_months * 31))"
+        fi
+        if [ "$$keep_years" -gt 0 ]; then
+          prune "$$dir/yearly" "$$((keep_years * 366))"
+        fi
       }
 
       case $$hour in
@@ -354,6 +425,12 @@ configs:
       case $$keep_days in
         '' | *[!0-9]* | 0) die "BACKUP_KEEP_DAYS must be a whole number of days (1 or more), got '$$keep_days'" ;;
       esac
+      case $$keep_months in
+        '' | *[!0-9]*) die "BACKUP_KEEP_MONTHS must be a whole number (0 = forever), got '$$keep_months'" ;;
+      esac
+      case $$keep_years in
+        '' | *[!0-9]*) die "BACKUP_KEEP_YEARS must be a whole number (0 = forever), got '$$keep_years'" ;;
+      esac
       if [ ! -d "$$dir" ] || [ ! -w "$$dir" ]; then
         die "$$dir is not a writable directory; check BACKUP_DIR in .env"
       fi
@@ -361,10 +438,10 @@ configs:
       # SIGTERM (docker stop) lets a running dump finish, then leaves the loop
       trap 'stop=1' TERM INT
 
-      # leftovers of a dump that was interrupted
-      find "$$dir" -maxdepth 1 -type f -name '.trail-*.dump.partial' -exec rm -f {} +
+      # leftovers of a dump or copy that was interrupted
+      find "$$dir" -maxdepth 2 -type f -name '.trail-*.dump.partial' -exec rm -f {} +
 
-      log "daily backups at $$hour:00 $${TZ:-UTC} to BACKUP_DIR, keeping $$keep_days days"
+      log "daily backups at $$hour:00 $${TZ:-UTC} to BACKUP_DIR: daily $$keep_days days, monthly $$keep_months months, yearly $$keep_years years (0 = forever)"
       if [ "$$on_start" = true ] || ! dump_within 1440; then
         backup
       fi

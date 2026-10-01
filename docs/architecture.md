@@ -217,7 +217,8 @@ actions may lack geometry), `extra`.
 
 **ingest_rejects** — dead letter for invalid records (never silently drop
 data): `id`, `device_id` → devices (cascade), `received_at`, `reason`,
-`record` (jsonb). Retention 30 days.
+`record` (jsonb). Kept forever, like every other recorded row: it is raw phone
+data that a later fix may still recover.
 
 **heat_cells** — pre-aggregated all-time density for the heatmap: PK
 `(device_id, z, x, y)`; `count` (int), `first_at`, `last_at`. `z` ∈ {6, 9, 12,
@@ -561,7 +562,8 @@ replaces device cache entries from `device` events and appends
   alert when data resumes (§6.2). Turning a device's alerts off clears its
   stamp.
 - hourly — delete expired sessions, ceremonies, links, invites (used/expired
-  > 30 days); prune `ingest_log` (> 90 d) and `ingest_rejects` (> 30 d).
+  > 30 days); prune `ingest_log` (> 90 d). Recorded data — locations, visits,
+  trips, events, rejects — is never pruned.
 - debounced (10 s) — daily-stats recomputation per touched (device, day), in
   the owner's time zone at run time; a failed pass is retried with the next.
   Changing the time zone (`PATCH /api/me`) rebuilds every day of the user's
@@ -685,6 +687,17 @@ labels (the file's directory must exist in the image). The app migrates the
 database on boot. Rollback = pin `TRAIL_IMAGE_TAG=sha-<short>` in
 `deploy/.env` and `docker compose up -d`.
 
+Data safety on updates: the app image updates as soon as CI published it
+(`cooldown-delay "0"`); third-party images (Postgres, Caddy, cloudflared, the
+DDNS updater, Watchtower) wait until they are 72 h old, time for a broken
+upstream release to be pulled. Watchtower runs lifecycle hooks
+(`WATCHTOWER_LIFECYCLE_HOOKS=true`): the `db` container's pre-update hook dumps
+the database to `BACKUP_DIR/pre-update` and reads the dump back before the
+container is replaced; any failure aborts that update. The database volume is
+external (`docker volume create trail-db`, name overridable with
+`TRAIL_DB_VOLUME`), so no Compose command — `down -v` included — can delete
+it.
+
 ### 13.3 Exposure (when the data flow is stable)
 
 - `tunnel` profile (recommended, zero router config, works behind CGNAT and if
@@ -718,9 +731,12 @@ address (docs/operations.md, section 6C).
 `backup` service (same Postgres image, a POSIX `sh` loop from a Compose
 config): `pg_dump -Fc` daily at `BACKUP_HOUR` (3, local time in `TZ`) to
 `BACKUP_DIR/trail-<UTC timestamp>.dump` (e.g. a OneDrive folder for an
-off-site copy), written to a temporary name and renamed when complete; keeps
-`BACKUP_KEEP_DAYS` (14). It also dumps at start when the newest dump is older
-than a day, or always with `BACKUP_ON_START=true`. A failure exits non-zero
+off-site copy), written to a temporary name, read back with `pg_restore --list`
+and only then renamed. The first dump of each month is copied to `monthly/`,
+the first of each year to `yearly/`. Retention: dailies and `pre-update/`
+dumps `BACKUP_KEEP_DAYS` (14), monthlies `BACKUP_KEEP_MONTHS` (12), yearlies
+`BACKUP_KEEP_YEARS` (0 = forever). It also dumps at start when the newest dump
+is older than a day, or always with `BACKUP_ON_START=true`. A failure exits non-zero
 and the restart retries. Restore with `pg_restore --clean --if-exists
 --single-transaction` (runbook in `docs/operations.md`).
 
@@ -798,7 +814,9 @@ on green CI once branch protection requires the checks.
 - `apps/api/tests/integration` — supertest against the real app and the
   `trail_test` database (`TEST_DATABASE_URL`), including passkey ceremonies
   with a software authenticator (ES256, `none` attestation, CBOR via
-  `@levischuck/tiny-cbor`).
+  `@levischuck/tiny-cbor`). `migrationUpgrade.test.ts` builds the schema of the
+  first release, records data with it, applies every later migration and
+  requires every row unchanged — deployed databases are only ever migrated.
 - `apps/web/tests` — Vitest + Testing Library (jsdom).
 - `tests/e2e` — Playwright against the built stack. `playwright.config.ts`
   starts `scripts/e2e-server.mjs`: it empties the `trail_e2e` database

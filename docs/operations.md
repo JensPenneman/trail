@@ -136,9 +136,11 @@ backups, `BACKUP_DIR` to a OneDrive folder
 explained in `.env.example`.
 
 If the image is private, log in to GHCR first ([Private image](#private-image)).
-Then start the stack and check it:
+Create the database volume — once, by hand, so that no Compose command can ever
+delete it ([Your data](#your-data)) — then start the stack and check it:
 
 ```powershell
+docker volume create trail-db
 docker compose up -d
 docker compose ps                         # app and db "healthy", backup and watchtower "Up"
 curl.exe -i http://localhost:8080/api/health   # HTTP 200: app and database are up
@@ -344,15 +346,41 @@ LAN address.
 3. Optional: `TRAIL_HTTP_BIND=127.0.0.1` and `docker compose up -d` stop
    plain-HTTP access from the home network once no phone uses it.
 
+## Your data
+
+Every point, visit, trip and event is kept forever; Trail itself only ever
+deletes recorded data when you ask it to (Settings > Data: delete a range,
+delete a device, delete the account). What happens to the data in practice:
+
+| Event | The data |
+|---|---|
+| App update (Watchtower, `docker compose pull/up`), container recreated | stays: it lives in the `trail-db` volume, not in a container |
+| Database migration on boot | runs in one transaction under a lock; a failure rolls back and the app refuses to start, data untouched. CI upgrades a database of the first release, with data, to every new release before an image ships |
+| Postgres update (18.x) | Watchtower first dumps the database to `BACKUP_DIR\pre-update` and checks the dump; if that fails the update is aborted. Third-party images update only once they are 3 days old |
+| `docker compose down` / `down -v` | stays: the volume is external, Compose never deletes it |
+| Postgres 19 | never automatic: see [Postgres major upgrade](#postgres-major-upgrade) |
+| Docker Desktop *Troubleshoot > Clean / Purge data*, *Reset to factory defaults*, uninstalling Docker Desktop, `docker volume rm trail-db` | **gone** — restore from the backups. Never do these on the server without a fresh dump |
+| The laptop's C: drive fails or the laptop is lost | gone from the laptop — the backups in `BACKUP_DIR` survive if it is on another drive or synced off-site |
+
 ## Backups
 
 The `backup` service dumps the database every day at `BACKUP_HOUR` (local time
-in `TZ`) to `BACKUP_DIR\trail-<UTC timestamp>.dump` (PostgreSQL custom format)
-and deletes dumps older than `BACKUP_KEEP_DAYS`. It also dumps right after
-starting when the newest dump is more than a day old: the first start, a day
-the laptop was off, or a failed run. A failed dump stops the container, Docker
-restarts it and the restart tries again, so a failing backup shows up as
-"Restarting" in `docker compose ps`.
+in `TZ`) to `BACKUP_DIR\trail-<UTC timestamp>.dump` (PostgreSQL custom format).
+A dump counts only once `pg_restore` can read it back. Layout and retention:
+
+| Folder of `BACKUP_DIR` | What | Kept |
+|---|---|---|
+| (top) `trail-<timestamp>.dump` | every daily dump | `BACKUP_KEEP_DAYS` (14) |
+| `monthly\trail-<YYYY-MM>.dump` | the first dump of each month | `BACKUP_KEEP_MONTHS` (12; 0 = forever) |
+| `yearly\trail-<YYYY>.dump` | the first dump of each year | `BACKUP_KEEP_YEARS` (0 = forever) |
+| `pre-update\trail-<timestamp>.dump` | taken by Watchtower before each Postgres update | `BACKUP_KEEP_DAYS` |
+
+Every dump holds the whole history, so the newest one is all a restore needs;
+the older ones only matter for undoing a mistake noticed late. It also dumps
+right after starting when the newest dump is more than a day old: the first
+start, a day the laptop was off, or a failed run. A failed dump stops the
+container, Docker restarts it and the restart tries again, so a failing backup
+shows up as "Restarting" in `docker compose ps`.
 
 ```powershell
 docker compose logs backup               # "backup complete: trail-....dump, 1234 KiB in 2 s"
