@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 import { acknowledgementSchema } from "../api/acknowledgementSchema";
 import { apiFetch } from "../api/apiFetch";
 import { queryKeys } from "../api/queryKeys";
+import { goneDevices } from "../devices/goneDevices";
 import { removeDeviceFromCache } from "../devices/removeDeviceFromCache";
 import { useAnnounce } from "../ui/useAnnounce";
 
@@ -19,8 +20,11 @@ export function useDeleteDevice(device: { id: string; name: string }) {
   const announce = useAnnounce();
   return useMutation({
     mutationKey: queryKeys.deleteDevice(device.id),
+    // gone for this tab's queries the moment the deletion starts (see goneDevices)
+    onMutate: () => goneDevices.mark(queryClient, device.id),
     mutationFn: () =>
       apiFetch(apiPaths.devices.one(device.id), acknowledgementSchema, { method: "DELETE" }),
+    onError: () => goneDevices.unmark(queryClient, device.id),
     onSuccess: async () => {
       await navigate("/devices", { replace: true });
       removeDeviceFromCache(queryClient, device.id);

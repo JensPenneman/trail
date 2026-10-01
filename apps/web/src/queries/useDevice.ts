@@ -1,21 +1,20 @@
-import { useIsMutating, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import { type DeviceListResponse, deviceResponseSchema } from "@trail/contracts/device";
 import { apiFetch } from "../api/apiFetch";
 import { queryKeys } from "../api/queryKeys";
+import { goneDevices } from "../devices/goneDevices";
 
 /**
  * One device; starts from the list cache when it is there so the page renders
  * instantly. `pollMs` adds polling for screens that wait for an upload, in
- * case the event stream is not connected. While the device is being deleted
- * it is never fetched again: the server's `device-removed` event may clear the
- * cache before the deletion returns, and the page is about to go.
+ * case the event stream is not connected. A device that is gone (goneDevices)
+ * is never fetched again: its page may linger while the app navigates away.
  */
 export function useDevice(deviceId: string, pollMs: number | false = false) {
   const queryClient = useQueryClient();
-  const deleting = useIsMutating({ mutationKey: queryKeys.deleteDevice(deviceId) }) > 0;
   return useQuery({
-    enabled: !deleting,
+    enabled: () => !goneDevices.has(queryClient, deviceId),
     queryKey: queryKeys.device(deviceId),
     queryFn: ({ signal }) =>
       apiFetch(apiPaths.devices.one(deviceId), deviceResponseSchema, { signal }),
