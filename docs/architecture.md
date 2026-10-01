@@ -701,6 +701,11 @@ Before either is live, phones on the home Wi-Fi can post to
 dashboard works at `http://localhost:8080` on the laptop itself (WebAuthn
 needs a secure context: HTTPS or localhost — never a bare LAN IP).
 
+A host that runs several apps can put Trail behind its own shared reverse
+proxy instead: `deploy/compose.proxy.yaml` joins the proxy's external Docker
+network under the alias `trail`, and `TRUST_PROXY` names that proxy's fixed
+address (docs/operations.md, section 6C).
+
 ### 13.4 Backups
 
 `backup` service (same Postgres image, a POSIX `sh` loop from a Compose
