@@ -55,6 +55,7 @@ describe("DevicePage", () => {
     const fetchMock = vi.mocked(fetch);
     const answered = fetchMock.getMockImplementation();
     let deleted = false;
+    let readsAfterDelete = 0;
     fetchMock.mockImplementation(async (input, init) => {
       if (init?.method === "DELETE") {
         deleted = true;
@@ -63,6 +64,7 @@ describe("DevicePage", () => {
       }
       // Gone on the server as soon as the deletion ran there.
       if (deleted && String(input).endsWith(`/api/devices/${ids.phone}`)) {
+        readsAfterDelete += 1;
         calls.push({ method: "GET", path: `/api/devices/${ids.phone}`, body: undefined });
         return new Response(
           JSON.stringify({ error: { code: "not_found", message: "No such device." } }),
@@ -80,10 +82,9 @@ describe("DevicePage", () => {
     expect(await screen.findByText("Elsewhere")).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/devices");
     expect(await screen.findByText("iPhone 16 was deleted.")).toBeInTheDocument();
-    const reads = calls.filter(
-      (call) => call.method === "GET" && call.path === `/api/devices/${ids.phone}`,
-    );
-    expect(reads.length).toBeLessThanOrEqual(1);
+    // The page lingers during the route transition; it must not ask for the
+    // device it just deleted (the browser would log the 404).
+    expect(readsAfterDelete).toBe(0);
   });
 
   it("explains an unknown device", async () => {
