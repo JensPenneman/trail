@@ -38,6 +38,17 @@ describe("rate limits", () => {
     expect(limited.headers["ratelimit-policy"]).toBeDefined();
   });
 
+  it("limits the database health check per IP, but never the liveness probe", async () => {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await request(t.app).get("/api/health").expect(200);
+    }
+    const limited = await request(t.app).get("/api/health").expect(429);
+    expect(apiErrorSchema.parse(limited.body).error.code).toBe("rate_limited");
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await request(t.app).get("/api/health/live").expect(200);
+    }
+  });
+
   it("limits failed device tokens per IP in Overland's error format", async () => {
     const bad = `trl_${"B".repeat(43)}`;
     for (let attempt = 0; attempt < 2; attempt += 1) {
