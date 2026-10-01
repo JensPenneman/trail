@@ -28,7 +28,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@levischuck/tiny-cbor": "^0.2.2",
+    "@levischuck/tiny-cbor": "^0.3.6",
     "@types/compression": "^1.8.1",
     "@types/express": "^5.0.6",
     "@types/pg": "^8.23.1",
