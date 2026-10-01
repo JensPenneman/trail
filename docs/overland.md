@@ -61,25 +61,25 @@ which device a point belongs to; the Device ID is stored for reference.
 
 ## 3. Recommended settings
 
-Trail offers three presets that match these settings. Pick one on the device
+Trail offers four presets that match these settings. Pick one on the device
 page (Remote settings) and Trail sends it to the phone in the reply to its next
 upload, so the phone does not have to be at hand. **Balanced** is the
-recommendation for everyday tracking.
+everyday default; **Balanced+** trades a little battery for GPS-quality tracks.
 
-| Overland setting | Balanced | High resolution | Battery saver |
-|---|---|---|---|
-| Send Interval | 5 min | 1 min | 10 min |
-| Continuous Tracking Mode | Standard | Standard | Significant Location |
-| Visit Tracking | on | on | on |
-| Desired Accuracy | 100m | Best | 100m |
-| Activity Type | Other | Other | Other |
-| Show Background Location Indicator | (unchanged) | Always | (unchanged) |
-| Pause Updates Automatically | on | off | on |
-| Resume with Geofence | 200m | off | 500m |
-| Logging Mode | All Data | All Data | All Data |
-| Locations per Batch | 200 | 500 | 200 |
-| Min Distance Between Points | 10m | off | off |
-| Min Time Between Points | 5s | 1s | 1s |
+| Overland setting | Balanced | Balanced+ | High resolution | Battery saver |
+|---|---|---|---|---|
+| Send Interval | 5 min | 5 min | 1 min | 10 min |
+| Continuous Tracking Mode | Standard | Both | Standard | Significant Location |
+| Visit Tracking | on | on | on | on |
+| Desired Accuracy | 100m | 10m | Best | 100m |
+| Activity Type | Other | Other | Other | Other |
+| Show Background Location Indicator | (unchanged) | Never | Always | (unchanged) |
+| Pause Updates Automatically | on | on | off | on |
+| Resume with Geofence | 200m | 100m | off | 500m |
+| Logging Mode | All Data | All Data | All Data | All Data |
+| Locations per Batch | 200 | 500 | 500 | 200 |
+| Min Distance Between Points | 10m | 10m | off | off |
+| Min Time Between Points | 5s | 1s | 1s | 1s |
 
 Whatever else you change, keep these:
 
@@ -116,6 +116,18 @@ curl.exe -H "Authorization: Bearer trl_..." http://localhost:8080/api/overland
 ```
 
 ## FAQ
+
+**Why is there a blue location indicator in the status bar, and can it go?**
+iOS shows it when an app uses location in the background and either the app
+asks for it (Overland's *Show Background Location Indicator*) or the app only
+has *While Using* permission. Give Overland **Always** (Settings > Overland >
+Location) and turn the indicator off in Overland, or apply the Balanced+ preset,
+which does both settings in one go except the permission. Tracking keeps
+working: with *Always* and Continuous Tracking Mode *Both*, iOS wakes Overland
+on significant location changes even if it suspended the app. The indicator
+only improves the odds of an uninterrupted high-frequency session, which is why
+High resolution keeps it on.
+
 
 **The phone was away from home during the LAN phase. Is that data lost?**
 No. Overland keeps recording and queues the points; they are uploaded once the

@@ -57,7 +57,7 @@ export const devices = pgTable(
     pointsTotal: bigint("points_total", { mode: "number" }).notNull().default(0),
     /** Remote-settings preset sent once with the next ingest response. */
     pendingSettings: text("pending_settings", {
-      enum: ["balanced", "high-resolution", "battery-saver"],
+      enum: ["balanced", "balanced-plus", "high-resolution", "battery-saver"],
     }),
     settingsAppliedAt: timestamptz("settings_applied_at"),
     staleAlertedAt: timestamptz("stale_alerted_at"),
@@ -67,7 +67,7 @@ export const devices = pgTable(
     check("devices_source_check", sql`${table.source} IN ('overland')`),
     check(
       "devices_pending_settings_check",
-      sql`${table.pendingSettings} IN ('balanced', 'high-resolution', 'battery-saver')`,
+      sql`${table.pendingSettings} IN ('balanced', 'balanced-plus', 'high-resolution', 'battery-saver')`,
     ),
   ],
 );

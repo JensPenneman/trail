@@ -6,7 +6,12 @@ import { z } from "zod";
  * from checking in again (send_interval=off, tracking_mode=off).
  * The API owns the preset → Overland settings mapping.
  */
-export const remoteSettingsPresets = ["balanced", "high-resolution", "battery-saver"] as const;
+export const remoteSettingsPresets = [
+  "balanced",
+  "balanced-plus",
+  "high-resolution",
+  "battery-saver",
+] as const;
 export const remoteSettingsPresetSchema = z.enum(remoteSettingsPresets);
 export type RemoteSettingsPreset = z.infer<typeof remoteSettingsPresetSchema>;
 
@@ -18,6 +23,11 @@ export const remoteSettingsPresetInfo: Record<
     label: "Balanced",
     description:
       "Continuous tracking at 100 m accuracy that pauses when you stand still and resumes with a geofence. Sends every 5 minutes.",
+  },
+  "balanced-plus": {
+    label: "Balanced+",
+    description:
+      "GPS-quality points (10 m) for clean tracks that still pause when you stand still and resume within 100 m; significant-location changes wake Overland if iOS stops it. No blue location indicator. Sends every 5 minutes.",
   },
   "high-resolution": {
     label: "High resolution",
