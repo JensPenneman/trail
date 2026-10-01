@@ -1,13 +1,16 @@
 import { apiPaths } from "@trail/contracts/apiPaths";
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
+import { ipRateLimit } from "../http/ipRateLimit";
 
 const databaseCheckTimeoutMs = 2_000;
 
 /**
  * `GET /api/health` (with a database round trip; 503 when it fails) and
  * `GET /api/health/live` (process only — the container health check, which
- * must not flap because Postgres restarts).
+ * must not flap because Postgres restarts). Both sit before the API's rate
+ * limiter so the container health check is never throttled; the database
+ * check gets a limiter of its own, or anyone could load Postgres through it.
  */
 export function healthRouter(ctx: AppContext): Router {
   const router = express.Router();
@@ -21,7 +24,13 @@ export function healthRouter(ctx: AppContext): Router {
     res.json({ status: "ok", ...info() });
   });
 
-  router.get(apiPaths.health, async (_req, res) => {
+  const databaseCheckLimit = ipRateLimit({
+    limit: ctx.config.rateLimits.apiPerMinute,
+    windowMs: 60_000,
+    logger: ctx.logger,
+  });
+
+  router.get(apiPaths.health, databaseCheckLimit, async (_req, res) => {
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(
