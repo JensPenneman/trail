@@ -1,0 +1,2 @@
+ALTER TABLE "devices" DROP CONSTRAINT "devices_pending_settings_check";--> statement-breakpoint
+ALTER TABLE "devices" ADD CONSTRAINT "devices_pending_settings_check" CHECK ("devices"."pending_settings" IN ('balanced', 'balanced-plus', 'high-resolution', 'battery-saver'));

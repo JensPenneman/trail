@@ -56,7 +56,8 @@ test.describe("a device's page", () => {
     const device = await uploadedDevice(page, "Tuned phone", batch);
     const settings = page.getByRole("region", { name: "Tracking settings", exact: true });
     await expect(settings.getByText("No preset has been sent to this phone yet.")).toBeVisible();
-    await settings.getByRole("radio", { name: /^Balanced/ }).check();
+    // not Balanced+, whose name starts the same
+    await settings.getByRole("radio", { name: /^Balanced(?!\+)/ }).check();
     await settings.getByRole("button", { name: "Send with next upload" }).click();
     await expect(settings.getByText("“Balanced” is queued")).toBeVisible();
 

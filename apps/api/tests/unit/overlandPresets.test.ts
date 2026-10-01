@@ -29,6 +29,22 @@ describe("presetSettings", () => {
         min_time: "5s",
       },
     });
+    expect(presetSettings("balanced-plus")).toEqual({
+      send_interval: "5m",
+      main: {
+        tracking_mode: "both",
+        visit_tracking: true,
+        desired_accuracy: "10m",
+        activity_type: "other",
+        background_indicator: false,
+        pause_automatically: true,
+        resume_with_geofence: "100m",
+        logging_mode: "all",
+        batch_size: 500,
+        min_distance: "10m",
+        min_time: "1s",
+      },
+    });
     expect(presetSettings("high-resolution")).toMatchObject({
       send_interval: "1m",
       main: { desired_accuracy: "best", background_indicator: true, pause_automatically: false },
