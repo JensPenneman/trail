@@ -45,9 +45,9 @@ which device a point belongs to; the Device ID is stored for reference.
   Location Services > Overland > Always. Without Always, recording stops when
   the app is in the background; without Precise Location, positions are only
   approximate (kilometres off).
-- **Local Network** (LAN phase): when iOS asks whether Overland may connect to
-  devices on the local network, allow it, otherwise uploads to the laptop's
-  LAN address fail. Check it under Settings > Privacy & Security > Local
+- **Local Network** (only for an endpoint on the home network, such as a
+  local run): when iOS asks whether Overland may connect to devices on the
+  local network, allow it, otherwise uploads to a LAN address fail. Check it under Settings > Privacy & Security > Local
   Network > Overland.
 - **Background App Refresh** on for Overland (Settings > General > Background
   App Refresh).
@@ -112,10 +112,10 @@ battery and position, plus a feed of uploads as they arrive; the device page
 lists every upload in its ingest log with the number of points. The two should
 agree: when Last Sent changes on the phone, a new entry appears in Trail.
 
-To test the endpoint and token without the phone, from the laptop:
+To test the endpoint and token without the phone, from any computer:
 
-```powershell
-curl.exe -H "Authorization: Bearer trl_..." http://localhost:8080/api/overland
+```sh
+curl -H "Authorization: Bearer trl_..." https://trail.jenspenneman.com/api/overland
 # {"name":"Jens's iPhone"}
 ```
 

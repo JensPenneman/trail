@@ -6,8 +6,9 @@ the API; people sign in with passkeys and see where their devices are, where
 they have been, and proof that data keeps arriving.
 
 - One person owns many devices; many people can share one server.
-- Everything runs as Docker containers on a home server (a Windows laptop with
-  Docker Desktop), updated automatically from GitHub via GHCR + Watchtower.
+- Everything runs as Docker containers on a home server, deployed by Launchway
+  (the owner's self-hosted deployment platform) from GitHub releases, with a
+  preview deployment per pull request; images come from GHCR.
 - Public hostname (later): `trail.jenspenneman.com` (configurable, `PUBLIC_URL`).
 
 This document is the specification. Code must follow it; when an
@@ -78,23 +79,22 @@ unrelated `DATABASE_URL`/`NODE_ENV`/`AUTH_SECRET`; they must never leak in).
 Databases: `trail` (dev), `trail_test` (API integration tests), `trail_e2e`
 (Playwright). Passkeys in dev are bound to `localhost`.
 
-### Production (Windows laptop, Docker Desktop / WSL2)
+### Production (Launchway)
 
 ```
 iPhone (Overland) ─┐
-Browser ───────────┼─▶ Cloudflare Tunnel (cloudflared)  ─┐
-                   └─▶ or: router :443 → Caddy (Let's Encrypt) ─┼─▶ app :8080 ──▶ db (postgres:18-alpine)
-LAN (before the domain is live): http://<laptop-ip>:8080 ─┘            │
-                                                             backup ──┘ (pg_dump → host folder)
-watchtower: polls the registries every 5 min, recreates every labelled service with its new image
+Browser ───────────┴─▶ Launchway edge (HTTPS, 10.210.0.2 on its proxy network) ─▶ app :8080 ──▶ db (postgres:18-alpine)
+                                                                                     backup ──┘ (pg_dump → host folder)
+GitHub release published ─▶ Launchway deploys deploy/compose.yaml with image sha-<commit>
+Pull request (same repository) ─▶ preview project launchway-trail-pr-<n>, own host name and volume
 ```
 
-`deploy/compose.yaml` services: `app` (GHCR image), `db`, `backup`,
-`watchtower`, and exposure profiles `tunnel` (cloudflared) and `direct`
-(Caddy + Cloudflare DDNS). Networks: `edge` (app, proxies, watchtower; internet
-access; subnet `10.201.8.0/24` with cloudflared at `.10` and Caddy at `.11`,
-the addresses the app trusts, others from `.128/25`) and `backend` (app, db,
-backup; `internal`, no route out). See §13 and the runbook `docs/operations.md`.
+`deploy/compose.yaml` services: `app` (GHCR image `sha-<commit>` of the
+deployed commit, `pull_policy: always`), `db`, and `backup` (profile
+`production`). Networks: the project's `default` (app; the way out, for ntfy)
+and `backend` (app, db, backup; `internal`, no route out); Launchway attaches
+`app` to its proxy network itself. No host port is published. See §13 and the
+runbook `docs/operations.md`.
 
 ## 4. Configuration (API environment)
 
@@ -110,7 +110,7 @@ All configuration is environment variables, validated at boot with zod
 | `ADDITIONAL_ORIGINS` | empty | More allowed origins, comma-separated (e.g. `http://localhost:8080`) |
 | `INGEST_BASE_URL` | `PUBLIC_URL` | Base URL shown to phones; endpoint = `<base>/api/overland` |
 | `SIGNUP_ALLOWLIST` | empty | Emails (or `*@domain`) that may create an account without an invite |
-| `TRUST_PROXY` | `false` (nobody) | Express `trust proxy`: the proxies whose `X-Forwarded-For`/`-Proto` decide client address and HTTPS; `deploy/compose.yaml` names its tunnel and Caddy (§12) |
+| `TRUST_PROXY` | `false` (nobody) | Express `trust proxy`: the proxies whose `X-Forwarded-For`/`-Proto` decide client address and HTTPS; `deploy/compose.yaml` defaults to Launchway's edge, `10.210.0.2` (§12) |
 | `SESSION_TTL_DAYS` | `30` | Sliding session lifetime |
 | `LIVE_WINDOW_MINUTES` | `15` | "live" status window |
 | `STALE_AFTER_HOURS` | `12` | "stale" status + silent-device alert threshold |
@@ -609,9 +609,8 @@ invalid value).
   rate limits, session IPs) and HTTPS (`req.secure`: the `__Host-` cookie, HSTS)
   come from `X-Forwarded-For`/`-Proto` of trusted hops only, otherwise anyone
   could claim a new address per request. `deploy/compose.yaml` trusts exactly
-  its tunnel and Caddy at their fixed addresses on `edge` (§13); everything
-  reaching the published port arrives from Docker's gateway, which stays
-  untrusted, so on the LAN every client shares one address.
+  Launchway's edge at its fixed address on Launchway's proxy network (§13);
+  the app publishes no host port.
 - Rate limits: auth routes ~20/min/IP (all `/api/auth/*` except the session
   probe); ingest ~300/min/token and ~30 failed tokens/10 min/IP; everything
   else ~600/min/IP (`/api/health*` and `/api/config` excluded). `429
@@ -641,7 +640,8 @@ invalid value).
   filesystem (`tmpfs /tmp`), `no-new-privileges`, all capabilities dropped.
 - Postgres is not published outside the Docker network in production.
 - The app container receives an explicit list of its own variables (§4), not
-  the whole `deploy/.env`: tunnel, DNS and notification tokens never reach it.
+  the whole `deploy/.env`: Launchway's and the backup's variables never reach
+  it.
 
 ## 13. Deployment
 
@@ -662,79 +662,55 @@ build args `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` → env (CI sets the
 package.json or tag version, the 7-character commit that matches the
 `sha-<short>` tag, and an ISO UTC time; empty means unset).
 
-### 13.2 Updates
+### 13.2 Images and releases
 
-GitHub Actions: on every push to `main` (after lint/typecheck/unit/
-integration/E2E pass) build and push `ghcr.io/jenspenneman/trail` tags
-`latest`, `sha-<short>`, `main` (a `v*` tag adds `<version>` and
-`<major>.<minor>`, never `latest`) with BuildKit provenance (`mode=max`) and
-SBOM attestations, plus a signed GitHub build provenance attestation when the
-repository is public (GitHub offers those on private repositories only with
-Enterprise Cloud). Base-image patches arrive as Dependabot digest updates of
-the Dockerfile, auto-merged on green CI; the weekly scheduled run (Monday
-03:00 UTC) rebuilds and republishes `main`. On the server, Watchtower
-(`nickfedor/watchtower:1`, the maintained fork — `containrrr/watchtower` was
-archived in Dec 2025 and breaks on Docker ≥ 29) polls every 5 min with
-`--label-enable`, `--cleanup`, `--rolling-restart`, `--include-restarting`;
-only containers labelled `com.centurylinklabs.watchtower.enable=true` update
-(all services, Watchtower itself included). Two fork specifics shape the
-compose file: rolling restarts refuse to start while a watched container has
-a dependency, so `WATCHTOWER_USE_COMPOSE_DEPENDS_ON=false` makes it ignore
-Compose's `depends_on` (the app reconnects to the database by itself); and a
-recreated container loses files that Compose `configs` wrote into it, so
-`backup` and `caddy` list theirs in `com.centurylinklabs.watchtower.copy-file`
-labels (the file's directory must exist in the image). The app migrates the
-database on boot. Rollback = pin `TRAIL_IMAGE_TAG=sha-<short>` in
-`deploy/.env` and `docker compose up -d`.
+GitHub Actions (`ci.yml`): on every push to a branch of this repository
+(after lint/typecheck/unit/integration/E2E pass) build and push
+`ghcr.io/jenspenneman/trail` tags `sha-<short>` and the branch name, plus
+`latest` on `main`; a `v*` tag adds `<version>` and `<major>.<minor>`, never
+`latest`. Pull request runs only build, so a fork never publishes; Dependabot
+branches only build too (read-only token). BuildKit provenance (`mode=max`)
+and SBOM attestations, plus a signed GitHub build provenance attestation when
+the repository is public (GitHub offers those on private repositories only
+with Enterprise Cloud). Base-image patches arrive as Dependabot digest updates
+of the Dockerfile, auto-merged on green CI; the weekly scheduled run (Monday
+03:00 UTC) rebuilds and republishes `main`.
 
-Data safety on updates: the app image updates as soon as CI published it
-(`cooldown-delay "0"`); third-party images (Postgres, Caddy, cloudflared, the
-DDNS updater, Watchtower) wait until they are 72 h old, time for a broken
-upstream release to be pulled. Watchtower runs lifecycle hooks
-(`WATCHTOWER_LIFECYCLE_HOOKS=true`): the `db` container's pre-update hook dumps
-the database to `BACKUP_DIR/pre-update` and reads the dump back before the
-container is replaced; any failure aborts that update. The database volume is
-external (`docker volume create trail-db`, name overridable with
-`TRAIL_DB_VOLUME`), so no Compose command — `down -v` included — can delete
-it.
+Releases: release-please (`release-please-config.json`, `release-type: node`,
+`"draft": true`) keeps a release pull request open; `scripts/release.sh`
+cherry-picks its commit onto `main` signed, pushes a signed tag `vX.Y.Z` and
+creates the GitHub release as a draft. CI on the tag publishes the images and
+then the draft (job `release`); a release pull request merged on GitHub
+instead gets its tag and CI run from the Release Please workflow.
 
-### 13.3 Exposure (when the data flow is stable)
+### 13.3 Deployment
 
-- `tunnel` profile (recommended, zero router config, works behind CGNAT and if
-  the laptop moves): `cloudflare/cloudflared` with a remotely-managed tunnel
-  token; public hostname `trail.jenspenneman.com` → `http://app:8080`. Needs
-  Universal SSL enabled on the zone (currently off because the zone is
-  DNS-only; Cloudflare then adds its own CAA records). TLS terminates at
-  Cloudflare.
-- `direct` profile (end-to-end TLS, no third party in the path): Caddy
-  (`caddy:2-alpine`, Let's Encrypt as the only issuer — HTTP-01 or TLS-ALPN-01;
-  CAA already allows `letsencrypt.org`, and Caddy's default ZeroSSL fallback
-  is disabled; no `encode`, so SSE is never buffered) on host ports 80/443
-  (TCP) and 443 (UDP, HTTP/3) + `favonia/cloudflare-ddns` keeping the DNS-only
-  `trail` A record on the home IP (IPv6 off by default). Needs a router
-  port-forward and NAT loopback (or a local DNS override) at home. Docker
-  Desktop's port forwarding does not preserve client addresses, so behind
-  Caddy every visitor shares one IP for the per-IP rate limits.
-
-Before either is live, phones on the home Wi-Fi can post to
-`http://<laptop-ip>:8080/api/overland` (Overland allows plain HTTP) and the
-dashboard works at `http://localhost:8080` on the laptop itself (WebAuthn
-needs a secure context: HTTPS or localhost — never a bare LAN IP).
-
-A host that runs several apps can put Trail behind its own shared reverse
-proxy instead: `deploy/compose.proxy.yaml` joins the proxy's external Docker
-network under the alias `trail`, and `TRUST_PROXY` names that proxy's fixed
-address (docs/operations.md, section 6C).
+Launchway deploys `deploy/compose.yaml` (the only Compose file) on every
+published release (`release.published`; drafts are ignored) as the project
+`launchway-trail`, and every pull request from this repository as
+`launchway-trail-pr-<n>` with its own host name. It writes the app's
+variables to `deploy/.env` and adds `LAUNCHWAY_COMMIT_SHA_SHORT` (the image
+tag) and `LAUNCHWAY_PUBLIC_URL` (the default of `PUBLIC_URL`). Production sets
+`COMPOSE_PROFILES=production` (starts `backup`, which bind-mounts
+`BACKUP_DIR`) and `TRAIL_DB_VOLUME` (a volume created by hand; Compose never
+removes a volume it did not create, `down -v` included); the app is marked
+trusted in Launchway for both. A preview sets neither: no backup, no host
+mounts, and a database volume of its own project (`<project>_trail-db`),
+removed with the preview. The app migrates the database on boot. Rollback =
+redeploy an older release. `deploy/compose.dev.yaml` builds the working tree
+for a local run (`TRAIL_IMAGE`). The former standalone stack (Watchtower,
+Cloudflare Tunnel or Caddy on a Windows laptop) is in the history at
+`3e560ee`.
 
 ### 13.4 Backups
 
-`backup` service (same Postgres image, a POSIX `sh` loop from a Compose
-config): `pg_dump -Fc` daily at `BACKUP_HOUR` (3, local time in `TZ`) to
-`BACKUP_DIR/trail-<UTC timestamp>.dump` (e.g. a OneDrive folder for an
+`backup` service (production only; same Postgres image, a POSIX `sh` loop
+from a Compose config): `pg_dump -Fc` daily at `BACKUP_HOUR` (3, local time in `TZ`) to
+`BACKUP_DIR/trail-<UTC timestamp>.dump` (e.g. a synced folder for an
 off-site copy), written to a temporary name, read back with `pg_restore --list`
 and only then renamed. The first dump of each month is copied to `monthly/`,
-the first of each year to `yearly/`. Retention: dailies and `pre-update/`
-dumps `BACKUP_KEEP_DAYS` (14), monthlies `BACKUP_KEEP_MONTHS` (12), yearlies
+the first of each year to `yearly/`. Retention: dailies and leftover
+`pre-update/` dumps of the standalone stack `BACKUP_KEEP_DAYS` (14), monthlies `BACKUP_KEEP_MONTHS` (12), yearlies
 `BACKUP_KEEP_YEARS` (0 = forever). It also dumps at start when the newest dump
 is older than a day, or always with `BACKUP_ON_START=true`. A failure exits non-zero
 and the restart retries. Restore with `pg_restore --clean --if-exists

@@ -5,9 +5,10 @@ Self-hosted location history for the iOS GPS logger
 batches to Trail; people sign in with passkeys to see where their devices are,
 where they have been, and that data keeps arriving.
 
-It runs as a small Docker stack on a home server (here: a Windows laptop with
-Docker Desktop) and updates itself from this repository: CI publishes an image
-to GHCR after the tests pass, Watchtower installs it.
+It runs as a small Docker Compose stack on a home server, deployed by
+Launchway, the owner's self-hosted deployment platform: CI publishes an image
+to GHCR after the tests pass, every published release goes to production, and
+every pull request gets a preview deployment of its own.
 
 ## Features
 
@@ -27,9 +28,8 @@ to GHCR after the tests pass, Watchtower installs it.
 - **Alerts** through [ntfy](https://ntfy.sh) when a device goes silent and
   when it recovers.
 - **Your data**: export as GeoJSON, GPX or CSV; delete a range or the account.
-- **Operations**: one image for amd64 and arm64, automatic updates, daily
-  database dumps, public access through a Cloudflare Tunnel or Caddy with
-  Let's Encrypt.
+- **Operations**: one image for amd64 and arm64, releases deployed
+  automatically, a preview per pull request, daily database dumps.
 
 ## Architecture
 
@@ -37,40 +37,33 @@ to GHCR after the tests pass, Watchtower installs it.
 flowchart LR
   phone["iPhone<br/>Overland"]
   browser["Browser<br/>passkeys"]
-  cfedge["Cloudflare edge"]
-  router["Home router<br/>ports 80/443"]
+  ci["GitHub Actions<br/>tests, image build"]
+  ghcr["GHCR<br/>ghcr.io/jenspenneman/trail"]
+  releases["GitHub releases<br/>and pull requests"]
 
-  subgraph laptop["Windows laptop: Docker Desktop, deploy/compose.yaml"]
-    cloudflared["cloudflared<br/>profile tunnel"]
-    caddy["Caddy + DDNS<br/>profile direct"]
+  subgraph server["Home server: Launchway"]
+    edge["Launchway edge<br/>HTTPS"]
     app["app<br/>API, ingest, dashboard"]
     db[("db<br/>PostgreSQL 18")]
     backup["backup<br/>daily pg_dump"]
-    watchtower["watchtower"]
   end
 
-  folder[("backup folder<br/>OneDrive")]
-  ghcr["GHCR<br/>ghcr.io/jenspenneman/trail"]
-  ci["GitHub Actions<br/>tests, image build"]
+  folder[("backup folder")]
 
-  phone -->|HTTPS| cfedge
-  browser -->|HTTPS| cfedge
-  cfedge -->|tunnel| cloudflared
-  phone -->|HTTPS| router
-  browser -->|HTTPS| router
-  router --> caddy
-  phone -.->|"LAN phase: HTTP :8080"| app
-  cloudflared --> app
-  caddy --> app
+  phone -->|HTTPS| edge
+  browser -->|HTTPS| edge
+  edge --> app
   app --> db
   backup --> db
   backup --> folder
-  ci -->|push| ghcr
-  watchtower -->|"poll every 5 min"| ghcr
-  watchtower -.->|"recreate on new image"| app
+  ci -->|"push image"| ghcr
+  ci -->|"publish draft release"| releases
+  releases -->|"webhook: deploy"| server
+  ghcr -->|pull| app
 ```
 
-One of the two public paths is used at a time. The API (Express 5) serves the
+Previews run the same stack as separate projects with their own host name
+and database, without `backup`. The API (Express 5) serves the
 Overland endpoint, the JSON API and the built single-page app from one
 container on port 8080; PostgreSQL is reachable only on an internal network.
 The specification, including the data model, the HTTP API and the security
@@ -131,33 +124,28 @@ and the unit tests before a push.
 
 ## Production
 
-The stack in [deploy/](deploy/) runs the app, PostgreSQL, a backup job and
-Watchtower; public access is an opt-in profile. In short:
+[deploy/compose.yaml](deploy/compose.yaml) runs the app, PostgreSQL and a
+backup job; Launchway deploys it and serves it over HTTPS. Its variables are
+in [deploy/.env.example](deploy/.env.example), and
+[deploy/compose.dev.yaml](deploy/compose.dev.yaml) runs the same stack locally
+from the working tree. The runbook, from the Launchway settings to previews,
+backups and troubleshooting: [docs/operations.md](docs/operations.md).
 
-```powershell
-git clone https://github.com/JensPenneman/trail.git C:\trail
-cd C:\trail\deploy
-powershell -ExecutionPolicy Bypass -File .\windows\new-env.ps1   # creates .env
-docker compose up -d
-```
+### Releases, previews and rollback
 
-Then sign in at `http://localhost:8080` on the laptop and add a phone. The full
-runbook, from power settings and the firewall to going public, backups and
-troubleshooting: [docs/operations.md](docs/operations.md).
+Every push to a branch of this repository runs lint, type checks, unit,
+integration and end-to-end tests; when they pass, CI builds the image for
+amd64 and arm64 with provenance and an SBOM and pushes it as
+`sha-<short commit>` (`main` also as `latest`). A pull request's preview runs
+that image.
 
-### Updates and rollback
-
-Every push to `main` runs lint, type checks, unit, integration and end-to-end
-tests; when they pass, CI builds the image for amd64 and arm64 with provenance
-and an SBOM and pushes it as `latest`, `main` and `sha-<short commit>`
-(`v*` tags add version tags). Watchtower on the server pulls a new `latest`
-within 5 minutes and restarts the app, which migrates the database on boot.
-Dependabot keeps npm packages, GitHub Actions and the Node base image current
-and merges minor and patch updates once CI is green.
-
-To roll back, pin a build in `deploy/.env` (`TRAIL_IMAGE_TAG=sha-1a2b3c4`) and
-run `docker compose up -d`; see
-[Rollback](docs/operations.md#rollback).
+release-please keeps a release pull request open with the next version and
+its changelog. `scripts/release.sh` publishes it as a signed commit and tag
+and a draft GitHub release; CI on the tag publishes the version's images and
+then the release, and Launchway deploys it. To roll back, redeploy an older
+release in Launchway. Dependabot keeps npm packages, GitHub Actions and the
+Node base image current and merges minor and patch updates once CI is green.
+See [Releases](docs/operations.md#releases).
 
 ## Phones
 
@@ -177,7 +165,7 @@ settings and troubleshooting: [docs/overland.md](docs/overland.md).
 - **Tooling**: npm workspaces, Biome, knip, Vitest, Playwright, lefthook,
   commitlint.
 - **Operations**: Docker (multi-stage, multi-platform image), Docker Compose,
-  GitHub Actions, GHCR, Watchtower, Cloudflare Tunnel or Caddy.
+  GitHub Actions, GHCR, release-please, Launchway.
 
 ## Repository layout
 
@@ -185,9 +173,9 @@ settings and troubleshooting: [docs/overland.md](docs/overland.md).
 apps/api/            Express API, Overland ingest, CLI (Node LTS, TypeScript)
 apps/web/            React single-page app, served by the API in production
 packages/contracts/  zod schemas and types of the HTTP API
-deploy/              production compose stack, .env example, Windows helper
+deploy/              compose stack for Launchway, .env example, local run
 docs/                architecture (the specification), operations, Overland
-scripts/             development, build and hook scripts
+scripts/             development, build, hook and release scripts
 tests/e2e/           Playwright end-to-end tests
 compose.yaml         development database
 Dockerfile           the production image

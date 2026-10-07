@@ -1,569 +1,289 @@
-# Operations: running Trail on a Windows laptop
+# Operations: Trail on Launchway
 
-This runbook installs and runs the production stack (`deploy/compose.yaml`) on
-a Windows laptop with Docker Desktop, first on the home network only, later on
-a public address. The architecture behind it is in
-[architecture.md](architecture.md) (sections 3 and 13); phone setup is in
-[overland.md](overland.md).
+Trail runs on Launchway, the owner's self-hosted deployment platform. Launchway
+deploys `deploy/compose.yaml` from this repository in two ways:
 
-Commands are for PowerShell and run in `C:\trail\deploy` unless noted.
-Windows PowerShell 5.1 and PowerShell 7 both work. Use `curl.exe`, not `curl`:
-in Windows PowerShell `curl` is an alias for `Invoke-WebRequest`.
+- **Production**: every published GitHub release (`vX.Y.Z`) is deployed
+  automatically. Releases come from release-please and
+  `scripts/release.sh` ([Releases](#releases)).
+- **Previews**: every pull request from a branch of this repository gets a
+  deployment of its own, with its own host name and an empty database, so a
+  change can be tried before it is merged ([Previews](#previews)).
+
+The architecture behind it is in [architecture.md](architecture.md) (sections
+3 and 13); phone setup is in [overland.md](overland.md). Commands run on the
+Launchway server unless noted.
 
 ## What runs
 
-| Service | Image | Role |
-|---|---|---|
-| `app` | `ghcr.io/jenspenneman/trail` | API, Overland ingest and the dashboard on port 8080 |
-| `db` | `postgres:18-alpine` | the database, reachable only by `app` and `backup` |
-| `backup` | `postgres:18-alpine` | daily `pg_dump` into `BACKUP_DIR` |
-| `watchtower` | `nickfedor/watchtower:1` | checks for new images every 5 minutes and installs them |
-| `cloudflared` | `cloudflare/cloudflared` | profile `tunnel`: Cloudflare Tunnel to `app` |
-| `caddy`, `ddns` | `caddy:2-alpine`, `favonia/cloudflare-ddns:1` | profile `direct`: HTTPS on ports 80/443 and the DNS record |
+| Service | Image | Production | Preview |
+|---|---|---|---|
+| `app` | `ghcr.io/jenspenneman/trail:sha-<commit>` | API, Overland ingest and the dashboard on port 8080 | the same, for the pull request's head commit |
+| `db` | `postgres:18-alpine` | the database, in the volume `TRAIL_DB_VOLUME` | the database, in a volume of the preview's own project |
+| `backup` | `postgres:18-alpine` | daily `pg_dump` into `BACKUP_DIR` (profile `production`) | not started |
 
-The stack runs in two phases:
+Launchway names the Compose projects `launchway-trail` (production) and
+`launchway-trail-pr-<number>` (previews); the containers are
+`<project>-<service>-1`, for example `launchway-trail-app-1`. It attaches `app`
+to its proxy network, where its edge forwards the route to port 8080; no host
+port is published. `db` and `backup` sit on an internal network without a
+route out.
 
-1. **LAN phase** (start here): phones on the home Wi-Fi post to
-   `http://<laptop-ip>:8080`, and you use the dashboard on the laptop itself at
-   `http://localhost:8080`.
-2. **Public**: once data arrives reliably, `trail.jenspenneman.com` is served
-   through a Cloudflare Tunnel (recommended) or directly from the laptop.
+Nothing is built on the server: CI builds and tests every commit and publishes
+its image as `sha-<first 7 characters of the commit>` ([Images](#images)).
 
-Nothing on the laptop needs a manual update: every push to `main` that passes
-CI publishes a new image and Watchtower installs it (see [Updates](#updates)).
+## The app in Launchway
 
-## 1. Prepare the laptop
+| Setting | Value |
+|---|---|
+| Repository | `JensPenneman/trail` |
+| Compose file | `deploy/compose.yaml` (only this one) |
+| Route | `trail.jenspenneman.com` → service `app`, port 8080. Unprotected (phones upload without a browser session) and uncompressed (compression would buffer the `/api/events` stream) |
+| Trusted | on: production bind-mounts `BACKUP_DIR` and uses a volume it did not create (`TRAIL_DB_VOLUME`); Launchway's Compose policy refuses both otherwise |
+| Deploy releases automatically | on: a published release is deployed. Drafts are ignored, which is why CI publishes the draft only once the images exist |
+| Previews | on, for pull requests from branches of this repository |
 
-### Docker Desktop
-
-1. Enable virtualisation in the firmware if it is off (Task Manager >
-   Performance > CPU shows "Virtualization: Enabled").
-2. In an administrator PowerShell: `wsl --install --no-distribution`, then
-   restart.
-3. Install [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/)
-   (`winget install Docker.DockerDesktop`) with the WSL 2 backend.
-4. Docker Desktop > Settings > General: enable **Use the WSL 2 based engine**
-   and **Start Docker Desktop when you sign in to your computer**.
-5. Install Git: `winget install Git.Git`.
-
-Docker Desktop only runs inside a signed-in Windows session. After a restart
-(Windows Update restarts laptops on its own), nothing runs until someone signs
-in. Pick one:
-
-- **Automatic sign-in** (simplest). Configure it with Sysinternals
-  [Autologon](https://learn.microsoft.com/sysinternals/downloads/autologon),
-  which stores the password encrypted, and add a Task Scheduler task "At log on
-  of <you>" that runs `rundll32.exe user32.dll,LockWorkStation`, so the
-  session locks right after it starts. Trade-off: whoever can switch the laptop
-  on gets a signed-in session for a moment. Keep BitLocker enabled.
-- **Headless alternative**: skip Docker Desktop and run Docker Engine in a WSL 2
-  Ubuntu distribution: enable systemd in `/etc/wsl.conf` (`[boot]`,
-  `systemd=true`), install Docker Engine from Docker's apt repository, set
-  `networkingMode=mirrored` in `%UserProfile%\.wslconfig` (Windows 11) so the
-  home network reaches published ports, allow inbound traffic for WSL in the
-  Hyper-V firewall, and create a Task Scheduler task that runs **At startup**,
-  **whether the user is logged on or not**, with the action
-  `wsl.exe -d Ubuntu --exec sleep infinity` to boot the distribution and keep
-  it running. The rest of this runbook then runs in the Ubuntu shell
-  (`/etc/trail` instead of `C:\trail`, `openssl rand -hex 32` for the password).
-
-### Power settings
-
-A sleeping laptop receives nothing. In an administrator PowerShell:
-
-```powershell
-powercfg /change standby-timeout-ac 0     # never sleep on mains power
-powercfg /change hibernate-timeout-ac 0
-powercfg /hibernate off
-# closing the lid does nothing, on mains power and on battery
-powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0
-powercfg /setdcvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0
-powercfg /setactive SCHEME_CURRENT
-```
-
-Keep it plugged in; if the laptop offers a battery charge limit (often 80 %),
-use it.
-
-### A fixed address on the home network
-
-Phones reach the laptop by its IP address during the LAN phase, and the
-`direct` profile forwards router ports to it. In the router, reserve the
-laptop's current address for its MAC address (often called "DHCP reservation"
-or "static lease"). `ipconfig` shows both (Physical Address, IPv4 Address) for
-the Wi-Fi or Ethernet adapter.
-
-### Firewall
-
-The home network must have the **Private** profile, and port 8080 must be open
-on it. In an administrator PowerShell:
-
-```powershell
-Get-NetConnectionProfile                    # NetworkCategory should be Private
-# Set-NetConnectionProfile -InterfaceAlias 'Wi-Fi' -NetworkCategory Private
-New-NetFirewallRule -DisplayName 'Trail (TCP 8080)' -Direction Inbound `
-  -Action Allow -Protocol TCP -LocalPort 8080 -Profile Private
-```
-
-## 2. Install
-
-```powershell
-git clone https://github.com/JensPenneman/trail.git C:\trail
-cd C:\trail\deploy
-```
-
-Only `deploy\` is needed at runtime: copying that folder instead of cloning
-works too, but a clone makes later changes to the stack a `git pull`.
-
-Create `.env`. The helper copies `.env.example`, generates the database
-password and fills in the laptop's LAN address:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\windows\new-env.ps1
-notepad .env
-```
-
-Or by hand: `Copy-Item .env.example .env`, then set `POSTGRES_PASSWORD` to the
-output of
-
-```powershell
-$b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); -join ($b | ForEach-Object { $_.ToString('x2') })
-```
-
-and `INGEST_BASE_URL` to `http://<laptop-ip>:8080`. In either case set
-`SIGNUP_ALLOWLIST` to your e-mail address and, for an off-site copy of the
-backups, `BACKUP_DIR` to a OneDrive folder
-(`C:/Users/<you>/OneDrive/Backups/trail`, forward slashes). Every variable is
-explained in `.env.example`.
-
-If the image is private, log in to GHCR first ([Private image](#private-image)).
-Create the database volume — once, by hand, so that no Compose command can ever
-delete it ([Your data](#your-data)) — then start the stack and check it:
-
-```powershell
-docker volume create trail-db
-docker compose up -d
-docker compose ps                         # app and db "healthy", backup and watchtower "Up"
-curl.exe -i http://localhost:8080/api/health   # HTTP 200: app and database are up
-```
-
-From another device on the Wi-Fi, `http://<laptop-ip>:8080/api/health/live`
-must answer too; if it does not, see [Troubleshooting](#troubleshooting).
-
-## 3. First sign-in
-
-Open `http://localhost:8080` **on the laptop itself**, enter the e-mail address
-from `SIGNUP_ALLOWLIST` and create a passkey (Windows Hello, a security key, or
-a phone via the QR code the browser offers). The first account is the admin;
-others join through the allowlist or an invite (Settings > People).
-
-Why only on the laptop: passkeys (WebAuthn) work only in a secure context,
-which means HTTPS or `localhost`. `http://192.168.x.x:8080` is neither, so
-browsers refuse passkeys there, and the dashboard cannot be used from other
-devices until Trail has an HTTPS address. Phones do not need a passkey to send
-data: Overland authenticates with a device token and may use plain HTTP.
-
-## 4. Add a phone
-
-On the laptop: Devices > Add device, give it a name and scan the QR code with
-the iPhone's Camera app; Overland opens with endpoint, token and device ID
-filled in. The page confirms the first upload as soon as it arrives. Details,
-recommended Overland settings and iOS permissions: [overland.md](overland.md).
-
-## 5. The LAN phase
-
-- Phones upload only while they are on the home Wi-Fi. Elsewhere, Overland
-  keeps recording and queues the points; they arrive when the phone is back
-  home.
-- The Live page on the laptop shows each device's last upload; Devices > a
-  device shows every upload in its ingest log.
-- Leave `TRAIL_HTTP_BIND=0.0.0.0` so phones can reach port 8080.
-- Everything that reaches port 8080 arrives from Docker's own address, and
-  the app believes no `X-Forwarded-For` from there: every phone and browser
-  shares one address for the per-address rate limits
-  ([architecture.md](architecture.md) §12), and nobody on the network can
-  pretend to be someone else.
-
-When uploads have arrived reliably for a while, go public.
-
-## 6. Go public
-
-Pick one of the ways below. Each ends at `https://trail.jenspenneman.com` with
-a valid certificate; after any of them, follow [After the address
-changes](#after-the-address-changes).
-
-### A. Cloudflare Tunnel (recommended)
-
-The laptop opens an outbound connection to Cloudflare; nothing is opened on the
-router, and it works behind carrier-grade NAT and on any network the laptop
-moves to. Cloudflare terminates TLS: it can see the traffic, including
-positions and session cookies. If that is not acceptable, use B.
-
-1. **Universal SSL.** Cloudflare dashboard > jenspenneman.com > SSL/TLS > Edge
-   Certificates: enable Universal SSL (it is off because the zone is DNS-only)
-   and wait until the edge certificate is active (minutes, at most a day).
-   Cloudflare then adds CAA records for its own certificate authorities next to
-   the existing `letsencrypt.org` one. Enable **Always Use HTTPS** there too.
-2. **Tunnel.** Zero Trust > Networks > Tunnels > Create a tunnel > Cloudflared,
-   name it `trail`, choose Docker as the environment and copy the token: the
-   long string after `--token` in the command shown. Do not run that command.
-3. **Public hostname** (newer dashboards call it a published application
-   route): subdomain `trail`, domain `jenspenneman.com`, no path, service type
-   `HTTP`, URL `app:8080`. This creates a proxied `trail` CNAME to the tunnel;
-   delete an existing `trail` record first if Cloudflare reports a conflict.
-4. **Let Overland through.** Phones are not browsers and cannot solve
-   challenges, so no bot or challenge feature may touch `POST /api/overland`:
-   - Security > Bots: **Bot Fight Mode off**. On the Free plan no rule can
-     exempt a path from it.
-   - Security > WAF > Custom rules: create a rule with the expression
-     `(http.host eq "trail.jenspenneman.com" and http.request.uri.path eq "/api/overland")`
-     and the action **Skip**, skipping all remaining custom rules, rate
-     limiting rules and managed rules, plus Browser Integrity Check and
-     Security Level under "More components to skip".
-   - Keep "I'm Under Attack" mode off.
-5. **`.env`:**
-   ```ini
-   PUBLIC_URL=https://trail.jenspenneman.com
-   INGEST_BASE_URL=
-   ADDITIONAL_ORIGINS=http://localhost:8080
-   TUNNEL_TOKEN=<token from step 2>
-   COMPOSE_PROFILES=tunnel
-   ```
-   `COMPOSE_PROFILES` makes every plain `docker compose` command include the
-   tunnel, so it cannot be forgotten.
-6. `docker compose up -d`, then `docker compose logs cloudflared` shows
-   "Registered tunnel connection" (four times), and from a phone on mobile data
-   `https://trail.jenspenneman.com/api/health/live` answers.
-
-Client addresses stay correct: Cloudflare and cloudflared pass them in
-`X-Forwarded-For`, which the app believes only from the tunnel container
-(its fixed address `10.201.8.10` on the stack's `edge` network, `TRUST_PROXY`).
-
-### B. Direct: Caddy and Let's Encrypt on the laptop
-
-End-to-end TLS with no third party in the path. It needs a public IPv4
-address at home and a router that forwards ports.
-
-1. **Check for carrier-grade NAT.** Compare the WAN address on the router's
-   status page with the `ip=` line of
-   `curl.exe https://www.cloudflare.com/cdn-cgi/trace`. If they differ, or the
-   router's address is in 100.64.0.0/10, the laptop cannot be reached from the
-   internet: use the tunnel.
-2. **Router:** forward TCP 80, TCP 443 and UDP 443 (HTTP/3) to the laptop's
-   reserved address.
-3. **Firewall** (administrator PowerShell):
-   ```powershell
-   New-NetFirewallRule -DisplayName 'Trail HTTPS (TCP 80, 443)' -Direction Inbound `
-     -Action Allow -Protocol TCP -LocalPort 80,443 -Profile Private
-   New-NetFirewallRule -DisplayName 'Trail HTTP/3 (UDP 443)' -Direction Inbound `
-     -Action Allow -Protocol UDP -LocalPort 443 -Profile Private
-   ```
-4. **Cloudflare API token** for the DNS updater: My Profile > API Tokens >
-   Create Token > template **Edit zone DNS**; permission Zone / DNS / Edit,
-   zone resources: Include > Specific zone > `jenspenneman.com`. Nothing
-   else. Delete a `trail` CNAME left over from a tunnel; the updater creates
-   the DNS-only `A` record itself. Universal SSL can stay off, and the
-   existing CAA record already allows Let's Encrypt, the only issuer Caddy is
-   configured to use.
-5. **`.env`:**
-   ```ini
-   PUBLIC_URL=https://trail.jenspenneman.com
-   INGEST_BASE_URL=
-   ADDITIONAL_ORIGINS=http://localhost:8080
-   TRAIL_DOMAIN=trail.jenspenneman.com
-   CLOUDFLARE_API_TOKEN=<token from step 4>
-   COMPOSE_PROFILES=direct
-   ```
-   `ACME_EMAIL` is optional (a contact address for the Let's Encrypt account).
-6. `docker compose up -d`; `docker compose logs ddns` shows the `A` record being
-   set and `docker compose logs caddy` shows "certificate obtained
-   successfully".
-
-Two things to know about this setup:
-
-- **NAT loopback.** At home, `trail.jenspenneman.com` resolves to the public
-  address, and many routers cannot connect from the LAN to their own public
-  address. The symptom: everything works on mobile data but not on the home
-  Wi-Fi. Fix it with the router's NAT loopback (hairpin NAT) option, or a
-  local DNS entry in the router (or Pi-hole) that points
-  `trail.jenspenneman.com` at the laptop's LAN address; Caddy serves the same
-  certificate there. The laptop's own `hosts` file only helps the laptop.
-- **Client addresses.** Docker Desktop's port forwarding hides the visitor's
-  address: the app sees every request coming from one internal address, so
-  the per-IP rate limits are shared by all clients. The tunnel does not have
-  this limitation.
-
-### C. Several apps on one server (shared reverse proxy)
-
-When the laptop hosts more than Trail, one reverse proxy owns ports 80 and 443
-for every app and routes by host name; each app gets a subdomain instead of a
-port forward. Trail then runs without its own `direct`/`tunnel` profile and
-joins the proxy's Docker network (`deploy/compose.proxy.yaml`):
-
-1. Start the shared proxy first. It must create an external Docker network
-   (here `proxy`) and give itself a fixed address on it (here `10.200.0.2`).
-   Its site for Trail is a plain `reverse_proxy trail:8080`, without `encode`
-   (compression would buffer the `/api/events` stream).
-2. **`.env`:**
-   ```ini
-   COMPOSE_FILE=compose.yaml;compose.proxy.yaml   # Windows; elsewhere use ':'
-   COMPOSE_PROFILES=
-   TRAIL_PROXY_NETWORK=proxy
-   TRUST_PROXY=10.200.0.2
-   TRAIL_HTTP_BIND=127.0.0.1
-   TRAIL_HTTP_PORT=20100                          # any free host port
-   ADDITIONAL_ORIGINS=http://localhost:20100
-   ```
-   `TRUST_PROXY` must name exactly the proxy's address: it decides the client
-   address of the rate limits and whether a request arrived over HTTPS.
-3. `docker compose up -d`. If the stack ran with the `direct` profile before,
-   remove its proxy first: `docker compose rm -sf caddy ddns` and
-   `docker volume rm trail_caddy-data trail_caddy-config`.
-
-The router forwards TCP 80, TCP 443 and UDP 443 to the laptop once, for all
-apps. For IPv6 there is no forwarding: allow the same three ports to the
-laptop's stable (not temporary) IPv6 address in the router's IPv6 firewall and
-add an `AAAA` record next to the `A` record once IPv6 works end to end.
-
-### D. Deploy with Launchway
-
-On a server run by Launchway (a self-hosted deployment platform), Launchway
-deploys Trail from this repository and its edge owns ports 80 and 443. Trail
-runs without its own `direct`/`tunnel` profile and without Watchtower;
-`deploy/compose.launchway.yaml` adapts the stack:
-
-- **Compose files**, merged in this order: `deploy/compose.yaml`,
-  `deploy/compose.launchway.yaml`. Launchway writes the variables below to
-  `deploy/.env` and adds `LAUNCHWAY_COMMIT_SHA_SHORT` itself.
-- **Image:** `ghcr.io/jenspenneman/trail:sha-<commit>` of the deployed commit,
-  pulled on every deployment; nothing is built on the server. CI publishes it
-  for pushes to `main` and for version tags, so deploy a push to `main` only
-  after its CI run has finished: until the image exists, the deployment fails
-  at the pull. Updates and rollbacks are deployments of another release;
-  [Updates](#updates) and [Rollback](#rollback) describe the standalone stack.
-- **Route:** `trail.<domain>` → service `app`, port 8080. Launchway attaches
-  `app` to its proxy network as `trail-app`; no host port is published. Leave
-  the route unprotected (phones upload without a browser session) and
-  uncompressed (compression would buffer the `/api/events` stream).
-- **Trusted:** mark the app as trusted. `db` and `backup` bind-mount
-  `BACKUP_DIR` and the database lives in an external volume
-  (`TRAIL_DB_VOLUME`); Launchway's Compose policy refuses both otherwise.
-
-The app's variables in Launchway:
+### Production variables
 
 ```ini
-POSTGRES_PASSWORD=<hex>            # moving a stack: its password
-PUBLIC_URL=https://trail.<domain>
-TRUST_PROXY=10.210.0.2             # Launchway's edge on its proxy network
-TRAIL_DB_VOLUME=trail-db           # moving a stack: its volume
-BACKUP_DIR=/absolute/host/path     # as the Docker daemon sees it
+COMPOSE_PROFILES=production        # starts `backup`
+POSTGRES_PASSWORD=<hex>            # openssl rand -hex 32; fixed once the database exists
+PUBLIC_URL=https://trail.jenspenneman.com
+TRAIL_DB_VOLUME=trail-db           # the existing database volume
+BACKUP_DIR=/absolute/host/path     # existing, as the Docker daemon sees it
+TRUST_PROXY=10.210.0.2             # Launchway's edge on its proxy network (the default)
+SIGNUP_ALLOWLIST=you@example.com
+TZ=Europe/Brussels
 BACKUP_HOUR=3
 BACKUP_KEEP_DAYS=14
 BACKUP_KEEP_MONTHS=12
 BACKUP_KEEP_YEARS=0
 BACKUP_ON_START=false
-TZ=Europe/Brussels
 ```
 
-`BACKUP_DIR` must be absolute: a relative path lands in the deployment's
-checkout, which Launchway deletes after later deployments. Optional, as in
-`.env.example`: `SIGNUP_ALLOWLIST` (a new install needs it for the first
-account), `INGEST_BASE_URL` (empty: phones post to `PUBLIC_URL`),
-`ADDITIONAL_ORIGINS`, `ALERT_NTFY_URL`, `ALERT_NTFY_TOKEN`,
-`LIVE_WINDOW_MINUTES`, `STALE_AFTER_HOURS`, `SESSION_TTL_DAYS`,
-`DEFAULT_TIMEZONE`, `LOG_LEVEL`, `RATE_LIMIT_*`, `MAP_STYLE_LIGHT`,
-`MAP_STYLE_DARK` and `MAP_CONNECT_SRC`. Leave out `COMPOSE_FILE` and
-`COMPOSE_PROFILES` (a profile would start the stack's own proxy or
-Watchtower) and the variables of the standalone stack: `TRAIL_IMAGE_TAG`,
-`TRAIL_HTTP_BIND`, `TRAIL_HTTP_PORT`, `TRAIL_PROXY_NETWORK`, `TUNNEL_TOKEN`,
-`TRAIL_DOMAIN`, `ACME_EMAIL`, `CLOUDFLARE_API_TOKEN`, `DDNS_IP6_PROVIDER` and
-`WATCHTOWER_NOTIFICATION_URL`.
+Optional, as in [deploy/.env.example](../deploy/.env.example):
+`INGEST_BASE_URL` (empty: phones post to `PUBLIC_URL`), `ADDITIONAL_ORIGINS`,
+`ALERT_NTFY_URL`, `ALERT_NTFY_TOKEN`, `LIVE_WINDOW_MINUTES`,
+`STALE_AFTER_HOURS`, `SESSION_TTL_DAYS`, `DEFAULT_TIMEZONE`, `LOG_LEVEL`,
+`RATE_LIMIT_*`, `MAP_STYLE_LIGHT`, `MAP_STYLE_DARK` and `MAP_CONNECT_SRC`.
 
-On a server without Trail, create the volume before the first deployment:
-`docker volume create trail-db`. To move a standalone stack on the same Docker
-host (on another host, restore a dump instead; see [Backups](#backups)):
+`BACKUP_DIR` must be absolute and must exist: a relative path would land in
+the deployment's checkout, which Launchway deletes after later deployments,
+and the mount does not create a missing folder (the `backup` container then
+fails to start, naming the path).
 
-1. Find its database volume: `docker volume ls` shows `trail-db`, or
-   `trail_trail-db` from before the volume became external.
-2. Stop the old stack first, in its `deploy/` folder: `docker compose down`
-   (the external volume stays). Two databases must never use one volume.
-3. Create the app in Launchway as above with the old `POSTGRES_PASSWORD`,
-   `TRAIL_DB_VOLUME` set to the volume of step 1 and `BACKUP_DIR` at the old
-   backup folder, so retention carries on. Deploy.
-4. Keep the old public host name for the route, so passkeys and the phones'
-   endpoint stay valid, and point its DNS record at Launchway instead of the
-   tunnel or the DDNS address. A new host name needs [After the address
-   changes](#after-the-address-changes).
+Launchway adds its own variables to the `.env` it writes. Trail uses two:
+`LAUNCHWAY_COMMIT_SHA_SHORT` (the image tag `sha-<commit>`) and
+`LAUNCHWAY_PUBLIC_URL` (the https address of the deployment's host name, used
+when `PUBLIC_URL` is empty). `LAUNCHWAY_ENVIRONMENT` (`production` or
+`preview`) and `LAUNCHWAY_PREVIEW_NUMBER` are available but unused.
 
-### After the address changes
+### Preview variables
 
-Passkeys are bound to a host name, so the passkey created on `localhost` does
-not work on `trail.jenspenneman.com`, and every phone still posts to the old
-LAN address.
+A preview needs only `POSTGRES_PASSWORD` (any hex value; its database is new)
+and `SIGNUP_ALLOWLIST` (to create the first account). Everything that ties a
+deployment to production must be **empty** in a preview; when previews start
+from the production variables, override these:
 
-1. **Add a passkey for the new address.** On the laptop at
-   `http://localhost:8080` (still allowed through `ADDITIONAL_ORIGINS`):
-   Settings > "Add a passkey on another device or address", pick
-   `https://trail.jenspenneman.com` and open the link (or its QR code) on the
-   device that should hold the passkey. The link is valid for 15 minutes and
-   works once. Without a working sign-in, create the link with the CLI:
-   ```powershell
-   docker compose exec app trail passkey-link you@example.com --origin https://trail.jenspenneman.com
-   ```
-2. **Move each phone to the public endpoint.** Devices > the device > Rotate
-   token shows a new QR code with the new endpoint; scan it with the phone.
-   The old token stops working at once, so re-scan right away. Points queued
-   on the phone are kept and sent to the new endpoint.
-3. Optional: `TRAIL_HTTP_BIND=127.0.0.1` and `docker compose up -d` stop
-   plain-HTTP access from the home network once no phone uses it.
+```ini
+COMPOSE_PROFILES=                  # no backup service, no host folder
+TRAIL_DB_VOLUME=                   # a volume of the preview's own project
+PUBLIC_URL=                        # the preview's own address (LAUNCHWAY_PUBLIC_URL)
+INGEST_BASE_URL=
+ALERT_NTFY_URL=                    # no alerts from test data
+```
+
+`TRAIL_DB_VOLUME` matters most: a preview with the production volume would
+run a second Postgres on the production data and corrupt it.
+
+## Install
+
+On a server without Trail:
+
+1. Create the database volume once, by hand, so that no Compose command ever
+   deletes it ([Your data](#your-data)): `docker volume create trail-db`.
+2. Create the backup folder (`BACKUP_DIR`).
+3. If the GHCR package is private, give Launchway's server credentials for
+   `ghcr.io` (a classic token with only `read:packages`); a public package
+   needs nothing.
+4. Create the app in Launchway as above and publish a release (or deploy the
+   latest one by hand).
+5. Open `https://trail.jenspenneman.com`, enter the address from
+   `SIGNUP_ALLOWLIST` and create a passkey. The first account is the admin;
+   others join through the allowlist or an invite (Settings > People).
+6. Add a phone: Devices > Add device, scan the QR code with the iPhone's
+   Camera app; Overland opens with endpoint, token and device ID filled in
+   ([overland.md](overland.md)).
+
+```sh
+curl -i https://trail.jenspenneman.com/api/health      # 200: app and database are up
+docker ps --filter name=launchway-trail-                # app and db healthy, backup up
+```
+
+## Releases
+
+release-please keeps a release pull request open that proposes the next
+version (from the Conventional Commits on `main`) and its `CHANGELOG.md`
+section. Every commit on `main` must carry a GPG signature, so that pull
+request is not merged on GitHub; the maintainer publishes it with:
+
+```sh
+scripts/release.sh   # asks before it changes anything; --yes skips the questions
+```
+
+The script checks that the working tree is clean, that `main` equals
+`origin/main`, that exactly one release pull request is open and is one commit
+on top of that `main` (so the changelog covers everything the release ships),
+and that neither the tag nor a release exists yet. Then it:
+
+1. cherry-picks the release commit onto `main` with `-x`, makes the maintainer
+   its author and verifies the commit's signature;
+2. creates the signed tag `vX.Y.Z` and pushes `main` and the tag together;
+3. creates the GitHub release **as a draft**, with the version's
+   `CHANGELOG.md` section as notes, and shows the CI run of the tag
+   (dispatching CI on the tag itself if none starts);
+4. closes the release pull request with a comment and deletes its branch.
+
+CI on the tag runs every test, publishes the images (`X.Y.Z`, `X.Y`,
+`sha-<commit>`) and then **publishes the draft** (job `release`). Launchway
+deploys on that `published` event, so the image always exists by then. If the
+script stops before the push, it moves `main` back and deletes the tag; after
+the push, it prints the commands that are left. It needs git with commit
+signing, an authenticated GitHub CLI and Node.js.
+
+When the release pull request is not one commit on top of `main`,
+release-please has not processed the latest push yet: wait for the Release
+Please workflow, then run the script again.
+
+Two fallbacks keep a release from getting stuck:
+
+- **Merged on GitHub** (not the normal path): release-please creates the draft
+  release itself (`"draft": true` in `release-please-config.json`); its
+  workflow creates the tag and starts CI on it, which publishes the draft.
+- **A tag pushed by hand** without a release: CI creates and publishes the
+  release once the images exist, with the `CHANGELOG.md` section (or
+  generated notes) as text.
+
+Optional: a pull request opened with `GITHUB_TOKEN` starts no workflows, which
+does not matter for a release pull request that is never merged. A
+fine-grained token with `contents` and `pull-requests` write access in the
+`RELEASE_PLEASE_TOKEN` secret makes CI run on it anyway.
+
+## Previews
+
+Every pull request from a branch of this repository gets a preview: Launchway
+deploys its head commit as the Compose project `launchway-trail-pr-<number>`
+on a host name of its own, and redeploys it on every push. Pull requests from
+forks get no preview, and CI never publishes their images.
+
+- **Image.** CI publishes `sha-<commit>` for every push to a branch of this
+  repository once all tests pass, roughly a quarter of an hour after the push.
+  Launchway retries the pull for up to an hour, so a preview appears when its
+  image does. A failing test means no image and no preview.
+- **Database.** Empty, in a volume of the preview's project, removed with the
+  preview. Migrations run on boot as in production.
+- **Sign-in.** Passkeys are bound to a host name, so every preview needs its
+  own account: sign up with an address from `SIGNUP_ALLOWLIST`.
+- **Phones.** Overland can post to a preview like to production (Devices > Add
+  device in the preview), for example with a test device. Do not move a real
+  device there: its points would end up in a database that disappears.
+- **No backups.** The `backup` service runs only with the `production`
+  profile, so a preview needs no host folder.
+
+`PUBLIC_URL` falls back to `LAUNCHWAY_PUBLIC_URL`, so a preview serves its own
+address without any setting ([Preview variables](#preview-variables)).
+
+## Images
+
+CI (`.github/workflows/ci.yml`) runs lint, type checks, unit, integration and
+end-to-end tests, then builds `ghcr.io/jenspenneman/trail` for amd64 and arm64
+with provenance and an SBOM:
+
+| Trigger | Tags published |
+|---|---|
+| push to any branch of this repository | `sha-<commit>`, the branch name (`/` becomes `-`) |
+| push to `main` | the above and `latest` |
+| tag `vX.Y.Z` | `sha-<commit>`, `X.Y.Z`, `X.Y`; then the draft release is published |
+| weekly schedule (Monday 03:00 UTC) | `main`, `latest` and `sha-<commit>` of `main`, rebuilt on the current base image |
+| pull request | nothing: build only (forks never publish) |
+
+Dependabot's branches only build, because their runs have a read-only token.
+Deployments always pin `sha-<commit>`; `latest` is only the newest build of
+`main`.
+
+What is running: Settings > About in the dashboard, or
+
+```sh
+curl -s https://trail.jenspenneman.com/api/config   # version, commit, builtAt
+```
+
+The commit is the short SHA of the image's `sha-<commit>` tag.
+
+## Rollback
+
+Redeploy an older release in Launchway (the app's deployments list): it pulls
+that release's `sha-<commit>` image again. Migrations only move forward, so an
+older image runs against the newer schema; when that does not work, restore
+the dump made before the update ([Backups](#backups)).
 
 ## Your data
 
 Every point, visit, trip and event is kept forever; Trail itself only ever
 deletes recorded data when you ask it to (Settings > Data: delete a range,
-delete a device, delete the account). What happens to the data in practice:
+delete a device, delete the account).
 
 | Event | The data |
 |---|---|
-| App update (Watchtower, `docker compose pull/up`), container recreated | stays: it lives in the `trail-db` volume, not in a container |
+| A deployment (release, rollback), container recreated | stays: it lives in the `trail-db` volume, not in a container |
 | Database migration on boot | runs in one transaction under a lock; a failure rolls back and the app refuses to start, data untouched. CI upgrades a database of the first release, with data, to every new release before an image ships |
-| Postgres update (18.x) | Watchtower first dumps the database to `BACKUP_DIR\pre-update` and checks the dump; if that fails the update is aborted. Third-party images update only once they are 3 days old |
-| `docker compose down` / `down -v` | stays: the volume is external, Compose never deletes it |
+| Postgres update (18.x) | happens when the server pulls a newer `postgres:18-alpine`; the data directory stays compatible within Postgres 18 |
+| `docker compose down -v` in the production project | stays: Compose only removes volumes it created, and `trail-db` was created by hand |
+| A preview is removed | only the preview's own volume goes |
 | Postgres 19 | never automatic: see [Postgres major upgrade](#postgres-major-upgrade) |
-| Docker Desktop *Troubleshoot > Clean / Purge data*, *Reset to factory defaults*, uninstalling Docker Desktop, `docker volume rm trail-db` | **gone** — restore from the backups. Never do these on the server without a fresh dump |
-| The laptop's C: drive fails or the laptop is lost | gone from the laptop — the backups in `BACKUP_DIR` survive if it is on another drive or synced off-site |
+| `docker volume rm trail-db`, a wiped Docker data directory | **gone**: restore from the backups. Never do this without a fresh dump |
+| The server's disk fails | gone from the server: the backups in `BACKUP_DIR` survive if it is on another disk or synced off-site |
 
 ## Backups
 
-The `backup` service dumps the database every day at `BACKUP_HOUR` (local time
-in `TZ`) to `BACKUP_DIR\trail-<UTC timestamp>.dump` (PostgreSQL custom format).
-A dump counts only once `pg_restore` can read it back. Layout and retention:
+The `backup` service (production only) dumps the database every day at
+`BACKUP_HOUR` (local time in `TZ`) to `BACKUP_DIR/trail-<UTC timestamp>.dump`
+(PostgreSQL custom format). A dump counts only once `pg_restore` can read it
+back. Layout and retention:
 
 | Folder of `BACKUP_DIR` | What | Kept |
 |---|---|---|
 | (top) `trail-<timestamp>.dump` | every daily dump | `BACKUP_KEEP_DAYS` (14) |
-| `monthly\trail-<YYYY-MM>.dump` | the first dump of each month | `BACKUP_KEEP_MONTHS` (12; 0 = forever) |
-| `yearly\trail-<YYYY>.dump` | the first dump of each year | `BACKUP_KEEP_YEARS` (0 = forever) |
-| `pre-update\trail-<timestamp>.dump` | taken by Watchtower before each Postgres update | `BACKUP_KEEP_DAYS` |
+| `monthly/trail-<YYYY-MM>.dump` | the first dump of each month | `BACKUP_KEEP_MONTHS` (12; 0 = forever) |
+| `yearly/trail-<YYYY>.dump` | the first dump of each year | `BACKUP_KEEP_YEARS` (0 = forever) |
+| `pre-update/` | dumps of the former standalone stack, if any | `BACKUP_KEEP_DAYS` |
 
-Every dump holds the whole history, so the newest one is all a restore needs;
-the older ones only matter for undoing a mistake noticed late. It also dumps
-right after starting when the newest dump is more than a day old: the first
-start, a day the laptop was off, or a failed run. A failed dump stops the
+Every dump holds the whole history, so the newest one is all a restore needs.
+It also dumps right after starting when the newest dump is more than a day
+old, or every start with `BACKUP_ON_START=true`. A failed dump stops the
 container, Docker restarts it and the restart tries again, so a failing backup
-shows up as "Restarting" in `docker compose ps`.
+shows up as "Restarting".
 
-```powershell
-docker compose logs backup               # "backup complete: trail-....dump, 1234 KiB in 2 s"
-Get-ChildItem C:\Users\<you>\OneDrive\Backups\trail
+```sh
+docker logs launchway-trail-backup-1   # "backup complete: trail-....dump, 1234 KiB in 2 s"
 ```
-
-**Off-site copy:** point `BACKUP_DIR` at a OneDrive folder. OneDrive uploads
-each dump; retention deletes old ones there as well.
 
 **Dump now** (before a risky change):
 
-```powershell
-docker compose exec backup sh -c 'pg_dump --format=custom --file=/backups/trail-$(date -u +%Y%m%dT%H%M%SZ).dump && ls -l /backups'
+```sh
+docker exec launchway-trail-backup-1 sh -c 'pg_dump --format=custom --file=/backups/trail-$(date -u +%Y%m%dT%H%M%SZ).dump && ls -l /backups'
 ```
 
-**Restore** into the running stack (replaces the current data):
+**Restore** into the running deployment (replaces the current data):
 
-```powershell
-docker compose stop app
-docker compose exec backup pg_restore --clean --if-exists --single-transaction --dbname=trail /backups/trail-20261001T010000Z.dump
-docker compose start app
+```sh
+docker stop launchway-trail-app-1
+docker exec launchway-trail-backup-1 pg_restore --clean --if-exists --single-transaction --dbname=trail /backups/trail-20261001T010000Z.dump
+docker start launchway-trail-app-1
 ```
 
-**Restore on a new laptop:** install as above, copy the dumps into
-`BACKUP_DIR`, then restore before the rest of the stack starts:
-
-```powershell
-docker compose up -d db
-docker compose run --rm --no-deps --entrypoint pg_restore backup --clean --if-exists --single-transaction --dbname=trail /backups/trail-20261001T010000Z.dump
-docker compose up -d
-```
-
-The app applies newer migrations on boot. Restore a dump now and then to be
-sure the backups work.
-
-## Updates
-
-How a change reaches the laptop:
-
-1. A push to `main` runs CI: lint, type check, unit tests, integration tests,
-   end-to-end tests. Only when all pass does CI build the multi-platform image
-   and push it to GHCR as `latest`, `main` and `sha-<short commit>`.
-2. Watchtower checks GHCR every 5 minutes. For a new `latest` it pulls the
-   image, stops the app, starts it on the new image (one container at a time,
-   waiting for health checks) and removes the old image.
-3. The app applies database migrations on boot.
-
-An update restarts the app for a few seconds; phones retry and nothing is lost.
-Watchtower updates the other services the same way when their tags move:
-`postgres:18-alpine` (only within Postgres 18), `caddy:2-alpine`, `cloudflared`,
-`cloudflare-ddns:1` and Watchtower itself (within version 1). CI also rebuilds
-the image every Monday at 03:00 UTC, which restarts the app once that night.
-
-What is running:
-
-```powershell
-Invoke-RestMethod http://localhost:8080/api/config | Select-Object version, commit, builtAt
-docker compose logs --since 24h watchtower  # "Found new image", "Started new container"
-docker compose images
-```
-
-The dashboard shows the same under Settings > About. The commit is the short
-SHA of the image's `sha-<commit>` tag.
-
-Update right away instead of waiting for Watchtower:
-`docker compose pull; docker compose up -d`. Pause automatic updates with
-`docker compose stop watchtower`.
-
-Watchtower does not touch `compose.yaml` or `.env`. When the stack itself
-changes in the repository:
-
-```powershell
-git -C C:\trail pull
-docker compose up -d
-```
-
-## Rollback
-
-Pin the app to an earlier build: every commit on `main` has an image tag
-`sha-<first 7 characters of the commit>` (GitHub > Packages > trail lists
-them).
-
-```powershell
-# in .env: TRAIL_IMAGE_TAG=sha-1a2b3c4
-docker compose up -d app
-```
-
-Watchtower leaves a pinned tag alone, because it never moves. To follow `main`
-again, set `TRAIL_IMAGE_TAG=latest` and run `docker compose up -d app`.
-
-Migrations only move forward: an older image runs against the newer schema.
-When that does not work, restore the dump made before the update.
-
-## Private image
-
-GHCR packages start out private. Making the `trail` package public (GitHub >
-Packages > trail > Package settings > Change visibility) removes every step
-below. For a private package:
-
-1. Create a classic personal access token with only the `read:packages` scope
-   (GHCR does not accept fine-grained tokens).
-2. Log in the laptop's Docker, so `docker compose pull` works:
-   `docker login ghcr.io -u JensPenneman` and paste the token.
-3. Give Watchtower its own credentials, because Docker Desktop keeps the
-   login in the Windows Credential Manager where Watchtower cannot read it:
-   ```powershell
-   New-Item -ItemType Directory -Force secrets | Out-Null
-   $auth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('JensPenneman:<token>'))
-   [IO.File]::WriteAllText("$PWD\secrets\watchtower-config.json", "{`"auths`":{`"ghcr.io`":{`"auth`":`"$auth`"}}}")
-   ```
-   then remove the `#` in front of the `./secrets/watchtower-config.json`
-   line of the `watchtower` service in `compose.yaml` and run
-   `docker compose up -d`. `deploy/secrets/` is git-ignored.
+**Restore on a new server:** install as above, copy the dumps into
+`BACKUP_DIR`, deploy, then restore as above. The app applies newer migrations
+on boot. Restore a dump now and then to be sure the backups work.
 
 ## Postgres major upgrade
 
@@ -572,59 +292,90 @@ major exists; it never merges itself. Postgres 18+ images keep the cluster in
 `/var/lib/postgresql/<major>/docker`, so a new major starts next to the old
 data in the same volume, empty. Move the data with a dump:
 
-1. `docker compose stop app`, then [dump now](#backups).
-2. Update `compose.yaml` to the new major (merge the pull request,
-   `git -C C:\trail pull`) and start only the new, empty database:
-   `docker compose up -d db`.
-3. Restore the dump as under "Restore on a new laptop" in
-   [Backups](#backups), which ends with `docker compose up -d`.
+1. `docker stop launchway-trail-app-1`, then [dump now](#backups).
+2. Merge the pull request and release it; the deployment starts the new,
+   empty database, and the app creates an empty schema in it.
+3. Restore the dump into it as under "Restore" in [Backups](#backups), which
+   stops the app first and starts it again afterwards.
 4. Once everything checks out, remove the old cluster:
-   `docker compose exec db rm -rf /var/lib/postgresql/18`.
+   `docker exec launchway-trail-db-1 rm -rf /var/lib/postgresql/18`.
 
 ## Change the database password
 
 `POSTGRES_PASSWORD` is applied only when the database is created. To change
-it, set it in the database first, then in `.env`:
+it, set it in the database first, then in Launchway, and redeploy:
 
-```powershell
-docker compose exec db psql -U trail -d trail -c "ALTER USER trail PASSWORD '<new hex password>'"
-# set POSTGRES_PASSWORD=<new hex password> in .env
-docker compose up -d
+```sh
+docker exec launchway-trail-db-1 psql -U trail -d trail -c "ALTER USER trail PASSWORD '<new hex password>'"
 ```
+
+## Changing the public address
+
+Passkeys are bound to a host name, and every phone posts to the address in its
+setup QR code. After a new `PUBLIC_URL`:
+
+1. **Add a passkey for the new address.** While the old address still works,
+   Settings > "Add a passkey on another device or address", pick the new
+   address and open the link (or its QR code) on the device that should hold
+   the passkey. The link is valid for 15 minutes and works once. Without a
+   working sign-in, create the link with the CLI:
+   `docker exec launchway-trail-app-1 trail passkey-link you@example.com --origin https://<new address>`.
+2. **Move each phone.** Devices > the device > Rotate token shows a new QR code
+   with the new endpoint; scan it with the phone right away (the old token
+   stops working at once). Points queued on the phone are kept.
 
 ## Logs
 
-```powershell
-docker compose logs -f app                  # follow; the app logs JSON lines (pino)
-docker compose logs --since 1h app | Select-String '"level":50'   # errors
-docker compose logs backup watchtower
+Launchway shows each service's logs; on the server:
+
+```sh
+docker logs -f launchway-trail-app-1     # the app logs JSON lines (pino)
+docker logs --since 1h launchway-trail-app-1 2>&1 | grep '"level":50'   # errors
 ```
 
 Every container keeps at most 5 files of 10 MB of logs. Device tokens, cookies
 and coordinates never appear in the app's logs at the default level.
 
+## Local run
+
+`deploy/compose.dev.yaml` builds the working tree into an image and runs the
+stack on `http://localhost:8080`, like a preview (no backup, a volume of its
+own). Its header lists the four variables `deploy/.env` needs; then, in
+`deploy/`:
+
+```sh
+docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+E2E_BASE_URL=http://localhost:8080 npm run test:e2e   # from the repository root, on a fresh database
+docker compose -f compose.yaml -f compose.dev.yaml down -v
+```
+
+Day-to-day development uses `npm run dev` instead (README).
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 |---|---|
-| `required variable POSTGRES_PASSWORD is missing a value` | `.env` is missing or not in the folder you run `docker compose` from (`C:\trail\deploy`). |
-| `app` keeps restarting; its log says "Invalid configuration" | A value in `.env` is invalid; the log names it (for example `INGEST_BASE_URL` still containing `<laptop-lan-ip>`). Fix it and run `docker compose up -d`. |
-| `/api/health` answers 503 | The database is down: `docker compose ps db`, `docker compose logs db`. |
-| Compose builds the image instead of pulling it | The pull failed, usually a private package without `docker login ghcr.io`. |
-| Nothing runs after a Windows restart | Docker Desktop starts only at sign-in; see [Docker Desktop](#docker-desktop). |
-| Phone uploads do not arrive (LAN phase) | The phone is not on the home Wi-Fi; the laptop's address changed (reserve it); the firewall rule or the Private profile is missing; Overland's "Local Network" permission is off ([overland.md](overland.md)). Test with `http://<laptop-ip>:8080/api/health/live` in the phone's browser. |
-| The browser offers no passkey at `http://<laptop-ip>:8080` | Expected: passkeys need HTTPS or localhost. Use `http://localhost:8080` on the laptop. |
-| "No passkey for this address" after going public | Add one with a passkey link ([After the address changes](#after-the-address-changes)). |
-| cloudflared logs "Provided Tunnel token is not valid" | `TUNNEL_TOKEN` is incomplete; copy the whole string after `--token`. |
-| `https://trail.jenspenneman.com` shows a Cloudflare 502 or 1033 | The route's service must be `HTTP` / `app:8080`, and `app` must be running. |
-| Overland reports HTML or 403 errors after going public | A Cloudflare challenge hit the ingest path: Bot Fight Mode and the Skip rule (tunnel step 4). |
-| Caddy logs "CAA record ... prevents issuance" | The CAA records must allow `letsencrypt.org`. |
-| Caddy logs a timeout or connection refused from Let's Encrypt | Port forwarding, the firewall rules, or carrier-grade NAT (direct step 1). |
-| Public address works on mobile data, not on the home Wi-Fi | NAT loopback (see the direct setup). |
-| Watchtower logs "unauthorized" or "denied" | Private package: set up [Private image](#private-image). |
-| A service is missing after an automatic update | Watchtower could not recreate it; `docker compose up -d` brings it back. `docker compose logs watchtower` has the reason. |
-| `backup` restarts with "is not a writable directory" | `BACKUP_DIR` does not exist or is not writable; use forward slashes in the Windows path. |
+| The deployment fails at the pull of `sha-<commit>` | CI has not published that commit yet (tests still running or failed). Launchway retries for an hour; check the commit's CI run. |
+| A release was tagged but nothing deployed | The release is still a draft: CI publishes it after the images. Check the tag's CI run, job `release`. |
+| `required variable POSTGRES_PASSWORD is missing a value` | Set it in Launchway (production and previews). |
+| `required variable LAUNCHWAY_COMMIT_SHA_SHORT is missing` | Outside Launchway: a local run sets `TRAIL_IMAGE` ([Local run](#local-run)). |
+| `backup` does not start: "bind source path does not exist" | `BACKUP_DIR` is unset or the folder does not exist; create it, absolute path. |
+| No `backup` container in production | `COMPOSE_PROFILES=production` is missing. |
+| Compose warns that volume `trail-db` "was not created by Docker Compose" | Expected: the volume was created by hand, which keeps `down -v` away from it. |
+| `app` keeps restarting; its log says "Invalid configuration" | A value is invalid; the log names it. Fix it in Launchway and redeploy. |
+| `/api/health` answers 503 | The database is down: `docker logs launchway-trail-db-1`. |
+| Requests all share one client address, or the session cookie is not `Secure` | `TRUST_PROXY` does not name Launchway's edge address. |
+| "No passkey for this address" | Passkeys are per host name: a preview needs its own account; a new production address needs [a new passkey](#changing-the-public-address). |
 | `backup` restarts with "pg_dump failed" | The database is not reachable; the log line before it shows why. |
-| Backups happen at the wrong hour | `TZ` in `.env`. |
-| Port 8080 is already in use | Set `TRAIL_HTTP_PORT` and change `PUBLIC_URL` and `INGEST_BASE_URL` with it. |
-| `docker compose up` fails with "Pool overlaps with other one on this address space" | Another Docker network uses `10.201.8.0/24`. Pick a free subnet for `edge` in `compose.yaml` and move the `ipv4_address` of cloudflared and caddy and the default of `TRUST_PROXY` with it. |
+| Backups happen at the wrong hour | `TZ`. |
+
+## Appendix: standalone (legacy)
+
+Until October 2026 Trail ran as a standalone Compose stack on a Windows laptop
+with Docker Desktop: Watchtower installed every new `latest` image, and the
+app was public through a Cloudflare Tunnel, Caddy with Let's Encrypt, or a
+shared reverse proxy. Launchway replaced all of that, and those services, the
+profiles `tunnel` and `direct`, `deploy/compose.proxy.yaml` and the Windows
+helper are gone. The last version of that stack and its runbook are in the
+history of this repository at commit `3e560ee` (`deploy/`,
+`docs/operations.md`).
