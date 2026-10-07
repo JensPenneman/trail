@@ -379,3 +379,5 @@ profiles `tunnel` and `direct`, `deploy/compose.proxy.yaml` and the Windows
 helper are gone. The last version of that stack and its runbook are in the
 history of this repository at commit `3e560ee` (`deploy/`,
 `docs/operations.md`).
+
+<!-- preview smoke test: Launchway pull-request previews (2026-10-07) -->
