@@ -187,8 +187,8 @@ When uploads have arrived reliably for a while, go public.
 
 ## 6. Go public
 
-Pick one of the two ways. Both end at `https://trail.jenspenneman.com` with a
-valid certificate; after either, follow [After the address
+Pick one of the ways below. Each ends at `https://trail.jenspenneman.com` with
+a valid certificate; after any of them, follow [After the address
 changes](#after-the-address-changes).
 
 ### A. Cloudflare Tunnel (recommended)
@@ -323,6 +323,76 @@ The router forwards TCP 80, TCP 443 and UDP 443 to the laptop once, for all
 apps. For IPv6 there is no forwarding: allow the same three ports to the
 laptop's stable (not temporary) IPv6 address in the router's IPv6 firewall and
 add an `AAAA` record next to the `A` record once IPv6 works end to end.
+
+### D. Deploy with Launchway
+
+On a server run by Launchway (a self-hosted deployment platform), Launchway
+deploys Trail from this repository and its edge owns ports 80 and 443. Trail
+runs without its own `direct`/`tunnel` profile and without Watchtower;
+`deploy/compose.launchway.yaml` adapts the stack:
+
+- **Compose files**, merged in this order: `deploy/compose.yaml`,
+  `deploy/compose.launchway.yaml`. Launchway writes the variables below to
+  `deploy/.env` and adds `LAUNCHWAY_COMMIT_SHA_SHORT` itself.
+- **Image:** `ghcr.io/jenspenneman/trail:sha-<commit>` of the deployed commit,
+  pulled on every deployment; nothing is built on the server. CI publishes it
+  for pushes to `main` and for version tags, so deploy a push to `main` only
+  after its CI run has finished: until the image exists, the deployment fails
+  at the pull. Updates and rollbacks are deployments of another release;
+  [Updates](#updates) and [Rollback](#rollback) describe the standalone stack.
+- **Route:** `trail.<domain>` → service `app`, port 8080. Launchway attaches
+  `app` to its proxy network as `trail-app`; no host port is published. Leave
+  the route unprotected (phones upload without a browser session) and
+  uncompressed (compression would buffer the `/api/events` stream).
+- **Trusted:** mark the app as trusted. `db` and `backup` bind-mount
+  `BACKUP_DIR` and the database lives in an external volume
+  (`TRAIL_DB_VOLUME`); Launchway's Compose policy refuses both otherwise.
+
+The app's variables in Launchway:
+
+```ini
+POSTGRES_PASSWORD=<hex>            # moving a stack: its password
+PUBLIC_URL=https://trail.<domain>
+TRUST_PROXY=10.210.0.2             # Launchway's edge on its proxy network
+TRAIL_DB_VOLUME=trail-db           # moving a stack: its volume
+BACKUP_DIR=/absolute/host/path     # as the Docker daemon sees it
+BACKUP_HOUR=3
+BACKUP_KEEP_DAYS=14
+BACKUP_KEEP_MONTHS=12
+BACKUP_KEEP_YEARS=0
+BACKUP_ON_START=false
+TZ=Europe/Brussels
+```
+
+`BACKUP_DIR` must be absolute: a relative path lands in the deployment's
+checkout, which Launchway deletes after later deployments. Optional, as in
+`.env.example`: `SIGNUP_ALLOWLIST` (a new install needs it for the first
+account), `INGEST_BASE_URL` (empty: phones post to `PUBLIC_URL`),
+`ADDITIONAL_ORIGINS`, `ALERT_NTFY_URL`, `ALERT_NTFY_TOKEN`,
+`LIVE_WINDOW_MINUTES`, `STALE_AFTER_HOURS`, `SESSION_TTL_DAYS`,
+`DEFAULT_TIMEZONE`, `LOG_LEVEL`, `RATE_LIMIT_*`, `MAP_STYLE_LIGHT`,
+`MAP_STYLE_DARK` and `MAP_CONNECT_SRC`. Leave out `COMPOSE_FILE` and
+`COMPOSE_PROFILES` (a profile would start the stack's own proxy or
+Watchtower) and the variables of the standalone stack: `TRAIL_IMAGE_TAG`,
+`TRAIL_HTTP_BIND`, `TRAIL_HTTP_PORT`, `TRAIL_PROXY_NETWORK`, `TUNNEL_TOKEN`,
+`TRAIL_DOMAIN`, `ACME_EMAIL`, `CLOUDFLARE_API_TOKEN`, `DDNS_IP6_PROVIDER` and
+`WATCHTOWER_NOTIFICATION_URL`.
+
+On a server without Trail, create the volume before the first deployment:
+`docker volume create trail-db`. To move a standalone stack on the same Docker
+host (on another host, restore a dump instead; see [Backups](#backups)):
+
+1. Find its database volume: `docker volume ls` shows `trail-db`, or
+   `trail_trail-db` from before the volume became external.
+2. Stop the old stack first, in its `deploy/` folder: `docker compose down`
+   (the external volume stays). Two databases must never use one volume.
+3. Create the app in Launchway as above with the old `POSTGRES_PASSWORD`,
+   `TRAIL_DB_VOLUME` set to the volume of step 1 and `BACKUP_DIR` at the old
+   backup folder, so retention carries on. Deploy.
+4. Keep the old public host name for the route, so passkeys and the phones'
+   endpoint stay valid, and point its DNS record at Launchway instead of the
+   tunnel or the DDNS address. A new host name needs [After the address
+   changes](#after-the-address-changes).
 
 ### After the address changes
 
