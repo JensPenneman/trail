@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Every branch of this repository: each pushed commit that passes gets its
+    # sha-<short> image, which pull-request previews on Launchway pull.
+    branches: ["**"]
     tags: ["v*"]
   pull_request:
   schedule:
@@ -15,9 +17,10 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  # Superseded pull request runs are cancelled. Runs on main and on tags always
-  # finish, so every commit on main gets its sha-<short> image to roll back to.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Superseded runs of pull requests and of other branches are cancelled (a
+  # preview follows the newest commit). Runs on main and on tags always finish,
+  # so every commit on main gets its sha-<short> image to roll back to.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.ref_type == 'branch' && github.ref != 'refs/heads/main') }}
 
 jobs:
   quality:
@@ -151,9 +154,12 @@ jobs:
       attestations: write
     env:
       IMAGE: ghcr.io/jenspenneman/trail
-      # Published from main (pushes, the weekly schedule, manual runs) and
-      # from version tags; pull requests and other branches only build.
-      PUSH: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+      # Published for every push to a branch of this repository (previews
+      # pull sha-<short>), for version tags, the weekly schedule and manual
+      # runs. Pull request runs only build: a fork's pull request must never
+      # publish, and a same-repository branch is published by its push run.
+      # Dependabot's pushes run with a read-only token and only build too.
+      PUSH: ${{ github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/heads/dependabot/') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Baked into the image as APP_VERSION / GIT_SHA / BUILD_TIME. GIT_SHA is
@@ -176,7 +182,8 @@ jobs:
           DOCKER_METADATA_SHORT_SHA_LENGTH: "7"
         with:
           images: ${{ env.IMAGE }}
-          # `latest` is what the server follows: main only, never a tag push
+          # `latest` names the newest build of main, never a tag push.
+          # Deployments pin sha-<short>; branch tags are a convenience.
           flavor: latest=false
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
@@ -224,3 +231,54 @@ jobs:
           push-to-registry: true
           # storage records exist for organisation-owned repositories only
           create-storage-record: false
+
+  # A release is created as a draft (scripts/release.sh, or release-please
+  # when its pull request is merged on GitHub) and published here, once the
+  # images of its tag exist: Launchway deploys on the release's `published`
+  # event, so it never waits for an image that is still being built.
+  release:
+    needs: image
+    if: github.event_name != 'pull_request' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Publish the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # The release script creates the draft right after pushing the tag,
+          # long before the tests above finish; wait a few minutes anyway.
+          draft=''
+          for _ in $(seq 1 30); do
+            if draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then break; fi
+            draft=''
+            sleep 10
+          done
+          case "$draft" in
+            true)
+              gh release edit "$TAG" --draft=false
+              echo "Published the release $TAG." ;;
+            false)
+              echo "The release $TAG is published already; nothing to do." ;;
+            *)
+              # No release at all (a tag pushed by hand): create it, with the
+              # version's CHANGELOG.md section as notes when there is one.
+              version="${TAG#v}"
+              awk -v version="$version" '
+                /^## / {
+                  if (found) exit
+                  if (index($0, "## [" version "]") == 1 || index($0, "## " version " ") == 1) found = 1
+                }
+                found
+              ' CHANGELOG.md > notes.md 2>/dev/null || true
+              if [ -s notes.md ]; then
+                gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md
+              else
+                gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
+              fi
+              echo "Created and published the release $TAG." ;;
+          esac
