@@ -1,0 +1,25 @@
+# A local, production-like run of the working tree: builds the image instead
+# of pulling one from GHCR and publishes the app on http://localhost:8080.
+# Launchway never uses this file. In deploy/.env (git-ignored; every variable
+# is explained in .env.example):
+#
+#   TRAIL_IMAGE=trail:dev
+#   POSTGRES_PASSWORD=<openssl rand -hex 32>
+#   PUBLIC_URL=http://localhost:8080
+#   SIGNUP_ALLOWLIST=you@example.com
+#
+# then, in deploy/:
+#
+#   docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+#
+# Without COMPOSE_PROFILES and TRAIL_DB_VOLUME it runs like a preview: no
+# backup service, and a database volume of its own (trail_trail-db) that
+# `docker compose -f compose.yaml -f compose.dev.yaml down -v` removes.
+
+services:
+  app:
+    build:
+      context: ..
+    pull_policy: build
+    ports:
+      - "127.0.0.1:8080:8080"

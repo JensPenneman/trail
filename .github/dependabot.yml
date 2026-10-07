@@ -100,10 +100,9 @@ updates:
       prefix: "chore(docker)"
     open-pull-requests-limit: 3
 
-  # Compose files: the images there float on tags that Watchtower follows
-  # (postgres:18-alpine, caddy:2-alpine, favonia/cloudflare-ddns:1,
-  # nickfedor/watchtower:1), so the only PRs here are new major versions,
-  # which never auto-merge. A Postgres major needs a dump and restore of the
+  # Compose files: postgres:18-alpine floats within Postgres 18 (a server
+  # picks up a new 18.x when it pulls the image), so the only PRs here are new
+  # major versions, which never auto-merge. A Postgres major needs a dump and restore of the
   # production database first (docs/operations.md, "Postgres major upgrade").
   - package-ecosystem: docker-compose
     directories:

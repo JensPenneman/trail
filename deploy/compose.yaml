@@ -1,18 +1,22 @@
-# Trail production stack. Runbook: docs/operations.md.
+# Trail on Launchway, the owner's self-hosted deployment platform. Runbook:
+# docs/operations.md.
 #
-#   copy .env.example to .env and fill it in, then:
-#   docker compose up -d                     app, db, backup, watchtower
-#   docker compose --profile tunnel up -d    + Cloudflare Tunnel (recommended exposure)
-#   docker compose --profile direct up -d    + Caddy on ports 80/443 and Cloudflare DDNS
-# COMPOSE_PROFILES in .env makes a profile part of every plain command.
+# Launchway deploys this file for production (a published GitHub release) and
+# for previews (pull requests from this repository), each as its own Compose
+# project. It writes the app's variables to deploy/.env and adds its own:
+# LAUNCHWAY_COMMIT_SHA_SHORT selects the image, LAUNCHWAY_PUBLIC_URL is the
+# address of the deployment's host name. It attaches `app` to its proxy
+# network, where its edge forwards the route to port 8080; no host port is
+# published.
+#
+#   production  COMPOSE_PROFILES=production starts `backup` too, and
+#               TRAIL_DB_VOLUME names the existing database volume
+#   preview     no profile, no host mounts, a database volume of its own
+#
+# A local run of the working tree: compose.dev.yaml next to this file.
 #
 # `$$` below is a literal `$` for the containers; a single `$` is filled in by
-# Compose from .env. The configs at the bottom are written into containers at
-# creation, so those containers cannot have a read-only root filesystem, and
-# they name each file in a watchtower copy-file label: Watchtower recreates
-# containers from their inspect data and would lose the files otherwise. It
-# copies into the file's directory, which must already exist in the image
-# (hence /etc/trail-backup.sh rather than a directory of its own).
+# Compose from .env.
 
 name: trail
 
@@ -24,11 +28,13 @@ x-logging: &logging
 
 services:
   app:
-    image: ghcr.io/jenspenneman/trail:${TRAIL_IMAGE_TAG:-latest}
-    # Local build from the repository (`docker compose build app`); normally
-    # the image comes from GHCR, built by CI.
-    build:
-      context: ..
+    # The image CI built and tested for the deployed commit; nothing is built
+    # on the server. CI publishes sha-<commit> for every push to a branch of
+    # this repository and for version tags, after all tests pass. Until the
+    # image exists the pull fails, and Launchway retries it. TRAIL_IMAGE
+    # replaces it for local runs (compose.dev.yaml); Launchway leaves it unset.
+    image: ${TRAIL_IMAGE:-ghcr.io/jenspenneman/trail:sha-${LAUNCHWAY_COMMIT_SHA_SHORT:?Launchway sets LAUNCHWAY_COMMIT_SHA_SHORT; local runs set TRAIL_IMAGE}}
+    pull_policy: always
     restart: unless-stopped
     init: true
     # the app's graceful shutdown (draining requests and SSE, flushing
@@ -37,20 +43,20 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # An explicit list instead of env_file: the app never sees the tunnel,
-    # DNS or notification tokens that live in the same .env. Entries without
-    # a value are passed only when .env sets them, so the app's own defaults
-    # (docs/architecture.md section 4) apply otherwise.
+    # An explicit list instead of env_file: the app never sees the rest of
+    # .env. Entries without a value are passed only when .env sets them, so
+    # the app's own defaults (docs/architecture.md section 4) apply otherwise.
     environment:
-      DATABASE_URL: postgres://trail:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/trail
-      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
+      DATABASE_URL: postgres://trail:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/trail
+      # A preview runs on its own host name: without PUBLIC_URL it takes the
+      # deployment's address from Launchway.
+      PUBLIC_URL: ${PUBLIC_URL:-${LAUNCHWAY_PUBLIC_URL:?set PUBLIC_URL (Launchway sets LAUNCHWAY_PUBLIC_URL)}}
       ADDITIONAL_ORIGINS:
       INGEST_BASE_URL:
       SIGNUP_ALLOWLIST:
-      # Only the stack's own proxies may set X-Forwarded-* (client address, HTTPS): their
-      # fixed addresses on `edge` below. Everything reaching the published port comes from
-      # Docker's gateway, which stays untrusted, so nobody on the LAN can spoof an address.
-      TRUST_PROXY: ${TRUST_PROXY:-10.201.8.10, 10.201.8.11}
+      # Only Launchway's edge may set X-Forwarded-* (client address, HTTPS):
+      # its fixed address on Launchway's proxy network.
+      TRUST_PROXY: ${TRUST_PROXY:-10.210.0.2}
       SESSION_TTL_DAYS:
       LIVE_WINDOW_MINUTES:
       STALE_AFTER_HOURS:
@@ -65,12 +71,8 @@ services:
       RATE_LIMIT_API_PER_MINUTE:
       RATE_LIMIT_INGEST_PER_MINUTE:
       RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES:
-    ports:
-      # Plain HTTP on the LAN for phones and for the dashboard at
-      # http://localhost:8080 on the laptop itself. Set TRAIL_HTTP_BIND to
-      # 127.0.0.1 once phones use the public address.
-      - "${TRAIL_HTTP_BIND:-0.0.0.0}:${TRAIL_HTTP_PORT:-8080}:8080"
-    networks: [edge, backend]
+    # default: the way out (ntfy alerts); backend: the database
+    networks: [default, backend]
     read_only: true
     tmpfs:
       - /tmp
@@ -84,10 +86,6 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 3
-    labels:
-      com.centurylinklabs.watchtower.enable: "true"
-      # every image of the app passed CI (unit, integration, E2E): no waiting
-      com.centurylinklabs.watchtower.cooldown-delay: "0"
     logging: *logging
 
   db:
@@ -96,7 +94,7 @@ services:
     environment:
       POSTGRES_USER: trail
       POSTGRES_DB: trail
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       # libc-independent collation, as in development: the data directory
       # stays valid if the image ever moves between Alpine (musl) and Debian
       POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8
@@ -104,8 +102,6 @@ services:
       # Postgres 18+ images keep the cluster in /var/lib/postgresql/18/docker,
       # so a future major version can sit next to it for pg_upgrade
       - trail-db:/var/lib/postgresql
-      # only for the dump Watchtower takes before replacing this container
-      - ${BACKUP_DIR:-./backups}:/backups
     networks: [backend]
     shm_size: 256mb
     stop_grace_period: 60s
@@ -117,29 +113,12 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 5
-    labels:
-      # the tag only moves within Postgres 18; a new major needs a manual
-      # dump and restore (docs/operations.md)
-      com.centurylinklabs.watchtower.enable: "true"
-      # a new Postgres image waits three days, time for a broken release to be pulled
-      com.centurylinklabs.watchtower.cooldown-delay: "72h"
-      # Before Watchtower replaces this container it dumps the database to
-      # BACKUP_DIR/pre-update and checks that the dump can be read back. Any
-      # failure aborts the update and the running database stays as it is.
-      com.centurylinklabs.watchtower.lifecycle.pre-update: >-
-        set -e;
-        dir=/backups/pre-update;
-        mkdir -p "$$dir";
-        stamp=$$(date -u +%Y%m%dT%H%M%SZ);
-        partial="$$dir/.trail-$$stamp.dump.partial";
-        pg_dump --username=trail --dbname=trail --format=custom --file="$$partial";
-        pg_restore --list "$$partial" > /dev/null;
-        mv "$$partial" "$$dir/trail-$$stamp.dump"
-      com.centurylinklabs.watchtower.lifecycle.pre-update-timeout: "30"
     logging: *logging
 
   backup:
     image: postgres:18-alpine
+    # production only: previews keep no backups and need no host folder
+    profiles: ["production"]
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/etc/trail-backup.sh"]
     depends_on:
@@ -155,176 +134,49 @@ services:
       PGHOST: db
       PGUSER: trail
       PGDATABASE: trail
-      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       PGCONNECT_TIMEOUT: "10"
     configs:
       - source: backup-script
         target: /etc/trail-backup.sh
     volumes:
-      - ${BACKUP_DIR:-./backups}:/backups
+      # BACKUP_DIR: an existing absolute folder, as the Docker daemon sees it;
+      # a relative path would land in the deployment's checkout, which
+      # Launchway deletes later. Launchway allows the bind mount because Trail
+      # is marked trusted. No `:?` check here: Compose checks variables of
+      # every service, including the previews' inactive `backup`; a missing
+      # folder fails at the start instead.
+      - type: bind
+        source: ${BACKUP_DIR:-/set-BACKUP_DIR-to-an-absolute-folder}
+        target: /backups
+        bind:
+          create_host_path: false
     # The image declares a volume for a database this container never runs;
-    # a tmpfs keeps Docker from creating (and Watchtower from leaving behind)
-    # an anonymous volume on every recreate.
+    # a tmpfs keeps Docker from creating an anonymous volume on every recreate.
     tmpfs:
       - /var/lib/postgresql
     networks: [backend]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: 512m
-    labels:
-      com.centurylinklabs.watchtower.enable: "true"
-      com.centurylinklabs.watchtower.cooldown-delay: "72h"
-      com.centurylinklabs.watchtower.copy-file: /etc/trail-backup.sh
-    logging: *logging
-
-  watchtower:
-    # The maintained fork: containrrr/watchtower was archived in December 2025
-    # and fails against Docker Engine 29 and newer.
-    image: nickfedor/watchtower:1
-    restart: unless-stopped
-    environment:
-      TZ: ${TZ:-Europe/Brussels}
-      WATCHTOWER_POLL_INTERVAL: "300"
-      WATCHTOWER_LABEL_ENABLE: "true"
-      WATCHTOWER_CLEANUP: "true"
-      WATCHTOWER_ROLLING_RESTART: "true"
-      WATCHTOWER_INCLUDE_RESTARTING: "true"
-      # Rolling restarts refuse to run when a watched container has
-      # dependencies, and Compose's depends_on (app -> db) counts as one.
-      # The app reconnects to the database on its own.
-      WATCHTOWER_USE_COMPOSE_DEPENDS_ON: "false"
-      WATCHTOWER_TIMEOUT: 60s
-      # runs the pre-update backup of the db container
-      WATCHTOWER_LIFECYCLE_HOOKS: "true"
-      # optional, e.g. ntfy://ntfy.sh/your-topic (only passed when .env sets it)
-      WATCHTOWER_NOTIFICATION_URL:
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      # Private GHCR package only: registry credentials for pulling
-      # (docs/operations.md, "Private image"):
-      # - ./secrets/watchtower-config.json:/config.json:ro
-    networks: [edge]
-    mem_limit: 256m
-    labels:
-      # updates itself within major version 1
-      com.centurylinklabs.watchtower.enable: "true"
-      com.centurylinklabs.watchtower.cooldown-delay: "72h"
-    logging: *logging
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    profiles: [tunnel]
-    restart: unless-stopped
-    command: ["tunnel", "--no-autoupdate", "run"]
-    environment:
-      # token of a remotely managed tunnel (Cloudflare Zero Trust dashboard);
-      # its public hostname points at http://app:8080
-      TUNNEL_TOKEN:
-    networks:
-      edge:
-        # trusted by the app (TRUST_PROXY)
-        ipv4_address: 10.201.8.10
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    mem_limit: 256m
-    labels:
-      com.centurylinklabs.watchtower.enable: "true"
-      com.centurylinklabs.watchtower.cooldown-delay: "72h"
-    logging: *logging
-
-  caddy:
-    image: caddy:2-alpine
-    profiles: [direct]
-    restart: unless-stopped
-    environment:
-      TRAIL_DOMAIN:
-      ACME_EMAIL:
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
-    volumes:
-      - caddy-data:/data
-      - caddy-config:/config
-    networks:
-      edge:
-        # trusted by the app (TRUST_PROXY)
-        ipv4_address: 10.201.8.11
-    cap_drop: [ALL]
-    cap_add: [NET_BIND_SERVICE]
-    security_opt: ["no-new-privileges:true"]
-    mem_limit: 256m
-    labels:
-      com.centurylinklabs.watchtower.enable: "true"
-      com.centurylinklabs.watchtower.cooldown-delay: "72h"
-      com.centurylinklabs.watchtower.copy-file: /etc/caddy/Caddyfile
-    logging: *logging
-
-  ddns:
-    # keeps the DNS-only A record of TRAIL_DOMAIN on the current home IP
-    image: favonia/cloudflare-ddns:1
-    profiles: [direct]
-    restart: unless-stopped
-    user: "1000:1000"
-    environment:
-      CLOUDFLARE_API_TOKEN:
-      DOMAINS: ${TRAIL_DOMAIN:-}
-      PROXIED: "false"
-      # IPv6 off: without an AAAA record nobody tries an address the router
-      # does not forward. Set DDNS_IP6_PROVIDER=cloudflare.trace to manage one.
-      IP6_PROVIDER: ${DDNS_IP6_PROVIDER:-none}
-      TZ: ${TZ:-Europe/Brussels}
-    networks: [edge]
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    mem_limit: 64m
-    labels:
-      com.centurylinklabs.watchtower.enable: "true"
-      com.centurylinklabs.watchtower.cooldown-delay: "72h"
     logging: *logging
 
 networks:
-  # app, proxies and everything that needs the internet. The fixed subnet gives the
-  # proxies fixed addresses (below .128); Docker hands out the others from ip_range.
-  edge:
-    ipam:
-      config:
-        - subnet: 10.201.8.0/24
-          ip_range: 10.201.8.128/25
   # app, db and backup only; no route out
   backend:
     internal: true
 
 volumes:
-  # The location history. External: created once with `docker volume create
-  # trail-db` (docs/operations.md) and never removed by Compose — not by
-  # `docker compose down -v` either. TRAIL_DB_VOLUME names an existing volume.
+  # The location history. Production: TRAIL_DB_VOLUME names a volume created
+  # once by hand (`docker volume create trail-db`, docs/operations.md). Compose
+  # only removes volumes it created itself, so `docker compose down -v` leaves
+  # that one alone; it warns that the volume "was not created by Docker
+  # Compose", which is expected. Previews leave TRAIL_DB_VOLUME empty and get a
+  # volume of their own project, removed with the preview.
   trail-db:
-    name: ${TRAIL_DB_VOLUME:-trail-db}
-    external: true
-  caddy-data:
-  caddy-config:
+    name: ${TRAIL_DB_VOLUME:-${COMPOSE_PROJECT_NAME}_trail-db}
 
 configs:
-  caddyfile:
-    content: |
-      {
-      	email "{$$ACME_EMAIL}"
-      	# Let's Encrypt only: the domain's CAA record allows letsencrypt.org,
-      	# so Caddy's default ZeroSSL fallback must never be tried
-      	cert_issuer acme
-      }
-
-      {$$TRAIL_DOMAIN} {
-      	# No `encode`: compressing would buffer the /api/events SSE stream.
-      	# Caddy flushes event streams immediately and adds X-Forwarded-*.
-      	reverse_proxy app:8080
-      }
   backup-script:
     content: |
       #!/bin/sh
@@ -333,7 +185,7 @@ configs:
       # dump to /backups/trail-<UTC timestamp>.dump; it counts only once
       # pg_restore can read it back. The first dump of every month is also kept in
       # monthly/ and the first of every year in yearly/. Daily dumps (and the
-      # pre-update/ dumps of the db container) are deleted after BACKUP_KEEP_DAYS
+      # pre-update/ dumps left by the former standalone stack) are deleted after BACKUP_KEEP_DAYS
       # days, monthly ones after BACKUP_KEEP_MONTHS months, yearly ones after
       # BACKUP_KEEP_YEARS years; 0 keeps them forever. It also dumps right after
       # starting when the newest dump is more than a day old (first start, the
