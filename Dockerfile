@@ -8,7 +8,7 @@
 # files. Node is always the current LTS: the tag stays `lts-alpine` and
 # Dependabot moves the pinned digest when a new image is published.
 
-FROM --platform=$BUILDPLATFORM node:lts-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS manifests
+FROM --platform=$BUILDPLATFORM node:lts-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS manifests
 WORKDIR /app
 # Only the manifests, so the install layers stay cached until a package.json
 # or the lockfile changes. npm ci needs every workspace manifest to validate
@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     && rm -rf node_modules/@trail \
     && find node_modules -name '*.node' -exec sh -c 'printf "native addon in the runtime dependencies: %s\n" "$@" >&2; exit 1' sh {} +
 
-FROM node:lts-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS runtime
+FROM node:lts-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS runtime
 ENV NODE_ENV=production \
     PORT=8080
 WORKDIR /app
