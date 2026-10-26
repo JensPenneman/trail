@@ -1376,12 +1376,18 @@ tests against a `postgres:18-alpine` service, `TEST_DATABASE_URL` →
 reachable as `postgres`, `E2E_DATABASE_URL` → `trail_e2e`, `npm run build` then `npm run test:e2e`;
 the report is uploaded on failure) → `image` (buildx multi-arch with the GHA
 cache; pushes to GHCR only from `main` — pushes, schedule, manual runs — and
-`v*` tags; builds without pushing on PRs). Actions pinned by commit SHA;
-per-job least-privilege permissions (`packages`, `id-token`, `attestations`
-write only in `image`). Dependabot (weekly, Monday 07:00 Europe/Brussels) for
-npm, GitHub Actions, the Dockerfile digests (the image's and the development
-container's) and the compose files, `.devcontainer/` included (only major
-tags change there; majors never auto-merge). The npm groups: `security`
+`v*` tags; builds without pushing on PRs). Beside them, `changes` →
+`devcontainer` builds the development container's image (§3) with Buildx and
+a GHA cache scope of its own, neither pushed nor loaded, for pushes and pull
+requests that change `.devcontainer/`, `package-lock.json` or `ci.yml`
+(`changes` diffs a pull request's merge commit with its base, a push with the
+branch's previous commit, a new branch with `main`); it is not a required
+check. Actions pinned by commit SHA; per-job least-privilege permissions
+(`packages`, `id-token`, `attestations` write only in `image`). Dependabot
+(weekly, Monday 07:00 Europe/Brussels) for npm, GitHub Actions, the
+Dockerfile digests (the image's and the development container's) and the
+compose files, `.devcontainer/` included (only major tags change there;
+majors never auto-merge). The npm groups: `security`
 (`applies-to: security-updates`, every package; GitHub Actions has one too),
 `biome` and `typescript` alone, the families (`vitest`, `playwright`,
 `react`, …) and the catch-all `minor-and-patch` with the pattern `*`:
