@@ -19,6 +19,6 @@ export interface AppContext {
   background: BackgroundTasks;
   /** Null when no ntfy topic is configured. */
   alerts: AlertSender | null;
-  /** Resolves API tokens for `/api/v1` (`noApiTokens` until a token store is wired in). */
+  /** Resolves API tokens for `/api/v1`: the `api_tokens` table, or a stand-in in tests. */
   apiTokens: ApiTokenVerifier;
 }

@@ -46,15 +46,26 @@ yourself: location data is personal data.
   the origin), no passwords. Session, device, invite and passkey-link tokens
   are random and stored as SHA-256 hashes only; session cookies are
   `HttpOnly`, `SameSite=Lax` and `__Host-`/`Secure` on HTTPS.
+- **API tokens**: 32 random bytes (`trlk_…`), stored as SHA-256 hashes only
+  and shown once, when created or rolled. Each token has scopes (positions
+  only with `locations:read`), can be limited to some devices and to IP
+  addresses or networks, and expires unless
+  its owner chooses otherwise; rolling replaces its secret at once, revoking
+  ends it at once. Tokens are accepted only in the `Authorization` header of
+  `/api/v1`, are shape-checked before any lookup, and are never logged; only
+  a person signed in with a passkey can create, change, roll or revoke them,
+  and no token reaches sign-in, passkeys, device credentials or other tokens.
+  Creating, changing, rolling and revoking are logged with the token's id.
 - **Requests**: origin checks against cross-site requests, input validation of
-  every request with zod, body size limits, rate limits per IP and per device
-  token; client addresses and HTTPS are taken from forwarded headers of the
-  stack's own proxies only.
+  every request with zod, body size limits, rate limits per IP, per device
+  token and per API token (and for refused tokens per IP); client addresses
+  and HTTPS are taken from forwarded headers of the stack's own proxies only.
 - **Headers**: a strict Content Security Policy without inline scripts or
   styles, HSTS on HTTPS, `frame-ancestors 'none'`, COOP/CORP, a
   Permissions-Policy that denies everything except passkeys.
 - **Privacy**: tokens, cookies and coordinates are kept out of the logs at the
-  default log level; every query is scoped to the signed-in person's devices.
+  default log level; every query is scoped to the signed-in person's devices,
+  or to the devices an API token is limited to.
 - **Container**: runs as an unprivileged user on a read-only root file system
   with all Linux capabilities dropped and `no-new-privileges`; the database
   sits on an internal network without a published port; the app receives only

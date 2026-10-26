@@ -16,8 +16,20 @@
       "description": "The account a credential belongs to."
     },
     {
+      "name": "Tokens",
+      "description": "The API token a request carries. Tokens are created, rolled and revoked in Settings › API tokens."
+    },
+    {
       "name": "Devices",
       "description": "The phones that record locations (Overland installs), with their latest position and battery."
+    },
+    {
+      "name": "Locations",
+      "description": "Where the devices have been: every point as it arrived, the places they stayed at (visits) and the all-time heatmap. All of it needs `locations:read`."
+    },
+    {
+      "name": "History",
+      "description": "History without coordinates: trips, daily statistics and recent activity (`history:read`)."
     },
     {
       "name": "Reference",
@@ -65,6 +77,48 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/tokens/verify": {
+      "get": {
+        "operationId": "verifyToken",
+        "summary": "Verify the token",
+        "description": "Checks the API token the request carries and describes it: its name, scopes, devices and expiry. A token that is refused gets the usual 401 instead, so this is the call to test a token with, or to find out when it expires. Only a token can be verified: a signed-in session gets 400.\n\n**Access:** any API token, whatever its scopes; not a session.",
+        "tags": [
+          "Tokens"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The API token that made the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenVerification"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -203,6 +257,97 @@
             "$ref": "#/components/responses/Unavailable"
           }
         }
+      },
+      "patch": {
+        "operationId": "updateDevice",
+        "summary": "Change a device",
+        "description": "Renames the device, switches its silence alerts or queues a settings preset for Overland. Its credentials are out of reach: no token can replace a device's access token or delete a device, which takes a signed-in session. The answer has the device and its settings after the change; the device's position only for a credential with `locations:read`.\n\n**Access:** an API token with the scope `devices:write`, or a signed-in session.",
+        "tags": [
+          "Devices"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "devices:write"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The device's id.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+            },
+            "required": true,
+            "description": "The device's id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "device": {
+                      "$ref": "#/components/schemas/Device"
+                    },
+                    "settings": {
+                      "$ref": "#/components/schemas/DeviceSettings"
+                    }
+                  },
+                  "required": [
+                    "device",
+                    "settings"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
       }
     },
     "/api/v1/devices/{id}/location": {
@@ -261,6 +406,603 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/locations": {
+      "get": {
+        "operationId": "listLocations",
+        "summary": "List points",
+        "description": "The points one device recorded, exactly as the phone sent them (no smoothing, no map matching), oldest first and a page at a time: follow `nextCursor` until it is null. `from` and `to` narrow the range. A phone uploads when it can, so points may arrive later than newer ones: to keep a copy current, ask again for a range that overlaps the end of the last one.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "tags": [
+          "Locations"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "device",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The device whose points to read.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+            },
+            "required": true,
+            "description": "The device whose points to read."
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "Only points recorded at or after this instant.",
+              "example": "2026-10-26T00:00:00+01:00",
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only points recorded at or after this instant."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "Only points recorded before this instant.",
+              "example": "2026-10-27T00:00:00+01:00",
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only points recorded before this instant."
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "description": "`nextCursor` of the previous page; leave it out (or empty) for the first page.",
+              "type": "string",
+              "maxLength": 200
+            },
+            "description": "`nextCursor` of the previous page; leave it out (or empty) for the first page."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "description": "Points per page, at most 1000.",
+              "example": 500,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "description": "Points per page, at most 1000."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of points.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/visits": {
+      "get": {
+        "operationId": "listVisits",
+        "summary": "List visits",
+        "description": "The places iOS saw the phones stay at (Overland with Visit Tracking on) that touch the range: arrived, departed or reported in it, or spanning it. At most 400 days at once. Visits are where someone was, so they need `locations:read`.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "tags": [
+          "Locations"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Start of the range (included).",
+              "example": "2026-10-25T00:00:00+02:00"
+            },
+            "required": true,
+            "description": "Start of the range (included)."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "description": "End of the range (excluded); at most 400 days after `from`.",
+              "example": "2026-10-26T00:00:00+01:00"
+            },
+            "required": true,
+            "description": "End of the range (excluded); at most 400 days after `from`."
+          },
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "visits": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Visit"
+                      },
+                      "description": "By arrival, oldest first."
+                    }
+                  },
+                  "required": [
+                    "visits"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/heatmap": {
+      "get": {
+        "operationId": "getHeatmap",
+        "summary": "Get the heatmap",
+        "description": "How many points were ever recorded in each cell of a viewport, summed over the devices: the cells get smaller as `zoom` grows. Counted as points arrive, so it costs the same for a day of data as for ten years. The cells are places, so the heatmap needs `locations:read`.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "tags": [
+          "Locations"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "bbox",
+            "schema": {
+              "description": "The viewport: `west,south,east,north` in degrees (west > east crosses the antimeridian).",
+              "example": "3.60,50.98,3.80,51.10",
+              "type": "string"
+            },
+            "required": true,
+            "description": "The viewport: `west,south,east,north` in degrees (west > east crosses the antimeridian)."
+          },
+          {
+            "in": "query",
+            "name": "zoom",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 24,
+              "description": "The map's zoom level; the cells get finer as it grows.",
+              "example": 12
+            },
+            "required": true,
+            "description": "The map's zoom level; the cells get finer as it grows."
+          },
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many points were ever recorded in each cell of the viewport; points less accurate than 200 m are left out.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Heatmap"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/trips": {
+      "get": {
+        "operationId": "listTrips",
+        "summary": "List trips",
+        "description": "The trips recorded with Overland's Start and Stop button that overlap the range. At most 400 days at once.\n\n**Access:** an API token with the scope `history:read`, or a signed-in session.",
+        "tags": [
+          "History"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "history:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Start of the range (included).",
+              "example": "2026-10-25T00:00:00+02:00"
+            },
+            "required": true,
+            "description": "Start of the range (included)."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "description": "End of the range (excluded); at most 400 days after `from`.",
+              "example": "2026-10-26T00:00:00+01:00"
+            },
+            "required": true,
+            "description": "End of the range (excluded); at most 400 days after `from`."
+          },
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "trips": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Trip"
+                      },
+                      "description": "By start, oldest first."
+                    }
+                  },
+                  "required": [
+                    "trips"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/stats/days": {
+      "get": {
+        "operationId": "listDayStats",
+        "summary": "List daily statistics",
+        "description": "Points, distance and the first and last point of every device on every local day from `from` to `to` (both included) that has points. Days follow the account's time zone, which the answer repeats. At most 400 days at once.\n\n**Access:** an API token with the scope `history:read`, or a signed-in session.",
+        "tags": [
+          "History"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "history:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+              "description": "First day (YYYY-MM-DD, the account's time zone).",
+              "example": "2026-10-01"
+            },
+            "required": true,
+            "description": "First day (YYYY-MM-DD, the account's time zone)."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+              "description": "Last day, included; at most 400 days after `from`.",
+              "example": "2026-10-26"
+            },
+            "required": true,
+            "description": "Last day, included; at most 400 days after `from`."
+          },
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "timezone": {
+                      "type": "string",
+                      "description": "The time zone the days are in (the account's).",
+                      "example": "Europe/Brussels"
+                    },
+                    "days": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DayStats"
+                      },
+                      "description": "Days with points only, by date then device."
+                    }
+                  },
+                  "required": [
+                    "timezone",
+                    "days"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/stats/activity": {
+      "get": {
+        "operationId": "getActivity",
+        "summary": "Get recent activity",
+        "description": "Points recorded and uploads received per device and UTC hour, over the last `hours` hours up to the current one, zeros included: the quickest way to see whether data still comes in.\n\n**Access:** an API token with the scope `history:read`, or a signed-in session.",
+        "tags": [
+          "History"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "history:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "hours",
+            "schema": {
+              "default": 48,
+              "description": "How many hours back, the current one included; at most 168 (a week).",
+              "example": 48,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 168
+            },
+            "description": "How many hours back, the current one included; at most 168 (a week)."
+          },
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Start of the first hour.",
+                      "example": "2026-10-24T09:00:00.000Z"
+                    },
+                    "to": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "End of the current hour.",
+                      "example": "2026-10-26T09:00:00.000Z"
+                    },
+                    "buckets": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ActivityBucket"
+                      },
+                      "description": "Every hour × device, zeros included, by hour then device."
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "to",
+                    "buckets"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -343,6 +1085,46 @@
   },
   "components": {
     "schemas": {
+      "DeviceUpdate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "Its name in Trail, 1 to 60 characters; the phone keeps sending as before.",
+            "example": "Work phone",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "alertsEnabled": {
+            "description": "Whether the server warns (through ntfy, when its owner set that up) once the device has been silent for a while, and when it sends again.",
+            "example": false,
+            "type": "boolean"
+          },
+          "pendingSettings": {
+            "description": "A preset for Overland, sent once with the answer to the phone's next upload; null withdraws one that has not been sent yet.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingsPreset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "description": "The changes; leave out what stays as it is."
+      },
+      "SettingsPreset": {
+        "type": "string",
+        "enum": [
+          "balanced",
+          "balanced-plus",
+          "high-resolution",
+          "battery-saver"
+        ],
+        "description": "A tested set of Overland settings: `balanced`, `balanced-plus`, `high-resolution` (best accuracy, most battery) or `battery-saver`.",
+        "example": "high-resolution"
+      },
       "Profile": {
         "type": "object",
         "properties": {
@@ -370,6 +1152,87 @@
         ],
         "additionalProperties": false,
         "description": "The account a credential belongs to."
+      },
+      "TokenVerification": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The token's id.",
+            "example": "019a1b2c-3d4e-7f60-8a9b-0c1d2e3f4a5b"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name its owner gave it.",
+            "example": "Home Assistant"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiScope"
+            },
+            "description": "What it may do.",
+            "example": [
+              "devices:read",
+              "locations:read"
+            ]
+          },
+          "deviceIds": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The only devices it reaches; null for every device of the account, also ones added later.",
+            "example": [
+              "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+            ]
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it stops working; null when it never expires.",
+            "example": "2027-01-24T09:00:00.000Z"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ApiTokenStatus"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "scopes",
+          "deviceIds",
+          "expiresAt",
+          "status"
+        ],
+        "additionalProperties": false,
+        "description": "The API token that made the request."
+      },
+      "ApiTokenStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "expired",
+          "revoked"
+        ],
+        "description": "`active` until the token is revoked or reaches its expiry; a token that is not active is refused.",
+        "example": "active"
       },
       "Device": {
         "type": "object",
@@ -639,6 +1502,47 @@
         "additionalProperties": false,
         "description": "The last battery reading of the device."
       },
+      "DeviceSettings": {
+        "type": "object",
+        "properties": {
+          "alertsEnabled": {
+            "type": "boolean",
+            "description": "Whether silence and recovery alerts are on.",
+            "example": true
+          },
+          "pendingSettings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingsPreset"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The preset waiting for the phone's next upload; null when none is waiting."
+          },
+          "settingsAppliedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the phone last received a preset; null when it never did.",
+            "example": "2026-10-20T18:04:11.000Z"
+          }
+        },
+        "required": [
+          "alertsEnabled",
+          "pendingSettings",
+          "settingsAppliedAt"
+        ],
+        "additionalProperties": false,
+        "description": "What the owner set for the device."
+      },
       "DeviceLocation": {
         "type": "object",
         "properties": {
@@ -732,6 +1636,453 @@
         "additionalProperties": false,
         "description": "The newest position of a device."
       },
+      "PointPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Point"
+            },
+            "description": "Oldest first."
+          },
+          "nextCursor": {
+            "description": "Pass it as `cursor` for the next page; null on the last page.",
+            "example": "MjAyNi0xMC0yNlQwODo0MTowNy4wMDBa",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "additionalProperties": false,
+        "description": "A page of points."
+      },
+      "Point": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "description": "Latitude in degrees (WGS84).",
+            "example": 51.0543
+          },
+          "lon": {
+            "type": "number",
+            "description": "Longitude in degrees (WGS84).",
+            "example": 3.7174
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the phone recorded the position.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "accuracy": {
+            "description": "Horizontal accuracy in metres (radius); null when unknown.",
+            "example": 5,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "speed": {
+            "description": "Speed in metres per second; null when unknown.",
+            "example": 4.2,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "course": {
+            "description": "Direction of travel in degrees clockwise from north; null when unknown.",
+            "example": 87,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "altitude": {
+            "description": "Altitude in metres; null when unknown.",
+            "example": 12,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "motion": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Motion activity iOS reported with the position (`walking`, `automotive` …).",
+            "example": [
+              "cycling"
+            ]
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device that recorded it.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When Trail received it (a phone sends in batches).",
+            "example": "2026-10-26T08:45:12.000Z"
+          },
+          "verticalAccuracy": {
+            "description": "Vertical accuracy of the altitude in metres; null when unknown.",
+            "example": 3,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "speedAccuracy": {
+            "description": "Accuracy of the speed in metres per second; null when unknown.",
+            "example": 0.5,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "courseAccuracy": {
+            "description": "Accuracy of the course in degrees; null when unknown.",
+            "example": 12,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "battery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Battery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "lat",
+          "lon",
+          "recordedAt",
+          "accuracy",
+          "speed",
+          "course",
+          "altitude",
+          "motion",
+          "deviceId",
+          "receivedAt",
+          "verticalAccuracy",
+          "speedAccuracy",
+          "courseAccuracy",
+          "battery"
+        ],
+        "additionalProperties": false,
+        "description": "A point the phone recorded, as it arrived: the documented fields only. What else Overland sends with a point (the Wi-Fi network, its own ids, tracking statistics) stays on the server."
+      },
+      "Visit": {
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device that reported it.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the phone reported the visit.",
+            "example": "2026-10-26T12:31:02.000Z"
+          },
+          "arrivedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Arrival; null when iOS did not know it.",
+            "example": "2026-10-26T08:58:40.000Z"
+          },
+          "departedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Departure; null while the visit is still going on (or when iOS did not know it).",
+            "example": "2026-10-26T12:30:11.000Z"
+          },
+          "lat": {
+            "type": "number",
+            "description": "Latitude of the place (WGS84).",
+            "example": 51.0543
+          },
+          "lon": {
+            "type": "number",
+            "description": "Longitude of the place (WGS84).",
+            "example": 3.7174
+          },
+          "accuracy": {
+            "description": "Horizontal accuracy in metres; null when unknown.",
+            "example": 35,
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "deviceId",
+          "recordedAt",
+          "arrivedAt",
+          "departedAt",
+          "lat",
+          "lon",
+          "accuracy"
+        ],
+        "additionalProperties": false,
+        "description": "A stay at one place. iOS reports a visit on arrival and again on departure; the two reports come as one visit."
+      },
+      "Heatmap": {
+        "type": "object",
+        "properties": {
+          "cellZoom": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Slippy-map zoom of the cells (6, 9, 12, 15 or 18).",
+            "example": 15
+          },
+          "cells": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              ],
+              "items": false,
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "description": "`[lon, lat, count]` of each cell centre with points, busiest first, at most 20 000.",
+            "example": [
+              [
+                3.7174,
+                51.0543,
+                1820
+              ],
+              [
+                3.7251,
+                51.0498,
+                640
+              ]
+            ]
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the viewport held more cells than the answer carries.",
+            "example": false
+          }
+        },
+        "required": [
+          "cellZoom",
+          "cells",
+          "truncated"
+        ],
+        "additionalProperties": false,
+        "description": "How many points were ever recorded in each cell of the viewport; points less accurate than 200 m are left out."
+      },
+      "Trip": {
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device that recorded it.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the trip started.",
+            "example": "2026-10-26T07:02:10.000Z"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it ended.",
+            "example": "2026-10-26T07:41:55.000Z"
+          },
+          "mode": {
+            "type": "string",
+            "description": "The mode chosen in Overland: `walk`, `run`, `bicycle`, `car`, `train` …",
+            "example": "bicycle"
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Distance in metres.",
+            "example": 12480
+          },
+          "durationS": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Duration in seconds.",
+            "example": 2385
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Steps counted on the way; null when the phone did not count them.",
+            "example": null
+          },
+          "stoppedAutomatically": {
+            "type": "boolean",
+            "description": "Whether Overland ended it by itself rather than with the Stop button.",
+            "example": false
+          }
+        },
+        "required": [
+          "deviceId",
+          "startedAt",
+          "endedAt",
+          "mode",
+          "distanceM",
+          "durationS",
+          "steps",
+          "stoppedAutomatically"
+        ],
+        "additionalProperties": false,
+        "description": "A trip recorded with Overland's Start and Stop button."
+      },
+      "DayStats": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "description": "The local day.",
+            "example": "2026-10-26"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "points": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Points recorded.",
+            "example": 1840
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Distance travelled in metres, without points less accurate than 100 m and without GPS jitter.",
+            "example": 23510
+          },
+          "firstAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The day's first point.",
+            "example": "2026-10-26T06:12:40.000Z"
+          },
+          "lastAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The day's last point.",
+            "example": "2026-10-26T21:58:03.000Z"
+          }
+        },
+        "required": [
+          "date",
+          "deviceId",
+          "points",
+          "distanceM",
+          "firstAt",
+          "lastAt"
+        ],
+        "additionalProperties": false,
+        "description": "What one device recorded on one local day."
+      },
+      "ActivityBucket": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start of the hour (UTC).",
+            "example": "2026-10-26T08:00:00.000Z"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "recorded": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Points recorded in this hour.",
+            "example": 212
+          },
+          "uploads": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Uploads Trail received from the phone in this hour.",
+            "example": 12
+          }
+        },
+        "required": [
+          "start",
+          "deviceId",
+          "recorded",
+          "uploads"
+        ],
+        "additionalProperties": false,
+        "description": "One hour of one device."
+      },
       "ApiScope": {
         "type": "string",
         "enum": [
@@ -751,7 +2102,7 @@
     },
     "responses": {
       "BadRequest": {
-        "description": "The request is invalid: `validation_failed` lists the offending fields in `fields`; `bad_request` means unreadable JSON.",
+        "description": "The request is invalid: `validation_failed` lists the offending fields in `fields`; `bad_request` means unreadable JSON, or a session calling an operation that only an API token can call.",
         "content": {
           "application/json": {
             "schema": {
@@ -1187,7 +2538,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "trlk_…",
-        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, tracks, the timeline). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read visits, trips, daily statistics, activity and the heatmap. |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |"
+        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read trips, daily statistics and activity: the history without coordinates. |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |"
       }
     }
   }

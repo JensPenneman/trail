@@ -3,6 +3,7 @@ import { DocumentTitle } from "../../app/DocumentTitle";
 import { useSessionUser } from "../../app/useSessionUser";
 import { PageHeader } from "../../ui/PageHeader";
 import { AboutSection } from "./AboutSection";
+import { ApiTokensSection } from "./ApiTokensSection";
 import { DataSection } from "./DataSection";
 import { PasskeyLinkSection } from "./PasskeyLinkSection";
 import { PasskeysSection } from "./PasskeysSection";
@@ -11,7 +12,7 @@ import { ProfileSection } from "./ProfileSection";
 import { SessionsSection } from "./SessionsSection";
 import "./SettingsPage.css";
 
-/** Account, sign-in, people (admins), data and build information on one page. */
+/** Account, sign-in, API tokens, people (admins), data and build information on one page. */
 export function SettingsPage() {
   const user = useSessionUser();
   const ids = {
@@ -19,6 +20,7 @@ export function SettingsPage() {
     passkeys: useId(),
     link: useId(),
     sessions: useId(),
+    tokens: useId(),
     people: useId(),
     data: useId(),
     about: useId(),
@@ -27,6 +29,7 @@ export function SettingsPage() {
     { id: ids.profile, label: "Profile" },
     { id: ids.passkeys, label: "Passkeys" },
     { id: ids.sessions, label: "Browsers" },
+    { id: ids.tokens, label: "API tokens" },
     ...(user.isAdmin ? [{ id: ids.people, label: "People" }] : []),
     { id: ids.data, label: "Data" },
     { id: ids.about, label: "About" },
@@ -46,6 +49,7 @@ export function SettingsPage() {
       <PasskeysSection headingId={ids.passkeys} />
       <PasskeyLinkSection headingId={ids.link} />
       <SessionsSection headingId={ids.sessions} />
+      <ApiTokensSection headingId={ids.tokens} />
       {user.isAdmin ? <PeopleSection headingId={ids.people} /> : null}
       <DataSection headingId={ids.data} />
       <AboutSection headingId={ids.about} />

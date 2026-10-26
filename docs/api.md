@@ -1,8 +1,9 @@
 # Trail API
 
 The Trail API gives scripts, apps and agents what a Trail server holds for an
-account: its devices, where they are now and, in later releases, where they
-have been and how they travelled. It is JSON over HTTPS under `/api/v1`. The
+account: its devices, where they are now, where they have been — every point,
+visit and trip, statistics per day and an all-time heatmap — and, in later
+releases, how they travelled. It is JSON over HTTPS under `/api/v1`. The
 OpenAPI 3.1 document at `/api/v1/openapi.json` describes every operation, and
 the reference at `/docs` renders it with this guide on top.
 
@@ -29,9 +30,9 @@ Authorization: Bearer trlk_…
 ```
 
 Tokens look like `trlk_` followed by 43 characters (`A–Z`, `a–z`, `0–9`, `-`
-and `_`). On the server's own origin, a signed-in browser session works as
-well: the dashboard uses it. Cookies never cross origins, so a page on
-another site can only use a token.
+and `_`); [Tokens](#tokens) explains how to get one. On the server's own
+origin, a signed-in browser session works as well: the dashboard uses it.
+Cookies never cross origins, so a page on another site can only use a token.
 
 A request that has no valid credential gets `401` and a `WWW-Authenticate`
 header (RFC 6750): `Bearer realm="trail"` when no credential was sent, with
@@ -43,10 +44,90 @@ with the missing scopes in the message and in the header's `scope` attribute.
 
 ## Tokens
 
-API tokens arrive in the next release: you will create them under
-Settings › API tokens, pick their scopes, their devices and when they expire,
-and see each secret exactly once. Until then the API accepts the signed-in
-session only.
+Create a token in the dashboard, under **Settings › API tokens › Create
+token**. You choose:
+
+- **a name**, to recognise it later (where it is used, such as "Home
+  Assistant");
+- **what it may do**: its [scopes](#scopes). Three templates fill them in,
+  and you can adjust them afterwards:
+
+  | Template | Scopes |
+  |---|---|
+  | Read-only | every `:read` scope |
+  | Agent | every `:read` scope and `locations:write` |
+  | Full access | every scope |
+
+- **its devices**: all of them (also the ones you add later), or some. The
+  others then look as if they did not exist: they are missing from lists and
+  answer `404`. Deleting a device takes it out of every token; a token whose
+  last device was deleted reaches no device at all (it never falls back to
+  all of them);
+- **when it expires**: in 30 days, 90 days, a year, on a date, or never. A
+  token without an expiry works until you revoke it, also when it has leaked
+  unnoticed: prefer an expiry;
+- optionally, **the addresses it may be used from**: IPv4 and IPv6
+  addresses and networks in CIDR notation (`203.0.113.7`,
+  `192.168.1.0/24`, `2001:db8::/32`; IPv4 networks in IPv4 notation). A
+  request from anywhere else is refused like an unknown token. The address is
+  the client's as the server sees it: behind a proxy the server trusts, the
+  address that proxy reports.
+
+The secret is shown **once**, right after you create the token: copy it into
+the program that uses it, or into a password manager. Trail stores only a
+hash of it, so nobody can show it again. An account can have 50 active
+tokens, and keeps at most 200 in all, the expired and revoked ones it still
+lists included.
+
+Settings lists every token with its hint (the last four characters), scopes,
+devices, addresses, expiry and when and from where it was last used (updated
+at most once a minute). There you can also:
+
+- **Roll** a token: it gets a new secret, shown once, and keeps its name,
+  scopes, devices, addresses and expiry. The old secret stops working at
+  once.
+- **Revoke** a token: it stops working at once and cannot be restored. It
+  stays in the list as revoked for 30 days, like an expired one, and is then
+  removed.
+
+Tokens are managed only there, signed in with a passkey: no token can create,
+change, roll or revoke tokens, or manage sign-in, passkeys or device
+credentials.
+
+To check a token, or to see when it expires, ask the API about it:
+
+```sh
+curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/tokens/verify"
+```
+
+```json
+{
+  "id": "019a1b2c-3d4e-7f60-8a9b-0c1d2e3f4a5b",
+  "name": "Home Assistant",
+  "scopes": ["devices:read", "locations:read"],
+  "deviceIds": ["0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"],
+  "expiresAt": "2027-01-24T09:00:00.000Z",
+  "status": "active"
+}
+```
+
+A token that is refused gets `401` instead, and the reason, as far as it is
+safe to tell:
+
+| Answer | `error.code` | `WWW-Authenticate` |
+|---|---|---|
+| The token has expired | `token_expired` | `Bearer realm="trail", error="invalid_token"` |
+| Unknown, revoked or malformed, or used from an address it does not allow | `unauthorized` | `Bearer realm="trail", error="invalid_token"` |
+| No credential at all | `unauthorized` | `Bearer realm="trail"` |
+| The token lacks a scope (`403`) | `insufficient_scope` | `Bearer realm="trail", error="insufficient_scope", scope="…"` |
+
+A caller outside a token's addresses learns nothing about it, not even that
+it has expired. `tokens/verify` with a signed-in session (which has no token)
+answers `400 bad_request`.
+
+Keep tokens out of URLs, shared files and source code: send them in the
+`Authorization` header only. Should one end up in a URL anyway, the server
+keeps it out of its logs.
 
 ## Scopes
 
@@ -59,17 +140,20 @@ needs them all. A signed-in session holds every scope.
 | `profile:read` | Read the account's name and time zone. |
 | `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |
 | `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |
-| `locations:read` | Read positions: where the devices are now and where they have been (points, tracks, the timeline). |
+| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |
 | `locations:write` | Correct how you travelled (transport mode overrides). |
-| `history:read` | Read visits, trips, daily statistics, activity and the heatmap. |
+| `history:read` | Read trips, daily statistics and activity: the history without coordinates. |
 | `people:read` | See the people who share their location with you. |
 | `shares:read` | List your shares, the ones you receive and your public links. |
 | `shares:write` | Start and stop sharing, hide people and manage public links. |
 
-Positions are what `locations:read` is for: a device in `GET /api/v1/devices`
-carries its `lastLocation` only for a credential with that scope. With
-`devices:read` alone the field is left out, so a token for a status display
-never learns where anyone is.
+Coordinates are what `locations:read` is for: every answer with a place in it
+needs it — points, visits, the heatmap and a device's position. A device in
+`GET /api/v1/devices` (and wherever else the API answers with a device, such as
+after `PATCH /api/v1/devices/{id}`) carries its `lastLocation` only for a
+credential with that scope; with `devices:read` alone the field is left out,
+so a token for a status display never learns where anyone is. `history:read`
+is the history without coordinates: trips, statistics per day and activity.
 
 A token can also be limited to some of the account's devices. The other
 devices then look as if they did not exist: they are missing from lists and
@@ -94,8 +178,16 @@ answer `404`.
 
 Lists that grow without bound, such as recorded points, come in pages: ask for
 `limit` items and get `{ "items": […], "nextCursor": "…" }`; pass
-`cursor=<nextCursor>` for the next page until `nextCursor` is `null`. Other
-lists cover a bounded range (at most 93 days) and come whole.
+`cursor=<nextCursor>` for the next page until `nextCursor` is `null`. A
+cursor is opaque: pass it back as it is, with the same other parameters. Other
+lists cover a bounded range and come whole: at most 400 days for visits,
+trips and statistics per day.
+
+`GET /api/v1/locations` returns one device's points oldest first, up to 1000
+a page, exactly as the phone recorded them: the documented fields, not the
+Wi-Fi network or Overland's own ids, which stay on the server. A phone uploads when it can, so points
+may arrive later than newer ones: to keep a copy current, ask again for a
+range that overlaps the end of the previous one.
 
 ## Errors
 
@@ -118,7 +210,7 @@ change. `fields` appears with `validation_failed` and maps each request field
 | Status | Codes | Meaning |
 |---|---|---|
 | 400 | `validation_failed`, `bad_request` | Invalid query or body; unreadable JSON |
-| 401 | `unauthorized`, `token_expired` | No credential, or a refused one |
+| 401 | `unauthorized`, `token_expired` | No credential, or a refused one (see [Tokens](#tokens)) |
 | 403 | `insufficient_scope`, `forbidden`, `origin_not_allowed` | A missing scope; something only a signed-in browser may do; a session request from another site |
 | 404 | `not_found` | No such resource or route |
 | 409 | `conflict` | The change conflicts with the current state |
@@ -158,6 +250,10 @@ scopes and devices as it needs.
 ```sh
 export TRAIL=https://trail.example.com
 export TRAIL_TOKEN=trlk_…
+export DEVICE=0199a0f3-5fec-72ad-a30c-5ab9d8908cd3
+
+# The token itself: its scopes, devices and expiry
+curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/tokens/verify"
 
 # The account behind the token
 curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/me"
@@ -166,8 +262,36 @@ curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/me"
 curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/devices"
 
 # Where one device is now
+curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/devices/$DEVICE/location"
+
+# One day of points, page by page (needs jq); an empty cursor is the first page
+cursor=""
+while :; do
+  page=$(curl -sS -G -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/locations" \
+    --data-urlencode "device=$DEVICE" \
+    --data-urlencode "from=2026-10-26T00:00:00+01:00" \
+    --data-urlencode "to=2026-10-27T00:00:00+01:00" \
+    --data-urlencode "limit=1000" --data-urlencode "cursor=$cursor")
+  echo "$page" | jq -c '.items[]'
+  cursor=$(echo "$page" | jq -r '.nextCursor // empty')
+  [ -n "$cursor" ] || break
+done
+
+# Visits (locations:read) and trips (history:read) of a week, the statistics of a month
+curl -sS -G -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/visits" \
+  --data-urlencode "from=2026-10-19T00:00:00+02:00" --data-urlencode "to=2026-10-26T00:00:00+01:00"
+curl -sS -G -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/trips" \
+  --data-urlencode "from=2026-10-19T00:00:00+02:00" --data-urlencode "to=2026-10-26T00:00:00+01:00"
 curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" \
-  "$TRAIL/api/v1/devices/0199a0f3-5fec-72ad-a30c-5ab9d8908cd3/location"
+  "$TRAIL/api/v1/stats/days?from=2026-10-01&to=2026-10-31&devices=$DEVICE"
+
+# Is data still coming in? Points and uploads per hour, the last 24 hours
+curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/stats/activity?hours=24"
+
+# Rename a device and queue a settings preset for its next upload (devices:write)
+curl -sS -X PATCH -H "Authorization: Bearer $TRAIL_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "Work phone", "pendingSettings": "high-resolution"}' \
+  "$TRAIL/api/v1/devices/$DEVICE"
 
 # The OpenAPI document, for a code generator or an HTTP client
 curl -sS "$TRAIL/api/v1/openapi.json" -o trail-openapi.json
@@ -189,5 +313,31 @@ A device's location:
     "motion": ["cycling"],
     "battery": { "level": 0.82, "state": "unplugged", "recordedAt": "2026-10-26T08:41:07.000Z" }
   }
+}
+```
+
+A page of points:
+
+```json
+{
+  "items": [
+    {
+      "deviceId": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3",
+      "recordedAt": "2026-10-26T08:41:07.000Z",
+      "receivedAt": "2026-10-26T08:45:12.000Z",
+      "lat": 51.0543,
+      "lon": 3.7174,
+      "accuracy": 5,
+      "verticalAccuracy": 3,
+      "speed": 4.2,
+      "speedAccuracy": 0.5,
+      "course": 87,
+      "courseAccuracy": 12,
+      "altitude": 12,
+      "motion": ["cycling"],
+      "battery": { "level": 0.82, "state": "unplugged", "recordedAt": "2026-10-26T08:41:07.000Z" }
+    }
+  ],
+  "nextCursor": "MjAyNi0xMC0yNlQwODo0MTowNy4wMDBa"
 }
 ```

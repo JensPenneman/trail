@@ -32,7 +32,7 @@ export async function createTestContext(
     webDistDir?: string;
     /** Receives the app's log lines (level info) instead of discarding them. */
     logDestination?: DestinationStream;
-    /** Resolves API tokens on /api/v1 (default: `noApiTokens`, which knows none). */
+    /** Resolves API tokens on /api/v1 instead of the `api_tokens` table (a stand-in for every outcome). */
     apiTokens?: ApiTokenVerifier;
   } = {},
 ): Promise<TestContext> {

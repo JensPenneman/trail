@@ -19,7 +19,7 @@ const errors = {
   400: {
     name: "BadRequest",
     description:
-      "The request is invalid: `validation_failed` lists the offending fields in `fields`; `bad_request` means unreadable JSON.",
+      "The request is invalid: `validation_failed` lists the offending fields in `fields`; `bad_request` means unreadable JSON, or a session calling an operation that only an API token can call.",
     codes: ["validation_failed", "bad_request"],
   },
   401: {

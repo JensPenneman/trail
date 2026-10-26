@@ -15,6 +15,13 @@
       "when": 1790847823108,
       "tag": "0001_balanced_plus_preset",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793003480679,
+      "tag": "0002_api_tokens",
+      "breakpoints": true
     }
   ]
 }

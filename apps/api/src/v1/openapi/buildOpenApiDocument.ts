@@ -37,7 +37,11 @@ const successDescriptions: Record<SuccessStatus, string> = {
 function errorStatusesOf(spec: RouteSpec): ErrorStatus[] {
   const statuses = new Set<ErrorStatus>([429, 500]);
   const request = spec.request ?? {};
-  if (spec.auth !== "public") for (const status of [401, 403, 503] as const) statuses.add(status);
+  // A token route checks no scope (no 403) and refuses a session with a 400.
+  if (spec.auth === "token") for (const status of [400, 401, 503] as const) statuses.add(status);
+  else if (spec.auth !== "public") {
+    for (const status of [401, 403, 503] as const) statuses.add(status);
+  }
   if (pathParameters(spec.path).length > 0) statuses.add(404);
   if (request.query !== undefined || request.body !== undefined) statuses.add(400);
   if (request.body !== undefined) for (const status of [413, 415] as const) statuses.add(status);
@@ -49,6 +53,7 @@ const code = (scope: string) => `\`${scope}\``;
 
 function accessNote(auth: RouteAuth): string {
   if (auth === "public") return "**Access:** public, no credential needed.";
+  if (auth === "token") return "**Access:** any API token, whatever its scopes; not a session.";
   const scopes = auth.scopes.map(code);
   const needed =
     scopes.length === 1
@@ -62,6 +67,7 @@ function accessNote(auth: RouteAuth): string {
 /** Any listed scope grants access: one security requirement per scope; `all` needs them together. */
 function securityOf(auth: RouteAuth): NonNullable<ZodOpenApiOperationObject["security"]> {
   if (auth === "public") return [];
+  if (auth === "token") return [{ bearer: [] }];
   if (auth.all === true) return [{ bearer: [...auth.scopes] }];
   return auth.scopes.map((scope) => ({ bearer: [scope] }));
 }

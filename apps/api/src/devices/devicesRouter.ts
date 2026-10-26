@@ -9,12 +9,14 @@ import {
 import { type IngestLogResponse, ingestLogQuerySchema } from "@trail/contracts/ingestLog";
 import { desc, eq } from "drizzle-orm";
 import express, { type Router } from "express";
+import { forgetDeviceInTokens } from "../apiTokens/forgetDeviceInTokens";
 import type { AppContext } from "../appContext";
 import { requireAuth, requireSession } from "../auth/requestAuth";
 import { allowLongStatements } from "../db/allowLongStatements";
 import { devices } from "../db/schema/devices";
 import { ingestLog } from "../db/schema/ingestLog";
 import { parseBody, parseQuery } from "../http/parseInput";
+import { changeDevice } from "./changeDevice";
 import { createDevice } from "./createDevice";
 import { deviceCredentials } from "./deviceCredentials";
 import { findOwnedDevice } from "./findOwnedDevice";
@@ -69,23 +71,7 @@ export function devicesRouter(ctx: AppContext): Router {
   router.patch("/api/devices/:id", async (req, res) => {
     const auth = requireAuth(req);
     const changes = parseBody(updateDeviceRequestSchema, req);
-    const existing = await findOwnedDevice(db, auth, req.params.id);
-    await db
-      .update(devices)
-      .set({
-        ...(changes.name === undefined ? {} : { name: changes.name }),
-        ...(changes.alertsEnabled === undefined ? {} : { alertsEnabled: changes.alertsEnabled }),
-        // With alerts off there must be no "sending again" message later either.
-        ...(changes.alertsEnabled === false ? { staleAlertedAt: null } : {}),
-        ...(changes.pendingSettings === undefined
-          ? {}
-          : { pendingSettings: changes.pendingSettings }),
-        updatedAt: new Date(),
-      })
-      .where(eq(devices.id, existing.id));
-    const device = await loadDeviceSummary(db, auth, existing.id);
-    publishDevice(ctx, auth.user.id, device);
-    const body: DeviceResponse = { device };
+    const body: DeviceResponse = { device: await changeDevice(ctx, auth, req.params.id, changes) };
     res.json(body);
   });
 
@@ -97,6 +83,8 @@ export function devicesRouter(ctx: AppContext): Router {
     await db.transaction(async (tx) => {
       await allowLongStatements(tx);
       await tx.delete(devices).where(eq(devices.id, existing.id));
+      // After the delete, which waits for token changes that hold the device: they are in by now.
+      await forgetDeviceInTokens(tx, user.id, existing.id);
     });
     ctx.bus.publish(user.id, { type: "device-removed", deviceId: existing.id });
     ctx.logger.info({ deviceId: existing.id, userId: user.id }, "device deleted");

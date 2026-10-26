@@ -124,19 +124,21 @@ When the two disagree, the pull request that notices fixes the plan.
 
 | Operation | Scope | Notes |
 |---|---|---|
-| `GET /api/v1/tokens/verify` | any token | `{ id, name, scopes, deviceIds, expiresAt, status }` (Cloudflare's `tokens/verify`) |
+| `GET /api/v1/tokens/verify` | any token (`auth: "token"`) | `{ id, name, scopes, deviceIds, expiresAt, status }` (Cloudflare's `tokens/verify`); a session gets 400 `bad_request` |
 | `GET /api/v1/me` | `profile:read` | id, displayName, timezone |
 | `GET /api/v1/devices` | `devices:read` | `DevicePublic`: no tokenHint, deviceKey, pendingSettings or alerts; `lastLocation` only with `locations:read` (left out otherwise) |
 | `GET /api/v1/devices/{id}` | `devices:read` | |
-| `PATCH /api/v1/devices/{id}` | `devices:write` | name, alertsEnabled, pendingSettings |
+| `PATCH /api/v1/devices/{id}` | `devices:write` | name, alertsEnabled, pendingSettings → `{ device, settings }` (the owner's settings, which `DevicePublic` leaves out) |
 | `GET /api/v1/devices/{id}/location` | `locations:read` | latest cached position, battery, inferred mode when known |
-| `GET /api/v1/locations` | `locations:read` | `device`, `from`, `to`, `level`, `cursor`, `limit` ≤ 1000 |
+| `GET /api/v1/locations` | `locations:read` | `device`, `from`, `to`, `cursor` (opaque), `limit` ≤ 1000, oldest first; raw points only — the levels are `/api/v1/tracks` |
 | `GET /api/v1/tracks` | `locations:read` | `devices`, `from`, `to` (≤ 93 days), `level` → segments with mode and confidence |
 | `GET /api/v1/segments` | `locations:read` | `devices`, `from`, `to` → stops and moves (§3) |
 | `PUT` / `DELETE /api/v1/segments/{id}/mode` | `locations:write` | override one segment |
 | `POST /api/v1/devices/{id}/mode` | `locations:write` | quick override from now (§3.5) |
-| `GET /api/v1/visits`, `/trips` | `history:read` | as the private routes |
-| `GET /api/v1/stats/days`, `/stats/activity`, `/heatmap` | `history:read` | as the private routes; `stats/days` adds per-mode figures |
+| `GET /api/v1/visits` | `locations:read` | as the private route: `from`, `to` (≤ 400 days, any offset), `devices`; visits are places |
+| `GET /api/v1/trips` | `history:read` | as the private route: `from`, `to` (≤ 400 days, any offset), `devices`; no coordinates |
+| `GET /api/v1/stats/days`, `/stats/activity` | `history:read` | as the private routes, with `devices`; `stats/days` adds per-mode figures (processing) |
+| `GET /api/v1/heatmap` | `locations:read` | as the private route, with `devices`; the cells are places |
 | `GET /api/v1/people` | `people:read` | people sharing with the caller, projected latest location |
 | `GET /api/v1/people/{userId}` | `people:read` | one person: shared devices and their locations |
 | `GET` / `POST /api/v1/shares`, `DELETE /api/v1/shares/{id}` | `shares:read` / `shares:write` | outgoing shares |
@@ -180,10 +182,12 @@ active tokens per user.
 `profile:read`, `devices:read`, `devices:write`, `locations:read`,
 `locations:write`, `history:read`, `people:read`, `shares:read`, `shares:write`.
 
-Scopes are the privacy boundary: a position always needs `locations:read`.
-`devices:read` covers the devices, their names, status, last-seen time and
-battery, never where they are; `DevicePublic.lastLocation` is left out for a
-principal without `locations:read`.
+Scopes are the privacy boundary: anything with coordinates needs
+`locations:read` — points, tracks, segments, visits, the heatmap and a device's
+position. `devices:read` covers the devices, their names, status, last-seen
+time and battery, never where they are; `DevicePublic.lastLocation` is left out
+for a principal without `locations:read`. `history:read` is the history
+without coordinates: trips, daily statistics and activity.
 
 Templates in the UI: **Read-only** (all `:read`), **Agent** (read + `locations:write`),
 **Full access**. `devices:write` never rotates a device token or deletes a
@@ -518,7 +522,8 @@ times are ISO with the owner's offset.
 | `get_location_at({ at, device?, toleranceMinutes? })` | `locations:read` | the nearest point around a time (default tolerance 30 min) |
 | `get_timeline({ from, to, device? })` | `locations:read` | stops and moves with mode, distance, duration, speed — the appointment agent's main tool |
 | `get_day_summary({ date, device? })` | `locations:read`, `history:read` | distance and time per mode, first and last movement, stops |
-| `get_visits({ from, to })`, `get_trips({ from, to })` | `history:read` | as the API |
+| `get_visits({ from, to })` | `locations:read` | as the API (visits are places) |
+| `get_trips({ from, to })` | `history:read` | as the API |
 | `set_transport_mode({ mode, device?, until? })` | `locations:write` | the quick override (§3.5) |
 | `get_people` | `people:read` | people sharing with the owner and their projected location |
 

@@ -331,10 +331,12 @@ Launchway shows each service's logs; on the server:
 ```sh
 docker logs -f launchway-trail-app-1     # the app logs JSON lines (pino)
 docker logs --since 1h launchway-trail-app-1 2>&1 | grep '"level":50'   # errors
+docker logs launchway-trail-app-1 2>&1 | grep '"msg":"API token'      # API tokens created, changed, rolled, revoked
 ```
 
-Every container keeps at most 5 files of 10 MB of logs. Device tokens, cookies
-and coordinates never appear in the app's logs at the default level.
+Every container keeps at most 5 files of 10 MB of logs. Device and API tokens,
+cookies and coordinates never appear in the app's logs at the default level;
+the API token lines carry the token's and the user's id only.
 
 ## Local run
 
@@ -365,6 +367,7 @@ Day-to-day development uses `npm run dev` instead (README).
 | `app` keeps restarting; its log says "Invalid configuration" | A value is invalid; the log names it. Fix it in Launchway and redeploy. |
 | `/api/health` answers 503 | The database is down: `docker logs launchway-trail-db-1`. |
 | Requests all share one client address, or the session cookie is not `Secure` | `TRUST_PROXY` does not name Launchway's edge address. |
+| An API token with an IP allowlist is refused (401) from an allowed address | The same: without the edge in `TRUST_PROXY` every request seems to come from the edge. Settings › API tokens shows the address a token was last used from. |
 | "No passkey for this address" | Passkeys are per host name: a preview needs its own account; a new production address needs [a new passkey](#changing-the-public-address). |
 | `backup` restarts with "pg_dump failed" | The database is not reachable; the log line before it shows why. |
 | Backups happen at the wrong hour | `TZ`. |

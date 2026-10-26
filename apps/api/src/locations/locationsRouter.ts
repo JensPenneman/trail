@@ -5,16 +5,15 @@ import {
   type LocationsPage,
   locationsQuerySchema,
 } from "@trail/contracts/location";
-import { and, desc, eq, lt } from "drizzle-orm";
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
 import { requireAuth } from "../auth/requestAuth";
-import { locations } from "../db/schema/locations";
 import { findOwnedDevice } from "../devices/findOwnedDevice";
 import { publishDeviceLater } from "../devices/publishDevice";
 import { parseBody, parseQuery } from "../http/parseInput";
 import { batteryStateOf } from "../overland/overlandValues";
 import { deleteLocationRange } from "./deleteLocationRange";
+import { readPoints } from "./readPoints";
 
 /** `GET /api/locations` (raw points, newest first) and `POST /api/locations/delete`. */
 export function locationsRouter(ctx: AppContext): Router {
@@ -25,18 +24,11 @@ export function locationsRouter(ctx: AppContext): Router {
     const auth = requireAuth(req);
     const query = parseQuery(locationsQuerySchema, req);
     const device = await findOwnedDevice(db, auth, query.deviceId);
-    const rows = await db
-      .select()
-      .from(locations)
-      .where(
-        and(
-          eq(locations.deviceId, device.id),
-          query.before === undefined ? undefined : lt(locations.recordedAt, new Date(query.before)),
-        ),
-      )
-      .orderBy(desc(locations.recordedAt))
-      .limit(query.limit + 1);
-    const items = rows.slice(0, query.limit);
+    const { rows: items, more } = await readPoints(db, device.id, {
+      order: "desc",
+      after: query.before === undefined ? undefined : new Date(query.before),
+      limit: query.limit,
+    });
     const body: LocationsPage = {
       items: items.map((row) => ({
         recordedAt: row.recordedAt.toISOString(),
@@ -56,8 +48,7 @@ export function locationsRouter(ctx: AppContext): Router {
         wifi: row.wifi,
         extra: row.extra,
       })),
-      nextCursor:
-        rows.length > query.limit ? (items.at(-1)?.recordedAt.toISOString() ?? null) : null,
+      nextCursor: more ? (items.at(-1)?.recordedAt.toISOString() ?? null) : null,
     };
     res.json(body);
   });

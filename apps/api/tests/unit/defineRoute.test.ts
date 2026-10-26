@@ -261,6 +261,32 @@ describe("authorization", () => {
     ]);
   });
 
+  it("serves token routes to any API token, refuses sessions with a 400", async () => {
+    const route = defineRoute(
+      {
+        method: "get",
+        path: "/api/v1/whoami",
+        operationId: "whoAmI",
+        summary: "Who am I",
+        description: "",
+        tags: ["Reference"],
+        auth: "token",
+        responses: { 200: z.object({ tokenId: z.string() }) },
+      },
+      ({ auth }) => ({ status: 200, body: { tokenId: auth.tokenId } }),
+    );
+    const allowed = await request(appFor(route, token(["profile:read"])))
+      .get("/api/v1/whoami")
+      .expect(200);
+    expect(allowed.body).toEqual({ tokenId: "t1" });
+    const refused = await request(appFor(route, session)).get("/api/v1/whoami").expect(400);
+    expect(refused.body.error.code).toBe("bad_request");
+    expect(refused.body.error.message).toContain("Authorization: Bearer");
+    const anonymous = await request(appFor(route)).get("/api/v1/whoami").expect(401);
+    expect(anonymous.body.error.code).toBe("unauthorized");
+    expect(anonymous.headers["www-authenticate"]).toBe('Bearer realm="trail"');
+  });
+
   it("serves public routes with and without a token's principal", async () => {
     const route = defineRoute(
       {
@@ -309,6 +335,18 @@ describe("handler types", () => {
     defineRoute(spec, () => ({ status: 201, body: { n: 1 } }));
     // @ts-expect-error a body that does not match its schema
     defineRoute(spec, () => ({ status: 200, body: { n: "one" } }));
+    defineRoute({ ...spec, auth: "token" }, ({ auth }) => {
+      // A token route always has a token principal, with the token's own id.
+      const tokenId: string = auth.tokenId;
+      expect(tokenId).toBeDefined();
+      return { status: 200, body: { n: 2 } };
+    });
+    defineRoute(spec, ({ auth }) => {
+      // @ts-expect-error a scoped route may be a session, which has no token id
+      const tokenId: string = auth.tokenId;
+      expect(tokenId).toBeDefined();
+      return { status: 200, body: { n: 3 } };
+    });
     defineRoute({ ...spec, auth: "public" }, ({ auth }) => {
       // @ts-expect-error a public route may have no principal
       const id: string = auth.user.id;

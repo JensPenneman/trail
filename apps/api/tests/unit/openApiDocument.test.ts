@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { Validator } from "@seriousme/openapi-schema-validator";
 import { apiScopeDescriptions, apiScopes } from "@trail/contracts/apiScope";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
+import { defineRoute } from "../../src/v1/defineRoute";
 import {
   buildOpenApiDocument,
   type OpenApiDocument,
@@ -92,6 +94,32 @@ describe("the OpenAPI document", () => {
     );
     expect(refs.length).toBeGreaterThan(0);
     for (const ref of refs) expect(defined).toContain(ref);
+  });
+
+  it("documents a token route as any bearer token: 400 for a session, no 403", () => {
+    const whoAmI = defineRoute(
+      {
+        method: "get",
+        path: "/api/v1/whoami",
+        operationId: "whoAmI",
+        summary: "Who am I",
+        description: "The calling token.",
+        tags: ["Reference"],
+        auth: "token",
+        responses: { 200: z.object({ tokenId: z.string() }) },
+      },
+      ({ auth }) => ({ status: 200, body: { tokenId: auth.tokenId } }),
+    );
+    const [found] = operations(
+      buildOpenApiDocument({ publicUrl: "https://trail.example.com", version: "1", guide }, [
+        whoAmI,
+      ]),
+    );
+    expect(found?.operation.security).toEqual([{ bearer: [] }]);
+    expect(found?.operation.description).toContain("**Access:** any API token");
+    expect(Object.keys(found?.operation.responses ?? {}).sort()).toEqual(
+      ["200", "400", "401", "429", "500", "503"].sort(),
+    );
   });
 
   it("refuses two routes for one method and path", () => {

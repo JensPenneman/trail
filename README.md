@@ -28,8 +28,13 @@ every pull request gets a preview deployment of its own.
 - **Alerts** through [ntfy](https://ntfy.sh) when a device goes silent and
   when it recovers.
 - **Your data**: export as GeoJSON, GPX or CSV; delete a range or the account.
-- **Public API**: a versioned JSON API under `/api/v1`, described in OpenAPI
-  3.1 and browsable at `/docs`.
+- **Public API**: a versioned JSON API under `/api/v1` for scripts, apps and
+  agents — devices, positions, every recorded point, visits, trips, daily
+  statistics, activity and the heatmap — described in OpenAPI 3.1 and
+  browsable at `/docs`.
+- **API tokens**: created in Settings, each with its own scopes, devices,
+  expiry and optional IP allowlist; the secret is shown once, and a token can
+  be rolled or revoked at any time.
 - **Operations**: one image for amd64 and arm64, releases deployed
   automatically, a preview per pull request, daily database dumps.
 
@@ -218,11 +223,17 @@ settings and troubleshooting: [docs/overland.md](docs/overland.md).
 
 Every Trail server documents its public API at `/docs`: a reference generated
 from the server's OpenAPI document (`/api/v1/openapi.json`), with the guide
-[docs/api.md](docs/api.md) on top — authentication, scopes, errors, rate limits,
-CORS and the versioning promise. API tokens for scripts and agents arrive in
-the next release; until then the API answers the signed-in dashboard session.
+[docs/api.md](docs/api.md) on top — tokens, scopes, pagination, errors, rate
+limits, CORS and the versioning promise. Scripts, apps and agents use an API
+token from Settings › API tokens:
+
+```sh
+curl -H "Authorization: Bearer trlk_…" https://trail.example.com/api/v1/tokens/verify
+```
+
 How the API is built and how to add an operation: [docs/architecture.md
-§8.3](docs/architecture.md#83-public-api-v1).
+§8.3](docs/architecture.md#83-public-api-v1); how tokens work:
+[§8.4](docs/architecture.md#84-api-tokens).
 
 ## Tech stack
 

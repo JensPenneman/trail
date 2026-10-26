@@ -14,8 +14,13 @@ export interface DeviceAccess {
 export const allowedDeviceIds = (access: DeviceAccess): readonly string[] | null =>
   access.deviceIds ?? null;
 
-/** Whether `access` may reach the device; that the user owns it is for the query to check. */
+/**
+ * Whether `access` may reach the device; that the user owns it is for the query
+ * to check. UUIDs compare without regard to case, as PostgreSQL compares them:
+ * `deviceIds` come from the database in lower case, a request may spell an id
+ * in capitals.
+ */
 export function mayReach(access: DeviceAccess, deviceId: string): boolean {
   const allowed = allowedDeviceIds(access);
-  return allowed === null || allowed.includes(deviceId);
+  return allowed === null || allowed.includes(deviceId.toLowerCase());
 }

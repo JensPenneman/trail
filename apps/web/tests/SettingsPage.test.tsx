@@ -7,7 +7,7 @@ import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
 
 describe("SettingsPage", () => {
-  it("shows profile, passkeys, browsers, people (for admins), data and build info", async () => {
+  it("shows profile, passkeys, browsers, API tokens, people (for admins), data and build info", async () => {
     mockApi(standardRoutes());
     renderPage(<SettingsPage />, { path: "/settings", user });
     expect(screen.getByLabelText("Display name")).toHaveValue("Jens");
@@ -17,6 +17,12 @@ describe("SettingsPage", () => {
     expect(
       await screen.findByRole("button", { name: "Sign out Safari on iPhone" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "API tokens" })).toBeInTheDocument();
+    expect(await screen.findByText("Home Assistant")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "API tokens" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^#/),
+    );
     expect(screen.getByRole("heading", { name: "People" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute(
       "href",

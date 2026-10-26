@@ -5,5 +5,6 @@ import { createHash } from "node:crypto";
  * plain hash (no salt, no slow KDF) is enough and allows indexed lookups.
  */
 export function hashToken(token: string): string {
+  // Not a password hash: 256 random bits cannot be guessed, so a slow KDF would only slow every request.
   return createHash("sha256").update(token, "utf8").digest("hex");
 }

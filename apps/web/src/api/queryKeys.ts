@@ -55,10 +55,13 @@ export const queryKeys = {
   heatmap: (params: HeatmapParams) => ["heatmap", params] as const,
   passkeys: ["passkeys"],
   sessions: ["sessions"],
+  apiTokens: ["api-tokens"],
   invites: ["invites"],
   adminUsers: ["admin-users"],
   linkInfo: (token: string) => ["link-info", token] as const,
   /** Mutations that end the session on purpose: signing out, deleting the account. */
   endSession: ["end-session"],
+  /** Creating an API token: its dialog stays open until the one-time secret is shown. */
+  createApiToken: ["create-api-token"],
   deleteDevice: (deviceId: string) => ["delete-device", deviceId] as const,
 } as const;

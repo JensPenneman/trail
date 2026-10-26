@@ -13,6 +13,7 @@ import { heatmapRouter } from "../heatmap/heatmapRouter";
 import { tripsRouter } from "../history/tripsRouter";
 import { visitsRouter } from "../history/visitsRouter";
 import { locationsRouter } from "../locations/locationsRouter";
+import { apiTokensRouter } from "../me/apiTokensRouter";
 import { meRouter } from "../me/meRouter";
 import { passkeyLinksRouter } from "../me/passkeyLinksRouter";
 import { passkeysRouter } from "../me/passkeysRouter";
@@ -80,6 +81,7 @@ export function createApp(ctx: AppContext): Express {
   app.use(meRouter(ctx));
   app.use(passkeysRouter(ctx));
   app.use(sessionsRouter(ctx));
+  app.use(apiTokensRouter(ctx));
   app.use(passkeyLinksRouter(ctx));
   app.use(adminRouter(ctx));
   app.use(devicesRouter(ctx));

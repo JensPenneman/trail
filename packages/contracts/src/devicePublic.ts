@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { batteryStates } from "./device";
+import { remoteSettingsPresetSchema } from "./remoteSettings";
 
 /*
  * Devices as the public API (v1) shows them. The shapes are spelled out here
@@ -137,3 +138,56 @@ export const deviceLocationResponseSchema = z.object({
     .meta({ description: "Null until the device has sent a position." }),
 });
 export type DeviceLocationResponse = z.infer<typeof deviceLocationResponseSchema>;
+
+const presetSchema = remoteSettingsPresetSchema.meta({
+  id: "SettingsPreset",
+  description:
+    "A tested set of Overland settings: `balanced`, `balanced-plus`, `high-resolution` (best accuracy, most battery) or `battery-saver`.",
+  example: "high-resolution",
+});
+
+/** `PATCH /api/v1/devices/{id}` — what a `devices:write` token may change; never the device's credentials. */
+export const deviceUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(60).optional().meta({
+      description: "Its name in Trail, 1 to 60 characters; the phone keeps sending as before.",
+      example: "Work phone",
+    }),
+    alertsEnabled: z.boolean().optional().meta({
+      description:
+        "Whether the server warns (through ntfy, when its owner set that up) once the device has been silent for a while, and when it sends again.",
+      example: false,
+    }),
+    pendingSettings: presetSchema.nullable().optional().meta({
+      description:
+        "A preset for Overland, sent once with the answer to the phone's next upload; null withdraws one that has not been sent yet.",
+    }),
+  })
+  .refine((body) => Object.keys(body).length > 0, "Nothing to update")
+  .meta({ id: "DeviceUpdate", description: "The changes; leave out what stays as it is." });
+export type DeviceUpdate = z.input<typeof deviceUpdateSchema>;
+
+/** The owner's settings of a device: shown where they can be changed, never in device lists. */
+export const deviceSettingsSchema = z
+  .object({
+    alertsEnabled: z.boolean().meta({
+      description: "Whether silence and recovery alerts are on.",
+      example: true,
+    }),
+    pendingSettings: presetSchema.nullable().meta({
+      description: "The preset waiting for the phone's next upload; null when none is waiting.",
+    }),
+    settingsAppliedAt: z.iso.datetime().nullable().meta({
+      description: "When the phone last received a preset; null when it never did.",
+      example: "2026-10-20T18:04:11.000Z",
+    }),
+  })
+  .meta({ id: "DeviceSettings", description: "What the owner set for the device." });
+export type DeviceSettings = z.infer<typeof deviceSettingsSchema>;
+
+/** Answer of `PATCH /api/v1/devices/{id}`: the device and its settings after the change. */
+export const deviceUpdateResponseSchema = z.object({
+  device: devicePublicSchema,
+  settings: deviceSettingsSchema,
+});
+export type DeviceUpdateResponse = z.infer<typeof deviceUpdateResponseSchema>;

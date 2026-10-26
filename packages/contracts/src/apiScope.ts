@@ -29,9 +29,9 @@ export const apiScopeDescriptions: Record<ApiScope, string> = {
   "devices:write":
     "Rename devices, switch their alerts and queue settings presets; never their tokens.",
   "locations:read":
-    "Read positions: where the devices are now and where they have been (points, tracks, the timeline).",
+    "Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline).",
   "locations:write": "Correct how you travelled (transport mode overrides).",
-  "history:read": "Read visits, trips, daily statistics, activity and the heatmap.",
+  "history:read": "Read trips, daily statistics and activity: the history without coordinates.",
   "people:read": "See the people who share their location with you.",
   "shares:read": "List your shares, the ones you receive and your public links.",
   "shares:write": "Start and stop sharing, hide people and manage public links.",
