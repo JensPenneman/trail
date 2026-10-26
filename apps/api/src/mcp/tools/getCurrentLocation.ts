@@ -45,13 +45,13 @@ export async function currentLocationAnswer(
     battery: presentBattery(summary.battery, timeZone),
     currentMode: await currentModeOf(context, summary.id),
   };
-  const accuracy = location?.accuracyM === null ? "" : ` (±${location?.accuracyM} m)`;
+  if (location === null) {
+    return { result, text: `${quoted(device.name)} has not sent a position yet.` };
+  }
+  const accuracy = location.accuracyM === null ? "" : ` (±${location.accuracyM} m)`;
   return {
     result,
-    text:
-      location === null
-        ? `${quoted(device.name)} has not sent a position yet.`
-        : `${quoted(device.name)} was at ${location.lat}, ${location.lon}${accuracy} at ${location.recordedAt}, ${location.ageS} s ago.`,
+    text: `${quoted(device.name)} was at ${location.lat}, ${location.lon}${accuracy} at ${location.recordedAt}, ${location.ageS} s ago.`,
   };
 }
 
