@@ -212,7 +212,10 @@ describe("authorization", () => {
     const response = await request(appFor(scoped(["devices:read"])))
       .get("/api/v1/things")
       .expect(401);
-    expect(response.body.error.code).toBe("unauthorized");
+    expect(response.body.error).toEqual({
+      code: "unauthorized",
+      message: "Sign in, or send an API token as Authorization: Bearer trlk_…",
+    });
     expect(response.headers["www-authenticate"]).toBe('Bearer realm="trail"');
   });
 
@@ -283,7 +286,10 @@ describe("authorization", () => {
     expect(refused.body.error.code).toBe("bad_request");
     expect(refused.body.error.message).toContain("Authorization: Bearer");
     const anonymous = await request(appFor(route)).get("/api/v1/whoami").expect(401);
-    expect(anonymous.body.error.code).toBe("unauthorized");
+    expect(anonymous.body.error).toEqual({
+      code: "unauthorized",
+      message: "Send an API token as Authorization: Bearer trlk_…",
+    });
     expect(anonymous.headers["www-authenticate"]).toBe('Bearer realm="trail"');
   });
 

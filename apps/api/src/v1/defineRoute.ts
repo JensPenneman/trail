@@ -159,8 +159,8 @@ function authorize(rule: RouteAuth, req: Request, res: Response): RequestAuth | 
       401,
       "unauthorized",
       rule === "token"
-        ? "Send an API token as Authorization: Bearer trlk_…."
-        : "Sign in, or send an API token as Authorization: Bearer trlk_….",
+        ? "Send an API token as Authorization: Bearer trlk_…"
+        : "Sign in, or send an API token as Authorization: Bearer trlk_…",
     );
   }
   if (rule === "token") {
