@@ -12,12 +12,12 @@ test.describe("signing in again", () => {
       await expect(page).toHaveURL(/\/login$/);
       await page.getByLabel("Email address").fill(account.email);
       await page.getByRole("button", { name: "Continue" }).click();
-      await expect(page.getByRole("heading", { level: 1, name: "Live" })).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: "Map" })).toBeVisible();
       expect((await currentUser(page)).email).toBe(account.email);
 
       await signOut(page);
       await page.getByRole("button", { name: "Use a passkey" }).click();
-      await expect(page.getByRole("heading", { level: 1, name: "Live" })).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: "Map" })).toBeVisible();
       expect((await currentUser(page)).id).toBe(account.id);
     });
   });
@@ -33,7 +33,7 @@ test.describe("signing in again", () => {
       .click();
     await shownSignIn;
     await page.waitForURL((url) => url.pathname === "/");
-    await expect(page.getByRole("heading", { level: 1, name: "Live" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Map" })).toBeVisible();
     expect((await currentUser(page)).id).toBe(account.id);
   });
 });

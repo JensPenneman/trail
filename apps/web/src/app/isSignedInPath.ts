@@ -1,6 +1,7 @@
 import { settingsSections } from "./settingsSections";
 
 const sections = settingsSections.map((section) => section.id).join("|");
+// `history` and `explore` only redirect to the Map page, which needs a session.
 const signedIn = new RegExp(
   `^/(?:history|explore|people|devices(?:/[^/]+)?|settings(?:/(?:${sections}))?)?/?$`,
 );

@@ -4,12 +4,19 @@ import { daysResponseSchema } from "@trail/contracts/stats";
 import { apiFetch } from "../api/apiFetch";
 import { type DaysParams, queryKeys } from "../api/queryKeys";
 
-/** Per-day totals (calendar dots, yearly totals) for local dates `from..to` inclusive. */
-export function useDays(params: DaysParams) {
+/**
+ * Per-day totals (calendar dots, yearly totals) for local dates `from..to`
+ * inclusive. Null params ask for nothing.
+ */
+export function useDays(params: DaysParams | null) {
   return useQuery({
-    queryKey: queryKeys.days(params),
+    queryKey: params === null ? queryKeys.all.days : queryKeys.days(params),
     queryFn: ({ signal }) =>
-      apiFetch(apiPaths.statsDays, daysResponseSchema, { query: params, signal }),
+      apiFetch(apiPaths.statsDays, daysResponseSchema, {
+        query: params === null ? {} : params,
+        signal,
+      }),
+    enabled: params !== null,
     placeholderData: keepPreviousData,
   });
 }

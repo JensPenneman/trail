@@ -26,6 +26,18 @@ export type LevelTracksParams = RangeParams & {
   level: "raw" | "averaged" | "mapped" | "inferred";
 };
 
+/**
+ * Someone's track (`/api/v1/people/{userId}/track`). `share` names the share's
+ * id and history, so a share that changes is another query: what it allowed
+ * before is never asked for again.
+ */
+export type PersonTrackParams = {
+  from: string;
+  to: string;
+  deviceIds: readonly string[];
+  share: string;
+};
+
 export type ActivityParams = {
   hours: number;
   deviceIds: readonly string[] | null;
@@ -48,6 +60,7 @@ export const queryKeys = {
     levelTracks: ["level-tracks"],
     timeline: ["timeline"],
     deviceMode: ["device-mode"],
+    personTracks: ["person-tracks"],
   },
   config: ["config"],
   session: ["session"],
@@ -64,6 +77,9 @@ export const queryKeys = {
   levelTracks: (params: LevelTracksParams) => ["level-tracks", params] as const,
   timeline: (params: RangeParams) => ["timeline", params] as const,
   deviceMode: (deviceId: string) => ["device-mode", deviceId] as const,
+  personTracksOf: (userId: string) => ["person-tracks", userId] as const,
+  personTracks: (userId: string, params: PersonTrackParams) =>
+    ["person-tracks", userId, params] as const,
   passkeys: ["passkeys"],
   sessions: ["sessions"],
   apiTokens: ["api-tokens"],

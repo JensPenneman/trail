@@ -30,7 +30,7 @@ test.describe("accessibility", () => {
 
   test("every signed-in page, with and without data", async ({ page, account }) => {
     await expect(page.getByRole("heading", { name: "Connect your first phone" })).toBeVisible();
-    await expectAccessible(page, "Live without devices");
+    await expectAccessible(page, "the map's Live without devices");
     await open(page, "/devices", "Devices", "No devices yet");
     await expectAccessible(page, "Devices without devices");
 
@@ -40,13 +40,13 @@ test.describe("accessibility", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
 
     const device = await uploadedDevice(page, "Checked phone", overlandBatch(account.timezone));
-    await open(page, "/", "Live", "Last upload");
-    await expectAccessible(page, "Live");
-    await open(page, "/history", "History", "30 points");
-    await expectAccessible(page, "History");
-    await open(page, "/explore", "Explore", "Busiest places in view");
+    await open(page, "/", "Map", "Last upload");
+    await expectAccessible(page, "the map's Live");
+    await open(page, "/?view=history", "Map", "30 points");
+    await expectAccessible(page, "the map's History");
+    await open(page, "/?view=heat", "Map", "Busiest places in view");
     await expect(page.getByText(/^\d+ points$/).first()).toBeVisible();
-    await expectAccessible(page, "Explore");
+    await expectAccessible(page, "the map's Heat");
     await open(page, "/people", "People", "Nobody shares with you yet");
     await expectAccessible(page, "People without anyone");
     await open(page, "/devices", "Devices", "Checked phone");

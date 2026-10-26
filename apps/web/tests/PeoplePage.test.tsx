@@ -43,6 +43,16 @@ describe("PeoplePage", () => {
     expect(map).toHaveAttribute("data-positions", "2");
   });
 
+  it("shows a person on the Map page, as their share allows", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, { path: "/people", user });
+    const card = await screen.findByRole("article", { name: "Ana Bell" });
+    await person.click(within(card).getByRole("button", { name: "Show on map" }));
+    expect(router.state.location.pathname).toBe("/");
+    expect(router.state.location.search).toBe(`?view=live&people=${ids.ana}`);
+  });
+
   it("lists whom you share with, with what they see", async () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { user });
@@ -58,6 +68,10 @@ describe("PeoplePage", () => {
     expect(
       within(section).getByRole("button", { name: "Stop sharing with Ana Bell" }),
     ).toBeInTheDocument();
+    expect(within(section).getByRole("link", { name: "Settings › Sharing" })).toHaveAttribute(
+      "href",
+      "/settings/sharing",
+    );
   });
 
   it("invites you to share when nobody shares with you", async () => {

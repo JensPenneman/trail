@@ -6,6 +6,7 @@ import {
 } from "@trail/contracts/transport";
 import { deviceCard } from "./support/deviceCard";
 import { expectAccessible } from "./support/expectAccessible";
+import { openMapOptions } from "./support/mapControls";
 import { type OverlandBatch, overlandBatch } from "./support/overlandBatch";
 import { postOverland } from "./support/postOverland";
 import { test } from "./support/test";
@@ -79,7 +80,8 @@ test("levels change the tracks, and a move's mode can be put right", async ({ pa
     ).size;
   expect(await distinct("raw")).toBeGreaterThan(await distinct("averaged"));
 
-  await page.goto("/history");
+  await page.goto("/?view=history");
+  await openMapOptions(page);
   const level = page.getByRole("group", { name: "Detail of the tracks" });
   await expect(level.getByRole("radio", { name: "Transport" })).toBeChecked();
   const legend = page.getByRole("region", { name: "Map legend" });
@@ -109,7 +111,8 @@ test("levels change the tracks, and a move's mode can be put right", async ({ pa
   await expect(level.getByRole("radio", { name: "Raw" })).toBeChecked();
   await expect(page).toHaveURL(/level=raw/);
   // The choice is remembered on this browser.
-  await page.goto("/history");
+  await page.goto("/?view=history");
+  await openMapOptions(page);
   await expect(page.getByRole("radio", { name: "Raw" })).toBeChecked();
   await page.getByRole("radio", { name: "Transport" }).click();
   await expect(page.getByRole("radio", { name: "Transport" })).toBeChecked();

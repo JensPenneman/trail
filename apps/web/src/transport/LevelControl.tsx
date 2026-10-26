@@ -1,13 +1,16 @@
-import type { ProcessingLevel } from "@trail/contracts/transport";
+import { type ProcessingLevel, processingLevels } from "@trail/contracts/transport";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import "./LevelControl.css";
 
-const options: readonly { value: ProcessingLevel; label: string }[] = [
-  { value: "raw", label: "Raw" },
-  { value: "averaged", label: "Averaged" },
-  { value: "mapped", label: "Mapped" },
-  { value: "inferred", label: "Transport" },
-];
+/** The levels by the names the control gives them. */
+export const levelLabels: Readonly<Record<ProcessingLevel, string>> = {
+  raw: "Raw",
+  averaged: "Averaged",
+  mapped: "Mapped",
+  inferred: "Transport",
+};
+
+const options = processingLevels.map((value) => ({ value, label: levelLabels[value] }));
 
 const explanations: Readonly<Record<ProcessingLevel, string>> = {
   raw: "The points as the phone sent them.",

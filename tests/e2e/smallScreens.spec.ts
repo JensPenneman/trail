@@ -17,9 +17,9 @@ test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account 
   );
   // Each page with its data loaded: tables and lists are what could get too wide.
   for (const [path, heading, loaded] of [
-    ["/", "Live", "Last upload"],
-    ["/history", "History", "30 points"],
-    ["/explore", "Explore", /^\d+ points$/],
+    ["/", "Map", "Last upload"],
+    ["/?view=history", "Map", "30 points"],
+    ["/?view=heat", "Map", /^\d+ points$/],
     ["/people", "People", "Nobody shares with you yet"],
     ["/devices", "Devices", "30 points"],
     [`/devices/${device.id}`, "A phone with a rather long name", "25 shown"],
@@ -29,7 +29,7 @@ test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account 
     ["/settings/sharing", "Settings", "Nobody sees your location."],
     ["/settings/data", "Settings", "Delete a period"],
     ["/settings/about", "Settings", "Receiver endpoint"],
-    ["/no/such/page", "This trail goes nowhere", "Go to Live"],
+    ["/no/such/page", "This trail goes nowhere", "Go to the map"],
   ] as const) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();

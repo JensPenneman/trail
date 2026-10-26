@@ -1,10 +1,8 @@
 import type { ProcessingLevel, TransportMode } from "@trail/contracts/transport";
 import { useMemo } from "react";
 import type { RangeParams } from "../api/queryKeys";
-import { useDeviceColors } from "../devices/useDeviceColors";
 import type { MapTrack, MapTransportSegment } from "../map/mapTypes";
 import { useLevelTracks } from "../queries/useLevelTracks";
-import { usePrefersDark } from "../ui/usePrefersDark";
 import { levelTracksToMap } from "./levelTracksToMap";
 import { modePalette } from "./modePalette";
 
@@ -25,20 +23,25 @@ export interface TransportMap {
 /**
  * What the map shows for a range at a level: the raw tracks the page already
  * has (`raw`, which the live stream extends) or the level's tracks from
- * `/api/v1/tracks`, until they arrive the raw ones.
+ * `/api/v1/tracks`, until they arrive the raw ones. A null range asks for
+ * nothing (a view that is not shown). `colors` are those of the map's
+ * background, which need not be the page's.
  */
 export function useTransportMap(
-  range: RangeParams,
+  range: RangeParams | null,
   level: ProcessingLevel,
   raw: readonly MapTrack[],
+  colors: { dark: boolean; device: (deviceId: string) => string },
 ): TransportMap {
-  const levelTracks = useLevelTracks(level === "raw" ? null : { ...range, level });
-  const dark = usePrefersDark();
-  const colors = useDeviceColors();
+  const levelTracks = useLevelTracks(
+    level === "raw" || range === null ? null : { ...range, level },
+  );
+  const { dark, device } = colors;
   const data = levelTracks.data;
   return useMemo(() => {
-    const pending = level !== "raw" && (levelTracks.isPending || levelTracks.isPlaceholderData);
-    if (level === "raw" || data === undefined) {
+    const pending =
+      level !== "raw" && range !== null && (levelTracks.isPending || levelTracks.isPlaceholderData);
+    if (level === "raw" || range === null || data === undefined) {
       return {
         tracks: raw,
         transport: [],
@@ -50,7 +53,7 @@ export function useTransportMap(
       };
     }
     const palette = modePalette[dark ? "dark" : "light"];
-    const layers = levelTracksToMap(data, { device: colors.hex, mode: (mode) => palette[mode] });
+    const layers = levelTracksToMap(data, { device, mode: (mode) => palette[mode] });
     const modes = new Set<TransportMode>();
     let review = false;
     for (const segment of data.segments) {
@@ -68,10 +71,11 @@ export function useTransportMap(
     };
   }, [
     level,
+    range,
     data,
     raw,
     dark,
-    colors,
+    device,
     levelTracks.isPending,
     levelTracks.isPlaceholderData,
     levelTracks.isFetching,

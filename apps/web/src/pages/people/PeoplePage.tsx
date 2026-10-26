@@ -1,6 +1,7 @@
-import type { Person, SharedDevice } from "@trail/contracts/person";
+import type { Person } from "@trail/contracts/person";
 import type { OutgoingShare } from "@trail/contracts/share";
-import { useContext, useId, useMemo, useRef, useState } from "react";
+import { useContext, useId, useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 import { DocumentTitle } from "../../app/DocumentTitle";
 import { useSessionUser } from "../../app/useSessionUser";
 import { useFormatter } from "../../format/useFormatter";
@@ -8,10 +9,9 @@ import { LiveStoreContext } from "../../live/LiveStoreContext";
 import { useLiveState } from "../../live/useLiveState";
 import { boundsOf } from "../../map/boundsOf";
 import { LazyTrailMap } from "../../map/LazyTrailMap";
-import type { MapPosition } from "../../map/mapTypes";
 import { useMapStyle } from "../../map/useMapStyle";
 import { PersonCard } from "../../people/PersonCard";
-import { personInitials } from "../../people/personInitials";
+import { personPositions } from "../../people/personPositions";
 import { usePersonColors } from "../../people/usePersonColors";
 import { useConfig } from "../../queries/useConfig";
 import { useDevices } from "../../queries/useDevices";
@@ -34,13 +34,11 @@ import { PageHeader } from "../../ui/PageHeader";
 import { PlainList } from "../../ui/PlainList";
 import { Skeleton } from "../../ui/Skeleton";
 import { useAnnounce } from "../../ui/useAnnounce";
-import { useMediaQuery } from "../../ui/useMediaQuery";
 import { useScrollableFocus } from "../../ui/useScrollableFocus";
 import "./PeoplePage.css";
 
 const defaultLiveMinutes = 15;
 /** How close "Show on map" goes, by what the share reveals. */
-const focusZoom = { precise: 16, approximate: 14, area: 11 } as const;
 
 const sharesBackWith = (person: Person, shares: readonly OutgoingShare[]): boolean =>
   shares.some(
@@ -64,23 +62,16 @@ export function PeoplePage() {
   const shares = useShares();
   const incoming = useIncomingShares();
   const devices = useDevices();
-  const colors = usePersonColors();
-  const { styleUrl, dark } = useMapStyle();
+  const { style, dark } = useMapStyle();
+  const colors = usePersonColors({ dark });
   const now = useNow(15_000);
   const hide = useHidePerson();
   const announce = useAnnounce();
   const live = useLiveState();
   const store = useContext(LiveStoreContext);
-  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const mapRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
   const [dialog, setDialog] = useState<ShareDialogMode | null>(null);
   const [stopping, setStopping] = useState<OutgoingShare | null>(null);
-  const [focus, setFocus] = useState<{
-    key: string;
-    lon: number;
-    lat: number;
-    zoom: number;
-  } | null>(null);
   const liveMinutes = config.data?.thresholds.liveMinutes ?? defaultLiveMinutes;
 
   const list = people.data ?? [];
@@ -90,25 +81,16 @@ export function PeoplePage() {
     .filter((person) => !sharesBackWith(person, outgoing))
     .map((person) => ({ name: person.displayName, email: person.email }));
 
-  const positions = useMemo<MapPosition[]>(
+  const positions = useMemo(
     () =>
-      (people.data ?? []).flatMap((person) =>
-        person.devices.flatMap((device) =>
-          device.location === null
-            ? []
-            : [
-                {
-                  id: `${person.userId}:${device.id}`,
-                  color: colors.hex(person.userId),
-                  slot: colors.slot(person.userId),
-                  lon: device.location.lon,
-                  lat: device.location.lat,
-                  accuracy: device.location.accuracy,
-                  live: now - Date.parse(device.location.recordedAt) <= liveMinutes * 60_000,
-                  initials: personInitials(person.displayName),
-                },
-              ],
-        ),
+      personPositions(
+        people.data ?? [],
+        (userId) =>
+          people.data
+            ?.find((person) => person.userId === userId)
+            ?.devices.map((device) => device.id) ?? [],
+        colors,
+        (recordedAt) => now - Date.parse(recordedAt) <= liveMinutes * 60_000,
       ),
     [people.data, colors, now, liveMinutes],
   );
@@ -128,20 +110,9 @@ export function PeoplePage() {
       ? "Map. Nobody who shares with you has a recent location."
       : `Map of where ${format.list(located.map((person) => person.displayName))} ${located.length === 1 ? "is" : "are"}. The same details are in the cards on this page.`;
 
-  const showOnMap = (person: Person, device: SharedDevice) => {
-    if (device.location === null) return;
-    setFocus({
-      key: `${device.id}:${Date.now()}`,
-      lon: device.location.lon,
-      lat: device.location.lat,
-      zoom: focusZoom[person.share.precision],
-    });
-    mapRef.current?.scrollIntoView({
-      block: "nearest",
-      behavior: reducedMotion ? "auto" : "smooth",
-    });
-    announce(`The map shows ${person.displayName}.`);
-  };
+  // The Map page shows them, Live and on their own, with what their share allows.
+  const showOnMap = (person: Person) =>
+    void navigate(`/?view=live&people=${encodeURIComponent(person.userId)}`);
 
   const notices = live.shareNotices.flatMap((notice) => {
     const person = list.find((candidate) => candidate.share.id === notice.shareId);
@@ -170,15 +141,14 @@ export function PeoplePage() {
         />
       </div>
 
-      <div className="map-layout__map" ref={mapRef}>
-        {styleUrl === null ? null : (
+      <div className="map-layout__map">
+        {style === null ? null : (
           <LazyTrailMap
             label={mapLabel}
-            styleUrl={styleUrl}
+            mapStyle={style}
             dark={dark}
             positions={positions}
             fit={{ key: fitKey, bounds: people.isPending ? null : bounds, maxZoom: 14 }}
-            focus={focus}
             cooperativeGestures
           />
         )}
@@ -233,7 +203,7 @@ export function PeoplePage() {
                     now={now}
                     liveMinutes={liveMinutes}
                     sharesBack={sharesBackWith(person, outgoing)}
-                    onShowOnMap={(device) => showOnMap(person, device)}
+                    onShowOnMap={() => showOnMap(person)}
                     onShareBack={() => setDialog({ kind: "create", email: person.email })}
                     hiding={hide.isPending && hide.variables.shareId === person.share.id}
                     onHide={() =>
@@ -333,8 +303,8 @@ export function PeoplePage() {
           )}
           <p className="muted people-page__links">
             <Icon name="globe" /> For someone without an account, make a public link in{" "}
-            <LinkButton to="/settings" variant="ghost">
-              Settings
+            <LinkButton to="/settings/sharing" variant="ghost">
+              Settings › Sharing
             </LinkButton>
           </p>
         </section>

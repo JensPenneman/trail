@@ -1,0 +1,8 @@
+.heat-view__totals {
+  gap: var(--space-3);
+}
+
+.heat-view__note {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}

@@ -7,14 +7,19 @@ import { personPalette } from "./personPalette";
 export interface PersonColors {
   /** Palette slot for the CSS class `person-color-<slot>`. */
   slot(userId: string): number;
-  /** The colour as hex for the current colour scheme (for the map). */
+  /** The colour as hex (for the map), in the step for a dark or a light background. */
   hex(userId: string): string;
 }
 
-/** The colours of the people who share with the signed-in person (the People list's order). */
-export function usePersonColors(): PersonColors {
+/**
+ * The colours of the people who share with the signed-in person (the People
+ * list's order). `hex` follows the colour scheme, unless `dark` says what the
+ * map is drawn on (a dark map on a light page).
+ */
+export function usePersonColors(options: { dark?: boolean } = {}): PersonColors {
   const { data: people } = usePeople();
-  const dark = usePrefersDark();
+  const prefersDark = usePrefersDark();
+  const dark = options.dark ?? prefersDark;
   return useMemo(() => {
     const slots = assignPersonColors(people ?? []);
     const palette = dark ? personPalette.dark : personPalette.light;

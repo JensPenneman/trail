@@ -1,0 +1,80 @@
+.map-options__body {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.map-options__label {
+  font-size: var(--text-s);
+  font-weight: 600;
+}
+
+.map-options__toggle {
+  display: none;
+}
+
+/* Where the map sits under the controls, they fold into one button. */
+@media (max-width: 63.99rem) {
+  .map-options {
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .map-options__toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    min-height: var(--target);
+    padding: var(--space-2) var(--space-3);
+    border: var(--border-width) solid var(--color-border-strong);
+    border-radius: var(--radius-m);
+    background: var(--color-surface);
+    color: var(--color-text);
+    text-align: start;
+  }
+
+  .map-options__toggle:hover {
+    background: var(--color-surface-2);
+  }
+
+  .map-options__toggle > .icon {
+    flex-shrink: 0;
+    color: var(--color-text-2);
+  }
+
+  .map-options__toggle-text {
+    display: grid;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .map-options__toggle-title {
+    font-weight: 650;
+  }
+
+  .map-options__summary {
+    overflow: hidden;
+    color: var(--color-text-2);
+    font-size: var(--text-s);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .map-options__chevron {
+    transition: rotate var(--duration-fast) ease;
+  }
+
+  .map-options.is-open .map-options__chevron {
+    rotate: 180deg;
+  }
+
+  .map-options:not(.is-open) .map-options__body {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-options__chevron {
+    transition: none;
+  }
+}

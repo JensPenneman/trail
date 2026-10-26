@@ -1,0 +1,164 @@
+/*
+ * One order for every screen: the controls, the map, the details. Phones and
+ * small tablets scroll the page as a whole, the map between the controls and
+ * the details. From 64rem the map fills the rest of the screen beside the
+ * panel, which scrolls by itself with its title and view switch on top.
+ */
+.map-page {
+  min-width: 0;
+}
+
+.map-page__panel {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+}
+
+.map-page__top {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5) calc(var(--space-4) + var(--safe-right)) 0
+    calc(var(--space-4) + var(--safe-left));
+}
+
+/*
+ * Positioned, like the body: whatever they hold that is positioned (visually
+ * hidden labels) stays inside the panel that scrolls, instead of reaching out
+ * to the page the map is placed against.
+ */
+.map-page__head {
+  position: relative;
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4) calc(var(--space-4) + var(--safe-right)) var(--space-4)
+    calc(var(--space-4) + var(--safe-left));
+}
+
+.map-page__controls {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.map-page__level {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+.map-page__map {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.map-page__canvas {
+  position: relative;
+  height: min(52vh, 28rem);
+  min-height: 16rem;
+  border-block: var(--border-width) solid var(--color-border);
+}
+
+/* Phones: History's time slider sits under the map, in the page flow. */
+.map-page__foot {
+  padding: var(--space-4) calc(var(--space-4) + var(--safe-right)) 0
+    calc(var(--space-4) + var(--safe-left));
+}
+
+.map-page__foot .scrubber {
+  box-shadow: var(--shadow-1);
+}
+
+.map-page__body {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-6);
+  min-width: 0;
+  padding: var(--space-5) calc(var(--space-4) + var(--safe-right)) var(--space-8)
+    calc(var(--space-4) + var(--safe-left));
+}
+
+/* A small status chip floating over the map ("Updating"). */
+.map-page__chip {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  font-size: var(--text-s);
+  font-weight: 600;
+}
+
+@media (min-width: 64rem) {
+  .map-page {
+    position: relative;
+    height: calc(100dvh - var(--header-height) - var(--safe-top));
+  }
+
+  /* Not positioned: the map inside it is placed against the page and does not scroll with it. */
+  .map-page__panel {
+    width: var(--panel-width);
+    height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-inline-end: var(--border-width) solid var(--color-border);
+    background: var(--color-bg);
+  }
+
+  /* The panel's own child, so it stays on top through all of the panel's scrolling. */
+  .map-page__top {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    padding: var(--space-6) var(--space-6) var(--space-4) calc(var(--space-6) + var(--safe-left));
+    border-bottom: var(--border-width) solid var(--color-border);
+    background: var(--color-bg);
+  }
+
+  .map-page__head {
+    padding: var(--space-4) var(--space-6) var(--space-4) calc(var(--space-6) + var(--safe-left));
+  }
+
+  .map-page__map {
+    position: absolute;
+    inset: 0 0 0 var(--panel-width);
+  }
+
+  .map-page__canvas {
+    position: absolute;
+    inset: 0;
+    height: auto;
+    min-height: 0;
+    border-block: 0;
+  }
+
+  /* The slider floats over the foot of the full-height map, above the attribution. */
+  .map-page__foot {
+    position: absolute;
+    inset: auto var(--space-6) 2.75rem;
+    z-index: 3;
+    width: min(100% - 2 * var(--space-6), 38rem);
+    margin: 0 auto;
+    padding: 0;
+  }
+
+  .map-page__foot .scrubber {
+    box-shadow: var(--shadow-3);
+  }
+
+  .map-page__body {
+    padding: var(--space-2) var(--space-6) var(--space-8) calc(var(--space-6) + var(--safe-left));
+  }
+}
+
+@media (min-width: 90rem) {
+  .map-page {
+    --panel-width: 28rem;
+  }
+}

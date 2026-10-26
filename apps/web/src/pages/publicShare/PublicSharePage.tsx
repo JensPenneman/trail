@@ -27,7 +27,6 @@ import { PageHeader } from "../../ui/PageHeader";
 import { PlainList } from "../../ui/PlainList";
 import { RelativeTime } from "../../ui/RelativeTime";
 import { Skeleton } from "../../ui/Skeleton";
-import { usePrefersDark } from "../../ui/usePrefersDark";
 import { Wordmark } from "../../ui/Wordmark";
 import "./PublicSharePage.css";
 
@@ -92,8 +91,7 @@ export function PublicSharePage() {
 function SharedLocation({ share, now }: { share: PublicShareResponse; now: number }) {
   const format = useFormatter();
   const config = useConfig();
-  const dark = usePrefersDark();
-  const { styleUrl } = useMapStyle();
+  const { style, dark } = useMapStyle();
   const liveMinutes = config.data?.thresholds.liveMinutes ?? defaultLiveMinutes;
   const palette = dark ? devicePalette.dark : devicePalette.light;
 
@@ -157,10 +155,10 @@ function SharedLocation({ share, now }: { share: PublicShareResponse; now: numbe
           />
         </div>
         <div className="map-layout__map">
-          {styleUrl === null ? null : (
+          {style === null ? null : (
             <LazyTrailMap
               label={mapLabel}
-              styleUrl={styleUrl}
+              mapStyle={style}
               dark={dark}
               positions={positions}
               tracks={tracks}
