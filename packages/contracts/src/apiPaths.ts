@@ -74,7 +74,27 @@ export const apiPaths = {
       mode: (segmentId: string) => `/api/v1/segments/${id(segmentId)}/mode`,
     },
     statsModes: "/api/v1/stats/modes",
+    people: {
+      root: "/api/v1/people",
+      one: (userId: string) => `/api/v1/people/${id(userId)}`,
+      track: (userId: string) => `/api/v1/people/${id(userId)}/track`,
+    },
+    shares: {
+      root: "/api/v1/shares",
+      one: (shareId: string) => `/api/v1/shares/${id(shareId)}`,
+      incoming: "/api/v1/shares/incoming",
+      hide: (shareId: string) => `/api/v1/shares/incoming/${id(shareId)}/hide`,
+      unhide: (shareId: string) => `/api/v1/shares/incoming/${id(shareId)}/unhide`,
+    },
+    shareLinks: {
+      root: "/api/v1/share-links",
+      one: (linkId: string) => `/api/v1/share-links/${id(linkId)}`,
+    },
   },
+  /** What a public link shows (no account); the secret is the path's last segment. */
+  publicShare: (secret: string) => `/api/public/shares/${id(secret)}`,
+  /** The public link page of the SPA. */
+  sharePage: (secret: string) => `/s/${id(secret)}`,
   /** The API reference (Scalar) — a page the API serves itself, outside the SPA. */
   docs: "/docs",
 } as const;

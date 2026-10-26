@@ -1,11 +1,29 @@
 import { z } from "zod";
 import { deviceSummarySchema } from "./device";
+import { sharedDeviceSchema } from "./person";
 import { trackPointSchema } from "./track";
+
+/** What happened to a share, as told to the other side of it (docs/architecture.md §9). */
+export const shareChanges = [
+  /** To the recipient: someone started sharing with you. */
+  "created",
+  /** To the recipient: the owner changed what or how long they share. */
+  "updated",
+  /** To the recipient: the owner stopped sharing (or deleted the device or the account). */
+  "revoked",
+  /** To the owner: the recipient hid them. */
+  "hidden",
+  /** To the owner: the recipient shows them again. */
+  "unhidden",
+  /** To the owner: the address of a pending share signed up; it is active now. */
+  "claimed",
+] as const;
 
 /**
  * Server-sent events on `GET /api/events` (session cookie). The SSE `event:`
  * field equals `type`, `data:` is this JSON. A `: ping` comment is sent every
- * 20 s. Events are scoped to the signed-in user's devices.
+ * 20 s. Events are scoped to the signed-in user's devices and to what other
+ * people share with them, projected as their shares allow.
  */
 export const serverEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("hello"), serverTime: z.iso.datetime() }),
@@ -21,6 +39,18 @@ export const serverEventSchema = z.discriminatedUnion("type", [
     duplicates: z.number().int().nonnegative(),
     rejected: z.number().int().nonnegative(),
     points: z.array(trackPointSchema),
+  }),
+  /** A device someone shares with you reported a position (already at the share's precision). */
+  z.object({ type: z.literal("person"), userId: z.uuid(), device: sharedDeviceSchema }),
+  /**
+   * A share with you, or one of yours, changed: refetch people and shares.
+   * `userId` is the other side (the owner or the recipient), null while unknown.
+   */
+  z.object({
+    type: z.literal("share"),
+    shareId: z.uuid(),
+    userId: z.uuid().nullable(),
+    change: z.enum(shareChanges),
   }),
   /**
    * Processing finished a window of a device's history: its stops, moves and
