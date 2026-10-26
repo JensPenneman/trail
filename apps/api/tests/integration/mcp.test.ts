@@ -452,6 +452,49 @@ describe("rate limits", () => {
   });
 });
 
+describe("refused tokens", () => {
+  it("count once per address for /api/v1 and /mcp together", async () => {
+    const limited = await createTestContext({
+      env: { RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES: "4" },
+    });
+    try {
+      const unknown = bearer(`trlk_${"B".repeat(43)}`);
+      for (let index = 0; index < 2; index += 1) {
+        await request(limited.app)
+          .get(apiPaths.v1.tokens.verify)
+          .set("Authorization", unknown)
+          .expect(401);
+        await request(limited.app)
+          .post(apiPaths.mcp)
+          .set("Authorization", unknown)
+          .set("Content-Type", "application/json")
+          .send(toolsList)
+          .expect(401);
+      }
+      const held = await request(limited.app)
+        .post(apiPaths.mcp)
+        .set("Authorization", unknown)
+        .set("Content-Type", "application/json")
+        .send(toolsList)
+        .expect(429);
+      expect(errorOf(held.body).code).toBe("rate_limited");
+      await request(limited.app)
+        .get(apiPaths.v1.tokens.verify)
+        .set("Authorization", unknown)
+        .expect(429);
+      // A valid token is never held back by it.
+      await request(limited.app)
+        .post(apiPaths.mcp)
+        .set("Authorization", bearer(secretOf("agent")))
+        .set("Accept", "application/json, text/event-stream")
+        .send(toolsList)
+        .expect(200);
+    } finally {
+      await limited.close();
+    }
+  });
+});
+
 describe("logging", () => {
   it("logs each tool call's name, duration and size — never its arguments, result or token", async () => {
     const before = logLines.length;
