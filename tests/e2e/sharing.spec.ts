@@ -1,23 +1,28 @@
 import { expect, type Page } from "@playwright/test";
 import { fact } from "./support/deviceCard";
 import { expectAccessible } from "./support/expectAccessible";
-import { type OverlandBatch, overlandBatch } from "./support/overlandBatch";
+import { laterBatch, type OverlandBatch, overlandBatch } from "./support/overlandBatch";
 import { postOverland } from "./support/postOverland";
 import { signUp } from "./support/signUp";
 import { test } from "./support/test";
 import { uniqueEmail } from "./support/uniqueEmail";
 import { uploadedDevice } from "./support/uploadedDevice";
 
-/** The same upload with every battery reading changed: what the phone sends a little later. */
+/**
+ * The same upload a minute later with every battery reading changed: what the
+ * phone sends next. Later, as a device keeps only a newer reading than the one
+ * it has.
+ */
 function withBattery(batch: OverlandBatch, level: number): OverlandBatch {
   const charged = (feature: OverlandBatch["locations"][number]) => ({
     ...feature,
     properties: { ...feature.properties, battery_level: level },
   });
+  const later = laterBatch(batch, 60_000);
   return {
-    ...batch,
-    locations: batch.locations.map(charged),
-    ...(batch.current === undefined ? {} : { current: charged(batch.current) }),
+    ...later,
+    locations: later.locations.map(charged),
+    ...(later.current === undefined ? {} : { current: charged(later.current) }),
   };
 }
 
