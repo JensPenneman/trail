@@ -1101,8 +1101,10 @@ and the `/api` chain):
    (`RATE_LIMIT_TOKEN_PER_MINUTE`): one budget per token for both.
 7. `postJsonOnly`: other methods 405 `method_not_allowed` with `Allow:
    POST`; a POST without a body 400, with another media type 415.
-8. `express.json` (1 MB, `application/json`), then the SDK, which gets the
-   parsed body and the principal (in `AuthInfo.extra` as an `McpCall`, with
+8. `express.json` (1 MB, `application/json`) and `singleMessage` (a JSON
+   array is 400: the SDK's 2025 transport would take a batch of 100 calls
+   for one count of the rate limits), then the SDK, which gets the parsed
+   body and the principal (in `AuthInfo.extra` as an `McpCall`, with
    the token's id as `token`, never the secret).
 9. A JSON 404 for other paths under `/mcp` and an error handler with the
    API's error body. Before the SDK every refusal uses `{ error: { code,

@@ -143,7 +143,7 @@ text only.
 |---|---|
 | Range per call | 31 days (local days: the night the clocks go back has 25 hours) |
 | Items per answer | 500; an answer that hit it says `truncated: true` — ask again with a narrower range |
-| Request body | 1 MB |
+| Request body | 1 MB, one JSON-RPC message (no batches) |
 | Database time per statement | 10 s; a call that needs more answers "This took too long" |
 | Requests | the API's: 600 a minute per client address and 600 a minute per token, shared with `/api/v1`, and 30 refused tokens in 10 minutes per address |
 
@@ -190,7 +190,8 @@ it, so the server was built against these threats:
   request is refused with `403` before the token is looked up. CORS answers
   with `*` and never allows credentials.
 - **Too much work.** A call covers at most 31 days and returns at most 500
-  items; the body is limited to 1 MB; reads run in a read-only transaction
+  items; the body is limited to 1 MB and one message, so a batch cannot
+  turn one request into a hundred calls; reads run in a read-only transaction
   under a 10 s statement timeout; the rate limits are per address and per
   token, and nothing holds a connection open: the server announces no
   changes, so a client that asks to listen is acknowledged and let go.
