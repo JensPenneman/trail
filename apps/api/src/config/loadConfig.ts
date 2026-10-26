@@ -4,6 +4,7 @@ import { defaultAppVersion, defaultCommit } from "./buildDefaults";
 import type { Config } from "./config";
 import { envSchema } from "./envSchema";
 import { parseTrustProxy } from "./parseTrustProxy";
+import { readSatelliteStyle } from "./satelliteStyle";
 
 /** Invalid environment: `issues` lists every problem as `VARIABLE: message`. */
 export class ConfigError extends Error {
@@ -35,11 +36,20 @@ export function loadConfig(
 
   const allowedOrigins = [...new Set([env.PUBLIC_URL, ...env.ADDITIONAL_ORIGINS])];
   const ingestBase = (env.INGEST_BASE_URL ?? env.PUBLIC_URL).replace(/\/+$/, "");
+  // Checked by the schema: a problem never gets this far.
+  const { style: satellite } = readSatelliteStyle(
+    env.MAP_STYLE_SATELLITE,
+    env.MAP_STYLE_SATELLITE_ATTRIBUTION,
+  );
   const mapOrigins = [
     ...new Set([
       ...env.MAP_CONNECT_SRC,
       originOf(env.MAP_STYLE_LIGHT),
       originOf(env.MAP_STYLE_DARK),
+      // The imagery's own host; a style that loads from more hosts lists them in MAP_CONNECT_SRC.
+      ...(satellite === null
+        ? []
+        : [originOf(satellite.kind === "style" ? satellite.url : satellite.tiles)]),
     ]),
   ];
 
@@ -63,7 +73,7 @@ export function loadConfig(
         ? null
         : { url: env.ALERT_NTFY_URL, token: env.ALERT_NTFY_TOKEN ?? null },
     defaultTimezone: env.DEFAULT_TIMEZONE,
-    mapStyles: { light: env.MAP_STYLE_LIGHT, dark: env.MAP_STYLE_DARK },
+    mapStyles: { light: env.MAP_STYLE_LIGHT, dark: env.MAP_STYLE_DARK, satellite },
     mapOrigins,
     webDistDir:
       env.WEB_DIST_DIR === undefined

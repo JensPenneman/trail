@@ -144,6 +144,8 @@ All configuration is environment variables, validated at boot with zod
 | `DEFAULT_TIMEZONE` | `Europe/Brussels` | Time zone of new accounts |
 | `MAP_STYLE_LIGHT` | `https://tiles.openfreemap.org/styles/liberty` | MapLibre style URL |
 | `MAP_STYLE_DARK` | `https://tiles.openfreemap.org/styles/dark` | MapLibre style URL |
+| `MAP_STYLE_SATELLITE` | empty (none) | Satellite imagery for the map's style control: a MapLibre style URL, or a raster tile URL template with `{z}`, `{x}`, `{y}` (256 px tiles); its origin joins the CSP's map origins |
+| `MAP_STYLE_SATELLITE_ATTRIBUTION` | empty | The imagery provider's credit, plain text; required with a tile template |
 | `MAP_CONNECT_SRC` | `https://tiles.openfreemap.org` | Extra CSP `connect-src`/`img-src` origins for the map (comma-separated) |
 | `WEB_DIST_DIR` | `apps/web/dist` (`../../web/dist` from the bundle in `apps/api/dist`) | Built SPA to serve; missing `index.html` = API only |
 | `LOG_LEVEL` | `info` | pino level |
@@ -1260,8 +1262,9 @@ invalid value).
   img-src 'self' data: blob: <map origins>; connect-src 'self' <map origins>;
   worker-src 'self' blob:; child-src 'self' blob:; font-src 'self';
   manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self';
-  frame-ancestors 'none'` (+ `upgrade-insecure-requests` on HTTPS). No inline
-  scripts or styles in HTML; CSSOM style changes (React `style`, MapLibre) are
+  frame-ancestors 'none'` (+ `upgrade-insecure-requests` on HTTPS); the map
+  origins are `MAP_CONNECT_SRC` plus the origins of the map styles and of the
+  satellite imagery (§4). No inline scripts or styles in HTML; CSSOM style changes (React `style`, MapLibre) are
   allowed by CSP. HSTS (2 years, includeSubDomains) on HTTPS only.
   `Referrer-Policy: same-origin`, `Permissions-Policy` denying the powerful
   features (camera, microphone, geolocation, payment, USB, …) and allowing

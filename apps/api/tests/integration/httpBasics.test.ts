@@ -81,6 +81,33 @@ describe("health and configuration", () => {
       features: { alerts: false },
       builtAt: null,
     });
+    expect(response.body.mapStyles).not.toHaveProperty("satellite");
+  });
+
+  it("offers satellite imagery when configured, and lets the map load its tiles", async () => {
+    const imagery = await createTestContext({
+      env: {
+        MAP_STYLE_SATELLITE: "https://imagery.example.net/tiles/{z}/{y}/{x}.jpg",
+        MAP_STYLE_SATELLITE_ATTRIBUTION: "Imagery © Example",
+      },
+    });
+    try {
+      const response = await request(imagery.app).get("/api/config").expect(200);
+      expect(publicConfigSchema.parse(response.body).mapStyles.satellite).toEqual({
+        kind: "raster",
+        tiles: "https://imagery.example.net/tiles/{z}/{y}/{x}.jpg",
+        attribution: "Imagery © Example",
+      });
+      const csp = String(response.headers["content-security-policy"]);
+      expect(csp).toContain(
+        "img-src 'self' data: blob: https://tiles.openfreemap.org https://imagery.example.net;",
+      );
+      expect(csp).toContain(
+        "connect-src 'self' https://tiles.openfreemap.org https://imagery.example.net;",
+      );
+    } finally {
+      await imagery.close();
+    }
   });
 });
 

@@ -13,7 +13,11 @@ export function configRouter(config: Config): Router {
     builtAt: config.build.builtAt,
     publicUrl: config.publicUrl,
     ingestUrl: config.ingestUrl,
-    mapStyles: config.mapStyles,
+    mapStyles: {
+      light: config.mapStyles.light,
+      dark: config.mapStyles.dark,
+      ...(config.mapStyles.satellite === null ? {} : { satellite: config.mapStyles.satellite }),
+    },
     thresholds: { liveMinutes: config.liveWindowMinutes, staleHours: config.staleAfterHours },
     features: { alerts: config.alerts !== null },
   };
