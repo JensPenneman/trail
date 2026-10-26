@@ -246,6 +246,13 @@ worked out again; the transport modes people set are kept like recorded data.
 | `docker volume rm trail-db`, a wiped Docker data directory | **gone**: restore from the backups. Never do this without a fresh dump |
 | The server's disk fails | gone from the server: the backups in `BACKUP_DIR` survive if it is on another disk or synced off-site |
 
+Shares and public links live in the same database, and so does the key that
+places the cells of approximate and area shares (`server_secrets`,
+`share-grid`, generated on first use): a restore keeps it, so everyone keeps
+seeing the same cells. Never delete that row; a new key would move every cell,
+and someone who saw both could narrow a position down. Stopped and ended
+shares and links are removed 30 days later.
+
 ## Backups
 
 The `backup` service (production only) dumps the database every day at
@@ -326,6 +333,9 @@ setup QR code. After a new `PUBLIC_URL`:
 2. **Move each phone.** Devices > the device > Rotate token shows a new QR code
    with the new endpoint; scan it with the phone right away (the old token
    stops working at once). Points queued on the phone are kept.
+3. **Public links** carry the address they were made on. Links sent before the
+   change still work as long as the old address reaches the server; otherwise
+   make new ones in Settings › Sharing.
 
 ## Processing
 

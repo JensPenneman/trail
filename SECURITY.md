@@ -65,7 +65,8 @@ yourself: location data is personal data.
   Permissions-Policy that denies everything except passkeys.
 - **Privacy**: tokens, cookies and coordinates are kept out of the logs at the
   default log level; every query is scoped to the signed-in person's devices,
-  or to the devices an API token is limited to.
+  or to the devices an API token is limited to, and to what other people share
+  with them (below).
 - **Container**: runs as an unprivileged user on a read-only root file system
   with all Linux capabilities dropped and `no-new-privileges`; the database
   sits on an internal network without a published port; the app receives only
@@ -75,3 +76,47 @@ yourself: location data is personal data.
   SBOM, and a signed GitHub build provenance attestation when the repository
   is public; Dependabot updates for npm, Actions and Docker, with majors
   reviewed by hand.
+
+## Sharing: who sees what
+
+Location sharing (People and public links, [docs/sharing.md](docs/sharing.md))
+is opt-in, one way and limited to what its owner picks.
+
+- **A person you share with** sees, for the devices you picked: the device
+  name, the newest position inside the share's window (for a live-only share
+  the last 12 hours by default, `STALE_AFTER_HOURS`; else the days of history
+  you allowed), and battery and
+  activity when you include them. With `approximate` or `area` they see the
+  centre of a cell about 560 m or 5.6 km across instead of the position, with
+  no altitude or course (and no speed for `area`); history is only ever shared
+  precisely. They see your name and address, and you see when they last
+  looked. They never see your device tokens or keys, settings, alerts, upload
+  logs, older points, exports, other devices or anything of other people.
+- **A holder of a public link** sees the label, the names of the devices it
+  names, their positions at its precision, optionally their route of up to 7
+  days (precise links only) and battery and activity — never your name,
+  address, account or device ids. The page is not indexed and sends no
+  referrer; its secret is stored as a hash, shown once and kept out of the
+  logs.
+- **Stopping is immediate**: a stopped, ended or hidden share and a turned-off
+  or expired link show nothing from that request on, in reads and in live
+  updates. Deleting a device or the account ends what it shared.
+- **Coarse positions cannot be averaged back**: the cell of each share and
+  device is fixed by a key the server generates and keeps to itself, so
+  reading again returns the same centre. What a cell does reveal: when a
+  person crosses into the next cell, the change shows that they were near
+  its edge at about that time; and people who pool what different shares
+  showed them (cells of different shares are offset differently) can narrow
+  the area down to the overlap of their cells.
+- **Addresses are not verified**: Trail treats an account as the owner of the
+  address it signed up with, and a share with an address that has no account
+  yet goes to whoever signs up with it first. Only the allow-list and
+  invitations decide who may sign up, so this is as safe as they are: with a
+  wildcard entry (`*@example.com`) or an open invitation, anyone allowed in
+  could take an address that is still free. Share with a pending address only
+  when that is acceptable, or ask an administrator to invite it (the share
+  dialog offers it) and share once the account exists.
+- **API tokens** need `people:read` to see people, `locations:read` as well for
+  distances (they start from your own position), and `shares:read` or
+  `shares:write` for shares and links. A token limited to some devices shares
+  only those and cannot widen a share that shows others.

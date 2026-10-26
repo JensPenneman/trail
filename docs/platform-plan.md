@@ -456,8 +456,8 @@ dashed outline and a "Confirm?" affordance.
   `[{ deviceId, ownerId, precision, from, includeDetails }]`: the viewer's own
   devices (precise, unbounded) plus the devices of active incoming shares (not
   revoked, expired or hidden; `from` = now − `history_days`, or now − the live
-  window for live-only shares). Every v1 read goes through it; mutations keep
-  `findOwnedDevice`.
+  window for live-only shares — `STALE_AFTER_HOURS`, see §4.8). Every read of
+  shared data goes through it; mutations keep `findOwnedDevice`.
 - Projection: coordinates of a non-precise device are snapped to a grid
   (approximate 0.005°, area 0.05°) with a per-device deterministic offset, so
   repeated reads cannot be averaged back to the real position; the reported
@@ -506,6 +506,59 @@ the public page polls.
 
 See §1.3, plus `GET /api/public/shares/:token`. Pending shares are claimed in
 `finishSignUp` by matching the address.
+
+### 4.8 Decisions (feat/sharing)
+
+The sharing pull request settled these; `docs/architecture.md` §8.4 is the
+specification.
+
+1. **History requires precise.** `history_days` only with `precision =
+   precise` (400 otherwise, also for a change that would leave it on a coarse
+   share; a check constraint backs it). Approximate and area shares are live
+   only. Find My shares no history at all; precise history is Trail's opt-in
+   extension. Shares allow 1–365 days (≤ 93 per track call), links 1–7.
+2. **Where shared data is readable:** only through the people routes, the live
+   events and the public link endpoint. The general v1 reads (locations,
+   tracks, visits, trips, stats, heatmap, devices) stay own-devices-only.
+   `resolveAccessibleDevices(viewer, requested?)` is the single source of truth
+   for what a viewer may see of other people; the MCP and Map branches use it
+   with `toSharedDevice`.
+3. **Live window = `STALE_AFTER_HOURS`** (12 h), not `LIVE_WINDOW_MINUTES`:
+   Overland pauses while a phone stands still, so a 15-minute window would hide
+   everyone who sits still. A live-only share shows the newest position of the
+   last 12 hours; nothing older.
+4. **Projection:** rows of 0.005° (approximate) or 0.05° (area) latitude, each
+   row's columns as wide in metres as the row is high; the grid of every
+   (share or link, device) is offset by an HMAC-SHA256 under a 32-byte key the
+   server generates once and keeps in `server_secrets` (`share-grid`). Accuracy
+   = the cell size (or the fix's own, when worse); altitude and course are
+   dropped for both coarse precisions, the speed too for area. Distances start
+   from the viewer's own newest position and end at the projected one; they
+   need `locations:read` for tokens (they are location data of the viewer).
+5. **Durations:** `hour`, `endOfDay` (the next local midnight in the owner's
+   time zone, found by bisection on the local date), `week` (7 × 24 h),
+   `indefinitely`; a change's `duration` counts from now. Links: expiry
+   required, 24 h by default, at most 30 days.
+6. **Limits and lifecycle:** 50 current shares (pending included) and 20
+   working links per owner (409); an ended share is stopped automatically
+   when a new one goes to the same address; stopped and ended rows are pruned
+   after 30 days; a deleted device leaves the owner's shares and links (never
+   widening one to every device).
+7. **Tokens limited to devices** (refines §2.2): they read people and shares
+   like any token, but share only the devices they are limited to, named by
+   id, and cannot change a share that shows other devices (403); stopping is
+   always allowed.
+8. **Visibility for the owner:** outgoing shares show `pending`, `active` or
+   `hidden` (the recipient hid them) and `last_viewed_at` (stamped at most
+   once a minute when the recipient reads people).
+9. **Public endpoint:** 404 `not_found` for a malformed or unknown secret, 404
+   `share_expired` (the new error code) for an expired or turned-off link, so
+   the page can say which; devices carry a per-link HMAC key instead of their
+   ids; tracks of history links are cached 30 s per link; its per-IP limit is
+   `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE` (60).
+10. **Inferred mode:** `activity.mode` comes from `currentModeOf`, null until
+    processing provides a current mode; the web cards read it through
+    `describeActivity`, which works with or without it.
 
 ---
 
