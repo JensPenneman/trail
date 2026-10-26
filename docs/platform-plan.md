@@ -124,19 +124,19 @@ When the two disagree, the pull request that notices fixes the plan.
 
 | Operation | Scope | Notes |
 |---|---|---|
-| `GET /api/v1/tokens/verify` | any token | `{ id, name, scopes, deviceIds, expiresAt, status }` (Cloudflare's `tokens/verify`) |
+| `GET /api/v1/tokens/verify` | any token (`auth: "token"`) | `{ id, name, scopes, deviceIds, expiresAt, status }` (Cloudflare's `tokens/verify`); a session gets 400 `bad_request` |
 | `GET /api/v1/me` | `profile:read` | id, displayName, timezone |
 | `GET /api/v1/devices` | `devices:read` | `DevicePublic`: no tokenHint, deviceKey, pendingSettings or alerts; `lastLocation` only with `locations:read` (left out otherwise) |
 | `GET /api/v1/devices/{id}` | `devices:read` | |
-| `PATCH /api/v1/devices/{id}` | `devices:write` | name, alertsEnabled, pendingSettings |
+| `PATCH /api/v1/devices/{id}` | `devices:write` | name, alertsEnabled, pendingSettings → `{ device, settings }` (the owner's settings, which `DevicePublic` leaves out) |
 | `GET /api/v1/devices/{id}/location` | `locations:read` | latest cached position, battery, inferred mode when known |
-| `GET /api/v1/locations` | `locations:read` | `device`, `from`, `to`, `level`, `cursor`, `limit` ≤ 1000 |
+| `GET /api/v1/locations` | `locations:read` | `device`, `from`, `to`, `cursor` (opaque), `limit` ≤ 1000, oldest first; raw points only — the levels are `/api/v1/tracks` |
 | `GET /api/v1/tracks` | `locations:read` | `devices`, `from`, `to` (≤ 93 days), `level` → segments with mode and confidence |
 | `GET /api/v1/segments` | `locations:read` | `devices`, `from`, `to` → stops and moves (§3) |
 | `PUT` / `DELETE /api/v1/segments/{id}/mode` | `locations:write` | override one segment |
 | `POST /api/v1/devices/{id}/mode` | `locations:write` | quick override from now (§3.5) |
-| `GET /api/v1/visits`, `/trips` | `history:read` | as the private routes |
-| `GET /api/v1/stats/days`, `/stats/activity`, `/heatmap` | `history:read` | as the private routes; `stats/days` adds per-mode figures |
+| `GET /api/v1/visits`, `/trips` | `history:read` | as the private routes: `from`, `to` (≤ 400 days, any offset), `devices` |
+| `GET /api/v1/stats/days`, `/stats/activity`, `/heatmap` | `history:read` | as the private routes, with `devices`; `stats/days` adds per-mode figures (processing) |
 | `GET /api/v1/people` | `people:read` | people sharing with the caller, projected latest location |
 | `GET /api/v1/people/{userId}` | `people:read` | one person: shared devices and their locations |
 | `GET` / `POST /api/v1/shares`, `DELETE /api/v1/shares/{id}` | `shares:read` / `shares:write` | outgoing shares |

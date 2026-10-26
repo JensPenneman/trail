@@ -248,6 +248,18 @@ in the owner's time zone: `points`, `distance_m`, `first_at`, `last_at`.
 Recomputed from `locations` for every (device, day) touched by an ingest
 (debounced ~10 s, after the response) or a deletion, and in bulk by the CLI.
 
+**api_tokens** — credentials of the public API (§8.4): `id`, `user_id` → users
+(cascade), `name` (1–60 characters, checked), `token_hash` (unique, SHA-256
+hex of the secret), `token_hint` (its last 4 characters), `scopes` (text[],
+non-empty, values from the contracts' scope vocabulary, checked — a new scope
+needs a migration), `device_ids` (uuid[]; null = every device of the user, an
+empty array = none; no foreign key into an array: deleting a device removes
+its id from every array in the same transaction, after the device row, so a
+token change that holds the device is already in), `allowed_ips` (cidr[], null
+= any address), `expires_at` (null = never), `created_at`, `last_used_at`,
+`last_used_ip` (inet), `revoked_at`. Index `(user_id)`. Revoked or expired rows
+are kept 30 days for the record, then pruned.
+
 ## 6. Overland ingest
 
 `POST /api/overland` — the "Receiver Endpoint" configured in Overland.
@@ -471,6 +483,8 @@ public, versioned one is `/api/v1` (§8.3).
 | `PATCH/DELETE /api/me/passkeys/:id` | cookie | `renamePasskeyRequest`; delete refuses the last passkey (`409 last_passkey`) |
 | `GET /api/me/sessions`, `DELETE /api/me/sessions/:id`, `POST /api/me/sessions/revoke-others` | cookie | `sessionListResponse` |
 | `POST /api/me/passkey-links` | cookie | `createPasskeyLinkRequest/Response` |
+| `GET/POST /api/me/tokens` | cookie | `apiTokenListResponse`, `createApiTokenRequest` → `apiTokenWithSecretResponse` (201) |
+| `PATCH/DELETE /api/me/tokens/:id`, `POST /api/me/tokens/:id/roll` | cookie | `updateApiTokenRequest` → `apiTokenResponse`; revoke 204; roll → `apiTokenWithSecretResponse` |
 | `GET/POST /api/admin/invites`, `DELETE /api/admin/invites/:id` | admin | `invite.ts` |
 | `GET /api/admin/users` | admin | `adminUser.ts` |
 | `GET/POST /api/devices` | cookie | `deviceListResponse`, `createDeviceRequest` → `deviceWithCredentialsResponse` (201) |
@@ -493,7 +507,7 @@ Ownership: every device-scoped query is filtered by the session user's
 devices; a foreign or unknown id is `404 not_found` (never 403, no probing).
 
 Status codes: creations answer `201` (devices, invites, passkeys, passkey
-links), deletions and logout `204`; `PATCH /api/me/passkeys/:id` answers
+links, API tokens), deletions, revocations and logout `204`; `PATCH /api/me/passkeys/:id` answers
 `addPasskeyResponse`, `POST /api/me/sessions/revoke-others` the remaining
 sessions. Invalid input → `400 validation_failed` with `fields`; malformed JSON
 → `400 bad_request`; a non-JSON body → `415 bad_request`; too large → `413
@@ -633,17 +647,17 @@ last-seen time and battery, never where a device is.
 only thing a token store has to provide: `verify(secret, { ip })` resolves a
 well-formed secret to a `TokenPrincipal` or a `{ reason: "unknown" | "expired"
 | "revoked" | "ip" }`; it answers rather than throws for a bad token and never
-logs the secret. `AppContext.apiTokens` holds it; `createAppContext` defaults
-to `noApiTokens`, which knows no token, so until the token store exists v1
-takes sessions only. The token store replaces that default; integration tests
-inject a verifier through `createTestContext({ apiTokens })`
-(`tests/support/fakeApiTokens.ts`).
+logs the secret. `AppContext.apiTokens` holds it: `createAppContext` wires in
+the `api_tokens` store (`DatabaseTokenVerifier`, §8.4); integration tests may
+inject another verifier through `createTestContext({ apiTokens })`
+(`tests/support/fakeApiTokens.ts`) to try every outcome.
 
 **Route registry.** Every operation is a `defineRoute(spec, handler)`
 (`apps/api/src/v1/defineRoute.ts`) in a module of its own,
 `apps/api/src/v1/routes/<feature>/<operationId>.ts`. Each feature lists its
 operations in reference order in `routes/<feature>/<feature>Routes.ts`
-(`profileRoutes`, `deviceRoutes`), and `apps/api/src/v1/v1Routes.ts`
+(`profileRoutes`, `tokenRoutes`, `deviceRoutes`, `locationRoutes`,
+`historyRoutes`), and `apps/api/src/v1/v1Routes.ts`
 aggregates the groups — one line per feature — plus the document's own route.
 The spec:
 
@@ -756,6 +770,64 @@ which loads Scalar's web fonts); the configuration turns off default fonts,
 telemetry, Scalar's chat agent, MCP hints and the button that opens Scalar's
 hosted client.
 
+### 8.4 API tokens
+
+The credentials of `/api/v1` for scripts, apps and agents: created in Settings
+(§14), described for their users in [docs/api.md](api.md#tokens), stored in
+`api_tokens` (§5). Contracts: `packages/contracts/src/apiToken.ts`; domain:
+`apps/api/src/apiTokens/`.
+
+- **Secret.** `trlk_` + 32 random bytes in base64url (`apiTokenSecretPattern`,
+  which `authenticateBearer` checks before any lookup). Only its SHA-256 hex is
+  stored, with the last four characters as the hint; the secret itself is in
+  the answer of creating and rolling, and nowhere else.
+- **Verification** (`DatabaseTokenVerifier`, the `ApiTokenVerifier` of §8.3):
+  hash → one lookup joined with the user → refused when revoked, then when the
+  client address is outside `allowed_ips`, then when expired, so a caller
+  outside the allowlist learns nothing, not even the expiry → a
+  `TokenPrincipal` with the token's scopes and devices. The address is `req.ip`
+  as `trust proxy` settles it — an allowlist is only as good as
+  `TRUST_PROXY`: with `true`, every client chooses its address — read as IPv4
+  when it is IPv4-mapped and without a link-local zone, and matched with
+  `node:net`'s `BlockList` against the networks of its own family only (IPv4
+  networks must be written as IPv4); no address, no match. Use is
+  recorded after the answer through `BackgroundTasks`, at most once a minute
+  per token: the row's `last_used_at` decides, a set of tokens being recorded
+  collapses bursts, and the `UPDATE` repeats the condition. A failed write is
+  logged and never touches the request.
+- **Management** (`/api/me/tokens`, `apps/api/src/me/apiTokensRouter.ts`) is
+  session-only — `requireSession`, and the private chain does not read bearer
+  tokens at all — and behind the CSRF guard: a token never manages tokens.
+  Creating takes a name (1–60, trimmed), scopes (at least one, put in the
+  vocabulary's order), devices (null = all; at most 50 of the user's own, else
+  404, held `FOR KEY SHARE` until the commit so a device deleted meanwhile
+  cannot stay in the list), an address allowlist (null, or 1–20 IPv4 or IPv6
+  addresses or CIDR networks without host bits, `ipNetworkSchema`) and an
+  expiry (stated: null for never, otherwise in the future). At most 50 tokens
+  per user are active and 200 kept in all, revoked and expired ones included,
+  so the list stays bounded (409 `conflict`); the user row is locked `FOR NO
+  KEY UPDATE` while counting, so parallel requests cannot pass the limit
+  together.
+  `PATCH` changes those settings of an active token and keeps its secret (it
+  locks the devices before the token, the order a device deletion takes them);
+  rolling gives an active token a new hash and hint in the same row, so the old
+  secret is unknown from the commit on; a revoked or expired token can be
+  neither changed nor rolled (409). `DELETE` revokes (`revoked_at`, 204, also
+  when it already was). Unknown, malformed and other people's ids are 404.
+- **What a token reaches**: the scopes of its routes (§8.3), field by field
+  where a scope guards part of an answer (`hasScope`: a device's position only
+  with `locations:read`, `toDevicePublic(summary, auth)`), and its devices
+  through `DeviceAccess`. `devices:write` renames a device, switches its alerts
+  and queues presets, never its credentials or its deletion, which stay with
+  the session. The dialog's templates (`apiTokenTemplates`): Read-only = every
+  `:read` scope, Agent = those and `locations:write`, Full access = all.
+  `GET /api/v1/tokens/verify` (`auth: "token"`) lets a token describe itself.
+- **Audit**: `API token created`, `changed`, `rolled` and `revoked` at info,
+  with the token's and the user's id (and the scopes or the changed fields),
+  never the secret.
+- **Retention**: revoked and expired tokens stay listed for 30 days, then the
+  hourly prune removes them (§10); deleting the account removes all of them.
+
 ## 9. Live updates (SSE)
 
 `GET /api/events` — `text/event-stream`, `Cache-Control: no-store`,
@@ -785,8 +857,9 @@ replaces device cache entries from `device` events and appends
   alert when data resumes (§6.2). Turning a device's alerts off clears its
   stamp.
 - hourly — delete expired sessions, ceremonies, links, invites (used/expired
-  > 30 days); prune `ingest_log` (> 90 d). Recorded data — locations, visits,
-  trips, events, rejects — is never pruned.
+  > 30 days) and API tokens (revoked/expired > 30 days); prune `ingest_log`
+  (> 90 d). Recorded data — locations, visits, trips, events, rejects — is
+  never pruned.
 - debounced (10 s) — daily-stats recomputation per touched (device, day), in
   the owner's time zone at run time; a failed pass is retried with the next.
   Changing the time zone (`PATCH /api/me`) rebuilds every day of the user's
@@ -867,8 +940,14 @@ invalid value).
   pending daily statistics and background work (≤ 2 s each), close the pool.
   A hung shutdown exits after 13 s, so the container's stop grace period
   should be at least 15 s.
-- Tokens (device, session, invite, link) are stored hashed only. API token
-  secrets are shape-checked before any lookup and never logged.
+- Tokens (device, session, invite, link, API) are stored hashed only, and
+  each secret is shown once. API token secrets are shape-checked before any
+  lookup, never logged, and only ever accepted in the `Authorization` header
+  of `/api/v1`. An API token does what its scopes allow, with its devices,
+  from its addresses, until it expires or is revoked (§8.4); none can manage
+  tokens, sessions, passkeys or device credentials, which take a passkey
+  session. Creating, changing, rolling and revoking a token is logged with
+  its id.
 - The container runs as the unprivileged `node` user on a read-only root
   filesystem (`tmpfs /tmp`), `no-new-privileges`, all capabilities dropped.
 - Postgres is not published outside the Docker network in production.
@@ -980,9 +1059,15 @@ Routes: `/login`, `/invite/:token`, `/link/:token` (public); `/` Live,
   rename, alerts toggle, delete (type the name to confirm).
 - **Settings** — profile (name, time zone), passkeys (list with provider,
   add, rename, delete), sessions (revoke), "add a passkey on another device
-  or address" (link + QR), people (admins: invites, users), data (export
-  GeoJSON/GPX/CSV, delete a range, delete account), about (version, commit,
-  build time).
+  or address" (link + QR), API tokens (list with hint, scope chips, devices,
+  addresses, expiry, last use and status; create with a name, a template —
+  Read-only, Agent, Full access — that fills in the scope checkboxes, all or
+  some devices, an expiry of 30 or 90 days, a year, a date or never (with a
+  warning) and an optional address allowlist; the secret shown once with a
+  copy button, the dialog closing only with "I have saved it"; roll and revoke
+  after a confirmation; a link to `/docs`), people (admins: invites, users),
+  data (export GeoJSON/GPX/CSV, delete a range, delete account), about
+  (version, commit, build time).
 - **Login** — one email field (`autocomplete="username webauthn"`) + Continue
   (unified start), conditional UI running in the background, "Use a passkey"
   button; clear states for not invited, no passkey for this address,
@@ -1037,7 +1122,15 @@ on green CI once branch protection requires the checks.
   `ApiTokenVerifier`, with tokens (scopes, device restrictions, expired,
   revoked and address-bound tokens, rate limits), check CORS, CSRF and the
   JSON 404, that the mounted routes and the document list the same
-  operations, and the `/docs` page's headers and scripts.
+  operations, and the `/docs` page's headers and scripts. `apiTokens.test.ts`
+  drives the token store through the real app (create, validate, change,
+  roll, revoke, expiry, allowlists, last use, the limit of 50 with parallel
+  requests, device deletion, pruning, account deletion, the audit log, CSRF
+  and session-only management); `apiV1Operations.test.ts` calls every v1
+  operation of the token branch with real tokens: the same answers as the
+  dashboard's routes, scopes, device restrictions and other accounts' ids.
+  The upgrade test also records API tokens with the release that added them
+  and requires every column unchanged after the later migrations.
 - `apps/web/tests` — Vitest + Testing Library (jsdom).
 - `tests/e2e` — Playwright against the built stack. `playwright.config.ts`
   starts `scripts/e2e-server.mjs`: it empties the `trail_e2e` database
@@ -1056,5 +1149,8 @@ on green CI once branch protection requires the checks.
   the heatmap, sign-in by email, passkey button and autofill, invitations and
   isolation, passkeys and passkey links, sessions, export, deleting a period
   and the account, Overland's protocol, static files and headers, the API
-  reference at `/docs` and the OpenAPI document, axe (WCAG 2.0 A–AAA, 2.1/2.2
-  AA, best practices), keyboard use and 320 px screens.
+  reference at `/docs` and the OpenAPI document, API tokens (create one in
+  Settings, read the secret from the one-time screen, call
+  `/api/v1/tokens/verify` with it, roll, revoke and see the old secrets
+  refused; devices and an expiry date), axe (WCAG 2.0 A–AAA, 2.1/2.2 AA, best
+  practices), keyboard use and 320 px screens.
