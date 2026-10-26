@@ -20,7 +20,7 @@ export interface Exchange {
 
 /**
  * The SDK's own client, connected to the test app over Streamable HTTP with an
- * API token, as an MCP client such as Claude Code connects. `exchanges`
+ * API token, as an agent's MCP client connects. `exchanges`
  * records what came back, so tests can check the answers were JSON.
  */
 export async function connectMcp(

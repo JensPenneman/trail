@@ -224,4 +224,4 @@ needs it.
 - **OAuth.** Clients that only connect with OAuth need protected-resource
   metadata (RFC 9728) and an authorization server that issues Trail's
   tokens; both are a planned follow-up on top of the token system. Until
-  then, use a client that can send a header, such as Claude Code.
+  then, use a client that can send a header (see [Connect](#connect)).
