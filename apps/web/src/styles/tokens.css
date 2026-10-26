@@ -35,6 +35,20 @@
   --color-danger-soft: #fff0ee;
   --color-on-danger: #ffffff;
 
+  /* Transport mode colours (see src/transport/modePalette.ts), apart from the device colours. */
+  --mode-stationary: #646a72;
+  --mode-walking: #1e7b34;
+  --mode-running: #687600;
+  --mode-cycling: #0b7a84;
+  --mode-car: #b53a14;
+  --mode-bus: #b25f00;
+  --mode-tram: #ae1f6c;
+  --mode-metro: #6a2bb5;
+  --mode-train: #22409a;
+  --mode-boat: #0267b2;
+  --mode-plane: #5b4334;
+  --mode-unknown: #7c828b;
+
   /* Device identity colours (see src/devices/devicePalette.ts). */
   --device-0: #2a78d6;
   --device-1: #eb6834;
@@ -160,6 +174,19 @@
     --color-danger-soft: #412421;
     --color-on-danger: #2f1a18;
 
+    --mode-stationary: #a2a8b1;
+    --mode-walking: #5ec872;
+    --mode-running: #b7c83c;
+    --mode-cycling: #3ec6d2;
+    --mode-car: #ff7d55;
+    --mode-bus: #ffab44;
+    --mode-tram: #f26dab;
+    --mode-metro: #b78ff2;
+    --mode-train: #91a8f7;
+    --mode-boat: #52b6f8;
+    --mode-plane: #c9a58c;
+    --mode-unknown: #868c95;
+
     --device-0: #3987e5;
     --device-1: #d95926;
     --device-2: #199e70;
@@ -248,4 +275,53 @@
 
 .device-color-7 {
   --device-color: var(--device-7);
+}
+
+/* Transport mode swatches: the class carries the mode, the label beside it says it. */
+.mode-color-stationary {
+  --mode-color: var(--mode-stationary);
+}
+
+.mode-color-walking {
+  --mode-color: var(--mode-walking);
+}
+
+.mode-color-running {
+  --mode-color: var(--mode-running);
+}
+
+.mode-color-cycling {
+  --mode-color: var(--mode-cycling);
+}
+
+.mode-color-car {
+  --mode-color: var(--mode-car);
+}
+
+.mode-color-bus {
+  --mode-color: var(--mode-bus);
+}
+
+.mode-color-tram {
+  --mode-color: var(--mode-tram);
+}
+
+.mode-color-metro {
+  --mode-color: var(--mode-metro);
+}
+
+.mode-color-train {
+  --mode-color: var(--mode-train);
+}
+
+.mode-color-boat {
+  --mode-color: var(--mode-boat);
+}
+
+.mode-color-plane {
+  --mode-color: var(--mode-plane);
+}
+
+.mode-color-unknown {
+  --mode-color: var(--mode-unknown);
 }

@@ -4,9 +4,14 @@ export const trailSources = {
   heat: "trail-heat",
   accuracy: "trail-accuracy",
   tracks: "trail-tracks",
+  transport: "trail-transport",
+  transportStops: "trail-transport-stops",
   visits: "trail-visits",
   cursors: "trail-cursors",
 } as const;
+
+/** The layers a click opens a segment from. */
+export const transportLayers = ["trail-transport-line", "trail-transport-stops"] as const;
 
 const empty: GeoJSONSourceSpecification = {
   type: "geojson",
@@ -142,6 +147,81 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
     );
   }
   map.setPaintProperty("trail-track-casing", "line-color", casing);
+
+  // Transport: lines in their mode's colour on a casing, a dashed outline over moves to review,
+  // the selected segment drawn wider, and stops as dots.
+  if (map.getLayer("trail-transport-casing") === undefined) {
+    map.addLayer(
+      {
+        id: "trail-transport-casing",
+        type: "line",
+        source: trailSources.transport,
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 4.5, 14, 7.5, 18, 11],
+        },
+      },
+      firstLabel,
+    );
+    map.addLayer(
+      {
+        id: "trail-transport-line",
+        type: "line",
+        source: trailSources.transport,
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 2.25, 14, 4, 18, 6.5],
+        },
+      },
+      firstLabel,
+    );
+    map.addLayer(
+      {
+        id: "trail-transport-review",
+        type: "line",
+        source: trailSources.transport,
+        filter: ["==", ["get", "review"], true],
+        layout: { "line-join": "round" },
+        paint: {
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 14, 1.5, 18, 2.25],
+          "line-dasharray": [2, 2],
+          "line-gap-width": ["interpolate", ["linear"], ["zoom"], 8, 3.5, 14, 6, 18, 9],
+        },
+      },
+      firstLabel,
+    );
+    map.addLayer(
+      {
+        id: "trail-transport-selected",
+        type: "line",
+        source: trailSources.transport,
+        filter: ["==", ["get", "id"], ""],
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 5, 14, 8, 18, 12],
+        },
+      },
+      firstLabel,
+    );
+  }
+  map.setPaintProperty("trail-transport-casing", "line-color", casing);
+  map.setPaintProperty("trail-transport-review", "line-color", dark ? "#f2f0ed" : "#1d1b19");
+
+  if (map.getLayer("trail-transport-stops") === undefined) {
+    map.addLayer({
+      id: "trail-transport-stops",
+      type: "circle",
+      source: trailSources.transportStops,
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 3.5, 15, 6.5],
+        "circle-color": ["get", "color"],
+        "circle-stroke-width": 2,
+      },
+    });
+  }
+  map.setPaintProperty("trail-transport-stops", "circle-stroke-color", surface);
 
   if (map.getLayer("trail-visits") === undefined) {
     map.addLayer({

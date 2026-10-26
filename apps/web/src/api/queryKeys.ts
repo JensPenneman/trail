@@ -21,6 +21,11 @@ export type HeatmapParams = {
   deviceIds: readonly string[] | null;
 };
 
+/** A range at a level of calculation (`/api/v1/tracks`). */
+export type LevelTracksParams = RangeParams & {
+  level: "raw" | "averaged" | "mapped" | "inferred";
+};
+
 export type ActivityParams = {
   hours: number;
   deviceIds: readonly string[] | null;
@@ -40,6 +45,9 @@ export const queryKeys = {
     heatmap: ["heatmap"],
     ingestLog: ["ingest-log"],
     locations: ["locations"],
+    levelTracks: ["level-tracks"],
+    timeline: ["timeline"],
+    deviceMode: ["device-mode"],
   },
   config: ["config"],
   session: ["session"],
@@ -53,6 +61,9 @@ export const queryKeys = {
   days: (params: DaysParams) => ["days", params] as const,
   activity: (params: ActivityParams) => ["activity", params] as const,
   heatmap: (params: HeatmapParams) => ["heatmap", params] as const,
+  levelTracks: (params: LevelTracksParams) => ["level-tracks", params] as const,
+  timeline: (params: RangeParams) => ["timeline", params] as const,
+  deviceMode: (deviceId: string) => ["device-mode", deviceId] as const,
   passkeys: ["passkeys"],
   sessions: ["sessions"],
   apiTokens: ["api-tokens"],

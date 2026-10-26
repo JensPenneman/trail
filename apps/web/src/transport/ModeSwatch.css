@@ -1,0 +1,23 @@
+.mode-swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 0.3125rem;
+  border-radius: var(--radius-pill);
+  background: var(--mode-color);
+}
+
+.mode-swatch--dashed {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--mode-color) 0 0.3rem,
+    transparent 0.3rem 0.5rem
+  );
+}
+
+@media (forced-colors: active) {
+  .mode-swatch {
+    forced-color-adjust: none;
+    outline: 1px solid CanvasText;
+  }
+}

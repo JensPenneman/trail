@@ -1,5 +1,5 @@
 import { type DeviceStatus, deviceStatus } from "@trail/contracts/deviceStatus";
-import { useId, useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import { DocumentTitle } from "../../app/DocumentTitle";
 import { useSessionUser } from "../../app/useSessionUser";
 import { useDeviceColors } from "../../devices/useDeviceColors";
@@ -12,10 +12,16 @@ import { useMapStyle } from "../../map/useMapStyle";
 import { useActivity } from "../../queries/useActivity";
 import { useConfig } from "../../queries/useConfig";
 import { useDevices } from "../../queries/useDevices";
+import { useTimeline } from "../../queries/useTimeline";
 import { useTracks } from "../../queries/useTracks";
 import { localDayRange } from "../../time/localDayRange";
 import { useNow } from "../../time/useNow";
 import { useToday } from "../../time/useToday";
+import { LevelControl } from "../../transport/LevelControl";
+import { ModeLegend } from "../../transport/ModeLegend";
+import { SegmentDialog } from "../../transport/SegmentDialog";
+import { useTrackLevel } from "../../transport/useTrackLevel";
+import { useTransportMap } from "../../transport/useTransportMap";
 import { EmptyState } from "../../ui/EmptyState";
 import { ErrorState } from "../../ui/ErrorState";
 import { LinkButton } from "../../ui/LinkButton";
@@ -49,12 +55,15 @@ export function LivePage() {
   const today = useToday();
   const now = useNow(15_000);
   const thresholds = config.data?.thresholds ?? defaultThresholds;
+  const { level, setLevel } = useTrackLevel();
+  const [openSegment, setOpenSegment] = useState<string | null>(null);
 
   const range = useMemo(
     () => ({ ...localDayRange(today, today, user.timezone), deviceIds: null }),
     [today, user.timezone],
   );
   const tracks = useTracks(range);
+  const timeline = useTimeline(level === "inferred" ? range : null);
   const activity = useActivity({ hours: activityHours, deviceIds: null });
 
   const deviceList = devices.data ?? [];
@@ -66,10 +75,12 @@ export function LivePage() {
     return map;
   }, [devices.data, now, thresholds]);
 
-  const mapTracks = useMemo(
+  const rawTracks = useMemo(
     () => tracksToMap(tracks.data?.tracks ?? [], colors.hex),
     [tracks.data, colors],
   );
+  const view = useTransportMap(range, level, rawTracks);
+  const shownSegment = timeline.data?.items.find((segment) => segment.id === openSegment) ?? null;
   const positions = useMemo<MapPosition[]>(
     () =>
       (devices.data ?? []).flatMap((device) =>
@@ -92,10 +103,11 @@ export function LivePage() {
   const bounds = useMemo(
     () =>
       boundsOf([
-        ...mapTracks.flatMap((track) => track.segments.flat()),
+        ...view.tracks.flatMap((track) => track.segments.flat()),
+        ...view.transport.flatMap((segment) => segment.line),
         ...positions.map((position) => [position.lon, position.lat] as const),
       ]),
-    [mapTracks, positions],
+    [view, positions],
   );
   const fitKey = `${today}:${deviceList
     .map((device) => device.id)
@@ -120,6 +132,12 @@ export function LivePage() {
           title="Live"
           description={<LiveSummary devices={deviceList} statuses={statuses} today={today} />}
         />
+        {deviceList.length === 0 ? null : (
+          <div className="live-page__level">
+            <LevelControl level={level} available={view.available} onChange={setLevel} />
+            {level === "inferred" ? <ModeLegend modes={view.modes} review={view.review} /> : null}
+          </div>
+        )}
       </div>
 
       <div className="map-layout__map">
@@ -128,12 +146,15 @@ export function LivePage() {
             label={mapLabel}
             styleUrl={styleUrl}
             dark={dark}
-            tracks={mapTracks}
+            tracks={view.tracks}
+            transport={view.transport}
+            selectedSegmentId={shownSegment?.id ?? null}
+            onSegmentClick={setOpenSegment}
             positions={positions}
             // Framed once both the positions and today's tracks are known, never on partial data.
             fit={{
               key: fitKey,
-              bounds: devices.isPending || tracks.isPending ? null : bounds,
+              bounds: devices.isPending || tracks.isPending || view.pending ? null : bounds,
               maxZoom: 15,
             }}
             cooperativeGestures
@@ -216,6 +237,17 @@ export function LivePage() {
 
         {deviceList.length === 0 ? null : <UploadFeed devices={deviceList} slotOf={colors.slot} />}
       </section>
+      {shownSegment === null ? null : (
+        <SegmentDialog
+          segment={shownSegment}
+          deviceName={
+            deviceList.length > 1
+              ? (deviceList.find((device) => device.id === shownSegment.deviceId)?.name ?? null)
+              : null
+          }
+          onClose={() => setOpenSegment(null)}
+        />
+      )}
     </div>
   );
 }

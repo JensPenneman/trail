@@ -10,12 +10,19 @@ import { tracksToMap } from "../../map/tracksToMap";
 import { useMapStyle } from "../../map/useMapStyle";
 import { useDays } from "../../queries/useDays";
 import { useDevices } from "../../queries/useDevices";
+import { useTimeline } from "../../queries/useTimeline";
 import { useTracks } from "../../queries/useTracks";
 import { useTrips } from "../../queries/useTrips";
 import { useVisits } from "../../queries/useVisits";
 import { addDays } from "../../time/addDays";
 import { boundedRange } from "../../time/boundedRange";
 import { shiftMonth } from "../../time/shiftMonth";
+import { DayTimeline } from "../../transport/DayTimeline";
+import { LevelControl } from "../../transport/LevelControl";
+import { ModeLegend } from "../../transport/ModeLegend";
+import { SegmentDialog } from "../../transport/SegmentDialog";
+import { useTrackLevel } from "../../transport/useTrackLevel";
+import { useTransportMap } from "../../transport/useTransportMap";
 import { Button } from "../../ui/Button";
 import { EmptyState } from "../../ui/EmptyState";
 import { ErrorState } from "../../ui/ErrorState";
@@ -36,8 +43,9 @@ import { VisitList } from "./VisitList";
 import "./HistoryPage.css";
 
 /**
- * Where the devices have been: a day or a period of tracks, with a time
- * slider, per-device totals, visits and trips — all driven by the URL.
+ * Where the devices have been: a day or a period of tracks at a level of
+ * calculation, with a time slider, per-device totals, the timeline of stops
+ * and moves, visits and trips — all driven by the URL.
  */
 export function HistoryPage() {
   const user = useSessionUser();
@@ -45,6 +53,8 @@ export function HistoryPage() {
   const calendarId = useId();
   const scrollable = useScrollableFocus();
   const { selection, today, showDay, showRange, showDevices } = useHistorySelection();
+  const { level, setLevel } = useTrackLevel();
+  const [openSegment, setOpenSegment] = useState<string | null>(null);
   const devices = useDevices();
   const colors = useDeviceColors();
   const { styleUrl, dark } = useMapStyle();
@@ -70,6 +80,7 @@ export function HistoryPage() {
   const tracks = useTracks(range);
   const visits = useVisits(range);
   const trips = useTrips(range);
+  const timeline = useTimeline(range);
 
   // The calendar follows the shown day unless the person browses to another month.
   const calendarMonth =
@@ -98,7 +109,9 @@ export function HistoryPage() {
     () => (tracks.data?.tracks ?? []).filter((track) => track.points.length > 0),
     [tracks.data],
   );
-  const mapTracks = useMemo(() => tracksToMap(trackList, colors.hex), [trackList, colors]);
+  const rawTracks = useMemo(() => tracksToMap(trackList, colors.hex), [trackList, colors]);
+  const view = useTransportMap(range, level, rawTracks);
+  const shownSegment = timeline.data?.items.find((segment) => segment.id === openSegment) ?? null;
   const visitPoints = useMemo<MapPoint[]>(
     () =>
       (visits.data ?? []).map((visit) => ({
@@ -112,10 +125,11 @@ export function HistoryPage() {
   const bounds = useMemo(
     () =>
       boundsOf([
-        ...mapTracks.flatMap((track) => track.segments.flat()),
+        ...view.tracks.flatMap((track) => track.segments.flat()),
+        ...view.transport.flatMap((segment) => segment.line),
         ...visitPoints.map((point) => [point.lon, point.lat] as const),
       ]),
-    [mapTracks, visitPoints],
+    [view, visitPoints],
   );
 
   // The slider spans the recorded time of the period; it starts at the latest point.
@@ -167,7 +181,7 @@ export function HistoryPage() {
       : `${format.day(selection.from)} – ${format.day(selection.to)}`;
   const hasData = trackList.length > 0;
   const mapLabel = hasData
-    ? `Map of the tracks for ${periodLabel}. Totals, visits and trips are listed on this page.`
+    ? `Map of the tracks for ${periodLabel}. Totals, the timeline, visits and trips are listed on this page.`
     : `Map. Nothing was recorded for ${periodLabel}.`;
 
   return (
@@ -194,6 +208,8 @@ export function HistoryPage() {
           calendarOpen={calendarOpen && selection.mode === "day"}
           onToggleCalendar={() => setCalendarOpen((open) => !open)}
         />
+        <LevelControl level={level} available={view.available} onChange={setLevel} />
+        {level === "inferred" ? <ModeLegend modes={view.modes} review={view.review} /> : null}
         {calendarOpen && selection.mode === "day" ? (
           <MonthCalendar
             id={calendarId}
@@ -218,21 +234,26 @@ export function HistoryPage() {
               label={mapLabel}
               styleUrl={styleUrl}
               dark={dark}
-              tracks={mapTracks}
+              tracks={view.tracks}
+              transport={view.transport}
+              selectedSegmentId={shownSegment?.id ?? null}
+              onSegmentClick={setOpenSegment}
               visits={visitPoints}
               cursors={cursors}
               fit={{
                 key: periodKey,
                 // Tracks placeholder data belongs to the previous period until the new one arrives.
                 bounds:
-                  tracks.isPending || tracks.isPlaceholderData || visits.isPending ? null : bounds,
+                  tracks.isPending || tracks.isPlaceholderData || visits.isPending || view.pending
+                    ? null
+                    : bounds,
                 maxZoom: 16,
               }}
               focus={focus}
               cooperativeGestures
             />
           )}
-          {tracks.isFetching && !tracks.isPending ? (
+          {(tracks.isFetching && !tracks.isPending) || (view.fetching && !view.pending) ? (
             <p className="map-layout__chip" aria-hidden="true">
               <Spinner size="s" /> Updating
             </p>
@@ -306,6 +327,29 @@ export function HistoryPage() {
           </div>
         )}
 
+        <DayTimeline
+          segments={timeline.data?.items}
+          pending={timeline.data?.pending ?? false}
+          loading={timeline.isPending}
+          error={timeline.isError ? timeline.error : null}
+          onRetry={() => void timeline.refetch()}
+          deviceName={(deviceId) =>
+            deviceList.length > 1
+              ? (deviceList.find((device) => device.id === deviceId)?.name ?? "Removed device")
+              : null
+          }
+          day={selection.mode === "day" ? selection.from : null}
+          onOpen={(segment) => {
+            setOpenSegment(segment.id);
+            setFocus({
+              key: `segment:${segment.id}`,
+              lon: segment.centroid.lon,
+              lat: segment.centroid.lat,
+              zoom: 13,
+            });
+          }}
+        />
+
         <VisitList
           visits={visits.data}
           loading={visits.isPending}
@@ -350,6 +394,17 @@ export function HistoryPage() {
           }}
         />
       </section>
+      {shownSegment === null ? null : (
+        <SegmentDialog
+          segment={shownSegment}
+          deviceName={
+            deviceList.length > 1
+              ? (deviceList.find((device) => device.id === shownSegment.deviceId)?.name ?? null)
+              : null
+          }
+          onClose={() => setOpenSegment(null)}
+        />
+      )}
     </div>
   );
 }

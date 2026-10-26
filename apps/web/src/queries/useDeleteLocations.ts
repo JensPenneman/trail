@@ -24,6 +24,8 @@ export function useDeleteLocations() {
         queryKeys.all.visits,
         queryKeys.all.trips,
         queryKeys.all.heatmap,
+        queryKeys.all.levelTracks,
+        queryKeys.all.timeline,
       ]) {
         void queryClient.invalidateQueries({ queryKey });
       }

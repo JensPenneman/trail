@@ -33,3 +33,17 @@ export interface MapViewState {
   bounds: Bounds;
   zoom: number;
 }
+
+/** A stop or move of the Transport level, coloured by its mode. */
+export interface MapTransportSegment {
+  /** The segment's id; pieces outside the timeline get a key of their own. */
+  id: string;
+  /** Whether clicking it opens the segment (pieces of plain track do not). */
+  selectable: boolean;
+  kind: "stop" | "move" | "track";
+  color: string;
+  /** Unsure inference nobody has confirmed: drawn with a dashed outline. */
+  review: boolean;
+  /** `[lon, lat]`; a stop is drawn as a dot at its first point. */
+  line: readonly (readonly [number, number])[];
+}

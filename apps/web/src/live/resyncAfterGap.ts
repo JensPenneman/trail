@@ -8,6 +8,9 @@ export function resyncAfterGap(queryClient: QueryClient): void {
     queryKeys.all.tracks,
     queryKeys.all.activity,
     queryKeys.all.ingestLog,
+    queryKeys.all.levelTracks,
+    queryKeys.all.timeline,
+    queryKeys.all.deviceMode,
   ]) {
     void queryClient.invalidateQueries({ queryKey });
   }

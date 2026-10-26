@@ -7,6 +7,7 @@ export function MapStub(props: TrailMapProps) {
       role="img"
       aria-label={props.label}
       data-tracks={props.tracks?.length ?? 0}
+      data-transport={props.transport?.length ?? 0}
       data-positions={props.positions?.length ?? 0}
       data-heat={props.heat?.length ?? 0}
     />

@@ -5,7 +5,7 @@ import { readApiError } from "./readApiError";
 
 export interface ApiRequest {
   /** Defaults to GET without a body and POST with one. */
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   query?: Readonly<Record<string, QueryValue>>;
   /** Sent as JSON; the API's CSRF check requires JSON bodies on unsafe methods. */
   body?: unknown;
