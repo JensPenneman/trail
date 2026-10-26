@@ -4,14 +4,11 @@ import type { DeviceRow } from "../devices/findOwnedDevice";
 import { toDeviceLocation } from "../devices/toDeviceLocation";
 import { haversineM } from "../tracks/haversine";
 import { currentModeOf } from "./currentMode";
-import { type GridScope, gridOffset, projectPosition } from "./gridProjection";
+import { ownerGridOffset, projectPosition } from "./gridProjection";
 import type { LatLon } from "./latestOwnPositions";
 
-/** What a share or a public link grants on a device. */
+/** What a share or a public link grants on a device. Its grid is the owner's, whichever grant it is. */
 export interface Grant {
-  scope: GridScope;
-  /** The share's or the link's id: with the device it picks the grid. */
-  id: string;
   precision: SharePrecision;
   includeDetails: boolean;
 }
@@ -40,7 +37,7 @@ export function toSharedDevice(
       : projectPosition(
           { ...visible, recordedAt: new Date(visible.recordedAt) },
           grant.precision,
-          gridOffset(context.key, grant.scope, grant.id, device.id),
+          ownerGridOffset(context.key, device.userId),
         );
   const battery = newest?.battery ?? null;
   return {

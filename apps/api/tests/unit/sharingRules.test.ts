@@ -58,8 +58,6 @@ const device = (changes: Partial<DeviceRow> = {}): DeviceRow => ({
 
 const key = Buffer.alloc(32, 3);
 const grant = (precision: "precise" | "approximate" | "area", includeDetails = true) => ({
-  scope: "share" as const,
-  id: "019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a23",
   precision,
   includeDetails,
 });

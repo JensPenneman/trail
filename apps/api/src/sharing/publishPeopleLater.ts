@@ -40,12 +40,7 @@ export function publishPeopleLater(ctx: AppContext, ownerId: string, deviceId: s
         userId: ownerId,
         device: toSharedDevice(
           device,
-          {
-            scope: "share",
-            id: share.id,
-            precision: share.precision,
-            includeDetails: share.includeDetails,
-          },
+          { precision: share.precision, includeDetails: share.includeDetails },
           {
             key,
             from: windowStart(share.historyDays, now, live),

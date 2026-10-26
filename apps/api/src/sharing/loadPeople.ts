@@ -96,7 +96,7 @@ export async function loadPeople(
         return [
           toSharedDevice(
             device,
-            { scope: "share", id: row.id, precision, includeDetails: access.includeDetails },
+            { precision, includeDetails: access.includeDetails },
             { key, from: access.from, viewerAt },
           ),
         ];

@@ -51,12 +51,7 @@ export async function loadPublicShare(
     .orderBy(asc(devices.createdAt), asc(devices.id));
   const key = await ctx.sharing.gridKey();
   const from = windowStart(link.historyDays, now, liveWindowMs(ctx.config));
-  const grant = {
-    scope: "link" as const,
-    id: link.id,
-    precision: link.precision,
-    includeDetails: link.includeDetails,
-  };
+  const grant = { precision: link.precision, includeDetails: link.includeDetails };
 
   const result: PublicShareResponse = {
     label: link.label,
