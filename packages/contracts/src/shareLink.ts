@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { batterySchema } from "./devicePublic";
-import { personActivitySchema, personLocationSchema } from "./person";
+import { sharedDeviceSchema } from "./person";
 import {
   historyNeedsPrecise,
   type SharePrecision,
@@ -134,17 +133,19 @@ export const createShareLinkResponseSchema = z.object({
 });
 export type CreateShareLinkResponse = z.infer<typeof createShareLinkResponseSchema>;
 
-/** A device on a public page: no id, only a key that means something on this page alone. */
-export const publicSharedDeviceSchema = z.object({
-  /** Stable for this device on this link, and unrelated to its id. */
-  key: z.string(),
-  name: z.string(),
-  location: personLocationSchema.nullable(),
-  battery: batterySchema.nullable(),
-  activity: personActivitySchema.nullable(),
-  /** The track of the shared history (simplified), oldest first; null for live-only links. */
-  track: z.array(trackPointSchema).nullable(),
-});
+/**
+ * A device on a public page: a shared device without its id or a distance (a
+ * visitor has no position of their own here), with a key that means something
+ * on this page alone, and the route when the link includes history.
+ */
+export const publicSharedDeviceSchema = sharedDeviceSchema
+  .omit({ id: true, distanceM: true })
+  .extend({
+    /** Stable for this device on this link, and unrelated to its id. */
+    key: z.string(),
+    /** The track of the shared history (simplified), oldest first; null for live-only links. */
+    track: z.array(trackPointSchema).nullable(),
+  });
 export type PublicSharedDevice = z.infer<typeof publicSharedDeviceSchema>;
 
 /** `GET /api/public/shares/{secret}` — what a link shows, without an account. */

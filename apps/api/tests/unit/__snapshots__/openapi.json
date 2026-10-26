@@ -4849,22 +4849,22 @@
             "description": "Longitude in degrees (WGS84).",
             "example": 3.7174
           },
-          "accuracy": {
-            "description": "Radius in metres within which the device is; at least the cell size when not precise.",
-            "example": 557,
-            "type": [
-              "number",
-              "null"
-            ]
-          },
           "recordedAt": {
             "type": "string",
             "format": "date-time",
             "description": "When the phone recorded the position.",
             "example": "2026-10-26T08:41:07.000Z"
           },
+          "accuracy": {
+            "description": "Radius in metres within which the device is; at least the cell size when not precise.",
+            "example": 556,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "speed": {
-            "description": "Speed in metres per second; null when unknown or for `area` shares.",
+            "description": "Speed in metres per second; null when unknown, and for `area` shares.",
             "example": 4.2,
             "type": [
               "number",
@@ -4872,7 +4872,7 @@
             ]
           },
           "course": {
-            "description": "Direction of travel in degrees from north; null when unknown or for `area`.",
+            "description": "Direction of travel in degrees from north; precise shares only.",
             "example": 87,
             "type": [
               "number",
@@ -4894,8 +4894,8 @@
         "required": [
           "lat",
           "lon",
-          "accuracy",
           "recordedAt",
+          "accuracy",
           "speed",
           "course",
           "altitude",

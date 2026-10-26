@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { batterySchema } from "./devicePublic";
+import { batterySchema, devicePublicSchema, positionSchema } from "./devicePublic";
 import { deviceIdsParamSchema } from "./query";
 import { shareHistoryDaysSchema, sharePrecisionSchema } from "./share";
 import { trackSchema } from "./track";
@@ -18,29 +18,32 @@ const userId = z.uuid().meta({
   example: "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60",
 });
 
-/** Where a shared device is, at the precision of its share. */
-export const personLocationSchema = z
-  .object({
-    lat: z.number().meta({
+/**
+ * Where a shared device is, at the precision of its share: the device's
+ * position (`Position`) without its motion (an activity detail), with the
+ * precision it was cut to.
+ */
+export const personLocationSchema = positionSchema
+  .omit({ motion: true })
+  .extend({
+    lat: positionSchema.shape.lat.meta({
       description: "Latitude in degrees (WGS84); the centre of the share's cell when not precise.",
       example: 51.0543,
     }),
-    lon: z.number().meta({ description: "Longitude in degrees (WGS84).", example: 3.7174 }),
-    accuracy: z.number().nullable().meta({
+    accuracy: positionSchema.shape.accuracy.meta({
       description:
         "Radius in metres within which the device is; at least the cell size when not precise.",
-      example: 557,
+      example: 556,
     }),
-    recordedAt: instant("When the phone recorded the position."),
-    speed: z.number().nullable().meta({
-      description: "Speed in metres per second; null when unknown or for `area` shares.",
+    speed: positionSchema.shape.speed.meta({
+      description: "Speed in metres per second; null when unknown, and for `area` shares.",
       example: 4.2,
     }),
-    course: z.number().nullable().meta({
-      description: "Direction of travel in degrees from north; null when unknown or for `area`.",
+    course: positionSchema.shape.course.meta({
+      description: "Direction of travel in degrees from north; precise shares only.",
       example: 87,
     }),
-    altitude: z.number().nullable().meta({
+    altitude: positionSchema.shape.altitude.meta({
       description: "Altitude in metres; precise shares only.",
       example: 12,
     }),
@@ -68,14 +71,14 @@ export const personActivitySchema = z
   .meta({ id: "PersonActivity", description: "What the device is doing." });
 export type PersonActivity = z.infer<typeof personActivitySchema>;
 
-/** One device of a person, as their share shows it. */
-export const sharedDeviceSchema = z
-  .object({
-    id: z.uuid().meta({
-      description: "The device's id.",
-      example: "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3",
-    }),
-    name: z.string().meta({ description: "Its name in Trail.", example: "Jens’s iPhone" }),
+/**
+ * One device of a person, as their share shows it: the device's id and name
+ * as the public API gives them (`Device`), and only what the share allows of
+ * the rest.
+ */
+export const sharedDeviceSchema = devicePublicSchema
+  .pick({ id: true, name: true })
+  .extend({
     location: personLocationSchema.nullable().meta({
       description:
         "The newest position inside the share's window: within the last `historyDays` days, or for live-only shares within the server's live window (12 hours by default). Null when there is none.",
