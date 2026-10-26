@@ -10,9 +10,10 @@ export const createShare = defineRoute(
     operationId: "createShare",
     summary: "Share your location",
     description:
-      "Starts sharing your location with a person, one way: they see you under People, you do not see them unless they share back. Pick the devices (all by default, also later ones), the precision, history (precise only; live only by default), whether battery and activity come along (yes by default) and the duration. An address without an account gets a `pending` share that starts when someone signs up with it. One current share per address: change it instead (409). At most 50 at a time (409). A token limited to some devices shares only those, listed by id.",
+      "Starts sharing your location with a person, one way: they see you under People, you do not see them unless they share back. Pick the devices (all by default, also later ones), the precision, history (precise only; live only by default), whether battery and activity come along (yes by default) and the duration. An address without an account gets a `pending` share that starts when someone signs up with it. One current share per address: change it instead (409). At most 50 at a time (409). A token limited to some devices shares only those, listed by id. Needs `locations:read` as well as `shares:write`: what you share can be precise positions.",
     tags: ["Sharing"],
-    auth: { scopes: ["shares:write"] },
+    // A share or a link can show precise positions: it needs what reading them needs.
+    auth: { scopes: ["shares:write", "locations:read"], all: true },
     request: { body: createShareRequestSchema },
     responses: { 201: shareResponseSchema },
     errors: [409],

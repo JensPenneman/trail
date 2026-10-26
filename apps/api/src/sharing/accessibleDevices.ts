@@ -4,6 +4,7 @@ import { type SQL, sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
 import { allowedDeviceIds, type DeviceAccess } from "../devices/deviceAccess";
 import { notFound } from "../http/httpError";
+import { mayReadOwnLocations } from "./mayReadOwnLocations";
 import { liveWindowMs, windowStart } from "./shareWindow";
 
 /**
@@ -66,8 +67,9 @@ const precisionOf = (value: string): SharePrecision => {
 /**
  * Every device the viewer may see — or, with `requested`, those (each must be
  * accessible, else 404 like an unknown id): the viewer's own devices (precise,
- * unbounded; a token only those it is limited to) and the devices of the
- * shares that grant the viewer access (`grantsViewer`), each with its share's
+ * unbounded; for a token only with `locations:read`, and only those it is
+ * limited to) and the devices of the shares that grant the viewer access
+ * (`grantsViewer`; for a token only with `people:read`), each with its share's
  * precision, window and details. Own devices first, then by owner and age.
  *
  * The one place that decides what a viewer may see of other people: the
@@ -84,7 +86,7 @@ export async function resolveAccessibleDevices(
   const viewerId = viewer.user.id;
   const allowed = allowedDeviceIds(viewer);
   const ownQuery =
-    options.ownDevices === false || allowed?.length === 0
+    options.ownDevices === false || allowed?.length === 0 || !mayReadOwnLocations(viewer)
       ? null
       : sql`
           SELECT d.id AS device_id, d.user_id AS owner_id, NULL::uuid AS share_id,

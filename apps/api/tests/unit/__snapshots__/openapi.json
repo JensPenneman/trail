@@ -2076,14 +2076,15 @@
       "post": {
         "operationId": "createShare",
         "summary": "Share your location",
-        "description": "Starts sharing your location with a person, one way: they see you under People, you do not see them unless they share back. Pick the devices (all by default, also later ones), the precision, history (precise only; live only by default), whether battery and activity come along (yes by default) and the duration. An address without an account gets a `pending` share that starts when someone signs up with it. One current share per address: change it instead (409). At most 50 at a time (409). A token limited to some devices shares only those, listed by id.\n\n**Access:** an API token with the scope `shares:write`, or a signed-in session.",
+        "description": "Starts sharing your location with a person, one way: they see you under People, you do not see them unless they share back. Pick the devices (all by default, also later ones), the precision, history (precise only; live only by default), whether battery and activity come along (yes by default) and the duration. An address without an account gets a `pending` share that starts when someone signs up with it. One current share per address: change it instead (409). At most 50 at a time (409). A token limited to some devices shares only those, listed by id. Needs `locations:read` as well as `shares:write`: what you share can be precise positions.\n\n**Access:** an API token with the scopes `shares:write` and `locations:read`, or a signed-in session.",
         "tags": [
           "Sharing"
         ],
         "security": [
           {
             "bearer": [
-              "shares:write"
+              "shares:write",
+              "locations:read"
             ]
           }
         ],
@@ -2151,14 +2152,15 @@
       "patch": {
         "operationId": "updateShare",
         "summary": "Change a share",
-        "description": "Changes what a current share shows or how long it runs: a `duration` counts from now (extend or shorten), the other fields change only when given. History stays limited to precise shares (400 otherwise). The recipient sees the change at once.\n\n**Access:** an API token with the scope `shares:write`, or a signed-in session.",
+        "description": "Changes what a current share shows or how long it runs: a `duration` counts from now (extend or shorten), the other fields change only when given. History stays limited to precise shares (400 otherwise). The recipient sees the change at once. A token limited to some devices changes only shares that show nothing but its devices, before and after the change (403). Needs `locations:read` as well as `shares:write`.\n\n**Access:** an API token with the scopes `shares:write` and `locations:read`, or a signed-in session.",
         "tags": [
           "Sharing"
         ],
         "security": [
           {
             "bearer": [
-              "shares:write"
+              "shares:write",
+              "locations:read"
             ]
           }
         ],
@@ -2544,14 +2546,15 @@
       "post": {
         "operationId": "createShareLink",
         "summary": "Make a public link",
-        "description": "Makes a secret web address that shows your location to anyone who has it, without an account: a page with the label, the devices you pick at the precision you pick, optionally their track of the last days (precise only) and battery and activity. Without a label it reads “Shared location”, never your name. It always expires — in 24 hours unless you choose another time, at least an hour and at most 30 days away — and you can turn it off at any time. The answer carries the secret and the address once; Trail keeps only a hash. At most 20 links work at a time (409).\n\n**Access:** an API token with the scope `shares:write`, or a signed-in session.",
+        "description": "Makes a secret web address that shows your location to anyone who has it, without an account: a page with the label, the devices you pick at the precision you pick, optionally their track of the last days (precise only) and battery and activity. Without a label it reads “Shared location”, never your name. It always expires — in 24 hours unless you choose another time, at least an hour and at most 30 days away — and you can turn it off at any time. The answer carries the secret and the address once; Trail keeps only a hash. At most 20 links work at a time (409). Needs `locations:read` as well as `shares:write`: the link can show precise positions.\n\n**Access:** an API token with the scopes `shares:write` and `locations:read`, or a signed-in session.",
         "tags": [
           "Sharing"
         ],
         "security": [
           {
             "bearer": [
-              "shares:write"
+              "shares:write",
+              "locations:read"
             ]
           }
         ],

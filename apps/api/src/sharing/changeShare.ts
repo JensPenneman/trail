@@ -52,6 +52,8 @@ export async function changeShare(
   if (changes.deviceIds !== undefined) {
     await assertShareableDevices(ctx.db, auth, changes.deviceIds);
   }
+  // A limited token changes only shares that show nothing but its devices, before and after.
+  assertWithinTokenDevices(auth, current.deviceIds);
   assertWithinTokenDevices(auth, next.deviceIds);
 
   const [row] = await ctx.db

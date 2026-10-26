@@ -14,9 +14,10 @@ export const updateShare = defineRoute(
     operationId: "updateShare",
     summary: "Change a share",
     description:
-      "Changes what a current share shows or how long it runs: a `duration` counts from now (extend or shorten), the other fields change only when given. History stays limited to precise shares (400 otherwise). The recipient sees the change at once.",
+      "Changes what a current share shows or how long it runs: a `duration` counts from now (extend or shorten), the other fields change only when given. History stays limited to precise shares (400 otherwise). The recipient sees the change at once. A token limited to some devices changes only shares that show nothing but its devices, before and after the change (403). Needs `locations:read` as well as `shares:write`.",
     tags: ["Sharing"],
-    auth: { scopes: ["shares:write"] },
+    // A share or a link can show precise positions: it needs what reading them needs.
+    auth: { scopes: ["shares:write", "locations:read"], all: true },
     request: { params: shareParamsSchema, body: updateShareRequestSchema },
     responses: { 200: shareResponseSchema },
   },

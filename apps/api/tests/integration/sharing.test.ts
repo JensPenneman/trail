@@ -14,6 +14,7 @@ import {
 import { sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { resolveAccessibleDevices } from "../../src/sharing/accessibleDevices";
 import { haversineM } from "../../src/tracks/haversine";
 import { type Agent, signUpWithCookie } from "../support/authFlows";
 import { createDevice, postOverland } from "../support/deviceFlows";
@@ -668,19 +669,44 @@ describe("API tokens", () => {
       .get(apiPaths.v1.shares.root)
       .set("Authorization", bearer(writer))
       .expect(403);
+    const full = await issue(owner.email, ["shares:write", "locations:read"]);
     const created = await request(t.app)
       .post(apiPaths.v1.shares.root)
-      .set("Authorization", bearer(writer))
+      .set("Authorization", bearer(full))
       .send({ email: "token-share@allowed.test", precision: "area", duration: "hour" })
       .expect(201);
+    // Stopping shows nothing: shares:write alone does it.
     await request(t.app)
       .delete(apiPaths.v1.shares.one(created.body.share.id))
       .set("Authorization", bearer(writer))
       .expect(204);
   });
 
+  it("need locations:read too for anything that can show positions", async () => {
+    // A share to an address it controls, or a precise link with history read back through the
+    // public endpoint, would hand a shares:write token positions it may not read.
+    const writer = await issue(owner.email, ["shares:write", "shares:read"]);
+    for (const pending of [
+      request(t.app)
+        .post(apiPaths.v1.shares.root)
+        .send({ email: "mine@allowed.test", precision: "precise", duration: "hour" }),
+      request(t.app).patch(apiPaths.v1.shares.one(shareId)).send({ precision: "precise" }),
+      request(t.app)
+        .post(apiPaths.v1.shareLinks.root)
+        .send({ precision: "precise", historyDays: 7 }),
+    ]) {
+      const refused = await pending.set("Authorization", bearer(writer)).expect(403);
+      expect(errorOf(refused.body)).toMatchObject({ code: "insufficient_scope" });
+      expect(refused.headers["www-authenticate"]).toContain('scope="locations:read"');
+    }
+  });
+
   it("limited to devices share only those, and cannot widen other shares", async () => {
-    const limited = await issue(owner.email, ["shares:write", "shares:read"], [phone.id]);
+    const limited = await issue(
+      owner.email,
+      ["shares:write", "shares:read", "locations:read"],
+      [phone.id],
+    );
     const post = (body: Record<string, unknown>) =>
       request(t.app)
         .post(apiPaths.v1.shares.root)
@@ -706,6 +732,42 @@ describe("API tokens", () => {
       .delete(apiPaths.v1.shares.one(mine.body.share.id))
       .set("Authorization", bearer(limited))
       .expect(204);
+  });
+
+  it("limited to devices cannot narrow a share that also shows other devices", async () => {
+    const both = await shareWith("both@allowed.test", { deviceIds: [phone.id, watch] });
+    const limited = await issue(
+      owner.email,
+      ["shares:write", "shares:read", "locations:read"],
+      [phone.id],
+    );
+    const narrowed = await request(t.app)
+      .patch(apiPaths.v1.shares.one(both.id))
+      .set("Authorization", bearer(limited))
+      .send({ deviceIds: [phone.id] })
+      .expect(403);
+    expect(errorOf(narrowed.body).code).toBe("forbidden");
+    await stop(both.id);
+  });
+
+  it("see their own devices through the access rules only with locations:read", async () => {
+    const without = await tokenPrincipal(t.ctx.db, owner.email, { scopes: ["people:read"] });
+    expect(
+      (await resolveAccessibleDevices(t.ctx, without)).filter((device) => device.shareId === null),
+    ).toEqual([]);
+    await expect(resolveAccessibleDevices(t.ctx, without, [phone.id])).rejects.toMatchObject({
+      status: 404,
+    });
+    const reader = await tokenPrincipal(t.ctx.db, owner.email, {
+      scopes: ["people:read", "locations:read"],
+    });
+    const own = (await resolveAccessibleDevices(t.ctx, reader)).filter(
+      (device) => device.shareId === null,
+    );
+    expect(own.map((device) => device.deviceId)).toContain(phone.id);
+    expect(own.every((device) => device.precision === "precise" && device.from === null)).toBe(
+      true,
+    );
   });
 });
 
