@@ -14,6 +14,9 @@ type Refusal = TokenRejection["reason"] | "malformed";
 
 const refusals = new WeakMap<Request, Refusal>();
 
+/** `Authorization` in the Bearer scheme, whose name is case-insensitive (RFC 9110 §11.1). */
+const bearerScheme = /^Bearer(?:[ \t]|$)/i;
+
 /** The secret of `Bearer <secret>` if it has the shape of an API token; null for anything else. */
 function bearerSecret(header: string): string | null {
   const secret = /^Bearer[ \t]+(\S+)[ \t]*$/i.exec(header)?.[1] ?? null;
@@ -22,18 +25,20 @@ function bearerSecret(header: string): string | null {
 
 /**
  * API token authentication for `/api/v1` (docs/architecture.md §8.3). A request
- * with an `Authorization` header is a bearer request: its token must have the
- * `trlk_` shape (else no lookup) and pass `ctx.apiTokens.verify`, and it then
- * becomes the request's principal — the session cookie is never looked at. A
- * refused token answers 401 once the failed-token limiter has counted it; that
- * limiter (per address, like the ingest's) skips valid tokens, so a scanner
- * sharing an address with a client never locks the client out. Requests
- * without the header pass through to the session.
+ * whose `Authorization` header uses the Bearer scheme is a bearer request: its
+ * token must have the `trlk_` shape (else no lookup) and pass
+ * `ctx.apiTokens.verify`, and it then becomes the request's principal — the
+ * session cookie is never looked at. A refused token answers 401 once the
+ * failed-token limiter has counted it; that limiter (per address, like the
+ * ingest's) skips valid tokens, so a scanner sharing an address with a client
+ * never locks the client out. Requests without the header, or with another
+ * scheme (`Basic` from a proxy in front, say), carry no API token: they pass
+ * through to the session.
  */
 export function authenticateBearer(ctx: AppContext): RequestHandler[] {
   const identify: RequestHandler = async (req, _res, next) => {
     const header = req.get("authorization");
-    if (header === undefined) {
+    if (header === undefined || !bearerScheme.test(header)) {
       next();
       return;
     }

@@ -33,6 +33,10 @@ Tokens look like `trlk_` followed by 43 characters (`A–Z`, `a–z`, `0–9`, `
 and `_`); [Tokens](#tokens) explains how to get one. On the server's own
 origin, a signed-in browser session works as well: the dashboard uses it.
 Cookies never cross origins, so a page on another site can only use a token.
+Only the `Bearer` scheme (in any letter case) is read: an `Authorization`
+header with another scheme, such as `Basic` from a proxy in front of the
+server, counts as no credential at all, and a `Bearer` value that is not a
+valid token is refused even next to a session.
 
 A request that has no valid credential gets `401` and a `WWW-Authenticate`
 header (RFC 6750): `Bearer realm="trail"` when no credential was sent, with

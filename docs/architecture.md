@@ -641,9 +641,12 @@ rest:
 3. Preflight: any `OPTIONS` answers 204 with `Allow-Methods` (the methods of
    the registry), `Allow-Headers: Authorization, Content-Type, Last-Event-ID`
    and `Max-Age: 600`, before credentials and the session are looked at.
-4. `authenticateBearer(ctx)`: a request with an `Authorization` header is a
-   bearer request. The value must be `Bearer trlk_` + 43 base64url characters
-   (`apiTokenPattern`), else it is refused without a lookup; otherwise
+4. `authenticateBearer(ctx)`: a request whose `Authorization` header uses the
+   Bearer scheme (in any letter case) is a bearer request; any other scheme
+   (`Basic` from a proxy in front, say) carries no API token, and the request
+   goes on to the session as if the header were absent. A bearer value must
+   be `Bearer trlk_` + 43 base64url characters (`apiTokenPattern`), else it is
+   refused without a lookup, a valid session cookie notwithstanding; otherwise
    `ctx.apiTokens.verify(secret, { ip })` returns a `TokenPrincipal`, which
    becomes the request's principal, or a refusal. A refused token counts
    towards the failed-token limiter (per IP, `RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES`,
@@ -1182,7 +1185,8 @@ invalid value).
 - Tokens (device, session, invite, link, API, share link) are stored hashed
   only, and each secret is shown once. API token and share link secrets are
   shape-checked before any lookup and never logged; API token secrets are only
-  ever accepted in the `Authorization` header of `/api/v1`. An API token does
+  ever accepted in the `Authorization` header of `/api/v1`, in the Bearer
+  scheme (another scheme there is no credential at all). An API token does
   what its scopes allow, with its devices, from its addresses, until it
   expires or is revoked (§8.4); none can manage tokens, sessions, passkeys or
   device credentials, which take a passkey session. Creating, changing,

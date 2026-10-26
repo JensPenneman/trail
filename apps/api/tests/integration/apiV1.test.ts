@@ -289,16 +289,55 @@ describe("v1 with API tokens", () => {
       "Bearer not-a-token",
       `Bearer trl_${"A".repeat(43)}`,
       `Bearer ${tokenSecret()}x`,
-      "Basic Zmlyc3Q6c2VjcmV0",
       "Bearer",
+      "bearer not-a-token",
     ]) {
       const response = await request(withTokens.app)
         .get(apiPaths.v1.me)
         .set("Authorization", header)
+        .set("Cookie", ownerCookie)
         .expect(401);
       expect(errorOf(response.body).code, header).toBe("unauthorized");
+      expect(response.headers["www-authenticate"], header).toBe(
+        'Bearer realm="trail", error="invalid_token"',
+      );
     }
     expect(tokens.calls.length).toBe(before);
+  });
+
+  it("reads the Bearer scheme only: another one is no API credential", async () => {
+    const before = tokens.calls.length;
+    const basic = "Basic Zmlyc3Q6c2VjcmV0";
+    // A proxy in front may send credentials of its own: the session still decides.
+    const signedIn = await request(withTokens.app)
+      .get(apiPaths.v1.me)
+      .set("Authorization", basic)
+      .set("Cookie", ownerCookie)
+      .expect(200);
+    expect(profileResponseSchema.parse(signedIn.body).user.displayName).toBe("first");
+    // Without a session there is no credential at all, rather than a refused token.
+    const anonymous = await request(withTokens.app)
+      .get(apiPaths.v1.me)
+      .set("Authorization", basic)
+      .expect(401);
+    expect(errorOf(anonymous.body).code).toBe("unauthorized");
+    expect(anonymous.headers["www-authenticate"]).toBe('Bearer realm="trail"');
+    // Still a session request, so the CSRF guard applies.
+    const forged = await request(withTokens.app)
+      .post(apiPaths.v1.devices.root)
+      .set("Authorization", basic)
+      .set("Cookie", ownerCookie)
+      .set("Origin", "https://evil.example")
+      .send({ name: "x" })
+      .expect(403);
+    expect(errorOf(forged.body).code).toBe("origin_not_allowed");
+    expect(tokens.calls.length).toBe(before);
+    // The scheme's name is case-insensitive.
+    const secret = await issue({ scopes: allScopes });
+    await request(withTokens.app)
+      .get(apiPaths.v1.me)
+      .set("Authorization", `bEaReR ${secret}`)
+      .expect(200);
   });
 
   it("hands the verifier the client address that trust proxy settles on", async () => {
