@@ -127,6 +127,25 @@ describe("route paths", () => {
       })),
     ).toThrow(/lowerCamelCase/);
   });
+
+  it("refuses a public route that takes a body (it runs before the body parser)", () => {
+    expect(() =>
+      defineRoute(
+        {
+          method: "post",
+          path: "/api/v1/items",
+          operationId: "addItem",
+          summary: "Add an item",
+          description: "",
+          tags: ["Devices"],
+          auth: "public",
+          request: { body: z.object({ name: z.string() }) },
+          responses: { 204: null },
+        },
+        () => ({ status: 204 }),
+      ),
+    ).toThrow(/addItem is public and takes a body/);
+  });
 });
 
 describe("validation", () => {
@@ -242,7 +261,7 @@ describe("authorization", () => {
     ]);
   });
 
-  it("serves public routes with and without a principal", async () => {
+  it("serves public routes with and without a token's principal", async () => {
     const route = defineRoute(
       {
         method: "get",
@@ -259,7 +278,9 @@ describe("authorization", () => {
     expect((await request(appFor(route)).get("/api/v1/hello").expect(200)).body).toEqual({
       who: "anyone",
     });
-    expect((await request(appFor(route, session)).get("/api/v1/hello").expect(200)).body).toEqual({
+    // In the real router a public route never sees a session (createV1Router loads none for it).
+    const withToken = appFor(route, token(["profile:read"]));
+    expect((await request(withToken).get("/api/v1/hello").expect(200)).body).toEqual({
       who: "Jens",
     });
   });

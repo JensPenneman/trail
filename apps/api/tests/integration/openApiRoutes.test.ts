@@ -11,13 +11,14 @@ import { testOrigin } from "../support/testEnvironment";
 
 let t: TestContext;
 let owner: Agent;
+let ownerId = "";
 let deviceId = "";
 
 beforeAll(async () => {
   await resetDatabase();
   t = await createTestContext();
   owner = agentFor(t.app);
-  await signUp(owner, new SoftwareAuthenticator(), "first@example.com");
+  ownerId = (await signUp(owner, new SoftwareAuthenticator(), "first@example.com")).user.id;
   deviceId = (await createDevice(owner, { name: "Phone" })).device.id;
 });
 
@@ -85,5 +86,27 @@ describe("GET /api/v1/openapi.json", () => {
       .expect(304);
     expect(unchanged.text).toBe("");
     await request(t.app).head(apiPaths.v1.openApi).expect(200);
+  });
+
+  it("never loads the session, so a cache cannot hand a cookie on", async () => {
+    // A signed-in browser sends its cookie along (the /docs page fetches the document).
+    const dueForRefresh = () =>
+      t.ctx.pool.query(
+        "UPDATE sessions SET last_seen_at = now() - interval '1 hour' WHERE user_id = $1",
+        [ownerId],
+      );
+    await dueForRefresh();
+    const document = await owner.get(apiPaths.v1.openApi).expect(200);
+    expect(document.headers["set-cookie"]).toBeUndefined();
+    // A route that reads the session slides it forward: the check above is not vacuous.
+    await dueForRefresh();
+    const me = await owner.get(apiPaths.v1.me).expect(200);
+    expect(String(me.headers["set-cookie"])).toMatch(/^trail_session=/);
+    // Nor is a cookie the server does not know cleared here.
+    const unknown = await request(t.app)
+      .get(apiPaths.v1.openApi)
+      .set("Cookie", `trail_session=${"x".repeat(43)}`)
+      .expect(200);
+    expect(unknown.headers["set-cookie"]).toBeUndefined();
   });
 });

@@ -67,7 +67,10 @@ type RequestPart<Spec extends RouteSpec, K extends keyof RouteRequest> =
 /** What a handler gets: the principal and the request, validated against the spec. */
 interface RouteInput<Spec extends RouteSpec> {
   ctx: AppContext;
-  /** Null only on a public route called without a credential. */
+  /**
+   * Always a principal on a scoped route. A public route never loads the session
+   * (`createV1Router`), so there it is the API token's principal or null.
+   */
   auth: Spec["auth"] extends "public" ? RequestAuth | null : RequestAuth;
   /** `undefined` when the spec has no such part. */
   params: RequestPart<Spec, "params">;
@@ -232,6 +235,12 @@ function checkSpec(spec: RouteSpec): void {
   }
   if (Object.keys(spec.responses).length === 0) {
     throw new Error(`${spec.operationId} lists no response`);
+  }
+  // createV1Router mounts public routes before the session and the body parser.
+  if (spec.auth === "public" && spec.request?.body !== undefined) {
+    throw new Error(
+      `${spec.operationId} is public and takes a body, which public routes never get`,
+    );
   }
 }
 

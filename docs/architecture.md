@@ -590,15 +590,19 @@ rest:
    consulted after the lookup and skipping valid tokens, like the ingest's)
    and answers 401 `unauthorized` — `token_expired` for an expired one — with
    `WWW-Authenticate: Bearer realm="trail", error="invalid_token"`.
-5. The session (`loadSession`), only when there was no bearer token: a bearer
-   request never reads the cookie.
-6. The CSRF guard of §7 for every request without a token (a token is no
-   ambient credential).
-7. The per-token limiter for token requests (`RATE_LIMIT_TOKEN_PER_MINUTE`,
+5. The per-token limiter for token requests (`RATE_LIMIT_TOKEN_PER_MINUTE`,
    key = token id, policy `"token"`, draft-8 headers).
-8. `express.json` (100 kB; `application/json` and `application/*+json`).
-9. The routes of the registry, then a JSON 404 `not_found` for anything else
-   under `/api/v1`. Errors go through the shared error handler.
+6. The public routes of the registry (`auth: "public"`: the OpenAPI
+   document). They never load the session, because their answers may be kept
+   by shared caches, which must not pass the session's sliding refresh, or the
+   clearing of a stale cookie, on to someone else; they take no body.
+7. The session (`loadSession`), only when there was no bearer token: a bearer
+   request never reads the cookie.
+8. The CSRF guard of §7 for every request without a token (a token is no
+   ambient credential).
+9. `express.json` (100 kB; `application/json` and `application/*+json`).
+10. The other routes of the registry, then a JSON 404 `not_found` for
+    anything else under `/api/v1`. Errors go through the shared error handler.
 
 **Principals.** `RequestAuth` is `{ kind: "session", user, sessionId }` or
 `{ kind: "token", user, tokenId, scopes, deviceIds }` (`deviceIds` null = all of
@@ -645,7 +649,7 @@ The spec:
 | `operationId` | unique, lowerCamelCase (`getDevice`) |
 | `summary`, `description` | a few words for the sidebar; Markdown, to which the document appends who may call the route |
 | `tags` | names from `v1Tags.ts` |
-| `auth` | `"public"`, or `{ scopes: [...] }` (any one grants access) / `{ scopes: [...], all: true }` |
+| `auth` | `"public"` (no session is loaded, no body accepted: the handler sees a token's principal or none), or `{ scopes: [...] }` (any one grants access) / `{ scopes: [...], all: true }` |
 | `request` | optional zod schemas: `params` (one key per path parameter; a value that fails it answers 404 — it names nothing), `query` (values are strings: coerce in the schema; failure 400 `validation_failed` with `fields`), `body` (JSON; not JSON 415, invalid 400) |
 | `responses` | the body schema of each success status (`200`, `201`, `202`, `204`); `null` for no body |
 | `errors` | error statuses beyond the implied ones (401, 403 and 503 for scoped routes, 404 with path parameters, 400 with a query or body, 413 and 415 with a body, 429 and 500 always), e.g. `[409]` |
@@ -658,7 +662,8 @@ fields the schema does not name are dropped and a mismatch is a logged 500.
 Errors are thrown as `HttpError`s. Streaming responses (SSE) are not supported
 yet: extend `defineRoute` rather than mounting around the registry. Mistakes in
 a spec (path parameters without params keys, a duplicate operationId or
-method and path, a schema the document generator cannot describe) stop the
+method and path, a public route with a body, a schema the document generator
+cannot describe) stop the
 server at startup and fail the unit tests.
 
 Adding a route:
