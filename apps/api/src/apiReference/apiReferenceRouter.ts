@@ -3,7 +3,7 @@ import helmet from "helmet";
 import type { Logger } from "pino";
 import { contentSecurityPolicyDirectives } from "../http/securityHeaders";
 import { apiReferencePage } from "./apiReferencePage";
-import { apiReferenceScripts } from "./apiReferenceScripts";
+import { type ApiReferenceScripts, apiReferenceScripts } from "./apiReferenceScripts";
 
 const notFoundText = (res: express.Response): void => {
   res.status(404).type("text/plain").send("Not found.");
@@ -21,22 +21,31 @@ function pageCsp(https: boolean): RequestHandler {
 
 /**
  * `/docs` — the API reference (Scalar's standalone bundle from the image, never
- * from a CDN) rendering `/api/v1/openapi.json`. The page revalidates; its
- * scripts carry their hash and are immutable. Mounted before the SPA router,
- * behind the per-IP limiter. Null when the bundle is missing (a broken build):
- * the server runs without the page.
+ * from a CDN) rendering `/api/v1/openapi.json`. The bundle is read here, at
+ * startup, and kept in memory with its ETag, so no request waits for 4.6 MB
+ * from the disk. The page revalidates; its scripts carry their hash and are
+ * immutable. Mounted before the SPA router, behind the per-IP limiter. Null
+ * when the bundle is missing or unreadable (a broken build): the server runs
+ * without the page.
  */
 export function apiReferenceRouter(bundlePath: string | null, logger: Logger): Router | null {
   if (bundlePath === null) {
     logger.warn("the API reference bundle is missing — /docs is not served");
     return null;
   }
+  let scripts: ApiReferenceScripts;
+  try {
+    scripts = apiReferenceScripts(bundlePath);
+  } catch (error) {
+    logger.warn({ err: error }, "the API reference bundle cannot be read — /docs is not served");
+    return null;
+  }
+  const html = apiReferencePage(scripts.ordered);
   const secureCsp = pageCsp(true);
   const plainCsp = pageCsp(false);
   const router = express.Router();
 
   router.get("/", (req, res, next) => {
-    const html = apiReferencePage(apiReferenceScripts(bundlePath).ordered);
     (req.secure ? secureCsp : plainCsp)(req, res, (error?: unknown) => {
       if (error !== undefined) {
         next(error);
@@ -48,7 +57,7 @@ export function apiReferenceRouter(bundlePath: string | null, logger: Logger): R
   });
 
   router.get("/assets/:name", async (req, res) => {
-    const script = apiReferenceScripts(bundlePath).byName.get(req.params.name);
+    const script = scripts.byName.get(req.params.name);
     if (script === undefined) {
       notFoundText(res);
       return;

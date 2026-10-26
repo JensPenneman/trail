@@ -50,7 +50,10 @@ npm only — never pnpm/yarn).
   flags are hard errors.
 - **Biome** for lint + format (`npm run lint`), **knip** for dead code,
   **lefthook** hooks (pre-commit: biome + typecheck; commit-msg: commitlint;
-  pre-push: unit tests), **Conventional Commits**.
+  pre-push: unit tests), **Conventional Commits**. Biome is pinned exactly
+  (`"@biomejs/biome": "2.5.15"`, no caret): it treats minor releases as rule
+  changes (new lint rules, new formatting), so it is updated deliberately, in
+  a pull request of its own with the fixes it asks for.
 - **One file = one purpose.** One component / one function / one router per
   file where practical. **No barrel files** (`index.ts` re-exports are banned by
   Biome `noBarrelFile`); import from the defining module. Contracts are imported
@@ -91,7 +94,14 @@ ephemeral loopback port and passes that origin as `PUBLIC_URL`. In the
 container `npm run dev` takes the project's environment instead of `.env`, and
 git and its hooks stay on the host. Playwright runs one worker there
 (`E2E_WORKERS`), so the suites of several worktrees can share one machine.
-`scripts/devc.sh down` removes the project, volumes included.
+`scripts/devc.sh down` removes the project, volumes included. The image
+installs the lockfile's `playwright-core` with `npm ci` from a one-package
+lockfile, so the lockfile's sha512 covers the package; that verified package
+pins the Chromium build (`browsers.json`) and fetches it over HTTPS with a
+size check only (Playwright compares the byte count with `Content-Length`,
+and neither Playwright nor Chrome for Testing publishes checksums). CI builds
+the image whenever `.devcontainer/`, `package-lock.json` or `ci.yml` change
+(§15).
 
 ### Production (Launchway)
 
@@ -486,7 +496,8 @@ Passkeys only (no passwords), SimpleWebAuthn v14 on both ends.
 - **Principals.** Every request has at most one: a session (cookie) or, on
   `/api/v1` only, an API token. Routes ask for `requireAuth` (either),
   `requireSession` (sessions, passkeys, live events, device credentials,
-  account deletion) or `requireAdmin`; §8.3 has the details.
+  account deletion) or `requireAdmin` (an administrator's session); §8.3 has
+  the details.
 - **Passkey links** (one-time, 15 min): Settings → "Add a passkey on another
   device or address" (`POST /api/me/passkey-links {origin?}`), and the CLI
   `trail passkey-link <email> [--origin URL]` for recovery. Opening
@@ -640,9 +651,12 @@ rest:
 3. Preflight: any `OPTIONS` answers 204 with `Allow-Methods` (the methods of
    the registry), `Allow-Headers: Authorization, Content-Type, Last-Event-ID`
    and `Max-Age: 600`, before credentials and the session are looked at.
-4. `authenticateBearer(ctx)`: a request with an `Authorization` header is a
-   bearer request. The value must be `Bearer trlk_` + 43 base64url characters
-   (`apiTokenPattern`), else it is refused without a lookup; otherwise
+4. `authenticateBearer(ctx)`: a request whose `Authorization` header uses the
+   Bearer scheme (in any letter case) is a bearer request; any other scheme
+   (`Basic` from a proxy in front, say) carries no API token, and the request
+   goes on to the session as if the header were absent. A bearer value must
+   be `Bearer trlk_` + 43 base64url characters (`apiTokenPattern`), else it is
+   refused without a lookup, a valid session cookie notwithstanding; otherwise
    `ctx.apiTokens.verify(secret, { ip })` returns a `TokenPrincipal`, which
    becomes the request's principal, or a refusal. A refused token counts
    towards the failed-token limiter (per IP, `RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES`,
@@ -669,8 +683,10 @@ the user's devices). `requireAuth(req)` accepts either; `requireSession(req)`
 (401 without a principal, 403 `forbidden` for a token) guards what only a person
 signed in with a passkey may do: sessions, passkeys, passkey links, the
 `/api/events` stream, creating, rotating and deleting device tokens, deleting
-the account and finishing an `add_passkey` ceremony. `requireAdmin` is
-unchanged. `hasScope(auth, scope)` is true for every scope of a session.
+the account and finishing an `add_passkey` ceremony. `requireAdmin` takes a
+session too: an API token gets 403 `forbidden`, an administrator's own
+included, although the private chain that serves `/api/admin/*` reads no
+tokens anyway. `hasScope(auth, scope)` is true for every scope of a session.
 Device lookups take the principal (`DeviceAccess`): `findOwnedDevice`,
 `resolveDeviceIds` and `loadDeviceSummaries` never return a device outside a
 token's `deviceIds`, which therefore answers 404 like a foreign one.
@@ -806,14 +822,18 @@ the SPA router, under the per-IP limiter) is Scalar's standalone bundle
 the build copies to `apps/api/dist/api-reference/`), never a CDN. The page
 holds a mount point and three same-origin scripts whose names carry their
 hash (`setup`, `scalar`, `start`; `Cache-Control: public, max-age=31536000,
-immutable`; the 4.6 MB bundle is compressed once per process, brotli and gzip,
-not per request); the page itself revalidates (`no-cache`). Its CSP is the one
-of §12 with `style-src 'self' 'unsafe-inline'` — the reference writes its
-styles at runtime — on this page only; `script-src 'self'` stays. Three
-details keep it free of CSP violations: `setup` switches on zod's jitless mode
-before the bundle runs (zod probes `new Function` otherwise); the mount point
-is not `#api-reference` (the bundle auto-mounts an unconfigured copy there,
-which loads Scalar's web fonts); the configuration turns off default fonts,
+immutable`, and a weak `ETag` that answers a revalidation with 304). The
+4.6 MB bundle is read and hashed once, when `createApp` builds the router at
+startup, so no request waits for the disk (an unreadable bundle leaves
+`/docs` out, like a missing one); it is compressed once per process on first
+request, brotli and gzip, not per request. The page itself revalidates
+(`no-cache`). Its CSP is the one of §12 with
+`style-src 'self' 'unsafe-inline'` — the reference writes its styles at
+runtime — on this page only; `script-src 'self'` stays. Three details keep it
+free of CSP violations: `setup` switches on zod's jitless mode before the
+bundle runs (zod probes `new Function` otherwise); the mount point is not
+`#api-reference` (the bundle auto-mounts an unconfigured copy there, which
+loads Scalar's web fonts); the configuration turns off default fonts,
 telemetry, Scalar's chat agent, MCP hints and the button that opens Scalar's
 hosted client.
 
@@ -1179,7 +1199,8 @@ invalid value).
 - Tokens (device, session, invite, link, API, share link) are stored hashed
   only, and each secret is shown once. API token and share link secrets are
   shape-checked before any lookup and never logged; API token secrets are only
-  ever accepted in the `Authorization` header of `/api/v1`. An API token does
+  ever accepted in the `Authorization` header of `/api/v1`, in the Bearer
+  scheme (another scheme there is no credential at all). An API token does
   what its scopes allow, with its devices, from its addresses, until it
   expires or is revoked (§8.4); none can manage tokens, sessions, passkeys or
   device credentials, which take a passkey session. Creating, changing,
@@ -1362,14 +1383,27 @@ tests against a `postgres:18-alpine` service, `TEST_DATABASE_URL` →
 reachable as `postgres`, `E2E_DATABASE_URL` → `trail_e2e`, `npm run build` then `npm run test:e2e`;
 the report is uploaded on failure) → `image` (buildx multi-arch with the GHA
 cache; pushes to GHCR only from `main` — pushes, schedule, manual runs — and
-`v*` tags; builds without pushing on PRs). Actions pinned by commit SHA;
-per-job least-privilege permissions (`packages`, `id-token`, `attestations`
-write only in `image`). Dependabot (weekly, Monday 07:00 Europe/Brussels) for
-npm (family groups), GitHub Actions, the Dockerfile digests (the image's and
-the development container's) and the compose files, `.devcontainer/` included
-(only major tags change there; majors never auto-merge);
-`dependabot-auto-merge.yml` enables auto-merge for minor/patch, which lands
-on green CI once branch protection requires the checks.
+`v*` tags; builds without pushing on PRs). Beside them, `changes` →
+`devcontainer` builds the development container's image (§3) with Buildx and
+a GHA cache scope of its own, neither pushed nor loaded, for pushes and pull
+requests that change `.devcontainer/`, `package-lock.json` or `ci.yml`
+(`changes` diffs a pull request's merge commit with its base, a push with the
+branch's previous commit, a new branch with `main`); it is not a required
+check. Actions pinned by commit SHA; per-job least-privilege permissions
+(`packages`, `id-token`, `attestations` write only in `image`). Dependabot
+(weekly, Monday 07:00 Europe/Brussels) for npm, GitHub Actions, the
+Dockerfile digests (the image's and the development container's) and the
+compose files, `.devcontainer/` included (only major tags change there;
+majors never auto-merge). The npm groups: `security`
+(`applies-to: security-updates`, every package; GitHub Actions has one too),
+`biome` and `typescript` alone, the families (`vitest`, `playwright`,
+`react`, …) and the catch-all `minor-and-patch` with the pattern `*`:
+Dependabot gives a dependency to the group whose pattern names it most
+precisely, and a group without patterns would take every dependency.
+`dependabot-auto-merge.yml` enables auto-merge, which lands on green CI once
+branch protection requires the checks, for minor, patch and digest updates,
+the `security` groups' included, except the `biome` and `typescript` groups,
+which are merged by hand; majors wait for a person, security ones too.
 
 ## 16. Testing
 
@@ -1382,7 +1416,8 @@ on green CI once branch protection requires the checks.
   number of an owner's devices, shares and links narrows a position below one
   approximate cell — and the sharing access rules), the v1
   route registry (`defineRoute`: path conversion, validation, scopes,
-  response schemas, handler types), principals, and the OpenAPI document:
+  response schemas, handler types), principals, the `/docs` router (the
+  bundle read at startup, revalidations), and the OpenAPI document:
   validated against the OpenAPI 3.1 schema and compared with
   `__snapshots__/openapi.json` (the guide aside); after an API change,
   `npm test -w @trail/api -- -u` rewrites the snapshot for review. The

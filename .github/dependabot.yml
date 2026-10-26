@@ -10,7 +10,8 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     # auto-merge lands minor/patch on green CI; the cooldown is the window in
-    # which a bad release can be yanked before it reaches main
+    # which a bad release can be yanked before it reaches main (security
+    # updates do not wait for it)
     cooldown:
       default-days: 3
     ignore:
@@ -18,12 +19,33 @@ updates:
       # LTS, see .nvmrc); it moves together with the LTS, not on its own
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
-    # A dependency joins the first group it matches, so the families come
-    # first: they carry no update-types and therefore hold for majors too,
-    # because a package and its types/plugins/runner have to move in one PR or
-    # the tree does not build. The rest falls through to minor-and-patch;
-    # majors of ungrouped packages get a PR of their own.
+    # Dependabot puts a dependency into the group whose pattern names it most
+    # precisely: an exact name beats a wildcard, and `*` loses to every other
+    # pattern. A group without patterns takes every dependency, whatever the
+    # other groups say, so the catch-all names `*`; without it every family
+    # update landed in minor-and-patch, where one failing package held back
+    # all the others. (GitHub's documentation says "the first group that
+    # matches"; the order below gives the same groups under that rule.) The
+    # families carry no update-types and therefore hold for majors too,
+    # because a package and its types/plugins/runner have to move in one PR
+    # or the tree does not build. Majors of ungrouped packages get a PR of
+    # their own.
     groups:
+      # Security updates in a group of their own, so a fix for an alert never
+      # waits behind a version update that breaks the build; the group merges
+      # itself once CI is green unless it holds a major, which waits for a
+      # person (dependabot-auto-merge.yml).
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+      # Tools that change what passes, each alone and merged by hand with the
+      # fixes it asks for, so it never holds back the rest: Biome adds lint
+      # rules and changes its formatting in minor releases (which is why
+      # package.json pins it exactly), TypeScript checks differently.
+      biome:
+        patterns: ["@biomejs/biome"]
+      typescript:
+        patterns: ["typescript"]
       vitest:
         patterns:
           - "vitest"
@@ -54,9 +76,6 @@ updates:
         patterns:
           - "drizzle-orm"
           - "drizzle-kit"
-      biome:
-        patterns:
-          - "@biomejs/*"
       commitlint:
         patterns:
           - "@commitlint/*"
@@ -67,6 +86,7 @@ updates:
         patterns:
           - "@types/*"
       minor-and-patch:
+        patterns: ["*"]
         update-types: ["minor", "patch"]
     open-pull-requests-limit: 10
 
@@ -82,6 +102,10 @@ updates:
     cooldown:
       default-days: 3
     groups:
+      # as for npm: an advisory's fix never waits for the other updates
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
       actions:
         patterns: ["*"]
     open-pull-requests-limit: 3

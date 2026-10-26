@@ -12,7 +12,8 @@
 #   scripts/devc.sh ps             this worktree's containers
 #   scripts/devc.sh down           removes them, the database and modules too
 #
-# Commands start the stack first when it is not running.
+# Commands start the stack first when it is not running, and run `npm ci`
+# first when package-lock.json has changed since the last install.
 set -eu
 
 usage='usage: scripts/devc.sh up [--web] | shell | ps | down | <command...>'
@@ -61,13 +62,19 @@ web_url() {
 }
 
 # What devcontainer.json's postCreateCommand does, and again whenever the
-# lockfile has changed since: the modules live in the container's volumes.
+# lockfile differs from the one the modules were installed from: the modules
+# live in the container's volumes, and a pull, a rebase or a checkout can
+# change the lockfile under a running stack. `up` and every command check it
+# first. The lock, outside the volume `npm ci` empties, keeps commands that
+# start together from installing at the same time: the others wait and find
+# the modules current. Its output goes to stderr, so a command's own output
+# stays as it is.
 install_modules() {
-  compose exec --no-TTY dev sh -c '
+  compose exec --no-TTY dev flock /tmp/devc-modules.lock sh -c '
     cmp -s package-lock.json node_modules/.devc-package-lock.json && exit 0
     echo "devc: npm ci (new volumes or a changed package-lock.json)"
     npm ci --no-audit --no-fund && cp package-lock.json node_modules/.devc-package-lock.json
-  '
+  ' >&2
 }
 
 up() {
@@ -90,7 +97,7 @@ up() {
 }
 
 run() {
-  running || up
+  if running; then install_modules; else up; fi
   # Called from inside the worktree, the command runs in the same directory.
   here=$(pwd -P)
   case $here/ in

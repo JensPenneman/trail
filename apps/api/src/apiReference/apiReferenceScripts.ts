@@ -39,7 +39,11 @@ export interface ApiReferenceScripts {
 
 const loaded = new Map<string, ApiReferenceScripts>();
 
-/** The page's scripts, read and hashed once per process (the bundle is 4.6 MB). */
+/**
+ * The page's scripts, read and hashed once per process (the bundle is 4.6 MB),
+ * when the router is created at startup: the synchronous read never holds up a
+ * request.
+ */
 export function apiReferenceScripts(bundlePath: string): ApiReferenceScripts {
   let scripts = loaded.get(bundlePath);
   if (scripts === undefined) {

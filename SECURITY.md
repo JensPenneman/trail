@@ -33,6 +33,22 @@ PostgreSQL, the map tile provider) are out of scope; report issues there to
 the respective vendor. A self-hosted server's own configuration (router, DNS,
 the host and its deployment platform) is the operator's responsibility.
 
+## Dependencies
+
+- Security updates (npm and GitHub Actions) come as soon as Dependabot raises
+  an alert, in a group of their own, so a fix never waits behind a version
+  update that breaks the build. They merge themselves once CI is green, unless
+  a fix needs a new major version: that waits for a person, like every major.
+- A dependency pull request that fails CI, a security fix or a version
+  update, is fixed, never ignored or left open: the alerts it would close must
+  not pile up.
+- Version updates come weekly, each at least three days after its release
+  (the cooldown, a window for a bad release to be withdrawn). Minor and patch
+  updates merge themselves on green CI; majors are reviewed by hand, and so
+  are Biome and TypeScript, each in a pull request of its own, because their
+  releases change what the checks accept. Biome is pinned exactly for that
+  reason.
+
 ## Safe harbour
 
 Good-faith research that respects this policy, avoids privacy violations,
@@ -74,8 +90,8 @@ yourself: location data is personal data.
 - **Supply chain**: GitHub Actions pinned to commit SHAs; the base image
   pinned by digest; images built in CI only, with BuildKit provenance and an
   SBOM, and a signed GitHub build provenance attestation when the repository
-  is public; Dependabot updates for npm, Actions and Docker, with majors
-  reviewed by hand.
+  is public; Dependabot updates for npm, Actions and Docker
+  ([Dependencies](#dependencies)).
 
 ## Sharing: who sees what
 

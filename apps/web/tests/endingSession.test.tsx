@@ -170,6 +170,24 @@ describe("ending the session", () => {
     expect(router.state.location.search).toBe("?next=%2Fsettings");
   });
 
+  it("by itself after a session came back without the sign-in page offers the way back", async () => {
+    mockApi({
+      "POST /api/auth/logout": { status: 204 },
+      "GET /api/auth/session": { status: 200, body: { user } },
+    });
+    const { queryClient, router } = renderSignedIn();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Sign out" }));
+    expect(await screen.findByText("Sign-in page")).toBeInTheDocument();
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0));
+    // Signed in again in another tab: this tab's session query finds that session.
+    await act(() => queryClient.refetchQueries({ queryKey: queryKeys.session }));
+    await act(() => router.navigate("/settings"));
+    expect(await screen.findByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    act(() => queryClient.setQueryData(queryKeys.session, null));
+    expect(await screen.findByText("Sign-in page")).toBeInTheDocument();
+    expect(router.state.location.search).toBe("?next=%2Fsettings");
+  });
+
   it("by itself after signing out and in again offers the way back", async () => {
     const answer = holdSignOut();
     const { queryClient, router } = renderSignedIn({ signIn: <SignInAgain /> });

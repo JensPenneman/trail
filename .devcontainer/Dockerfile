@@ -13,23 +13,53 @@
 
 FROM node:lts-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS playwright
 # The browsers must be the build that the locked Playwright drives, so they
-# come from the lockfile's own playwright-core tarball (it has no dependencies:
-# no registry metadata to fetch). Only that URL is handed on, so a lockfile
-# change that leaves Playwright alone keeps the browser layer cached.
+# come from the lockfile's own playwright-core (it has no dependencies). Its
+# lockfile entry, and nothing else, is handed on as a project of one package:
+# a lockfile change that leaves Playwright alone keeps the browser layer
+# cached, and `npm ci` checks the tarball against the entry's integrity
+# (sha512). Given just the tarball's URL, npx would run whatever it serves.
 COPY package-lock.json /tmp/
-RUN node -p "require('/tmp/package-lock.json').packages['node_modules/playwright-core'].resolved" > /tmp/playwright-core
+RUN node <<'EOF'
+const fs = require("node:fs");
+const { packages } = require("/tmp/package-lock.json");
+// A dependency of its own project here, not a development one
+const { dev, ...entry } = packages["node_modules/playwright-core"];
+const project = {
+  name: "playwright-browsers",
+  private: true,
+  dependencies: { "playwright-core": entry.version },
+};
+const lockfile = {
+  name: project.name,
+  lockfileVersion: 3,
+  requires: true,
+  packages: { "": project, "node_modules/playwright-core": entry },
+};
+fs.mkdirSync("/tmp/playwright");
+fs.writeFileSync("/tmp/playwright/package.json", JSON.stringify(project));
+fs.writeFileSync("/tmp/playwright/package-lock.json", JSON.stringify(lockfile));
+EOF
 
 FROM node:lts-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
 # Outside every home directory and volume, owned by root, shared by all users
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-COPY --from=playwright /tmp/playwright-core /tmp/
+COPY --from=playwright /tmp/playwright /tmp/playwright
 # The suite's projects run in Chromium, headless, so its headless shell is
-# enough; --with-deps adds the system packages. The `webkit` project of
-# playwright.config.ts only exists for a deployment on another port
-# (E2E_BASE_URL), and WebKit with its packages would double the image.
+# enough; --with-deps adds the system packages, which apt checks against
+# Debian's signed archive. The lockfile's sha512 covers playwright-core; that
+# verified package pins the browser build (its browsers.json) and fetches it
+# over HTTPS from Playwright's CDN, which hands Chrome for Testing builds over
+# to Google's storage, with a size check only: Playwright compares the byte
+# count with Content-Length, and neither Playwright nor Chrome for Testing
+# publishes a checksum. The `webkit` project of playwright.config.ts only
+# exists for a deployment on another port (E2E_BASE_URL), and WebKit with its
+# packages would double the image.
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    npx --yes --package="$(cat /tmp/playwright-core)" playwright-core install --with-deps --only-shell chromium \
-    && rm -rf /var/lib/apt/lists/* /tmp/playwright-core
+    cd /tmp/playwright \
+    && npm ci --ignore-scripts --no-audit --no-fund --no-update-notifier \
+    && node_modules/.bin/playwright-core install --with-deps --only-shell chromium \
+    && cd / \
+    && rm -rf /var/lib/apt/lists/* /tmp/playwright
 
 # The image's `node` user. Docker Desktop shows files the container creates in
 # the bind mount as the host user's whatever the uid; a Linux host sees the uid

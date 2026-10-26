@@ -77,6 +77,17 @@ describe("/docs", () => {
     const gzipped = await request(t.app).get(bundle).set("Accept-Encoding", "gzip").expect(200);
     expect(gzipped.headers["content-encoding"]).toBe("gzip");
     expect(Buffer.from(gzipped.text).equals(original)).toBe(true);
+
+    // One validator for every encoding: a revalidation costs a 304, nothing compressed.
+    const etag = String(gzipped.headers["etag"]);
+    expect(etag).toMatch(/^W\/"[0-9a-f]{64}"$/);
+    expect(brotli.headers["etag"]).toBe(etag);
+    const unchanged = await request(t.app)
+      .get(bundle)
+      .set("Accept-Encoding", "br, gzip")
+      .set("If-None-Match", etag)
+      .expect(304);
+    expect(unchanged.headers["content-encoding"]).toBeUndefined();
   });
 
   it("knows nothing else", async () => {
