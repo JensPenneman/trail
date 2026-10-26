@@ -13,9 +13,9 @@ export const getHeatmap = defineRoute(
     operationId: "getHeatmap",
     summary: "Get the heatmap",
     description:
-      "How many points were ever recorded in each cell of a viewport, summed over the devices: the cells get smaller as `zoom` grows. Counted as points arrive, so it costs the same for a day of data as for ten years.",
-    tags: ["History"],
-    auth: { scopes: ["history:read"] },
+      "How many points were ever recorded in each cell of a viewport, summed over the devices: the cells get smaller as `zoom` grows. Counted as points arrive, so it costs the same for a day of data as for ten years. The cells are places, so the heatmap needs `locations:read`.",
+    tags: ["Locations"],
+    auth: { scopes: ["locations:read"] },
     request: { query: heatmapPublicQuerySchema },
     // A device in `devices` that is unknown, foreign or outside the token is a 404.
     errors: [404],

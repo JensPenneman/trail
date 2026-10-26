@@ -140,18 +140,20 @@ needs them all. A signed-in session holds every scope.
 | `profile:read` | Read the account's name and time zone. |
 | `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |
 | `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |
-| `locations:read` | Read positions: where the devices are now and where they have been (points, tracks, the timeline). |
+| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |
 | `locations:write` | Correct how you travelled (transport mode overrides). |
-| `history:read` | Read visits, trips, daily statistics, activity and the heatmap. |
+| `history:read` | Read trips, daily statistics and activity: the history without coordinates. |
 | `people:read` | See the people who share their location with you. |
 | `shares:read` | List your shares, the ones you receive and your public links. |
 | `shares:write` | Start and stop sharing, hide people and manage public links. |
 
-Positions are what `locations:read` is for: a device in `GET /api/v1/devices`
-(and wherever else the API answers with a device, such as after `PATCH
-/api/v1/devices/{id}`) carries its `lastLocation` only for a credential with
-that scope. With `devices:read` alone the field is left out, so a token for a
-status display never learns where anyone is.
+Coordinates are what `locations:read` is for: every answer with a place in it
+needs it — points, visits, the heatmap and a device's position. A device in
+`GET /api/v1/devices` (and wherever else the API answers with a device, such as
+after `PATCH /api/v1/devices/{id}`) carries its `lastLocation` only for a
+credential with that scope; with `devices:read` alone the field is left out,
+so a token for a status display never learns where anyone is. `history:read`
+is the history without coordinates: trips, statistics per day and activity.
 
 A token can also be limited to some of the account's devices. The other
 devices then look as if they did not exist: they are missing from lists and
@@ -274,7 +276,7 @@ while :; do
   [ -n "$cursor" ] || break
 done
 
-# Visits and trips of a week, and the statistics of a month
+# Visits (locations:read) and trips (history:read) of a week, the statistics of a month
 curl -sS -G -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/visits" \
   --data-urlencode "from=2026-10-19T00:00:00+02:00" --data-urlencode "to=2026-10-26T00:00:00+01:00"
 curl -sS -G -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/trips" \

@@ -25,11 +25,11 @@
     },
     {
       "name": "Locations",
-      "description": "The points the phones recorded, exactly as they arrived."
+      "description": "Where the devices have been: every point as it arrived, the places they stayed at (visits) and the all-time heatmap. All of it needs `locations:read`."
     },
     {
       "name": "History",
-      "description": "Visits, trips, daily statistics, recent activity and the all-time heatmap."
+      "description": "History without coordinates: trips, daily statistics and recent activity (`history:read`)."
     },
     {
       "name": "Reference",
@@ -541,14 +541,14 @@
       "get": {
         "operationId": "listVisits",
         "summary": "List visits",
-        "description": "The places iOS saw the phones stay at (Overland with Visit Tracking on) that touch the range: arrived, departed or reported in it, or spanning it. At most 400 days at once.\n\n**Access:** an API token with the scope `history:read`, or a signed-in session.",
+        "description": "The places iOS saw the phones stay at (Overland with Visit Tracking on) that touch the range: arrived, departed or reported in it, or spanning it. At most 400 days at once. Visits are where someone was, so they need `locations:read`.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
         "tags": [
-          "History"
+          "Locations"
         ],
         "security": [
           {
             "bearer": [
-              "history:read"
+              "locations:read"
             ]
           }
         ],
@@ -607,6 +607,91 @@
                     "visits"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/heatmap": {
+      "get": {
+        "operationId": "getHeatmap",
+        "summary": "Get the heatmap",
+        "description": "How many points were ever recorded in each cell of a viewport, summed over the devices: the cells get smaller as `zoom` grows. Counted as points arrive, so it costs the same for a day of data as for ten years. The cells are places, so the heatmap needs `locations:read`.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "tags": [
+          "Locations"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "bbox",
+            "schema": {
+              "description": "The viewport: `west,south,east,north` in degrees (west > east crosses the antimeridian).",
+              "example": "3.60,50.98,3.80,51.10",
+              "type": "string"
+            },
+            "required": true,
+            "description": "The viewport: `west,south,east,north` in degrees (west > east crosses the antimeridian)."
+          },
+          {
+            "in": "query",
+            "name": "zoom",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 24,
+              "description": "The map's zoom level; the cells get finer as it grows.",
+              "example": 12
+            },
+            "required": true,
+            "description": "The map's zoom level; the cells get finer as it grows."
+          },
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many points were ever recorded in each cell of the viewport; points less accurate than 200 m are left out.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Heatmap"
                 }
               }
             }
@@ -912,91 +997,6 @@
                     "buckets"
                   ],
                   "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          },
-          "503": {
-            "$ref": "#/components/responses/Unavailable"
-          }
-        }
-      }
-    },
-    "/api/v1/heatmap": {
-      "get": {
-        "operationId": "getHeatmap",
-        "summary": "Get the heatmap",
-        "description": "How many points were ever recorded in each cell of a viewport, summed over the devices: the cells get smaller as `zoom` grows. Counted as points arrive, so it costs the same for a day of data as for ten years.\n\n**Access:** an API token with the scope `history:read`, or a signed-in session.",
-        "tags": [
-          "History"
-        ],
-        "security": [
-          {
-            "bearer": [
-              "history:read"
-            ]
-          }
-        ],
-        "parameters": [
-          {
-            "in": "query",
-            "name": "bbox",
-            "schema": {
-              "description": "The viewport: `west,south,east,north` in degrees (west > east crosses the antimeridian).",
-              "example": "3.60,50.98,3.80,51.10",
-              "type": "string"
-            },
-            "required": true,
-            "description": "The viewport: `west,south,east,north` in degrees (west > east crosses the antimeridian)."
-          },
-          {
-            "in": "query",
-            "name": "zoom",
-            "schema": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 24,
-              "description": "The map's zoom level; the cells get finer as it grows.",
-              "example": 12
-            },
-            "required": true,
-            "description": "The map's zoom level; the cells get finer as it grows."
-          },
-          {
-            "in": "query",
-            "name": "devices",
-            "schema": {
-              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
-              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "How many points were ever recorded in each cell of the viewport; points less accurate than 200 m are left out.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Heatmap"
                 }
               }
             }
@@ -1890,6 +1890,65 @@
         "additionalProperties": false,
         "description": "A stay at one place. iOS reports a visit on arrival and again on departure; the two reports come as one visit."
       },
+      "Heatmap": {
+        "type": "object",
+        "properties": {
+          "cellZoom": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Slippy-map zoom of the cells (6, 9, 12, 15 or 18).",
+            "example": 15
+          },
+          "cells": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              ],
+              "items": false,
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "description": "`[lon, lat, count]` of each cell centre with points, busiest first, at most 20 000.",
+            "example": [
+              [
+                3.7174,
+                51.0543,
+                1820
+              ],
+              [
+                3.7251,
+                51.0498,
+                640
+              ]
+            ]
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the viewport held more cells than the answer carries.",
+            "example": false
+          }
+        },
+        "required": [
+          "cellZoom",
+          "cells",
+          "truncated"
+        ],
+        "additionalProperties": false,
+        "description": "How many points were ever recorded in each cell of the viewport; points less accurate than 200 m are left out."
+      },
       "Trip": {
         "type": "object",
         "properties": {
@@ -2052,65 +2111,6 @@
         ],
         "additionalProperties": false,
         "description": "One hour of one device."
-      },
-      "Heatmap": {
-        "type": "object",
-        "properties": {
-          "cellZoom": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991,
-            "description": "Slippy-map zoom of the cells (6, 9, 12, 15 or 18).",
-            "example": 15
-          },
-          "cells": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "prefixItems": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
-                }
-              ],
-              "items": false,
-              "minItems": 3,
-              "maxItems": 3
-            },
-            "description": "`[lon, lat, count]` of each cell centre with points, busiest first, at most 20 000.",
-            "example": [
-              [
-                3.7174,
-                51.0543,
-                1820
-              ],
-              [
-                3.7251,
-                51.0498,
-                640
-              ]
-            ]
-          },
-          "truncated": {
-            "type": "boolean",
-            "description": "True when the viewport held more cells than the answer carries.",
-            "example": false
-          }
-        },
-        "required": [
-          "cellZoom",
-          "cells",
-          "truncated"
-        ],
-        "additionalProperties": false,
-        "description": "How many points were ever recorded in each cell of the viewport; points less accurate than 200 m are left out."
       },
       "ApiScope": {
         "type": "string",
@@ -2567,7 +2567,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "trlk_…",
-        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, tracks, the timeline). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read visits, trips, daily statistics, activity and the heatmap. |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |"
+        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read trips, daily statistics and activity: the history without coordinates. |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |"
       }
     }
   }

@@ -30,13 +30,12 @@ const templates: readonly { value: ApiTokenTemplate; label: string; description:
   {
     value: "read-only",
     label: "Read-only",
-    description: "Reads what a token can read; changes nothing.",
+    description: "Reads everything a token can read, positions included; changes nothing.",
   },
   {
     value: "agent",
     label: "Agent",
-    description:
-      "Read-only, and may correct how you travelled: for an assistant that plans with you.",
+    description: "Read-only, and may correct how you travelled: for an agent that plans with you.",
   },
   {
     value: "full",

@@ -104,6 +104,8 @@ beforeAll(async () => {
   await issue("profileOnly", ["profile:read"]);
   await issue("devicesRead", ["devices:read"]);
   await issue("writer", ["devices:write"]);
+  await issue("historyOnly", ["history:read"]);
+  await issue("locationsOnly", ["locations:read"]);
 });
 
 afterAll(async () => {
@@ -494,17 +496,34 @@ describe("history", () => {
     expect(visits.visits.map((visit) => visit.deviceId)).not.toContain(foreign);
   });
 
-  it("needs history:read and validates its ranges", async () => {
-    for (const path of [
+  it("needs locations:read for what has coordinates and history:read for the rest", async () => {
+    const days = { from: "2026-09-28", to: "2026-09-29" };
+    const withCoordinates = [
       `${apiPaths.v1.visits}?${query(twoDays)}`,
-      `${apiPaths.v1.trips}?${query(twoDays)}`,
-      `${apiPaths.v1.stats.days}?${query({ from: "2026-09-28", to: "2026-09-29" })}`,
-      `${apiPaths.v1.stats.activity}`,
       `${apiPaths.v1.heatmap}?${query({ bbox: "3.4,50.9,3.8,51.1", zoom: 11 })}`,
-    ]) {
-      const refused = await as("devicesRead", path).expect(403);
+    ];
+    const withoutCoordinates = [
+      `${apiPaths.v1.trips}?${query(twoDays)}`,
+      `${apiPaths.v1.stats.days}?${query(days)}`,
+      `${apiPaths.v1.stats.activity}`,
+    ];
+    // A history-only token: the trips and the statistics, never a place.
+    for (const path of withCoordinates) {
+      const refused = await as("historyOnly", path).expect(403);
+      expect(errorOf(refused.body), path).toMatchObject({ code: "insufficient_scope" });
+      expect(errorOf(refused.body).message, path).toContain("locations:read");
+      expect(refused.headers["www-authenticate"]).toContain('scope="locations:read"');
+    }
+    for (const path of withoutCoordinates) await as("historyOnly", path).expect(200);
+    // A locations-only token: the places, not the coordinate-free history.
+    for (const path of withCoordinates) await as("locationsOnly", path).expect(200);
+    for (const path of withoutCoordinates) {
+      const refused = await as("locationsOnly", path).expect(403);
       expect(errorOf(refused.body).message, path).toContain("history:read");
     }
+  });
+
+  it("validates its ranges", async () => {
     for (const path of [
       `${apiPaths.v1.visits}?${query({ from: "2025-01-01T00:00:00Z", to: "2026-09-30T00:00:00Z" })}`,
       `${apiPaths.v1.trips}?${query({ from: twoDays.to, to: twoDays.from })}`,

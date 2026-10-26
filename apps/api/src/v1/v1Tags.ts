@@ -13,11 +13,13 @@ export const v1Tags = [
   },
   {
     name: "Locations",
-    description: "The points the phones recorded, exactly as they arrived.",
+    description:
+      "Where the devices have been: every point as it arrived, the places they stayed at (visits) and the all-time heatmap. All of it needs `locations:read`.",
   },
   {
     name: "History",
-    description: "Visits, trips, daily statistics, recent activity and the all-time heatmap.",
+    description:
+      "History without coordinates: trips, daily statistics and recent activity (`history:read`).",
   },
   { name: "Reference", description: "This API's own description." },
 ] as const satisfies readonly { name: string; description: string }[];

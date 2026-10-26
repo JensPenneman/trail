@@ -11,9 +11,9 @@ export const listVisits = defineRoute(
     operationId: "listVisits",
     summary: "List visits",
     description:
-      "The places iOS saw the phones stay at (Overland with Visit Tracking on) that touch the range: arrived, departed or reported in it, or spanning it. At most 400 days at once.",
-    tags: ["History"],
-    auth: { scopes: ["history:read"] },
+      "The places iOS saw the phones stay at (Overland with Visit Tracking on) that touch the range: arrived, departed or reported in it, or spanning it. At most 400 days at once. Visits are where someone was, so they need `locations:read`.",
+    tags: ["Locations"],
+    auth: { scopes: ["locations:read"] },
     request: { query: historyRangeQuerySchema },
     // A device in `devices` that is unknown, foreign or outside the token is a 404.
     errors: [404],

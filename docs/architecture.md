@@ -638,10 +638,12 @@ scopes that grant access; any one of them is enough, all of them with
 scopes in the message and in `WWW-Authenticate: Bearer realm="trail",
 error="insufficient_scope", scope="…"`. Without any principal a scoped route
 answers 401 with `WWW-Authenticate: Bearer realm="trail"`. Scopes are the
-privacy boundary, and a position needs `locations:read`: `toDevicePublic`
-leaves `DevicePublic.lastLocation` out for a principal without it (null keeps
-meaning "no position yet"), so `devices:read` alone shows names, status,
-last-seen time and battery, never where a device is.
+privacy boundary, and anything with coordinates needs `locations:read`: the
+points, visits and the heatmap are its operations, and `toDevicePublic` leaves
+`DevicePublic.lastLocation` out for a principal without it (null keeps meaning
+"no position yet"), so `devices:read` alone shows names, status, last-seen time
+and battery, never where a device is. `history:read` is the history without
+coordinates: trips, daily statistics and activity.
 
 **The token seam.** `ApiTokenVerifier` (`apps/api/src/v1/apiTokens.ts`) is the
 only thing a token store has to provide: `verify(secret, { ip })` resolves a
@@ -814,7 +816,8 @@ The credentials of `/api/v1` for scripts, apps and agents: created in Settings
   secret is unknown from the commit on; a revoked or expired token can be
   neither changed nor rolled (409). `DELETE` revokes (`revoked_at`, 204, also
   when it already was). Unknown, malformed and other people's ids are 404.
-- **What a token reaches**: the scopes of its routes (§8.3), field by field
+- **What a token reaches**: the scopes of its routes (§8.3) — coordinates
+  (points, visits, the heatmap) only with `locations:read` — field by field
   where a scope guards part of an answer (`hasScope`: a device's position only
   with `locations:read`, `toDevicePublic(summary, auth)`), and its devices
   through `DeviceAccess`. `devices:write` renames a device, switches its alerts
