@@ -8,7 +8,10 @@ import { mayReadPeople } from "../../src/sharing/accessibleDevices";
 import { announceShareChange } from "../../src/sharing/announceShareChange";
 import { cellMetres } from "../../src/sharing/gridProjection";
 import { mayReadOwnLocations } from "../../src/sharing/mayReadOwnLocations";
-import { assertTokenMayShare } from "../../src/sharing/shareableDevices";
+import {
+  assertShareableDevices,
+  assertWithinTokenDevices,
+} from "../../src/sharing/shareableDevices";
 import { coversDevice, liveWindowMs, windowStart } from "../../src/sharing/shareWindow";
 import { toSharedDevice } from "../../src/sharing/toSharedDevice";
 import { haversineM } from "../../src/tracks/haversine";
@@ -91,17 +94,31 @@ describe("who may see what", () => {
     expect(mayReadOwnLocations(token(["people:read", "locations:read"]))).toBe(true);
   });
 
-  it("lets a token limited to devices share those only, by name", () => {
-    expect(() => assertTokenMayShare(session, null)).not.toThrow();
-    expect(() => assertTokenMayShare(token(["shares:write"]), null)).not.toThrow();
+  it("makes a token limited to devices name the devices it shares", async () => {
+    // "Every device" is refused before any lookup.
+    const noDatabase = {} as Parameters<typeof assertShareableDevices>[0];
     const limited = token(["shares:write"], [deviceId]);
-    expect(() => assertTokenMayShare(limited, [deviceId])).not.toThrow();
-    expect(() => assertTokenMayShare(limited, null)).toThrow(
-      expect.objectContaining({ status: 400, code: "validation_failed" }),
-    );
-    expect(() => assertTokenMayShare(limited, [deviceId, other])).toThrow(
-      expect.objectContaining({ status: 403, code: "forbidden" }),
-    );
+    await expect(assertShareableDevices(noDatabase, limited, null)).rejects.toMatchObject({
+      status: 400,
+      code: "validation_failed",
+      fields: { deviceIds: [expect.any(String)] },
+    });
+    await expect(assertShareableDevices(noDatabase, session, null)).resolves.toBeUndefined();
+    await expect(
+      assertShareableDevices(noDatabase, token(["shares:write"]), null),
+    ).resolves.toBeUndefined();
+  });
+
+  it("lets a token limited to devices change only shares within them", () => {
+    const limited = token(["shares:write"], [deviceId]);
+    expect(() => assertWithinTokenDevices(session, null)).not.toThrow();
+    expect(() => assertWithinTokenDevices(token(["shares:write"]), [other])).not.toThrow();
+    expect(() => assertWithinTokenDevices(limited, [deviceId])).not.toThrow();
+    for (const deviceIds of [null, [deviceId, other], [other]]) {
+      expect(() => assertWithinTokenDevices(limited, deviceIds)).toThrow(
+        expect.objectContaining({ status: 403, code: "forbidden" }),
+      );
+    }
   });
 });
 

@@ -11,7 +11,7 @@ import { shares } from "../db/schema/shares";
 import { HttpError, notFound } from "../http/httpError";
 import { announceShareChange } from "./announceShareChange";
 import { findOutgoingShare, toOutgoingShare } from "./outgoingShares";
-import { assertOwnDevices, assertTokenMayShare } from "./shareableDevices";
+import { assertShareableDevices, assertWithinTokenDevices } from "./shareableDevices";
 import { shareExpiresAt } from "./shareExpiry";
 
 type UpdateShare = z.output<typeof updateShareRequestSchema>;
@@ -49,8 +49,10 @@ export async function changeShare(
       historyDays: [historyNeedsPrecise],
     });
   }
-  assertTokenMayShare(auth, next.deviceIds);
-  if (changes.deviceIds !== undefined) await assertOwnDevices(ctx.db, auth, changes.deviceIds);
+  if (changes.deviceIds !== undefined) {
+    await assertShareableDevices(ctx.db, auth, changes.deviceIds);
+  }
+  assertWithinTokenDevices(auth, next.deviceIds);
 
   const [row] = await ctx.db
     .update(shares)

@@ -11,7 +11,7 @@ import type { AppContext } from "../appContext";
 import type { RequestAuth } from "../auth/requestAuth";
 import { shareLinks } from "../db/schema/shareLinks";
 import { HttpError } from "../http/httpError";
-import { assertOwnDevices, assertTokenMayShare } from "./shareableDevices";
+import { assertShareableDevices } from "./shareableDevices";
 import { maxCurrentShareLinks } from "./shareLimits";
 import { newShareLinkSecret } from "./shareLinkSecret";
 import { toShareLink } from "./toShareLink";
@@ -37,8 +37,7 @@ export async function makeShareLink(
   request: CreateShareLink,
 ): Promise<CreateShareLinkResponse> {
   const deviceIds = request.deviceIds ?? null;
-  assertTokenMayShare(auth, deviceIds);
-  await assertOwnDevices(ctx.db, auth, deviceIds);
+  await assertShareableDevices(ctx.db, auth, deviceIds);
   const now = new Date();
   const expiresAt =
     request.expiresAt === undefined

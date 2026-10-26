@@ -110,6 +110,40 @@ const laterTables: {
       FROM mode_overrides
     `,
   },
+  {
+    // Sharing: who shares what with whom (Ana has an account, the second address not yet),
+    // a public link and the grid key.
+    migration: tagOf("sharing"),
+    record: async (pool, { userId, deviceId }) => {
+      await pool.query(
+        `INSERT INTO shares (owner_user_id, recipient_email, recipient_user_id, device_ids,
+           precision, history_days, include_details, expires_at, hidden_at)
+         VALUES ($1, 'ana@example.com', (SELECT id FROM users WHERE email = 'ana@example.com'),
+           ARRAY[$2]::uuid[], 'precise', 7, true, '2027-01-01T00:00:00Z', '2026-02-01T00:00:00Z'),
+           ($1, 'pending@example.com', NULL, NULL, 'area', NULL, false, NULL, NULL)`,
+        [userId, deviceId],
+      );
+      await pool.query(
+        `INSERT INTO share_links (owner_user_id, token_hash, label, precision, expires_at, view_count)
+         VALUES ($1, 'link-token-hash', 'Upgrade', 'approximate', '2026-02-01T00:00:00Z', 3)`,
+        [userId],
+      );
+      await pool.query(
+        `INSERT INTO server_secrets (name, secret) VALUES ('share-grid', decode(repeat('ab', 32), 'hex'))`,
+      );
+    },
+    fingerprint: `
+      SELECT
+        ((SELECT count(*) FROM shares) + (SELECT count(*) FROM share_links)
+          + (SELECT count(*) FROM server_secrets WHERE name = 'share-grid'))::int AS rows,
+        (SELECT string_agg(concat_ws('|', owner_user_id, recipient_email, recipient_user_id,
+          device_ids::text, precision, history_days, include_details, expires_at, revoked_at,
+          hidden_at), ';' ORDER BY id) FROM shares) AS share_rows,
+        (SELECT string_agg(concat_ws('|', owner_user_id, token_hash, label, precision, history_days,
+          expires_at, view_count), ';' ORDER BY id) FROM share_links) AS link_rows,
+        (SELECT encode(secret, 'hex') FROM server_secrets WHERE name = 'share-grid') AS grid_key
+    `,
+  },
 ];
 
 /*
@@ -168,6 +202,11 @@ describe("migrations on an existing database", () => {
       `INSERT INTO ingest_rejects (device_id, reason, record)
        VALUES ($1, 'unparseable timestamp', '{"timestamp": "yesterday"}')`,
       [deviceId],
+    );
+    // Someone to share with, of the first release: their account is part of its data.
+    await pool.query(
+      `INSERT INTO users (email, display_name, webauthn_user_id, timezone)
+       VALUES ('ana@example.com', 'Ana', '\\x0304', 'Europe/Brussels')`,
     );
     before = (await pool.query(fingerprint)).rows[0] ?? {};
 

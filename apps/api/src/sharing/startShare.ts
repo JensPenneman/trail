@@ -10,7 +10,7 @@ import { HttpError } from "../http/httpError";
 import { announceShareChange } from "./announceShareChange";
 import { currentShare } from "./currentShare";
 import { toOutgoingShare } from "./outgoingShares";
-import { assertOwnDevices, assertTokenMayShare } from "./shareableDevices";
+import { assertShareableDevices } from "./shareableDevices";
 import { shareExpiresAt } from "./shareExpiry";
 import { maxCurrentShares } from "./shareLimits";
 
@@ -35,8 +35,7 @@ export async function startShare(
     });
   }
   const deviceIds = request.deviceIds ?? null;
-  assertTokenMayShare(auth, deviceIds);
-  await assertOwnDevices(ctx.db, auth, deviceIds);
+  await assertShareableDevices(ctx.db, auth, deviceIds);
   const now = new Date();
 
   const created = await ctx.db.transaction(async (tx) => {

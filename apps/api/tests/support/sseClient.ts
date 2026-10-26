@@ -59,16 +59,20 @@ export class SseClient {
     for (const wake of this.#waiters.splice(0)) wake();
   }
 
-  /** Waits until an event of `type` has arrived (or fails after `timeoutMs`). */
+  /**
+   * Waits until an event of `type` has arrived — among the events from index
+   * `after` on, to wait for the next one — or fails after `timeoutMs`.
+   */
   async waitFor<T extends ServerEvent["type"]>(
     type: T,
     timeoutMs = 5_000,
+    after = 0,
   ): Promise<Extract<ServerEvent, { type: T }>> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      const found = this.events.find(
-        (event): event is Extract<ServerEvent, { type: T }> => event.type === type,
-      );
+      const found = this.events
+        .slice(after)
+        .find((event): event is Extract<ServerEvent, { type: T }> => event.type === type);
       if (found !== undefined) return found;
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw new Error(`No "${type}" event within ${timeoutMs} ms`);
