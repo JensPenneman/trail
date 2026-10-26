@@ -4,6 +4,7 @@ import {
   type createShareLinkRequestSchema,
   defaultShareLinkHours,
   maxShareLinkDays,
+  minShareLinkHours,
 } from "@trail/contracts/shareLink";
 import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
@@ -18,18 +19,18 @@ import { toShareLink } from "./toShareLink";
 
 type CreateShareLink = z.output<typeof createShareLinkRequestSchema>;
 
-/** A request's clock and ours differ a little: an expiry a minute past the limit still counts as the limit. */
+/** A request's clock and ours differ a little: an expiry a minute past a limit still counts. */
 const slackMs = 60_000;
 
-/** "Jens" of "Jens Penneman": what visitors see when the owner gives no label. */
-const firstName = (displayName: string): string =>
-  displayName.trim().split(/\s+/)[0]?.slice(0, 60) || "Trail";
+/** What visitors see when the owner gives no label: nothing of the account. */
+const defaultShareLinkLabel = "Shared location";
 
 /**
  * Makes a public link (docs/architecture.md §8.4). Its secret and URL are in
  * this answer only; the database keeps the SHA-256 of the secret. A link
- * always expires: in 24 hours unless asked otherwise, in 30 days at most. At
- * most `maxCurrentShareLinks` work at the same time.
+ * always expires: in 24 hours unless asked otherwise, in an hour at the
+ * soonest and 30 days at the latest. At most `maxCurrentShareLinks` work at
+ * the same time. Without a label it is "Shared location", never a name.
  */
 export async function makeShareLink(
   ctx: AppContext,
@@ -44,14 +45,14 @@ export async function makeShareLink(
       ? new Date(now.getTime() + defaultShareLinkHours * 3_600_000)
       : new Date(request.expiresAt);
   if (
-    expiresAt.getTime() <= now.getTime() ||
+    expiresAt.getTime() < now.getTime() + minShareLinkHours * 3_600_000 - slackMs ||
     expiresAt.getTime() > now.getTime() + maxShareLinkDays * 86_400_000 + slackMs
   ) {
     throw new HttpError(
       400,
       "validation_failed",
-      `A link expires in the future, within ${maxShareLinkDays} days.`,
-      { expiresAt: [`Pick a time in the next ${maxShareLinkDays} days`] },
+      `A link runs at least ${minShareLinkHours} hour and at most ${maxShareLinkDays} days.`,
+      { expiresAt: [`Pick a time between an hour and ${maxShareLinkDays} days from now`] },
     );
   }
   const { secret, hash } = newShareLinkSecret();
@@ -80,7 +81,7 @@ export async function makeShareLink(
       .values({
         ownerUserId: auth.user.id,
         tokenHash: hash,
-        label: request.label ?? firstName(auth.user.displayName),
+        label: request.label ?? defaultShareLinkLabel,
         deviceIds,
         precision: request.precision,
         historyDays: request.historyDays ?? null,

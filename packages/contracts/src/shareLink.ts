@@ -26,6 +26,8 @@ export const shareSecretHeader = "X-Share-Secret";
 
 /** A link runs this long unless the owner picks another expiry. */
 export const defaultShareLinkHours = 24;
+/** No link ends sooner than this. */
+export const minShareLinkHours = 1;
 /** No link outlives this. */
 export const maxShareLinkDays = 30;
 /** A public page draws the whole shared history on every refresh, so it stays short. */
@@ -43,7 +45,7 @@ const instant = (description: string) =>
 
 const label = z.string().trim().min(1).max(60).meta({
   description: "Shown to visitors as the page's title.",
-  example: "Jens on the way home",
+  example: "On the way home",
 });
 
 const linkHistoryDays = z
@@ -94,9 +96,10 @@ export const shareLinkParamsSchema = z.object({ id: linkId });
 
 /** `GET /api/v1/share-links` */
 export const shareLinkListResponseSchema = z.object({
-  links: z
-    .array(shareLinkSchema)
-    .meta({ description: "Links that were not turned off, newest first; expired ones too." }),
+  links: z.array(shareLinkSchema).meta({
+    description:
+      "Links that were not turned off: the working ones, then expired ones, each newest first, at most 50.",
+  }),
 });
 export type ShareLinkListResponse = z.infer<typeof shareLinkListResponseSchema>;
 
@@ -108,7 +111,9 @@ const preciseForHistory = (body: {
 /** `POST /api/v1/share-links` */
 export const createShareLinkRequestSchema = z
   .object({
-    label: label.optional().meta({ description: "Defaults to your first name." }),
+    label: label.optional().meta({
+      description: "Defaults to “Shared location”: visitors see nothing of your account.",
+    }),
     deviceIds: shareDeviceIdsSchema.optional(),
     precision: sharePrecisionSchema,
     historyDays: linkHistoryDays.optional(),
@@ -117,7 +122,7 @@ export const createShareLinkRequestSchema = z
       .datetime({ offset: true })
       .optional()
       .meta({
-        description: `When the link stops working: in the future and at most ${maxShareLinkDays} days away. Defaults to ${defaultShareLinkHours} hours from now.`,
+        description: `When the link stops working: at least ${minShareLinkHours} hour and at most ${maxShareLinkDays} days away. Defaults to ${defaultShareLinkHours} hours from now.`,
         example: "2026-10-27T08:41:07.000Z",
       }),
   })

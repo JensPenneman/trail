@@ -78,7 +78,8 @@ describe("making a link", () => {
     // The secret is the fragment: browsers never send it to a server, a proxy or as a referrer.
     expect(made.url).toBe(`${testOrigin}/s#${made.secret}`);
     expect(made.link).toMatchObject({
-      label: "Jens",
+      // Never the account's name: the owner chose "Jens Penneman", visitors see none of it.
+      label: "Shared location",
       deviceIds: null,
       precision: "precise",
       historyDays: null,
@@ -114,6 +115,12 @@ describe("making a link", () => {
       }
     };
     await refused({ expiresAt: new Date(Date.now() - 1000).toISOString() }, 400, "expiresAt");
+    // An hour at least: no burst of links that vanish before anyone could check them.
+    await refused(
+      { expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() },
+      400,
+      "expiresAt",
+    );
     await refused(
       { expiresAt: new Date(Date.now() + 31 * 86_400_000).toISOString() },
       400,
@@ -143,6 +150,29 @@ describe("making a link", () => {
     }).expect(409);
     expect(errorOf(refused.body).code).toBe("conflict");
     for (const id of made) await from(owner, "delete", apiPaths.v1.shareLinks.one(id)).expect(204);
+  });
+});
+
+describe("the list of links", () => {
+  it("is bounded: every working link first, then the newest expired ones", async () => {
+    await t.ctx.db.execute(sql`UPDATE share_links SET revoked_at = now() WHERE revoked_at IS NULL`);
+    const keeper = await makeLink({ label: "Keeper" });
+    for (let round = 0; round < 3; round += 1) {
+      for (let index = 0; index < 19; index += 1)
+        await makeLink({ label: `Brief ${round}.${index}` });
+      await t.ctx.db.execute(sql`
+        UPDATE share_links SET expires_at = now() - interval '1 second'
+        WHERE revoked_at IS NULL AND id <> ${keeper.link.id} AND expires_at > now()
+      `);
+    }
+    const listed = shareLinkListResponseSchema.parse(
+      (await owner.get(apiPaths.v1.shareLinks.root).expect(200)).body,
+    ).links;
+    expect(listed).toHaveLength(50);
+    expect(listed[0]?.id).toBe(keeper.link.id);
+    expect(listed.slice(1).every((link) => link.status === "expired")).toBe(true);
+    // The newest expired ones are the ones kept.
+    expect(listed[1]?.label).toBe("Brief 2.18");
   });
 });
 

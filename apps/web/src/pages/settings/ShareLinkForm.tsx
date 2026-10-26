@@ -1,7 +1,6 @@
 import { type SharePrecision, sharePrecisions } from "@trail/contracts/share";
 import { maxShareLinkHistoryDays } from "@trail/contracts/shareLink";
 import { type FormEvent, useState } from "react";
-import { useSessionUser } from "../../app/useSessionUser";
 import { useDeviceColors } from "../../devices/useDeviceColors";
 import { useFormatter } from "../../format/useFormatter";
 import { useCreateShareLink } from "../../queries/useCreateShareLink";
@@ -34,13 +33,11 @@ const historyChoices = [1, 3, maxShareLinkHistoryDays] as const;
  * once, with a QR code, right after it is made.
  */
 export function ShareLinkForm() {
-  const user = useSessionUser();
   const format = useFormatter();
   const devices = useDevices();
   const colors = useDeviceColors();
   const create = useCreateShareLink();
   const announce = useAnnounce();
-  const firstName = user.displayName.trim().split(/\s+/)[0] ?? user.displayName;
   const [label, setLabel] = useState("");
   const [deviceIds, setDeviceIds] = useState<string[] | null>(null);
   const [precision, setPrecision] = useState<SharePrecision>("precise");
@@ -75,8 +72,8 @@ export function ShareLinkForm() {
       <form className="share-link-form" onSubmit={onSubmit} noValidate>
         <TextField
           label="Label (optional)"
-          hint="Visitors see it as the page’s title."
-          placeholder={firstName}
+          hint="Visitors see it as the page’s title; without one it reads “Shared location”."
+          placeholder="Shared location"
           maxLength={60}
           autoComplete="off"
           value={label}

@@ -104,4 +104,13 @@ describe("Settings › Sharing", () => {
     expect(within(change).getByRole("radio", { name: /No change/ })).toBeChecked();
     expect(within(change).queryByLabelText("Email address")).toBeNull();
   });
+
+  it("offers a neutral label for links", async () => {
+    mockApi(standardRoutes());
+    renderPage(<SharingSection headingId="sharing" />, { user });
+    expect(await screen.findByLabelText("Label (optional)")).toHaveAttribute(
+      "placeholder",
+      "Shared location",
+    );
+  });
 });

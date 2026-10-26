@@ -10,7 +10,7 @@ export const listShareLinks = defineRoute(
     operationId: "listShareLinks",
     summary: "List public links",
     description:
-      "Your public links that were not turned off, newest first, with what each shows, when it expires and how often it was opened. Expired links stay listed for 30 days. Secrets are never listed: a link's address is shown once, when it is made.",
+      "Your public links that were not turned off — the working ones, then expired ones (kept for 30 days), each newest first, at most 50 — with what each shows, when it expires and how often it was opened. Secrets are never listed: a link's address is shown once, when it is made.",
     tags: ["Sharing"],
     auth: { scopes: ["shares:read"] },
     responses: { 200: shareLinkListResponseSchema },

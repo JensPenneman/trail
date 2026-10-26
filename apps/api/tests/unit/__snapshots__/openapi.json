@@ -2489,7 +2489,7 @@
       "get": {
         "operationId": "listShareLinks",
         "summary": "List public links",
-        "description": "Your public links that were not turned off, newest first, with what each shows, when it expires and how often it was opened. Expired links stay listed for 30 days. Secrets are never listed: a link's address is shown once, when it is made.\n\n**Access:** an API token with the scope `shares:read`, or a signed-in session.",
+        "description": "Your public links that were not turned off — the working ones, then expired ones (kept for 30 days), each newest first, at most 50 — with what each shows, when it expires and how often it was opened. Secrets are never listed: a link's address is shown once, when it is made.\n\n**Access:** an API token with the scope `shares:read`, or a signed-in session.",
         "tags": [
           "Sharing"
         ],
@@ -2513,7 +2513,7 @@
                       "items": {
                         "$ref": "#/components/schemas/ShareLink"
                       },
-                      "description": "Links that were not turned off, newest first; expired ones too."
+                      "description": "Links that were not turned off: the working ones, then expired ones, each newest first, at most 50."
                     }
                   },
                   "required": [
@@ -2544,7 +2544,7 @@
       "post": {
         "operationId": "createShareLink",
         "summary": "Make a public link",
-        "description": "Makes a secret web address that shows your location to anyone who has it, without an account: a page with the label, the devices you pick at the precision you pick, optionally their track of the last days (precise only) and battery and activity. It always expires — in 24 hours unless you choose another time, within 30 days — and you can turn it off at any time. The answer carries the secret and the address once; Trail keeps only a hash. At most 20 links work at a time (409).\n\n**Access:** an API token with the scope `shares:write`, or a signed-in session.",
+        "description": "Makes a secret web address that shows your location to anyone who has it, without an account: a page with the label, the devices you pick at the precision you pick, optionally their track of the last days (precise only) and battery and activity. Without a label it reads “Shared location”, never your name. It always expires — in 24 hours unless you choose another time, at least an hour and at most 30 days away — and you can turn it off at any time. The answer carries the secret and the address once; Trail keeps only a hash. At most 20 links work at a time (409).\n\n**Access:** an API token with the scope `shares:write`, or a signed-in session.",
         "tags": [
           "Sharing"
         ],
@@ -2985,11 +2985,11 @@
         "type": "object",
         "properties": {
           "label": {
-            "description": "Defaults to your first name.",
+            "description": "Defaults to “Shared location”: visitors see nothing of your account.",
             "type": "string",
             "minLength": 1,
             "maxLength": 60,
-            "example": "Jens on the way home"
+            "example": "On the way home"
           },
           "deviceIds": {
             "anyOf": [
@@ -3032,7 +3032,7 @@
             "example": false
           },
           "expiresAt": {
-            "description": "When the link stops working: in the future and at most 30 days away. Defaults to 24 hours from now.",
+            "description": "When the link stops working: at least 1 hour and at most 30 days away. Defaults to 24 hours from now.",
             "example": "2026-10-27T08:41:07.000Z",
             "type": "string",
             "format": "date-time"
@@ -5208,7 +5208,7 @@
             "minLength": 1,
             "maxLength": 60,
             "description": "Shown to visitors as the page's title.",
-            "example": "Jens on the way home"
+            "example": "On the way home"
           },
           "deviceIds": {
             "anyOf": [

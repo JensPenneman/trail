@@ -135,33 +135,16 @@ test("a public link shows your location without an account until it is turned of
   ).toBeVisible();
   await expectAccessible(visitor.page, "a link that has ended");
 
-  // A link that runs out: here after three seconds (the dialog offers an hour at least).
-  const made = await page.request.post("/api/v1/share-links", {
+  // A link runs an hour at least, so none ends while this test waits: an expired link answers
+  // like a turned-off one (`share_expired`, covered by the API's integration tests).
+  const brief = await page.request.post("/api/v1/share-links", {
     data: { precision: "area", expiresAt: new Date(Date.now() + 3000).toISOString() },
     headers: { Origin: new URL(page.url()).origin },
   });
-  expect(made.status()).toBe(201);
-  const { url: brief, secret: briefSecret } = (await made.json()) as {
-    url: string;
-    secret: string;
-  };
-  await visitor.page.goto(brief);
-  await expect(visitor.page.getByRole("heading", { level: 1 })).toBeVisible();
-  await expect
-    .poll(
-      async () =>
-        (
-          await visitor.page.request.get("/api/public/share", {
-            headers: { "X-Share-Secret": briefSecret },
-          })
-        ).status(),
-      { timeout: 15_000 },
-    )
-    .toBe(404);
-  await visitor.page.reload();
-  await expect(
-    visitor.page.getByRole("heading", { level: 2, name: "This link has ended" }),
-  ).toBeVisible();
+  expect(brief.status()).toBe(400);
+  expect(await brief.json()).toMatchObject({
+    error: { code: "validation_failed", fields: { expiresAt: [expect.any(String)] } },
+  });
 
   await visitor.page.goto(`/s#trls_${"A".repeat(43)}`);
   await expect(
