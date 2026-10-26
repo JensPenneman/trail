@@ -293,7 +293,7 @@ change. `fields` appears with `validation_failed` and maps each request field
 |---|---|---|
 | Per client address | 600 a minute | every API request from the address, the dashboard's included |
 | Per API token | 600 a minute | every request with the token, from any address, to `/api/v1` and to the MCP server together |
-| Refused tokens | 30 in 10 minutes | requests with an invalid token, per address; valid tokens are never held back by it |
+| Refused tokens | 30 in 10 minutes | requests with an invalid token, per address, to `/api/v1` and to the MCP server together; valid tokens are never held back by it |
 
 The server's owner can change them. Responses carry the limits that applied in
 `RateLimit-Policy` and the remaining quota in `RateLimit` (IETF draft 8), one

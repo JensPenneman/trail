@@ -209,7 +209,7 @@ needs it.
 
 | You see | Why | What to do |
 |---|---|---|
-| `401`, `WWW-Authenticate: Bearer realm="trail"` | No `Authorization` header reached Trail | Check the client's header configuration; behind a proxy, check that it passes `Authorization` on |
+| `401`, `WWW-Authenticate: Bearer realm="trail"` | No API token reached Trail: no `Authorization` header at all, or one in another scheme — `Basic` from a proxy in front, say — which is no credential here | Check the client's header configuration; behind a proxy, check that it passes `Authorization: Bearer trlk_…` on unchanged |
 | `401` with `error="invalid_token"`, code `unauthorized` | The token is unknown, revoked, malformed or used from an address it does not allow | Copy the secret again, or create a new token |
 | `401`, code `token_expired` | The token has expired | Create a new token |
 | `403`, code `origin_not_allowed` | A web page on another origin made the request | Serve the client from an allowed origin, or ask the server's owner to add it to `MCP_ALLOWED_ORIGINS` |

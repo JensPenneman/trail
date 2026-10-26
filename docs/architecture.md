@@ -1096,8 +1096,8 @@ rest:
    and `Max-Age: 600`.
 5. `authenticateBearer(ctx)` with its failed-token limiter — one chain per
    app, so refused tokens count once per address for `/api/v1` and `/mcp` —
-   then
-   `requireApiToken`: without a token principal 401 `unauthorized` with
+   then `requireApiToken`: without a token principal — no `Authorization`, or
+   one in another scheme (`Basic` from a proxy) — 401 `unauthorized` with
    `WWW-Authenticate: Bearer realm="trail"`. The session is never loaded, so a
    cookie alone is refused.
 6. The per-token limiter: `tokenRateLimit(ctx)` gives one instance per app,
