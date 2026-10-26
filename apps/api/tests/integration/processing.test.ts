@@ -3,7 +3,7 @@ import { levelTracksResponseSchema } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { enqueueBackfill } from "../../src/processing/backfill";
-import { takeNextWindow } from "../../src/processing/processingQueue";
+import { rearmWindows, takeNextWindow } from "../../src/processing/processingQueue";
 import { processingVersion } from "../../src/processing/processingVersion";
 import { processWindow } from "../../src/processing/processWindow";
 import { planWindow } from "../../src/processing/runPipeline";
@@ -52,6 +52,15 @@ const segmentsOf = async (deviceId: string, context = t) =>
       SELECT kind, mode_inferred, point_count FROM segments WHERE device_id = ${deviceId} ORDER BY started_at
     `)
   ).rows;
+
+/** Queued windows whose ready time has more than milliseconds (the worker's clock has no more). */
+const subMillisecondReadyTimes = async () =>
+  (
+    await t.ctx.db.execute<{ count: number }>(sql`
+      SELECT count(*)::int AS count FROM processing_queue
+      WHERE extract(microseconds FROM next_at)::bigint % 1000 <> 0
+    `)
+  ).rows[0]?.count;
 
 const tracksAt = async (deviceId: string, level: string, range = day) =>
   levelTracksResponseSchema.parse(
@@ -242,6 +251,7 @@ describe("the backfill", () => {
 
     const queued = await enqueueBackfill(t.ctx.db, processingVersion);
     expect(queued).toBeGreaterThanOrEqual(3);
+    expect(await subMillisecondReadyTimes()).toBe(0);
     expect(await enqueueBackfill(t.ctx.db, processingVersion)).toBe(0);
     const [first] = await takeNextWindow(t.ctx.db, new Date());
     expect(first?.priority).toBe(1);
@@ -271,6 +281,25 @@ describe("the backfill", () => {
       ).toEqual(["car", "car", "car"]);
     } finally {
       await restarted.close();
+    }
+  });
+});
+
+describe("the queue's clock", () => {
+  it("makes a window whose tiles arrived ready by the worker's clock at once", async () => {
+    const device = await newDevice("Clockwork");
+    // The database keeps microseconds, the worker's clock milliseconds: twenty
+    // times in a row, the window must be ready the moment it is made ready.
+    for (let run = 0; run < 20; run += 1) {
+      await t.ctx.db.execute(sql`
+        INSERT INTO processing_queue (device_id, from_at, to_at, reason, priority, next_at, missing_tiles)
+        VALUES (${device.id}, now(), now() + interval '1 hour', 'map', 0, now() + interval '1 day', '[]'::jsonb)
+      `);
+      expect(await rearmWindows(t.ctx.db)).toBe(1);
+      expect(await subMillisecondReadyTimes()).toBe(0);
+      const rows = await takeNextWindow(t.ctx.db, new Date());
+      expect(rows.map((row) => row.deviceId)).toEqual([device.id]);
+      await t.ctx.db.execute(sql`DELETE FROM processing_queue WHERE device_id = ${device.id}`);
     }
   });
 });

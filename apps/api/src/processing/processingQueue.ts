@@ -204,10 +204,17 @@ export async function awaitTiles(
   `);
 }
 
+/**
+ * The database's time to the millisecond, for `next_at`: the worker asks for
+ * windows ready by its own clock, which has milliseconds only, so a window
+ * made ready now must not lie a fraction of a millisecond ahead of it.
+ */
+export const readyNow = sql.raw("date_trunc('milliseconds', now())");
+
 /** Makes the windows ready whose missing tiles have all arrived; returns how many. */
 export async function rearmWindows(db: Executor): Promise<number> {
   const result = await db.execute(sql`
-    UPDATE processing_queue q SET next_at = now(), missing_tiles = NULL
+    UPDATE processing_queue q SET next_at = ${readyNow}, missing_tiles = NULL
     WHERE q.missing_tiles IS NOT NULL
       AND NOT EXISTS (
         SELECT 1 FROM jsonb_array_elements_text(q.missing_tiles) AS m(key)

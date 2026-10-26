@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { Database, Executor } from "../db/database";
-import { queuePriority } from "./processingQueue";
+import { queuePriority, readyNow } from "./processingQueue";
 
 interface StateRow extends Record<string, unknown> {
   version: number | null;
@@ -21,9 +21,10 @@ export async function enqueueBackfill(db: Database, version: number): Promise<nu
     `);
     if (state.rows[0]?.version === version) return 0;
     const queued = await tx.execute(sql`
-      INSERT INTO processing_queue (device_id, from_at, to_at, reason, priority)
+      INSERT INTO processing_queue (device_id, from_at, to_at, reason, priority, next_at)
       SELECT s.device_id, (s.date::timestamp AT TIME ZONE u.timezone),
-        ((s.date + 1)::timestamp AT TIME ZONE u.timezone), 'backfill', ${queuePriority.backfill}
+        ((s.date + 1)::timestamp AT TIME ZONE u.timezone), 'backfill', ${queuePriority.backfill},
+        ${readyNow}
       FROM daily_stats s
       JOIN devices d ON d.id = s.device_id
       JOIN users u ON u.id = d.user_id
@@ -49,9 +50,9 @@ export async function enqueueBackfill(db: Database, version: number): Promise<nu
  */
 export async function enqueueCatchUp(db: Executor): Promise<number> {
   const result = await db.execute(sql`
-    INSERT INTO processing_queue (device_id, from_at, to_at, reason, priority)
+    INSERT INTO processing_queue (device_id, from_at, to_at, reason, priority, next_at)
     SELECT d.id, processed.last - interval '30 minutes', recorded.last + interval '1 second',
-      'catch-up', ${queuePriority.normal}
+      'catch-up', ${queuePriority.normal}, ${readyNow}
     FROM devices d
     CROSS JOIN LATERAL (SELECT max(recorded_at) AS last FROM locations WHERE device_id = d.id) recorded
     CROSS JOIN LATERAL (SELECT max(recorded_at) AS last FROM processed_points WHERE device_id = d.id) processed
