@@ -944,7 +944,8 @@ hidden by the viewer; for a token only with `people:read`), each as
 (the live window, 12 h by default) for live-only ones: Overland pauses while a
 phone stands still, so a shorter window would hide everyone who sits still.
 Requested ids must all be accessible (else 404). Shared data is readable
-through the people routes, the live events and the public link endpoint only;
+through the people routes, the live events, the public link endpoint and the
+MCP server's `get_people` (§8.6, through `loadPeople`) only;
 every other read (devices, locations, tracks, visits, trips, statistics, the
 heatmap, exports) stays own-devices-only.
 
@@ -1118,7 +1119,8 @@ the tools whose scopes the token holds, in the order of `mcpTools` (stable,
 so clients can cache the list); a tool it may not use answers like an
 unknown one (JSON-RPC `-32602`). A call goes through `runMcpWork`: the scopes
 again; for `read` a transaction `READ ONLY` with `SET LOCAL
-statement_timeout = '10s'`; the answer through the output schema (whatever
+statement_timeout = '10s'` (unless the tool's functions take the whole context
+and query the pool themselves, `transaction: false`: `get_people`); the answer through the output schema (whatever
 it does not name is dropped; a mismatch is logged with codes and paths only
 and answers a generic failure); a log line at info with the tool, outcome,
 duration, items, `resultBytes` and the token's id — never arguments, results
@@ -1137,6 +1139,7 @@ and answers a generic message.
 | `get_visits` | `locations:read` | `findVisits` |
 | `get_trips` | `history:read` | `findTrips` |
 | `set_transport_mode` | `locations:read`, `locations:write` | `setDeviceMode(…, { source: "mcp" })`, then `processing.notify()` and the `segments` event, like `POST /api/v1/devices/{id}/mode` |
+| `get_people` | `people:read` | `loadPeople` — the sharing gate (`resolveAccessibleDevices`, `toSharedDevice`, §8.5); names, precision, expiry and per device the projected position, its age, and battery and mode only with details; no addresses or ids; queries on the pool (`transaction: false`), and looking stamps `last_viewed_at` |
 
 `device` is an id or the exact name (NFC, trimmed) of one device the token
 reaches (`chooseDevice`); without it a single-device tool takes the device
@@ -1148,8 +1151,8 @@ the template `trail://devices/{id}/location` (`locations:read`,
 `get_current_location`'s answer; listed per device the token reaches; any
 other id is `ResourceNotFoundError`, `-32602`). No prompts.
 
-**Text from users.** Device names (and, later, people's names and share
-labels) reach the agent's model. `safeText` turns control, format and
+**Text from users.** Device names and people's display names reach the
+agent's model. `safeText` turns control, format and
 separator characters (C0, DEL, C1, zero-width and bidirectional characters,
 tag characters) into spaces, collapses white space, repairs lone surrogates
 and cuts at 80 code points; `deviceRef` and the summary lines quote names
@@ -1590,8 +1593,10 @@ which are merged by hand; majors wait for a person, security ones too.
   let go, one rate-limit budget with `/api/v1`, the log line);
   `mcpTools.test.ts` every tool and resource on processed journeys,
   device-limited tokens, the 31-day and 500-item caps, `set_transport_mode`
-  with source `mcp`, the read-only transaction and its timeout, and a device
-  named to instruct the agent.
+  with source `mcp`, `get_people` at each sharer's precision (no exact
+  position, details or distance where not granted, no addresses or ids,
+  hidden and stopped shares left out), the read-only transaction and its
+  timeout, and a device and a sharer named to instruct the agent.
   The migration-upgrade test also records rows in the user-data tables that
   later migrations add (`api_tokens`, `mode_overrides`, and `shares`,
   `share_links`, `hidden_people` and the grid key of sharing), each with the

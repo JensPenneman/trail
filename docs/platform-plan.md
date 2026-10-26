@@ -656,7 +656,7 @@ scopes it holds (all of them); calling another answers like an unknown tool.
 | `get_visits({ from, to, device? })` | `locations:read` | as the API (visits are places) |
 | `get_trips({ from, to, device? })` | `history:read` | as the API |
 | `set_transport_mode({ mode, device?, until? })` | `locations:read`, `locations:write` | the quick override (§3.5), source `mcp`; its answer is the mode now (location data) |
-| `get_people` | `people:read` | people sharing with the owner and their projected location (after §4) |
+| `get_people` | `people:read` | people sharing with the owner and their projected location, through `loadPeople` only; no addresses or ids |
 
 Resources: `trail://devices` (`devices:read`) and
 `trail://devices/{id}/location` (`locations:read`). No prompts.

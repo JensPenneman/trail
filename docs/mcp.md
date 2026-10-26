@@ -94,6 +94,7 @@ every scope in its row. Anything that can yield coordinates needs
 | `get_visits({ from, to, device? })` | `locations:read` | The places iOS saw the phones stay at (Overland's visits), with arrival, departure and duration. |
 | `get_trips({ from, to, device? })` | `history:read` | Trips recorded with Overland's trip recorder: mode, times, distance, speed, steps. No coordinates. |
 | `set_transport_mode({ mode, device?, until? })` | `locations:read`, `locations:write` | Tells Trail how a device travels from now on, until `until` or the next stop; `mode: null` ends it. Recorded with the source `mcp`. Its answer is the mode now, which is location data, hence both scopes. |
+| `get_people` | `people:read` | The people who share their location with you, as each chose: name, precision and until when, and per shared device its newest position at that precision, how old it is, and battery and mode only where they share details; the distance from your own newest position needs `locations:read` too. |
 
 `device` takes a device's id (from `list_devices`) or its exact name. Without
 it, the single-device tools use the device that reported a position most
@@ -123,9 +124,10 @@ text only.
   (`2026-10-26T09:41:07+01:00`). Times you send need an offset or `Z`; a
   `date` is a calendar day in the account's time zone; a range runs from
   `from` (included) to `to` (excluded).
-- **Names** of devices are what someone typed. They come back as plain
-  data, without control or invisible characters and cut at 80 characters,
-  and the server's instructions tell the model to treat them as data.
+- **Names** of devices and people are what someone typed. They come back as
+  plain data, without control or invisible characters and cut at 80
+  characters, and the server's instructions tell the model to treat them as
+  data.
 - **Failures** of a tool — no such device, a range that is too long,
   arguments that do not match its schema, a database that is briefly away —
   come back as a tool result with `isError: true` and a message written for
@@ -168,10 +170,16 @@ it, so the server was built against these threats:
   `get_trips` give times, counts and distances, never a place; every
   answer goes out through its output schema, which drops whatever it does
   not name.
-- **Other people's positions.** Shared locations are not part of the tools
-  yet; they will only ever come through the sharing rules and at the
-  precision their owners chose.
-- **Prompt injection.** Device names reach the agent's model. They are
+- **Other people's positions.** `get_people` reads them only through the
+  sharing rules the People page uses (`resolveAccessibleDevices` and
+  `toSharedDevice`): only people who share with you and whom you have not
+  hidden, each device at the precision its owner chose — for approximate and
+  area shares the centre of a cell, never the position — and battery and mode
+  only where they share details. Their addresses and account and device ids
+  are left out. Like the People page, looking stamps the shares' last view,
+  which their owners see.
+- **Prompt injection.** Device names and people's display names reach the
+  agent's model. They are
   never put into the server's instructions or a tool's description; in
   answers they are data fields, stripped of control, format and invisible
   characters (bidirectional overrides, zero-width and tag characters) and
@@ -216,5 +224,3 @@ needs it.
   metadata (RFC 9728) and an authorization server that issues Trail's
   tokens; both are a planned follow-up on top of the token system. Until
   then, use a client that can send a header, such as Claude Code.
-- **People.** A tool for the people who share their location with you,
-  through the sharing rules, follows once sharing ships.

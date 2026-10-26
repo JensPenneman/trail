@@ -76,7 +76,8 @@ yourself: location data is personal data.
 - **MCP server** (`/mcp`, [docs/mcp.md](docs/mcp.md)): API tokens only,
   never the session cookie; pages on other origins refused before any token
   lookup; a token's scopes decide which tools it sees and its devices which
-  data, with positions only for `locations:read`; names typed by users reach
+  data, with positions only for `locations:read` and other people's only
+  through the sharing rules, at their precision; names typed by users reach
   an agent's model only as sanitised data, never as instructions; reads are
   read-only, short and bounded (31 days, 500 items); calls are logged without
   their arguments or results.

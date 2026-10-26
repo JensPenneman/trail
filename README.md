@@ -51,8 +51,8 @@ every pull request gets a preview deployment of its own.
   be rolled or revoked at any time.
 - **MCP server**: agents connect to `/mcp` with an API token and ask where
   the devices are, where they were at a time, the timeline of stops and
-  moves, a day in figures, visits and trips, and can say how you travel now
-  ([docs/mcp.md](docs/mcp.md)).
+  moves, a day in figures, visits and trips, and the people who share with
+  you, and can say how you travel now ([docs/mcp.md](docs/mcp.md)).
 - **Operations**: one image for amd64 and arm64, releases deployed
   automatically, a preview per pull request, daily database dumps.
 
