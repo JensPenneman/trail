@@ -63,13 +63,30 @@ const postJsonOnly: RequestHandler = (req, res, next) => {
 };
 
 /**
+ * One JSON-RPC message per request, as every revision since 2025-06-18 has
+ * it: the SDK's 2025 transport would still take a batch of up to 100, which
+ * would let one request — one count for the rate limits — run a hundred tool
+ * calls.
+ */
+const singleMessage: RequestHandler = (req, res, next) => {
+  if (Array.isArray(req.body)) {
+    sendApiError(
+      res,
+      new HttpError(400, "bad_request", "Send one JSON-RPC message per request, not a batch."),
+    );
+    return;
+  }
+  next();
+};
+
+/**
  * `/mcp` (docs/mcp.md), mounted before compression and the dashboard's `/api`
  * chain so it sets its own order: CORS headers (so a browser client can read
  * every refusal, as on `/api/v1`) → the per-address limiter the whole API
  * shares → the `Origin` check → preflight → the API token (bearer only: the
  * session cookie is never read, and the failed-token limiter counts refusals)
  * → the per-token limiter `/api/v1` shares → POST with JSON only → the 1 MB
- * body parser → the SDK. Refusals before the SDK use the API's error body;
+ * body parser → one message, no batch → the SDK. Refusals before the SDK use the API's error body;
  * once the SDK has the request, it answers in JSON-RPC.
  */
 export function mcpRouter(
@@ -92,6 +109,7 @@ export function mcpRouter(
   router.use(limits.perToken);
   router.all("/", postJsonOnly);
   router.post("/", express.json({ limit: mcpBodyLimitBytes, type: "application/json" }));
+  router.post("/", singleMessage);
   router.post("/", async (req, res) => {
     const principal = getRequestAuth(req);
     if (principal?.kind !== "token") throw new Error("/mcp reached the SDK without a token");

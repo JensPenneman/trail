@@ -383,6 +383,13 @@ describe("HTTP", () => {
     expect(errorOf(large.body).code).toBe("payload_too_large");
   });
 
+  it("takes one message per request: a batch would run many calls for one count", async () => {
+    const response = await post([toolsList, { ...toolsList, id: 3 }], secretOf("agent")).expect(
+      400,
+    );
+    expect(errorOf(response.body).message).toContain("not a batch");
+  });
+
   it("parses no body without a valid token", async () => {
     const response = await request(t.app)
       .post(apiPaths.mcp)
