@@ -2,7 +2,12 @@ import type { ApiScope } from "@trail/contracts/apiScope";
 import type { Request, Response } from "express";
 import type { z } from "zod";
 import type { AppContext } from "../appContext";
-import { getRequestAuth, hasScope, type RequestAuth } from "../auth/requestAuth";
+import {
+  getRequestAuth,
+  hasScope,
+  type RequestAuth,
+  type TokenPrincipal,
+} from "../auth/requestAuth";
 import { hasBody } from "../http/hasBody";
 import { HttpError, notFound } from "../http/httpError";
 import { validationError } from "../http/validationError";
@@ -16,14 +21,16 @@ type HttpMethod = "get" | "post" | "put" | "patch" | "delete";
 export type SuccessStatus = 200 | 201 | 202 | 204;
 
 /**
- * Who may call a route: anyone (`"public"`), or a principal holding one of
- * `scopes` — all of them with `all: true`. A session holds every scope, so the
- * signed-in dashboard may call every route; an API token only what its scopes
- * allow.
+ * Who may call a route: anyone (`"public"`), any API token whatever its scopes
+ * (`"token"`, for operations about the calling token itself), or a principal
+ * holding one of `scopes` — all of them with `all: true`. A session holds every
+ * scope, so the signed-in dashboard may call every scoped route; an API token
+ * only what its scopes allow.
  */
-export type RouteAuth =
-  | "public"
-  | { readonly scopes: readonly [ApiScope, ...ApiScope[]]; readonly all?: boolean };
+export type RouteAuth = "public" | "token" | ScopeRule;
+
+/** A scoped route: any one of `scopes` grants access, all of them with `all: true`. */
+type ScopeRule = { readonly scopes: readonly [ApiScope, ...ApiScope[]]; readonly all?: boolean };
 
 /** The validated parts of a request: zod objects for the path and the query string. */
 interface RouteRequest {
@@ -68,10 +75,15 @@ type RequestPart<Spec extends RouteSpec, K extends keyof RouteRequest> =
 interface RouteInput<Spec extends RouteSpec> {
   ctx: AppContext;
   /**
-   * Always a principal on a scoped route. A public route never loads the session
-   * (`createV1Router`), so there it is the API token's principal or null.
+   * Always a principal on a scoped route, and a token on a token route. A public
+   * route never loads the session (`createV1Router`), so there it is the API
+   * token's principal or null.
    */
-  auth: Spec["auth"] extends "public" ? RequestAuth | null : RequestAuth;
+  auth: Spec["auth"] extends "public"
+    ? RequestAuth | null
+    : Spec["auth"] extends "token"
+      ? TokenPrincipal
+      : RequestAuth;
   /** `undefined` when the spec has no such part. */
   params: RequestPart<Spec, "params">;
   query: RequestPart<Spec, "query">;
@@ -124,16 +136,13 @@ const realm = 'Bearer realm="trail"';
 const routePrefix = "/api/v1";
 
 /** The scopes the principal lacks for `rule`; empty when it may go ahead. */
-export function missingScopes(
-  auth: RequestAuth,
-  rule: Exclude<RouteAuth, "public">,
-): readonly ApiScope[] {
+export function missingScopes(auth: RequestAuth, rule: ScopeRule): readonly ApiScope[] {
   const lacking = rule.scopes.filter((scope) => !hasScope(auth, scope));
   if (rule.all === true || lacking.length === rule.scopes.length) return lacking;
   return [];
 }
 
-function scopeMessage(rule: Exclude<RouteAuth, "public">, missing: readonly ApiScope[]): string {
+function scopeMessage(rule: ScopeRule, missing: readonly ApiScope[]): string {
   const list = missing.join(", ");
   if (rule.all === true || missing.length === 1) {
     return `This API token lacks the scope${missing.length > 1 ? "s" : ""} ${list}.`;
@@ -149,8 +158,21 @@ function authorize(rule: RouteAuth, req: Request, res: Response): RequestAuth | 
     throw new HttpError(
       401,
       "unauthorized",
-      "Sign in, or send an API token as Authorization: Bearer trlk_….",
+      rule === "token"
+        ? "Send an API token as Authorization: Bearer trlk_…."
+        : "Sign in, or send an API token as Authorization: Bearer trlk_….",
     );
+  }
+  if (rule === "token") {
+    // Not a 403: nothing is refused to the person, the request just has no token to talk about.
+    if (auth.kind !== "token") {
+      throw new HttpError(
+        400,
+        "bad_request",
+        "This operation is about the API token that calls it: send one as Authorization: Bearer trlk_…, not a session.",
+      );
+    }
+    return auth;
   }
   const missing = missingScopes(auth, rule);
   if (missing.length > 0) {

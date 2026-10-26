@@ -751,7 +751,7 @@
     },
     "responses": {
       "BadRequest": {
-        "description": "The request is invalid: `validation_failed` lists the offending fields in `fields`; `bad_request` means unreadable JSON.",
+        "description": "The request is invalid: `validation_failed` lists the offending fields in `fields`; `bad_request` means unreadable JSON, or a session calling an operation that only an API token can call.",
         "content": {
           "application/json": {
             "schema": {

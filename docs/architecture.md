@@ -653,13 +653,14 @@ The spec:
 | `operationId` | unique, lowerCamelCase (`getDevice`) |
 | `summary`, `description` | a few words for the sidebar; Markdown, to which the document appends who may call the route |
 | `tags` | names from `v1Tags.ts` |
-| `auth` | `"public"` (no session is loaded, no body accepted: the handler sees a token's principal or none), or `{ scopes: [...] }` (any one grants access) / `{ scopes: [...], all: true }` |
+| `auth` | `"public"` (no session is loaded, no body accepted: the handler sees a token's principal or none); `"token"`, any API token whatever its scopes, for operations about the calling token itself (a session gets 400 `bad_request`); or `{ scopes: [...] }` (any one grants access) / `{ scopes: [...], all: true }` |
 | `request` | optional zod schemas: `params` (one key per path parameter; a value that fails it answers 404 — it names nothing), `query` (values are strings: coerce in the schema; failure 400 `validation_failed` with `fields`), `body` (JSON; not JSON 415, invalid 400) |
 | `responses` | the body schema of each success status (`200`, `201`, `202`, `204`); `null` for no body |
-| `errors` | error statuses beyond the implied ones (401, 403 and 503 for scoped routes, 404 with path parameters, 400 with a query or body, 413 and 415 with a body, 429 and 500 always), e.g. `[409]` |
+| `errors` | error statuses beyond the implied ones (401, 403 and 503 for scoped routes; 400, 401 and 503 for token routes; 404 with path parameters, 400 with a query or body, 413 and 415 with a body, 429 and 500 always), e.g. `[409]` |
 
 The handler receives `{ ctx, auth, params, query, body, req }`, typed from the
-spec — `auth` is non-null on scoped routes, absent parts are `undefined` — and
+spec — `auth` is non-null on scoped routes and a `TokenPrincipal` on token
+routes, absent parts are `undefined` — and
 returns `{ status, body, headers? }` with a status the spec lists; the type
 checker enforces both. The body goes out through that status's schema, so
 fields the schema does not name are dropped and a mismatch is a logged 500.
@@ -726,7 +727,8 @@ export const updateDevice = defineRoute(
 `openapi: "3.1.1"`, `info` (title "Trail API", the build's version, and
 docs/api.md without its title as the description), `servers` = `PUBLIC_URL`,
 `securitySchemes.bearer` (http bearer, `trlk_…`, the scope table), one security
-requirement per granting scope (`security: []` on public routes), the tags of
+requirement per granting scope (`security: []` on public routes, a bearer
+requirement without scopes on token routes), the tags of
 `v1Tags.ts`, shared error responses per status listing their codes, and the
 contracts as components (request parts as input schemas, responses as output
 schemas; regex patterns of UUIDs and timestamps are left out for
