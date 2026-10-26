@@ -1,6 +1,9 @@
 /* Starts the development stack: Postgres (compose.yaml), the API (tsx watch)
  * and the web app (Vite). Variables from .env override the shell's own — a
- * DATABASE_URL exported for another project must never reach this one. */
+ * DATABASE_URL exported for another project must never reach this one.
+ * In the development container (.devcontainer) its own Compose project holds
+ * the database and the environment, so neither compose.yaml nor .env is used,
+ * and Vite listens on every interface for `scripts/devc.sh up --web`. */
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -9,28 +12,37 @@ import { parseEnv } from "node:util";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const envPath = fileURLToPath(new URL("../.env", import.meta.url));
+const inDevContainer = process.env["TRAIL_DEVCONTAINER"] !== undefined;
 
-if (!existsSync(envPath)) {
+if (!inDevContainer && !existsSync(envPath)) {
   console.error("dev: .env is missing — copy .env.example to .env first");
   process.exit(1);
 }
 
 const env = {
   ...process.env,
-  ...parseEnv(readFileSync(envPath, "utf8")),
+  ...(inDevContainer ? {} : parseEnv(readFileSync(envPath, "utf8"))),
   NODE_ENV: "development",
   FORCE_COLOR: "1",
 };
 
-execFileSync("docker", ["compose", "up", "-d", "--wait"], { cwd: root, stdio: "inherit" });
+if (!inDevContainer) {
+  execFileSync("docker", ["compose", "up", "-d", "--wait"], { cwd: root, stdio: "inherit" });
+}
 
 const services = [
-  { name: "api", color: "\u001b[36m", workspace: "@trail/api" },
-  { name: "web", color: "\u001b[35m", workspace: "@trail/web" },
+  { name: "api", color: "\u001b[36m", workspace: "@trail/api", args: [] },
+  {
+    name: "web",
+    color: "\u001b[35m",
+    workspace: "@trail/web",
+    // A published port reaches the container on its own address, not on loopback.
+    args: inDevContainer ? ["--", "--host", "0.0.0.0"] : [],
+  },
 ];
 
-const children = services.map(({ name, color, workspace }) => {
-  const child = spawn("npm", ["run", "dev", "-w", workspace], {
+const children = services.map(({ name, color, workspace, args }) => {
+  const child = spawn("npm", ["run", "dev", "-w", workspace, ...args], {
     cwd: root,
     env,
     stdio: ["ignore", "pipe", "pipe"],

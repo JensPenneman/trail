@@ -1,0 +1,15 @@
+{
+  "name": "Trail",
+  "dockerComposeFile": "compose.yaml",
+  "service": "dev",
+  "workspaceFolder": "/workspaces/trail",
+  // The project name of scripts/devc.sh (trail-<branch>), so that VS Code and
+  // the script share this worktree's containers instead of starting a second set
+  "initializeCommand": ["sh", "scripts/devc.sh", "--initialize"],
+  "postCreateCommand": "npm ci",
+  "customizations": {
+    "vscode": {
+      "extensions": ["biomejs.biome"]
+    }
+  }
+}

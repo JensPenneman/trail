@@ -89,6 +89,7 @@ phone on the same Wi-Fi, set `INGEST_BASE_URL` to the Mac's LAN address (see
 | Script | What it does |
 |---|---|
 | `npm run dev` | database, API and web app with reload |
+| `npm run devc -- <arguments>` | `scripts/devc.sh`: [the development container](#develop-in-a-container) |
 | `npm run build` | production build: `apps/web/dist` and `apps/api/dist` |
 | `npm start` | runs the built server (`apps/api/dist/main.mjs`) |
 | `npm run db:up` / `npm run db:down` | start / stop the development database |
@@ -121,6 +122,63 @@ For coverage, pass the flag to the workspaces directly:
 Git hooks (lefthook) run Biome and the type check before a commit, commitlint
 on the message ([Conventional Commits](https://www.conventionalcommits.org))
 and the unit tests before a push.
+
+### Develop in a container
+
+`.devcontainer/` holds a development container: Node LTS, Chromium for the
+end-to-end tests and a PostgreSQL of its own, so every check runs inside
+Docker and several git worktrees can run theirs side by side. It needs Docker
+with the Compose plugin; `scripts/devc.sh` drives it from anywhere in a
+worktree.
+
+```sh
+scripts/devc.sh up          # build the image when needed, start, npm ci
+scripts/devc.sh npm test    # any command, run in the container
+scripts/devc.sh down        # remove this worktree's containers and volumes
+```
+
+The first `up` builds the image (1.2 GB) and installs the modules, a minute
+or two on a fast connection; later ones take seconds and run `npm ci` again
+only when `package-lock.json` has changed. Commands start the stack if it is
+not running and run in the matching directory of the container. The test
+databases are preset there (`.env` belongs to the host), so the other suites
+need no variables either:
+
+```sh
+scripts/devc.sh npm run test:integration
+scripts/devc.sh npm run build && scripts/devc.sh npm run test:e2e
+```
+
+Playwright runs one worker per suite in the container (`E2E_WORKERS=1`). Its
+browser draws the maps in software, a CPU's worth, and with more workers the
+suites of three worktrees at once overload Docker Desktop's 8 CPUs until
+tests time out. A suite takes about two minutes alone, as on CI, and about
+four with two others beside it; when it runs alone,
+`E2E_WORKERS=4 scripts/devc.sh npm run test:e2e` finishes in under one.
+
+`scripts/devc.sh shell` opens a shell, `scripts/devc.sh ps` lists the
+containers.
+
+Each worktree is a Compose project of its own, named after its branch:
+`trail-<branch>` with `/` as `-`, for example `trail-chore-devcontainer`. It
+has its own database, `node_modules` volumes (Linux builds, apart from the
+host's) and network, and publishes no port on the host, so worktrees never
+compete for one. VS Code's "Reopen in Container" uses the same project. Git
+stays on the host: commit there, where the hooks run with the host's own
+`npm ci`.
+
+For the app in a browser on the host, `scripts/devc.sh up --web` publishes
+Vite's port on a free port of the host's loopback and prints the address, for
+example `http://localhost:59206`; `scripts/devc.sh npm run dev` then serves
+the app there. Commands started through the script get that address as
+`PUBLIC_URL`, the origin passkeys belong to. A plain `up` removes the port
+again.
+
+`scripts/devc.sh down` removes the project's containers, network and volumes,
+the database included; run it before you delete a worktree or switch its
+branch, since the project name follows the branch and the old project would
+stay behind (`docker compose -p trail-<old-branch> down --volumes` removes it
+later). The image stays for the next `up`.
 
 ## Production
 
@@ -177,6 +235,7 @@ deploy/              compose stack for Launchway, .env example, local run
 docs/                architecture (the specification), operations, Overland
 scripts/             development, build, hook and release scripts
 tests/e2e/           Playwright end-to-end tests
+.devcontainer/       development container (scripts/devc.sh)
 compose.yaml         development database
 Dockerfile           the production image
 ```
