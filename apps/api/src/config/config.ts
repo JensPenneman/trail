@@ -30,6 +30,19 @@ interface BuildInfo {
   builtAt: string | null;
 }
 
+/** Location processing (docs/architecture.md §17.7). */
+export interface ProcessingSettings {
+  enabled: boolean;
+  /** Overpass interpreter for map data; null when mapping is switched off. */
+  overpassUrl: string | null;
+  /** Download budget per UTC day. */
+  overpassDailyBytes: number;
+  /** Map tiles are fetched again after this many days. */
+  osmTtlDays: number;
+  maxAccuracyM: number;
+  stopMinS: number;
+}
+
 /** Validated runtime configuration (docs/architecture.md §4). */
 export interface Config {
   nodeEnv: string;
@@ -60,4 +73,5 @@ export interface Config {
   logLevel: LogLevel;
   build: BuildInfo;
   rateLimits: RateLimitConfig;
+  processing: ProcessingSettings;
 }

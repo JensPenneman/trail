@@ -6,6 +6,7 @@ import { locationRoutes } from "./routes/locations/locationRoutes";
 import { profileRoutes } from "./routes/profile/profileRoutes";
 import { getOpenApiDocument } from "./routes/reference/getOpenApiDocument";
 import { tokenRoutes } from "./routes/tokens/tokenRoutes";
+import { transportRoutes } from "./routes/transport/transportRoutes";
 
 /**
  * The operations of the public API, in the order of the reference: one group
@@ -17,6 +18,7 @@ const operations: readonly V1Route[] = [
   ...tokenRoutes,
   ...deviceRoutes,
   ...locationRoutes,
+  ...transportRoutes,
   ...historyRoutes,
 ];
 

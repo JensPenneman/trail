@@ -63,7 +63,9 @@ export function locationsRouter(ctx: AppContext): Router {
       timezone: user.timezone,
       from: new Date(request.from),
       to: new Date(request.to),
+      queueProcessing: ctx.processing.enabled,
     });
+    ctx.processing.notify();
     ctx.logger.info({ deviceId: device.id, deleted }, "points deleted");
     publishDeviceLater(ctx, user.id, device.id);
     const body: DeleteLocationsResponse = { deleted };

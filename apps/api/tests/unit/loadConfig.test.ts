@@ -51,7 +51,53 @@ describe("loadConfig", () => {
         tokenPerMinute: 600,
         tokenFailedPer10Minutes: 30,
       },
+      processing: {
+        enabled: true,
+        overpassUrl: "https://overpass-api.de/api/interpreter",
+        overpassDailyBytes: 300_000_000,
+        osmTtlDays: 90,
+        maxAccuracyM: 150,
+        stopMinS: 180,
+      },
     });
+  });
+
+  it("switches mapping off with an empty Overpass URL, and processing off altogether", () => {
+    expect(
+      loadConfig({ ...minimal, PROCESSING_OVERPASS_URL: "" }, defaults).processing,
+    ).toMatchObject({
+      enabled: true,
+      overpassUrl: null,
+    });
+    expect(
+      loadConfig({ ...minimal, PROCESSING_OVERPASS_URL: "  " }, defaults).processing.overpassUrl,
+    ).toBeNull();
+    const custom = loadConfig(
+      {
+        ...minimal,
+        PROCESSING_ENABLED: "false",
+        PROCESSING_OVERPASS_URL: "http://overpass.lan/api/interpreter",
+        PROCESSING_OVERPASS_DAILY_MB: "50",
+        PROCESSING_OSM_TTL_DAYS: "30",
+        PROCESSING_MAX_ACCURACY_M: "100",
+        PROCESSING_STOP_MIN_S: "300",
+      },
+      defaults,
+    );
+    expect(custom.processing).toEqual({
+      enabled: false,
+      overpassUrl: "http://overpass.lan/api/interpreter",
+      overpassDailyBytes: 50_000_000,
+      osmTtlDays: 30,
+      maxAccuracyM: 100,
+      stopMinS: 300,
+    });
+    expect(
+      issuesOf({ ...minimal, PROCESSING_ENABLED: "yes", PROCESSING_OVERPASS_URL: "ftp://x" }),
+    ).toEqual([
+      "PROCESSING_ENABLED: Use true or false",
+      expect.stringMatching(/^PROCESSING_OVERPASS_URL: /),
+    ]);
   });
 
   it("treats empty variables as unset and parses lists", () => {

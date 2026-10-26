@@ -5,21 +5,30 @@ import { devices } from "../db/schema/devices";
 import { locations } from "../db/schema/locations";
 import { rebuildHeatCells } from "../heatmap/rebuildHeatCells";
 import { localDate } from "../lib/localDate";
+import { lockDeviceProcessing } from "../processing/deviceLock";
+import { enqueueWindow } from "../processing/processingQueue";
 import { recomputeDailyStats } from "../stats/recomputeDailyStats";
 
 interface DateRow extends Record<string, unknown> {
   date: string;
 }
 
+/** The stops and moves around a deleted range are worked out again this far beyond it. */
+const reprocessMarginMs = 30 * 60_000;
+
 /**
  * Deletes a device's points, visits, trips and events in `[from, to)` in one
  * transaction and repairs everything derived from them: heat cells (rebuilt),
- * the point counter, the cached position, and the affected days' statistics.
- * Returns the number of deleted records of all kinds.
+ * the point counter, the cached position, the affected days' statistics, and
+ * the processed levels — the points' rows go with them, the segments that
+ * touched the range are removed at once and the range is queued for
+ * processing (`queueProcessing`), under the device's processing lock so no
+ * window in progress writes them back. Returns the number of deleted records
+ * of all kinds.
  */
 export async function deleteLocationRange(
   db: Database,
-  input: { deviceId: string; timezone: string; from: Date; to: Date },
+  input: { deviceId: string; timezone: string; from: Date; to: Date; queueProcessing: boolean },
 ): Promise<number> {
   const { deviceId, timezone } = input;
   const from = input.from.toISOString();
@@ -34,11 +43,29 @@ export async function deleteLocationRange(
       .from(devices)
       .where(eq(devices.id, deviceId))
       .for("update");
+    await lockDeviceProcessing(tx, deviceId);
     const points = await tx.execute(sql`DELETE FROM locations WHERE ${inRange("recorded_at")}`);
     const visits = await tx.execute(sql`DELETE FROM visits WHERE ${inRange("recorded_at")}`);
     const trips = await tx.execute(sql`DELETE FROM trips WHERE ${inRange("started_at")}`);
     const events = await tx.execute(sql`DELETE FROM device_events WHERE ${inRange("recorded_at")}`);
     const deletedPoints = points.rowCount ?? 0;
+    // Visits and trips feed the inference too (stops, Overland's trip mode).
+    const touched = deletedPoints + (visits.rowCount ?? 0) + (trips.rowCount ?? 0);
+    if (touched > 0) {
+      await tx.execute(sql`
+        DELETE FROM segments
+        WHERE device_id = ${deviceId}
+          AND started_at < ${to}::timestamptz AND ended_at > ${from}::timestamptz
+      `);
+      if (input.queueProcessing) {
+        await enqueueWindow(tx, {
+          deviceId,
+          from: new Date(input.from.getTime() - reprocessMarginMs),
+          to: new Date(input.to.getTime() + reprocessMarginMs),
+          reason: "delete",
+        });
+      }
+    }
 
     if (deletedPoints > 0) {
       await rebuildHeatCells(tx, deviceId);

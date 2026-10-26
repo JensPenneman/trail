@@ -7,6 +7,7 @@ import { createPool } from "../../src/db/createPool";
 import { createApp } from "../../src/http/createApp";
 import type { Alert } from "../../src/jobs/alert";
 import { createLogger } from "../../src/logging/createLogger";
+import type { WaySource } from "../../src/processing/waySource";
 import type { ApiTokenVerifier } from "../../src/v1/apiTokens";
 import { testEnvironment } from "./testEnvironment";
 
@@ -20,11 +21,11 @@ export interface TestContext {
 }
 
 /**
- * The real app wired to the test database, with an alert recorder and a
- * manual daily-stats flush. It listens on 127.0.0.1 itself: supertest would
- * listen on the `::` wildcard and then connect to 127.0.0.1:<port>, and on
- * macOS another local process may hold that port on 127.0.0.1 and receive the
- * request instead.
+ * The real app wired to the test database, with an alert recorder and manual
+ * flushes of the daily statistics and the processing queue. It listens on
+ * 127.0.0.1 itself: supertest would listen on the `::` wildcard and then
+ * connect to 127.0.0.1:<port>, and on macOS another local process may hold
+ * that port on 127.0.0.1 and receive the request instead.
  */
 export async function createTestContext(
   options: {
@@ -34,6 +35,8 @@ export async function createTestContext(
     logDestination?: DestinationStream;
     /** Resolves API tokens on /api/v1 instead of the `api_tokens` table (a stand-in for every outcome). */
     apiTokens?: ApiTokenVerifier;
+    /** Map data for processing (default: none, so the mapped level degrades to averaged). */
+    waySource?: WaySource | null;
   } = {},
 ): Promise<TestContext> {
   const config = loadConfig(testEnvironment(options.env), {
@@ -53,8 +56,10 @@ export async function createTestContext(
       alerts.push(alert);
     },
     ...(options.apiTokens === undefined ? {} : { apiTokens: options.apiTokens }),
-    // Tests flush the daily statistics explicitly.
+    // Tests flush the daily statistics and the processing queue explicitly.
     dailyStatsDelayMs: 3_600_000,
+    processingDelayMs: 3_600_000,
+    waySource: options.waySource ?? null,
   });
   const server = createServer(createApp(ctx));
   await new Promise<void>((resolve, reject) => {
@@ -71,6 +76,7 @@ export async function createTestContext(
       await new Promise<void>((resolve) => server.close(() => resolve()));
       ctx.dailyStats.stop();
       await ctx.background.drain(5_000);
+      await ctx.processing.stop();
       await pool.end();
     },
   };

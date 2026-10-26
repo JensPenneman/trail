@@ -53,6 +53,24 @@ const cspSourceSchema = z
 
 const intSchema = (min: number, max: number) => z.coerce.number().int().min(min).max(max);
 
+const booleanSchema = z
+  .enum(["true", "false"], { error: "Use true or false" })
+  .transform((value) => value === "true");
+
+/*
+ * Unset: OpenStreetMap's public Overpass instance. Set but empty: no map data
+ * at all (the mapped level degrades to averaged), which is why this one does
+ * not go through `env` (where empty means "the default").
+ */
+const overpassUrlSchema = z
+  .preprocess(
+    (value) => (typeof value === "string" ? value.trim() : value),
+    z.union([z.literal(""), httpUrlSchema]).optional(),
+  )
+  .transform((value) =>
+    value === undefined ? "https://overpass-api.de/api/interpreter" : value === "" ? null : value,
+  );
+
 export const envSchema = z
   .object({
     NODE_ENV: env(z.string().default("development")),
@@ -100,6 +118,12 @@ export const envSchema = z
     RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES: env(intSchema(1, 1_000_000).default(30)),
     RATE_LIMIT_TOKEN_PER_MINUTE: env(intSchema(1, 1_000_000).default(600)),
     RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES: env(intSchema(1, 1_000_000).default(30)),
+    PROCESSING_ENABLED: env(booleanSchema.default(true)),
+    PROCESSING_OVERPASS_URL: overpassUrlSchema,
+    PROCESSING_OVERPASS_DAILY_MB: env(intSchema(1, 100_000).default(300)),
+    PROCESSING_OSM_TTL_DAYS: env(intSchema(1, 3650).default(90)),
+    PROCESSING_MAX_ACCURACY_M: env(intSchema(10, 5000).default(150)),
+    PROCESSING_STOP_MIN_S: env(intSchema(30, 7200).default(180)),
   })
   .superRefine((values, context) => {
     // A development shell may export DATABASE_URL for an unrelated project:

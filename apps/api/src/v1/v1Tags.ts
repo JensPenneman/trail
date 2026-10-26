@@ -17,6 +17,16 @@ export const v1Tags = [
       "Where the devices have been: every point as it arrived, the places they stayed at (visits) and the all-time heatmap. All of it needs `locations:read`.",
   },
   {
+    name: "Tracks",
+    description:
+      "Where the devices went, at a level of calculation: as recorded, averaged, mapped onto roads and railways, or as stops and moves.",
+  },
+  {
+    name: "Timeline",
+    description:
+      "Stops and moves with their transport modes, the corrections people make to the modes, and distance and time per mode.",
+  },
+  {
     name: "History",
     description:
       "History without coordinates: trips, daily statistics and recent activity (`history:read`).",
