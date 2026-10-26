@@ -192,6 +192,20 @@ forks get no preview, and CI never publishes their images.
   image does. A failing test means no image and no preview.
 - **Database.** Empty, in a volume of the preview's project, removed with the
   preview. Migrations run on boot as in production.
+- **A migration regenerated after a rebase.** Drizzle applies only the
+  migrations newer than the last one a database has applied (by the
+  journal's timestamp), and a pull request rebased onto a `main` that gained
+  a migration deletes its own and generates it again, under a new number.
+  The preview's database already has the old version, so the new one fails
+  ("already exists") and the app refuses to start; a migration of `main`
+  older than the old version would even be skipped. A preview holds test
+  data only, so start it over on an empty database, then redeploy the
+  preview in Launchway (or push to the branch):
+
+  ```sh
+  docker compose -p launchway-trail-pr-<number> down
+  docker volume rm launchway-trail-pr-<number>_trail-db
+  ```
 - **Sign-in.** Passkeys are bound to a host name, so every preview needs its
   own account: sign up with an address from `SIGNUP_ALLOWLIST`.
 - **Phones.** Overland can post to a preview like to production (Devices > Add
