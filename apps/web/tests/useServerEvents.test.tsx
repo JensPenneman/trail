@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../src/api/queryKeys";
 import { createLiveStore } from "../src/live/createLiveStore";
 import { useServerEvents } from "../src/live/useServerEvents";
+import { sessionEndedOnPurpose } from "../src/queries/sessionEndedOnPurpose";
 import { device, ids } from "./support/fixtures";
 
 /** A controllable stand-in for the browser's EventSource. */
@@ -111,7 +112,7 @@ describe("useServerEvents", () => {
     expect(FakeEventSource.instances).toHaveLength(1);
   });
 
-  it("does not ask about the session while this browser is signing out", () => {
+  it("does not ask about the session once this browser is signing out", () => {
     const { queryClient } = setup();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     act(() => latest().open());
@@ -119,14 +120,8 @@ describe("useServerEvents", () => {
       act(() => latest().fail());
       return invalidate.mock.calls.some(([filters]) => filters?.queryKey === queryKeys.session);
     };
-    // A sign-out under way: the server may cut the stream before the request returns.
-    void queryClient
-      .getMutationCache()
-      .build(queryClient, {
-        mutationKey: queryKeys.endSession,
-        mutationFn: () => new Promise<never>(() => undefined),
-      })
-      .execute(undefined);
+    // A sign-out under way, or done with the page still shown: the server cuts the stream.
+    sessionEndedOnPurpose.mark(queryClient);
     expect(failAndCheckedSession()).toBe(false);
   });
 
