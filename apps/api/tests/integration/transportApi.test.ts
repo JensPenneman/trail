@@ -308,13 +308,20 @@ describe("PUT and DELETE /api/v1/segments/{id}/mode", () => {
       .send({ mode: "car" })
       .expect(403);
     expect(errorOf(refused.body).message).toContain("locations:write");
-    const otherDevice = await issue(["locations:write"], [drive]);
+    // The answer is the segment, positions included: writing alone is not enough.
+    const writeOnly = await request(t.app)
+      .put(apiPaths.v1.segments.mode(move.id))
+      .set("Authorization", await issue(["locations:write"]))
+      .send({ mode: "car" })
+      .expect(403);
+    expect(errorOf(writeOnly.body).message).toContain("locations:read");
+    const otherDevice = await issue(["locations:read", "locations:write"], [drive]);
     await request(t.app)
       .delete(apiPaths.v1.segments.mode(move.id))
       .set("Authorization", otherDevice)
       .expect(404);
     // A token with the scope may; its corrections are marked as coming from the API.
-    const writer = await issue(["locations:write"]);
+    const writer = await issue(["locations:read", "locations:write"]);
     await request(t.app)
       .put(apiPaths.v1.segments.mode(move.id))
       .set("Authorization", writer)
@@ -387,17 +394,20 @@ describe("GET and POST /api/v1/devices/{id}/mode", () => {
       .set("Authorization", await issue(["locations:read"]))
       .send({ mode: "car" })
       .expect(403);
-    const mcp = await request(t.app)
-      .post(path)
-      .set("Authorization", await issue(["locations:write"]))
-      .send({ mode: "car" })
-      .expect(200);
-    expect(deviceModeResponseSchema.parse(mcp.body).mode.override?.source).toBe("api");
+    // The answer is the current mode, which tells where the device is going.
     await request(t.app)
       .post(path)
       .set("Authorization", await issue(["locations:write"]))
-      .send({ mode: null })
+      .send({ mode: "car" })
+      .expect(403);
+    const agent = await issue(["locations:read", "locations:write"]);
+    const mcp = await request(t.app)
+      .post(path)
+      .set("Authorization", agent)
+      .send({ mode: "car" })
       .expect(200);
+    expect(deviceModeResponseSchema.parse(mcp.body).mode.override?.source).toBe("api");
+    await request(t.app).post(path).set("Authorization", agent).send({ mode: null }).expect(200);
   });
 });
 

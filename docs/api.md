@@ -221,7 +221,8 @@ later. Transport modes: `stationary`, `walking`, `running`, `cycling`, `car`,
 `bus`, `tram`, `metro`, `train`, `boat`, `plane` and `unknown`. `mode` is the
 one that counts: a person's choice (`modeUser`), else the inferred one.
 
-People (and agents) can put a mode right, with `locations:write`:
+People (and agents) can put a mode right, with `locations:write` and
+`locations:read` together (the answers carry the segment or the current mode):
 
 - `PUT /api/v1/segments/{id}/mode` with `{ "mode": "train" }` sets a move's
   mode; it wins over the inference, also when the history is worked out

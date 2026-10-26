@@ -17,7 +17,8 @@ export const setSegmentMode = defineRoute(
     description:
       "Corrects the transport mode of a move: the mode applies to the move's time and wins over the inference, also when the history is processed again. The inferred mode stays visible as `modeInferred`. Setting the mode it already has changes nothing. A stop has no mode: `409`.",
     tags: ["Timeline"],
-    auth: { scopes: ["locations:write"] },
+    // The answer carries the segment or the current mode: location data.
+    auth: { scopes: ["locations:read", "locations:write"], all: true },
     request: { params: segmentParamsSchema, body: setSegmentModeRequestSchema },
     responses: { 200: segmentResponseSchema },
     errors: [409],

@@ -133,9 +133,9 @@ When the two disagree, the pull request that notices fixes the plan.
 | `GET /api/v1/locations` | `locations:read` | `device`, `from`, `to`, `cursor` (opaque), `limit` ≤ 1000, oldest first; raw points only — the levels are `/api/v1/tracks` |
 | `GET /api/v1/tracks` | `locations:read` | `devices`, `from`, `to` (≤ 93 days), `level`, `maxPoints` → segments with mode and confidence |
 | `GET /api/v1/segments` | `locations:read` | `devices`, `from`, `to` (≤ 93 days), `cursor`, `limit` ≤ 1000 → stops and moves (§3) |
-| `PUT` / `DELETE /api/v1/segments/{id}/mode` | `locations:write` | override one segment |
+| `PUT` / `DELETE /api/v1/segments/{id}/mode` | `locations:write` + `locations:read` | override one segment (the answer is the segment) |
 | `GET /api/v1/devices/{id}/mode` | `locations:read` | the quick toggle in force and the current mode |
-| `POST /api/v1/devices/{id}/mode` | `locations:write` | quick override from now (§3.5) |
+| `POST /api/v1/devices/{id}/mode` | `locations:write` + `locations:read` | quick override from now (§3.5; the answer is the current mode) |
 | `GET /api/v1/visits` | `locations:read` | as the private route: `from`, `to` (≤ 400 days, any offset), `devices`; visits are places |
 | `GET /api/v1/trips` | `history:read` | as the private route: `from`, `to` (≤ 400 days, any offset), `devices`; no coordinates |
 | `GET /api/v1/stats/days`, `/stats/activity` | `history:read` | as the private routes, with `devices` |

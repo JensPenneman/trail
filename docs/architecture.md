@@ -1459,6 +1459,9 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   after it, which ends it. The applied override is in `features.override`
   (`{ id, kind, source }`); `GET /api/v1/stats/modes` counts the corrected
   segments.
+- The three corrections need `locations:write` and `locations:read` together
+  (their answers carry the segment, with its positions, or the current mode);
+  `GET /api/v1/devices/{id}/mode` needs `locations:read`.
 
 ### 17.6 API and UI
 

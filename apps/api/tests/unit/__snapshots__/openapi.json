@@ -943,13 +943,14 @@
       "put": {
         "operationId": "setSegmentMode",
         "summary": "Set a move's mode",
-        "description": "Corrects the transport mode of a move: the mode applies to the move's time and wins over the inference, also when the history is processed again. The inferred mode stays visible as `modeInferred`. Setting the mode it already has changes nothing. A stop has no mode: `409`.\n\n**Access:** an API token with the scope `locations:write`, or a signed-in session.",
+        "description": "Corrects the transport mode of a move: the mode applies to the move's time and wins over the inference, also when the history is processed again. The inferred mode stays visible as `modeInferred`. Setting the mode it already has changes nothing. A stop has no mode: `409`.\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
         "tags": [
           "Timeline"
         ],
         "security": [
           {
             "bearer": [
+              "locations:read",
               "locations:write"
             ]
           }
@@ -1033,13 +1034,14 @@
       "delete": {
         "operationId": "resetSegmentMode",
         "summary": "Reset a move's mode",
-        "description": "Withdraws the correction that set the move's mode — a mode set from a moment on with it, for every move it covered — so the inferred mode counts again. The segment answers with the inferred mode at once; the span is worked out again within seconds (a `segments` event follows). Without a correction nothing changes.\n\n**Access:** an API token with the scope `locations:write`, or a signed-in session.",
+        "description": "Withdraws the correction that set the move's mode — a mode set from a moment on with it, for every move it covered — so the inferred mode counts again. The segment answers with the inferred mode at once; the span is worked out again within seconds (a `segments` event follows). Without a correction nothing changes.\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
         "tags": [
           "Timeline"
         ],
         "security": [
           {
             "bearer": [
+              "locations:read",
               "locations:write"
             ]
           }
@@ -1171,13 +1173,14 @@
       "post": {
         "operationId": "setDeviceMode",
         "summary": "Set the mode from now on",
-        "description": "The quick toggle: from now on the device travels by `mode`, until `until` or the next detected stop, whichever comes first. It is idempotent — the same mode again changes nothing — another mode ends the running one and starts anew, and `mode: null` ends it, so inference takes over again.\n\n**Access:** an API token with the scope `locations:write`, or a signed-in session.",
+        "description": "The quick toggle: from now on the device travels by `mode`, until `until` or the next detected stop, whichever comes first. It is idempotent — the same mode again changes nothing — another mode ends the running one and starts anew, and `mode: null` ends it, so inference takes over again.\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
         "tags": [
           "Timeline"
         ],
         "security": [
           {
             "bearer": [
+              "locations:read",
               "locations:write"
             ]
           }

@@ -12,7 +12,8 @@ export const resetSegmentMode = defineRoute(
     description:
       "Withdraws the correction that set the move's mode — a mode set from a moment on with it, for every move it covered — so the inferred mode counts again. The segment answers with the inferred mode at once; the span is worked out again within seconds (a `segments` event follows). Without a correction nothing changes.",
     tags: ["Timeline"],
-    auth: { scopes: ["locations:write"] },
+    // The answer carries the segment or the current mode: location data.
+    auth: { scopes: ["locations:read", "locations:write"], all: true },
     request: { params: segmentParamsSchema },
     responses: { 200: segmentResponseSchema },
   },

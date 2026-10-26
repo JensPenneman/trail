@@ -14,7 +14,8 @@ export const setDeviceMode = defineRoute(
     description:
       "The quick toggle: from now on the device travels by `mode`, until `until` or the next detected stop, whichever comes first. It is idempotent — the same mode again changes nothing — another mode ends the running one and starts anew, and `mode: null` ends it, so inference takes over again.",
     tags: ["Timeline"],
-    auth: { scopes: ["locations:write"] },
+    // The answer carries the segment or the current mode: location data.
+    auth: { scopes: ["locations:read", "locations:write"], all: true },
     request: { params: deviceParamsSchema, body: setDeviceModeRequestSchema },
     responses: { 200: deviceModeResponseSchema },
   },
