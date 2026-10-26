@@ -62,6 +62,11 @@ export const apiPaths = {
       location: (deviceId: string) => `/api/v1/devices/${id(deviceId)}/location`,
     },
     tokens: { verify: "/api/v1/tokens/verify" },
+    locations: "/api/v1/locations",
+    visits: "/api/v1/visits",
+    trips: "/api/v1/trips",
+    stats: { days: "/api/v1/stats/days", activity: "/api/v1/stats/activity" },
+    heatmap: "/api/v1/heatmap",
   },
   /** The API reference (Scalar) — a page the API serves itself, outside the SPA. */
   docs: "/docs",

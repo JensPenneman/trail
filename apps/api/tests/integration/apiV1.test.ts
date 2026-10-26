@@ -324,10 +324,13 @@ describe("v1 plumbing", () => {
       .expect(204);
     expect(response.headers).toMatchObject({
       "access-control-allow-origin": "*",
-      "access-control-allow-methods": "GET",
       "access-control-allow-headers": "Authorization, Content-Type, Last-Event-ID",
       "access-control-max-age": "600",
     });
+    // The methods of the registry; more arrive with new operations.
+    expect(String(response.headers["access-control-allow-methods"]).split(", ")).toEqual(
+      expect.arrayContaining(["GET", "PATCH"]),
+    );
     expect(response.headers["access-control-allow-credentials"]).toBeUndefined();
     expect(response.headers["set-cookie"]).toBeUndefined();
     expect(tokens.calls.length).toBe(before);

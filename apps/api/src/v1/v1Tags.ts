@@ -11,6 +11,14 @@ export const v1Tags = [
     description:
       "The phones that record locations (Overland installs), with their latest position and battery.",
   },
+  {
+    name: "Locations",
+    description: "The points the phones recorded, exactly as they arrived.",
+  },
+  {
+    name: "History",
+    description: "Visits, trips, daily statistics, recent activity and the all-time heatmap.",
+  },
   { name: "Reference", description: "This API's own description." },
 ] as const satisfies readonly { name: string; description: string }[];
 

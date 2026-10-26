@@ -2,7 +2,7 @@ import { z } from "zod";
 import { deviceIdsParamSchema } from "./query";
 
 /** `bbox=west,south,east,north` in degrees. */
-const bboxSchema = z
+export const bboxParamSchema = z
   .string()
   .transform((value) => value.split(",").map(Number))
   .pipe(
@@ -16,7 +16,7 @@ const bboxSchema = z
 
 /** `GET /api/heatmap` — all-time density in the viewport, from pre-aggregated cells. */
 export const heatmapQuerySchema = z.object({
-  bbox: bboxSchema,
+  bbox: bboxParamSchema,
   /** Current map zoom; the server picks the matching cell resolution. */
   zoom: z.coerce.number().min(0).max(24),
   deviceIds: deviceIdsParamSchema.optional(),

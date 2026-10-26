@@ -16,6 +16,7 @@ import { allowLongStatements } from "../db/allowLongStatements";
 import { devices } from "../db/schema/devices";
 import { ingestLog } from "../db/schema/ingestLog";
 import { parseBody, parseQuery } from "../http/parseInput";
+import { changeDevice } from "./changeDevice";
 import { createDevice } from "./createDevice";
 import { deviceCredentials } from "./deviceCredentials";
 import { findOwnedDevice } from "./findOwnedDevice";
@@ -70,23 +71,7 @@ export function devicesRouter(ctx: AppContext): Router {
   router.patch("/api/devices/:id", async (req, res) => {
     const auth = requireAuth(req);
     const changes = parseBody(updateDeviceRequestSchema, req);
-    const existing = await findOwnedDevice(db, auth, req.params.id);
-    await db
-      .update(devices)
-      .set({
-        ...(changes.name === undefined ? {} : { name: changes.name }),
-        ...(changes.alertsEnabled === undefined ? {} : { alertsEnabled: changes.alertsEnabled }),
-        // With alerts off there must be no "sending again" message later either.
-        ...(changes.alertsEnabled === false ? { staleAlertedAt: null } : {}),
-        ...(changes.pendingSettings === undefined
-          ? {}
-          : { pendingSettings: changes.pendingSettings }),
-        updatedAt: new Date(),
-      })
-      .where(eq(devices.id, existing.id));
-    const device = await loadDeviceSummary(db, auth, existing.id);
-    publishDevice(ctx, auth.user.id, device);
-    const body: DeviceResponse = { device };
+    const body: DeviceResponse = { device: await changeDevice(ctx, auth, req.params.id, changes) };
     res.json(body);
   });
 
