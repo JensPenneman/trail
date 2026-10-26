@@ -1178,11 +1178,14 @@ on green CI once branch protection requires the checks.
   Processing is tested in the real app with map tiles cut from the hand-made
   world by a `FixtureWaySource` (no network): uploads to segments and the
   `segments` event, every level and its degradation, windows waiting for map
-  data, a deleted range repaired, the backfill across a restart, the v1 routes
-  with sessions and tokens, `trail reprocess`. The migration-upgrade test also
-  records rows in the user-data tables that later migrations add
-  (`api_tokens`, `mode_overrides`), each with the migration that adds it, and
-  requires every column unchanged after every migration that follows.
+  data, old tiles fetched again, a window worked out the same in many pieces
+  of map data as in one, ready times by the worker's clock, a deleted range
+  repaired, the backfill across a restart, the v1 routes with sessions and
+  tokens, `trail reprocess`, and a log that names tiles only at debug level.
+  The migration-upgrade test also records rows in the user-data tables that
+  later migrations add (`api_tokens`, `mode_overrides`), each with the
+  migration that adds it, and requires every column unchanged after every
+  migration that follows.
 - `apps/web/tests` — Vitest + Testing Library (jsdom).
 - `tests/e2e` — Playwright against the built stack. `playwright.config.ts`
   starts `scripts/e2e-server.mjs`: it empties the `trail_e2e` database

@@ -72,10 +72,10 @@ async function readCapped(
 /**
  * Map data from an Overpass API instance (docs/architecture.md §17.3), one
  * query per z14 tile, politely: one request at a time and at most one every
- * two seconds, a 60-second timeout, a User-Agent that names the software
- * (not the instance), retries with
- * backoff for answers worth retrying (honouring Retry-After), a 20 MB cap on
- * the answer and strict parsing. The daily byte budget is the tile fetcher's.
+ * two seconds, a 60-second timeout, a User-Agent that names the software (not
+ * the instance), retries with backoff for answers worth retrying (honouring
+ * Retry-After), a 20 MB cap on the answer and strict parsing. The daily byte
+ * budget is the tile fetcher's.
  */
 export class OverpassWaySource implements WaySource {
   readonly name = "overpass";
