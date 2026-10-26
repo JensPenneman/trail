@@ -9,7 +9,7 @@ import { currentShare } from "./currentShare";
 import type { ShareRow } from "./outgoingShares";
 
 /** A share as its recipient sees it. */
-export function toIncomingShare(
+function toIncomingShare(
   row: ShareRow,
   owner: { displayName: string; email: string },
 ): IncomingShare {

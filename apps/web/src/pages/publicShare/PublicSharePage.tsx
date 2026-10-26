@@ -13,8 +13,9 @@ import type { MapPosition, MapTrack } from "../../map/mapTypes";
 import { useMapStyle } from "../../map/useMapStyle";
 import { describeActivity } from "../../people/describeActivity";
 import { useConfig } from "../../queries/useConfig";
-import { usePublicShare } from "../../queries/usePublicShare";
+import { publicShareRefreshMs, usePublicShare } from "../../queries/usePublicShare";
 import { precisionInfo } from "../../sharing/shareText";
+import { localDateOf } from "../../time/localDateOf";
 import { useNow } from "../../time/useNow";
 import { BatteryIndicator } from "../../ui/BatteryIndicator";
 import { DeviceSwatch } from "../../ui/DeviceSwatch";
@@ -139,7 +140,7 @@ function SharedLocation({ share, now }: { share: PublicShareResponse; now: numbe
         <div className="map-layout__head">
           <PageHeader
             title={share.label}
-            description={`Shared location · ${precisionInfo[share.precision].short.toLowerCase()} · updated every 15 seconds`}
+            description={`Shared location · ${precisionInfo[share.precision].short.toLowerCase()} · updated every ${publicShareRefreshMs / 1000} seconds`}
           />
         </div>
         <div className="map-layout__map">
@@ -199,10 +200,7 @@ function SharedLocation({ share, now }: { share: PublicShareResponse; now: numbe
           </PlainList>
           <p className="public-share__expiry">
             <Icon name="calendar" />
-            <span>
-              This link expires {format.dateTime(share.expiresAt)} (
-              {format.relative(share.expiresAt, now)}).
-            </span>
+            <span>{expiryNotice(share.expiresAt, format, now)}</span>
           </p>
           <p className="muted public-share__about">
             Shared with Trail, a self-hosted location history. Only people with this link see this
@@ -212,6 +210,19 @@ function SharedLocation({ share, now }: { share: PublicShareResponse; now: numbe
       </div>
     </PublicFrame>
   );
+}
+
+/** "This link expires today at 13:41 (in 25 min)." — the countdown only in its last hour. */
+function expiryNotice(
+  expiresAt: string,
+  format: ReturnType<typeof useFormatter>,
+  now: number,
+): string {
+  const end = Date.parse(expiresAt);
+  const today = localDateOf(end, format.timeZone) === localDateOf(now, format.timeZone);
+  const when = today ? `today at ${format.time(end)}` : `on ${format.dayTime(end)}`;
+  const soon = end - now < 3_600_000 ? ` (${format.relative(end, now)})` : "";
+  return `This link expires ${when}${soon}.`;
 }
 
 /** The page's frame: the brand, no navigation, the content as `main`. */

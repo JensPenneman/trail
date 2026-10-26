@@ -22,7 +22,7 @@ export interface Grant {
 }
 
 /** The device cache's newest position, or null before the first one. */
-export function recordedPosition(device: DeviceRow): RecordedPosition | null {
+function recordedPosition(device: DeviceRow): RecordedPosition | null {
   if (device.lastRecordedAt === null || device.lastLat === null || device.lastLon === null) {
     return null;
   }

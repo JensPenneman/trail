@@ -10,7 +10,7 @@ export interface LiveUpload {
 }
 
 /** Someone started sharing with this person while the page was open (a `share` event). */
-export interface ShareNotice {
+interface ShareNotice {
   shareId: string;
   /** Epoch ms. */
   at: number;

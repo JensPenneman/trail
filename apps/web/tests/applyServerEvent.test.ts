@@ -1,11 +1,12 @@
 import { QueryClient } from "@tanstack/react-query";
 import type { DeviceListResponse, DeviceResponse } from "@trail/contracts/device";
+import type { PeopleResponse } from "@trail/contracts/person";
 import type { TracksResponse } from "@trail/contracts/track";
 import { describe, expect, it } from "vitest";
 import { queryKeys } from "../src/api/queryKeys";
 import { applyServerEvent } from "../src/live/applyServerEvent";
 import { createLiveStore } from "../src/live/createLiveStore";
-import { car, device, ids, tracks } from "./support/fixtures";
+import { ana, bob, car, device, ids, sharedDevice, tracks } from "./support/fixtures";
 
 const range = { from: "2026-09-29T22:00:00.000Z", to: "2026-09-30T22:00:00.000Z" };
 const inRange = Date.parse("2026-09-30T10:00:00.000Z") / 1000;
@@ -100,5 +101,82 @@ describe("applyServerEvent", () => {
       points: [],
     });
     expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
+  });
+});
+
+describe("applyServerEvent for people", () => {
+  function withPeople() {
+    const queryClient = new QueryClient();
+    const store = createLiveStore();
+    queryClient.setQueryData<PeopleResponse>(queryKeys.people, { people: [ana(), bob()] });
+    return { queryClient, store };
+  }
+
+  it("moves a person's device where the event says", () => {
+    const { queryClient, store } = withPeople();
+    const others = queryClient.getQueryData<PeopleResponse>(queryKeys.people)?.people[1];
+    const moved = sharedDevice({ distanceM: 20 });
+    applyServerEvent(queryClient, store, { type: "person", userId: ids.ana, device: moved });
+    const people = queryClient.getQueryData<PeopleResponse>(queryKeys.people)?.people;
+    expect(people?.[0]?.devices).toEqual([moved]);
+    expect(people?.[1]).toBe(others);
+  });
+
+  it("adds a device the person did not share before", () => {
+    const { queryClient, store } = withPeople();
+    const watch = sharedDevice({ id: "01926f3c-2e5f-7a71-8243-5d6e7f8091a9", name: "Watch" });
+    applyServerEvent(queryClient, store, { type: "person", userId: ids.ana, device: watch });
+    expect(
+      queryClient.getQueryData<PeopleResponse>(queryKeys.people)?.people[0]?.devices,
+    ).toHaveLength(2);
+  });
+
+  it("refetches the list for someone it does not know yet", async () => {
+    const { queryClient, store } = withPeople();
+    applyServerEvent(queryClient, store, {
+      type: "person",
+      userId: "01926f3a-8b2c-7d4e-9f10-2a3b4c5d6e99",
+      device: sharedDevice(),
+    });
+    expect(queryClient.getQueryState(queryKeys.people)?.isInvalidated).toBe(true);
+  });
+
+  it("drops a stopped share's person at once, and tells about new ones", () => {
+    const { queryClient, store } = withPeople();
+    applyServerEvent(queryClient, store, {
+      type: "share",
+      shareId: ids.bobShare,
+      userId: ids.bob,
+      change: "created",
+    });
+    expect(store.getSnapshot().shareNotices.map((notice) => notice.shareId)).toEqual([
+      ids.bobShare,
+    ]);
+    applyServerEvent(queryClient, store, {
+      type: "share",
+      shareId: ids.bobShare,
+      userId: ids.bob,
+      change: "revoked",
+    });
+    expect(
+      queryClient.getQueryData<PeopleResponse>(queryKeys.people)?.people.map((p) => p.userId),
+    ).toEqual([ids.ana]);
+    expect(store.getSnapshot().shareNotices).toEqual([]);
+    for (const queryKey of [queryKeys.people, queryKeys.shares, queryKeys.incomingShares]) {
+      queryClient.setQueryData(queryKey, queryClient.getQueryData(queryKey) ?? { shares: [] });
+    }
+    applyServerEvent(queryClient, store, {
+      type: "share",
+      shareId: ids.anaShare,
+      userId: ids.ana,
+      change: "hidden",
+    });
+    expect(queryClient.getQueryState(queryKeys.shares)?.isInvalidated).toBe(true);
+  });
+
+  it("refreshes distances when one's own device moves", () => {
+    const { queryClient, store } = withPeople();
+    applyServerEvent(queryClient, store, { type: "device", device: device() });
+    expect(queryClient.getQueryState(queryKeys.people)?.isInvalidated).toBe(true);
   });
 });
