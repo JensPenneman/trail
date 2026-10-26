@@ -2,6 +2,7 @@ import type { McpTool } from "./defineTool";
 import { getCurrentLocation } from "./tools/getCurrentLocation";
 import { getDaySummary } from "./tools/getDaySummary";
 import { getLocationAt } from "./tools/getLocationAt";
+import { getPeople } from "./tools/getPeople";
 import { getTimeline } from "./tools/getTimeline";
 import { getTrips } from "./tools/getTrips";
 import { getVisits } from "./tools/getVisits";
@@ -22,4 +23,5 @@ export const mcpTools: readonly McpTool[] = [
   getVisits,
   getTrips,
   setTransportMode,
+  getPeople,
 ];

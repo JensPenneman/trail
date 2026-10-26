@@ -194,7 +194,7 @@ describe("running a tool", () => {
   const job = {
     kind: "tool" as const,
     name: "probe",
-    access: "write" as const,
+    executor: "pool" as const,
     allowed: true,
     check: (answer: { result: { value: number }; items?: number }) => {
       const parsed = z.object({ value: z.number() }).safeParse(answer.result);

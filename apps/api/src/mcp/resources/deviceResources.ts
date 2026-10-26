@@ -41,7 +41,7 @@ async function readAsJson<Output extends z.ZodType>(
   const outcome = await runMcpWork(session, {
     kind: "resource",
     name: resource.name,
-    access: "read",
+    executor: "read-only transaction",
     allowed: hasScope(session.principal, resource.scope),
     work: resource.work,
     check: (answer) => {
@@ -65,7 +65,7 @@ async function listLocations(session: McpSession): Promise<ListResourcesResult> 
   const outcome = await runMcpWork(session, {
     kind: "resource",
     name: `${locationTemplate} (list)`,
-    access: "read",
+    executor: "read-only transaction",
     allowed: hasScope(session.principal, "locations:read"),
     work: async (context) => {
       const devices = await resolveDeviceIds(context.db, context.principal, undefined);

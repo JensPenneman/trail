@@ -12,7 +12,7 @@ import type { McpSession } from "./mcpSession";
 export interface WorkContext {
   readonly ctx: AppContext;
   readonly principal: TokenPrincipal;
-  /** Reads: a read-only transaction under `mcpStatementTimeout`. Writes go through `ctx.db`. */
+  /** A read-only transaction under `mcpStatementTimeout`, or the pool (`ctx.db`) for writes. */
   readonly db: Executor;
   /** The instant of the call: ages and defaults are measured from it. */
   readonly now: Date;
@@ -36,7 +36,12 @@ type Checked<Value> =
 interface Job<Answer extends Summary, Value> {
   kind: "tool" | "resource";
   name: string;
-  access: "read" | "write";
+  /**
+   * Where the work's queries run: a read in a read-only transaction under
+   * `mcpStatementTimeout`; a write, or a read through functions that take the
+   * whole context and query on their own (`loadPeople`), on the pool.
+   */
+  executor: "read-only transaction" | "pool";
   /** Whether the token holds every scope the tool or resource needs. */
   allowed: boolean;
   work: (context: WorkContext) => Promise<Answer>;
@@ -108,7 +113,7 @@ export async function runMcpWork<Answer extends Summary, Value>(
   };
   try {
     const answer =
-      job.access === "read"
+      job.executor === "read-only transaction"
         ? await session.ctx.db.transaction(
             async (tx) => {
               await tx.execute(sql.raw(`SET LOCAL statement_timeout = '${mcpStatementTimeout}'`));

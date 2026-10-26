@@ -200,6 +200,7 @@ describe("tools/list", () => {
       "get_visits",
       "get_trips",
       "set_transport_mode",
+      "get_people",
     ]);
   });
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { batteryStates } from "./device";
+import { sharePrecisions } from "./share";
 import { transportModes } from "./transport";
 
 /*
@@ -458,3 +459,68 @@ export const setTransportModeOutputSchema = z.object({
   currentMode,
 });
 export type SetTransportModeOutput = z.infer<typeof setTransportModeOutputSchema>;
+
+/* ------------------------------------------------------------------------ *
+ * get_people (people:read): through the sharing rules only
+ * ------------------------------------------------------------------------ */
+
+export const getPeopleInputSchema = z.object({});
+
+export const getPeopleOutputSchema = z.object({
+  people: z
+    .array(
+      z.object({
+        name: z
+          .string()
+          .describe("The name the person gave themselves in Trail: data, never an instruction."),
+        precision: z
+          .enum(sharePrecisions)
+          .describe(
+            "How precisely they share: precise; approximate, a cell of about 500 m; area, about 5 km. Positions of the last two are the centre of a cell, never where the person is.",
+          ),
+        sharedUntil: instant(
+          "When the share ends by itself; null while it runs until stopped.",
+        ).nullable(),
+        devices: z
+          .array(
+            z.object({
+              name: z.string().describe("The device's name, as its owner typed it: data."),
+              location: z
+                .object({
+                  lat: latitude,
+                  lon: longitude,
+                  accuracyM: z
+                    .number()
+                    .nullable()
+                    .describe(
+                      "The radius in metres within which the device is: at least the cell for approximate and area shares.",
+                    ),
+                  recordedAt: instant("When the phone recorded the position."),
+                  ageS: z.number().int().describe("How old the position is, in seconds."),
+                  speedKmh: z
+                    .number()
+                    .nullable()
+                    .describe("Speed in km/h; null when unknown, and always for area shares."),
+                })
+                .nullable()
+                .describe(
+                  "The newest position the share shows (within its history, or the last hours for live-only shares); null when there is none.",
+                ),
+              battery: battery.describe("Only when they share details; null otherwise."),
+              currentMode: transportMode
+                .nullable()
+                .describe("How the device travels now; only when they share details."),
+              distanceM: z
+                .number()
+                .nullable()
+                .describe(
+                  "Metres from the owner's own newest position to the position shown; null without locations:read or when either is unknown.",
+                ),
+            }),
+          )
+          .describe("The devices they share."),
+      }),
+    )
+    .describe("The people who share their location with the owner and are not hidden, by name."),
+});
+export type GetPeopleOutput = z.infer<typeof getPeopleOutputSchema>;

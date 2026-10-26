@@ -29,6 +29,11 @@ export interface ToolSpec<Input extends z.ZodObject, Output extends z.ZodObject>
   readonly output: Output;
   /** `read` tools run in a read-only transaction; `write` tools open their own. */
   readonly access: "read" | "write";
+  /**
+   * `false` for a read built on functions that take the whole context and
+   * query the pool themselves (`loadPeople`): a transaction would sit idle.
+   */
+  readonly transaction?: false;
   readonly run: McpWork<z.output<Input>, ToolAnswer<z.input<Output>>>;
 }
 
@@ -86,7 +91,10 @@ export function defineTool<const Input extends z.ZodObject, const Output extends
           const outcome = await runMcpWork(session, {
             kind: "tool",
             name: spec.name,
-            access: spec.access,
+            executor:
+              spec.access === "read" && spec.transaction !== false
+                ? "read-only transaction"
+                : "pool",
             allowed: spec.scopes.every((scope) => hasScope(session.principal, scope)),
             work: (context) => spec.run(input, context),
             check: (answer) => {
