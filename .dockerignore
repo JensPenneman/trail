@@ -18,6 +18,8 @@ deploy
 .vscode
 .devcontainer
 docs
+# …except the API guide: the build embeds it in the OpenAPI document
+!docs/api.md
 tests
 coverage
 playwright-report

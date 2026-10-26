@@ -71,6 +71,8 @@ services:
       RATE_LIMIT_API_PER_MINUTE:
       RATE_LIMIT_INGEST_PER_MINUTE:
       RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES:
+      RATE_LIMIT_TOKEN_PER_MINUTE:
+      RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES:
     # default: the way out (ntfy alerts); backend: the database
     networks: [default, backend]
     read_only: true

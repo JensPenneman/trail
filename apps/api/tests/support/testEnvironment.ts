@@ -22,6 +22,8 @@ export function testEnvironment(overrides: Record<string, string> = {}): NodeJS.
     RATE_LIMIT_API_PER_MINUTE: "100000",
     RATE_LIMIT_INGEST_PER_MINUTE: "100000",
     RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES: "100000",
+    RATE_LIMIT_TOKEN_PER_MINUTE: "100000",
+    RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES: "100000",
     ...overrides,
   };
 }

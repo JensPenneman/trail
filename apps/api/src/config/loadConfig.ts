@@ -79,6 +79,8 @@ export function loadConfig(
       apiPerMinute: env.RATE_LIMIT_API_PER_MINUTE,
       ingestPerMinute: env.RATE_LIMIT_INGEST_PER_MINUTE,
       ingestFailedPer10Minutes: env.RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES,
+      tokenPerMinute: env.RATE_LIMIT_TOKEN_PER_MINUTE,
+      tokenFailedPer10Minutes: env.RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES,
     },
   };
 }

@@ -48,6 +48,8 @@ describe("loadConfig", () => {
         apiPerMinute: 600,
         ingestPerMinute: 300,
         ingestFailedPer10Minutes: 30,
+        tokenPerMinute: 600,
+        tokenFailedPer10Minutes: 30,
       },
     });
   });

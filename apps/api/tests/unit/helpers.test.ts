@@ -78,6 +78,18 @@ describe("logging safety", () => {
     expect(redactUrl("/link")).toBe("/link");
   });
 
+  it("removes API token secrets wherever a client put them in the URL", () => {
+    const secret = `trlk_${"Ab9-_".repeat(8)}xyz`;
+    expect(secret).toHaveLength(48);
+    expect(redactUrl(`/api/v1/me?key=${secret}&x=1`)).toBe("/api/v1/me?key=[redacted]&x=1");
+    expect(redactUrl(`/api/v1/me?auth=Bearer%20${secret}`)).toBe("/api/v1/me?auth=[redacted]");
+    expect(redactUrl(`/api/v1/${secret}/devices`)).toBe("/api/v1/[redacted]/devices");
+    expect(redactUrl(`/api/v1/%74rlk_${secret.slice(5)}`)).toBe("/api/v1/[redacted]");
+    expect(redactUrl("/api/v1/devices?cursor=trlk_short")).toBe(
+      "/api/v1/devices?cursor=trlk_short",
+    );
+  });
+
   it("keeps only what names the failure of a Postgres error, never the refused value", () => {
     const refused = Object.assign(
       new Error('invalid input syntax for type double precision: "51.0543 3.7174"'),

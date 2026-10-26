@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/package-lock.json", "!**/drizzle/meta"]
+    "includes": ["**", "!**/package-lock.json", "!**/drizzle/meta", "!**/__snapshots__"]
   },
   "formatter": {
     "enabled": true,

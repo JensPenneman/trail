@@ -7,6 +7,7 @@ import { createPool } from "../../src/db/createPool";
 import { createApp } from "../../src/http/createApp";
 import type { Alert } from "../../src/jobs/alert";
 import { createLogger } from "../../src/logging/createLogger";
+import type { ApiTokenVerifier } from "../../src/v1/apiTokens";
 import { testEnvironment } from "./testEnvironment";
 
 export interface TestContext {
@@ -31,6 +32,8 @@ export async function createTestContext(
     webDistDir?: string;
     /** Receives the app's log lines (level info) instead of discarding them. */
     logDestination?: DestinationStream;
+    /** Resolves API tokens on /api/v1 (default: `noApiTokens`, which knows none). */
+    apiTokens?: ApiTokenVerifier;
   } = {},
 ): Promise<TestContext> {
   const config = loadConfig(testEnvironment(options.env), {
@@ -49,6 +52,7 @@ export async function createTestContext(
     alerts: async (alert) => {
       alerts.push(alert);
     },
+    ...(options.apiTokens === undefined ? {} : { apiTokens: options.apiTokens }),
     // Tests flush the daily statistics explicitly.
     dailyStatsDelayMs: 3_600_000,
   });

@@ -5,15 +5,18 @@ import { HttpError } from "./httpError";
 import { rateLimitLogger } from "./rateLimitLogger";
 import { sendApiError } from "./sendApiError";
 
-/** Per-IP limiter for the dashboard API; over the limit → 429 `rate_limited` (contract error body). */
+/** Per-IP limiter for the API; over the limit → 429 `rate_limited` (contract error body). */
 export function ipRateLimit(options: {
   limit: number;
   windowMs: number;
   logger: Logger;
+  /** The policy's name in the `RateLimit` headers (default `<limit>-in-<window>`). */
+  identifier?: string;
 }): RequestHandler {
   return rateLimit({
     windowMs: options.windowMs,
     limit: options.limit,
+    ...(options.identifier === undefined ? {} : { identifier: options.identifier }),
     standardHeaders: "draft-8",
     legacyHeaders: false,
     logger: rateLimitLogger(options.logger),
