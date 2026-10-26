@@ -82,6 +82,14 @@ services:
       PROCESSING_OSM_TTL_DAYS:
       PROCESSING_MAX_ACCURACY_M:
       PROCESSING_STOP_MIN_S:
+      # The V8 heap's limit, set instead of Node's own guess from mem_limit
+      # (about 560 MB of the 1 GB on Node 24; other V8 versions guess
+      # otherwise). A processing backfill holds up to ~250 MB per piece:
+      # 640 MB of old space gives it room beside the server and leaves the
+      # rest of the 1 GB to memory outside the heap (buffers, native code), so
+      # the heap is collected, or at worst fails with an out-of-memory error in
+      # the log, before the kernel would OOM-kill the container mid-backfill.
+      NODE_OPTIONS: --max-old-space-size=640
     # default: the way out (ntfy alerts, map data from Overpass); backend: the database
     networks: [default, backend]
     read_only: true
