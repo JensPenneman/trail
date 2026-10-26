@@ -70,9 +70,9 @@ yourself: location data is personal data.
   ends it at once. Tokens are accepted only in the `Authorization` header of
   `/api/v1` and `/mcp`, are shape-checked before any lookup, and are never
   logged; only a person signed in with a passkey can create, change, roll or
-  revoke them,
-  and no token reaches sign-in, passkeys, device credentials or other tokens.
-  Creating, changing, rolling and revoking are logged with the token's id.
+  revoke them, and no token reaches sign-in, passkeys, device credentials or
+  other tokens. Creating, changing, rolling and revoking are logged with the
+  token's id.
 - **MCP server** (`/mcp`, [docs/mcp.md](docs/mcp.md)): API tokens only,
   never the session cookie; pages on other origins refused before any token
   lookup; a token's scopes decide which tools it sees and its devices which

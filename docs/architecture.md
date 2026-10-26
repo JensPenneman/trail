@@ -1125,10 +1125,11 @@ the tools whose scopes the token holds, in the order of `mcpTools` (stable,
 so clients can cache the list); a tool it may not use answers like an
 unknown one (JSON-RPC `-32602`). A call goes through `runMcpWork`: the scopes
 again; for `read` a transaction `READ ONLY` with `SET LOCAL
-statement_timeout = '10s'` (unless the tool's functions take the whole context
-and query the pool themselves, `transaction: false`: `get_people`); the answer through the output schema (whatever
-it does not name is dropped; a mismatch is logged with codes and paths only
-and answers a generic failure); a log line at info with the tool, outcome,
+statement_timeout = '10s'` (unless the tool's functions take the whole
+context and query the pool themselves, `transaction: false`: `get_people`);
+the answer through the output schema (whatever it does not name is
+dropped; a mismatch is logged with codes and paths only and answers a
+generic failure); a log line at info with the tool, outcome,
 duration, items, `resultBytes` and the token's id — never arguments, results
 or the secret. Failures become tool results with `isError: true`: an
 `HttpError` below 500 passes its message (static texts written for the
