@@ -14,6 +14,8 @@ import {
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
+import type { TokenPrincipal } from "../../src/auth/requestAuth";
+import { runMcpWork, type WorkContext } from "../../src/mcp/runMcpWork";
 import { createApiToken } from "../support/apiTokenFlows";
 import { type Agent, agentFor, signUp, signUpWithCookie } from "../support/authFlows";
 import { createDevice, postOverland } from "../support/deviceFlows";
@@ -385,6 +387,65 @@ describe("resources", () => {
       devicesOnly.readResource({ uri: `trail://devices/${commuter}/location` }),
     ).rejects.toMatchObject({ code: -32602 });
   });
+});
+
+describe("what a read runs in", () => {
+  const session = () => ({
+    ctx: t.ctx,
+    principal: {
+      kind: "token" as const,
+      user: { id: "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60", timezone: "Europe/Brussels" },
+      tokenId: "019a1b2c-3d4e-7f60-8a9b-0c1d2e3f4a5b",
+      scopes: ["devices:read" as const],
+      deviceIds: null,
+    } as unknown as TokenPrincipal,
+    log: t.ctx.logger,
+  });
+  const read = <A extends { items?: number }>(work: (context: WorkContext) => Promise<A>) =>
+    runMcpWork(session(), {
+      kind: "tool",
+      name: "probe",
+      access: "read",
+      allowed: true,
+      work,
+      check: (answer) => ({ ok: true, value: answer }),
+    });
+
+  it("is a read-only transaction with a statement timeout of its own", async () => {
+    const shown = await read(async ({ db }) => {
+      const timeout = await db.execute<{ statement_timeout: string }>(sql`SHOW statement_timeout`);
+      const readOnly = await db.execute<{ transaction_read_only: string }>(
+        sql`SHOW transaction_read_only`,
+      );
+      return {
+        timeout: timeout.rows[0]?.statement_timeout,
+        readOnly: readOnly.rows[0]?.transaction_read_only,
+        items: 0,
+      };
+    });
+    expect(shown).toMatchObject({ ok: true, value: { timeout: "10s", readOnly: "on" } });
+    const write = await read(async ({ db }) => {
+      await db.execute(sql`UPDATE devices SET name = 'changed' WHERE id = ${commuter}`);
+      return {};
+    });
+    expect(write.ok).toBe(false);
+    const names = await t.ctx.db.execute<{ name: string }>(
+      sql`SELECT name FROM devices WHERE id = ${commuter}`,
+    );
+    expect(names.rows[0]?.name).toBe("Commuter");
+  });
+
+  it("answers a statement over its time with advice, not the database's words", async () => {
+    const slow = await read(async ({ db }) => {
+      await db.execute(sql`SELECT pg_sleep(11)`);
+      return {};
+    });
+    expect(slow).toEqual({
+      ok: false,
+      message: "This took too long. Ask for a shorter range.",
+      notFound: false,
+    });
+  }, 20_000);
 });
 
 describe("names someone typed", () => {
