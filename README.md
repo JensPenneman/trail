@@ -22,6 +22,13 @@ every pull request gets a preview deployment of its own.
   over server-sent events, plus a feed of uploads as they arrive.
 - **History**: tracks per day or date range with distance, visits and trips,
   and a time scrubber.
+- **How you travelled**: tracks in four levels — raw, averaged (noise
+  smoothed), mapped onto OpenStreetMap roads and railways, and transport:
+  stops and moves, each move with its mode (walking, cycling, car, bus, tram,
+  metro, train, boat, plane …) worked out from speed, the ways followed,
+  pauses at stops and the phone's motion sensor. A timeline per day, one-click
+  corrections that survive every recomputation, and a quick "now I'm on the
+  train" toggle ([docs/transport.md](docs/transport.md)).
 - **Explore**: an all-time heatmap.
 - **Devices**: set up a phone by scanning a QR code; per-device ingest log,
   raw points, token rotation.
@@ -223,9 +230,9 @@ settings and troubleshooting: [docs/overland.md](docs/overland.md).
 
 Every Trail server documents its public API at `/docs`: a reference generated
 from the server's OpenAPI document (`/api/v1/openapi.json`), with the guide
-[docs/api.md](docs/api.md) on top — tokens, scopes, pagination, errors, rate
-limits, CORS and the versioning promise. Scripts, apps and agents use an API
-token from Settings › API tokens:
+[docs/api.md](docs/api.md) on top — tokens, scopes, the levels of the tracks
+and the timeline, pagination, errors, rate limits, CORS and the versioning
+promise. Scripts, apps and agents use an API token from Settings › API tokens:
 
 ```sh
 curl -H "Authorization: Bearer trlk_…" https://trail.example.com/api/v1/tokens/verify
@@ -255,7 +262,7 @@ apps/api/            Express API, Overland ingest, CLI (Node LTS, TypeScript)
 apps/web/            React single-page app, served by the API in production
 packages/contracts/  zod schemas and types of the HTTP API
 deploy/              compose stack for Launchway, .env example, local run
-docs/                architecture (the specification), API guide, operations, Overland
+docs/                architecture (the specification), API guide, operations, Overland, transport modes
 scripts/             development, build, hook and release scripts
 tests/e2e/           Playwright end-to-end tests
 .devcontainer/       development container (scripts/devc.sh)

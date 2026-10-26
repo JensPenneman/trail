@@ -73,7 +73,15 @@ services:
       RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES:
       RATE_LIMIT_TOKEN_PER_MINUTE:
       RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES:
-    # default: the way out (ntfy alerts); backend: the database
+      # location processing; an empty PROCESSING_OVERPASS_URL (set in .env)
+      # means no map data, an unset one the public Overpass instance
+      PROCESSING_ENABLED:
+      PROCESSING_OVERPASS_URL:
+      PROCESSING_OVERPASS_DAILY_MB:
+      PROCESSING_OSM_TTL_DAYS:
+      PROCESSING_MAX_ACCURACY_M:
+      PROCESSING_STOP_MIN_S:
+    # default: the way out (ntfy alerts, map data from Overpass); backend: the database
     networks: [default, backend]
     read_only: true
     tmpfs:

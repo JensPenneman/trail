@@ -119,6 +119,14 @@ curl -H "Authorization: Bearer trl_..." https://trail.jenspenneman.com/api/overl
 # {"name":"Jens's iPhone"}
 ```
 
+## 5. How you travelled
+
+Trail works out from the points where you stopped and how you travelled, and
+the History and Live maps can show it by mode: see
+[transport.md](transport.md), which also explains how to correct a mode. The
+recommended presets record enough for it: Balanced+ and High resolution give
+the most detail; with Battery saver the modes rest on fewer points.
+
 ## FAQ
 
 **Why is there a blue location indicator in the status bar, and can it go?**

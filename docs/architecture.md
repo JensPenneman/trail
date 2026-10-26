@@ -26,7 +26,7 @@ trail/
 ├── packages/
 │   └── contracts/      zod schemas + types = the HTTP contract (imported by both)
 ├── deploy/             production compose stack, env example, Windows docs/scripts
-├── docs/               this file, the public API guide (api.md), operations docs
+├── docs/               this file, the public API guide (api.md), operations and user docs
 ├── scripts/            repo tooling (dev, build, hooks, db init)
 ├── tests/e2e/          Playwright end-to-end suite (whole stack)
 ├── .devcontainer/      development container (scripts/devc.sh, §3)
@@ -105,7 +105,7 @@ Pull request (same repository) ─▶ preview project launchway-trail-pr-<n>, ow
 
 `deploy/compose.yaml` services: `app` (GHCR image `sha-<commit>` of the
 deployed commit, `pull_policy: always`), `db`, and `backup` (profile
-`production`). Networks: the project's `default` (app; the way out, for ntfy)
+`production`). Networks: the project's `default` (app; the way out, for ntfy and map data)
 and `backend` (app, db, backup; `internal`, no route out); Launchway attaches
 `app` to its proxy network itself. No host port is published. See §13 and the
 runbook `docs/operations.md`.
@@ -143,6 +143,12 @@ All configuration is environment variables, validated at boot with zod
 | `RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES` | `30` | Uploads with an unknown token, per IP |
 | `RATE_LIMIT_TOKEN_PER_MINUTE` | `600` | `/api/v1` requests with a valid API token, per token (§8.3) |
 | `RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES` | `30` | `/api/v1` requests with an invalid API token, per IP |
+| `PROCESSING_ENABLED` | `true` | Location processing (§17); `false` queues and processes nothing |
+| `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Map data for the mapped level; set but empty: none (§17.3) |
+| `PROCESSING_OVERPASS_DAILY_MB` | `300` | Map download budget per UTC day |
+| `PROCESSING_OSM_TTL_DAYS` | `90` | Map tiles are refreshed after this many days |
+| `PROCESSING_MAX_ACCURACY_M` | `150` | Less accurate points are dropped from the averaged level on |
+| `PROCESSING_STOP_MIN_S` | `180` | The shortest stop |
 | `NODE_ENV` | `development` | `production` in the image (see below) |
 
 Development safety: when `NODE_ENV !== "production"` the API refuses to start
@@ -259,6 +265,12 @@ token change that holds the device is already in), `allowed_ips` (cidr[], null
 = any address), `expires_at` (null = never), `created_at`, `last_used_at`,
 `last_used_ip` (inet), `revoked_at`. Index `(user_id)`. Revoked or expired rows
 are kept 30 days for the record, then pruned.
+
+**Processing** (§17.2): the derived, rebuildable `processed_points` (cascading
+from `locations`), `segments`, `processing_queue`, `processing_state` and the
+OpenStreetMap cache (`osm_tiles`, `osm_ways`, `osm_tile_ways`, `osm_pois`);
+and `mode_overrides`, the transport modes people set — user data, kept when
+everything else is rebuilt.
 
 ## 6. Overland ingest
 
@@ -659,7 +671,7 @@ inject another verifier through `createTestContext({ apiTokens })`
 `apps/api/src/v1/routes/<feature>/<operationId>.ts`. Each feature lists its
 operations in reference order in `routes/<feature>/<feature>Routes.ts`
 (`profileRoutes`, `tokenRoutes`, `deviceRoutes`, `locationRoutes`,
-`historyRoutes`), and `apps/api/src/v1/v1Routes.ts`
+`transportRoutes`, `historyRoutes`), and `apps/api/src/v1/v1Routes.ts`
 aggregates the groups — one line per feature — plus the document's own route.
 The spec:
 
@@ -846,7 +858,10 @@ client with more than 1 MB unsent is dropped.
 `ingest` is published for every accepted upload (also when everything was a
 duplicate), followed by a `device` event with the fresh summary. The web app
 replaces device cache entries from `device` events and appends
-`ingest.points` to today's track.
+`ingest.points` to today's track. `segments { deviceId, from, to }` follows when processing finished a
+window of a device's history, or a person corrected a mode (§17.4): the
+dashboard refetches the tracks at their level, the timeline and the current
+mode.
 
 ## 10. Background jobs (in-process, single instance)
 
@@ -867,6 +882,10 @@ replaces device cache entries from `device` events and appends
   the owner's time zone at run time; a failed pass is retried with the next.
   Changing the time zone (`PATCH /api/me`) rebuilds every day of the user's
   devices in the background.
+- the processing worker (§17.4) — 3 s after new work, every minute for
+  retries and every 15 minutes for windows waiting on map data and lost
+  windows; the boot-time backfill when the algorithms' version changed; map
+  tiles fetched alongside, within the daily budget.
 Jobs must never crash the process; failures are logged. Runs never overlap.
 
 ## 11. CLI
@@ -879,6 +898,8 @@ the image, so `docker compose exec app trail <command>`):
 - `invite [--email <email>] [--days <n>]` — invite URL
 - `users` — list accounts
 - `recompute [--device <id>]` — rebuild heat cells + daily stats
+- `reprocess [--device <id>] [--from <iso> --to <iso>] [--from-level averaged|mapped|inferred]`
+  — work out the processed levels again (§17.4)
 - `prune` — run the retention cleanup now
 - `help` / `--help`
 
@@ -928,6 +949,12 @@ invalid value).
 - Database statements time out after 120 s; deleting a device or an account
   and rebuilding derived data lift that limit for their own transaction.
 - Body limits: 100 kB default, 5 MB on the ingest route.
+- Map data (§17.3) is the only outbound request besides ntfy: tile bounding
+  boxes posted to `PROCESSING_OVERPASS_URL` without credentials or cookies,
+  without redirects, with a capped answer parsed strictly. The boxes of the
+  tiles requested show the Overpass operator which areas (about 1.5 km
+  squares) the devices visited; a self-hosted Overpass or an empty
+  `PROCESSING_OVERPASS_URL` keeps that at home.
 - pino-http redacts `authorization`, `cookie`, `set-cookie` and token query
   params; coordinates are never logged above `debug`. The access log keeps
   method, redacted URL, status, client address and user agent only. The URL is
@@ -1046,12 +1073,15 @@ Routes: `/login`, `/invite/:token`, `/link/:token` (public); `/` Live,
 - **Live** — map with every device's latest position (accuracy circle,
   pulsing when live) and today's tracks; device cards: status badge
   (`deviceStatus()`), last upload ("2 min ago", ticking), battery, speed /
-  motion, current trip, points today, 48 h activity sparkline; live feed of
-  uploads from SSE. This is the "data still comes in" proof screen.
+  motion, current trip, points today, 48 h activity sparkline, the quick
+  toggle of the transport mode (§17.6); live feed of uploads from SSE. This
+  is the "data still comes in" proof screen.
 - **History** — pick a day (prev/next, calendar with days that have data from
-  `/api/stats/days`) or a range ≤ 93 days; device filter; tracks per device;
-  time scrubber showing the position at a moment; distance, points,
-  first/last; visits and trips of the day.
+  `/api/stats/days`) or a range ≤ 93 days; device filter; tracks per device
+  at a level (Raw · Averaged · Mapped · Transport, §17.6), stops and moves in
+  their modes' colours with a legend; time scrubber showing the position at a
+  moment; distance, points, first/last; the timeline of stops and moves, with
+  a dialog to correct a mode; visits and trips of the day.
 - **Explore** — all-time heatmap (`/api/heatmap`, refetch on move), totals.
 - **Devices** — list; "Add device" flow: name → big QR of `setupUrl` ("scan
   with the iPhone camera, Overland opens with everything filled in"), "Open in
@@ -1114,7 +1144,14 @@ on green CI once branch protection requires the checks.
   response schemas, handler types), principals, and the OpenAPI document:
   validated against the OpenAPI 3.1 schema and compared with
   `__snapshots__/openapi.json` (the guide aside); after an API change,
-  `npm test -w @trail/api -- -u` rewrites the snapshot for review.
+  `npm test -w @trail/api -- -u` rewrites the snapshot for review. The
+  processing stages run on a hand-made world (`tests/support/syntheticWorld.ts`:
+  a curving railway with stations and a halt, a motorway, street grids with a
+  main road and bus stops, a cycleway, a footpath, a tram line in a street, a
+  subway and a ferry) with journeys recorded through it (`journeys.ts`: a
+  dense walk, a drive, a bus, a bike ride, a train every 3 to 5 minutes, walk
+  → train → walk, a tram, a ferry, a flight, a phone on a desk); a benchmark
+  holds a dense day of 21 000 points to its CPU budget.
 - `apps/api/tests/integration` — supertest against the real app and the
   `trail_test` database (`TEST_DATABASE_URL`), including passkey ceremonies
   with a software authenticator (ES256, `none` attestation, CBOR via
@@ -1132,8 +1169,14 @@ on green CI once branch protection requires the checks.
   and session-only management); `apiV1Operations.test.ts` calls every v1
   operation of the token branch with real tokens: the same answers as the
   dashboard's routes, scopes, device restrictions and other accounts' ids.
-  The upgrade test also records API tokens with the release that added them
-  and requires every column unchanged after the later migrations.
+  Processing is tested in the real app with map tiles cut from the hand-made
+  world by a `FixtureWaySource` (no network): uploads to segments and the
+  `segments` event, every level and its degradation, windows waiting for map
+  data, a deleted range repaired, the backfill across a restart, the v1 routes
+  with sessions and tokens, `trail reprocess`. The migration-upgrade test also
+  records rows in the user-data tables that later migrations add
+  (`api_tokens`, `mode_overrides`), each with the migration that adds it, and
+  requires every column unchanged after every migration that follows.
 - `apps/web/tests` — Vitest + Testing Library (jsdom).
 - `tests/e2e` — Playwright against the built stack. `playwright.config.ts`
   starts `scripts/e2e-server.mjs`: it empties the `trail_e2e` database
@@ -1155,5 +1198,308 @@ on green CI once branch protection requires the checks.
   reference at `/docs` and the OpenAPI document, API tokens (create one in
   Settings, read the secret from the one-time screen, call
   `/api/v1/tokens/verify` with it, roll, revoke and see the old secrets
-  refused; devices and an expiry date), axe (WCAG 2.0 A–AAA, 2.1/2.2 AA, best
-  practices), keyboard use and 320 px screens.
+  refused; devices and an expiry date), the levels of the tracks and
+  correcting a move's mode, the quick toggle, axe (WCAG 2.0 A–AAA, 2.1/2.2
+  AA, best practices), keyboard use and 320 px screens. The suite's server
+  has no map data (`PROCESSING_OVERPASS_URL` empty), so the mapped level
+  degrades to averaged there.
+
+## 17. Processing and transport inference
+
+Trail works out how a device travelled from the recorded points, in four
+levels of calculation, each built on the one before. Recorded data is never
+changed: everything below is derived, carries the algorithm version
+(`processingVersion`, `apps/api/src/processing/processingVersion.ts`) and can
+be rebuilt with `trail reprocess`. The stages are pure functions over plain
+arrays in `apps/api/src/processing/` (`averagePoints`, `detectStops`,
+`matchToWays`, `extractFeatures`, `scoreModes`, `splitMove`, `applyOverrides`,
+composed by `planWindow` and `finishWindow`); thin adapters read and write the
+database around them. Every threshold is in one typed object,
+`ProcessingConfig` (`processingConfig.ts`), and `segments.features` keeps what
+each move was judged on, so a change can be evaluated against the stored
+segments and the corrections people made.
+
+### 17.1 Levels
+
+| Level | Meaning | Lives in |
+|---|---|---|
+| `raw` | the points as received | `locations` |
+| `averaged` | outliers dropped, GPS noise smoothed | `processed_points.kept`, `lat_avg`, `lon_avg`, `speed_avg` |
+| `mapped` | averaged points snapped to OpenStreetMap roads and railways, with the way's shape between consecutive points | `processed_points.lat_map`, `lon_map`, `way_id`, `way_kind`, `snap_m`, `path_map` |
+| `inferred` | stops and moves; every move with a transport mode and a confidence, the person's corrections applied | `segments` |
+
+A point that has not reached a level is served at the best one below it
+(`GET /api/v1/tracks` says which in `availableLevel`): not processed yet →
+raw; no map data → averaged. Without map data at all
+(`PROCESSING_OVERPASS_URL` empty) the inference still runs, on averaged
+points and without map evidence.
+
+Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
+`metro`, `train`, `boat`, `plane`, `unknown` (contracts `transport.ts`).
+
+### 17.2 Tables
+
+- **processed_points** — PK `(device_id, recorded_at)`, foreign key to
+  `locations` with `ON DELETE CASCADE`: deleting points deletes their rows.
+  `kept`, `lat_avg`, `lon_avg`, `speed_avg`, `lat_map`/`lon_map` (null: not
+  mapped), `way_id`, `way_kind` (null for stop points, `other` off every
+  way), `snap_m`, `path_map` (jsonb `[[lon, lat], …]`: the way's shape since
+  the move's previous point, both ends excluded), `version`, `processed_at`.
+- **segments** — `id` (uuidv7, kept while a segment keeps its start),
+  `device_id` → devices (cascade), `started_at`, `ended_at`, `kind`
+  `stop|move`, `mode` (the one that counts: `mode_user`, else
+  `mode_inferred`; null for stops), `mode_inferred`, `mode_user`,
+  `confidence`, `review` (the inference was unsure; `needsReview` = review and
+  no `mode_user`), `distance_m`, `duration_s`, `max_speed`, `point_count`,
+  start, end and centroid lat/lon, `features` (jsonb), `version`,
+  `computed_at`. Unique `(device_id, started_at)`, index
+  `(device_id, ended_at)`. Stops and moves follow each other without overlap
+  and share their boundary point; a recording gap without travel lies outside
+  every segment.
+- **mode_overrides** — user data, part of the migration-upgrade fingerprint:
+  `id`, `device_id` (cascade), `kind` `segment|toggle`, `from_at`, `to_at`
+  (null: until the next stop), `mode`, `source` `ui|api|mcp`, `created_by`
+  (set null), `created_at`, `revoked_at` (rows are kept).
+- **processing_queue** — PK `(device_id, from_at)`: `to_at`, `reason`,
+  `from_level` `averaged|mapped|inferred`, `priority` (0 new data, 1
+  backfill), `attempts`, `next_at`, `enqueued_at` (the version a finished pass
+  compares against), `missing_tiles` (jsonb `["z/x/y", …]`: the window waits
+  for map data), `last_error`.
+- Map cache: **osm_tiles** PK `(z, x, y)` with `status` `ok|failed`,
+  `fetched_at`, `way_count`, `poi_count`, `bytes`, `failures`, `retry_at`;
+  **osm_ways** (`id` = OSM way id, `kind`, the kept `tags`, `nodes` bigint[],
+  `geometry` jsonb `[[lon, lat], …]`, bounding box, `fetched_at`);
+  **osm_tile_ways** `(z, x, y, way_id)`; **osm_pois** (`id` `n…|w…|r…`,
+  `kind` `station|halt|tram_stop|subway_station|bus_stop|ferry_terminal|aerodrome`,
+  `lat`, `lon`, `name`, the tile it came with).
+- **processing_state** — key/value: the version the history was backfilled for.
+
+### 17.3 Algorithms
+
+**Averaged** (`averagePoints`), per device in time order:
+
+1. Points with an accuracy above `PROCESSING_MAX_ACCURACY_M` (150 m) are
+   dropped, and so are spikes: a run of up to three points that the phone
+   cannot have reached from the point before it nor left for the point after
+   it (> 90 m/s), while those two agree with each other (≤ 90 m/s). The
+   agreement test keeps a flight, whose points all imply more than 90 m/s.
+2. Consecutive points within max(accuracy, 25 m) of the running centroid at
+   ≤ 0.5 m/s (the reported speed, else the derived one less the accuracies)
+   form a stationary cluster and collapse to its 1/accuracy²-weighted centroid.
+3. A moving point becomes the 1/accuracy²-weighted mean of itself and its
+   moving neighbours within ±20 s — at most three on each side, and only those
+   within two accuracies (at least 10 m) of it. Noise is smoothed where it
+   dominates (slow, inaccurate) and corners at speed survive; sparse points
+   have no neighbours that close and stay exactly as they are.
+4. `speed_avg` is the median of the reported speed and the derived speeds to
+   both neighbours.
+
+**Stops and moves** (`detectStops`): a stop is at least
+`PROCESSING_STOP_MIN_S` (180 s) within 60 m of its running centroid (moving
+points at its edges trimmed), the points of an iOS visit within 150 m of its
+place (unless most of them disagree), or CoreMotion reporting stationary and
+nothing else throughout. Stops at one place on both sides of a recording
+pause, or within 80 m with at most five minutes of wandering between them,
+are one stop. After a pause of five minutes or more the stop lasts until the
+first point outside it when that point is within 300 m (iOS resumes outside
+its geofence). Moves fill the time between stops and share their end points
+with them. A gap of more than 30 minutes ends a move unless the device
+travelled at 10 m/s or more meanwhile (a flight, a train through tunnels).
+
+**Mapped** (`matchToWays`), per move (stops are not matched): a hidden Markov
+model over the ways near each point, solved with Viterbi.
+
+- Map data comes in z14 tiles: the candidate radius around every point, a
+  corridor of min(1 km, 10 % of the distance) on each side of the straight
+  line between points far apart, and 300 m around both ends (stations). A
+  move is mapped only when all its tiles are there.
+- Points enter the model 30 m apart; the ones between are placed on the
+  matched line afterwards, never behind the point before them.
+- Candidates: the nearest point of each way within clamp(1.5 × accuracy,
+  25 m, 120 m), at most four, plus "off the network". Emission cost
+  ½(d/σ)², σ = max(accuracy, 10 m); off the network 2.5.
+- Transitions route along the network of the candidate's class — rail
+  (`rail`, `light_rail`, `subway`), tram, street (roads and paths) or ferry —
+  with a bounded Dijkstra over the cached ways' shared nodes: within
+  min(25 km, 2 × chord + 300 m) and 40 way changes. Cost
+  |route − chord| / max(25 m, 0.15 × chord), plus 0.3 for another way of the
+  same network; no route (another class, out of reach) costs 8, leaving or
+  joining the network 1.
+- The result gives each point its place, its way and the way's shape since
+  the previous point: the rails between two train points minutes apart, not
+  a straight cut across the fields.
+
+Map data comes through a `WaySource` (`fetchTile(tile, signal)`). The
+default `OverpassWaySource` posts one query per tile to
+`PROCESSING_OVERPASS_URL` (default `https://overpass-api.de/api/interpreter`;
+empty switches mapping off): every `highway=*` except
+proposed/construction/abandoned/razed/disused/planned, the railways
+`rail|light_rail|tram|subway|narrow_gauge|funicular`, `route=ferry` (with
+`out body geom`), and the stations, halts, tram stops, bus stops, ferry
+terminals and aerodromes (`out body center`). It sends one request at a time
+and at most one every 2 s, with a 60 s timeout, `User-Agent: Trail/<version>
+(+<PUBLIC_URL>)` and no redirects; 429, 5xx and network errors are retried
+three times with backoff (Retry-After honoured); answers over 20 MB are cut
+off and refused; parsing is strict (a malformed element, mismatched nodes and
+shape, or a `remark` about a runtime error refuses the whole tile). The
+`TileFetcher` fetches the tiles waiting windows list, within
+`PROCESSING_OVERPASS_DAILY_MB` (300) per UTC day, and makes a window ready as
+soon as its tiles are all there. A failed tile is tried again after 10
+minutes, four times longer each time, at most a day later; a cached tile older
+than `PROCESSING_OSM_TTL_DAYS` (90) keeps serving. A self-hosted extract can
+implement the same interface.
+
+**Features** of a move (`moveSeries`, `extractFeatures`), from its intervals:
+time-weighted median, p85 and p98 (top) speed — the points' own speeds for
+intervals up to 30 s, distance along the track over time beyond that — the
+average speed, the acceleration variance of dense intervals, the shares of the
+distance by matched way family (rail, subway, tram, motorway, road, cycleway,
+foot, ferry, none) and near tram tracks, cycleways and footways (they run
+beside roads), the corridor ratio (samples every 250 m along the straight
+lines between points within 200 m of a railway, and of a motorway), pauses
+inside the move (≤ 1 m/s for ≥ 15 s, or one slow reading between long
+intervals) near stations and halts (300 m), tram stops (60 m), metro stations
+(250 m), bus stops (40 m), ferry terminals (300 m) and airports (3 km), the
+stops at both ends near them, the bus and tram stops passed within 25 m, the
+CoreMotion time shares, the mode of an Overland trip covering half the move,
+the highest altitude and fastest climb, the duration, the distance and the
+extent.
+
+**Scores** (`scoreModes`, `ScoringThresholds`): a sum of evidence per mode
+from ramps over the named thresholds, for example train = 3.2 × rail evidence
+(matched share or corridor ratio from 0.4 to 0.7) × speed (p85 from 40 to
+70 km/h) × max(0.35, station stops, no road overlap); bus = speed band (12–18
+… 55–70 km/h) × (2.6 × bus-stop evidence (pauses at bus stops, and at most of
+the stops passed) + 0.3 × road share); car = (speed + CoreMotion automotive
++ road and motorway shares), damped off roads, by bus or tram stop pauses, by
+rails and above 170 km/h; tram = tram share × (1.2 + 1.6 × tram-stop
+evidence); cycling = CoreMotion cycling, or 11–30 km/h, more on cycleways;
+walking = up to 7 km/h or CoreMotion walking; running = 8.5–16 km/h, or
+CoreMotion running; boat = ferry share; plane = p85 ≥ 200–280 km/h, altitude
+or climb; stationary = slow and small. Without map data a fast move gets some
+train score too, so it is not called a car with certainty. An Overland trip's
+mode adds 2.5. Confidence = winner / sum of all scores; below 0.4 the mode is
+`unknown`, below 0.6 the move is flagged for review.
+
+**Splitting** (`splitMove`): a 3-minute window slides along each move in
+30-second steps and is scored like a move. A change of the winner's family —
+on foot, bike, vehicle — that lasts at least 2 minutes or 500 m cuts the move
+(walk → train → walk). Pauses never decide a change: they join the run after
+them, so waiting on the platform counts towards the train. A change between
+vehicles needs a transfer, on foot or at a stop, so a bus that looks like a
+car between its stops stays one bus ride. Shorter runs merge into their
+longer neighbour; every part is scored on its own, and neighbours that end up
+with the same mode are joined again.
+
+**Overrides** are applied last (§17.5). Everything is deterministic: ways and
+stops are ordered by id, ties go to the nearer candidate and then the lower
+index, and a dense day of 21 000 points takes about 150 ms of CPU with its map
+data at hand (`processingBenchmark.test.ts`, bound 3 s).
+
+### 17.4 Scheduling
+
+- After an upload's commit its window (earliest new point − 30 min, latest
+  + 30 min) is queued (a window with the same start widens the queued one);
+  `POST /api/locations/delete` deletes the segments touching the range at
+  once and queues the range ± 30 min in its transaction, under the device's
+  processing lock; deleting a device cascades. A time-zone change needs
+  nothing (segments are UTC).
+- One in-process worker (`ProcessingWorker`, the daily-statistics scheduler's
+  pattern, reading the table) wakes 3 s after new work, every minute for
+  retries and on a 15-minute pass. It takes the next ready window — new data
+  oldest first, then the backfill newest day first — with every queued window
+  of the device that overlaps it, grows it to whole segments at both edges (at
+  most two days out; a segment reaching further back is cut at the window's
+  start), and in one transaction under a per-device advisory lock reads the
+  points, visits, trips, overrides and cached map data, runs the pipeline,
+  replaces the window's processed points and segments and finishes the queue
+  rows (only those that did not change meanwhile). It yields to the event loop
+  between windows. A failure re-queues with backoff (30 s × 4ⁿ, at most 6 h).
+  Moves without their tiles are stored unmapped and the window waits for them
+  (`missing_tiles`, re-checked after a day at the latest); tiles are fetched
+  alongside, so a missing tile never holds up other windows.
+- The 15-minute pass makes waiting windows whose tiles arrived ready and
+  queues the gap of any device whose newest point is more than 15 minutes
+  newer than its newest processed point (a window lost when the process
+  stopped between an upload and its queueing).
+- When `processingVersion` differs from the one in `processing_state`, the
+  worker's start queues every day with points of every device (from
+  `daily_stats`, in the owner's time zone) at low priority and records the
+  version in the same transaction: the backfill runs once per version and
+  resumes after a restart, because the queue is a table.
+- `trail reprocess [--device <id>] [--from <iso> --to <iso>] [--from-level
+  averaged|mapped|inferred]` queues the range in day windows, then processes
+  them itself with the map data already cached; tiles still missing are left
+  to the server's fetcher.
+- When a window is done, the owner's streams get `segments { deviceId, from,
+  to }` (§9), and so after a correction; an open dashboard refetches.
+- Shutdown stops the worker: a window in progress finishes its transaction,
+  map downloads are aborted.
+
+### 17.5 Overrides (the person wins)
+
+- `PUT /api/v1/segments/{id}/mode { mode }` stores a `segment` override for
+  the move's span and sets `mode_user` at once (the same mode again changes
+  nothing). `DELETE` revokes the override that set the segment (a toggle with
+  it, for every move it covered), shows the inferred mode at once and queues
+  the span for the inference again. A stop has no mode (409).
+- `POST /api/v1/devices/{id}/mode { mode, until? }` is the quick toggle: a
+  `toggle` override from now until `until` or the next detected stop,
+  whichever comes first. The same mode again changes nothing (but a new
+  `until`); another mode ends the running toggle and starts a new one; `mode:
+  null` ends it. `GET` on the same path answers the toggle in force and the
+  current mode.
+- `applyOverrides` applies them in creation order, so a later one wins: a move
+  inside an override's span takes its mode; one reaching beyond it is cut at
+  the span's edges, the parts outside keep (and are scored for) the inferred
+  mode. Leftovers shorter than 90 s join the corrected part, so an override
+  still fits after recomputation moved the segment by a few seconds; an
+  override covering less than 90 s of a move, and not most of it, leaves it
+  alone. A toggle that began before the window gets the first stored stop
+  after it, which ends it. The applied override is in `features.override`
+  (`{ id, kind, source }`); `GET /api/v1/stats/modes` counts the corrected
+  segments.
+
+### 17.6 API and UI
+
+`GET /api/v1/tracks?devices&from&to&level&maxPoints` (`locations:read`, ≤ 93
+days) answers `{ level, availableLevel, from, to, simplified, segments }`;
+a segment is `{ id, deviceId, kind, level, mode, modeInferred, modeUser,
+confidence, needsReview, startedAt, endedAt, distanceM, points }` with points
+`[lon, lat, epochSeconds]` (the way's shape between mapped points carries
+interpolated times). `raw`, `averaged` and `mapped` give pieces of track
+(`kind: "track"`, split at gaps over ten minutes); `inferred` gives the
+timeline's stops and moves, and points outside every segment as track. Each
+device is simplified to `maxPoints` with one RDP tolerance over its pieces
+(their ends always kept); over 200 000 points a device's points are thinned
+first. `GET /api/v1/segments?devices&from&to&cursor&limit` (`locations:read`,
+≤ 93 days, keyset pages of up to 1000) is the timeline, with `pending` while
+points of the range wait for processing. `GET /api/v1/stats/modes?devices&from&to`
+(`history:read`, local days, ≤ 400) gives distance, time and segments per day,
+device and mode. `/api/v1/locations` (owned by the token pull request) stays
+raw-only, and `/stats/days` is not extended.
+
+The dashboard calls these with its session (`apps/web/src/transport/`):
+History and Live get the level `SegmentedControl` (Raw · Averaged · Mapped ·
+Transport; `?level=` in the URL and remembered in `localStorage`, Transport
+by default) with a word on what is missing; at Transport the map draws stops
+and moves in the mode colours (`--mode-*` tokens, apart from the device
+colours, every mark ≥ 3:1) with a dashed outline for moves to review and a
+legend. A click on a segment — or "Details" in the day's timeline list next
+to the visits and trips — opens its dialog: the mode with its icon, "set by
+you", the confidence, average and top speed, distance and duration, "Was this
+…?" for moves to review, Change mode and Reset to detected. Live's device
+cards carry the quick toggle (Now: Walk · Bike · Car · Bus · Train · Tram ·
+Metro · Other · Auto). `segments` events refetch the tracks at their level,
+the timeline and the current mode.
+
+### 17.7 Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PROCESSING_ENABLED` | `true` | `false`: nothing is queued or processed; the derived tables stay as they are |
+| `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Overpass interpreter for map data; set but empty: no map data (mapped degrades to averaged) |
+| `PROCESSING_OVERPASS_DAILY_MB` | `300` | Map download budget per UTC day |
+| `PROCESSING_OSM_TTL_DAYS` | `90` | Map tiles are refreshed after this many days |
+| `PROCESSING_MAX_ACCURACY_M` | `150` | Points less accurate than this are left out from the averaged level on |
+| `PROCESSING_STOP_MIN_S` | `180` | A stop lasts at least this long |

@@ -65,7 +65,8 @@ Optional, as in [deploy/.env.example](../deploy/.env.example):
 `INGEST_BASE_URL` (empty: phones post to `PUBLIC_URL`), `ADDITIONAL_ORIGINS`,
 `ALERT_NTFY_URL`, `ALERT_NTFY_TOKEN`, `LIVE_WINDOW_MINUTES`,
 `STALE_AFTER_HOURS`, `SESSION_TTL_DAYS`, `DEFAULT_TIMEZONE`, `LOG_LEVEL`,
-`RATE_LIMIT_*`, `MAP_STYLE_LIGHT`, `MAP_STYLE_DARK` and `MAP_CONNECT_SRC`.
+`RATE_LIMIT_*`, `MAP_STYLE_LIGHT`, `MAP_STYLE_DARK`, `MAP_CONNECT_SRC` and
+the `PROCESSING_*` settings ([Processing](#processing)).
 
 `BACKUP_DIR` must be absolute and must exist: a relative path would land in
 the deployment's checkout, which Launchway deletes after later deployments,
@@ -230,7 +231,9 @@ the dump made before the update ([Backups](#backups)).
 
 Every point, visit, trip and event is kept forever; Trail itself only ever
 deletes recorded data when you ask it to (Settings > Data: delete a range,
-delete a device, delete the account).
+delete a device, delete the account). What processing works out from it —
+averaged and mapped points, stops and moves, the map cache — can always be
+worked out again; the transport modes people set are kept like recorded data.
 
 | Event | The data |
 |---|---|
@@ -324,6 +327,60 @@ setup QR code. After a new `PUBLIC_URL`:
    with the new endpoint; scan it with the phone right away (the old token
    stops working at once). Points queued on the phone are kept.
 
+## Processing
+
+Trail works out from the recorded points how each device travelled
+([transport.md](transport.md) for the people using it,
+[architecture.md §17](architecture.md#17-processing-and-transport-inference)
+for the details): the averaged level (outliers dropped, noise smoothed), the
+mapped one (snapped to roads and railways from OpenStreetMap), and the
+inferred one — stops and moves, each move with its transport mode. All of it
+lives in tables of its own and can be rebuilt; the recorded points are never
+changed. One worker in the app does the work a few seconds after each upload;
+after a release that changes the algorithms it works through the whole history
+again, newest days first, while new uploads keep going first.
+
+**Map data and Overpass.** Map data comes from the public Overpass instance
+at `https://overpass-api.de/api/interpreter` (`PROCESSING_OVERPASS_URL`), one
+query per map tile of about 1.5 × 1 km, and stays cached for
+`PROCESSING_OSM_TTL_DAYS` (90). Trail follows the instance's usage policy: one
+request at a time, at most one every two seconds, a User-Agent that names the
+server (`Trail/<version> (+PUBLIC_URL)`), retries only for busy answers, with
+backoff, and at most `PROCESSING_OVERPASS_DAILY_MB` (300 MB) a day. The first
+days after an install or a long trip use the most; the places you visit again
+are cached. When the budget is spent, mapping pauses until midnight UTC and
+the rest goes on (moves without their tiles are shown averaged until the
+tiles arrive). The tiles requested tell the Overpass operator which areas
+your devices visited. To keep that at home, point `PROCESSING_OVERPASS_URL`
+at an Overpass instance of your own — it needs the same interpreter API — or
+set it empty: then nothing is mapped and the mapped level shows the averaged
+one.
+
+| Setting | Effect |
+|---|---|
+| `PROCESSING_ENABLED=false` | Nothing is queued or processed; what was worked out stays as it is |
+| `PROCESSING_OVERPASS_URL=` (empty) | No map data: stops, moves and modes are still worked out, without map evidence |
+| `PROCESSING_OVERPASS_DAILY_MB=100` | A smaller daily download budget |
+| `PROCESSING_MAX_ACCURACY_M`, `PROCESSING_STOP_MIN_S` | The two thresholds worth tuning: points left out as inaccurate (150 m), the shortest stop (180 s) |
+
+**Reprocess** after changing those thresholds, or to fill in the map after a
+long budget pause:
+
+```sh
+docker exec launchway-trail-app-1 trail reprocess                                   # everything, from averaging on
+docker exec launchway-trail-app-1 trail reprocess --device <id> --from 2026-10-01T00:00:00Z --to 2026-11-01T00:00:00Z
+docker exec launchway-trail-app-1 trail reprocess --from-level inferred              # only stops, moves and modes
+```
+
+It works through the range in day windows and prints a line per device;
+tiles it lacks are left to the server, which fetches them politely
+afterwards. The modes people set are kept through every reprocessing.
+
+The log tells what the worker does: `processing window done` (device, range,
+points, segments, missing tiles, milliseconds), `map tile stored` (tile,
+ways, stops, bytes), `processing backfill queued` (days), and warnings when a
+tile fails (it is tried again later) or the daily budget is spent.
+
 ## Logs
 
 Launchway shows each service's logs; on the server:
@@ -371,6 +428,8 @@ Day-to-day development uses `npm run dev` instead (README).
 | "No passkey for this address" | Passkeys are per host name: a preview needs its own account; a new production address needs [a new passkey](#changing-the-public-address). |
 | `backup` restarts with "pg_dump failed" | The database is not reachable; the log line before it shows why. |
 | Backups happen at the wrong hour | `TZ`. |
+| The mapped level shows averaged lines | No map data for that area yet: the tiles wait for the daily budget (log: "daily map download budget spent") or failed (log: "map tile could not be fetched"; tried again later). `PROCESSING_OVERPASS_URL` empty switches map data off altogether. |
+| Stops, moves or modes are missing for new points | The worker runs a few seconds after an upload; `PROCESSING_ENABLED=false` switches it off. A failed window is retried with backoff (log: "processing window failed"). |
 
 ## Appendix: standalone (legacy)
 

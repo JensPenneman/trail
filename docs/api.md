@@ -2,8 +2,8 @@
 
 The Trail API gives scripts, apps and agents what a Trail server holds for an
 account: its devices, where they are now, where they have been — every point,
-visit and trip, statistics per day and an all-time heatmap — and, in later
-releases, how they travelled. It is JSON over HTTPS under `/api/v1`. The
+visit and trip, statistics per day and an all-time heatmap — and how they
+travelled. It is JSON over HTTPS under `/api/v1`. The
 OpenAPI 3.1 document at `/api/v1/openapi.json` describes every operation, and
 the reference at `/docs` renders it with this guide on top.
 
@@ -189,6 +189,53 @@ Wi-Fi network or Overland's own ids, which stay on the server. A phone uploads w
 may arrive later than newer ones: to keep a copy current, ask again for a
 range that overlaps the end of the previous one.
 
+## Levels, tracks and the timeline
+
+Trail works out from the recorded points how a device travelled, in four
+levels of calculation, each built on the one before:
+
+| Level | What it is |
+|---|---|
+| `raw` | The points as the phone sent them. |
+| `averaged` | Outliers dropped and GPS noise smoothed; a phone lying still is one position. |
+| `mapped` | Snapped to OpenStreetMap roads and railways, with the way's shape between points — a train recorded every few minutes follows the rails. |
+| `inferred` | Stops and moves; each move with a transport mode and a confidence, the corrections people made applied. |
+
+`GET /api/v1/tracks?from=…&to=…&level=…` returns the tracks at a level (at
+most 93 days; `devices` narrows it, `maxPoints` caps each device's points,
+8000 by default). Every point is served at the asked level or the best one
+below it that exists yet — points that arrived seconds ago are still raw,
+areas without map data averaged — and `availableLevel` names the level every
+point reached, each segment's `level` its own. Points are `[lon, lat, t]`:
+WGS84 degrees and epoch seconds (the way's shape between two mapped points
+carries interpolated times). At `inferred` the segments are the timeline's
+stops and moves with their modes; at the other levels they are pieces of
+track, split where the recording paused for more than ten minutes.
+
+`GET /api/v1/segments?from=…&to=…` is the timeline itself: stops (with their
+place, `centroid`, and duration) and moves (with `mode`, `modeInferred`,
+`modeUser`, `confidence`, `needsReview`, distance, duration and speeds), a
+page of up to `limit` (500 by default, at most 1000) at a time. `pending` is
+true while points of the range still wait for processing — ask again a little
+later. Transport modes: `stationary`, `walking`, `running`, `cycling`, `car`,
+`bus`, `tram`, `metro`, `train`, `boat`, `plane` and `unknown`. `mode` is the
+one that counts: a person's choice (`modeUser`), else the inferred one.
+
+People (and agents) can put a mode right, with `locations:write`:
+
+- `PUT /api/v1/segments/{id}/mode` with `{ "mode": "train" }` sets a move's
+  mode; it wins over the inference, also when the history is worked out
+  again. `DELETE` on the same path hands the move back to the inference.
+- `POST /api/v1/devices/{id}/mode` with `{ "mode": "train" }` says how the
+  device travels from now on — until `until`, if given, or the next detected
+  stop, whichever comes first. The same mode again changes nothing;
+  `{ "mode": null }` ends it. `GET` on the same path tells the mode now.
+
+`GET /api/v1/stats/modes?from=2026-10-01&to=2026-10-31` (`history:read`, local
+days, at most 400) gives distance, time and segments per day, device and
+mode. Segment ids stay the same while a segment keeps its start; after a
+correction or new data, read the timeline again.
+
 ## Errors
 
 Every error has the same body:
@@ -292,6 +339,19 @@ curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/stats/activity?h
 curl -sS -X PATCH -H "Authorization: Bearer $TRAIL_TOKEN" -H "Content-Type: application/json" \
   -d '{"name": "Work phone", "pendingSettings": "high-resolution"}' \
   "$TRAIL/api/v1/devices/$DEVICE"
+
+# Yesterday's stops and moves, and the tracks by transport mode
+curl -sS -G -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/segments" \
+  --data-urlencode "from=2026-10-25T00:00:00+02:00" --data-urlencode "to=2026-10-26T00:00:00+01:00"
+curl -sS -G -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/tracks" \
+  --data-urlencode "from=2026-10-25T00:00:00+02:00" --data-urlencode "to=2026-10-26T00:00:00+01:00" \
+  -d level=inferred
+
+# That move was a train ride; and from now on I am on a bus
+curl -sS -X PUT -H "Authorization: Bearer $TRAIL_TOKEN" -H "Content-Type: application/json" \
+  -d '{"mode":"train"}' "$TRAIL/api/v1/segments/019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d4e/mode"
+curl -sS -X POST -H "Authorization: Bearer $TRAIL_TOKEN" -H "Content-Type: application/json" \
+  -d '{"mode":"bus"}' "$TRAIL/api/v1/devices/0199a0f3-5fec-72ad-a30c-5ab9d8908cd3/mode"
 
 # The OpenAPI document, for a code generator or an HTTP client
 curl -sS "$TRAIL/api/v1/openapi.json" -o trail-openapi.json
