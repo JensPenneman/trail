@@ -1,0 +1,9 @@
+.share-form {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.share-form__suggestions {
+  display: grid;
+  gap: var(--space-1);
+}

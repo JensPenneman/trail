@@ -12,7 +12,7 @@ export interface MapTrack {
 export interface MapPosition {
   id: string;
   color: string;
-  /** Palette slot, for the CSS class of the DOM marker. */
+  /** Palette slot, for the CSS class of the DOM marker (`device-color-…`, or `person-color-…`). */
   slot: number;
   lon: number;
   lat: number;
@@ -20,6 +20,8 @@ export interface MapPosition {
   accuracy: number | null;
   /** Pulses while the device is live. */
   live: boolean;
+  /** Someone else's device: drawn as their initials in their colour instead of a dot. */
+  initials?: string;
 }
 
 export interface MapPoint {

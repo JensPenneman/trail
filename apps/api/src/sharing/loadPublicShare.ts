@@ -7,6 +7,7 @@ import { shareLinks } from "../db/schema/shareLinks";
 import { HttpError, notFound } from "../http/httpError";
 import { hashToken } from "../lib/hashToken";
 import { buildTrack } from "../tracks/buildTrack";
+import { publicDeviceKey } from "./gridProjection";
 import { isShareLinkSecret } from "./shareLinkSecret";
 import { liveWindowMs, windowStart } from "./shareWindow";
 import { toSharedDevice } from "./toSharedDevice";
@@ -84,7 +85,14 @@ export async function loadPublicShare(
             });
             return built.points;
           });
-    result.devices.push({ name: device.name, location, battery, activity, track });
+    result.devices.push({
+      key: publicDeviceKey(key, link.id, device.id),
+      name: device.name,
+      location,
+      battery,
+      activity,
+      track,
+    });
   }
 
   ctx.background.run("count a share link view", async () => {

@@ -72,6 +72,59 @@
   }
 }
 
+/* Someone else's position: their initials in a ring of their colour; live people pulse too. */
+.map-person {
+  position: relative;
+  width: 2.25rem;
+  height: 2.25rem;
+  pointer-events: none;
+}
+
+.map-person__pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--person-color);
+  opacity: 0;
+}
+
+.map-person__initials {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 3px solid var(--person-color);
+  border-radius: 50%;
+  background: var(--color-surface);
+  box-shadow: 0 1px 6px rgb(0 0 0 / 35%);
+  color: var(--color-text);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .map-person--live .map-person__pulse {
+    animation: map-position-pulse 2.4s var(--ease-out) infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-person--live .map-person__pulse {
+    opacity: 0.25;
+    scale: 1.6;
+  }
+}
+
+@media (forced-colors: active) {
+  .map-person__initials {
+    forced-color-adjust: none;
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}
+
 /* MapLibre's controls, in Trail's colours and with 44 px targets. */
 .trail-map .maplibregl-ctrl-group {
   overflow: hidden;

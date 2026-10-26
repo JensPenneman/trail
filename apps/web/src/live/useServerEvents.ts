@@ -15,6 +15,8 @@ const eventTypes = [
   "device-removed",
   "ingest",
   "segments",
+  "person",
+  "share",
   "session-ended",
 ] as const satisfies readonly ServerEventType[];
 

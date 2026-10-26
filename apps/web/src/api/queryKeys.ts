@@ -70,6 +70,14 @@ export const queryKeys = {
   invites: ["invites"],
   adminUsers: ["admin-users"],
   linkInfo: (token: string) => ["link-info", token] as const,
+  /** People who share with the signed-in person (v1), kept current by `person` events. */
+  people: ["people"],
+  /** The signed-in person's own shares, and the ones others give them. */
+  shares: ["shares"],
+  incomingShares: ["incoming-shares"],
+  shareLinks: ["share-links"],
+  /** What a public link shows; the secret is the key's second element. */
+  publicShare: (secret: string) => ["public-share", secret] as const,
   /** Mutations that end the session on purpose: signing out, deleting the account. */
   endSession: ["end-session"],
   /** Creating an API token: its dialog stays open until the one-time secret is shown. */

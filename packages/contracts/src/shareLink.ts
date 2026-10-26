@@ -134,8 +134,10 @@ export const createShareLinkResponseSchema = z.object({
 });
 export type CreateShareLinkResponse = z.infer<typeof createShareLinkResponseSchema>;
 
-/** A device on a public page; it has no id, visitors need none. */
+/** A device on a public page: no id, only a key that means something on this page alone. */
 export const publicSharedDeviceSchema = z.object({
+  /** Stable for this device on this link, and unrelated to its id. */
+  key: z.string(),
   name: z.string(),
   location: personLocationSchema.nullable(),
   battery: batterySchema.nullable(),

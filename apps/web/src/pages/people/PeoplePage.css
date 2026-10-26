@@ -1,0 +1,27 @@
+.people-page__cards {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+}
+
+@media (min-width: 40rem) and (max-width: 63.99rem) {
+  .people-page__cards {
+    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  }
+}
+
+.people-page__hidden > summary {
+  width: fit-content;
+}
+
+.people-page__hidden > .card {
+  margin-top: var(--space-2);
+}
+
+.people-page__links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-s);
+}

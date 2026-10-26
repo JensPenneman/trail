@@ -8,6 +8,7 @@ const items: readonly { to: string; label: string; icon: IconName; end?: boolean
   { to: "/", label: "Live", icon: "live", end: true },
   { to: "/history", label: "History", icon: "history" },
   { to: "/explore", label: "Explore", icon: "explore" },
+  { to: "/people", label: "People", icon: "users" },
   { to: "/devices", label: "Devices", icon: "devices" },
   { to: "/settings", label: "Settings", icon: "settings" },
 ];

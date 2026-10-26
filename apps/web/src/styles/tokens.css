@@ -59,6 +59,16 @@
   --device-6: #4a3aa7;
   --device-7: #e34948;
 
+  /* People's identity colours, a second ring (see src/people/personPalette.ts). */
+  --person-0: #00838f;
+  --person-1: #8e24aa;
+  --person-2: #c2185b;
+  --person-3: #8d6e63;
+  --person-4: #827717;
+  --person-5: #546e7a;
+  --person-6: #bf360c;
+  --person-7: #0277bd;
+
   --font-sans:
     system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
@@ -196,6 +206,15 @@
     --device-6: #9085e9;
     --device-7: #e66767;
 
+    --person-0: #26c6da;
+    --person-1: #ce93d8;
+    --person-2: #f48fb1;
+    --person-3: #bcaaa4;
+    --person-4: #c0ca33;
+    --person-5: #90a4ae;
+    --person-6: #ff8a65;
+    --person-7: #4fc3f7;
+
     --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
     --shadow-2: 0 8px 24px rgb(0 0 0 / 45%), 0 2px 6px rgb(0 0 0 / 30%);
     --shadow-3: 0 24px 64px rgb(0 0 0 / 60%), 0 4px 16px rgb(0 0 0 / 40%);
@@ -324,4 +343,37 @@
 
 .mode-color-unknown {
   --mode-color: var(--mode-unknown);
+}
+
+/* People: the class carries identity, the name or initials beside it the meaning. */
+.person-color-0 {
+  --person-color: var(--person-0);
+}
+
+.person-color-1 {
+  --person-color: var(--person-1);
+}
+
+.person-color-2 {
+  --person-color: var(--person-2);
+}
+
+.person-color-3 {
+  --person-color: var(--person-3);
+}
+
+.person-color-4 {
+  --person-color: var(--person-4);
+}
+
+.person-color-5 {
+  --person-color: var(--person-5);
+}
+
+.person-color-6 {
+  --person-color: var(--person-6);
+}
+
+.person-color-7 {
+  --person-color: var(--person-7);
 }

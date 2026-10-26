@@ -38,6 +38,17 @@ export function gridOffset(
   return { lat: digest.readUInt32BE(0) / 2 ** 32, lon: digest.readUInt32BE(4) / 2 ** 32 };
 }
 
+/**
+ * What a public page calls a device: stable for the link, unrelated to the
+ * device's id (which would date the device and name it across links).
+ */
+export function publicDeviceKey(key: Buffer, linkId: string, deviceId: string): string {
+  return createHmac("sha256", key)
+    .update(`trail/share-link-device/v1\0${linkId}\0${deviceId}`)
+    .digest("hex")
+    .slice(0, 16);
+}
+
 const toRadians = (degrees: number): number => (degrees * Math.PI) / 180;
 
 /** Longitude in [-180, 180). */

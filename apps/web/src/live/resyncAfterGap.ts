@@ -11,6 +11,9 @@ export function resyncAfterGap(queryClient: QueryClient): void {
     queryKeys.all.levelTracks,
     queryKeys.all.timeline,
     queryKeys.all.deviceMode,
+    queryKeys.people,
+    queryKeys.shares,
+    queryKeys.incomingShares,
   ]) {
     void queryClient.invalidateQueries({ queryKey });
   }
