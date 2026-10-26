@@ -9,7 +9,7 @@ test.describe("passkeys", () => {
     consoleGuard,
   }) => {
     expect(account.email).toContain("@");
-    await page.goto("/settings");
+    await page.goto("/settings/passkeys");
     const passkeys = page.getByRole("region", { name: "Passkeys", exact: true });
     const rows = passkeys.getByRole("listitem");
     await expect(rows).toHaveCount(1);
@@ -59,7 +59,7 @@ test.describe("passkeys", () => {
     openBrowser,
     consoleGuard,
   }) => {
-    await page.goto("/settings");
+    await page.goto("/settings/passkeys");
     const section = page.getByRole("region", {
       name: "Add a passkey on another device or address",
       exact: true,

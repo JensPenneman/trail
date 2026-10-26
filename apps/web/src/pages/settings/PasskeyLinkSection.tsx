@@ -38,7 +38,7 @@ export function PasskeyLinkSection({ headingId }: { headingId: string }) {
 
   return (
     <section className="section" aria-labelledby={headingId}>
-      <h2 className="section__title" id={headingId}>
+      <h2 className="section__title" id={headingId} tabIndex={-1} data-section-title>
         Add a passkey on another device or address
       </h2>
       <div className="card">

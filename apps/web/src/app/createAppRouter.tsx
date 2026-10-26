@@ -6,6 +6,7 @@ import { PublicLayout } from "./PublicLayout";
 import { RequireSession } from "./RequireSession";
 import { RootLayout } from "./RootLayout";
 import { RouteError } from "./RouteError";
+import { settingsSections } from "./settingsSections";
 
 /**
  * Every page is its own chunk, fetched on first visit (the map library is
@@ -91,9 +92,25 @@ export function createAppRouter() {
                 {
                   path: "settings",
                   lazy: () =>
-                    import("../pages/settings/SettingsPage").then((m) => ({
-                      Component: m.SettingsPage,
+                    import("../pages/settings/SettingsLayout").then((m) => ({
+                      Component: m.SettingsLayout,
                     })),
+                  children: [
+                    {
+                      index: true,
+                      lazy: () =>
+                        import("../pages/settings/SettingsIndex").then((m) => ({
+                          Component: m.SettingsIndex,
+                        })),
+                    },
+                    ...settingsSections.map((section) => ({
+                      path: section.id,
+                      lazy: () =>
+                        import("../pages/settings/SettingsSection").then((m) => ({
+                          element: <m.SettingsSection id={section.id} />,
+                        })),
+                    })),
+                  ],
                 },
               ],
             },

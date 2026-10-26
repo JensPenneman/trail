@@ -53,8 +53,17 @@ test.describe("accessibility", () => {
     await expectAccessible(page, "Devices");
     await open(page, `/devices/${device.id}`, "Checked phone", "Uploads of this device");
     await expectAccessible(page, "the device page");
-    await open(page, "/settings", "Settings", "works on this address");
-    await expectAccessible(page, "Settings");
+    for (const [section, ready] of [
+      ["profile", "Time zone"],
+      ["passkeys", "works on this address"],
+      ["tokens", "No active tokens."],
+      ["sharing", "Nobody sees your location."],
+      ["data", "Delete a period"],
+      ["about", "Receiver endpoint"],
+    ] as const) {
+      await open(page, `/settings/${section}`, "Settings", ready);
+      await expectAccessible(page, `Settings › ${section}`);
+    }
   });
 
   test("the setup code of a new device", async ({ page, account }) => {
@@ -73,8 +82,10 @@ test.describe("accessibility", () => {
       !(await currentUser(admin.page)).isAdmin,
       "The server's first account belongs to someone else",
     );
-    await open(admin.page, "/settings", "Settings", "Invite someone");
-    await expect(admin.page.getByRole("heading", { name: "Accounts" })).toBeVisible();
+    await open(admin.page, "/settings/people", "Settings", "Invite someone");
+    await expect(
+      admin.page.getByRole("heading", { name: "Accounts on this server" }),
+    ).toBeVisible();
     await expectAccessible(admin.page, "Settings of an administrator");
   });
 });

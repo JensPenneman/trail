@@ -9,7 +9,7 @@ export function DataSection({ headingId }: { headingId: string }) {
   const [deletingAccount, setDeletingAccount] = useState(false);
   return (
     <section className="section" aria-labelledby={headingId}>
-      <h2 className="section__title" id={headingId}>
+      <h2 className="section__title" id={headingId} tabIndex={-1} data-section-title>
         Your data
       </h2>
       <div className="card">

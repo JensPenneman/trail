@@ -25,7 +25,7 @@ test.describe("signing in again", () => {
   test("offers the saved passkey in the email field's autofill", async ({ page, account }) => {
     // The virtual authenticator answers the autofill request at once, as if the person
     // picked their passkey from the list under the email field.
-    await openSettingsConnected(page);
+    await openSettingsConnected(page, "about");
     const shownSignIn = page.waitForURL(/\/login$/);
     await page
       .getByRole("region", { name: "About" })

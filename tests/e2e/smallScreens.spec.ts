@@ -23,7 +23,12 @@ test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account 
     ["/people", "People", "Nobody shares with you yet"],
     ["/devices", "Devices", "30 points"],
     [`/devices/${device.id}`, "A phone with a rather long name", "25 shown"],
-    ["/settings", "Settings", "works on this address"],
+    ["/settings/profile", "Settings", "Time zone"],
+    ["/settings/passkeys", "Settings", "works on this address"],
+    ["/settings/tokens", "Settings", "No active tokens."],
+    ["/settings/sharing", "Settings", "Nobody sees your location."],
+    ["/settings/data", "Settings", "Delete a period"],
+    ["/settings/about", "Settings", "Receiver endpoint"],
     ["/no/such/page", "This trail goes nowhere", "Go to Live"],
   ] as const) {
     await page.goto(path);

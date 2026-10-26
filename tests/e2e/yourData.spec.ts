@@ -22,7 +22,7 @@ async function download(
 test.describe("your data", () => {
   test("exports download as GeoJSON, GPX and CSV that read back", async ({ page, account }) => {
     await uploadedDevice(page, "Exported phone", overlandBatch(account.timezone));
-    await page.goto("/settings");
+    await page.goto("/settings/data");
     const fileName = /^trail-\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.(geojson|gpx|csv)$/;
 
     const geojson = await download(page, "geojson");
@@ -65,7 +65,7 @@ test.describe("your data", () => {
     account,
   }) => {
     const device = await uploadedDevice(page, "Tidied phone", overlandBatch(account.timezone));
-    await page.goto("/settings");
+    await page.goto("/settings/data");
     const form = page.getByRole("region", { name: "Your data", exact: true });
     await form.getByLabel("Device", { exact: true }).selectOption({ label: "Tidied phone" });
     await form.getByRole("button", { name: "Delete data…" }).click();
@@ -93,7 +93,7 @@ test.describe("your data", () => {
     // deleted account's passkey; the server no longer knows it (401 unknown_credential) and
     // the page tells the password manager to forget it through the WebAuthn Signal API.
     consoleGuard.expectFailedResponse(401, /\/api\/auth\/finish$/);
-    await openSettingsConnected(page);
+    await openSettingsConnected(page, "data");
     await page.getByRole("button", { name: "Delete account…" }).click();
     const confirm = page.getByRole("dialog", { name: "Delete your account?" });
     await confirm.getByLabel(`Type ${account.email} to confirm`).fill(account.email);
