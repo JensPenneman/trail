@@ -566,9 +566,10 @@ the reference page at `/docs` are generated from the route registry. A
 breaking change means `/api/v2`, never a silent change in v1. The routes of
 §8 without `v1` stay the dashboard's private API.
 
-**Mounting order.** `createV1Router(ctx)` (`apps/api/src/v1/createV1Router.ts`)
-is mounted at `/api/v1` before the dashboard's `/api` chain, so it sets its own
-order:
+**Mounting order.** `/api/v1` is mounted before the dashboard's `/api` chain,
+so it sets its own order. `createApp` puts steps 1 and 2 in front of
+`createV1Router(ctx)` (`apps/api/src/v1/createV1Router.ts`), which does the
+rest:
 
 1. CORS headers on every response, refusals and 429s included
    (`Access-Control-Allow-Origin: *`, no credentials; exposed: `ETag`,

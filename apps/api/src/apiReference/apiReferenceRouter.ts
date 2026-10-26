@@ -22,22 +22,18 @@ function pageCsp(https: boolean): RequestHandler {
 /**
  * `/docs` — the API reference (Scalar's standalone bundle from the image, never
  * from a CDN) rendering `/api/v1/openapi.json`. The page revalidates; its
- * scripts carry their hash and are immutable. Mounted before the SPA router.
- * Null when the bundle is missing (a broken build): the server runs without
- * the page.
+ * scripts carry their hash and are immutable. Mounted before the SPA router,
+ * behind the per-IP limiter. Null when the bundle is missing (a broken build):
+ * the server runs without the page.
  */
-export function apiReferenceRouter(
-  bundlePath: string | null,
-  options: { ipRateLimit: RequestHandler; logger: Logger },
-): Router | null {
+export function apiReferenceRouter(bundlePath: string | null, logger: Logger): Router | null {
   if (bundlePath === null) {
-    options.logger.warn("the API reference bundle is missing — /docs is not served");
+    logger.warn("the API reference bundle is missing — /docs is not served");
     return null;
   }
   const secureCsp = pageCsp(true);
   const plainCsp = pageCsp(false);
   const router = express.Router();
-  router.use(options.ipRateLimit);
 
   router.get("/", (req, res, next) => {
     const html = apiReferencePage(apiReferenceScripts(bundlePath).ordered);

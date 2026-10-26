@@ -37,7 +37,7 @@ function documentedOperations(document: { paths?: Record<string, Record<string, 
 describe("the OpenAPI document and the router", () => {
   it("describe exactly the same operations", async () => {
     const document = (await request(t.app).get(apiPaths.v1.openApi).expect(200)).body;
-    const router = createV1Router(t.ctx, { ipRateLimit: (_req, _res, next) => next() });
+    const router = createV1Router(t.ctx);
     const mounted = router.stack.flatMap(({ route }) => {
       if (route === undefined) return [];
       const template = `${apiPaths.v1.root}${route.path.replace(/:(\w+)/g, "{$1}")}`;

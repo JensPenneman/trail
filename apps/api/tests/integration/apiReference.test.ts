@@ -22,8 +22,9 @@ const docsCsp =
   "connect-src 'self';worker-src 'self' blob:;child-src 'self' blob:;font-src 'self';" +
   "manifest-src 'self';object-src 'none';base-uri 'none';form-action 'self';frame-ancestors 'none'";
 
+/** The page's script URLs, in page order (every one is a `/docs/assets/…` file). */
 const scriptPaths = (html: string): string[] =>
-  [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((match) => match[1] ?? "");
+  [...html.matchAll(/src="(\/docs\/assets\/[^"]+)"/g)].map((match) => match[1] ?? "");
 
 describe("/docs", () => {
   it("is a page of its own with a CSP that allows inline styles, and nothing inline else", async () => {
@@ -32,7 +33,7 @@ describe("/docs", () => {
     expect(page.headers["cache-control"]).toBe("no-cache");
     expect(page.headers["content-security-policy"]).toBe(docsCsp);
     expect(page.headers["x-frame-options"]).toBe("DENY");
-    expect(page.text).not.toMatch(/<script>|<style|style=/);
+    for (const inline of ["<script>", "<style", "style="]) expect(page.text).not.toContain(inline);
     const scripts = scriptPaths(page.text);
     expect(scripts.map((path) => path.replace(/-[0-9a-f]{12}\.js$/, ""))).toEqual([
       "/docs/assets/setup",

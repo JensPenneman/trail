@@ -23,6 +23,7 @@ import { configRouter } from "../publicConfig/configRouter";
 import { statsRouter } from "../stats/statsRouter";
 import { tracksRouter } from "../tracks/tracksRouter";
 import { createV1Router } from "../v1/createV1Router";
+import { corsHeaders } from "../v1/v1Cors";
 import { apiNotFound } from "./apiNotFound";
 import { compress } from "./compress";
 import { csrfGuard } from "./csrfGuard";
@@ -65,7 +66,10 @@ export function createApp(ctx: AppContext): Express {
     logger,
     identifier: "ip",
   });
-  app.use(apiPaths.v1.root, createV1Router(ctx, { ipRateLimit: apiRateLimit }));
+  // CORS headers come first, so that a browser client can read even a 429.
+  app.use(apiPaths.v1.root, corsHeaders);
+  app.use(apiPaths.v1.root, apiRateLimit);
+  app.use(apiPaths.v1.root, createV1Router(ctx));
 
   app.use("/api", apiRateLimit);
   app.use("/api", csrfGuard(config.allowedOrigins));
@@ -89,11 +93,11 @@ export function createApp(ctx: AppContext): Express {
   app.use(eventsRouter(ctx));
   app.use("/api", apiNotFound);
 
-  const reference = apiReferenceRouter(apiReferenceScriptPath(), {
-    ipRateLimit: apiRateLimit,
-    logger,
-  });
-  if (reference !== null) app.use(apiPaths.docs, reference);
+  const reference = apiReferenceRouter(apiReferenceScriptPath(), logger);
+  if (reference !== null) {
+    app.use(apiPaths.docs, apiRateLimit);
+    app.use(apiPaths.docs, reference);
+  }
   const spa = spaRouter(config.webDistDir, logger);
   if (spa !== null) app.use(spa);
   app.use(pageNotFound);

@@ -1,4 +1,4 @@
-import express, { type RequestHandler, type Router } from "express";
+import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
 import { loadSession } from "../auth/loadSession";
 import { getRequestAuth } from "../auth/requestAuth";
@@ -10,7 +10,7 @@ import { buildOpenApiDocument } from "./openapi/buildOpenApiDocument";
 import { readApiGuide } from "./openapi/readApiGuide";
 import { type ServedDocument, serveDocument } from "./openapi/servedDocument";
 import { tokenRateLimit } from "./tokenRateLimit";
-import { corsHeaders, corsPreflight } from "./v1Cors";
+import { corsPreflight } from "./v1Cors";
 import { v1Routes } from "./v1Routes";
 
 /** Two routes with one operationId or one method and path are a mistake: refuse to start. */
@@ -26,13 +26,14 @@ function checkUnique(routes: readonly V1Route[]): void {
 
 /**
  * The public API, mounted at `/api/v1` before the dashboard's `/api` chain so it
- * sets its own order (docs/architecture.md §8.3): CORS headers → per-IP limit
- * (shared with the dashboard API) → preflight → API token → session (only
- * without a token) → CSRF guard (only without a token) → per-token limit →
- * JSON body → the routes of the registry → JSON 404. The OpenAPI document is
- * built here, once, so a spec it cannot describe stops the server at startup.
+ * sets its own order (docs/architecture.md §8.3). `createApp` puts the CORS
+ * headers and the per-IP limiter it shares with the dashboard API in front;
+ * then come the preflight → API token → session (only without a token) →
+ * CSRF guard (only without a token) → per-token limit → JSON body → the routes
+ * of the registry → JSON 404. The OpenAPI document is built here, once, so a
+ * spec it cannot describe stops the server at startup.
  */
-export function createV1Router(ctx: AppContext, options: { ipRateLimit: RequestHandler }): Router {
+export function createV1Router(ctx: AppContext): Router {
   const { config } = ctx;
   let served: ServedDocument | undefined;
   const routes = v1Routes(() => {
@@ -52,8 +53,6 @@ export function createV1Router(ctx: AppContext, options: { ipRateLimit: RequestH
   const methods = [...new Set(routes.map(({ spec }) => spec.method.toUpperCase()))];
 
   const router = express.Router();
-  router.use(corsHeaders);
-  router.use(options.ipRateLimit);
   router.use(corsPreflight(methods));
   router.use(authenticateBearer(ctx));
   // A bearer request is decided by its token: the session cookie stays unread.
