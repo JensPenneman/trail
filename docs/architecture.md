@@ -501,8 +501,8 @@ Passkeys only (no passwords), SimpleWebAuthn v14 on both ends.
   `requireSession` (sessions, passkeys, live events, device credentials,
   account deletion) or `requireAdmin` (an administrator's session); §8.3 has
   the details.
-- **Passkey links** (one-time, 15 min): Settings → "Add a passkey on another
-  device or address" (`POST /api/me/passkey-links {origin?}`), and the CLI
+- **Passkey links** (one-time, 15 min): Settings › Passkeys → "Add a passkey
+  on another device or address" (`POST /api/me/passkey-links {origin?}`), and the CLI
   `trail passkey-link <email> [--origin URL]` for recovery. Opening
   `/link/<token>` on that origin → `POST /api/auth/link/:token/start` →
   registration for that account → `/api/auth/finish` signs in.
@@ -1440,28 +1440,89 @@ and the restart retries. Restore with `pg_restore --clean --if-exists
 ## 14. Web app
 
 React 19 + React Router 8 + TanStack Query 5 + MapLibre GL 6 (OpenFreeMap
-vector styles, light/dark from `/api/config`), `@simplewebauthn/browser`,
+vector styles, light/dark and optional satellite imagery from `/api/config`),
+`@simplewebauthn/browser`,
 `uqr` for QR codes. Plain CSS with custom properties (LCH colours with sRGB
 fallbacks), system font stack, no web fonts, no third-party scripts, CSP-clean.
 
-Routes: `/login`, `/invite/:token`, `/link/:token`, `/s` (public; the link's
-secret is the fragment, `/s#trls_…`); `/`
-Live, `/history`, `/explore`, `/people`, `/devices`, `/devices/:id`, `/settings`
-(signed in); 404.
+Navigation (`PrimaryNav`, one landmark): **Map · People · Devices ·
+Settings**, in the header on wide screens and as a four-item tab bar along
+the bottom edge on phones (the same element, restyled); the current item
+carries `aria-current="page"` on every address below it.
 
-- **Live** — map with every device's latest position (accuracy circle,
-  pulsing when live) and today's tracks; device cards: status badge
-  (`deviceStatus()`), last upload ("2 min ago", ticking), battery, speed /
-  motion, current trip, points today, 48 h activity sparkline, the quick
-  toggle of the transport mode (§17.6); live feed of uploads from SSE. This
-  is the "data still comes in" proof screen.
-- **History** — pick a day (prev/next, calendar with days that have data from
-  `/api/stats/days`) or a range ≤ 93 days; device filter; tracks per device
-  at a level (Raw · Averaged · Mapped · Transport, §17.6), stops and moves in
-  their modes' colours with a legend; time scrubber showing the position at a
-  moment; distance, points, first/last; the timeline of stops and moves, with
-  a dialog to correct a mode; visits and trips of the day.
-- **Explore** — all-time heatmap (`/api/heatmap`, refetch on move), totals.
+| Route | Page |
+|---|---|
+| `/login`, `/invite/:token`, `/link/:token` | sign-in and sign-up (public) |
+| `/s` | a public link; its secret is the fragment, `/s#trls_…` (public) |
+| `/` | **Map**: Live, History and Heat (signed in) |
+| `/people` | People |
+| `/devices`, `/devices/:id` | Devices, one device |
+| `/settings/profile`, `…/passkeys`, `…/tokens`, `…/sharing`, `…/people`, `…/data`, `…/about` | Settings, a section each; `…/people` (Accounts) for administrators only, Profile for everyone else |
+| `/settings` | opens Profile; an anchor of the single page of old (`/settings#tokens`, `#browsers`, …) opens its section (`settingsPathFor`) |
+| `/history?…`, `/explore?…` | redirect (replacing the entry) to `/?view=history&…` and `/?view=heat&…`, every parameter kept (`legacyMapPath`) |
+| anything else | 404 |
+
+`isSignedInPath` lists the signed-in paths (it decides whether the session is
+fetched at startup).
+
+- **Map** (`pages/map/MapPage`) — one map and three **views** of it, chosen
+  with a switch in the head (Live · History · Heat). The state is the URL:
+  `/?view=live|history|heat&people=me,<userId>,…&devices=<id>,…&date=…` or
+  `&from=…&to=…`, plus `level=` (§17.6) and `style=`. Defaults (Live, Me,
+  every device, today) are left out of it; an unknown view is Live, unknown
+  people and devices are dropped once the lists have loaded, and every
+  control changes its own parameter only, so a day chosen in History is still
+  there after a look at Heat. Every view keeps its queries and state in a
+  hook (`useLiveView`, `useHistoryView`, `useHeatView`) that asks for nothing
+  while another view is shown, and hands the page what to draw: the page has
+  one `TrailMap` for all three, so switching views keeps the map — no new
+  canvas, style or tiles. The camera frames what is drawn when that changes
+  (another day, other people or devices; Live and History on today share it),
+  never merely because the view did; Heat frames it only when the page opened
+  on it.
+  - **Live** — every shown device's latest position (accuracy circle,
+    pulsing when live) and today's tracks; device cards: status badge
+    (`deviceStatus()`), last upload ("2 min ago", ticking), battery, speed /
+    motion, current trip, points today, 48 h activity sparkline, the quick
+    toggle of the transport mode (§17.6); live feed of uploads from SSE. This
+    is the "data still comes in" proof screen. The people chosen appear as
+    their initials and with their cards (`PersonCard`; Show on map moves the
+    camera to them).
+  - **History** — pick a day (prev/next, calendar with days that have data
+    from `/api/stats/days`) or a range ≤ 93 days; tracks per device at a
+    level (Raw · Averaged · Mapped · Transport, §17.6), stops and moves in
+    their modes' colours with a legend; time scrubber showing the position at
+    a moment; distance, points, first/last; the timeline of stops and moves,
+    with a dialog to correct a mode; visits and trips of the day.
+  - **Heat** — all-time heatmap (`/api/heatmap`, refetched as the map moves),
+    totals and the busiest places in view. Heatmaps cover one's own devices
+    only, so Heat offers no people and says so when some are chosen.
+
+  The head holds the controls the views share, in this order: **people**
+  (Me and everyone who shares with me, plus Everyone — a checkbox for all,
+  "mixed" while some are chosen — once two or more share; somebody always
+  stays chosen), the **device filter** (grouped by person; someone else's
+  devices in their colour from `personPalette`), the **map style** (Auto,
+  which follows the system's light or dark setting, Light, Dark, and
+  Satellite when the server has imagery; remembered in localStorage
+  `trail.mapStyle`, a dark or satellite map drawing Trail's lines and dots
+  in their dark-background steps whatever the page's scheme), and the
+  tracks' **level** with the mode legend (Live and History). On phones and
+  small tablets they fold into one "Map options" button with a one-line
+  summary, so the map stays near the top; beside a full-height map (≥ 64rem)
+  the panel scrolls by itself under a sticky title and view switch.
+
+  **People, as their shares allow** (§8.5): positions come from
+  `GET /api/v1/people` (projected by the server) and `person` events; an
+  approximate or area position is drawn as a circle of the precision it was
+  cut to, never as a track. A track — Live's today, History's period — is
+  asked for (`/api/v1/people/{id}/track`, one request per person) only when
+  the share is precise with history; everyone else gets a calm note in
+  History instead of a request, so no 404 ever reaches the console. Those
+  queries are keyed by the share's id and history, so a share that changes
+  (a `share` event refetches the people) is never asked for what it allowed
+  before, and they are not cached once off screen (`gcTime` 0); `person`
+  events refetch them.
 - **Devices** — list; "Add device" flow: name → big QR of `setupUrl` ("scan
   with the iPhone camera, Overland opens with everything filled in"), "Open in
   Overland" button (on the phone itself), manual values with copy buttons,
@@ -1476,7 +1537,8 @@ Live, `/history`, `/explore`, `/people`, `/devices`, `/devices/:id`, `/settings`
   fresh their position is, what they are doing (`describeActivity`, which
   takes the inferred mode when there is one), battery, distance; Show on map,
   Apple Maps and Google Maps links, Share back, Hide. Hidden people can be
-  shown again. "You share with" (`OutgoingShareList`) lists status, devices,
+  shown again; Show on map opens the Map page with that person alone
+  (`/?view=live&people=<userId>`). "You share with" (`OutgoingShareList`) lists status, devices,
   precision, history, details, expiry and the last look, with Change and Stop
   — and, when someone signed up with the address of a pending share,
   "<name> (<address>) joined Trail — confirm?" with Confirm and Cancel.
@@ -1486,9 +1548,11 @@ Live, `/history`, `/explore`, `/people`, `/devices`, `/devices/:id`, `/settings`
   gets "They will see you once they sign up and you confirm", an
   administrator a one-click invitation to that address (which skips the
   confirmation). `person` and `share` events keep it all live.
-- **Settings** — profile (name, time zone), passkeys (list with provider,
-  add, rename, delete), sessions (revoke), "add a passkey on another device
-  or address" (link + QR), API tokens (list with hint, scope chips, devices,
+- **Settings** — one header, a navigation of the sections (current one
+  marked) and the section; moving between sections moves focus to the
+  section's heading. Profile (name, time zone); passkeys (list with provider,
+  add, rename, delete), "add a passkey on another device or address" (link +
+  QR) and the signed-in browsers (revoke); API tokens (list with hint, scope chips, devices,
   addresses, expiry, last use and status; create with a name, a template —
   Read-only, Agent, Full access — that fills in the scope checkboxes, all or
   some devices, an expiry of 30 or 90 days, a year, a date or never (with a
@@ -1496,8 +1560,9 @@ Live, `/history`, `/explore`, `/people`, `/devices`, `/devices/:id`, `/settings`
   copy button, the dialog closing only with "I have saved it"; roll and revoke
   after a confirmation; a link to `/docs`), sharing (make public links — the
   address once, with a QR code —, their views and Turn off; the outgoing
-  shares), people (admins: invites, users), data (export GeoJSON/GPX/CSV,
-  delete a range, delete account), about (version, commit, build time).
+  shares), accounts (`/settings/people`, admins: invites, users), data
+  (export GeoJSON/GPX/CSV, delete a range, delete account), about (version,
+  commit, build time, and Sign out — the place for it on phones).
 - **Public link** (`/s#<secret>`) — no session, no navigation: the label, a map
   of the shared devices (with the route for history links), how fresh each
   position is, details when included, the expiry, a refresh every 15 s, and a
@@ -1627,7 +1692,15 @@ which are merged by hand; majors wait for a person, security ones too.
   (`locations:read` for anything that can show positions) and device-limited
   tokens, the public endpoint's 404s, headers, view counting and rate limit,
   and the access log.
-- `apps/web/tests` — Vitest + Testing Library (jsdom).
+- `apps/web/tests` — Vitest + Testing Library (jsdom). Pages render through
+  `renderPage` with the API answered by `mockApi` and the map replaced by a
+  stub that shows what it was handed; the Map page's tests also check that
+  switching views keeps that one map, and that a view not shown asks for
+  nothing. The Map page's URL (`parseMapSearch`, the updates in
+  `mapSearchUpdates`, `resolveMapSelection`), the old addresses
+  (`legacyMapPath`, and the redirects through the app's own route table),
+  Settings' anchors (`settingsPathFor`) and `isSignedInPath` have unit tests
+  of their own.
 - `tests/e2e` — Playwright against the built stack. `playwright.config.ts`
   starts `scripts/e2e-server.mjs`: it empties the `trail_e2e` database
   (`E2E_DATABASE_URL`; any database not named `trail…e2e` is refused) and runs
@@ -1638,7 +1711,9 @@ which are merged by hand; majors wait for a person, security ones too.
   holds the passkeys), plus WebKit for the signed-out pages where the port
   allows (WebKit refuses 4190). A setup project signs up the first account
   (the admin) for the invitation tests. Every test fails on a console error,
-  an uncaught exception or a CSP violation; map styles are stubbed, other
+  an uncaught exception or a CSP violation; map styles are stubbed (the
+  suite's server has satellite imagery from a host of its own, whose tiles
+  the stub answers, so the CSP's map origins are checked too), other
   third-party requests refused. The Overland fixture is shifted to today.
   Scenarios: sign-up and refusal, device setup and the live upload, ingest log
   and raw points, remote settings, token rotation, History and its scrubber,
@@ -1651,8 +1726,15 @@ which are merged by hand; majors wait for a person, security ones too.
   refused; devices and an expiry date), the levels of the tracks and
   correcting a move's mode, the quick toggle, sharing between two accounts
   in two browsers (live updates, hiding, stopping) and public links (opened
-  signed out, turned off, too short, unknown), axe (WCAG 2.0 A–AAA, 2.1/2.2
-  AA, best practices), keyboard use and 320 px screens. The suite's server
+  signed out, turned off, too short, unknown), the Map page (its three views
+  on one map, Back through them, the old addresses and deep links, the
+  device filter across views, the map style — Auto following the system, a
+  remembered choice, satellite imagery — and people on the map: a share with
+  history drawn in History, a share without history never asked for, Show on
+  map from People), Settings' sections and old anchors, the navigation (a
+  tab bar on phones, the current item, focus on the new page's heading),
+  axe (WCAG 2.0 A–AAA, 2.1/2.2 AA, best practices) on every view and
+  section, keyboard use and 320 px screens. The suite's server
   has no map data (`PROCESSING_OVERPASS_URL` empty), so the mapped level
   degrades to averaged there.
 

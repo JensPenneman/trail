@@ -7,7 +7,8 @@ arrive, and you can always put it right.
 
 ## Four ways to look at a track
 
-The map on the History and Live pages has a switch with four levels:
+The map's Live and History views have a switch with four levels (under Map
+options on a phone):
 
 - **Raw**: the points exactly as your phone sent them, with their GPS noise.
 - **Averaged**: stray points left out (a fix that is kilometres off for a
@@ -61,7 +62,7 @@ sure, especially between a car and a train.
   was, the speeds, distance and time. Pick the right mode under Change mode;
   the move shows "set by you" from then on. Reset to detected hands it back to
   Trail. For a move marked as unsure, "Yes" confirms Trail's guess.
-- **From now on**: on the Live page every device card has a row
+- **From now on**: in the map's Live view every device card has a row
   *Now: Walk · Bike · Car · Bus · Train · Tram · Metro · Other · Auto*. Tap
   the mode you are switching to — getting on a train, say — and it holds
   until your next stop. Auto hands it back to Trail; Other has every mode.

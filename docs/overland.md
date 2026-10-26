@@ -107,7 +107,7 @@ On the phone, Overland's Tracker screen shows:
 - **Last Sent**: time since the last accepted upload.
 - **Send Now**: uploads immediately, handy while testing.
 
-In Trail, the **Live** page shows every device's last upload ("2 min ago"),
+In Trail, the map's **Live** view shows every device's last upload ("2 min ago"),
 battery and position, plus a feed of uploads as they arrive; the device page
 lists every upload in its ingest log with the number of points. The two should
 agree: when Last Sent changes on the phone, a new entry appears in Trail.
@@ -122,7 +122,7 @@ curl -H "Authorization: Bearer trl_..." https://trail.jenspenneman.com/api/overl
 ## 5. How you travelled
 
 Trail works out from the points where you stopped and how you travelled, and
-the History and Live maps can show it by mode: see
+the map's History and Live views can show it by mode: see
 [transport.md](transport.md), which also explains how to correct a mode. The
 recommended presets record enough for it: Balanced+ and High resolution give
 the most detail; with Battery saver the modes rest on fewer points.

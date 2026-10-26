@@ -124,7 +124,7 @@ On a server without Trail:
    latest one by hand).
 5. Open `https://trail.jenspenneman.com`, enter the address from
    `SIGNUP_ALLOWLIST` and create a passkey. The first account is the admin;
-   others join through the allowlist or an invite (Settings > People).
+   others join through the allowlist or an invite (Settings > Accounts).
 6. Add a phone: Devices > Add device, scan the QR code with the iPhone's
    Camera app; Overland opens with endpoint, token and device ID filled in
    ([overland.md](overland.md)).
@@ -352,8 +352,8 @@ Passkeys are bound to a host name, and every phone posts to the address in its
 setup QR code. After a new `PUBLIC_URL`:
 
 1. **Add a passkey for the new address.** While the old address still works,
-   Settings > "Add a passkey on another device or address", pick the new
-   address and open the link (or its QR code) on the device that should hold
+   Settings > Passkeys > "Add a passkey on another device or address", pick
+   the new address and open the link (or its QR code) on the device that should hold
    the passkey. The link is valid for 15 minutes and works once. Without a
    working sign-in, create the link with the CLI:
    `docker exec launchway-trail-app-1 trail passkey-link you@example.com --origin https://<new address>`.
