@@ -143,9 +143,9 @@ When the two disagree, the pull request that notices fixes the plan.
 | `GET /api/v1/heatmap` | `locations:read` | as the private route, with `devices`; the cells are places |
 | `GET /api/v1/people` | `people:read` | people sharing with the caller, projected latest location |
 | `GET /api/v1/people/{userId}` | `people:read` | one person: shared devices and their locations |
-| `GET` / `POST /api/v1/shares`, `DELETE /api/v1/shares/{id}` | `shares:read` / `shares:write` | outgoing shares |
+| `GET` / `POST /api/v1/shares`, `PATCH` / `DELETE /api/v1/shares/{id}`, `POST …/{id}/confirm` | `shares:read` / `shares:write` (+ `locations:read` to start, change or confirm, §4.8) | outgoing shares |
 | `GET /api/v1/shares/incoming`, `POST …/incoming/{id}/hide` | `shares:read` / `shares:write` | incoming shares |
-| `GET` / `POST /api/v1/share-links`, `DELETE …/{id}` | `shares:read` / `shares:write` | public links |
+| `GET` / `POST /api/v1/share-links`, `DELETE …/{id}` | `shares:read` / `shares:write` (+ `locations:read` to make one) | public links |
 | `GET /api/v1/events` | `locations:read` | SSE: the `/api/events` frames plus `person` and `segments`; bearer or session (stretch goal) |
 
 Ingest stays at `/api/overland` with device tokens. Token management is
@@ -436,19 +436,23 @@ dashed outline and a "Confirm?" affordance.
 ### 4.2 Model
 
 - `shares` — `id`, `owner_user_id`, `recipient_email` (lower-cased),
-  `recipient_user_id` null (bound when the address has an account, at creation
-  or at sign-up), `device_ids` uuid[] null, `precision`
+  `recipient_user_id` null (bound when the address has an account at
+  creation, at a sign-up with an invitation to that address, or when the owner
+  confirms who signed up, §4.8), `device_ids` uuid[] null, `precision`
   `precise|approximate|area`, `history_days` int null (null = live only),
   `include_details` bool (battery and mode; default true), `expires_at` null,
   `created_at`, `revoked_at`, `hidden_at` (set by the recipient),
   `last_viewed_at`. Partial unique `(owner_user_id, recipient_email)` where
   `revoked_at` is null; at most 50 active per owner.
 - `share_links` — `id`, `owner_user_id`, `token_hash` unique, `label` (shown to
-  visitors; defaults to the owner's first name), `device_ids` null,
-  `precision`, `history_days` null, `include_details` (default false),
-  `expires_at` not null (default 24 h, at most 30 days), `created_at`,
+  visitors; defaults to “Shared location”, never the owner's name),
+  `device_ids` null, `precision`, `history_days` null, `include_details`
+  (default false), `expires_at` not null (default 24 h, at least 1 h, at most
+  30 days), `created_at`,
   `revoked_at`, `view_count`, `last_viewed_at`. Secret `trls_` + 32 bytes; URL
   `${PUBLIC_URL}/s#<secret>` (the secret is the fragment, §4.8).
+- `hidden_people` — `user_id`, `hidden_user_id`, `hidden_at`; PK of both: a
+  person the user hid, so every share from them stays hidden (§4.8).
 
 ### 4.3 Access rules
 
@@ -459,8 +463,9 @@ dashed outline and a "Confirm?" affordance.
   window for live-only shares — `STALE_AFTER_HOURS`, see §4.8). Every read of
   shared data goes through it; mutations keep `findOwnedDevice`.
 - Projection: coordinates of a non-precise device are snapped to a grid
-  (approximate 0.005°, area 0.05°) with a per-device deterministic offset, so
-  repeated reads cannot be averaged back to the real position; the reported
+  (approximate 0.005°, area 0.05°) with one deterministic offset per owner, so
+  repeated reads cannot be averaged back to the real position and several
+  shares, links or devices cannot be intersected (§4.8); the reported
   accuracy is the grid size; speed and course are dropped for `area`. Battery
   and mode appear only with `include_details`.
 - A recipient never sees device tokens or keys, pending settings, alerts,
@@ -473,7 +478,7 @@ dashed outline and a "Confirm?" affordance.
 `afterIngest` publishes `person` events (projected) to every recipient with an
 active share for that device (owner → recipients lookup cached for 60 s), and a
 `share` event to the recipient when a share is created or revoked and to the
-owner when it is hidden or accepted. People and Map pages update from these;
+owner when it is hidden or someone signed up with its address. People and Map pages update from these;
 the public page polls.
 
 ### 4.5 Public links
@@ -493,8 +498,10 @@ the public page polls.
 - **People** page (new primary item): "People who share with me" (cards as in
   §4.1) and "You share with" (status, devices, precision, expiry, stop). A
   **Share my location** dialog: email (suggesting people who share with me),
-  devices, precision, history, duration; it says "They will see you as soon as
-  they sign in" when the address has no account; admins get a one-click invite.
+  devices, precision, history, duration; it says "They will see you once they
+  sign up and you confirm" when the address has no account; admins get a
+  one-click invite to that address. "You share with" asks "<name> (<address>)
+  joined Trail — confirm?" with Confirm and Cancel when someone signed up.
 - Settings › **Sharing**: public links (create with label, devices, precision,
   history and expiry; copy, QR, revoke; views and last viewed) and the outgoing
   shares.
@@ -505,8 +512,9 @@ the public page polls.
 
 ### 4.7 Endpoints
 
-See §1.3, plus `GET /api/public/share` (`X-Share-Secret`). Pending shares are claimed in
-`finishSignUp` by matching the address.
+See §1.3, plus `GET /api/public/share` (`X-Share-Secret`). Pending shares are bound in
+`finishSignUp` only for an invitation to their address; otherwise the owner
+confirms with `POST /api/v1/shares/{id}/confirm` (§4.8).
 
 ### 4.8 Decisions (feat/sharing)
 
@@ -528,10 +536,16 @@ specification.
    Overland pauses while a phone stands still, so a 15-minute window would hide
    everyone who sits still. A live-only share shows the newest position of the
    last 12 hours; nothing older.
-4. **Projection:** rows of 0.005° (approximate) or 0.05° (area) latitude, each
-   row's columns as wide in metres as the row is high; the grid of every
-   (share or link, device) is offset by an HMAC-SHA256 under a 32-byte key the
-   server generates once and keeps in `server_secrets` (`share-grid`). Accuracy
+4. **Projection:** rows of 0.005° latitude; bands of ten rows, each divided
+   into a whole number of columns (a multiple of ten) about as wide in metres
+   as the rows are high; an area cell is a block of ten by ten approximate
+   cells, so it is always a union of them, and whole columns leave no cut
+   cell at the antimeridian. One offset per owner — an HMAC-SHA256 of the
+   owner's id under a 32-byte key the server generates once and keeps in
+   `server_secrets` (`share-grid`) — serves every device, share and link of
+   the owner and both precisions: no number of them, nor a share made again,
+   narrows a position below one approximate cell (a property test holds it;
+   offsets per share or device could be intersected). Accuracy
    = the cell size (or the fix's own, when worse); altitude and course are
    dropped for both coarse precisions, the speed too for area. Distances start
    from the viewer's own newest position and end at the projected one; they
@@ -539,19 +553,25 @@ specification.
 5. **Durations:** `hour`, `endOfDay` (the next local midnight in the owner's
    time zone, found by bisection on the local date), `week` (7 × 24 h),
    `indefinitely`; a change's `duration` counts from now. Links: expiry
-   required, 24 h by default, at most 30 days.
-6. **Limits and lifecycle:** 50 current shares (pending included) and 20
-   working links per owner (409); an ended share is stopped automatically
+   required, 24 h by default, at least an hour, at most 30 days; without a
+   label they read “Shared location”, never the owner's name.
+6. **Limits and lifecycle:** 50 current shares (pending and joined included)
+   and 20 working links per owner (409); the links list shows the working
+   ones, then expired ones, at most 50; an ended share is stopped automatically
    when a new one goes to the same address; stopped and ended rows are pruned
    after 30 days; a deleted device leaves the owner's shares and links (never
    widening one to every device).
 7. **Tokens limited to devices** (refines §2.2): they read people and shares
    like any token, but share only the devices they are limited to, named by
-   id, and cannot change a share that shows other devices (403); stopping is
-   always allowed.
-8. **Visibility for the owner:** outgoing shares show `pending`, `active` or
-   `hidden` (the recipient hid them) and `last_viewed_at` (stamped at most
-   once a minute when the recipient reads people).
+   id, and change or confirm only shares that show nothing but those devices,
+   before and after the change (403); stopping is always allowed.
+8. **Visibility for the owner:** outgoing shares show `pending`, `joined`
+   (someone signed up with the address and waits for confirmation), `active`
+   or `hidden` (the recipient hid them) and `last_viewed_at` (stamped at most
+   once a minute when the recipient reads people). Accepted: starting a share
+   tells the owner whether the address has an account, and its name — on a
+   server whose accounts come from the allow-list and invitations there is
+   little to learn from it.
 9. **Public endpoint:** the secret never appears in a URL a server or proxy
    sees — the link is `${PUBLIC_URL}/s#<secret>` (a fragment) and the page
    calls `GET /api/public/share` with `X-Share-Secret`; 404 `not_found` for a
@@ -563,6 +583,29 @@ specification.
 10. **Inferred mode:** `activity.mode` comes from `currentModeOf`, null until
     processing provides a current mode; the web cards read it through
     `describeActivity`, which works with or without it.
+11. **Scopes:** anything that can yield coordinates needs `locations:read`.
+    Starting or changing a share, confirming one and making a link take
+    `shares:write` and `locations:read` (a share to an address the token
+    controls, or a precise link read back through the public endpoint, would
+    otherwise show positions the token may not read); stopping a share or a
+    link and hiding or showing a person take `shares:write` alone.
+    `resolveAccessibleDevices` returns the caller's own devices to a token
+    only with `locations:read` (and shared ones only with `people:read`), so
+    every caller — the MCP server too — inherits the rule.
+12. **Pending shares and sign-up:** Trail does not verify addresses, so
+    whoever first signs up with an address must not inherit what was shared
+    with it. A pending share binds at sign-up only when the sign-up used an
+    invitation to that very address (an administrator vouched for it); after
+    any other sign-up (the allow-list, an open invitation) the owner sees
+    "<name> (<address>) joined Trail — confirm?" and confirms
+    (`POST /api/v1/shares/{id}/confirm`) or cancels. Nothing is visible to the
+    new account before that; both sides get the usual `share` events
+    (`claimed` to the owner, `created` to the recipient on confirmation).
+    Sign-up and starting a share take the same advisory lock, so they never
+    miss each other.
+13. **Hiding is per person:** the recipient hides the owner, not a share
+    (`hidden_people`); a new share from someone hidden starts hidden and sends
+    no `created` notice until they are shown again.
 
 ---
 

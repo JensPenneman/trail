@@ -24,9 +24,14 @@ account on your server there are **public links**.
      time zone), a week, or until you stop it.
 4. Choose **Share**.
 
-If the address has no account yet, the share waits: they see you as soon as
-they sign up with that address. Administrators can send an invitation right
-from the dialog. Trail sends no e-mails itself.
+If the address has no account yet, the share waits. Trail does not check that
+an address belongs to whoever signs up with it, so when someone does,
+**You share with** asks "*name* (*address*) joined Trail — confirm?": choose
+**Confirm** if it is the person you meant, **Cancel** if not. Until you
+confirm they see nothing of you. An invitation to that address skips the
+question — an administrator sent it to that person on purpose — and
+administrators can send one right from the dialog. Trail sends no e-mails
+itself.
 
 Sharing works one way. They see you; you see them only if they share back,
 with **Share back** on their card.
@@ -44,15 +49,20 @@ Each person has a card: their devices, when the position was updated, what
 they are doing, battery and the distance from you, with **Show on map**,
 **Apple Maps**, **Google Maps** and **Share back**. **Hide** removes someone
 from your People page without asking them to stop; they still share, are told
-that you hid them, and you can show them again under *Hidden*.
+that you hid them, and you can show them again under *Hidden*. Hiding holds
+for the person: when they share with you again later, the new share starts
+hidden too, without a notice.
 
 Approximate and area positions are the centre of a fixed cell around the
-person: the same spot every time, never their exact position.
+person: the same spot every time, never their exact position. Each person has
+one grid for all their devices, shares and links, so putting several of them
+together tells no more than one.
 
 ## Public links
 
-In **Settings › Sharing**, **Make a public link**: a label for the page (your
-first name by default), the devices, precision, optionally your route of up to
+In **Settings › Sharing**, **Make a public link**: a label for the page
+(“Shared location” unless you write one — the page never shows your name),
+the devices, precision, optionally your route of up to
 seven days (precise only), battery and activity (off by default), and when the
 link stops working (one hour to 30 days). Copy the address or let someone scan
 its code: it is shown only once. Anyone with the address sees the page, which
@@ -69,5 +79,7 @@ request header.
 The API reference at `/docs` describes the people, shares and share-links
 operations; [api.md](api.md) has a summary, and
 [architecture.md §8.4](architecture.md#84-sharing-people) the rules behind
-them. What a recipient and a link holder can and cannot see is in
+them. An API token needs `shares:write` and `locations:read` to start, change
+or confirm a share and to make a link: anything that can show positions needs
+`locations:read`. What a recipient and a link holder can and cannot see is in
 [SECURITY.md](../SECURITY.md).

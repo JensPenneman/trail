@@ -272,16 +272,18 @@ from `locations`), `segments`, `processing_queue`, `processing_state` and the
 OpenStreetMap cache (`osm_tiles`, `osm_ways`, `osm_tile_ways`, `osm_pois`);
 and `mode_overrides`, the transport modes people set — user data, kept when
 everything else is rebuilt.
+
 **shares** — one person's location shared with another (§8.4): `id`,
 `owner_user_id` → users (cascade), `recipient_email` (lower-case, checked),
-`recipient_user_id` → users (cascade; null while the address has no account:
-a pending share), `device_ids` (uuid[]; null = every device of the owner, also
-later ones; a deleted device is removed from the array, which never turns it
-into null), `precision` (`precise|approximate|area`), `history_days` (int
-1–365, only with `precise`, checked; null = live only), `include_details`
-(bool, default true), `expires_at` (null = until stopped), `created_at`,
-`revoked_at`, `hidden_at` (set by the recipient), `last_viewed_at`. Partial
-unique `(owner_user_id, recipient_email)` where `revoked_at` is null; indexes on
+`recipient_user_id` → users (cascade; null until the share is bound: pending,
+or joined and waiting for the owner's confirmation), `device_ids` (uuid[];
+null = every device of the owner, also later ones; a deleted device is
+removed from the array, which never turns it into null), `precision`
+(`precise|approximate|area`), `history_days` (int 1–365, only with
+`precise`, checked; null = live only), `include_details` (bool, default
+true), `expires_at` (null = until stopped), `created_at`, `revoked_at`,
+`hidden_at` (set by the recipient), `last_viewed_at`. Partial unique
+`(owner_user_id, recipient_email)` where `revoked_at` is null; indexes on
 `recipient_user_id` (current) and on `recipient_email` of pending shares.
 
 **share_links** — public links (§8.4): `id`, `owner_user_id` → users (cascade),
@@ -290,10 +292,14 @@ unique `(owner_user_id, recipient_email)` where `revoked_at` is null; indexes on
 false), `expires_at` (not null), `created_at`, `revoked_at`, `view_count`,
 `last_viewed_at`. Index `(owner_user_id)`.
 
+**hidden_people** — whom a person has hidden on their People page (§8.4):
+`user_id` → users (cascade), `hidden_user_id` → users (cascade), `hidden_at`;
+PK `(user_id, hidden_user_id)`. A share bound to that person starts hidden.
+
 **server_secrets** — keys the server generates for itself on first use and
 keeps: `name` (PK), `secret` (bytea), `created_at`. `share-grid` (32 random
-bytes) keys the offsets of the sharing grids; it must never change, or a
-recipient who saw old and new cells could intersect them.
+bytes) keys the offset of each owner's sharing grid; it must never change, or
+a recipient who saw old and new cells could intersect them.
 
 ## 6. Overland ingest
 
@@ -449,9 +455,10 @@ Passkeys only (no passwords), SimpleWebAuthn v14 on both ends.
 - **Finish** `POST /api/auth/finish {ceremonyId, response}` → verifies with
   `expectedOrigin` = ceremony origin, `expectedRPID` = ceremony RP ID,
   `requireUserVerification: true`; registration creates user (+ admin if
-  first) + passkey in one transaction, consumes the invite and binds the
-  pending shares of the address (§8.4; their owners get a `share` event
-  afterwards); authentication
+  first) + passkey in one transaction and consumes the invite; pending
+  shares of the address bind only for an invitation to that very address,
+  otherwise their owners confirm (§8.4; they get a `share` event either
+  way); authentication
   checks the credential belongs to the user (targeted) or resolves the user
   from the credential (discoverable), updates `counter`/`last_used_at`. Then
   creates a session and sets the cookie (a session the browser already had is
@@ -878,38 +885,54 @@ a secret link. Code in `apps/api/src/sharing/`; the user guide is
 **Concepts.**
 
 - A *share* goes from its owner to an address (lower-case). An address with an
-  account is bound at once; otherwise the share is *pending* and is bound in
-  the sign-up transaction of whoever creates an account with that address
-  (`claimPendingShares` in `finishSignUp`). Trail does not verify addresses:
-  the allow-list and invitations decide who may sign up with one.
+  account is bound to it at once. Otherwise the share is *pending*; when
+  someone signs up with the address it binds at once only if they came with an
+  invitation to that very address — the administrator vouched for it. Any
+  other sign-up (the allow-list, an open invitation) leaves it waiting: the
+  owner sees `joined` with the new account's name and address and confirms
+  (`POST /api/v1/shares/{id}/confirm`) or cancels. Until then the new account
+  sees nothing. Trail does not verify addresses; this is where a person
+  decides. New shares take the sign-up lock (`lockSignups`), so a share and a
+  sign-up of its address at the same moment never miss each other.
 - One current share per owner and address (a partial unique index); an ended
   one is stopped automatically when a new one is made. At most 50 current
-  shares (pending ones count) and 20 working links per owner, else 409
-  `conflict`.
+  shares (pending and joined ones count) and 20 working links per owner, else
+  409 `conflict`.
 - The owner picks the devices (all — also later ones — or a list), the
   precision, history (only with precise), details (battery and activity) and
   the duration: one hour, until the end of the owner's local day, a week
   (7 × 24 h) or until stopped. The end of the day is found by bisection on the
   local date (`endOfLocalDay`), so days of 23 or 25 hours and zones that skip
   midnight need no special case. A `duration` in a change counts from now.
-- The owner changes or stops a share; the recipient hides the person (the
-  owner sees the share as `hidden`) or shows them again. Both take effect with
-  the next read and the next live event.
+- The owner changes or stops a share; the recipient hides the owner or shows
+  them again. Hiding is per person (`hidden_people`), not per share: a later
+  share from someone hidden arrives hidden, without a `created` notice, until
+  they are shown again. The owner sees the share as `hidden`. All of it takes
+  effect with the next read and the next live event.
 
 **Access rules.** `resolveAccessibleDevices(viewer, requested?)`
 (`accessibleDevices.ts`) is the one place that decides what a viewer sees of
-other people: the viewer's own devices (precise, unbounded; a token only the
-devices it is limited to) and the devices of the shares that grant the viewer
-access — `grantsViewer`: bound to the viewer, not stopped, not ended, not
-hidden by the viewer — each as `{ deviceId, ownerId, shareId, precision,
-historyDays, from, includeDetails }`. `from` is now − `history_days` for
-history shares and now − `STALE_AFTER_HOURS` (the live window, 12 h by default)
-for live-only ones: Overland pauses while a phone stands still, so a shorter
-window would hide everyone who sits still. Requested ids must all be
-accessible (else 404). A token without `people:read` sees no shared device.
-Shared data is readable through the people routes, the live events and the
-public link endpoint only; every other read (devices, locations, tracks,
-visits, trips, statistics, the heatmap, exports) stays own-devices-only.
+devices other than through their own device routes: the viewer's own devices
+— precise and unbounded; for a token only with `locations:read`, and only the
+devices it is limited to — and the devices of the shares that grant the viewer
+access (`grantsViewer`: bound to the viewer, not stopped, not ended, not
+hidden by the viewer; for a token only with `people:read`), each as
+`{ deviceId, ownerId, shareId, precision, historyDays, from, includeDetails }`.
+`from` is now − `history_days` for history shares and now − `STALE_AFTER_HOURS`
+(the live window, 12 h by default) for live-only ones: Overland pauses while a
+phone stands still, so a shorter window would hide everyone who sits still.
+Requested ids must all be accessible (else 404). Shared data is readable
+through the people routes, the live events and the public link endpoint only;
+every other read (devices, locations, tracks, visits, trips, statistics, the
+heatmap, exports) stays own-devices-only.
+
+**Scopes.** Anything that can yield coordinates needs `locations:read`:
+creating or changing a share or a link, and confirming a share, take
+`shares:write` *and* `locations:read` (a share to an address the token
+controls, or a precise link read back through the public endpoint, would
+otherwise hand out positions the token may not read). Listing takes
+`shares:read`; stopping a share or a link and hiding or showing a person take
+`shares:write` alone; the people routes take `people:read`.
 
 **Projection** (`gridProjection.ts`, `toSharedDevice.ts`). Per shared device a
 recipient gets its name, the newest position recorded since `from` at the
@@ -920,17 +943,22 @@ located device — for principals with `locations:read` only — to the position
 points outside the window, exports or deletion.
 
 - `precise` passes the position on.
-- `approximate` (rows of 0.005° latitude, ≈ 556 m) and `area` (0.05°, ≈ 5.6 km)
-  give the centre of the grid cell around the position. A row's columns are as
-  wide in metres as the row is high (`size / cos φ` of the row's centre,
-  capped near the poles), so a cell covers about the same ground everywhere.
-  The grid of each (share or link, device) is shifted by an offset: an
-  HMAC-SHA256 of the scope and both ids under the `share-grid` key
-  (`server_secrets`). It is fixed — the same position gives the same cell on
-  every read, so averaging reads gains nothing — differs per share and device,
-  and cannot be derived from anything public. The accuracy reported is the
-  cell size (or the fix's own, when worse); altitude and course are dropped,
-  for `area` the speed too.
+- `approximate` gives the centre of a cell of one grid per owner: rows of
+  0.005° latitude (≈ 556 m); ten rows form a band, and each band is divided
+  into a whole number of columns — a multiple of ten — about as wide in metres
+  as the rows are high. `area` gives the centre of a block of ten by ten of
+  those cells (≈ 5.6 km), so an area cell is always a union of approximate
+  cells. Whole columns tile the full circle, so the cell at the antimeridian is
+  whole too.
+- The grid is offset by an HMAC-SHA256 of the owner's id under the
+  `share-grid` key (`server_secrets`): the same for every device, share and
+  link of the owner and for both precisions, so holding several of them —
+  devices in one pocket, a share again after a stop, several links, an
+  approximate and an area share — never narrows a position below one
+  approximate cell. It is fixed (the same position gives the same cell on
+  every read, so averaging gains nothing) and cannot be derived from anything
+  public. The accuracy reported is the cell size (or the fix's own, when
+  worse); altitude and course are dropped, for `area` the speed too.
 - Battery and activity (`motion`, the mode of an Overland trip in progress,
   and the inferred transport mode through `currentModeOf`, null until location
   processing provides one) only with `include_details`.
@@ -943,20 +971,28 @@ People and Sharing):
 | `GET /api/v1/people` | `people:read` | people sharing with the caller, by name, with their shared devices |
 | `GET /api/v1/people/{userId}` | `people:read` | one of them; 404 for anyone else or a hidden person |
 | `GET /api/v1/people/{userId}/track` | `people:read` | shares with history only: points in `[from, to)` (≤ 93 days), `from` moved up to the start of the history, split and simplified as in §8.1 |
-| `GET`, `POST /api/v1/shares` | `shares:read`, `shares:write` | current outgoing shares; start one (201) |
-| `PATCH`, `DELETE /api/v1/shares/{id}` | `shares:write` | change (duration from now, devices, precision, history, details); stop (204) |
+| `GET /api/v1/shares` | `shares:read` | current outgoing shares: `pending`, `joined`, `active`, `hidden` |
+| `POST /api/v1/shares` | `shares:write` + `locations:read` | start one (201) |
+| `PATCH /api/v1/shares/{id}` | `shares:write` + `locations:read` | change (duration from now, devices, precision, history, details) |
+| `POST /api/v1/shares/{id}/confirm` | `shares:write` + `locations:read` | a `joined` share starts; 409 when nobody joined or it is bound already |
+| `DELETE /api/v1/shares/{id}` | `shares:write` | stop (204) |
 | `GET /api/v1/shares/incoming` | `shares:read` | current shares with the caller, hidden ones included |
 | `POST /api/v1/shares/incoming/{id}/hide`, `…/unhide` | `shares:write` | hide or show a person |
-| `GET`, `POST /api/v1/share-links`, `DELETE …/{id}` | `shares:read`, `shares:write` | public links; the secret and its URL only in the 201 |
+| `GET /api/v1/share-links` | `shares:read` | the working links, then expired ones, each newest first, at most 50 |
+| `POST /api/v1/share-links` | `shares:write` + `locations:read` | the secret and its URL only in the 201 |
+| `DELETE /api/v1/share-links/{id}` | `shares:write` | turn off (204) |
 
 History needs `precise` (400 `validation_failed`, also for a change that would
 leave history on a coarse share); sharing with yourself is 400; devices must
 be the caller's (404). `people:*` and `shares:*` reads are not limited by a
 token's devices, but a token limited to devices shares only those, listed by
-id (`deviceIds: null` is 400), and cannot change a share that shows other
-devices (403 `forbidden`); stopping is always allowed. Reading people stamps
-the shares' `last_viewed_at`, at most once a minute and after the response;
-the owner sees it.
+id (`deviceIds: null` is 400), and changes or confirms only shares that show
+nothing but its devices, before and after the change (403 `forbidden`);
+stopping is always allowed. Reading people stamps the shares'
+`last_viewed_at`, at most once a minute and after the response; the owner sees
+it. Accepted: starting a share tells the owner whether the address has an
+account, and its name — on a server whose accounts come from the allow-list
+and invitations, there is little to learn from it.
 
 **Public links.** A link's secret is `trls_` + 32 random bytes (base64url),
 stored as its SHA-256; the 201 carries it and `${PUBLIC_URL}/s#<secret>` once.
@@ -964,27 +1000,28 @@ The secret lives in the fragment: browsers never send a fragment to a server,
 a proxy or as a referrer, so no URL that reaches the network carries it. The
 `/s` page reads it from `location.hash` (it stays there, so a reload works;
 never in history state or storage) and sends it in the `X-Share-Secret`
-request header. Expiry is required (24 h by default, 30 days at most), history
-1–7 days and precise only, details off by default, the label the owner's first
-name by default. `GET /api/public/share` (`publicShareRouter`, mounted before
-the dashboard's `/api` chain behind its own per-IP limiter
-`RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE`; no session is read and no cookie set)
-answers 404 `not_found` for a missing secret or one of the wrong shape (no
-lookup) or an unknown one, 404 `share_expired` for an expired or turned-off
-link, and
-otherwise the label, expiry, precision, history and the devices it names:
-name, a per-link key (an HMAC, never the device id), the projected position,
-details, and for history links the simplified track (≤ 2 000 points per
-device, built at most every 30 s per link). It never names the owner's
-account, address or device ids. A request counts as a view at most once a
-minute per link. `/s` and `/api/public/share` send `Referrer-Policy:
-no-referrer` and `X-Robots-Tag: noindex, nofollow`.
+request header. A link runs at least an hour and at most 30 days (24 h by
+default); history 1–7 days and precise only; details off by default; without
+a label it reads "Shared location", never the owner's name. `GET
+/api/public/share` (`publicShareRouter`, mounted before the dashboard's `/api`
+chain behind its own per-IP limiter `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE`; no
+session is read and no cookie set) answers 404 `not_found` for a missing
+secret or one of the wrong shape (no lookup) or an unknown one, 404
+`share_expired` for an expired or turned-off link, and otherwise the label,
+expiry, precision, history and the devices it names: name, a per-link key (an
+HMAC, never the device id), the projected position, details, and for history
+links the simplified track (≤ 2 000 points per device, built at most every
+30 s per link). It never names the owner's account, address or device ids. A
+request counts as a view at most once a minute per link. `/s` and
+`/api/public/share` send `Referrer-Policy: no-referrer` and `X-Robots-Tag:
+noindex, nofollow`.
 
 **Lifecycle.** Stopped and ended shares and links are pruned 30 days later
-(§10). Deleting a device takes it out of the owner's shares and links (a share
-of only that device then shows none; it never widens to every device) and
-tells their recipients; deleting an account removes its shares in both
-directions and its links and tells the other sides. Live updates: §9.
+(§10); `hidden_people` rows stay until the person is shown again or one of the
+two accounts goes. Deleting a device takes it out of the owner's shares and
+links (a share of only that device then shows none; it never widens to every
+device) and tells their recipients; deleting an account removes its shares in
+both directions and its links and tells the other sides. Live updates: §9.
 
 ## 9. Live updates (SSE)
 
@@ -1013,9 +1050,11 @@ and is not hidden. An owner's shares come from a per-process cache
 (`SharingState`, one minute) that every change to them clears, and expiry is
 checked whenever it is used, so a stopped, hidden or ended share receives
 nothing from the next upload on. `share` (`{ shareId, userId, change }`) tells
-the other side of a share what changed: the recipient on `created`, `updated`
-and `revoked`, the owner on `hidden`, `unhidden` and `claimed` (the address of
-a pending share signed up). The web app updates the people list from `person`
+the other side of a share what changed: the recipient on `created` (also when
+the owner confirms a joined share; never while the recipient hides the owner),
+`updated` and `revoked`, the owner on `hidden`, `unhidden` and `claimed`
+(someone signed up with the address of a pending share — bound, or waiting
+for confirmation). The web app updates the people list from `person`
 events and refetches people and shares on `share` events.
 
 ## 10. Background jobs (in-process, single instance)
@@ -1144,8 +1183,10 @@ invalid value).
   their data send `Referrer-Policy: no-referrer` and `X-Robots-Tag: noindex,
   nofollow` (§8.4).
 - Sharing: other people's data is read through `resolveAccessibleDevices`
-  only, coarse positions never leave the server unprojected, and a stopped,
-  ended or hidden share shows nothing from that moment on (§8.4, §9).
+  only, coarse positions never leave the server unprojected, anything that
+  can yield coordinates (a share, a link, a confirmation) needs
+  `locations:read`, and a stopped, ended or hidden share shows nothing from
+  that moment on (§8.4, §9).
 - The container runs as the unprivileged `node` user on a read-only root
   filesystem (`tmpfs /tmp`), `no-new-privileges`, all capabilities dropped.
 - Postgres is not published outside the Docker network in production.
@@ -1267,12 +1308,15 @@ Live, `/history`, `/explore`, `/people`, `/devices`, `/devices/:id`, `/settings`
   takes the inferred mode when there is one), battery, distance; Show on map,
   Apple Maps and Google Maps links, Share back, Hide. Hidden people can be
   shown again. "You share with" (`OutgoingShareList`) lists status, devices,
-  precision, history, details, expiry and the last look, with Change and Stop.
+  precision, history, details, expiry and the last look, with Change and Stop
+  — and, when someone signed up with the address of a pending share,
+  "<name> (<address>) joined Trail — confirm?" with Confirm and Cancel.
   **Share my location** (`ShareDialog`): address (with the people who share
   with you as suggestions), devices, precision with plain-language
   explanations, history (precise only), details, duration; a pending address
-  gets "They will see you as soon as they sign in", an administrator a
-  one-click invitation. `person` and `share` events keep it all live.
+  gets "They will see you once they sign up and you confirm", an
+  administrator a one-click invitation to that address (which skips the
+  confirmation). `person` and `share` events keep it all live.
 - **Settings** — profile (name, time zone), passkeys (list with provider,
   add, rename, delete), sessions (revoke), "add a passkey on another device
   or address" (link + QR), API tokens (list with hint, scope chips, devices,
@@ -1328,9 +1372,11 @@ on green CI once branch protection requires the checks.
 - `packages/contracts/tests` — schema and helper unit tests.
 - `apps/api/tests/unit` — pure logic (Overland normalisation, timestamps,
   RDP, distance, tile math, token hashing, config parsing, presets, share
-  durations across DST and skipped midnights, the sharing grids — fixed per
-  share and device, different between shares, within the cell around the
-  position, never averaged back — and the sharing access rules), the v1
+  durations across DST and skipped midnights, the sharing grids — one per
+  owner, fixed, within the cell around the position, area cells made of whole
+  approximate cells, whole at the antimeridian, and a property test that no
+  number of an owner's devices, shares and links narrows a position below one
+  approximate cell — and the sharing access rules), the v1
   route registry (`defineRoute`: path conversion, validation, scopes,
   response schemas, handler types), principals, and the OpenAPI document:
   validated against the OpenAPI 3.1 schema and compared with
@@ -1369,15 +1415,19 @@ on green CI once branch protection requires the checks.
   tokens, `trail reprocess`, and a log that names tiles only at debug level.
   The migration-upgrade test also records rows in the user-data tables that
   later migrations add (`api_tokens`, `mode_overrides`, and `shares`,
-  `share_links` and the grid key of sharing), each with the migration that
-  adds it, and requires every column unchanged after every migration that
-  follows. The sharing tests play owner, recipient and stranger on every
-  people, shares and links route: stopped, ended and hidden shares vanish at
-  once from reads and live events, coarse shares never carry the precise
-  position (reads, events, the public endpoint), history never reaches before
-  its window, pending shares are claimed at sign-up, limits, scopes and
-  device-limited tokens, the public endpoint's 404s, headers, view counting
-  and rate limit, and the access log.
+  `share_links`, `hidden_people` and the grid key of sharing), each with the
+  migration that adds it, and requires every column unchanged after every
+  migration that follows. The sharing tests play owner, recipient and
+  stranger on every people, shares and links route: stopped, ended and hidden
+  shares vanish at once from reads and live events, coarse shares never carry
+  the precise position (reads, events, the public endpoint), history never
+  reaches before its window, pending shares bind at sign-up only with an
+  invitation to their address and otherwise wait for the owner's
+  confirmation (also when a share and the sign-up happen at the same moment),
+  hiding a person holds for their later shares, limits, scopes
+  (`locations:read` for anything that can show positions) and device-limited
+  tokens, the public endpoint's 404s, headers, view counting and rate limit,
+  and the access log.
 - `apps/web/tests` — Vitest + Testing Library (jsdom).
 - `tests/e2e` — Playwright against the built stack. `playwright.config.ts`
   starts `scripts/e2e-server.mjs`: it empties the `trail_e2e` database
@@ -1402,7 +1452,7 @@ on green CI once branch protection requires the checks.
   refused; devices and an expiry date), the levels of the tracks and
   correcting a move's mode, the quick toggle, sharing between two accounts
   in two browsers (live updates, hiding, stopping) and public links (opened
-  signed out, turned off, expired, unknown), axe (WCAG 2.0 A–AAA, 2.1/2.2
+  signed out, turned off, too short, unknown), axe (WCAG 2.0 A–AAA, 2.1/2.2
   AA, best practices), keyboard use and 320 px screens. The suite's server
   has no map data (`PROCESSING_OVERPASS_URL` empty), so the mapped level
   degrades to averaged there.
