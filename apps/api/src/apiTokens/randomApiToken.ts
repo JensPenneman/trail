@@ -14,7 +14,7 @@ export interface ApiTokenValue {
  * is stored. A fast hash is enough for a random 256-bit value (no salt or slow
  * KDF, unlike a password), and it allows the indexed lookup.
  */
-export function generateApiToken(): ApiTokenValue {
+export function randomApiToken(): ApiTokenValue {
   const token = `trlk_${randomToken(32)}`;
   return { token, hash: hashToken(token), hint: token.slice(-4) };
 }

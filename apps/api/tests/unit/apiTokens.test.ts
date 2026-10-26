@@ -4,25 +4,25 @@ import { addressAllowed } from "../../src/apiTokens/addressAllowed";
 import { apiTokenStatus } from "../../src/apiTokens/apiTokenStatus";
 import { clientAddress } from "../../src/apiTokens/clientAddress";
 import { futureExpiry } from "../../src/apiTokens/futureExpiry";
-import { generateApiToken } from "../../src/apiTokens/generateApiToken";
+import { randomApiToken } from "../../src/apiTokens/randomApiToken";
 import { HttpError } from "../../src/http/httpError";
 import { hashToken } from "../../src/lib/hashToken";
 import { apiTokenPattern } from "../../src/v1/apiTokens";
 
 describe("API token secrets", () => {
   it("are trlk_ and 32 random bytes, stored only as their hash", () => {
-    const { token: secret, hash, hint } = generateApiToken();
+    const { token: secret, hash, hint } = randomApiToken();
     expect(secret).toMatch(/^trlk_[A-Za-z0-9_-]{43}$/);
     expect(Buffer.from(secret.slice(5), "base64url")).toHaveLength(32);
     expect(hash).toBe(hashToken(secret));
     expect(hash).toMatch(/^[0-9a-f]{64}$/);
     expect(hint).toBe(secret.slice(-4));
-    expect(generateApiToken().token).not.toBe(secret);
+    expect(randomApiToken().token).not.toBe(secret);
   });
 
   it("have one shape, from the contract, wherever they are checked", () => {
     expect(apiTokenPattern).toBe(apiTokenSecretPattern);
-    expect(apiTokenPattern.test(generateApiToken().token)).toBe(true);
+    expect(apiTokenPattern.test(randomApiToken().token)).toBe(true);
     for (const wrong of [
       `trl_${"A".repeat(43)}`,
       `trlk_${"A".repeat(42)}`,

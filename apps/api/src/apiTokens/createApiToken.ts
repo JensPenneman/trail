@@ -7,8 +7,8 @@ import { users } from "../db/schema/users";
 import { HttpError } from "../http/httpError";
 import { activeToken } from "./activeToken";
 import { futureExpiry } from "./futureExpiry";
-import { generateApiToken } from "./generateApiToken";
 import { lockTokenDevices } from "./lockTokenDevices";
+import { randomApiToken } from "./randomApiToken";
 import type { ApiTokenRow } from "./toApiToken";
 
 export interface NewApiToken {
@@ -30,7 +30,7 @@ export async function createApiToken(
   input: NewApiToken,
 ): Promise<{ row: ApiTokenRow; secret: string }> {
   const expiresAt = futureExpiry(input.expiresAt);
-  const generated = generateApiToken();
+  const generated = randomApiToken();
   const row = await db.transaction(async (tx) => {
     // One creation at a time per account: two parallel requests cannot both take the last place.
     await tx.execute(sql`SELECT 1 FROM ${users} WHERE ${users.id} = ${userId} FOR NO KEY UPDATE`);

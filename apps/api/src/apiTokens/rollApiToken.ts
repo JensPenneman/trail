@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/database";
 import { apiTokens } from "../db/schema/apiTokens";
-import { generateApiToken } from "./generateApiToken";
 import { lockActiveToken } from "./lockActiveToken";
+import { randomApiToken } from "./randomApiToken";
 import type { ApiTokenRow } from "./toApiToken";
 
 /**
@@ -15,7 +15,7 @@ export async function rollApiToken(
   userId: string,
   tokenId: string,
 ): Promise<{ row: ApiTokenRow; secret: string }> {
-  const generated = generateApiToken();
+  const generated = randomApiToken();
   const row = await db.transaction(async (tx) => {
     const token = await lockActiveToken(tx, userId, tokenId);
     const [rolled] = await tx
