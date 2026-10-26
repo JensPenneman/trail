@@ -12,7 +12,10 @@ import { transportModes } from "./transport";
 
 /** What one call may ask for and get back. */
 export const mcpLimits = {
-  /** The longest range one call covers. */
+  /**
+   * The longest range one call covers, in days of 24 hours — and one hour
+   * more, so that a month of 31 local days fits when the clocks go back.
+   */
   maxRangeDays: 31,
   /** The most items one result lists; the rest needs a narrower range. */
   maxItems: 500,
