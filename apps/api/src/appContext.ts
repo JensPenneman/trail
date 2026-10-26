@@ -6,6 +6,7 @@ import type { EventBus } from "./events/eventBus";
 import type { AlertSender } from "./jobs/alert";
 import type { BackgroundTasks } from "./lib/backgroundTasks";
 import type { ProcessingService } from "./processing/processingService";
+import type { SharingState } from "./sharing/sharingState";
 import type { DailyStatsScheduler } from "./stats/dailyStatsScheduler";
 import type { ApiTokenVerifier } from "./v1/apiTokens";
 
@@ -24,4 +25,6 @@ export interface AppContext {
   apiTokens: ApiTokenVerifier;
   /** Location processing: averaged, mapped and inferred levels (docs/architecture.md §17). */
   processing: ProcessingService;
+  /** The sharing grid key and every owner's shares for the live fan-out (docs/architecture.md §8.4). */
+  sharing: SharingState;
 }

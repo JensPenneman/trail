@@ -4,6 +4,8 @@ import { isUniqueViolation } from "../db/isUniqueViolation";
 import { invites } from "../db/schema/invites";
 import { users } from "../db/schema/users";
 import { HttpError } from "../http/httpError";
+import { announceShareChange } from "../sharing/announceShareChange";
+import { claimPendingShares } from "../sharing/claimPendingShares";
 import { type CeremonyRow, ceremonyExpired } from "./ceremonies";
 import { isSignupAllowlisted } from "./isSignupAllowlisted";
 import type { UserRow } from "./requestAuth";
@@ -17,8 +19,10 @@ const localPart = (email: string): string => email.slice(0, email.lastIndexOf("@
 
 /**
  * Completes a `register` ceremony: creates the user (admin when first), stores
- * the passkey and consumes the invite, all in one transaction. The sign-up
- * policy is checked again because an invite can be used up meanwhile.
+ * the passkey, consumes the invite and binds the shares that waited for the
+ * address, all in one transaction; the owners of those shares are told
+ * afterwards. The sign-up policy is checked again because an invite can be
+ * used up meanwhile.
  */
 export async function finishSignUp(
   ctx: AppContext,
@@ -29,7 +33,7 @@ export async function finishSignUp(
   if (email === null || webauthnUserId === null) throw ceremonyExpired();
   const registration = await verifyRegistration(ceremony, response, ctx.logger);
 
-  return ctx.db.transaction(async (tx) => {
+  const { user, claimed } = await ctx.db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${signupLockKey})`);
     const now = new Date();
     let usedInviteId: string | null = null;
@@ -85,6 +89,15 @@ export async function finishSignUp(
       await tx.update(invites).set({ usedBy: user.id }).where(eq(invites.id, usedInviteId));
     }
     await storePasskey(tx, { userId: user.id, rpId: ceremony.rpId, registration });
-    return user;
+    return { user, claimed: await claimPendingShares(tx, user, now) };
   });
+  for (const share of claimed) {
+    announceShareChange(ctx, {
+      shareId: share.id,
+      ownerId: share.ownerUserId,
+      recipientId: user.id,
+      change: "claimed",
+    });
+  }
+  return user;
 }

@@ -14,6 +14,8 @@ import { allowLongStatements } from "../db/allowLongStatements";
 import { users } from "../db/schema/users";
 import { HttpError } from "../http/httpError";
 import { parseBody } from "../http/parseInput";
+import { announceAccountGone } from "../sharing/announceAccountGone";
+import { sharesOfAccount } from "../sharing/sharesOfAccount";
 import { rebuildUserDailyStats } from "../stats/rebuildUserDailyStats";
 
 /** `GET/PATCH/DELETE /api/me` — profile and account deletion. */
@@ -56,12 +58,15 @@ export function meRouter(ctx: AppContext): Router {
         confirmEmail: ["Does not match the address of this account"],
       });
     }
-    // Cascades to every device and point of the account.
-    await ctx.db.transaction(async (tx) => {
+    // Cascades to every device and point of the account, and to its shares and links.
+    const gone = await ctx.db.transaction(async (tx) => {
       await allowLongStatements(tx);
+      const shared = await sharesOfAccount(tx, auth.user.id);
       await tx.delete(users).where(eq(users.id, auth.user.id));
+      return shared;
     });
     ctx.bus.disconnectUser(auth.user.id);
+    announceAccountGone(ctx, auth.user.id, gone);
     ctx.logger.info({ userId: auth.user.id }, "account deleted");
     res.append("Set-Cookie", clearedSessionCookie(req.secure));
     res.status(204).end();

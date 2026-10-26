@@ -78,6 +78,17 @@ describe("logging safety", () => {
     expect(redactUrl("/link")).toBe("/link");
   });
 
+  it("removes share link secrets from the page, its data and anywhere else in a URL", () => {
+    const secret = `trls_${"Ab9-_".repeat(8)}xyz`;
+    expect(redactUrl(`/s/${secret}`)).toBe("/s/[redacted]");
+    expect(redactUrl(`/S/${secret}?utm=x`)).toBe("/S/[redacted]?utm=x");
+    expect(redactUrl(`/api/public/shares/${secret}`)).toBe("/api/public/shares/[redacted]");
+    expect(redactUrl("/api/public/shares/not-even-a-secret")).toBe("/api/public/shares/[redacted]");
+    expect(redactUrl(`/somewhere?next=%2Fs%2F${secret}`)).toBe("/somewhere?next=[redacted]");
+    expect(redactUrl("/settings")).toBe("/settings");
+    expect(redactUrl("/s")).toBe("/s");
+  });
+
   it("removes API token secrets wherever a client put them in the URL", () => {
     const secret = `trlk_${"Ab9-_".repeat(8)}xyz`;
     expect(secret).toHaveLength(48);

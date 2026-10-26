@@ -7,16 +7,19 @@ export interface PruneResult {
   passkeyLinks: number;
   invites: number;
   apiTokens: number;
+  shares: number;
+  shareLinks: number;
   ingestLog: number;
 }
 
 /**
  * Retention (docs/architecture.md §10): expired sessions and ceremonies go
  * immediately, used or expired links and invites and revoked or expired API
- * tokens after 30 days (so the lists still show recent ones), upload logs after
- * 90 days. Recorded data is never pruned: points, visits, trips, events and
- * the dead letter of rejected records (raw phone data that may still be
- * recovered) are kept forever.
+ * tokens after 30 days (so the lists still show recent ones), stopped or ended
+ * shares and share links after 30 days, upload logs after 90 days. Recorded
+ * data is never pruned: points, visits, trips, events and the dead letter of
+ * rejected records (raw phone data that may still be recovered) are kept
+ * forever.
  */
 export async function pruneExpiredData(db: Executor): Promise<PruneResult> {
   const count = async (statement: ReturnType<typeof sql>) =>
@@ -34,6 +37,14 @@ export async function pruneExpiredData(db: Executor): Promise<PruneResult> {
     `),
     apiTokens: await count(sql`
       DELETE FROM api_tokens
+      WHERE revoked_at < now() - interval '30 days' OR expires_at < now() - interval '30 days'
+    `),
+    shares: await count(sql`
+      DELETE FROM shares
+      WHERE revoked_at < now() - interval '30 days' OR expires_at < now() - interval '30 days'
+    `),
+    shareLinks: await count(sql`
+      DELETE FROM share_links
       WHERE revoked_at < now() - interval '30 days' OR expires_at < now() - interval '30 days'
     `),
     ingestLog: await count(

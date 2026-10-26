@@ -18,6 +18,7 @@ export const shareChanges = [
   /** To the owner: the address of a pending share signed up; it is active now. */
   "claimed",
 ] as const;
+export type ShareChange = (typeof shareChanges)[number];
 
 /**
  * Server-sent events on `GET /api/events` (session cookie). The SSE `event:`

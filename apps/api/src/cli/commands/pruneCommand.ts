@@ -8,6 +8,8 @@ const lines: readonly (readonly [keyof PruneResult, string])[] = [
   ["passkeyLinks", "old passkey links"],
   ["invites", "old invites"],
   ["apiTokens", "old API tokens"],
+  ["shares", "old shares"],
+  ["shareLinks", "old share links"],
   ["ingestLog", "upload log (> 90 days)"],
 ];
 

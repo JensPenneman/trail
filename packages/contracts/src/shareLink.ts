@@ -5,6 +5,7 @@ import {
   historyNeedsPrecise,
   type SharePrecision,
   shareDeviceIdsSchema,
+  sharedDeviceIdsSchema,
   sharePrecisionSchema,
 } from "./share";
 import { trackPointSchema } from "./track";
@@ -61,7 +62,7 @@ export const shareLinkSchema = z
   .object({
     id: linkId,
     label,
-    deviceIds: shareDeviceIdsSchema,
+    deviceIds: sharedDeviceIdsSchema,
     precision: sharePrecisionSchema,
     historyDays: linkHistoryDays,
     includeDetails,

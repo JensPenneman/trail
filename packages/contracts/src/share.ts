@@ -48,10 +48,17 @@ const instant = (description: string) =>
 const optionalInstant = (description: string) =>
   z.iso.datetime().nullable().meta({ description, example: "2026-10-26T22:59:59.000Z" });
 
-/** Device ids of the owner; null = every device, also the ones added later. */
+/** Device ids of the owner to share; null = every device, also the ones added later. */
 export const shareDeviceIdsSchema = z.array(z.uuid()).min(1).max(50).nullable().meta({
   description:
-    "The devices shared: ids of the owner's devices, or null for all of them, also the ones added later.",
+    "The devices to share: ids of your devices, or null for all of them, also the ones added later.",
+  example: null,
+});
+
+/** The devices a share or link shows; empty once every device it named was deleted. */
+export const sharedDeviceIdsSchema = z.array(z.uuid()).nullable().meta({
+  description:
+    "The devices shared: ids of the owner's devices, or null for all of them, also the ones added later. Empty when every device it named has been deleted.",
   example: null,
 });
 
@@ -97,7 +104,7 @@ export const outgoingShareSchema = z
         "`pending`: the address has no account yet; the share starts when someone signs up with it. `active`: the recipient sees the location. `hidden`: the recipient has hidden this person; nothing is sent to them until they show the person again.",
       example: "active",
     }),
-    deviceIds: shareDeviceIdsSchema,
+    deviceIds: sharedDeviceIdsSchema,
     precision: sharePrecisionSchema,
     historyDays: shareHistoryDaysSchema,
     includeDetails,

@@ -50,6 +50,7 @@ describe("loadConfig", () => {
         ingestFailedPer10Minutes: 30,
         tokenPerMinute: 600,
         tokenFailedPer10Minutes: 30,
+        publicSharePerMinute: 60,
       },
       processing: {
         enabled: true,

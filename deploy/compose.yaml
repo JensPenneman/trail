@@ -73,6 +73,7 @@ services:
       RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES:
       RATE_LIMIT_TOKEN_PER_MINUTE:
       RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES:
+      RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE:
       # location processing; an empty PROCESSING_OVERPASS_URL (set in .env)
       # means no map data, an unset one the public Overpass instance
       PROCESSING_ENABLED:

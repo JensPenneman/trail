@@ -16,6 +16,8 @@ import { allowLongStatements } from "../db/allowLongStatements";
 import { devices } from "../db/schema/devices";
 import { ingestLog } from "../db/schema/ingestLog";
 import { parseBody, parseQuery } from "../http/parseInput";
+import { announceShareChange } from "../sharing/announceShareChange";
+import { removeDeviceFromShares } from "../sharing/removeDeviceFromShares";
 import { changeDevice } from "./changeDevice";
 import { createDevice } from "./createDevice";
 import { deviceCredentials } from "./deviceCredentials";
@@ -80,13 +82,25 @@ export function devicesRouter(ctx: AppContext): Router {
     const { user } = auth;
     const existing = await findOwnedDevice(db, auth, req.params.id);
     // The cascade removes every point of the device, which can be millions of rows.
-    await db.transaction(async (tx) => {
+    const sharedWith = await db.transaction(async (tx) => {
       await allowLongStatements(tx);
+      const showing = await removeDeviceFromShares(tx, user.id, existing.id);
       await tx.delete(devices).where(eq(devices.id, existing.id));
       // After the delete, which waits for token changes that hold the device: they are in by now.
       await forgetDeviceInTokens(tx, user.id, existing.id);
+      return showing;
     });
     ctx.bus.publish(user.id, { type: "device-removed", deviceId: existing.id });
+    // Whoever saw the device through a share is told the share changed.
+    ctx.sharing.forget(user.id);
+    for (const share of sharedWith) {
+      announceShareChange(ctx, {
+        shareId: share.id,
+        ownerId: user.id,
+        recipientId: share.recipientUserId,
+        change: "updated",
+      });
+    }
     ctx.logger.info({ deviceId: existing.id, userId: user.id }, "device deleted");
     res.status(204).end();
   });
