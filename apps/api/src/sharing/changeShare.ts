@@ -28,12 +28,11 @@ export async function changeShare(
   changes: UpdateShare,
 ): Promise<OutgoingShare> {
   const now = new Date();
-  const { share: current, recipientName } = await findOutgoingShare(
-    ctx.db,
-    auth.user.id,
-    shareId,
-    now,
-  );
+  const {
+    share: current,
+    recipientName,
+    joinedName,
+  } = await findOutgoingShare(ctx.db, auth.user.id, shareId, now);
   const next = {
     deviceIds: changes.deviceIds === undefined ? current.deviceIds : changes.deviceIds,
     precision: changes.precision ?? current.precision,
@@ -74,5 +73,5 @@ export async function changeShare(
     recipientId: row.recipientUserId,
     change: "updated",
   });
-  return toOutgoingShare(row, recipientName);
+  return toOutgoingShare(row, recipientName, joinedName);
 }

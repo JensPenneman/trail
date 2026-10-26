@@ -14,9 +14,10 @@ import { users } from "./users";
 
 /**
  * One person's location shared with another (docs/architecture.md §5): by
- * address, bound to the recipient's account at creation or when the address
- * signs up. Stopping a share stamps `revoked_at`; revoked and expired rows are
- * pruned 30 days later.
+ * address, bound to the recipient's account at creation, at a sign-up with an
+ * invitation to that address, or when the owner confirms who signed up with it.
+ * Stopping a share stamps `revoked_at`; revoked and expired rows are pruned 30
+ * days later.
  */
 export const shares = pgTable(
   "shares",
@@ -27,7 +28,7 @@ export const shares = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     /** Lower-case; the account it names is the recipient once it exists. */
     recipientEmail: text("recipient_email").notNull(),
-    /** Null while the address has no account (a pending share). */
+    /** Null until bound: pending, or joined and waiting for the owner's confirmation. */
     recipientUserId: uuid("recipient_user_id").references(() => users.id, {
       onDelete: "cascade",
     }),

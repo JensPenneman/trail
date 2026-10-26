@@ -1,4 +1,5 @@
 import type { V1Route } from "../../defineRoute";
+import { confirmShare } from "./confirmShare";
 import { createShare } from "./createShare";
 import { createShareLink } from "./createShareLink";
 import { deleteShare } from "./deleteShare";
@@ -21,6 +22,7 @@ export const sharingRoutes: readonly V1Route[] = [
   listShares,
   createShare,
   updateShare,
+  confirmShare,
   deleteShare,
   listIncomingShares,
   hideIncomingShare,

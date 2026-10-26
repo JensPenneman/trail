@@ -82,6 +82,7 @@ export const apiPaths = {
     shares: {
       root: "/api/v1/shares",
       one: (shareId: string) => `/api/v1/shares/${id(shareId)}`,
+      confirm: (shareId: string) => `/api/v1/shares/${id(shareId)}/confirm`,
       incoming: "/api/v1/shares/incoming",
       hide: (shareId: string) => `/api/v1/shares/incoming/${id(shareId)}/hide`,
       unhide: (shareId: string) => `/api/v1/shares/incoming/${id(shareId)}/unhide`,

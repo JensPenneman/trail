@@ -335,10 +335,11 @@ function ShareCreated({ share, onDone }: { share: OutgoingShare; onDone: () => v
   return (
     <div className="stack">
       {share.status === "pending" ? (
-        <Notice tone="info" title="They will see you as soon as they sign in">
+        <Notice tone="info" title="They will see you once they sign up and you confirm">
           <p>
-            {share.recipient.email} has no account on this server yet. The share starts when they
-            sign up with this address.
+            {share.recipient.email} has no account on this server yet. When someone signs up with
+            this address, People asks you to confirm it is them; until then they see nothing. An
+            invitation to this address skips the question.
           </p>
         </Notice>
       ) : (

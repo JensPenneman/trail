@@ -90,18 +90,20 @@ export const outgoingShareSchema = z
           example: "ana@example.com",
         }),
         userId: z.uuid().nullable().meta({
-          description: "The recipient's account; null while the address has no account.",
+          description:
+            "The recipient's account; null until the share is bound to one (`pending`, `joined`).",
           example: "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60",
         }),
         displayName: z.string().nullable().meta({
-          description: "The recipient's name in Trail; null while the address has no account.",
+          description:
+            "The recipient's name in Trail — for `joined`, the name of whoever signed up with the address; null while nobody has.",
           example: "Ana",
         }),
       })
       .meta({ description: "Who sees the location." }),
-    status: z.enum(["pending", "active", "hidden"]).meta({
+    status: z.enum(["pending", "joined", "active", "hidden"]).meta({
       description:
-        "`pending`: the address has no account yet; the share starts when someone signs up with it. `active`: the recipient sees the location. `hidden`: the recipient has hidden this person; nothing is sent to them until they show the person again.",
+        "`pending`: the address has no account yet. `joined`: someone signed up with the address; they see nothing until you confirm it is the person you meant (`POST /api/v1/shares/{id}/confirm`) — an invitation to that address skips this. `active`: the recipient sees the location. `hidden`: the recipient has hidden you; nothing is sent to them until they show you again.",
       example: "active",
     }),
     deviceIds: sharedDeviceIdsSchema,

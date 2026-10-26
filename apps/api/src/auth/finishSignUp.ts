@@ -1,26 +1,26 @@
-import { and, count, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { and, count, eq, gt, isNull, or } from "drizzle-orm";
 import type { AppContext } from "../appContext";
 import { isUniqueViolation } from "../db/isUniqueViolation";
 import { invites } from "../db/schema/invites";
 import { users } from "../db/schema/users";
 import { HttpError } from "../http/httpError";
 import { announceShareChange } from "../sharing/announceShareChange";
-import { claimPendingShares } from "../sharing/claimPendingShares";
+import { bindShares, pendingSharesFor } from "../sharing/pendingShares";
 import { type CeremonyRow, ceremonyExpired } from "./ceremonies";
 import { isSignupAllowlisted } from "./isSignupAllowlisted";
 import type { UserRow } from "./requestAuth";
+import { lockSignups } from "./signupLock";
 import { storePasskey } from "./storePasskey";
 import { verifyRegistration } from "./verifyRegistration";
-
-/** Serialises sign-ups so that "the first account ever created is admin" holds under concurrency. */
-const signupLockKey = 740_318_267;
 
 const localPart = (email: string): string => email.slice(0, email.lastIndexOf("@"));
 
 /**
  * Completes a `register` ceremony: creates the user (admin when first), stores
- * the passkey, consumes the invite and binds the shares that waited for the
- * address, all in one transaction; the owners of those shares are told
+ * the passkey and consumes the invite, all in one transaction. Shares that
+ * waited for the address bind to the new account only when it signed up with
+ * an invitation to that very address; otherwise their owners confirm first,
+ * since Trail does not verify addresses. Either way the owners are told
  * afterwards. The sign-up policy is checked again because an invite can be
  * used up meanwhile.
  */
@@ -33,10 +33,11 @@ export async function finishSignUp(
   if (email === null || webauthnUserId === null) throw ceremonyExpired();
   const registration = await verifyRegistration(ceremony, response, ctx.logger);
 
-  const { user, claimed } = await ctx.db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(${signupLockKey})`);
+  const { user, waiting } = await ctx.db.transaction(async (tx) => {
+    await lockSignups(tx);
     const now = new Date();
     let usedInviteId: string | null = null;
+    let inviteForThisAddress = false;
     if (inviteId !== null) {
       const [invite] = await tx
         .update(invites)
@@ -49,8 +50,9 @@ export async function finishSignUp(
             or(isNull(invites.email), eq(invites.email, email)),
           ),
         )
-        .returning({ id: invites.id });
+        .returning({ id: invites.id, email: invites.email });
       usedInviteId = invite?.id ?? null;
+      inviteForThisAddress = invite?.email === email;
     }
     if (usedInviteId === null && !isSignupAllowlisted(email, ctx.config.signupAllowlist)) {
       throw new HttpError(
@@ -89,9 +91,17 @@ export async function finishSignUp(
       await tx.update(invites).set({ usedBy: user.id }).where(eq(invites.id, usedInviteId));
     }
     await storePasskey(tx, { userId: user.id, rpId: ceremony.rpId, registration });
-    return { user, claimed: await claimPendingShares(tx, user, now) };
+    const pending = await pendingSharesFor(tx, email, now);
+    if (inviteForThisAddress) {
+      await bindShares(
+        tx,
+        pending.map((share) => share.id),
+        user.id,
+      );
+    }
+    return { user, waiting: pending };
   });
-  for (const share of claimed) {
+  for (const share of waiting) {
     announceShareChange(ctx, {
       shareId: share.id,
       ownerId: share.ownerUserId,

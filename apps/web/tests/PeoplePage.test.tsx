@@ -155,7 +155,7 @@ describe("PeoplePage", () => {
     await person.type(within(dialog).getByLabelText("Email address"), "new@example.com");
     await person.click(within(dialog).getByRole("button", { name: "Share" }));
     expect(
-      await screen.findByText("They will see you as soon as they sign in"),
+      await screen.findByText("They will see you once they sign up and you confirm"),
     ).toBeInTheDocument();
     await person.click(screen.getByRole("button", { name: "Invite new@example.com" }));
     expect(await screen.findByRole("textbox", { name: "Invite link" })).toHaveValue(

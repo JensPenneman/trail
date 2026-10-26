@@ -12,17 +12,21 @@ import {
   shareResponseSchema,
 } from "@trail/contracts/share";
 import { sql } from "drizzle-orm";
+import pg from "pg";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { signupLockKey } from "../../src/auth/signupLock";
 import { resolveAccessibleDevices } from "../../src/sharing/accessibleDevices";
 import { haversineM } from "../../src/tracks/haversine";
-import { type Agent, signUpWithCookie } from "../support/authFlows";
+import { type Agent, agentFor, signUp, signUpWithCookie } from "../support/authFlows";
 import { createDevice, postOverland } from "../support/deviceFlows";
 import { FakeApiTokens, tokenPrincipal } from "../support/fakeApiTokens";
 import { resetDatabase } from "../support/resetDatabase";
 import { from, uploadOf } from "../support/sharingFlows";
+import { SoftwareAuthenticator } from "../support/softwareAuthenticator";
 import { SseClient } from "../support/sseClient";
 import { createTestContext, type TestContext } from "../support/testContext";
+import { testDatabaseUrl } from "../support/testEnvironment";
 
 /*
  * Sharing with people through /api/v1 (docs/architecture.md §8.4): who sees
@@ -428,38 +432,119 @@ describe("sharing with someone who has an account", () => {
 });
 
 describe("sharing with an address without an account", () => {
-  it("waits for the address and starts when someone signs up with it", async () => {
+  /** An invitation from the owner (the server's administrator), to `email` or open to anyone. */
+  async function invitation(email?: string): Promise<string> {
+    const made = await from(
+      owner.agent,
+      "post",
+      apiPaths.admin.invites,
+      email === undefined ? {} : { email },
+    ).expect(201);
+    return new URL(made.body.url).pathname.split("/").at(-1) ?? "";
+  }
+
+  async function signedUpWith(email: string, inviteToken: string): Promise<Person> {
+    const agent = agentFor(t.app);
+    await signUp(agent, new SoftwareAuthenticator(), email, { inviteToken });
+    const session = await agent.get("/api/auth/session").expect(200);
+    return { agent, cookie: "", email, id: session.body.user.id };
+  }
+
+  const listedShare = async (shareId: string) =>
+    shareListResponseSchema
+      .parse((await owner.agent.get(apiPaths.v1.shares.root).expect(200)).body)
+      .shares.find((entry) => entry.id === shareId);
+
+  const incomingOf = async (person: Person) =>
+    incomingShareListResponseSchema.parse(
+      (await person.agent.get(apiPaths.v1.shares.incoming).expect(200)).body,
+    ).shares;
+
+  it("waits for the owner to confirm whoever signs up with the address", async () => {
     const share = await shareWith("newcomer@allowed.test", { precision: "approximate" });
     expect(share).toMatchObject({
       status: "pending",
       recipient: { userId: null, displayName: null },
     });
     const ownerStream = await stream(owner);
+    // The allow-list lets anyone in with this address: nothing proves it is the right person.
     const newcomer = await account("newcomer@allowed.test");
-    const claimed = await ownerStream.waitFor("share");
-    expect(claimed).toEqual({
+    expect(await ownerStream.waitFor("share")).toEqual({
       type: "share",
       shareId: share.id,
       userId: newcomer.id,
       change: "claimed",
     });
-    const [listed] = shareListResponseSchema
-      .parse((await owner.agent.get(apiPaths.v1.shares.root).expect(200)).body)
-      .shares.filter((entry) => entry.id === share.id);
-    expect(listed).toMatchObject({ status: "active", recipient: { userId: newcomer.id } });
+    expect(await listedShare(share.id)).toMatchObject({
+      status: "joined",
+      recipient: { email: "newcomer@allowed.test", userId: null, displayName: "newcomer" },
+    });
+    expect(await peopleOf(newcomer)).toEqual([]);
+    expect(await incomingOf(newcomer)).toEqual([]);
+    await newcomer.agent.get(apiPaths.v1.people.one(owner.id)).expect(404);
+    const newcomerStream = await stream(newcomer);
+    await upload(phone.token, [{ ago: 1, ...exact }]);
+    expect(newcomerStream.events.map((event) => event.type)).toEqual(["hello"]);
+
+    const confirmed = shareResponseSchema.parse(
+      (await from(owner.agent, "post", apiPaths.v1.shares.confirm(share.id)).expect(200)).body,
+    ).share;
+    expect(confirmed).toMatchObject({
+      status: "active",
+      recipient: { userId: newcomer.id, displayName: "newcomer" },
+    });
+    expect(await newcomerStream.waitFor("share")).toEqual({
+      type: "share",
+      shareId: share.id,
+      userId: owner.id,
+      change: "created",
+    });
     const [person] = await peopleOf(newcomer);
     expect(person?.userId).toBe(owner.id);
     expect(person?.devices[0]?.location?.precision).toBe("approximate");
+
+    // Nothing left to confirm, nobody to confirm yet, or not one's own share.
+    await from(owner.agent, "post", apiPaths.v1.shares.confirm(share.id)).expect(409);
+    const nobody = await shareWith("nobody-yet@allowed.test");
+    const early = await from(owner.agent, "post", apiPaths.v1.shares.confirm(nobody.id)).expect(
+      409,
+    );
+    expect(errorOf(early.body).code).toBe("conflict");
+    await from(eve.agent, "post", apiPaths.v1.shares.confirm(nobody.id)).expect(404);
+    await from(owner.agent, "post", apiPaths.v1.shares.confirm("not-a-uuid")).expect(404);
+    await stop(nobody.id);
     await stop(share.id);
   });
 
-  it("is claimed only by that address, and not once stopped or ended", async () => {
-    const stopped = await shareWith("late@allowed.test");
+  it("starts at once when an invitation to that very address brought them", async () => {
+    // Not on the allow-list: only the invitation lets this address in.
+    const email = "invited@invited.test";
+    const share = await shareWith(email);
+    const joined = await signedUpWith(email, await invitation(email));
+    expect(await listedShare(share.id)).toMatchObject({
+      status: "active",
+      recipient: { userId: joined.id },
+    });
+    expect((await peopleOf(joined)).map((person) => person.userId)).toEqual([owner.id]);
+    await stop(share.id);
+  });
+
+  it("waits for confirmation after an open invitation", async () => {
+    const email = "open@invited.test";
+    const share = await shareWith(email);
+    const joined = await signedUpWith(email, await invitation());
+    expect(await listedShare(share.id)).toMatchObject({ status: "joined" });
+    expect(await peopleOf(joined)).toEqual([]);
+    await stop(share.id);
+  });
+
+  it("never binds a stopped or ended share, invitation or not", async () => {
+    const stopped = await shareWith("late@invited.test");
     await stop(stopped.id);
-    const ended = await shareWith("later@allowed.test", { duration: "hour" });
+    const ended = await shareWith("later@invited.test", { duration: "hour" });
     await t.ctx.db.execute(sql`UPDATE shares SET expires_at = now() WHERE id = ${ended.id}`);
-    const late = await account("late@allowed.test");
-    const later = await account("later@allowed.test");
+    const late = await signedUpWith("late@invited.test", await invitation("late@invited.test"));
+    const later = await signedUpWith("later@invited.test", await invitation("later@invited.test"));
     expect(await peopleOf(late)).toEqual([]);
     expect(await peopleOf(later)).toEqual([]);
     expect(await peopleOf(eve)).toEqual([]);
@@ -500,6 +585,30 @@ describe("hiding a person", () => {
       )
       .toBe(true);
     await stop(third.id);
+  });
+});
+
+describe("a share and a sign-up at the same moment", () => {
+  it("wait for each other, so a share never misses the account", async () => {
+    const lock = new pg.Client({ connectionString: testDatabaseUrl });
+    await lock.connect();
+    try {
+      // As if a sign-up were running right now.
+      await lock.query("SELECT pg_advisory_lock($1)", [signupLockKey]);
+      let done = false;
+      const pending = shareWith("racing@allowed.test").then((share) => {
+        done = true;
+        return share;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(done).toBe(false);
+      await lock.query("SELECT pg_advisory_unlock($1)", [signupLockKey]);
+      const share = await pending;
+      expect(share.status).toBe("pending");
+      await stop(share.id);
+    } finally {
+      await lock.end();
+    }
   });
 });
 
@@ -728,6 +837,7 @@ describe("API tokens", () => {
         .post(apiPaths.v1.shares.root)
         .send({ email: "mine@allowed.test", precision: "precise", duration: "hour" }),
       request(t.app).patch(apiPaths.v1.shares.one(shareId)).send({ precision: "precise" }),
+      request(t.app).post(apiPaths.v1.shares.confirm(shareId)),
       request(t.app)
         .post(apiPaths.v1.shareLinks.root)
         .send({ precision: "precise", historyDays: 7 }),

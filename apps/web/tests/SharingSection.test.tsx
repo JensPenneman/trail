@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { SharingSection } from "../src/pages/settings/SharingSection";
-import { ids, shareLink, user } from "./support/fixtures";
+import { ids, outgoingShare, shareLink, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
@@ -103,6 +103,47 @@ describe("Settings › Sharing", () => {
     const change = await screen.findByRole("dialog", { name: "Sharing with Ana Bell" });
     expect(within(change).getByRole("radio", { name: /No change/ })).toBeChecked();
     expect(within(change).queryByLabelText("Email address")).toBeNull();
+  });
+
+  it("asks to confirm whoever signed up with a waiting share's address", async () => {
+    const nora = { email: "new@example.com", displayName: "Nora" };
+    let confirmed = false;
+    const api = mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/shares": () => ({
+        status: 200,
+        body: {
+          shares: [
+            confirmed
+              ? outgoingShare({ recipient: { ...nora, userId: ids.bob } })
+              : outgoingShare({ status: "joined", recipient: { ...nora, userId: null } }),
+          ],
+        },
+      }),
+      [`POST /api/v1/shares/${ids.myShare}/confirm`]: () => {
+        confirmed = true;
+        return {
+          status: 200,
+          body: { share: outgoingShare({ recipient: { ...nora, userId: ids.bob } }) },
+        };
+      },
+    });
+    const person = userEvent.setup();
+    renderPage(<SharingSection headingId="sharing" />, { user });
+    expect(
+      await screen.findByText(/Nora \(new@example\.com\) joined Trail — confirm\?/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/They see nothing until you confirm/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel sharing with Nora" })).toBeInTheDocument();
+    await person.click(
+      screen.getByRole("button", {
+        name: "Confirm that Nora (new@example.com) is the person you meant",
+      }),
+    );
+    await waitFor(() =>
+      expect(api.calls.some((call) => call.path.endsWith("/confirm"))).toBe(true),
+    );
+    expect(await screen.findByText("Sees you")).toBeInTheDocument();
   });
 
   it("offers a neutral label for links", async () => {

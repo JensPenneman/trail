@@ -15,7 +15,11 @@ export const shareChanges = [
   "hidden",
   /** To the owner: the recipient shows them again. */
   "unhidden",
-  /** To the owner: the address of a pending share signed up; it is active now. */
+  /**
+   * To the owner: someone signed up with the address of a pending share. With
+   * an invitation to that address it is active now; otherwise it waits for the
+   * owner's confirmation (`joined`).
+   */
   "claimed",
 ] as const;
 export type ShareChange = (typeof shareChanges)[number];

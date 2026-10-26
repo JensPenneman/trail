@@ -15,6 +15,11 @@
   vertical-align: 0.1em;
 }
 
+.outgoing-shares__status--joined {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
 .outgoing-shares__status--active {
   background: var(--color-live-soft);
   color: var(--color-live);

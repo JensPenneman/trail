@@ -3,6 +3,7 @@ import { and, count, eq, isNull, lte, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { AppContext } from "../appContext";
 import type { RequestAuth } from "../auth/requestAuth";
+import { lockSignups } from "../auth/signupLock";
 import { isUniqueViolation } from "../db/isUniqueViolation";
 import { shares } from "../db/schema/shares";
 import { users } from "../db/schema/users";
@@ -20,10 +21,11 @@ type CreateShare = z.output<typeof createShareRequestSchema>;
 /**
  * Starts sharing the principal's location with an address
  * (docs/architecture.md §8.4). An address with an account is bound at once;
- * otherwise the share waits for someone to sign up with it. One current share
- * per address (an ended one is stopped to make room) and at most
- * `maxCurrentShares` at a time. Someone who hid the owner gets the share
- * hidden, without a notice.
+ * otherwise the share waits for someone to sign up with it (and then for the
+ * owner's confirmation, unless an invitation to that address brought them).
+ * One current share per address (an ended one is stopped to make room) and
+ * at most `maxCurrentShares` at a time. Someone who hid the owner gets the
+ * share hidden, without a notice.
  */
 export async function startShare(
   ctx: AppContext,
@@ -41,6 +43,9 @@ export async function startShare(
   const now = new Date();
 
   const created = await ctx.db.transaction(async (tx) => {
+    // A sign-up of this address at the same moment either comes first (and the share binds to
+    // its account) or after (and finds the share waiting): never neither.
+    await lockSignups(tx);
     // One owner's shares change one at a time, so the limit holds under concurrent requests.
     await tx.execute(sql`SELECT 1 FROM users WHERE id = ${owner.id} FOR UPDATE`);
     await tx
