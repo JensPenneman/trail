@@ -3,13 +3,13 @@ import type { AppContext } from "../appContext";
 import { getRequestAuth } from "../auth/requestAuth";
 import { hasBody } from "../http/hasBody";
 import { HttpError, notFound } from "../http/httpError";
-import { noStore } from "../http/noStore";
 import { sendApiError } from "../http/sendApiError";
 import { toHttpError } from "../http/toHttpError";
 import { authenticateBearer } from "../v1/authenticateBearer";
+import { tokenRateLimit } from "../v1/tokenRateLimit";
 import { createTrailMcpServer } from "./createTrailMcpServer";
 import { McpCall } from "./mcpCall";
-import { mcpCorsHeaders, mcpPreflight } from "./mcpCors";
+import { mcpPreflight } from "./mcpCors";
 import { createMcpEndpoint, mcpBodyLimitBytes } from "./mcpEndpoint";
 import { mcpOriginGuard } from "./mcpOriginGuard";
 
@@ -80,33 +80,28 @@ const singleMessage: RequestHandler = (req, res, next) => {
 };
 
 /**
- * `/mcp` (docs/mcp.md), mounted before compression and the dashboard's `/api`
- * chain so it sets its own order: CORS headers (so a browser client can read
- * every refusal, as on `/api/v1`) → the per-address limiter the whole API
- * shares → the `Origin` check → preflight → the API token (bearer only: the
- * session cookie is never read, and the failed-token limiter counts refusals)
- * → the per-token limiter `/api/v1` shares → POST with JSON only → the 1 MB
- * body parser → one message, no batch → the SDK. Refusals before the SDK use the API's error body;
- * once the SDK has the request, it answers in JSON-RPC.
+ * `/mcp` (docs/mcp.md). `createApp` mounts it before compression and the
+ * dashboard's `/api` chain, behind `no-store`, the CORS headers (so a browser
+ * client can read every refusal, as on `/api/v1`) and the per-address
+ * limiter the whole API shares; here follow the `Origin` check → preflight →
+ * the API token (bearer only: the session cookie is never read, and the
+ * failed-token limiter counts refusals) → the per-token limiter `/api/v1`
+ * shares → POST with JSON only → the 1 MB body parser → one message, no
+ * batch → the SDK. Refusals before the SDK use the API's error body; once the
+ * SDK has the request, it answers in JSON-RPC.
  */
-export function mcpRouter(
-  ctx: AppContext,
-  limits: { perAddress: RequestHandler; perToken: RequestHandler },
-): Router {
+export function mcpRouter(ctx: AppContext): Router {
   const endpoint = createMcpEndpoint((request) => {
     const call = McpCall.of(request.authInfo);
     return createTrailMcpServer({ ctx, principal: call.principal, log: call.log });
   }, ctx.logger);
 
   const router = express.Router();
-  router.use(noStore);
-  router.use(mcpCorsHeaders);
-  router.use(limits.perAddress);
   router.use(mcpOriginGuard(ctx.config.mcpAllowedOrigins));
   router.use(mcpPreflight);
   router.use(authenticateBearer(ctx));
   router.use(requireApiToken);
-  router.use(limits.perToken);
+  router.use(tokenRateLimit(ctx));
   router.all("/", postJsonOnly);
   router.post("/", express.json({ limit: mcpBodyLimitBytes, type: "application/json" }));
   router.post("/", singleMessage);

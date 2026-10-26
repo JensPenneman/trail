@@ -13,6 +13,7 @@ import { heatmapRouter } from "../heatmap/heatmapRouter";
 import { tripsRouter } from "../history/tripsRouter";
 import { visitsRouter } from "../history/visitsRouter";
 import { locationsRouter } from "../locations/locationsRouter";
+import { mcpCorsHeaders } from "../mcp/mcpCors";
 import { mcpRouter } from "../mcp/mcpRouter";
 import { apiTokensRouter } from "../me/apiTokensRouter";
 import { meRouter } from "../me/meRouter";
@@ -27,7 +28,6 @@ import { publicShareRouter } from "../sharing/publicShareRouter";
 import { statsRouter } from "../stats/statsRouter";
 import { tracksRouter } from "../tracks/tracksRouter";
 import { createV1Router } from "../v1/createV1Router";
-import { tokenRateLimit } from "../v1/tokenRateLimit";
 import { corsHeaders } from "../v1/v1Cors";
 import { apiNotFound } from "./apiNotFound";
 import { compress } from "./compress";
@@ -63,13 +63,14 @@ export function createApp(ctx: AppContext): Express {
     logger,
     identifier: "ip",
   });
-  // And one per API token, whether it calls v1 or the MCP server.
-  const apiTokenRateLimit = tokenRateLimit(ctx);
 
   app.use(requestLogger(logger));
   app.use(securityHeaders(config.mapOrigins));
   // Before compression and the /api chain: its own order, answers that are never compressed.
-  app.use(apiPaths.mcp, mcpRouter(ctx, { perAddress: apiRateLimit, perToken: apiTokenRateLimit }));
+  // CORS headers come first, so that a browser client can read even a 429.
+  app.use(apiPaths.mcp, noStore, mcpCorsHeaders);
+  app.use(apiPaths.mcp, apiRateLimit);
+  app.use(apiPaths.mcp, mcpRouter(ctx));
   app.use(compress());
   app.use("/api", noStore);
 
@@ -89,7 +90,7 @@ export function createApp(ctx: AppContext): Express {
   // CORS headers come first, so that a browser client can read even a 429.
   app.use(apiPaths.v1.root, corsHeaders);
   app.use(apiPaths.v1.root, apiRateLimit);
-  app.use(apiPaths.v1.root, createV1Router(ctx, { perToken: apiTokenRateLimit }));
+  app.use(apiPaths.v1.root, createV1Router(ctx));
 
   app.use("/api", apiRateLimit);
   app.use("/api", csrfGuard(config.allowedOrigins));

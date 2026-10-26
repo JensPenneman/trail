@@ -1075,8 +1075,9 @@ resource subscriptions, so a 2026-07-28 `subscriptions/listen` is
 acknowledged with an empty filter and completed at once, and nothing holds a
 stream open.
 
-**Mounting order** (`mcpRouter`, mounted in `createApp` before compression
-and the `/api` chain):
+**Mounting order.** `/mcp` is mounted before compression and the `/api`
+chain; `createApp` puts steps 1 and 2 in front of `mcpRouter`, which does the
+rest:
 
 1. `Cache-Control: no-store` and the CORS headers on every response
    (`Access-Control-Allow-Origin: *`, no credentials; exposed: `RateLimit`,
@@ -1097,8 +1098,9 @@ and the `/api` chain):
    `requireApiToken`: without a token principal 401 `unauthorized` with
    `WWW-Authenticate: Bearer realm="trail"`. The session is never loaded, so a
    cookie alone is refused.
-6. The per-token limiter, the same instance as `/api/v1`'s
-   (`RATE_LIMIT_TOKEN_PER_MINUTE`): one budget per token for both.
+6. The per-token limiter: `tokenRateLimit(ctx)` gives one instance per app,
+   the one `/api/v1` uses too (`RATE_LIMIT_TOKEN_PER_MINUTE`): one budget per
+   token for both.
 7. `postJsonOnly`: other methods 405 `method_not_allowed` with `Allow:
    POST`; a POST without a body 400, with another media type 415.
 8. `express.json` (1 MB, `application/json`) and `singleMessage` (a JSON
