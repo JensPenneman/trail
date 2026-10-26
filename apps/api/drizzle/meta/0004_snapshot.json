@@ -1,5 +1,5 @@
 {
-  "id": "63f73415-1c96-437d-bcdf-deafb4b0f5e1",
+  "id": "bbabd50b-8927-4d95-b220-4b45063ad233",
   "prevId": "1c44498f-e23a-497d-8eca-7c3e0a7d1d83",
   "version": "7",
   "dialect": "postgresql",
@@ -726,6 +726,73 @@
             "z",
             "x",
             "y"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.hidden_people": {
+      "name": "hidden_people",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hidden_user_id": {
+          "name": "hidden_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hidden_at": {
+          "name": "hidden_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "hidden_people_user_id_users_id_fk": {
+          "name": "hidden_people_user_id_users_id_fk",
+          "tableFrom": "hidden_people",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "hidden_people_hidden_user_id_users_id_fk": {
+          "name": "hidden_people_hidden_user_id_users_id_fk",
+          "tableFrom": "hidden_people",
+          "tableTo": "users",
+          "columnsFrom": [
+            "hidden_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "hidden_people_user_id_hidden_user_id_pk": {
+          "name": "hidden_people_user_id_hidden_user_id_pk",
+          "columns": [
+            "user_id",
+            "hidden_user_id"
           ]
         }
       },

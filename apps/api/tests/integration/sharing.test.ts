@@ -466,6 +466,43 @@ describe("sharing with an address without an account", () => {
   });
 });
 
+describe("hiding a person", () => {
+  it("holds for the person: their next share arrives hidden and without a notice", async () => {
+    const first = await shareWith(ana.email);
+    await from(ana.agent, "post", apiPaths.v1.shares.hide(first.id)).expect(200);
+    await stop(first.id);
+    const anaStream = await stream(ana);
+    const again = await shareWith(ana.email);
+    expect(again.status).toBe("hidden");
+    await upload(phone.token, [{ ago: 1, ...exact }]);
+    expect(anaStream.events.map((event) => event.type)).toEqual(["hello"]);
+    expect(await peopleOf(ana)).toEqual([]);
+    const [incoming] = incomingShareListResponseSchema.parse(
+      (await ana.agent.get(apiPaths.v1.shares.incoming).expect(200)).body,
+    ).shares;
+    expect(incoming).toMatchObject({ id: again.id, owner: { userId: owner.id } });
+    expect(incoming?.hiddenAt).not.toBeNull();
+
+    // Shown again, the person is back, and the next share announces itself as usual.
+    await from(ana.agent, "post", apiPaths.v1.shares.unhide(again.id)).expect(200);
+    expect(await peopleOf(ana)).toHaveLength(1);
+    await stop(again.id);
+    const third = await shareWith(ana.email);
+    expect(third.status).toBe("active");
+    await expect
+      .poll(
+        () =>
+          anaStream.events.some(
+            (event) =>
+              event.type === "share" && event.shareId === third.id && event.change === "created",
+          ),
+        { timeout: 5_000 },
+      )
+      .toBe(true);
+    await stop(third.id);
+  });
+});
+
 describe("history", () => {
   let historyPhone = { id: "", token: "" };
   let shareId = "";

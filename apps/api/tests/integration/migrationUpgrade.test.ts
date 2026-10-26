@@ -112,7 +112,7 @@ const laterTables: {
   },
   {
     // Sharing: who shares what with whom (Ana has an account, the second address not yet),
-    // a public link and the grid key.
+    // a public link, the grid key and Ana hiding the owner.
     migration: tagOf("sharing"),
     record: async (pool, { userId, deviceId }) => {
       await pool.query(
@@ -131,17 +131,25 @@ const laterTables: {
       await pool.query(
         `INSERT INTO server_secrets (name, secret) VALUES ('share-grid', decode(repeat('ab', 32), 'hex'))`,
       );
+      await pool.query(
+        `INSERT INTO hidden_people (user_id, hidden_user_id, hidden_at)
+         VALUES ((SELECT id FROM users WHERE email = 'ana@example.com'), $1, '2026-02-01T00:00:00Z')`,
+        [userId],
+      );
     },
     fingerprint: `
       SELECT
         ((SELECT count(*) FROM shares) + (SELECT count(*) FROM share_links)
-          + (SELECT count(*) FROM server_secrets WHERE name = 'share-grid'))::int AS rows,
+          + (SELECT count(*) FROM server_secrets WHERE name = 'share-grid')
+          + (SELECT count(*) FROM hidden_people))::int AS rows,
         (SELECT string_agg(concat_ws('|', owner_user_id, recipient_email, recipient_user_id,
           device_ids::text, precision, history_days, include_details, expires_at, revoked_at,
           hidden_at), ';' ORDER BY id) FROM shares) AS share_rows,
         (SELECT string_agg(concat_ws('|', owner_user_id, token_hash, label, precision, history_days,
           expires_at, view_count), ';' ORDER BY id) FROM share_links) AS link_rows,
-        (SELECT encode(secret, 'hex') FROM server_secrets WHERE name = 'share-grid') AS grid_key
+        (SELECT encode(secret, 'hex') FROM server_secrets WHERE name = 'share-grid') AS grid_key,
+        (SELECT string_agg(concat_ws('|', user_id, hidden_user_id, hidden_at), ';' ORDER BY user_id)
+          FROM hidden_people) AS hidden_people
     `,
   },
 ];

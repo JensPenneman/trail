@@ -9,6 +9,7 @@ import { users } from "../db/schema/users";
 import { HttpError } from "../http/httpError";
 import { announceShareChange } from "./announceShareChange";
 import { currentShare } from "./currentShare";
+import { hiddenSince } from "./hiddenSince";
 import { toOutgoingShare } from "./outgoingShares";
 import { assertShareableDevices } from "./shareableDevices";
 import { shareExpiresAt } from "./shareExpiry";
@@ -21,7 +22,8 @@ type CreateShare = z.output<typeof createShareRequestSchema>;
  * (docs/architecture.md §8.4). An address with an account is bound at once;
  * otherwise the share waits for someone to sign up with it. One current share
  * per address (an ended one is stopped to make room) and at most
- * `maxCurrentShares` at a time.
+ * `maxCurrentShares` at a time. Someone who hid the owner gets the share
+ * hidden, without a notice.
  */
 export async function startShare(
   ctx: AppContext,
@@ -75,6 +77,7 @@ export async function startShare(
           ownerUserId: owner.id,
           recipientEmail: request.email,
           recipientUserId: recipient?.id ?? null,
+          hiddenAt: recipient === undefined ? null : await hiddenSince(tx, recipient.id, owner.id),
           deviceIds,
           precision: request.precision,
           historyDays: request.historyDays ?? null,
@@ -98,11 +101,15 @@ export async function startShare(
   });
 
   ctx.logger.info({ shareId: created.row.id, ownerId: owner.id }, "share created");
-  announceShareChange(ctx, {
-    shareId: created.row.id,
-    ownerId: owner.id,
-    recipientId: created.row.recipientUserId,
-    change: "created",
-  });
+  if (created.row.hiddenAt === null) {
+    announceShareChange(ctx, {
+      shareId: created.row.id,
+      ownerId: owner.id,
+      recipientId: created.row.recipientUserId,
+      change: "created",
+    });
+  } else {
+    ctx.sharing.forget(owner.id);
+  }
   return toOutgoingShare(created.row, created.recipientName);
 }

@@ -1,3 +1,10 @@
+CREATE TABLE "hidden_people" (
+	"user_id" uuid NOT NULL,
+	"hidden_user_id" uuid NOT NULL,
+	"hidden_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "hidden_people_user_id_hidden_user_id_pk" PRIMARY KEY("user_id","hidden_user_id")
+);
+--> statement-breakpoint
 CREATE TABLE "server_secrets" (
 	"name" text PRIMARY KEY NOT NULL,
 	"secret" "bytea" NOT NULL,
@@ -43,6 +50,8 @@ CREATE TABLE "shares" (
 	CONSTRAINT "shares_not_self_check" CHECK ("shares"."recipient_user_id" <> "shares"."owner_user_id")
 );
 --> statement-breakpoint
+ALTER TABLE "hidden_people" ADD CONSTRAINT "hidden_people_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "hidden_people" ADD CONSTRAINT "hidden_people_hidden_user_id_users_id_fk" FOREIGN KEY ("hidden_user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "share_links" ADD CONSTRAINT "share_links_owner_user_id_users_id_fk" FOREIGN KEY ("owner_user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "shares" ADD CONSTRAINT "shares_owner_user_id_users_id_fk" FOREIGN KEY ("owner_user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "shares" ADD CONSTRAINT "shares_recipient_user_id_users_id_fk" FOREIGN KEY ("recipient_user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

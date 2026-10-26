@@ -10,7 +10,7 @@ export const hideIncomingShare = defineRoute(
     operationId: "hideIncomingShare",
     summary: "Hide a person",
     description:
-      "Hides the person who gives you this share: they disappear from People and their live updates stop reaching you, until you show them again. They keep sharing and are told that you hid them.",
+      "Hides the person who gives you this share: they disappear from People and their live updates stop reaching you until you show them again — a later share from them starts hidden too, without a notice. They keep sharing and are told that you hid them.",
     tags: ["Sharing"],
     auth: { scopes: ["shares:write"] },
     request: { params: shareParamsSchema },

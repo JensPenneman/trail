@@ -2351,7 +2351,7 @@
       "post": {
         "operationId": "hideIncomingShare",
         "summary": "Hide a person",
-        "description": "Hides the person who gives you this share: they disappear from People and their live updates stop reaching you, until you show them again. They keep sharing and are told that you hid them.\n\n**Access:** an API token with the scope `shares:write`, or a signed-in session.",
+        "description": "Hides the person who gives you this share: they disappear from People and their live updates stop reaching you until you show them again — a later share from them starts hidden too, without a notice. They keep sharing and are told that you hid them.\n\n**Access:** an API token with the scope `shares:write`, or a signed-in session.",
         "tags": [
           "Sharing"
         ],
