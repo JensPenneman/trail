@@ -14,7 +14,7 @@ export interface Grant {
 }
 
 /**
- * A device as a grant shows it to someone else (docs/architecture.md §8.4),
+ * A device as a grant shows it to someone else (docs/architecture.md §8.5),
  * cut down from the owner's own public view of it (`toDeviceLocation`): its
  * id and name, the newest position recorded since `from` at the grant's
  * precision, and — only when the grant includes details — the battery reading

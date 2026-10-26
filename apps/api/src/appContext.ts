@@ -25,6 +25,6 @@ export interface AppContext {
   apiTokens: ApiTokenVerifier;
   /** Location processing: averaged, mapped and inferred levels (docs/architecture.md §17). */
   processing: ProcessingService;
-  /** The sharing grid key and every owner's shares for the live fan-out (docs/architecture.md §8.4). */
+  /** The sharing grid key and every owner's shares for the live fan-out (docs/architecture.md §8.5). */
   sharing: SharingState;
 }

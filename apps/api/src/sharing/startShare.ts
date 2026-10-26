@@ -20,7 +20,7 @@ type CreateShare = z.output<typeof createShareRequestSchema>;
 
 /**
  * Starts sharing the principal's location with an address
- * (docs/architecture.md §8.4). An address with an account is bound at once;
+ * (docs/architecture.md §8.5). An address with an account is bound at once;
  * otherwise the share waits for someone to sign up with it (and then for the
  * owner's confirmation, unless an invitation to that address brought them).
  * One current share per address (an ended one is stopped to make room) and

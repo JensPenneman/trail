@@ -6,7 +6,7 @@ import { trackSchema } from "./track";
 
 /*
  * People who share their location with the caller, as their shares allow
- * (docs/architecture.md §8.4). Positions of approximate and area shares are
+ * (docs/architecture.md §8.5). Positions of approximate and area shares are
  * already coarsened by the server: nothing more precise ever leaves it.
  */
 

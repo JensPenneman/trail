@@ -15,7 +15,7 @@ import { toSharedDevice } from "./toSharedDevice";
 const maxAccuracyM = 200;
 
 /**
- * What a public link shows (docs/architecture.md §8.4): its label, expiry and
+ * What a public link shows (docs/architecture.md §8.5): its label, expiry and
  * the owner's devices it names, at its precision — never the owner's account,
  * address or device ids. A secret of the wrong shape or an unknown one is
  * `not_found`; an expired or turned-off link `share_expired`, both 404. A

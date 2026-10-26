@@ -26,7 +26,7 @@ const slackMs = 60_000;
 const defaultShareLinkLabel = "Shared location";
 
 /**
- * Makes a public link (docs/architecture.md §8.4). Its secret and URL are in
+ * Makes a public link (docs/architecture.md §8.5). Its secret and URL are in
  * this answer only; the database keeps the SHA-256 of the secret. A link
  * always expires: in 24 hours unless asked otherwise, in an hour at the
  * soonest and 30 days at the latest. At most `maxCurrentShareLinks` work at

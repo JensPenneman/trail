@@ -2,7 +2,7 @@ import { z } from "zod";
 import { emailSchema } from "./email";
 
 /*
- * Sharing with people (docs/architecture.md §8.4): one person shows another
+ * Sharing with people (docs/architecture.md §8.5): one person shows another
  * where they are, one way and on purpose, for as long as they choose. The
  * owner manages outgoing shares; the recipient sees incoming ones and may
  * hide a person.

@@ -5,7 +5,7 @@ import { loadPublicShare } from "./loadPublicShare";
 
 /**
  * `GET /api/public/share` — what a public link shows, without an account
- * (docs/architecture.md §8.4). The page sends the link's secret, which it
+ * (docs/architecture.md §8.5). The page sends the link's secret, which it
  * keeps in the address's fragment, in the `X-Share-Secret` header: no URL
  * ever carries it, so no access log or proxy records it. Mounted before the
  * dashboard's `/api` chain behind its own per-address limit: no session is

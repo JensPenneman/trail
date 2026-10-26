@@ -518,7 +518,7 @@ confirms with `POST /api/v1/shares/{id}/confirm` (§4.8).
 
 ### 4.8 Decisions (feat/sharing)
 
-The sharing pull request settled these; `docs/architecture.md` §8.4 is the
+The sharing pull request settled these; `docs/architecture.md` §8.5 is the
 specification.
 
 1. **History requires precise.** `history_days` only with `precision =

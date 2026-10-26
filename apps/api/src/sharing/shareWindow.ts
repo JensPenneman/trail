@@ -11,7 +11,7 @@ export const liveWindowMs = (config: { staleAfterHours: number }): number =>
 
 /**
  * The earliest instant a share or link shows positions from: `historyDays`
- * back, or the live window for live-only grants (docs/architecture.md §8.4).
+ * back, or the live window for live-only grants (docs/architecture.md §8.5).
  */
 export function windowStart(historyDays: number | null, now: Date, liveMs: number): Date {
   return new Date(now.getTime() - (historyDays === null ? liveMs : historyDays * dayMs));

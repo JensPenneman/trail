@@ -111,7 +111,7 @@ export function publicDeviceKey(key: Buffer, linkId: string, deviceId: string): 
 }
 
 /**
- * A position at a share's precision (docs/architecture.md §8.4). Precise
+ * A position at a share's precision (docs/architecture.md §8.5). Precise
  * passes it on. Approximate and area give the centre of the owner's grid cell,
  * with the cell size as accuracy (or the fix's own, if worse), and leave out
  * what would narrow it down again: the altitude and the course for both, the

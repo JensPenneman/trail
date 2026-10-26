@@ -17,7 +17,7 @@ export type Viewer = DeviceAccess & {
   readonly scopes?: readonly ApiScope[];
 };
 
-/** A device the viewer may see, and how (docs/architecture.md §8.4). */
+/** A device the viewer may see, and how (docs/architecture.md §8.5). */
 export interface AccessibleDevice {
   deviceId: string;
   ownerId: string;

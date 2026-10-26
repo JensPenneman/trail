@@ -29,7 +29,7 @@ import { createTestContext, type TestContext } from "../support/testContext";
 import { testDatabaseUrl } from "../support/testEnvironment";
 
 /*
- * Sharing with people through /api/v1 (docs/architecture.md §8.4): who sees
+ * Sharing with people through /api/v1 (docs/architecture.md §8.5): who sees
  * what, at which precision, for how long — and that a stopped, ended or hidden
  * share shows nothing from that moment on, in reads and in live events.
  */

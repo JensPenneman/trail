@@ -17,7 +17,7 @@ import { createTestContext, type TestContext } from "../support/testContext";
 import { testOrigin } from "../support/testEnvironment";
 
 /*
- * Public links (docs/architecture.md §8.4): a secret address that shows the
+ * Public links (docs/architecture.md §8.5): a secret address that shows the
  * owner's location without an account, until it expires or is turned off —
  * and nothing about the owner beyond what the link shares.
  */

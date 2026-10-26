@@ -14,7 +14,7 @@ import { assertWithinTokenDevices } from "./shareableDevices";
 
 /**
  * The owner confirms that the account which signed up with a waiting share's
- * address is the person they meant (docs/architecture.md §8.4): only now does
+ * address is the person they meant (docs/architecture.md §8.5): only now does
  * that account see them. Nothing to confirm yet, or any more, is 409.
  */
 export async function confirmShare(

@@ -30,7 +30,7 @@ interface PersonRow extends Record<string, unknown> {
 
 /**
  * The people who share with the viewer — or one of them — with their shared
- * devices at the precision of their shares (docs/architecture.md §8.4). A
+ * devices at the precision of their shares (docs/architecture.md §8.5). A
  * person whose share covers no device yet is listed with none. Looking
  * stamps the shares' `last_viewed_at`.
  */

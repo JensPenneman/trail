@@ -10,7 +10,7 @@ import {
 import { trackPointSchema } from "./track";
 
 /*
- * Public links (docs/architecture.md §8.4): a secret URL that shows the
+ * Public links (docs/architecture.md §8.5): a secret URL that shows the
  * owner's location to anyone who has it, without an account, until it
  * expires. The secret is shown once, when the link is created.
  */

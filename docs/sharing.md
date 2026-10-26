@@ -78,7 +78,7 @@ request header.
 
 The API reference at `/docs` describes the people, shares and share-links
 operations; [api.md](api.md) has a summary, and
-[architecture.md §8.4](architecture.md#84-sharing-people) the rules behind
+[architecture.md §8.5](architecture.md#85-sharing-people) the rules behind
 them. An API token needs `shares:write` and `locations:read` to start, change
 or confirm a share and to make a link: anything that can show positions needs
 `locations:read`. What a recipient and a link holder can and cannot see is in
