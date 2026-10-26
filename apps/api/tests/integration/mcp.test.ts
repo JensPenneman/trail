@@ -159,6 +159,13 @@ describe("connecting", () => {
     expect(capabilities?.tools?.listChanged).not.toBe(true);
     expect(capabilities?.resources?.listChanged).not.toBe(true);
     expect(capabilities?.resources?.subscribe).not.toBe(true);
+    const subscription = await client.listen({
+      toolsListChanged: true,
+      resourcesListChanged: true,
+      resourceSubscriptions: ["trail://devices"],
+    });
+    expect(subscription.honoredFilter).toEqual({});
+    expect(await subscription.closed).toBe("graceful");
     await client.close();
   });
 });
