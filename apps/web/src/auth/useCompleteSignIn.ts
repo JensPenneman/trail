@@ -3,6 +3,7 @@ import type { SessionUser } from "@trail/contracts/user";
 import { useCallback } from "react";
 import { useNavigate } from "react-router";
 import { queryKeys } from "../api/queryKeys";
+import { sessionEndedOnPurpose } from "../queries/sessionEndedOnPurpose";
 
 const publicQueryRoots = new Set<unknown>([queryKeys.config[0], "link-info"]);
 
@@ -17,6 +18,8 @@ export function useCompleteSignIn(next: string): (user: SessionUser) => void {
   return useCallback(
     (user: SessionUser) => {
       queryClient.removeQueries({ predicate: (query) => !publicQueryRoots.has(query.queryKey[0]) });
+      // a new session: when it ends by itself, the way back to the page is offered again
+      sessionEndedOnPurpose.unmark(queryClient);
       queryClient.setQueryData(queryKeys.session, user);
       void navigate(next, { replace: true });
     },

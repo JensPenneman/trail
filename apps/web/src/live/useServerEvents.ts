@@ -3,6 +3,7 @@ import { apiPaths } from "@trail/contracts/apiPaths";
 import type { ServerEventType } from "@trail/contracts/events";
 import { useEffect } from "react";
 import { queryKeys } from "../api/queryKeys";
+import { sessionEndedOnPurpose } from "../queries/sessionEndedOnPurpose";
 import { applyServerEvent } from "./applyServerEvent";
 import type { LiveStore } from "./createLiveStore";
 import { parseServerEvent } from "./parseServerEvent";
@@ -116,9 +117,8 @@ export function useServerEvents(store: LiveStore): void {
       clearTimeout(graceTimer);
       graceTimer = setTimeout(() => store.setConnection("reconnecting"), reconnectGraceMs);
       // A stream that keeps failing may mean the session ended; the guard reacts to a 401.
-      // Not while this browser is ending the session itself: the answer is known (and a 401).
-      const endingSession = queryClient.isMutating({ mutationKey: queryKeys.endSession }) > 0;
-      if (failures % 5 === 0 && !endingSession) {
+      // Not once this tab is ending the session itself: the answer is known (and a 401).
+      if (failures % 5 === 0 && !sessionEndedOnPurpose.has(queryClient)) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.session });
       }
       retryTimer = setTimeout(connect, backoffMs(failures));
