@@ -9,6 +9,7 @@ import {
 import { type IngestLogResponse, ingestLogQuerySchema } from "@trail/contracts/ingestLog";
 import { desc, eq } from "drizzle-orm";
 import express, { type Router } from "express";
+import { forgetDeviceInTokens } from "../apiTokens/forgetDeviceInTokens";
 import type { AppContext } from "../appContext";
 import { requireAuth, requireSession } from "../auth/requestAuth";
 import { allowLongStatements } from "../db/allowLongStatements";
@@ -97,6 +98,8 @@ export function devicesRouter(ctx: AppContext): Router {
     await db.transaction(async (tx) => {
       await allowLongStatements(tx);
       await tx.delete(devices).where(eq(devices.id, existing.id));
+      // After the delete, which waits for token changes that hold the device: they are in by now.
+      await forgetDeviceInTokens(tx, user.id, existing.id);
     });
     ctx.bus.publish(user.id, { type: "device-removed", deviceId: existing.id });
     ctx.logger.info({ deviceId: existing.id, userId: user.id }, "device deleted");

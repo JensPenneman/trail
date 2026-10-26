@@ -20,9 +20,10 @@ import { createTestContext, type TestContext } from "../support/testContext";
 import { testOrigin } from "../support/testEnvironment";
 
 /*
- * `t` runs with the default verifier (`noApiTokens`), as the server does until
- * the token store exists; `withTokens` shares its database but resolves the
- * tokens of a FakeApiTokens, which is how the token store will plug in.
+ * `t` runs with the server's own token store, which knows none of the secrets
+ * here; `withTokens` shares its database but resolves the tokens of a
+ * FakeApiTokens, to try every outcome a verifier can have (tests/integration/
+ * apiTokens.test.ts covers the store itself).
  */
 let t: TestContext;
 let withTokens: TestContext;
@@ -129,7 +130,7 @@ describe("v1 with a signed-in session", () => {
 });
 
 describe("v1 with API tokens", () => {
-  it("refuses every token while no token store is wired in", async () => {
+  it("refuses a token the store does not know, even next to a session cookie", async () => {
     const response = await request(t.app)
       .get(apiPaths.v1.me)
       .set("Authorization", bearer(tokenSecret()))

@@ -2,6 +2,11 @@
 export const v1Tags = [
   { name: "Profile", description: "The account a credential belongs to." },
   {
+    name: "Tokens",
+    description:
+      "The API token a request carries. Tokens are created, rolled and revoked in Settings › API tokens.",
+  },
+  {
     name: "Devices",
     description:
       "The phones that record locations (Overland installs), with their latest position and battery.",

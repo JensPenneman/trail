@@ -16,6 +16,10 @@
       "description": "The account a credential belongs to."
     },
     {
+      "name": "Tokens",
+      "description": "The API token a request carries. Tokens are created, rolled and revoked in Settings › API tokens."
+    },
+    {
       "name": "Devices",
       "description": "The phones that record locations (Overland installs), with their latest position and battery."
     },
@@ -65,6 +69,48 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/tokens/verify": {
+      "get": {
+        "operationId": "verifyToken",
+        "summary": "Verify the token",
+        "description": "Checks the API token the request carries and describes it: its name, scopes, devices and expiry. A token that is refused gets the usual 401 instead, so this is the call to test a token with, or to find out when it expires. Only a token can be verified: a signed-in session gets 400.\n\n**Access:** any API token, whatever its scopes; not a session.",
+        "tags": [
+          "Tokens"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The API token that made the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenVerification"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -370,6 +416,87 @@
         ],
         "additionalProperties": false,
         "description": "The account a credential belongs to."
+      },
+      "TokenVerification": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The token's id.",
+            "example": "019a1b2c-3d4e-7f60-8a9b-0c1d2e3f4a5b"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name its owner gave it.",
+            "example": "Home Assistant"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiScope"
+            },
+            "description": "What it may do.",
+            "example": [
+              "devices:read",
+              "locations:read"
+            ]
+          },
+          "deviceIds": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The only devices it reaches; null for every device of the account, also ones added later.",
+            "example": [
+              "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+            ]
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it stops working; null when it never expires.",
+            "example": "2027-01-24T09:00:00.000Z"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ApiTokenStatus"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "scopes",
+          "deviceIds",
+          "expiresAt",
+          "status"
+        ],
+        "additionalProperties": false,
+        "description": "The API token that made the request."
+      },
+      "ApiTokenStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "expired",
+          "revoked"
+        ],
+        "description": "`active` until the token is revoked or reaches its expiry; a token that is not active is refused.",
+        "example": "active"
       },
       "Device": {
         "type": "object",

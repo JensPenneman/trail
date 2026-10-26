@@ -15,19 +15,23 @@ const journal: Journal = JSON.parse(
   readFileSync(join(migrationsFolder, "meta", "_journal.json"), "utf8"),
 );
 
-/** A migrations folder holding only the first release's migration. */
-function firstReleaseFolder(): string {
-  const [first] = journal.entries;
-  if (first === undefined) throw new Error("no migrations in the journal");
+/** A migrations folder holding the journal's migrations up to and including `lastTag`. */
+function migrationsUpTo(lastTag: string): string {
+  const last = journal.entries.findIndex((entry) => entry.tag === lastTag);
+  if (last < 0) throw new Error(`no migration ${lastTag} in the journal`);
+  const entries = journal.entries.slice(0, last + 1);
   const folder = mkdtempSync(join(tmpdir(), "trail-migrations-"));
   mkdirSync(join(folder, "meta"));
-  cpSync(join(migrationsFolder, `${first.tag}.sql`), join(folder, `${first.tag}.sql`));
-  writeFileSync(
-    join(folder, "meta", "_journal.json"),
-    JSON.stringify({ ...journal, entries: [first] }),
-  );
+  for (const entry of entries) {
+    cpSync(join(migrationsFolder, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`));
+  }
+  writeFileSync(join(folder, "meta", "_journal.json"), JSON.stringify({ ...journal, entries }));
   return folder;
 }
+
+/** The tag of the first migration, and of the one that added `api_tokens` (renumbered on rebases). */
+const firstTag = journal.entries[0]?.tag ?? "";
+const apiTokensTag = journal.entries.find((entry) => entry.tag.endsWith("_api_tokens"))?.tag ?? "";
 
 /** Every table that holds recorded data, with a fingerprint of its rows. */
 const fingerprint = `
@@ -43,6 +47,18 @@ const fingerprint = `
     (SELECT count(*) FROM users)::int AS users
 `;
 
+/** API tokens (added after the first release), every column of every row. */
+const tokenFingerprint = `
+  SELECT count(*)::int AS tokens,
+    string_agg(
+      concat_ws('|', id, user_id, name, token_hash, token_hint, scopes::text, device_ids::text,
+        allowed_ips::text, expires_at::text, created_at::text, last_used_at::text,
+        last_used_ip::text, revoked_at::text),
+      ' / ' ORDER BY id
+    ) AS rows
+  FROM api_tokens
+`;
+
 /*
  * Deployed databases are never rebuilt: every release migrates the data that is
  * already there. This test starts from the first release's schema, records data
@@ -52,13 +68,14 @@ const fingerprint = `
  */
 describe("migrations on an existing database", () => {
   const pool = new pg.Pool({ connectionString: testDatabaseUrl, max: 1 });
-  let folder = "";
+  const folders: string[] = [];
   let before: Record<string, unknown> = {};
+  let tokensBefore: Record<string, unknown> = {};
 
   beforeAll(async () => {
     await wipeTestDatabase(pool);
-    folder = firstReleaseFolder();
-    await runMigrations(pool, folder);
+    folders.push(migrationsUpTo(firstTag));
+    await runMigrations(pool, folders[0] ?? "");
 
     const user = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, webauthn_user_id, timezone)
@@ -100,11 +117,31 @@ describe("migrations on an existing database", () => {
     );
     before = (await pool.query(fingerprint)).rows[0] ?? {};
 
+    // The release with API tokens, and tokens recorded the way it records them.
+    folders.push(migrationsUpTo(apiTokensTag));
+    await runMigrations(pool, folders[1] ?? "");
+    const userId = (await pool.query<{ id: string }>("SELECT id FROM users")).rows[0]?.id;
+    await pool.query(
+      `INSERT INTO api_tokens (user_id, name, token_hash, token_hint, scopes, device_ids,
+         allowed_ips, expires_at, last_used_at, last_used_ip)
+       VALUES ($1, 'Home Assistant', 'upgrade-api-token-hash', 'Wx9z',
+         ARRAY['devices:read', 'locations:read'], ARRAY[$2::uuid], ARRAY['192.168.1.0/24'::cidr],
+         '2027-01-01T00:00:00Z', '2026-01-02T10:00:00Z', '192.168.1.20')`,
+      [userId, deviceId],
+    );
+    await pool.query(
+      `INSERT INTO api_tokens (user_id, name, token_hash, token_hint, scopes, revoked_at)
+       VALUES ($1, 'Old script', 'upgrade-revoked-token-hash', 'Ab12', ARRAY['history:read'],
+         '2026-01-03T00:00:00Z')`,
+      [userId],
+    );
+    tokensBefore = (await pool.query(tokenFingerprint)).rows[0] ?? {};
+
     await runMigrations(pool, migrationsFolder);
   });
 
   afterAll(async () => {
-    rmSync(folder, { recursive: true, force: true });
+    for (const folder of folders) rmSync(folder, { recursive: true, force: true });
     await pool.end();
     // leave the database as every other test file expects it
     await resetDatabase();
@@ -113,6 +150,11 @@ describe("migrations on an existing database", () => {
   it("keeps every recorded row", async () => {
     expect(before["locations"]).toBe(500);
     expect((await pool.query(fingerprint)).rows[0]).toEqual(before);
+  });
+
+  it("keeps every API token as it was", async () => {
+    expect(tokensBefore["tokens"]).toBe(2);
+    expect((await pool.query(tokenFingerprint)).rows[0]).toEqual(tokensBefore);
   });
 
   it("applies every migration of the journal", async () => {

@@ -1,7 +1,8 @@
+import { apiTokenSecretPattern } from "@trail/contracts/apiToken";
 import type { TokenPrincipal } from "../auth/requestAuth";
 
-/** An API token secret: `trlk_` and 32 random bytes in base64url. */
-export const apiTokenPattern = /^trlk_[A-Za-z0-9_-]{43}$/;
+/** An API token secret: `trlk_` and 32 random bytes in base64url (the contract's pattern). */
+export const apiTokenPattern = apiTokenSecretPattern;
 
 /**
  * Why a token was refused. The client only learns about `expired` (401
@@ -22,8 +23,3 @@ export interface TokenRejection {
 export interface ApiTokenVerifier {
   verify(secret: string, request: { ip: string | null }): Promise<TokenPrincipal | TokenRejection>;
 }
-
-/** Until a token store is wired in, every token is unknown: `/api/v1` then takes sessions only. */
-export const noApiTokens: ApiTokenVerifier = {
-  verify: async () => ({ reason: "unknown" }),
-};

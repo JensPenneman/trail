@@ -26,6 +26,10 @@ export const apiPaths = {
     session: (sessionId: string) => `/api/me/sessions/${id(sessionId)}`,
     revokeOtherSessions: "/api/me/sessions/revoke-others",
     passkeyLinks: "/api/me/passkey-links",
+    /** API tokens: managed with the session only, never with a token. */
+    tokens: "/api/me/tokens",
+    token: (tokenId: string) => `/api/me/tokens/${id(tokenId)}`,
+    rollToken: (tokenId: string) => `/api/me/tokens/${id(tokenId)}/roll`,
   },
   admin: {
     invites: "/api/admin/invites",
@@ -57,6 +61,7 @@ export const apiPaths = {
       one: (deviceId: string) => `/api/v1/devices/${id(deviceId)}`,
       location: (deviceId: string) => `/api/v1/devices/${id(deviceId)}/location`,
     },
+    tokens: { verify: "/api/v1/tokens/verify" },
   },
   /** The API reference (Scalar) — a page the API serves itself, outside the SPA. */
   docs: "/docs",
