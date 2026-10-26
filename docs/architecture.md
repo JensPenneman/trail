@@ -50,7 +50,10 @@ npm only — never pnpm/yarn).
   flags are hard errors.
 - **Biome** for lint + format (`npm run lint`), **knip** for dead code,
   **lefthook** hooks (pre-commit: biome + typecheck; commit-msg: commitlint;
-  pre-push: unit tests), **Conventional Commits**.
+  pre-push: unit tests), **Conventional Commits**. Biome is pinned exactly
+  (`"@biomejs/biome": "2.5.15"`, no caret): it treats minor releases as rule
+  changes (new lint rules, new formatting), so it is updated deliberately, in
+  a pull request of its own with the fixes it asks for.
 - **One file = one purpose.** One component / one function / one router per
   file where practical. **No barrel files** (`index.ts` re-exports are banned by
   Biome `noBarrelFile`); import from the defining module. Contracts are imported
