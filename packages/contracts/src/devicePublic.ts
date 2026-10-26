@@ -72,9 +72,10 @@ export const devicePublicSchema = z
       description: "Time of the last accepted upload of any kind; null before the first one.",
       example: "2026-10-26T08:42:00.000Z",
     }),
-    lastLocation: positionSchema
-      .nullable()
-      .meta({ description: "The newest known position; null before the first one." }),
+    lastLocation: positionSchema.nullable().optional().meta({
+      description:
+        "The newest known position; null before the first one. Only for a credential with `locations:read`: without that scope the field is left out.",
+    }),
     battery: batterySchema.nullable(),
     liveTrip: z
       .object({

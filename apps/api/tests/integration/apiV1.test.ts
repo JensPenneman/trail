@@ -83,6 +83,8 @@ describe("v1 with a signed-in session", () => {
       expect(Object.keys(device).sort()).toEqual(Object.keys(devicePublicSchema.shape).sort());
     }
     expect(JSON.stringify(response.body)).not.toMatch(/tokenHint|deviceKey|pendingSettings|alerts/);
+    // A session holds every scope, positions included; null means no position yet.
+    expect(devices.map((device) => device.lastLocation === null)).toEqual([false, true]);
     const one = await owner.get(apiPaths.v1.devices.one(uploaded)).expect(200);
     expect(devicePublicResponseSchema.parse(one.body).device).toEqual(devices[0]);
   });
@@ -178,6 +180,31 @@ describe("v1 with API tokens", () => {
         `Bearer realm="trail", error="insufficient_scope", scope="${scope}"`,
       );
     }
+  });
+
+  it("shows where a device is only to a token with locations:read", async () => {
+    const statusOnly = await issue({ scopes: ["devices:read"] });
+    const withPositions = await issue({ scopes: ["devices:read", "locations:read"] });
+    const get = (path: string, secret: string) =>
+      request(withTokens.app).get(path).set("Authorization", bearer(secret)).expect(200);
+
+    const withheld = await get(apiPaths.v1.devices.root, statusOnly);
+    expect(devicePublicListResponseSchema.parse(withheld.body).devices).toHaveLength(2);
+    for (const device of withheld.body.devices) expect(device).not.toHaveProperty("lastLocation");
+    const one = (await get(apiPaths.v1.devices.one(uploaded), statusOnly)).body.device;
+    expect(one).not.toHaveProperty("lastLocation");
+    // What devices:read is for stays: status, last-seen time and battery.
+    expect(one.lastSeenAt).not.toBeNull();
+    expect(one.battery).not.toBeNull();
+
+    const shown = devicePublicListResponseSchema.parse(
+      (await get(apiPaths.v1.devices.root, withPositions)).body,
+    ).devices;
+    expect(shown[0]?.lastLocation).toMatchObject({
+      lat: expect.any(Number),
+      lon: expect.any(Number),
+    });
+    expect(shown[1]?.lastLocation).toBeNull();
   });
 
   it("keeps a token to its devices: the others do not exist for it", async () => {

@@ -11,13 +11,17 @@ export const listDevices = defineRoute(
     operationId: "listDevices",
     summary: "List devices",
     description:
-      "Every device of the account — or, for a token limited to some devices, those — with its latest position, battery, trip in progress and point counts.",
+      "Every device of the account — or, for a token limited to some devices, those — with its status, battery, trip in progress and point counts, and with its latest position for a credential that holds `locations:read`.",
     tags: ["Devices"],
     auth: { scopes: ["devices:read"] },
     responses: { 200: devicePublicListResponseSchema },
   },
   async ({ ctx, auth }) => ({
     status: 200,
-    body: { devices: (await loadDeviceSummaries(ctx.db, auth)).map(toDevicePublic) },
+    body: {
+      devices: (await loadDeviceSummaries(ctx.db, auth)).map((summary) =>
+        toDevicePublic(summary, auth),
+      ),
+    },
   }),
 );

@@ -18,6 +18,6 @@ export const getDevice = defineRoute(
   },
   async ({ ctx, auth, params }) => ({
     status: 200,
-    body: { device: toDevicePublic(await loadDeviceSummary(ctx.db, auth, params.id)) },
+    body: { device: toDevicePublic(await loadDeviceSummary(ctx.db, auth, params.id), auth) },
   }),
 );

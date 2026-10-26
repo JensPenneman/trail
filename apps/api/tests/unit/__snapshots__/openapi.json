@@ -82,7 +82,7 @@
       "get": {
         "operationId": "listDevices",
         "summary": "List devices",
-        "description": "Every device of the account — or, for a token limited to some devices, those — with its latest position, battery, trip in progress and point counts.\n\n**Access:** an API token with the scope `devices:read`, or a signed-in session.",
+        "description": "Every device of the account — or, for a token limited to some devices, those — with its status, battery, trip in progress and point counts, and with its latest position for a credential that holds `locations:read`.\n\n**Access:** an API token with the scope `devices:read`, or a signed-in session.",
         "tags": [
           "Devices"
         ],
@@ -412,6 +412,7 @@
             "example": "2026-10-26T08:42:00.000Z"
           },
           "lastLocation": {
+            "description": "The newest known position; null before the first one. Only for a credential with `locations:read`: without that scope the field is left out.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Position"
@@ -419,8 +420,7 @@
               {
                 "type": "null"
               }
-            ],
-            "description": "The newest known position; null before the first one."
+            ]
           },
           "battery": {
             "anyOf": [
@@ -507,7 +507,6 @@
           "source",
           "createdAt",
           "lastSeenAt",
-          "lastLocation",
           "battery",
           "liveTrip",
           "counts"
@@ -1188,7 +1187,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "trlk_…",
-        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their status, battery and latest position. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read points, tracks, the timeline and current positions. |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read visits, trips, daily statistics, activity and the heatmap. |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |"
+        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, tracks, the timeline). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read visits, trips, daily statistics, activity and the heatmap. |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |"
       }
     }
   }

@@ -623,7 +623,11 @@ scopes that grant access; any one of them is enough, all of them with
 `all: true`. A failure answers 403 `insufficient_scope`, naming the missing
 scopes in the message and in `WWW-Authenticate: Bearer realm="trail",
 error="insufficient_scope", scope="…"`. Without any principal a scoped route
-answers 401 with `WWW-Authenticate: Bearer realm="trail"`.
+answers 401 with `WWW-Authenticate: Bearer realm="trail"`. Scopes are the
+privacy boundary, and a position needs `locations:read`: `toDevicePublic`
+leaves `DevicePublic.lastLocation` out for a principal without it (null keeps
+meaning "no position yet"), so `devices:read` alone shows names, status,
+last-seen time and battery, never where a device is.
 
 **The token seam.** `ApiTokenVerifier` (`apps/api/src/v1/apiTokens.ts`) is the
 only thing a token store has to provide: `verify(secret, { ip })` resolves a

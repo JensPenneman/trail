@@ -57,14 +57,19 @@ needs them all. A signed-in session holds every scope.
 | Scope | Allows |
 |---|---|
 | `profile:read` | Read the account's name and time zone. |
-| `devices:read` | List the devices with their status, battery and latest position. |
+| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |
 | `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |
-| `locations:read` | Read points, tracks, the timeline and current positions. |
+| `locations:read` | Read positions: where the devices are now and where they have been (points, tracks, the timeline). |
 | `locations:write` | Correct how you travelled (transport mode overrides). |
 | `history:read` | Read visits, trips, daily statistics, activity and the heatmap. |
 | `people:read` | See the people who share their location with you. |
 | `shares:read` | List your shares, the ones you receive and your public links. |
 | `shares:write` | Start and stop sharing, hide people and manage public links. |
+
+Positions are what `locations:read` is for: a device in `GET /api/v1/devices`
+carries its `lastLocation` only for a credential with that scope. With
+`devices:read` alone the field is left out, so a token for a status display
+never learns where anyone is.
 
 A token can also be limited to some of the account's devices. The other
 devices then look as if they did not exist: they are missing from lists and
@@ -157,7 +162,7 @@ export TRAIL_TOKEN=trlk_…
 # The account behind the token
 curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/me"
 
-# All devices, with their latest positions
+# All devices (with their latest positions when the token has locations:read)
 curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/devices"
 
 # Where one device is now

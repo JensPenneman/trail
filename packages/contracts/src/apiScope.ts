@@ -24,10 +24,12 @@ export type ApiScope = z.infer<typeof apiScopeSchema>;
 /** What each scope allows, in a sentence (the API reference, the token dialog). */
 export const apiScopeDescriptions: Record<ApiScope, string> = {
   "profile:read": "Read the account's name and time zone.",
-  "devices:read": "List the devices with their status, battery and latest position.",
+  "devices:read":
+    "List the devices with their name, status, last-seen time and battery, not where they are.",
   "devices:write":
     "Rename devices, switch their alerts and queue settings presets; never their tokens.",
-  "locations:read": "Read points, tracks, the timeline and current positions.",
+  "locations:read":
+    "Read positions: where the devices are now and where they have been (points, tracks, the timeline).",
   "locations:write": "Correct how you travelled (transport mode overrides).",
   "history:read": "Read visits, trips, daily statistics, activity and the heatmap.",
   "people:read": "See the people who share their location with you.",
