@@ -42,6 +42,7 @@ const isoDate = z.iso.date();
 const instantInput = (description: string) =>
   z
     .string()
+    .max(40)
     .refine((value) => isoInstant.safeParse(value).success, {
       message: "Use ISO 8601 with a UTC offset, e.g. 2026-10-26T09:00:00+01:00",
     })
@@ -60,6 +61,7 @@ const instant = (description: string) =>
 const day = (description: string) =>
   z
     .string()
+    .max(10)
     .refine((value) => isoDate.safeParse(value).success, {
       message: "Use a date like 2026-10-26",
     })
