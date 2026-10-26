@@ -157,4 +157,6 @@ is opt-in, one way and limited to what its owner picks.
   it cannot share your positions with an address it controls or make a
   precise link and read it back. A token limited to some devices shares only
   those, and changes or confirms only shares that show nothing but its
-  devices, before and after the change.
+  devices, before and after the change. An agent using the MCP server's
+  `get_people` sees exactly what the People page shows, at the same
+  precision, without the addresses.
