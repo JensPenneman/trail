@@ -10,7 +10,7 @@ interface TileRow extends Record<string, unknown> {
   z: number;
   x: number;
   y: number;
-  status: "ok" | "failed";
+  stale: boolean;
 }
 
 interface WayRow extends Record<string, unknown> {
@@ -35,17 +35,36 @@ const addresses = (keys: Iterable<TileKey>): TileAddress[] =>
     return tile === null ? [] : [tile];
   });
 
-/** The tiles among `keys` whose data is cached (refreshing an old one keeps its data usable). */
-export async function availableTiles(db: Executor, keys: Iterable<TileKey>): Promise<Set<TileKey>> {
+/** Tiles fetched before this are due for a refresh (`mapping.tileMaxAgeDays`). */
+export const staleBefore = (maxAgeDays: number, now: Date): Date =>
+  new Date(now.getTime() - maxAgeDays * 86_400_000);
+
+/**
+ * The tiles among `keys` whose data is cached, and those of them fetched
+ * before `before`: they keep serving while they are fetched again (a failed
+ * refresh keeps the old data).
+ */
+export async function cachedTiles(
+  db: Executor,
+  keys: Iterable<TileKey>,
+  before: Date,
+): Promise<{ available: Set<TileKey>; stale: Set<TileKey> }> {
+  const available = new Set<TileKey>();
+  const stale = new Set<TileKey>();
   const tiles = addresses(keys);
-  if (tiles.length === 0) return new Set();
+  if (tiles.length === 0) return { available, stale };
   const result = await db.execute<TileRow>(sql`
-    SELECT t.z, t.x, t.y, t.status
+    SELECT t.z, t.x, t.y, t.fetched_at < ${before.toISOString()}::timestamptz AS stale
     FROM jsonb_to_recordset(${JSON.stringify(tiles)}::jsonb) AS r(z smallint, x integer, y integer)
     JOIN osm_tiles t ON t.z = r.z AND t.x = r.x AND t.y = r.y
     WHERE t.status = 'ok'
   `);
-  return new Set(result.rows.map((row) => tileKey(row.z, row.x, row.y)));
+  for (const row of result.rows) {
+    const key = tileKey(row.z, row.x, row.y);
+    available.add(key);
+    if (row.stale) stale.add(key);
+  }
+  return { available, stale };
 }
 
 /** The ways and stops of the cached tiles among `keys`. */

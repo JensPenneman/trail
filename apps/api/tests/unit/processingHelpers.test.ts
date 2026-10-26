@@ -3,7 +3,10 @@ import { latToTileY, lonToTileX, tileBounds } from "../../src/heatmap/tileMath";
 import { averagePoints } from "../../src/processing/averagePoints";
 import { keptPoints } from "../../src/processing/keptPoint";
 import { motionActivity } from "../../src/processing/motionActivity";
-import { defaultProcessingConfig } from "../../src/processing/processingConfig";
+import {
+  defaultProcessingConfig,
+  processingConfigWith,
+} from "../../src/processing/processingConfig";
 import { moveTiles, parseTileKey, tileKey } from "../../src/processing/tileCover";
 import { weightedQuantile } from "../../src/processing/weightedQuantile";
 import { decodeTimelineCursor, encodeTimelineCursor } from "../../src/transport/timelineCursor";
@@ -60,6 +63,16 @@ describe("tiles", () => {
     );
     expect(sparse.size).toBeGreaterThan(pointTiles.size * 2);
     for (const tile of pointTiles) expect(sparse.has(tile)).toBe(true);
+  });
+});
+
+describe("the configuration", () => {
+  it("takes the thresholds and the tile age the environment sets", () => {
+    const config = processingConfigWith({ maxAccuracyM: 80, stopMinS: 240, osmTtlDays: 30 });
+    expect(config.averaging.maxAccuracyM).toBe(80);
+    expect(config.stops.minDurationS).toBe(240);
+    expect(config.mapping.tileMaxAgeDays).toBe(30);
+    expect(config.mapping.pieceMaxTiles).toBe(defaultProcessingConfig.mapping.pieceMaxTiles);
   });
 });
 

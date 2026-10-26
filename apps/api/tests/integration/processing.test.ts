@@ -12,6 +12,7 @@ import {
 import { processingVersion } from "../../src/processing/processingVersion";
 import { processWindow } from "../../src/processing/processWindow";
 import { planWindow } from "../../src/processing/runPipeline";
+import { parseTileKey } from "../../src/processing/tileCover";
 import { type Agent, signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
 import { FixtureWaySource } from "../support/fixtureWaySource";
@@ -329,6 +330,58 @@ describe("map data a piece at a time", () => {
   });
 });
 
+describe("map data that is old", () => {
+  it("serves an old tile, fetches it again and works the window out again", async () => {
+    const device = await newDevice("Returning driver");
+    const points = motorwayDrive(morning + 40_000);
+    const range = { from: iso(morning + 39_000), to: iso(morning + 44_000) };
+    await upload(device.token, points);
+    await t.ctx.processing.flush();
+    const tiles = [...planWindow(points, [], t.ctx.processing.config).tiles];
+    const addresses = JSON.stringify(tiles.map((key) => parseTileKey(key)));
+    const ofTheDrive = sql`(z, x, y) IN (
+      SELECT * FROM jsonb_to_recordset(${addresses}::jsonb) AS r(z smallint, x integer, y integer)
+    )`;
+    // As if the drive's tiles had been fetched four months ago, and Overpass were down.
+    await t.ctx.db.execute(
+      sql`UPDATE osm_tiles SET fetched_at = now() - interval '120 days' WHERE ${ofTheDrive}`,
+    );
+    for (const tile of tiles) fixture.failing.add(tile);
+    const asked = fixture.requested.length;
+    await enqueueWindow(t.ctx.db, {
+      deviceId: device.id,
+      from: new Date(range.from),
+      to: new Date(range.to),
+      reason: "reprocess",
+    });
+    await t.ctx.processing.flush();
+    // The old data still serves; the window waits for the fresh one.
+    expect(fixture.requested.length).toBeGreaterThan(asked);
+    expect((await tracksAt(device.id, "mapped", range)).availableLevel).toBe("mapped");
+    const waiting = await t.ctx.db.execute<{ missing: number }>(sql`
+      SELECT jsonb_array_length(missing_tiles) AS missing FROM processing_queue
+      WHERE device_id = ${device.id} AND missing_tiles IS NOT NULL
+    `);
+    expect(waiting.rows).toEqual([{ missing: tiles.length }]);
+
+    fixture.failing.clear();
+    await t.ctx.db.execute(
+      sql`UPDATE osm_tiles SET retry_at = now() - interval '1 minute' WHERE ${ofTheDrive}`,
+    );
+    await t.ctx.processing.flush();
+    const fresh = await t.ctx.db.execute<{ old: number }>(sql`
+      SELECT count(*)::int AS old FROM osm_tiles
+      WHERE ${ofTheDrive} AND fetched_at < now() - interval '1 hour'
+    `);
+    expect(fresh.rows).toEqual([{ old: 0 }]);
+    const queued = await t.ctx.db.execute(
+      sql`SELECT 1 FROM processing_queue WHERE device_id = ${device.id}`,
+    );
+    expect(queued.rows).toHaveLength(0);
+    expect((await segmentsOf(device.id)).map((segment) => segment.mode_inferred)).toEqual(["car"]);
+  });
+});
+
 describe("the queue's clock", () => {
   it("makes a window whose tiles arrived ready by the worker's clock at once", async () => {
     const device = await newDevice("Clockwork");
@@ -339,7 +392,7 @@ describe("the queue's clock", () => {
         INSERT INTO processing_queue (device_id, from_at, to_at, reason, priority, next_at, missing_tiles)
         VALUES (${device.id}, now(), now() + interval '1 hour', 'map', 0, now() + interval '1 day', '[]'::jsonb)
       `);
-      expect(await rearmWindows(t.ctx.db)).toBe(1);
+      expect(await rearmWindows(t.ctx.db, new Date())).toBe(1);
       expect(await subMillisecondReadyTimes()).toBe(0);
       const rows = await takeNextWindow(t.ctx.db, new Date());
       expect(rows.map((row) => row.deviceId)).toEqual([device.id]);

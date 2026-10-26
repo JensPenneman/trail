@@ -342,8 +342,9 @@ again, newest days first, while new uploads keep going first.
 
 **Map data and Overpass.** Map data comes from the public Overpass instance
 at `https://overpass-api.de/api/interpreter` (`PROCESSING_OVERPASS_URL`), one
-query per map tile of about 1.5 × 1 km, and stays cached for
-`PROCESSING_OSM_TTL_DAYS` (90). Trail follows the instance's usage policy: one
+query per map tile of about 1.5 km square. A tile stays cached for
+`PROCESSING_OSM_TTL_DAYS` (90); after that it keeps serving and is fetched
+again the next time a window needs it. Trail follows the instance's usage policy: one
 request at a time, at most one every two seconds, a User-Agent that names the
 software (`Trail/<version> (+https://github.com/JensPenneman/trail)`, never
 your server's address), retries only for busy answers, with backoff, and at

@@ -211,8 +211,11 @@ export async function awaitTiles(
  */
 export const readyNow = sql.raw("date_trunc('milliseconds', now())");
 
-/** Makes the windows ready whose missing tiles have all arrived; returns how many. */
-export async function rearmWindows(db: Executor): Promise<number> {
+/**
+ * Makes the windows ready whose missing tiles have all arrived, each fetched
+ * at `staleBefore` or later (a window can wait for a refresh); returns how many.
+ */
+export async function rearmWindows(db: Executor, staleBefore: Date): Promise<number> {
   const result = await db.execute(sql`
     UPDATE processing_queue q SET next_at = ${readyNow}, missing_tiles = NULL
     WHERE q.missing_tiles IS NOT NULL
@@ -224,14 +227,23 @@ export async function rearmWindows(db: Executor): Promise<number> {
             AND t.x = split_part(m.key, '/', 2)::integer
             AND t.y = split_part(m.key, '/', 3)::integer
             AND t.status = 'ok'
+            AND t.fetched_at >= ${staleBefore.toISOString()}::timestamptz
         )
       )
   `);
   return result.rowCount ?? 0;
 }
 
-/** The tiles waiting windows need that are worth fetching now (not cached, not failing until later). */
-export async function tilesToFetch(db: Executor, now: Date, limit: number): Promise<TileKey[]> {
+/**
+ * The tiles waiting windows need that are worth fetching now: not cached, or
+ * cached before `staleBefore`, and not failing until later.
+ */
+export async function tilesToFetch(
+  db: Executor,
+  now: Date,
+  staleBefore: Date,
+  limit: number,
+): Promise<TileKey[]> {
   const result = await db.execute<{ key: string }>(sql`
     SELECT m.key
     FROM processing_queue q
@@ -241,7 +253,10 @@ export async function tilesToFetch(db: Executor, now: Date, limit: number): Prom
       AND t.x = split_part(m.key, '/', 2)::integer
       AND t.y = split_part(m.key, '/', 3)::integer
     WHERE q.missing_tiles IS NOT NULL
-      AND (t.z IS NULL OR (t.status = 'failed' AND (t.retry_at IS NULL OR t.retry_at <= ${now.toISOString()}::timestamptz)))
+      AND (t.z IS NULL OR (
+        (t.status = 'failed' OR t.fetched_at < ${staleBefore.toISOString()}::timestamptz)
+        AND (t.retry_at IS NULL OR t.retry_at <= ${now.toISOString()}::timestamptz)
+      ))
     GROUP BY m.key
     ORDER BY min(q.priority), min(q.enqueued_at), min(m.position), m.key
     LIMIT ${limit}

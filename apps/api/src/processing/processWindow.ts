@@ -8,7 +8,7 @@ import { awaitTiles, type FromLevel, finishWindows, type QueueRow } from "./proc
 import { processingVersion } from "./processingVersion";
 import { inferWindow, mapPiece, piecesToMap, planWindow, type StretchMapping } from "./runPipeline";
 import type { TileKey } from "./tileCover";
-import { availableTiles, loadMapData } from "./tileStore";
+import { cachedTiles, loadMapData, staleBefore } from "./tileStore";
 import {
   extendWindow,
   loadOverrides,
@@ -35,7 +35,9 @@ const levels: readonly FromLevel[] = ["averaged", "mapped", "inferred"];
  * §17.4), in one transaction under the device's processing lock: the window
  * grows to whole segments, the points, visits, trips and overrides are read,
  * the pipeline runs with the cached map data loaded a piece at a time, the
- * results replace the window's derived rows and the queue rows are done. Moves whose map tiles are missing are
+ * results replace the window's derived rows and the queue rows are done.
+ * Tiles older than `mapping.tileMaxAgeDays` serve, and the window waits for
+ * them to be fetched again. Moves whose map tiles are missing are
  * stored unmapped, and the window waits for those tiles. Null when the
  * device is gone.
  */
@@ -71,7 +73,9 @@ export async function processWindow(
     const trips = await loadTrips(tx, deviceId, window.from, window.to, now);
     const overrides = await loadOverrides(tx, deviceId, window.from, window.to);
     const plan = planWindow(raw, visits, config);
-    const available = options.mapping ? await availableTiles(tx, plan.tiles) : new Set<TileKey>();
+    const { available, stale } = options.mapping
+      ? await cachedTiles(tx, plan.tiles, staleBefore(config.mapping.tileMaxAgeDays, now))
+      : { available: new Set<TileKey>(), stale: new Set<TileKey>() };
     const storedMapping =
       fromLevel === "inferred"
         ? await loadStoredMapping(tx, deviceId, plan.raw, processingVersion)
@@ -100,8 +104,10 @@ export async function processWindow(
       version: processingVersion,
     });
     await finishWindows(tx, rows);
-    if (result.missingTiles.length > 0) {
-      await awaitTiles(tx, { deviceId, ...window, fromLevel, priority }, result.missingTiles);
+    // Missing tiles, and old ones (they served this pass): the window is done again once they are here.
+    const waitFor = [...new Set([...result.missingTiles, ...stale])].sort();
+    if (waitFor.length > 0) {
+      await awaitTiles(tx, { deviceId, ...window, fromLevel, priority }, waitFor);
     }
     return {
       deviceId,
@@ -110,7 +116,7 @@ export async function processWindow(
       to: window.to,
       points: raw.length,
       segments: result.segments.length,
-      missingTiles: result.missingTiles,
+      missingTiles: waitFor,
     };
   });
 }

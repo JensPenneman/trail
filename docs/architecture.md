@@ -1363,8 +1363,10 @@ shape, or a `remark` about a runtime error refuses the whole tile). The
 `TileFetcher` fetches the tiles waiting windows list, within
 `PROCESSING_OVERPASS_DAILY_MB` (300) per UTC day, and makes a window ready as
 soon as its tiles are all there. A failed tile is tried again after 10
-minutes, four times longer each time, at most a day later; a cached tile older
-than `PROCESSING_OSM_TTL_DAYS` (90) keeps serving. A self-hosted extract can
+minutes, four times longer each time, at most a day later. A cached tile older
+than `PROCESSING_OSM_TTL_DAYS` (90) keeps serving and is fetched again when a
+window needs it: the window waits for it and is worked out again once it is
+fresh (a failed refresh keeps the old data). A self-hosted extract can
 implement the same interface.
 
 **Features** of a move (`moveSeries`, `extractFeatures`), from its intervals:
@@ -1432,10 +1434,12 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   points, visits, trips and overrides, runs the pipeline with the cached map
   data of one piece at a time, replaces the window's processed points and
   segments and finishes the queue rows (only those that did not change
-  meanwhile). It yields to the event loop between pieces and windows. A failure re-queues with backoff (30 s × 4ⁿ, at most 6 h).
-  Moves without their tiles are stored unmapped and the window waits for them
-  (`missing_tiles`, re-checked after a day at the latest); tiles are fetched
-  alongside, so a missing tile never holds up other windows.
+  meanwhile). It yields to the event loop between pieces and windows. A
+  failure re-queues with backoff (30 s × 4ⁿ, at most 6 h). Moves without
+  their tiles are stored unmapped and the window waits for them, as it does
+  for tiles due for a refresh (`missing_tiles`, re-checked after a day at the
+  latest); tiles are fetched alongside, so a missing tile never holds up other
+  windows. Ready times are kept to the millisecond, the worker's clock.
 - The 15-minute pass makes waiting windows whose tiles arrived ready and
   queues the gap of any device whose newest point is more than 15 minutes
   newer than its newest processed point (a window lost when the process

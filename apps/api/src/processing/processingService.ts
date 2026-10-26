@@ -53,6 +53,7 @@ export class ProcessingService {
                   logger: input.logger,
                   source: input.waySource,
                   dailyBytes: input.dailyBytes,
+                  maxAgeDays: input.config.mapping.tileMaxAgeDays,
                 }),
           ...(input.delayMs === undefined ? {} : { delayMs: input.delayMs }),
         })

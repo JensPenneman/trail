@@ -8,6 +8,7 @@ import { rearmWindows, retryWindows, takeNextWindow } from "./processingQueue";
 import { processingVersion } from "./processingVersion";
 import { processWindow } from "./processWindow";
 import type { TileFetcher } from "./tileFetcher";
+import { staleBefore } from "./tileStore";
 
 /** After an upload the worker waits this long, so a burst of uploads becomes one pass. */
 const defaultDelayMs = 3000;
@@ -203,7 +204,10 @@ export class ProcessingWorker {
 
   async #mapWaitPass(): Promise<void> {
     try {
-      const rearmed = await rearmWindows(this.#db);
+      const rearmed = await rearmWindows(
+        this.#db,
+        staleBefore(this.#config.mapping.tileMaxAgeDays, new Date()),
+      );
       const caughtUp = await enqueueCatchUp(this.#db);
       if (rearmed + caughtUp > 0) this.notify(0);
       this.#startFetching();

@@ -82,6 +82,8 @@ export interface ProcessingConfig {
     readonly pieceMaxTiles: number;
     /** … each matched with this much of the move beyond its ends, so the seams match as the whole move would. */
     readonly seamMarginM: number;
+    /** A cached tile older than this keeps serving and is fetched again when a window needs it (PROCESSING_OSM_TTL_DAYS). */
+    readonly tileMaxAgeDays: number;
   };
   readonly features: {
     /** Interval speeds from pairs at most this far apart; sparser pairs use the distance along the track. */
@@ -216,6 +218,7 @@ export const defaultProcessingConfig: ProcessingConfig = {
     groundMaxSpeedMs: 100,
     pieceMaxTiles: 256,
     seamMarginM: 1500,
+    tileMaxAgeDays: 90,
   },
   features: {
     pairMaxGapS: 600,
@@ -281,14 +284,16 @@ export const defaultProcessingConfig: ProcessingConfig = {
   },
 };
 
-/** The defaults with the two thresholds the environment can change (docs/architecture.md §4). */
+/** The defaults with what the environment can change (docs/architecture.md §4). */
 export function processingConfigWith(settings: {
   maxAccuracyM: number;
   stopMinS: number;
+  osmTtlDays: number;
 }): ProcessingConfig {
   return {
     ...defaultProcessingConfig,
     averaging: { ...defaultProcessingConfig.averaging, maxAccuracyM: settings.maxAccuracyM },
     stops: { ...defaultProcessingConfig.stops, minDurationS: settings.stopMinS },
+    mapping: { ...defaultProcessingConfig.mapping, tileMaxAgeDays: settings.osmTtlDays },
   };
 }

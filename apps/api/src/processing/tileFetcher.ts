@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 import type { Database } from "../db/database";
 import { rearmWindows, tilesToFetch } from "./processingQueue";
 import { parseTileKey } from "./tileCover";
-import { bytesFetchedToday, recordTileFailure, saveTile } from "./tileStore";
+import { bytesFetchedToday, recordTileFailure, saveTile, staleBefore } from "./tileStore";
 import { TileFetchError, type WaySource } from "./waySource";
 
 export interface FetchRound {
@@ -15,7 +15,8 @@ export interface FetchRound {
 /**
  * Fetches the map tiles that waiting windows need (docs/architecture.md
  * §17.3), one at a time through the way source, within the daily download
- * budget, and makes a window ready again as soon as its tiles are all there.
+ * budget — tiles not cached yet, and those older than the configured age —
+ * and makes a window ready again as soon as its tiles are all there.
  * A tile that fails is tried again later (the tile store's backoff).
  */
 export class TileFetcher {
@@ -23,12 +24,21 @@ export class TileFetcher {
   readonly #logger: Logger;
   readonly #source: WaySource;
   readonly #dailyBytes: number;
+  readonly #maxAgeDays: number;
 
-  constructor(input: { db: Database; logger: Logger; source: WaySource; dailyBytes: number }) {
+  constructor(input: {
+    db: Database;
+    logger: Logger;
+    source: WaySource;
+    dailyBytes: number;
+    /** Older tiles are fetched again (`mapping.tileMaxAgeDays`). */
+    maxAgeDays: number;
+  }) {
     this.#db = input.db;
     this.#logger = input.logger;
     this.#source = input.source;
     this.#dailyBytes = input.dailyBytes;
+    this.#maxAgeDays = input.maxAgeDays;
   }
 
   /** Fetches until nothing is waiting, the budget is spent or `signal` aborts. */
@@ -43,7 +53,7 @@ export class TileFetcher {
         );
         break;
       }
-      const [key] = await tilesToFetch(this.#db, now(), 1);
+      const [key] = await tilesToFetch(this.#db, now(), staleBefore(this.#maxAgeDays, now()), 1);
       if (key === undefined) break;
       const tile = parseTileKey(key);
       if (tile === null) break;
@@ -64,7 +74,7 @@ export class TileFetcher {
           },
           "map tile stored",
         );
-        await rearmWindows(this.#db);
+        await rearmWindows(this.#db, staleBefore(this.#maxAgeDays, now()));
       } catch (error) {
         if (signal.aborted) break;
         const bytes = error instanceof TileFetchError ? error.bytes : 0;
