@@ -94,7 +94,12 @@ ephemeral loopback port and passes that origin as `PUBLIC_URL`. In the
 container `npm run dev` takes the project's environment instead of `.env`, and
 git and its hooks stay on the host. Playwright runs one worker there
 (`E2E_WORKERS`), so the suites of several worktrees can share one machine.
-`scripts/devc.sh down` removes the project, volumes included.
+`scripts/devc.sh down` removes the project, volumes included. The image
+installs the lockfile's `playwright-core` with `npm ci` from a one-package
+lockfile, so the tarball is checked against the lockfile's integrity, and that
+package fetches its own Chromium build (Playwright checks the size, no
+published checksum exists); CI builds the image whenever `.devcontainer/`,
+`package-lock.json` or `ci.yml` change (§15).
 
 ### Production (Launchway)
 
