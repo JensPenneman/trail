@@ -47,7 +47,7 @@ function legacyJsonLeg(factory: McpServerFactory) {
  * server per request from `factory`, answers as single JSON bodies. Requests
  * of the 2026-07-28 revision (a `_meta` envelope on every request) go to the
  * SDK's per-request handler, strict about that revision; 2025-era requests,
- * which every client before it sends, to a stateless JSON leg — routed by the
+ * which every older client sends, to a stateless JSON leg — routed by the
  * SDK's own classifier, so the two can never disagree about a request.
  * `toNodeHandler` adapts the fetch-shaped composition to Node; the router in
  * front of it has verified the token, the origin, the method and the body.
