@@ -59,6 +59,11 @@ its code: it is shown only once. Anyone with the address sees the page, which
 refreshes every 15 seconds and says when it expires. The list shows how often
 each link was opened; **Turn off** ends a link at once.
 
+The secret is the part of the address after `#`. Browsers keep that part to
+themselves: it never reaches your server's or any proxy's logs, and no other
+site learns it from a link on the page. The page passes it to Trail in a
+request header.
+
 ## For developers
 
 The API reference at `/docs` describes the people, shares and share-links

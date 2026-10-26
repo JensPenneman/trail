@@ -22,7 +22,7 @@ import { overlandRouter } from "../overland/overlandRouter";
 import { apiReferenceScriptPath } from "../packagedFiles";
 import { configRouter } from "../publicConfig/configRouter";
 import { linkPageHeaders } from "../sharing/linkPageHeaders";
-import { publicSharesRouter } from "../sharing/publicSharesRouter";
+import { publicShareRouter } from "../sharing/publicShareRouter";
 import { statsRouter } from "../stats/statsRouter";
 import { tracksRouter } from "../tracks/tracksRouter";
 import { createV1Router } from "../v1/createV1Router";
@@ -69,12 +69,7 @@ export function createApp(ctx: AppContext): Express {
     logger,
     identifier: "public-share",
   });
-  app.use(
-    apiPaths.publicShares.root,
-    linkPageHeaders,
-    publicShareRateLimit,
-    publicSharesRouter(ctx),
-  );
+  app.use(apiPaths.publicShare, linkPageHeaders, publicShareRateLimit, publicShareRouter(ctx));
 
   // One per-address budget for the whole API: dashboard, v1 and the reference page.
   const apiRateLimit = ipRateLimit({
@@ -116,7 +111,7 @@ export function createApp(ctx: AppContext): Express {
     app.use(apiPaths.docs, apiRateLimit);
     app.use(apiPaths.docs, reference);
   }
-  app.use(apiPaths.sharePages.root, linkPageHeaders);
+  app.use(apiPaths.sharePage.root, linkPageHeaders);
   const spa = spaRouter(config.webDistDir, logger);
   if (spa !== null) app.use(spa);
   app.use(pageNotFound);

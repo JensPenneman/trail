@@ -78,15 +78,17 @@ describe("logging safety", () => {
     expect(redactUrl("/link")).toBe("/link");
   });
 
-  it("removes share link secrets from the page, its data and anywhere else in a URL", () => {
+  it("removes share link secrets that a client puts into a URL after all", () => {
+    // They belong in the fragment of the page and the X-Share-Secret header only.
     const secret = `trls_${"Ab9-_".repeat(8)}xyz`;
-    expect(redactUrl(`/s/${secret}`)).toBe("/s/[redacted]");
-    expect(redactUrl(`/S/${secret}?utm=x`)).toBe("/S/[redacted]?utm=x");
-    expect(redactUrl(`/api/public/shares/${secret}`)).toBe("/api/public/shares/[redacted]");
-    expect(redactUrl("/api/public/shares/not-even-a-secret")).toBe("/api/public/shares/[redacted]");
-    expect(redactUrl(`/somewhere?next=%2Fs%2F${secret}`)).toBe("/somewhere?next=[redacted]");
-    expect(redactUrl("/settings")).toBe("/settings");
-    expect(redactUrl("/s")).toBe("/s");
+    expect(redactUrl(`/api/public/share?secret=${secret}`)).toBe(
+      "/api/public/share?secret=[redacted]",
+    );
+    expect(redactUrl(`/somewhere/${secret}`)).toBe("/somewhere/[redacted]");
+    expect(redactUrl(`/somewhere?next=%2Fs%23${secret}`)).toBe("/somewhere?next=[redacted]");
+    // A fragment never reaches the server; one sent anyway is not logged.
+    expect(redactUrl(`/s#${secret}`)).toBe("/s");
+    expect(redactUrl("/api/public/share")).toBe("/api/public/share");
   });
 
   it("removes API token secrets wherever a client put them in the URL", () => {

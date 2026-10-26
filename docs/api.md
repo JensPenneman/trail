@@ -328,10 +328,13 @@ mode when Trail knows it) come along when `includeDetails` is true.
 - `POST /api/v1/share-links` makes a public link: anyone with its address sees
   your location without an account, until it expires (24 hours by default, 30
   days at most) or you delete it. The answer carries the `secret` and the
-  `url` once; Trail keeps only a hash. A link page reads
-  `GET /api/public/shares/{secret}`: no credential, 60 requests a minute per
-  address, `404 not_found` for an unknown secret and `404 share_expired` for
-  an ended one. That endpoint belongs to the page and is not part of `/api/v1`.
+  `url` (`<server>/s#<secret>`) once; Trail keeps only a hash. The secret is
+  the address's fragment, which browsers never send to a server, a proxy or
+  as a referrer. The page sends it in a header instead:
+  `GET /api/public/share` with `X-Share-Secret: trls_…` — no other
+  credential, 60 requests a minute per address, `404 not_found` for a
+  missing or unknown secret and `404 share_expired` for an ended link. That
+  endpoint belongs to the page and is not part of `/api/v1`.
 
 A token limited to some devices shares only those, named in `deviceIds`, and
 cannot change a share that shows other devices (`403 forbidden`); it can

@@ -31,15 +31,7 @@ describe("sign-in redirects", () => {
     ]) {
       expect(isSignedInPath(path)).toBe(true);
     }
-    for (const path of [
-      "/login",
-      "/invite/x",
-      "/link/x",
-      "/nope",
-      "/s/trls_x",
-      "/s",
-      "/people/x",
-    ]) {
+    for (const path of ["/login", "/invite/x", "/link/x", "/nope", "/s", "/s", "/people/x"]) {
       expect(isSignedInPath(path)).toBe(false);
     }
   });

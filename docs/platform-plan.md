@@ -448,7 +448,7 @@ dashed outline and a "Confirm?" affordance.
   `precision`, `history_days` null, `include_details` (default false),
   `expires_at` not null (default 24 h, at most 30 days), `created_at`,
   `revoked_at`, `view_count`, `last_viewed_at`. Secret `trls_` + 32 bytes; URL
-  `${PUBLIC_URL}/s/<secret>`.
+  `${PUBLIC_URL}/s#<secret>` (the secret is the fragment, §4.8).
 
 ### 4.3 Access rules
 
@@ -478,13 +478,14 @@ the public page polls.
 
 ### 4.5 Public links
 
-- `/s/:token` is a public SPA route (no session): a minimal page with the
-  label, a map centred on the latest position(s), freshness, mode and battery
-  where included, "Updated every 15 s", the expiry, and no navigation. It calls
-  `GET /api/public/shares/:token` (per-IP 60/min; 404 for unknown, expired or
-  revoked; `Cache-Control: no-store`), which bumps `view_count` at most once a
-  minute per link.
-- Tokens are redacted from logs (`/s/`, `/api/public/shares/`); the page sends
+- `/s` is a public SPA route (no session) that reads the secret from the
+  fragment (`/s#<secret>`): a minimal page with the label, a map centred on the
+  latest position(s), freshness, mode and battery where included, "Updated
+  every 15 s", the expiry, and no navigation. It calls `GET /api/public/share`
+  with the secret in `X-Share-Secret` (per-IP 60/min; 404 for unknown, expired
+  or revoked; `Cache-Control: no-store`), which bumps `view_count` at most once
+  a minute per link.
+- No URL carries the secret; the header is redacted from logs; the page sends
   `Referrer-Policy: no-referrer` and `X-Robots-Tag: noindex`.
 
 ### 4.6 UI
@@ -504,7 +505,7 @@ the public page polls.
 
 ### 4.7 Endpoints
 
-See §1.3, plus `GET /api/public/shares/:token`. Pending shares are claimed in
+See §1.3, plus `GET /api/public/share` (`X-Share-Secret`). Pending shares are claimed in
 `finishSignUp` by matching the address.
 
 ### 4.8 Decisions (feat/sharing)
@@ -551,11 +552,14 @@ specification.
 8. **Visibility for the owner:** outgoing shares show `pending`, `active` or
    `hidden` (the recipient hid them) and `last_viewed_at` (stamped at most
    once a minute when the recipient reads people).
-9. **Public endpoint:** 404 `not_found` for a malformed or unknown secret, 404
-   `share_expired` (the new error code) for an expired or turned-off link, so
-   the page can say which; devices carry a per-link HMAC key instead of their
-   ids; tracks of history links are cached 30 s per link; its per-IP limit is
-   `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE` (60).
+9. **Public endpoint:** the secret never appears in a URL a server or proxy
+   sees — the link is `${PUBLIC_URL}/s#<secret>` (a fragment) and the page
+   calls `GET /api/public/share` with `X-Share-Secret`; 404 `not_found` for a
+   missing, malformed or unknown secret, 404 `share_expired` (the new error
+   code) for an expired or turned-off link, so the page can say which; devices
+   carry a per-link HMAC key instead of their ids; tracks of history links are
+   cached 30 s per link; its per-IP limit is `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE`
+   (60).
 10. **Inferred mode:** `activity.mode` comes from `currentModeOf`, null until
     processing provides a current mode; the web cards read it through
     `describeActivity`, which works with or without it.
@@ -618,7 +622,7 @@ SDK's client to call `tools/list` and one tool against the test server.
 Signed-in: `/` **Map**, `/people`, `/devices`, `/devices/:id`, `/settings`
 with sections as sub-routes (`/settings/profile|passkeys|tokens|sharing|data|
 people|about`; the bare `/settings` goes to profile; existing anchors keep
-working). Public: `/login`, `/invite/:t`, `/link/:t`, `/s/:t`. Redirects:
+working). Public: `/login`, `/invite/:t`, `/link/:t`, `/s` (`#<secret>`). Redirects:
 `/history?…` → `/?view=history&…`, `/explore` → `/?view=heat`.
 `isSignedInPath` changes with the routes.
 

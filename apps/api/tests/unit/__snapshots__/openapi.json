@@ -2585,8 +2585,8 @@
                     "url": {
                       "type": "string",
                       "format": "uri",
-                      "description": "The page to send: `<server>/s/<secret>`, shown this once.",
-                      "example": "https://trail.example.com/s/trls_8kKZ2mQ1xVtC4pLr7nWb0sYe5uJa9dHf3gTq6oNi1Bc"
+                      "description": "The page to send: `<server>/s#<secret>`, shown this once. The secret is the fragment, which browsers never send to a server.",
+                      "example": "https://trail.example.com/s#trls_8kKZ2mQ1xVtC4pLr7nWb0sYe5uJa9dHf3gTq6oNi1Bc"
                     }
                   },
                   "required": [

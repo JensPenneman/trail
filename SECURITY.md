@@ -95,9 +95,10 @@ is opt-in, one way and limited to what its owner picks.
 - **A holder of a public link** sees the label, the names of the devices it
   names, their positions at its precision, optionally their route of up to 7
   days (precise links only) and battery and activity — never your name,
-  address, account or device ids. The page is not indexed and sends no
-  referrer; its secret is stored as a hash, shown once and kept out of the
-  logs.
+  address, account or device ids. The link secret lives in the fragment of
+  the address (`/s#trls_…`), which browsers never send to a server, a proxy
+  or as a referrer; the page sends it in a request header that Trail never
+  logs. It is stored as a hash and shown once, and the page is not indexed.
 - **Stopping is immediate**: a stopped, ended or hidden share and a turned-off
   or expired link show nothing from that request on, in reads and in live
   updates. Deleting a device or the account ends what it shared.

@@ -10,7 +10,7 @@ vi.mock("../src/map/LazyTrailMap", async () => ({
 }));
 
 const secret = `trls_${"x".repeat(43)}`;
-const path = `/api/public/shares/${secret}`;
+const path = "/api/public/share";
 
 const page = (overrides: Record<string, unknown> = {}) => ({
   label: "Jens on the way home",
@@ -39,8 +39,8 @@ const page = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const open = () =>
-  renderPage(<PublicSharePage />, { path: "/s/:secret", url: `/s/${secret}`, user: null });
+const open = (hash = `#${secret}`) =>
+  renderPage(<PublicSharePage />, { path: "/s", url: `/s${hash}`, user: null });
 
 describe("PublicSharePage", () => {
   it("shows the label, the position's freshness and the expiry, without a session", async () => {
@@ -64,6 +64,10 @@ describe("PublicSharePage", () => {
     ).toHaveAttribute("data-positions", "1");
     expect(screen.queryByRole("navigation")).toBeNull();
     expect(api.calls.map((call) => call.path)).not.toContain("/api/auth/session");
+    // The secret travels in a header; no address the page asks for carries it.
+    const asked = api.calls.find((call) => call.path === path);
+    expect(asked?.headers?.["x-share-secret"]).toBe(secret);
+    for (const call of api.calls) expect(call.url ?? "").not.toContain(secret);
   });
 
   it("draws the shared route when the link includes history", async () => {
@@ -136,6 +140,18 @@ describe("PublicSharePage", () => {
     });
     open();
     expect(await screen.findByText(/^This link expires .* \(in 26 min\)\.$/)).toBeInTheDocument();
+  });
+
+  it("says that a link does not work without a secret of the right shape, asking nobody", async () => {
+    for (const hash of ["", "#", "#trls_short", "#%E0%A4%A"]) {
+      const api = mockApi({ "GET /api/config": { status: 200, body: config } });
+      const view = open(hash);
+      expect(
+        await screen.findByRole("heading", { level: 2, name: "This link does not work" }),
+      ).toBeInTheDocument();
+      expect(api.calls.some((call) => call.path === path)).toBe(false);
+      view.unmount();
+    }
   });
 
   it("ends by itself when the expiry passes on screen", async () => {

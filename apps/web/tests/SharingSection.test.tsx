@@ -7,7 +7,7 @@ import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
 
-const url = `https://trail.example.com/s/trls_${"k".repeat(43)}`;
+const url = `https://trail.example.com/s#trls_${"k".repeat(43)}`;
 
 describe("Settings › Sharing", () => {
   it("lists public links with what they show and how often they were opened", async () => {

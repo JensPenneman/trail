@@ -91,15 +91,15 @@ export const apiPaths = {
       one: (linkId: string) => `/api/v1/share-links/${id(linkId)}`,
     },
   },
-  /** What a public link shows, without an account; the secret is the path's last segment. */
-  publicShares: {
-    root: "/api/public/shares",
-    one: (secret: string) => `/api/public/shares/${id(secret)}`,
-  },
-  /** The pages of public links in the SPA. */
-  sharePages: {
+  /** What a public link shows, without an account; its secret travels in the `X-Share-Secret` header. */
+  publicShare: "/api/public/share",
+  /**
+   * The page of public links in the SPA. The secret is the fragment
+   * (`/s#trls_…`), which browsers never send to a server, a proxy or as a referrer.
+   */
+  sharePage: {
     root: "/s",
-    one: (secret: string) => `/s/${id(secret)}`,
+    link: (secret: string) => `/s#${id(secret)}`,
   },
   /** The API reference (Scalar) — a page the API serves itself, outside the SPA. */
   docs: "/docs",

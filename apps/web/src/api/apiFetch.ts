@@ -9,6 +9,8 @@ export interface ApiRequest {
   query?: Readonly<Record<string, QueryValue>>;
   /** Sent as JSON; the API's CSRF check requires JSON bodies on unsafe methods. */
   body?: unknown;
+  /** Extra request headers, e.g. the secret of a public link (`X-Share-Secret`). */
+  headers?: Readonly<Record<string, string>>;
   signal?: AbortSignal;
 }
 
@@ -30,7 +32,7 @@ export async function apiFetch<T>(
   request: ApiRequest = {},
 ): Promise<T> {
   const hasBody = request.body !== undefined;
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = { ...request.headers, Accept: "application/json" };
   if (hasBody) headers["Content-Type"] = "application/json";
 
   let response: Response;

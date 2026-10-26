@@ -5,6 +5,7 @@ import {
   publicShareResponseSchema,
   shareLinkListResponseSchema,
   shareLinkSecretPattern,
+  shareSecretHeader,
 } from "@trail/contracts/shareLink";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -41,7 +42,9 @@ const makeLink = async (body: Record<string, unknown> = {}) =>
     ).body,
   );
 
-const visit = (secret: string) => anonymous(t.app, apiPaths.publicShares.one(secret));
+/** What the link page asks for: the secret in its header, in no URL. */
+const visit = (secret: string, app = t.app) =>
+  anonymous(app, apiPaths.publicShare).set(shareSecretHeader, secret);
 
 beforeAll(async () => {
   await resetDatabase();
@@ -72,7 +75,8 @@ describe("making a link", () => {
     const before = Date.now();
     const made = await makeLink();
     expect(made.secret).toMatch(shareLinkSecretPattern);
-    expect(made.url).toBe(`${testOrigin}/s/${made.secret}`);
+    // The secret is the fragment: browsers never send it to a server, a proxy or as a referrer.
+    expect(made.url).toBe(`${testOrigin}/s#${made.secret}`);
     expect(made.link).toMatchObject({
       label: "Jens",
       deviceIds: null,
@@ -212,8 +216,10 @@ describe("the public endpoint", () => {
     }
   });
 
-  it("answers 404 for addresses that are wrong, unknown, ended or turned off", async () => {
+  it("answers 404 for secrets that are missing, wrong, unknown, ended or turned off", async () => {
     const code = async (secret: string) => errorOf((await visit(secret).expect(404)).body).code;
+    const missing = await anonymous(t.app, apiPaths.publicShare).expect(404);
+    expect(errorOf(missing.body).code).toBe("not_found");
     expect(await code("not-a-secret")).toBe("not_found");
     expect(await code(`trls_${"A".repeat(43)}`)).toBe("not_found");
     expect(await code(`trlk_${"A".repeat(43)}`)).toBe("not_found");
@@ -261,10 +267,15 @@ describe("the public endpoint", () => {
     expect((await count())?.viewCount).toBe(2);
   });
 
-  it("only reads: other methods do not exist", async () => {
+  it("only reads: other methods and paths do not exist", async () => {
     const { secret } = await makeLink();
-    const response = await from(owner, "post", apiPaths.publicShares.one(secret), {}).expect(404);
-    expect(errorOf(response.body).code).toBe("not_found");
+    const posted = await from(owner, "post", apiPaths.publicShare, {})
+      .set(shareSecretHeader, secret)
+      .expect(404);
+    expect(errorOf(posted.body).code).toBe("not_found");
+    // The secret in a path is no address at all.
+    await anonymous(t.app, `${apiPaths.publicShare}/${secret}`).expect(404);
+    await anonymous(t.app, `/api/public/shares/${secret}`).expect(404);
   });
 
   it("is owned by its maker only", async () => {
@@ -281,10 +292,9 @@ describe("the public endpoint", () => {
     }).expect(404);
   });
 
-  it("sends the page's own headers on /s/ addresses", async () => {
-    const { secret } = await makeLink();
+  it("sends the page's own headers on /s", async () => {
     // No built web app in the tests: the page itself is a 404 here, with the headers all the same.
-    const response = await anonymous(t.app, apiPaths.sharePages.one(secret));
+    const response = await anonymous(t.app, apiPaths.sharePage.root);
     expect(response.headers["referrer-policy"]).toBe("no-referrer");
     expect(response.headers["x-robots-tag"]).toBe("noindex, nofollow");
   });
@@ -292,14 +302,15 @@ describe("the public endpoint", () => {
   it("never writes a secret to the access log", async () => {
     const { secret } = await makeLink();
     await visit(secret).expect(200);
-    await anonymous(t.app, apiPaths.sharePages.one(secret));
-    await anonymous(t.app, `/api/public/shares/${secret}?x=1`);
+    await visit(`trls_${"B".repeat(43)}`).expect(404);
+    await anonymous(t.app, apiPaths.sharePage.root);
+    // A careless client that puts it into a URL after all.
+    await anonymous(t.app, `${apiPaths.publicShare}?secret=${secret}`).expect(404);
     await new Promise((resolve) => setImmediate(resolve));
-    const logged = lines.filter(
-      (line) => line.includes("/s/") || line.includes("/api/public/shares/"),
-    );
+    const logged = lines.filter((line) => line.includes(apiPaths.publicShare));
     expect(logged.length).toBeGreaterThanOrEqual(3);
     expect(lines.join("\n")).not.toContain(secret.slice(5));
+    expect(lines.join("\n")).not.toContain("B".repeat(43));
   });
 });
 
@@ -309,9 +320,9 @@ describe("the public endpoint's rate limit", () => {
     try {
       const { secret } = await makeLink();
       for (let index = 0; index < 3; index += 1) {
-        await anonymous(limited.app, apiPaths.publicShares.one(secret)).expect(200);
+        await visit(secret, limited.app).expect(200);
       }
-      const refused = await anonymous(limited.app, apiPaths.publicShares.one(secret)).expect(429);
+      const refused = await visit(secret, limited.app).expect(429);
       expect(errorOf(refused.body).code).toBe("rate_limited");
       expect(refused.headers["ratelimit-policy"]).toContain('"public-share"');
       // A different limit from the API's: other routes still answer.

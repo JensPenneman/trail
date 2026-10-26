@@ -18,6 +18,12 @@ import { trackPointSchema } from "./track";
 /** A link secret: `trls_` and 32 random bytes in base64url. */
 export const shareLinkSecretPattern = /^trls_[A-Za-z0-9_-]{43}$/;
 
+/**
+ * The request header that carries a link's secret to `GET /api/public/share`:
+ * in no URL, so neither the server's access log nor a proxy's records it.
+ */
+export const shareSecretHeader = "X-Share-Secret";
+
 /** A link runs this long unless the owner picks another expiry. */
 export const defaultShareLinkHours = 24;
 /** No link outlives this. */
@@ -127,8 +133,9 @@ export const createShareLinkResponseSchema = z.object({
     example: "trls_8kKZ2mQ1xVtC4pLr7nWb0sYe5uJa9dHf3gTq6oNi1Bc",
   }),
   url: z.url().meta({
-    description: "The page to send: `<server>/s/<secret>`, shown this once.",
-    example: "https://trail.example.com/s/trls_8kKZ2mQ1xVtC4pLr7nWb0sYe5uJa9dHf3gTq6oNi1Bc",
+    description:
+      "The page to send: `<server>/s#<secret>`, shown this once. The secret is the fragment, which browsers never send to a server.",
+    example: "https://trail.example.com/s#trls_8kKZ2mQ1xVtC4pLr7nWb0sYe5uJa9dHf3gTq6oNi1Bc",
   }),
 });
 export type CreateShareLinkResponse = z.infer<typeof createShareLinkResponseSchema>;
@@ -148,7 +155,7 @@ export const publicSharedDeviceSchema = sharedDeviceSchema
   });
 export type PublicSharedDevice = z.infer<typeof publicSharedDeviceSchema>;
 
-/** `GET /api/public/shares/{secret}` — what a link shows, without an account. */
+/** `GET /api/public/share` with `X-Share-Secret` — what a link shows, without an account. */
 export const publicShareResponseSchema = z.object({
   label: z.string(),
   expiresAt: z.iso.datetime(),

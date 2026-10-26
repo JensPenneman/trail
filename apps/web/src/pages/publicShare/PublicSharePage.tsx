@@ -1,7 +1,7 @@
-import type { PublicShareResponse } from "@trail/contracts/shareLink";
+import { type PublicShareResponse, shareLinkSecretPattern } from "@trail/contracts/shareLink";
 import { trackSegments } from "@trail/contracts/trackSegments";
 import { useMemo } from "react";
-import { useParams } from "react-router";
+import { useLocation } from "react-router";
 import { ApiError } from "../../api/ApiError";
 import { DocumentTitle } from "../../app/DocumentTitle";
 import { useRouteFocus } from "../../app/useRouteFocus";
@@ -33,26 +33,39 @@ import "./PublicSharePage.css";
 
 const defaultLiveMinutes = 15;
 
+/** The secret in the address's fragment (`#trls_…`), or null when there is none of its shape. */
+function secretOf(hash: string): string | null {
+  let value = hash.startsWith("#") ? hash.slice(1) : hash;
+  try {
+    value = decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+  return shareLinkSecretPattern.test(value) ? value : null;
+}
+
 /** The owner's devices in the palette's order, as on their own pages. */
 const slotOf = (index: number): number => index % devicePaletteSize;
 
 /**
- * The page of a public link (`/s/<secret>`), for people without an account:
+ * The page of a public link (`/s#<secret>`), for people without an account:
  * the label, a map of the shared devices, how fresh each position is, battery
  * and activity when the link includes them, and when the link expires. It
  * refreshes every 15 seconds and never asks for a session; an ended or
- * unknown link gets a friendly page of its own.
+ * unknown link gets a friendly page of its own. The secret stays in the
+ * fragment (so a reload works) and is sent in a header, never in a URL.
  */
 export function PublicSharePage() {
   useRouteFocus();
-  const { secret = "" } = useParams();
-  const share = usePublicShare(secret);
+  const { hash } = useLocation();
+  const secret = secretOf(hash);
+  const share = usePublicShare(secret ?? "", secret !== null);
   const now = useNow(15_000);
   const expired =
     share.data !== undefined && Date.parse(share.data.expiresAt) <= now ? "share_expired" : null;
   const notFound =
     share.error instanceof ApiError && share.error.status === 404 ? share.error.code : null;
-  const ended = expired ?? notFound;
+  const ended = secret === null ? "not_found" : (expired ?? notFound);
 
   if (ended !== null) return <LinkEnded expired={ended === "share_expired"} />;
   if (share.data === undefined) {

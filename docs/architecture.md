@@ -143,7 +143,7 @@ All configuration is environment variables, validated at boot with zod
 | `RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES` | `30` | Uploads with an unknown token, per IP |
 | `RATE_LIMIT_TOKEN_PER_MINUTE` | `600` | `/api/v1` requests with a valid API token, per token (§8.3) |
 | `RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES` | `30` | `/api/v1` requests with an invalid API token, per IP |
-| `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE` | `60` | The data of public share pages (`/api/public/shares/…`), per IP (§8.4) |
+| `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE` | `60` | The public share endpoint (`/api/public/share`), per IP (§8.4) |
 | `PROCESSING_ENABLED` | `true` | Location processing (§17); `false` queues and processes nothing |
 | `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Map data for the mapped level; set but empty: none (§17.3) |
 | `PROCESSING_OVERPASS_DAILY_MB` | `300` | Map download budget per UTC day |
@@ -538,7 +538,7 @@ public, versioned one is `/api/v1` (§8.3).
 | `GET /api/export` | cookie | `exportQuery` → streamed GeoJSON / GPX 1.1 / CSV attachment |
 | `GET /api/events` | cookie | SSE, `events.ts` |
 | `/api/v1/*` | API token or cookie | §8.3; `GET /api/v1/openapi.json` is public; people, shares and public links §8.4 |
-| `GET /api/public/shares/:secret` | — (the link's secret) | `shareLink.ts` `publicShareResponse` (§8.4) |
+| `GET /api/public/share` | the link's secret in `X-Share-Secret` | `shareLink.ts` `publicShareResponse` (§8.4) |
 | `GET /docs` | — | the API reference page (§8.3) |
 
 Ownership: every device-scoped query is filtered by the session user's
@@ -959,20 +959,25 @@ the shares' `last_viewed_at`, at most once a minute and after the response;
 the owner sees it.
 
 **Public links.** A link's secret is `trls_` + 32 random bytes (base64url),
-stored as its SHA-256; the 201 carries it and `${PUBLIC_URL}/s/<secret>` once.
-Expiry is required (24 h by default, 30 days at most), history 1–7 days and
-precise only, details off by default, the label the owner's first name by
-default. `GET /api/public/shares/:secret` (`publicSharesRouter`, mounted before
+stored as its SHA-256; the 201 carries it and `${PUBLIC_URL}/s#<secret>` once.
+The secret lives in the fragment: browsers never send a fragment to a server,
+a proxy or as a referrer, so no URL that reaches the network carries it. The
+`/s` page reads it from `location.hash` (it stays there, so a reload works;
+never in history state or storage) and sends it in the `X-Share-Secret`
+request header. Expiry is required (24 h by default, 30 days at most), history
+1–7 days and precise only, details off by default, the label the owner's first
+name by default. `GET /api/public/share` (`publicShareRouter`, mounted before
 the dashboard's `/api` chain behind its own per-IP limiter
 `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE`; no session is read and no cookie set)
-answers 404 `not_found` for a secret of the wrong shape (no lookup) or an
-unknown one, 404 `share_expired` for an expired or turned-off link, and
+answers 404 `not_found` for a missing secret or one of the wrong shape (no
+lookup) or an unknown one, 404 `share_expired` for an expired or turned-off
+link, and
 otherwise the label, expiry, precision, history and the devices it names:
 name, a per-link key (an HMAC, never the device id), the projected position,
 details, and for history links the simplified track (≤ 2 000 points per
 device, built at most every 30 s per link). It never names the owner's
 account, address or device ids. A request counts as a view at most once a
-minute per link. `/s/*` and `/api/public/shares/*` send `Referrer-Policy:
+minute per link. `/s` and `/api/public/share` send `Referrer-Policy:
 no-referrer` and `X-Robots-Tag: noindex, nofollow`.
 
 **Lifecycle.** Stopped and ended shares and links are pruned 30 days later
@@ -1111,15 +1116,15 @@ invalid value).
   empty `PROCESSING_OVERPASS_URL` keeps that at home, and a local extract
   behind the `WaySource` interface is a possible later step.
 - pino-http redacts `authorization`, `cookie`, `referer`, `set-cookie`, token
-  query params and the `secret` route parameter; coordinates, map tile keys
-  and OSM ids are never logged above `debug` (the processing log keeps counts,
+  query params and the `X-Share-Secret` header; coordinates, map tile keys and
+  OSM ids are never logged above `debug` (the processing log keeps counts,
   times and the kind of failure, `TileFetchError.reason`). The access log keeps
   method, redacted URL, status, client address and user agent only. The URL is
   redacted from its parsed parts, as the routers read them (decoded,
   case-insensitive): device tokens in `token`/`access_token`, the one-time
-  tokens of `/link/…`, `/invite/…` and `/api/auth/link/…`, the secrets of
-  public links in `/s/…` and `/api/public/shares/…`, and any API token or share
-  link secret (`trlk_…`, `trls_…`) a client puts elsewhere into a URL. Database errors are
+  tokens of `/link/…`, `/invite/…` and `/api/auth/link/…`, and any API token or
+  share link secret (`trlk_…`, `trls_…`) a client puts into a URL after all —
+  public links keep theirs in the fragment and a header (§8.4). Database errors are
   logged without query parameters or failing-row details; for an error from
   Postgres only its SQLSTATE, routine and the names of what failed (constraint,
   table, column), because its message can quote the refused value.
@@ -1229,7 +1234,8 @@ vector styles, light/dark from `/api/config`), `@simplewebauthn/browser`,
 `uqr` for QR codes. Plain CSS with custom properties (LCH colours with sRGB
 fallbacks), system font stack, no web fonts, no third-party scripts, CSP-clean.
 
-Routes: `/login`, `/invite/:token`, `/link/:token`, `/s/:secret` (public); `/`
+Routes: `/login`, `/invite/:token`, `/link/:token`, `/s` (public; the link's
+secret is the fragment, `/s#trls_…`); `/`
 Live, `/history`, `/explore`, `/people`, `/devices`, `/devices/:id`, `/settings`
 (signed in); 404.
 
@@ -1279,7 +1285,7 @@ Live, `/history`, `/explore`, `/people`, `/devices`, `/devices/:id`, `/settings`
   address once, with a QR code —, their views and Turn off; the outgoing
   shares), people (admins: invites, users), data (export GeoJSON/GPX/CSV,
   delete a range, delete account), about (version, commit, build time).
-- **Public link** (`/s/:secret`) — no session, no navigation: the label, a map
+- **Public link** (`/s#<secret>`) — no session, no navigation: the label, a map
   of the shared devices (with the route for history links), how fresh each
   position is, details when included, the expiry, a refresh every 15 s, and a
   friendly page for a link that ended or does not exist.

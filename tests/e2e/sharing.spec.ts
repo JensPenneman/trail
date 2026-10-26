@@ -105,14 +105,16 @@ test("a public link shows your location without an account until it is turned of
   await sharing.getByLabel("Label (optional)").fill("On my way");
   await sharing.getByRole("button", { name: "Make link" }).click();
   const link = await sharing.getByRole("textbox", { name: "Public link" }).inputValue();
-  expect(link).toMatch(/\/s\/trls_[A-Za-z0-9_-]{43}$/);
+  // The secret is the fragment: browsers never send it to a server, a proxy or as a referrer.
+  expect(link).toMatch(/\/s#trls_[A-Za-z0-9_-]{43}$/);
+  const secret = new URL(link).hash.slice(1);
   await expect(
     sharing.getByRole("img", { name: "Code with the public link to your location" }),
   ).toBeVisible();
 
   const visitor = await openBrowser();
   const asked: string[] = [];
-  visitor.page.on("request", (sent) => asked.push(new URL(sent.url()).pathname));
+  visitor.page.on("request", (sent) => asked.push(sent.url()));
   const opened = await visitor.page.goto(link);
   expect(opened?.headers()["x-robots-tag"]).toBe("noindex, nofollow");
   expect(opened?.headers()["referrer-policy"]).toBe("no-referrer");
@@ -121,9 +123,10 @@ test("a public link shows your location without an account until it is turned of
   await expect(visitor.page.getByText(/^This link expires /)).toBeVisible();
   await expect(visitor.page.getByRole("navigation")).toHaveCount(0);
   await expectAccessible(visitor.page, "a public link");
-  expect(asked).not.toContain("/api/auth/session");
+  expect(asked.map((url) => new URL(url).pathname)).not.toContain("/api/auth/session");
+  expect(asked.some((url) => url.includes(secret))).toBe(false);
 
-  consoleGuard.expectFailedResponse(404, /\/api\/public\/shares\//);
+  consoleGuard.expectFailedResponse(404, /\/api\/public\/share$/);
   await sharing.getByRole("button", { name: "Turn off the link “On my way”" }).click();
   await expect(sharing.getByText("On my way")).toBeHidden();
   await visitor.page.reload();
@@ -138,16 +141,21 @@ test("a public link shows your location without an account until it is turned of
     headers: { Origin: new URL(page.url()).origin },
   });
   expect(made.status()).toBe(201);
-  const { url: brief } = (await made.json()) as { url: string };
+  const { url: brief, secret: briefSecret } = (await made.json()) as {
+    url: string;
+    secret: string;
+  };
   await visitor.page.goto(brief);
   await expect(visitor.page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect
     .poll(
       async () =>
-        (await visitor.page.request.get(brief.replace("/s/", "/api/public/shares/"))).status(),
-      {
-        timeout: 15_000,
-      },
+        (
+          await visitor.page.request.get("/api/public/share", {
+            headers: { "X-Share-Secret": briefSecret },
+          })
+        ).status(),
+      { timeout: 15_000 },
     )
     .toBe(404);
   await visitor.page.reload();
@@ -155,7 +163,7 @@ test("a public link shows your location without an account until it is turned of
     visitor.page.getByRole("heading", { level: 2, name: "This link has ended" }),
   ).toBeVisible();
 
-  await visitor.page.goto(`/s/trls_${"A".repeat(43)}`);
+  await visitor.page.goto(`/s#trls_${"A".repeat(43)}`);
   await expect(
     visitor.page.getByRole("heading", { level: 2, name: "This link does not work" }),
   ).toBeVisible();

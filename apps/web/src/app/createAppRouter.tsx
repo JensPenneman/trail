@@ -39,8 +39,8 @@ export function createAppRouter() {
           ],
         },
         {
-          // A public link: no session, no navigation, a layout of its own.
-          path: "s/:secret",
+          // A public link (`/s#<secret>`): no session, no navigation, a layout of its own.
+          path: "s",
           lazy: () =>
             import("../pages/publicShare/PublicSharePage").then((m) => ({
               Component: m.PublicSharePage,

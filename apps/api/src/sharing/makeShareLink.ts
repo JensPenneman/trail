@@ -97,6 +97,6 @@ export async function makeShareLink(
   return {
     link: toShareLink(row, now),
     secret,
-    url: `${ctx.config.publicUrl}${apiPaths.sharePages.one(secret)}`,
+    url: `${ctx.config.publicUrl}${apiPaths.sharePage.link(secret)}`,
   };
 }

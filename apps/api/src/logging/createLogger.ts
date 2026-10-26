@@ -11,18 +11,18 @@ export interface LoggerOptions {
 }
 
 /**
- * Secrets that must never be written: bearer tokens, cookies, token query
- * parameters, and where a share link's secret travels besides the URL (which
- * `redactUrl` covers): its route parameter and a referrer from its page.
+ * Secrets that must never be written: bearer tokens, share link secrets (in
+ * their own header), cookies, token query parameters, and referrers, which
+ * can name the one-time token of an invitation or passkey link page.
  */
 const redactPaths = [
   "req.headers.authorization",
+  'req.headers["x-share-secret"]',
   "req.headers.cookie",
   "req.headers.referer",
   'res.headers["set-cookie"]',
   "req.query.token",
   "req.query.access_token",
-  "req.params.secret",
 ];
 
 export function createLogger(options: LoggerOptions): Logger {
