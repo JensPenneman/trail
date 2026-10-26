@@ -196,6 +196,13 @@ Wi-Fi network or Overland's own ids, which stay on the server. A phone uploads w
 may arrive later than newer ones: to keep a copy current, ask again for a
 range that overlaps the end of the previous one.
 
+`GET /api/v1/heatmap` (`locations:read`) is bounded by a viewport instead of
+a range: for `bbox=west,south,east,north` and the map's `zoom` it counts the
+points ever recorded in each cell, busiest first, at most 20 000 cells
+(`truncated` says when the viewport held more), optionally for some
+`devices`. The cells get finer as `zoom` grows, and points less accurate
+than 200 m are left out.
+
 ## Levels, tracks and the timeline
 
 Trail works out from the recorded points how a device travelled, in four
@@ -348,9 +355,11 @@ toggle, else the latest stop or move while it is recent) come along when
 - `POST /api/v1/share-links` (`shares:write` and `locations:read`) makes a
   public link: anyone with its address sees your location without an
   account, until it expires (24 hours by default, at least an hour, at most
-  30 days) or you delete it. Without a `label` the page reads “Shared
-  location”, never your name. `GET /api/v1/share-links` lists the working
-  links, then expired ones, at most 50. The answer carries the `secret` and the
+  30 days) or you turn it off with `DELETE /api/v1/share-links/{id}`
+  (`shares:write`), after which its page says that it has ended. Without a
+  `label` the page reads “Shared location”, never your name.
+  `GET /api/v1/share-links` (`shares:read`) lists the working links, then
+  expired ones, at most 50. The answer of `POST` carries the `secret` and the
   `url` (`<server>/s#<secret>`) once; Trail keeps only a hash. The secret is
   the address's fragment, which browsers never send to a server, a proxy or
   as a referrer. The page sends it in a header instead:
