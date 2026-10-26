@@ -96,9 +96,10 @@ git and its hooks stay on the host. Playwright runs one worker there
 (`E2E_WORKERS`), so the suites of several worktrees can share one machine.
 `scripts/devc.sh down` removes the project, volumes included. The image
 installs the lockfile's `playwright-core` with `npm ci` from a one-package
-lockfile, so the tarball is checked against the lockfile's integrity, and that
-package fetches its own Chromium build (Playwright checks the size, no
-published checksum exists); CI builds the image whenever `.devcontainer/`,
+lockfile, so the lockfile's integrity covers the package; Playwright then
+verifies its own download per version: the Chromium build its
+`browsers.json` names, of the size the server announces (it checks no hash,
+and none is published). CI builds the image whenever `.devcontainer/`,
 `package-lock.json` or `ci.yml` change (§15).
 
 ### Production (Launchway)
