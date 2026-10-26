@@ -14,7 +14,7 @@ every pull request gets a preview deployment of its own.
 
 - **Overland receiver**: the batch protocol with duplicate-safe storage, a
   reject log for invalid points (a bad point never blocks a phone's queue),
-  visits, trips and app events, and three remote settings presets sent back
+  visits, trips and app events, and four remote settings presets sent back
   to the phone.
 - **Passkeys only**: no passwords. Several people per server, invites,
   one-time links to add a passkey on another device or address.

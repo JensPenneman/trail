@@ -2,10 +2,9 @@
 
 ## Supported versions
 
-Only the `main` branch and the image built from it
-(`ghcr.io/jenspenneman/trail:latest`) are supported. There are no release
-branches to patch; fixes ship as a new `latest`, which servers install
-automatically.
+Only the newest release (`ghcr.io/jenspenneman/trail:<version>`) and `main`
+are supported. There are no release branches to patch; fixes ship in a new
+release, which Launchway deploys as soon as it is published.
 
 ## Reporting a vulnerability
 
@@ -31,8 +30,8 @@ There is no bug bounty.
 
 Third-party software and services (Overland, Cloudflare, GitHub, Docker,
 PostgreSQL, the map tile provider) are out of scope; report issues there to
-the respective vendor. A self-hosted server's own configuration (router,
-Cloudflare account, Windows) is the operator's responsibility.
+the respective vendor. A self-hosted server's own configuration (router, DNS,
+the host and its deployment platform) is the operator's responsibility.
 
 ## Safe harbour
 
@@ -59,7 +58,7 @@ yourself: location data is personal data.
 - **Container**: runs as an unprivileged user on a read-only root file system
   with all Linux capabilities dropped and `no-new-privileges`; the database
   sits on an internal network without a published port; the app receives only
-  its own settings, never the tunnel or DNS credentials.
+  its own settings, never those of Launchway or the backup.
 - **Supply chain**: GitHub Actions pinned to commit SHAs; the base image
   pinned by digest; images built in CI only, with BuildKit provenance and an
   SBOM, and a signed GitHub build provenance attestation when the repository
