@@ -9,3 +9,9 @@
     grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
   }
 }
+
+.live-page__level {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}

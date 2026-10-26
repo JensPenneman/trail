@@ -9,6 +9,10 @@ Commands:
                                            with --email only that address can use it
   users                                    List all accounts
   recompute [--device <id>]                Rebuild heat cells and daily statistics (all devices or one)
+  reprocess [--device <id>] [--from <iso> --to <iso>] [--from-level averaged|mapped|inferred]
+                                           Work out the averaged, mapped and inferred levels again
+                                           (all history by default; mapped: map matching on;
+                                           inferred: stops, moves and modes only)
   prune                                    Delete expired sessions, links, invites and old logs now
   help                                     Show this help
 

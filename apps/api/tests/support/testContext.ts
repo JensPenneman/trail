@@ -1,12 +1,14 @@
 import { createServer, type Server } from "node:http";
 import type { DestinationStream } from "pino";
 import type { AppContext } from "../../src/appContext";
+import type { LogLevel } from "../../src/config/config";
 import { loadConfig } from "../../src/config/loadConfig";
 import { createAppContext } from "../../src/createAppContext";
 import { createPool } from "../../src/db/createPool";
 import { createApp } from "../../src/http/createApp";
 import type { Alert } from "../../src/jobs/alert";
 import { createLogger } from "../../src/logging/createLogger";
+import type { WaySource } from "../../src/processing/waySource";
 import type { ApiTokenVerifier } from "../../src/v1/apiTokens";
 import { testEnvironment } from "./testEnvironment";
 
@@ -20,20 +22,24 @@ export interface TestContext {
 }
 
 /**
- * The real app wired to the test database, with an alert recorder and a
- * manual daily-stats flush. It listens on 127.0.0.1 itself: supertest would
- * listen on the `::` wildcard and then connect to 127.0.0.1:<port>, and on
- * macOS another local process may hold that port on 127.0.0.1 and receive the
- * request instead.
+ * The real app wired to the test database, with an alert recorder and manual
+ * flushes of the daily statistics and the processing queue. It listens on
+ * 127.0.0.1 itself: supertest would listen on the `::` wildcard and then
+ * connect to 127.0.0.1:<port>, and on macOS another local process may hold
+ * that port on 127.0.0.1 and receive the request instead.
  */
 export async function createTestContext(
   options: {
     env?: Record<string, string>;
     webDistDir?: string;
-    /** Receives the app's log lines (level info) instead of discarding them. */
+    /** Receives the app's log lines instead of discarding them … */
     logDestination?: DestinationStream;
+    /** … from this level on (info by default). */
+    logLevel?: LogLevel;
     /** Resolves API tokens on /api/v1 instead of the `api_tokens` table (a stand-in for every outcome). */
     apiTokens?: ApiTokenVerifier;
+    /** Map data for processing (default: none, so the mapped level degrades to averaged). */
+    waySource?: WaySource | null;
   } = {},
 ): Promise<TestContext> {
   const config = loadConfig(testEnvironment(options.env), {
@@ -42,7 +48,7 @@ export async function createTestContext(
   const logger =
     options.logDestination === undefined
       ? createLogger({ level: "silent" })
-      : createLogger({ level: "info", destination: options.logDestination });
+      : createLogger({ level: options.logLevel ?? "info", destination: options.logDestination });
   const pool = createPool(config.databaseUrl, logger, { statementTimeoutMs: 30_000, max: 5 });
   const alerts: Alert[] = [];
   const ctx = createAppContext({
@@ -53,8 +59,10 @@ export async function createTestContext(
       alerts.push(alert);
     },
     ...(options.apiTokens === undefined ? {} : { apiTokens: options.apiTokens }),
-    // Tests flush the daily statistics explicitly.
+    // Tests flush the daily statistics and the processing queue explicitly.
     dailyStatsDelayMs: 3_600_000,
+    processingDelayMs: 3_600_000,
+    waySource: options.waySource ?? null,
   });
   const server = createServer(createApp(ctx));
   await new Promise<void>((resolve, reject) => {
@@ -71,6 +79,7 @@ export async function createTestContext(
       await new Promise<void>((resolve) => server.close(() => resolve()));
       ctx.dailyStats.stop();
       await ctx.background.drain(5_000);
+      await ctx.processing.stop();
       await pool.end();
     },
   };

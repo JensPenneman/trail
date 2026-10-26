@@ -5,6 +5,7 @@ import { inviteCommand } from "./commands/inviteCommand";
 import { passkeyLinkCommand } from "./commands/passkeyLinkCommand";
 import { pruneCommand } from "./commands/pruneCommand";
 import { recomputeCommand } from "./commands/recomputeCommand";
+import { parseReprocessOptions, reprocessCommand } from "./commands/reprocessCommand";
 import { usersCommand } from "./commands/usersCommand";
 import { usage } from "./usage";
 import { UsageError } from "./usageError";
@@ -46,6 +47,25 @@ const commands: Readonly<Record<string, Command>> = {
   recompute: (args) => {
     const { values } = parseArgs({ args, options: { device: { type: "string" } } });
     return (ctx) => recomputeCommand(ctx, values.device);
+  },
+  reprocess: (args) => {
+    const { values } = parseArgs({
+      args,
+      options: {
+        device: { type: "string" },
+        from: { type: "string" },
+        to: { type: "string" },
+        "from-level": { type: "string" },
+      },
+    });
+    const options = {
+      device: values.device,
+      from: values.from,
+      to: values.to,
+      fromLevel: values["from-level"],
+    };
+    parseReprocessOptions(options);
+    return (ctx) => reprocessCommand(ctx, options);
   },
   prune: (args) => {
     noOptions(args);

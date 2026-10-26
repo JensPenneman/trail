@@ -26,6 +26,16 @@ export function applyServerEvent(
     case "device-removed":
       removeDeviceFromCache(queryClient, event.deviceId);
       return;
+    case "segments":
+      // Processing finished a window: its levels, stops, moves and the current mode changed.
+      for (const queryKey of [
+        queryKeys.all.levelTracks,
+        queryKeys.all.timeline,
+        queryKeys.deviceMode(event.deviceId),
+      ]) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+      return;
     case "session-ended":
       // The route guard takes the person to the sign-in page, with a way back here.
       queryClient.setQueryData(queryKeys.session, null);

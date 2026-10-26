@@ -21,7 +21,8 @@ const toTrackPoint = (point: IngestOutcome["inserted"][number]): TrackPoint => [
 /**
  * Step 5 of docs/architecture.md §6.2, after the commit and the response: live
  * events for the owner's dashboards, the debounced daily-stats refresh for the
- * touched days, and the recovery alert when the device had been reported silent.
+ * touched days, the new points' window in the processing queue, and the
+ * recovery alert when the device had been reported silent.
  */
 export function afterIngest(ctx: AppContext, device: IngestDevice, outcome: IngestOutcome): void {
   const { counts, inserted } = outcome;
@@ -36,9 +37,14 @@ export function afterIngest(ctx: AppContext, device: IngestDevice, outcome: Inge
   });
   publishDeviceLater(ctx, device.userId, device.id);
 
-  if (inserted.length > 0) {
+  const first = inserted[0];
+  const last = inserted.at(-1);
+  if (first !== undefined && last !== undefined) {
     const days = new Set(inserted.map((point) => localDate(point.recordedAt, device.timezone)));
     ctx.dailyStats.schedule(device.id, [...days]);
+    ctx.background.run("processing queue", () =>
+      ctx.processing.afterIngest(device.id, first.recordedAt, last.recordedAt),
+    );
   }
 
   const { alerts } = ctx;

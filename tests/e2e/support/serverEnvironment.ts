@@ -46,5 +46,13 @@ export function e2eServerEnvironment(databaseUrl: string): Record<string, string
     RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES: "100000",
     RATE_LIMIT_TOKEN_PER_MINUTE: "100000",
     RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES: "100000",
+    PROCESSING_ENABLED: "",
+    // Empty here is not the default but "no map data": the suite never reaches Overpass, so the
+    // mapped level degrades to averaged, as it does on a server without map data.
+    PROCESSING_OVERPASS_URL: "",
+    PROCESSING_OVERPASS_DAILY_MB: "",
+    PROCESSING_OSM_TTL_DAYS: "",
+    PROCESSING_MAX_ACCURACY_M: "",
+    PROCESSING_STOP_MIN_S: "",
   };
 }

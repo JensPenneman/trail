@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { runCli } from "../../src/cli/runCli";
 import { agentFor, signUp } from "../support/authFlows";
@@ -99,6 +100,44 @@ describe("trail CLI", () => {
     expect(output.join("\n")).toContain("heat cells rebuilt, 1 days of statistics");
     expect(await run("prune")).toBe(0);
     expect(output[0]).toBe("Removed:");
+  });
+
+  it("reprocesses the history, a device or a range, at a level", async () => {
+    expect(await run("reprocess", "--device", "nope")).toBe(2);
+    expect(await run("reprocess", "--from", "2026-09-29T00:00:00Z")).toBe(2);
+    expect(errors.join("\n")).toContain("--from and --to go together");
+    expect(await run("reprocess", "--from-level", "raw")).toBe(2);
+    expect(
+      await run("reprocess", "--from", "2026-09-30T00:00:00Z", "--to", "2026-09-29T00:00:00Z"),
+    ).toBe(2);
+
+    expect(await run("reprocess")).toBe(0);
+    expect(output.join("\n")).toMatch(
+      /^iPhone \([0-9a-f-]{36}\): 1 windows, 30 points, 1 stops and moves$/,
+    );
+    const segments = await t.ctx.db.execute<{ mode_inferred: string }>(sql`
+      SELECT mode_inferred FROM segments WHERE kind = 'move'
+    `);
+    expect(segments.rows).toEqual([{ mode_inferred: "cycling" }]);
+    const queue = await t.ctx.db.execute(sql`SELECT 1 FROM processing_queue`);
+    expect(queue.rows).toHaveLength(0);
+
+    const [device] = (await t.ctx.db.execute<{ id: string }>(sql`SELECT id FROM devices`)).rows;
+    expect(
+      await run(
+        "reprocess",
+        "--device",
+        device?.id ?? "",
+        "--from",
+        "2026-09-29T06:00:00Z",
+        "--to",
+        "2026-09-29T08:00:00Z",
+        "--from-level",
+        "inferred",
+      ),
+    ).toBe(0);
+    expect(output.join("\n")).toContain("1 stops and moves");
+    expect(await run("reprocess", "--device", "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3")).toBe(1);
   });
 
   it("fails with exit code 1 on configuration errors", async () => {

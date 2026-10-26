@@ -14,6 +14,7 @@ const eventTypes = [
   "device",
   "device-removed",
   "ingest",
+  "segments",
   "session-ended",
 ] as const satisfies readonly ServerEventType[];
 
@@ -86,6 +87,8 @@ export function useServerEvents(store: LiveStore): void {
         clearTimeout(refreshTimer);
         refreshTimer = setTimeout(() => {
           void queryClient.invalidateQueries({ queryKey: queryKeys.all.tracks });
+          // Tracks at a level show the new points too, as recorded until they are processed.
+          void queryClient.invalidateQueries({ queryKey: queryKeys.all.levelTracks });
         }, trackRefreshDelayMs);
       }
     };

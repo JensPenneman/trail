@@ -15,10 +15,11 @@ const journal: Journal = JSON.parse(
   readFileSync(join(migrationsFolder, "meta", "_journal.json"), "utf8"),
 );
 
-/** A migrations folder holding the journal's migrations up to and including `lastTag`. */
-function migrationsUpTo(lastTag: string): string {
-  const last = journal.entries.findIndex((entry) => entry.tag === lastTag);
-  if (last < 0) throw new Error(`no migration ${lastTag} in the journal`);
+/** A migrations folder holding the migrations up to and including `tag` (the first: the first release's). */
+function folderUpTo(tag?: string): string {
+  const last = tag === undefined ? 0 : journal.entries.findIndex((entry) => entry.tag === tag);
+  if (last < 0 || journal.entries.length === 0)
+    throw new Error(`no migration ${tag} in the journal`);
   const entries = journal.entries.slice(0, last + 1);
   const folder = mkdtempSync(join(tmpdir(), "trail-migrations-"));
   mkdirSync(join(folder, "meta"));
@@ -29,9 +30,12 @@ function migrationsUpTo(lastTag: string): string {
   return folder;
 }
 
-/** The tag of the first migration, and of the one that added `api_tokens` (renumbered on rebases). */
-const firstTag = journal.entries[0]?.tag ?? "";
-const apiTokensTag = journal.entries.find((entry) => entry.tag.endsWith("_api_tokens"))?.tag ?? "";
+/** The tag of the migration named `name` (`0002_api_tokens`): numbers change on rebases, names do not. */
+function tagOf(name: string): string {
+  const tag = journal.entries.find((entry) => entry.tag.endsWith(`_${name}`))?.tag;
+  if (tag === undefined) throw new Error(`no migration named ${name} in the journal`);
+  return tag;
+}
 
 /** Every table that holds recorded data, with a fingerprint of its rows. */
 const fingerprint = `
@@ -47,17 +51,66 @@ const fingerprint = `
     (SELECT count(*) FROM users)::int AS users
 `;
 
-/** API tokens (added after the first release), every column of every row. */
-const tokenFingerprint = `
-  SELECT count(*)::int AS tokens,
-    string_agg(
-      concat_ws('|', id, user_id, name, token_hash, token_hint, scopes::text, device_ids::text,
-        allowed_ips::text, expires_at::text, created_at::text, last_used_at::text,
-        last_used_ip::text, revoked_at::text),
-      ' / ' ORDER BY id
-    ) AS rows
-  FROM api_tokens
-`;
+/**
+ * Tables of user data that a later migration created: once that migration has
+ * run, rows are recorded in them and fingerprinted like the first release's
+ * data, and every migration after it must keep them. Derived tables
+ * (processed points, segments, the map cache, the queue) are rebuilt from
+ * the recorded data instead.
+ */
+const laterTables: {
+  migration: string;
+  record: (pool: pg.Pool, ids: { userId: string; deviceId: string }) => Promise<void>;
+  fingerprint: string;
+}[] = [
+  {
+    // API tokens: every column of every row.
+    migration: tagOf("api_tokens"),
+    record: async (pool, { userId, deviceId }) => {
+      await pool.query(
+        `INSERT INTO api_tokens (user_id, name, token_hash, token_hint, scopes, device_ids,
+           allowed_ips, expires_at, last_used_at, last_used_ip)
+         VALUES ($1, 'Home Assistant', 'upgrade-api-token-hash', 'Wx9z',
+           ARRAY['devices:read', 'locations:read'], ARRAY[$2::uuid], ARRAY['192.168.1.0/24'::cidr],
+           '2027-01-01T00:00:00Z', '2026-01-02T10:00:00Z', '192.168.1.20')`,
+        [userId, deviceId],
+      );
+      await pool.query(
+        `INSERT INTO api_tokens (user_id, name, token_hash, token_hint, scopes, revoked_at)
+         VALUES ($1, 'Old script', 'upgrade-revoked-token-hash', 'Ab12', ARRAY['history:read'],
+           '2026-01-03T00:00:00Z')`,
+        [userId],
+      );
+    },
+    fingerprint: `
+      SELECT count(*)::int AS rows,
+        string_agg(
+          concat_ws('|', id, user_id, name, token_hash, token_hint, scopes::text, device_ids::text,
+            allowed_ips::text, expires_at::text, created_at::text, last_used_at::text,
+            last_used_ip::text, revoked_at::text),
+          ' / ' ORDER BY id
+        ) AS digest
+      FROM api_tokens
+    `,
+  },
+  {
+    migration: tagOf("processing"),
+    record: async (pool, { userId, deviceId }) => {
+      await pool.query(
+        `INSERT INTO mode_overrides (device_id, kind, from_at, to_at, mode, source, created_by, created_at, revoked_at)
+         VALUES ($1, 'segment', '2026-01-01T08:00:00Z', '2026-01-01T08:40:00Z', 'train', 'ui', $2, '2026-01-02T09:00:00Z', NULL),
+                ($1, 'toggle', '2026-01-01T17:00:00Z', NULL, 'cycling', 'api', $2, '2026-01-01T17:00:00Z', NULL),
+                ($1, 'toggle', '2026-01-01T18:00:00Z', '2026-01-01T18:30:00Z', 'bus', 'mcp', NULL, '2026-01-01T18:00:00Z', '2026-01-01T18:10:00Z')`,
+        [deviceId, userId],
+      );
+    },
+    fingerprint: `
+      SELECT count(*)::int AS rows,
+        md5(string_agg(concat_ws('|', device_id, kind, from_at, to_at, mode, source, created_by, created_at, revoked_at), ',' ORDER BY created_at, kind)) AS digest
+      FROM mode_overrides
+    `,
+  },
+];
 
 /*
  * Deployed databases are never rebuilt: every release migrates the data that is
@@ -70,12 +123,13 @@ describe("migrations on an existing database", () => {
   const pool = new pg.Pool({ connectionString: testDatabaseUrl, max: 1 });
   const folders: string[] = [];
   let before: Record<string, unknown> = {};
-  let tokensBefore: Record<string, unknown> = {};
+  const laterBefore = new Map<string, Record<string, unknown>>();
 
   beforeAll(async () => {
     await wipeTestDatabase(pool);
-    folders.push(migrationsUpTo(firstTag));
-    await runMigrations(pool, folders[0] ?? "");
+    const firstRelease = folderUpTo();
+    folders.push(firstRelease);
+    await runMigrations(pool, firstRelease);
 
     const user = await pool.query<{ id: string }>(
       `INSERT INTO users (email, display_name, webauthn_user_id, timezone)
@@ -117,25 +171,13 @@ describe("migrations on an existing database", () => {
     );
     before = (await pool.query(fingerprint)).rows[0] ?? {};
 
-    // The release with API tokens, and tokens recorded the way it records them.
-    folders.push(migrationsUpTo(apiTokensTag));
-    await runMigrations(pool, folders[1] ?? "");
-    const userId = (await pool.query<{ id: string }>("SELECT id FROM users")).rows[0]?.id;
-    await pool.query(
-      `INSERT INTO api_tokens (user_id, name, token_hash, token_hint, scopes, device_ids,
-         allowed_ips, expires_at, last_used_at, last_used_ip)
-       VALUES ($1, 'Home Assistant', 'upgrade-api-token-hash', 'Wx9z',
-         ARRAY['devices:read', 'locations:read'], ARRAY[$2::uuid], ARRAY['192.168.1.0/24'::cidr],
-         '2027-01-01T00:00:00Z', '2026-01-02T10:00:00Z', '192.168.1.20')`,
-      [userId, deviceId],
-    );
-    await pool.query(
-      `INSERT INTO api_tokens (user_id, name, token_hash, token_hint, scopes, revoked_at)
-       VALUES ($1, 'Old script', 'upgrade-revoked-token-hash', 'Ab12', ARRAY['history:read'],
-         '2026-01-03T00:00:00Z')`,
-      [userId],
-    );
-    tokensBefore = (await pool.query(tokenFingerprint)).rows[0] ?? {};
+    for (const later of laterTables) {
+      const folder = folderUpTo(later.migration);
+      folders.push(folder);
+      await runMigrations(pool, folder);
+      await later.record(pool, { userId: user.rows[0]?.id ?? "", deviceId: deviceId ?? "" });
+      laterBefore.set(later.migration, (await pool.query(later.fingerprint)).rows[0] ?? {});
+    }
 
     await runMigrations(pool, migrationsFolder);
   });
@@ -152,9 +194,12 @@ describe("migrations on an existing database", () => {
     expect((await pool.query(fingerprint)).rows[0]).toEqual(before);
   });
 
-  it("keeps every API token as it was", async () => {
-    expect(tokensBefore["tokens"]).toBe(2);
-    expect((await pool.query(tokenFingerprint)).rows[0]).toEqual(tokensBefore);
+  it("keeps the rows of tables added after the first release", async () => {
+    for (const later of laterTables) {
+      const recorded = laterBefore.get(later.migration);
+      expect(recorded?.["rows"]).toBeGreaterThan(0);
+      expect((await pool.query(later.fingerprint)).rows[0]).toEqual(recorded);
+    }
   });
 
   it("applies every migration of the journal", async () => {

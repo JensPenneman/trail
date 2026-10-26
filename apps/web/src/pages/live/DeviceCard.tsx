@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import { describeMovement } from "../../devices/describeMovement";
 import { tripModeLabel } from "../../devices/tripModeLabel";
 import { useFormatter } from "../../format/useFormatter";
+import { QuickModeChips } from "../../transport/QuickModeChips";
 import { BatteryIndicator } from "../../ui/BatteryIndicator";
 import { DeviceSwatch } from "../../ui/DeviceSwatch";
 import { Icon } from "../../ui/Icon";
@@ -118,6 +119,10 @@ export function DeviceCard({
 
       {activity === null ? null : (
         <ActivitySparkline slots={activity} colorSlot={colorSlot} deviceName={device.name} />
+      )}
+
+      {device.lastSeenAt === null ? null : (
+        <QuickModeChips deviceId={device.id} deviceName={device.name} />
       )}
     </article>
   );

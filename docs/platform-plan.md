@@ -93,10 +93,10 @@ When the two disagree, the pull request that notices fixes the plan.
 - **Pagination:** keyset `cursor` + `limit` (`{ items, nextCursor }`) for lists
   that grow without bound (locations, segments); bounded ranges elsewhere with
   the same caps as today.
-- **Levels** (§3): `level=raw|averaged|mapped|inferred` wherever points or
-  tracks are returned. Default `raw` on the public API; the dashboard asks for
-  its preference. A response says which level it could deliver
-  (`availableLevel`).
+- **Levels** (§3): `level=raw|averaged|mapped|inferred` on `/api/v1/tracks`,
+  which serves the processed levels; `/api/v1/locations` stays raw points.
+  Default `raw` on the public API; the dashboard asks for its preference. A
+  response says which level it could deliver (`availableLevel`).
 - Responses never include another user's secrets; the sharing projection (§4.3)
   applies whenever a device is not the caller's own.
 
@@ -131,13 +131,15 @@ When the two disagree, the pull request that notices fixes the plan.
 | `PATCH /api/v1/devices/{id}` | `devices:write` | name, alertsEnabled, pendingSettings → `{ device, settings }` (the owner's settings, which `DevicePublic` leaves out) |
 | `GET /api/v1/devices/{id}/location` | `locations:read` | latest cached position, battery, inferred mode when known |
 | `GET /api/v1/locations` | `locations:read` | `device`, `from`, `to`, `cursor` (opaque), `limit` ≤ 1000, oldest first; raw points only — the levels are `/api/v1/tracks` |
-| `GET /api/v1/tracks` | `locations:read` | `devices`, `from`, `to` (≤ 93 days), `level` → segments with mode and confidence |
-| `GET /api/v1/segments` | `locations:read` | `devices`, `from`, `to` → stops and moves (§3) |
-| `PUT` / `DELETE /api/v1/segments/{id}/mode` | `locations:write` | override one segment |
-| `POST /api/v1/devices/{id}/mode` | `locations:write` | quick override from now (§3.5) |
+| `GET /api/v1/tracks` | `locations:read` | `devices`, `from`, `to` (≤ 93 days), `level`, `maxPoints` → segments with mode and confidence |
+| `GET /api/v1/segments` | `locations:read` | `devices`, `from`, `to` (≤ 93 days), `cursor`, `limit` ≤ 1000 → stops and moves (§3) |
+| `PUT` / `DELETE /api/v1/segments/{id}/mode` | `locations:write` + `locations:read` | override one segment (the answer is the segment) |
+| `GET /api/v1/devices/{id}/mode` | `locations:read` | the quick toggle in force and the current mode |
+| `POST /api/v1/devices/{id}/mode` | `locations:write` + `locations:read` | quick override from now (§3.5; the answer is the current mode) |
 | `GET /api/v1/visits` | `locations:read` | as the private route: `from`, `to` (≤ 400 days, any offset), `devices`; visits are places |
 | `GET /api/v1/trips` | `history:read` | as the private route: `from`, `to` (≤ 400 days, any offset), `devices`; no coordinates |
-| `GET /api/v1/stats/days`, `/stats/activity` | `history:read` | as the private routes, with `devices`; `stats/days` adds per-mode figures (processing) |
+| `GET /api/v1/stats/days`, `/stats/activity` | `history:read` | as the private routes, with `devices` |
+| `GET /api/v1/stats/modes` | `history:read` | distance and time per local day and mode (§3.6); no coordinates |
 | `GET /api/v1/heatmap` | `locations:read` | as the private route, with `devices`; the cells are places |
 | `GET /api/v1/people` | `people:read` | people sharing with the caller, projected latest location |
 | `GET /api/v1/people/{userId}` | `people:read` | one person: shared devices and their locations |
@@ -250,18 +252,25 @@ degrades to the one below, and the response says so.
   delete cascade (deleting raw points removes the derived ones). Columns: `kept`
   bool, `lat_avg`, `lon_avg` float8, `speed_avg` real, `lat_map`, `lon_map`
   float8 null, `way_id` bigint null, `way_kind` text null, `snap_m` real null,
-  `version` smallint, `processed_at`.
+  `path_map` jsonb null (the way's shape since the move's previous point —
+  what makes a sparse train follow the rails), `version` smallint,
+  `processed_at`.
 - `segments` — `id` uuidv7, `device_id`, `started_at`, `ended_at`, `kind`
   `stop|move`, `mode` (final, null for stops), `mode_inferred`, `confidence`
-  real, `mode_user` null, `distance_m`, `duration_s`, `point_count`, start, end
-  and centroid lat/lon, `features` jsonb, `version`, `computed_at`. Unique
-  `(device_id, started_at)`; index `(device_id, ended_at)`.
-- `mode_overrides` — `id`, `device_id`, `from_at`, `to_at` null (open: until the
-  next stop), `mode`, `source` `ui|api|mcp`, `created_by`, `created_at`,
-  `revoked_at`. Overrides outlive recomputation and are materialised into
+  real, `mode_user` null, `review` (the inference was unsure), `distance_m`,
+  `duration_s`, `max_speed`, `point_count`, start, end and centroid lat/lon,
+  `features` jsonb, `version`, `computed_at`. Unique `(device_id,
+  started_at)`; index `(device_id, ended_at)`.
+- `mode_overrides` — `id`, `device_id`, `kind` `segment|toggle` (a segment
+  override holds for its span, a toggle until `to_at` or the next stop),
+  `from_at`, `to_at` null (open: until the next stop), `mode`, `source`
+  `ui|api|mcp`, `created_by`, `created_at`, `revoked_at`. Overrides outlive recomputation and are materialised into
   `segments.mode_user` whenever segments are rebuilt.
-- `processing_queue` — `device_id`, `from_at`, `to_at`, `reason`, `attempts`,
-  `next_at`, `enqueued_at`; PK `(device_id, from_at)`. Survives restarts.
+- `processing_queue` — `device_id`, `from_at`, `to_at`, `reason`,
+  `from_level`, `priority`, `attempts`, `next_at`, `enqueued_at`,
+  `missing_tiles` (a window waiting for map data), `last_error`; PK
+  `(device_id, from_at)`. Survives restarts. `processing_state` records the
+  version the history was backfilled for.
 - Map data cache: `osm_tiles (z, x, y)` PK with `fetched_at`, `way_count`,
   `bytes`; `osm_ways` `id` PK, `kind`, `tags` jsonb (highway, railway, service,
   maxspeed, name, route, public_transport, oneway), `nodes` bigint[],
@@ -303,14 +312,18 @@ The map data comes through a `WaySource` interface
 (`fetchTile(z, x, y): Promise<TileData>`). The default `OverpassWaySource` uses
 `PROCESSING_OVERPASS_URL` (default `https://overpass-api.de/api/interpreter`;
 empty disables mapping) with: one request every 2 s, concurrency 1, a 60 s
-timeout, retries with backoff, `User-Agent: Trail/<version> (+<PUBLIC_URL>)`,
+timeout, retries with backoff, `User-Agent: Trail/<version>
+(+https://github.com/JensPenneman/trail)` (the project, not the instance),
 a daily byte budget `PROCESSING_OVERPASS_DAILY_MB` (300), a 20 MB response cap
 and strict parsing. One query per tile: every `highway=*` except
 proposed/construction/abandoned, railways (`rail|light_rail|tram|subway|
 narrow_gauge|funicular`), `route=ferry`, and the POIs above, with `out geom`.
 A missing tile leaves the window `needs_map`; the queue retries it later and
-everything else proceeds. A self-hosted extract can implement the same
-interface later.
+everything else proceeds. Overpass learns which ~1.5 km squares are fetched
+and when (fetches follow uploads), from the server's IP address, but not the
+tracks or who the user is; tile keys, like coordinates, are logged at debug
+level only. `PROCESSING_OVERPASS_URL=` (empty) switches it off; a
+self-hosted extract behind the same interface is a possible later step.
 
 **Inferred.**
 
@@ -368,8 +381,9 @@ model trained on the overrides) can be evaluated offline.
   `mode_overrides` row for the segment's span; `DELETE` revokes it. The UI
   shows `modeUser` with a "set by you" mark; the inferred value stays visible.
 - Quick toggle: `POST /api/v1/devices/{id}/mode { mode, until? }` opens an
-  override from now (or from the start of the current move) until `until` or
-  the next detected stop, whichever comes first. Idempotent; `mode: null` ends
+  override from now until `until` or the next detected stop, whichever comes
+  first; a part of the current move shorter than 90 s before it joins in, and
+  the segment dialog corrects a whole move. Idempotent; `mode: null` ends
   the open override. In the UI it is a one-tap chip row on the device card and
   in the segment popover; for agents it is an MCP tool (§5.2).
 - Overrides are also reported in `features.override` and counted in stats.
@@ -380,8 +394,10 @@ model trained on the overrides) can be evaluated offline.
 segments: [{ id, deviceId, kind, mode, modeInferred, confidence, needsReview,
 startedAt, endedAt, distanceM, points: [[lon, lat, epochSeconds], …] }] }`.
 `GET /api/v1/segments` returns the timeline: stops with centroid and duration,
-moves with mode, distance, duration and average speed. `/api/v1/stats/days`
-adds distance and time per mode where level ≥ inferred exists.
+moves with mode, distance, duration and average speed. Per-mode figures have
+their own endpoint, `GET /api/v1/stats/modes` (distance, time and segments per
+local day, device and mode); `/api/v1/stats/days` stays as it is, and
+`/api/v1/locations` stays raw.
 
 UI (inside History and Live at first; §6 moves it): a level `SegmentedControl`
 (Raw · Averaged · Mapped · Transport) kept in the URL and localStorage; mode

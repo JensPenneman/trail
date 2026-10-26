@@ -28,6 +28,14 @@
       "description": "Where the devices have been: every point as it arrived, the places they stayed at (visits) and the all-time heatmap. All of it needs `locations:read`."
     },
     {
+      "name": "Tracks",
+      "description": "Where the devices went, at a level of calculation: as recorded, averaged, mapped onto roads and railways, or as stops and moves."
+    },
+    {
+      "name": "Timeline",
+      "description": "Stops and moves with their transport modes, the corrections people make to the modes, and distance and time per mode."
+    },
+    {
       "name": "History",
       "description": "History without coordinates: trips, daily statistics and recent activity (`history:read`)."
     },
@@ -720,6 +728,622 @@
         }
       }
     },
+    "/api/v1/tracks": {
+      "get": {
+        "operationId": "getTracks",
+        "summary": "Get tracks at a level",
+        "description": "The tracks of the devices in `[from, to)` (at most 93 days) at a level of calculation: `raw` as recorded, `averaged` (outliers dropped, GPS noise smoothed), `mapped` (snapped to roads and railways, with the way's shape between points) or `inferred` (the stops and moves of the timeline, each move with its transport mode). A point that has not reached the level yet is served at the best one below it, and `availableLevel` says which level every point reached. Each device's track is simplified to at most `maxPoints`.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "tags": [
+          "Tracks"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids; all devices the credential may reach when omitted.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3",
+              "type": "string"
+            },
+            "description": "Comma-separated device ids; all devices the credential may reach when omitted."
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Start of the range (inclusive).",
+              "example": "2026-10-25T23:00:00Z"
+            },
+            "required": true,
+            "description": "Start of the range (inclusive)."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "description": "End of the range (exclusive), at most 93 days after `from`.",
+              "example": "2026-10-26T23:00:00Z"
+            },
+            "required": true,
+            "description": "End of the range (exclusive), at most 93 days after `from`."
+          },
+          {
+            "in": "query",
+            "name": "level",
+            "schema": {
+              "default": "raw",
+              "$ref": "#/components/schemas/ProcessingLevel"
+            }
+          },
+          {
+            "in": "query",
+            "name": "maxPoints",
+            "schema": {
+              "default": 8000,
+              "description": "At most this many points per device; longer tracks are simplified.",
+              "example": 8000,
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 50000
+            },
+            "description": "At most this many points per device; longer tracks are simplified."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tracks at a level of calculation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tracks"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/segments": {
+      "get": {
+        "operationId": "listSegments",
+        "summary": "List stops and moves",
+        "description": "The timeline: the stops and moves overlapping `[from, to)` (at most 93 days), oldest first, a page at a time. A stop has its place (`centroid`) and duration; a move its transport mode — the one a person set, else the inferred one — with the confidence, distance, duration and speeds. `pending` is true while points of the range still wait for processing, so the timeline may still change.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "tags": [
+          "Timeline"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids; all devices the credential may reach when omitted.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3",
+              "type": "string"
+            },
+            "description": "Comma-separated device ids; all devices the credential may reach when omitted."
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Start of the range (inclusive).",
+              "example": "2026-10-25T23:00:00Z"
+            },
+            "required": true,
+            "description": "Start of the range (inclusive)."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "description": "End of the range (exclusive), at most 93 days after `from`.",
+              "example": "2026-10-26T23:00:00Z"
+            },
+            "required": true,
+            "description": "End of the range (exclusive), at most 93 days after `from`."
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "description": "`nextCursor` of the previous page.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "description": "`nextCursor` of the previous page."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 500,
+              "description": "Segments per page.",
+              "example": 500,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "description": "Segments per page."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stops and moves, one page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Timeline"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/segments/{id}/mode": {
+      "put": {
+        "operationId": "setSegmentMode",
+        "summary": "Set a move's mode",
+        "description": "Corrects the transport mode of a move: the mode applies to the move's time and wins over the inference, also when the history is processed again. The inferred mode stays visible as `modeInferred`. Setting the mode it already has changes nothing. A stop has no mode: `409`.\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
+        "tags": [
+          "Timeline"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read",
+              "locations:write"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The segment's id. It stays the same while the segment keeps its start.",
+              "example": "019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d4e"
+            },
+            "required": true,
+            "description": "The segment's id. It stays the same while the segment keeps its start."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSegmentModeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "segment": {
+                      "$ref": "#/components/schemas/Segment"
+                    }
+                  },
+                  "required": [
+                    "segment"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "resetSegmentMode",
+        "summary": "Reset a move's mode",
+        "description": "Withdraws the correction that set the move's mode — a mode set from a moment on with it, for every move it covered — so the inferred mode counts again. The segment answers with the inferred mode at once; the span is worked out again within seconds (a `segments` event follows). Without a correction nothing changes.\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
+        "tags": [
+          "Timeline"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read",
+              "locations:write"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The segment's id. It stays the same while the segment keeps its start.",
+              "example": "019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d4e"
+            },
+            "required": true,
+            "description": "The segment's id. It stays the same while the segment keeps its start."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "segment": {
+                      "$ref": "#/components/schemas/Segment"
+                    }
+                  },
+                  "required": [
+                    "segment"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{id}/mode": {
+      "get": {
+        "operationId": "getDeviceMode",
+        "summary": "Get a device's mode now",
+        "description": "How the device travels now: the mode set from a moment on that is still in force (`override`), and the current mode — that one, or the latest segment's while it is recent (a stop is `stationary`). `current` is null when the device has not reported for a while.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "tags": [
+          "Timeline"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The device's id.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+            },
+            "required": true,
+            "description": "The device's id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "$ref": "#/components/schemas/DeviceMode"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      },
+      "post": {
+        "operationId": "setDeviceMode",
+        "summary": "Set the mode from now on",
+        "description": "The quick toggle: from now on the device travels by `mode`, until `until` or the next detected stop, whichever comes first. It is idempotent — the same mode again changes nothing — another mode ends the running one and starts anew, and `mode: null` ends it, so inference takes over again.\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
+        "tags": [
+          "Timeline"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read",
+              "locations:write"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The device's id.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+            },
+            "required": true,
+            "description": "The device's id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDeviceModeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "$ref": "#/components/schemas/DeviceMode"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/stats/modes": {
+      "get": {
+        "operationId": "getModeStats",
+        "summary": "Get distance and time per mode",
+        "description": "Per local day (the account's time zone) from `from` to `to` (inclusive, at most 400 days), device and transport mode: the distance, the time and the number of segments, and how many of those a person set. Stops count as `stationary`; a segment across midnight counts on both days in proportion to its time.\n\n**Access:** an API token with the scope `history:read`, or a signed-in session.",
+        "tags": [
+          "Timeline"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "history:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids; all devices the credential may reach when omitted.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3",
+              "type": "string"
+            },
+            "description": "Comma-separated device ids; all devices the credential may reach when omitted."
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+              "description": "First local day (the account's time zone).",
+              "example": "2026-10-01"
+            },
+            "required": true,
+            "description": "First local day (the account's time zone)."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+              "description": "Last local day, inclusive.",
+              "example": "2026-10-31"
+            },
+            "required": true,
+            "description": "Last local day, inclusive."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Distance and time per mode and local day.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/trips": {
       "get": {
         "operationId": "listTrips",
@@ -1124,6 +1748,73 @@
         ],
         "description": "A tested set of Overland settings: `balanced`, `balanced-plus`, `high-resolution` (best accuracy, most battery) or `battery-saver`.",
         "example": "high-resolution"
+      },
+      "ProcessingLevel": {
+        "type": "string",
+        "enum": [
+          "raw",
+          "averaged",
+          "mapped",
+          "inferred"
+        ],
+        "description": "`raw`: the points as the phone sent them. `averaged`: outliers dropped and GPS noise smoothed. `mapped`: snapped to roads and railways, with the way's shape between points. `inferred`: cut into stops and moves, each move with its transport mode.",
+        "example": "inferred"
+      },
+      "SetSegmentModeRequest": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/ChosenTransportMode"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "description": "The mode the segment really had."
+      },
+      "ChosenTransportMode": {
+        "type": "string",
+        "enum": [
+          "stationary",
+          "walking",
+          "running",
+          "cycling",
+          "car",
+          "bus",
+          "tram",
+          "metro",
+          "train",
+          "boat",
+          "plane"
+        ],
+        "description": "A transport mode a person can set: every mode except `unknown`.",
+        "example": "train"
+      },
+      "SetDeviceModeRequest": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChosenTransportMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The mode from now on; null ends the mode set before and inference takes over."
+          },
+          "until": {
+            "description": "End it at this time at the latest (it always ends at the next stop).",
+            "example": "2026-10-26T10:30:00Z",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "description": "Set the transport mode from now on."
       },
       "Profile": {
         "type": "object",
@@ -1919,6 +2610,668 @@
         ],
         "additionalProperties": false,
         "description": "How many points were ever recorded in each cell of the viewport; points less accurate than 200 m are left out."
+      },
+      "Tracks": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "description": "The level asked for.",
+            "$ref": "#/components/schemas/ProcessingLevel"
+          },
+          "availableLevel": {
+            "description": "The level every point of the response reached. Lower than `level` while points wait for processing or map data.",
+            "$ref": "#/components/schemas/ProcessingLevel"
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start of the range.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time",
+            "description": "End of the range.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "simplified": {
+            "type": "boolean",
+            "description": "Points were left out to stay within `maxPoints`.",
+            "example": false
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrackSegment"
+            },
+            "description": "Per device in the order of the devices, oldest first."
+          }
+        },
+        "required": [
+          "level",
+          "availableLevel",
+          "from",
+          "to",
+          "simplified",
+          "segments"
+        ],
+        "additionalProperties": false,
+        "description": "Tracks at a level of calculation."
+      },
+      "TrackSegment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "description": "The segment's id. It stays the same while the segment keeps its start.",
+                "example": "019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d4e"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The timeline segment (inferred level); null for a piece of track."
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device's id.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "stop",
+              "move",
+              "track"
+            ],
+            "description": "`stop` and `move` on the inferred level; `track`: a continuous piece of track (the other levels, and points not processed yet).",
+            "example": "move"
+          },
+          "level": {
+            "description": "The level this segment's points reached.",
+            "$ref": "#/components/schemas/ProcessingLevel"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modeInferred": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modeUser": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChosenTransportMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "needsReview": {
+            "type": "boolean"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Time of its first point.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Time of its last point.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Distance in metres.",
+            "example": 31240
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LevelPoint"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "deviceId",
+          "kind",
+          "level",
+          "mode",
+          "modeInferred",
+          "modeUser",
+          "confidence",
+          "needsReview",
+          "startedAt",
+          "endedAt",
+          "distanceM",
+          "points"
+        ],
+        "additionalProperties": false,
+        "description": "A drawable piece of a device's track."
+      },
+      "TransportMode": {
+        "type": "string",
+        "enum": [
+          "stationary",
+          "walking",
+          "running",
+          "cycling",
+          "car",
+          "bus",
+          "tram",
+          "metro",
+          "train",
+          "boat",
+          "plane",
+          "unknown"
+        ],
+        "description": "How the device travelled. `stationary` is standing still; `unknown` means the evidence was too weak to decide.",
+        "example": "train"
+      },
+      "LevelPoint": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        ],
+        "items": false,
+        "minItems": 3,
+        "maxItems": 3,
+        "description": "`[lon, lat, t]`: WGS84 degrees and the time in epoch seconds. On the mapped level the way's shape between two recorded points carries interpolated times.",
+        "example": [
+          3.7104,
+          51.0362,
+          1793000000
+        ]
+      },
+      "Timeline": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Segment"
+            },
+            "description": "Segments overlapping the range, oldest first."
+          },
+          "nextCursor": {
+            "description": "Pass as `cursor` for the next page; null on the last one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pending": {
+            "type": "boolean",
+            "description": "Recorded points in the range are still waiting to be processed.",
+            "example": false
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "pending"
+        ],
+        "additionalProperties": false,
+        "description": "Stops and moves, one page."
+      },
+      "Segment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The segment's id. It stays the same while the segment keeps its start.",
+            "example": "019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d4e"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device's id.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "stop",
+              "move"
+            ],
+            "description": "`stop`: the device stayed in one place. `move`: it travelled.",
+            "example": "move"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start of the segment.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "End of the segment; the next segment starts here.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "durationS": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Duration in seconds.",
+            "example": 2280
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Distance travelled in metres; 0 for a stop.",
+            "example": 31240
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The transport mode that counts: the person's choice, else the inferred one. Null for a stop."
+          },
+          "modeInferred": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The mode Trail worked out; null for a stop."
+          },
+          "modeUser": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChosenTransportMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The mode a person set for this time; null when nobody did."
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How sure the inference is, from 0 to 1; null for a stop.",
+            "example": 0.86
+          },
+          "needsReview": {
+            "type": "boolean",
+            "description": "The inference is unsure and nobody has set the mode: worth a look.",
+            "example": false
+          },
+          "averageSpeed": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Distance over duration in m/s; null for a stop.",
+            "example": 13.7
+          },
+          "maxSpeed": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Top speed in m/s (outliers left out); null for a stop.",
+            "example": 38.1
+          },
+          "pointCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Recorded points in the segment.",
+            "example": 41
+          },
+          "start": {
+            "description": "Where the segment starts.",
+            "$ref": "#/components/schemas/Coordinate"
+          },
+          "end": {
+            "description": "Where the segment ends.",
+            "$ref": "#/components/schemas/Coordinate"
+          },
+          "centroid": {
+            "description": "The middle of its points: a stop's place.",
+            "$ref": "#/components/schemas/Coordinate"
+          }
+        },
+        "required": [
+          "id",
+          "deviceId",
+          "kind",
+          "startedAt",
+          "endedAt",
+          "durationS",
+          "distanceM",
+          "mode",
+          "modeInferred",
+          "modeUser",
+          "confidence",
+          "needsReview",
+          "averageSpeed",
+          "maxSpeed",
+          "pointCount",
+          "start",
+          "end",
+          "centroid"
+        ],
+        "additionalProperties": false,
+        "description": "A stop or a move. Stops and moves follow each other without overlap; a gap in the recording leaves a gap between them."
+      },
+      "Coordinate": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "description": "Latitude in degrees (WGS84).",
+            "example": 51.0362
+          },
+          "lon": {
+            "type": "number",
+            "description": "Longitude in degrees (WGS84).",
+            "example": 3.7104
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "additionalProperties": false,
+        "description": "A position in WGS84 degrees."
+      },
+      "DeviceMode": {
+        "type": "object",
+        "properties": {
+          "override": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModeOverride"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The mode set from a moment on that is still in force, or null."
+          },
+          "current": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "$ref": "#/components/schemas/TransportMode"
+                  },
+                  "setByUser": {
+                    "type": "boolean",
+                    "description": "A person set it.",
+                    "example": true
+                  },
+                  "since": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Since when.",
+                    "example": "2026-10-26T08:41:07.000Z"
+                  },
+                  "segmentId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "The segment of the timeline it comes from; null before processing."
+                  }
+                },
+                "required": [
+                  "mode",
+                  "setByUser",
+                  "since",
+                  "segmentId"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the device is doing now, when its last segment is recent; else null."
+          }
+        },
+        "required": [
+          "override",
+          "current"
+        ],
+        "additionalProperties": false,
+        "description": "A device's transport mode now."
+      },
+      "ModeOverride": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The override's id."
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device's id.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "segment",
+              "toggle"
+            ],
+            "description": "`segment`: set for one segment's time. `toggle`: set from a moment on, until `until` or the next stop.",
+            "example": "toggle"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ChosenTransportMode"
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Where it starts.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it ends at the latest; null: at the next stop.",
+            "example": null
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "ui",
+              "api",
+              "mcp"
+            ],
+            "description": "`ui` (the dashboard), `api` (an API token) or `mcp` (an agent).",
+            "example": "ui"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it was set.",
+            "example": "2026-10-26T08:41:07.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "deviceId",
+          "kind",
+          "mode",
+          "from",
+          "until",
+          "source",
+          "createdAt"
+        ],
+        "additionalProperties": false,
+        "description": "A transport mode set by a person."
+      },
+      "ModeStats": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "The time zone of the days.",
+            "example": "Europe/Brussels"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModeDayStat"
+            },
+            "description": "By day, device and mode."
+          }
+        },
+        "required": [
+          "timezone",
+          "days"
+        ],
+        "additionalProperties": false,
+        "description": "Distance and time per mode and local day."
+      },
+      "ModeDayStat": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "description": "The local day.",
+            "example": "2026-10-26"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device's id.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "mode": {
+            "description": "The mode; stops count as `stationary`.",
+            "$ref": "#/components/schemas/TransportMode"
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Metres.",
+            "example": 31240
+          },
+          "durationS": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Seconds.",
+            "example": 2280
+          },
+          "segments": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Segments that count towards it.",
+            "example": 2
+          },
+          "setByUser": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Of those, the ones whose mode a person set.",
+            "example": 1
+          }
+        },
+        "required": [
+          "date",
+          "deviceId",
+          "mode",
+          "distanceM",
+          "durationS",
+          "segments",
+          "setByUser"
+        ],
+        "additionalProperties": false,
+        "description": "Distance and time of one device in one mode on one local day. A segment across midnight counts on both days, in proportion to its time."
       },
       "Trip": {
         "type": "object",

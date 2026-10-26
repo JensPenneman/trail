@@ -1,0 +1,47 @@
+.segment-dialog {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.segment-dialog__mode {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-l);
+}
+
+.segment-dialog__mode > .icon {
+  color: var(--mode-color);
+}
+
+.segment-dialog__mode > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.segment-dialog__mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+  font-size: var(--text-s);
+  font-weight: 600;
+}
+
+.segment-dialog__change {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.segment-dialog__heading {
+  font-size: var(--text-m);
+}
+
+.segment-dialog__saved:empty {
+  display: none;
+}

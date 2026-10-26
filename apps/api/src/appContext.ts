@@ -5,6 +5,7 @@ import type { Database } from "./db/database";
 import type { EventBus } from "./events/eventBus";
 import type { AlertSender } from "./jobs/alert";
 import type { BackgroundTasks } from "./lib/backgroundTasks";
+import type { ProcessingService } from "./processing/processingService";
 import type { DailyStatsScheduler } from "./stats/dailyStatsScheduler";
 import type { ApiTokenVerifier } from "./v1/apiTokens";
 
@@ -21,4 +22,6 @@ export interface AppContext {
   alerts: AlertSender | null;
   /** Resolves API tokens for `/api/v1`: the `api_tokens` table, or a stand-in in tests. */
   apiTokens: ApiTokenVerifier;
+  /** Location processing: averaged, mapped and inferred levels (docs/architecture.md §17). */
+  processing: ProcessingService;
 }

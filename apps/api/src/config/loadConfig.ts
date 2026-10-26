@@ -82,5 +82,13 @@ export function loadConfig(
       tokenPerMinute: env.RATE_LIMIT_TOKEN_PER_MINUTE,
       tokenFailedPer10Minutes: env.RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES,
     },
+    processing: {
+      enabled: env.PROCESSING_ENABLED,
+      overpassUrl: env.PROCESSING_OVERPASS_URL,
+      overpassDailyBytes: env.PROCESSING_OVERPASS_DAILY_MB * 1_000_000,
+      osmTtlDays: env.PROCESSING_OSM_TTL_DAYS,
+      maxAccuracyM: env.PROCESSING_MAX_ACCURACY_M,
+      stopMinS: env.PROCESSING_STOP_MIN_S,
+    },
   };
 }

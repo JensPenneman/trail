@@ -30,6 +30,7 @@ async function start(config: Config, logger: Logger): Promise<void> {
   const ctx = createAppContext({ config, logger, pool });
   const server = await listen(createApp(ctx), config.port, config.host);
   const jobs = startJobs(ctx);
+  ctx.processing.start();
   logger.info(
     {
       port: config.port,

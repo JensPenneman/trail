@@ -1,0 +1,152 @@
+import { describe, expect, it } from "vitest";
+import type { OverrideSpan } from "../../src/processing/pipelineTypes";
+import { morning, motorwayDrive } from "../support/journeys";
+import { moves, processWorld } from "../support/processWorld";
+import { concat, lastT, motorwayLine, stay, subPath, travel } from "../support/syntheticWorld";
+
+const override = (
+  fields: Partial<OverrideSpan> & Pick<OverrideSpan, "from" | "mode">,
+): OverrideSpan => ({
+  id: `o-${fields.from}-${fields.mode}`,
+  kind: "segment",
+  to: null,
+  endsBy: null,
+  createdAt: 0,
+  source: "ui",
+  ...fields,
+});
+
+/** Two drives on the motorway with a ten-minute stop between them. */
+function twoDrives() {
+  const first = travel(subPath(motorwayLine, 500, 12_500), {
+    startT: morning,
+    speedMs: 30,
+    intervalS: 1,
+    motion: ["driving"],
+    seed: 3,
+  });
+  const pause = stay(motorwayLine[26] ?? [12_500, -3000], {
+    startT: lastT(first) + 1,
+    durationS: 600,
+    intervalS: 5,
+    seed: 4,
+  });
+  const second = travel(subPath(motorwayLine, 12_500, 24_500), {
+    startT: lastT(pause) + 1,
+    speedMs: 30,
+    intervalS: 1,
+    motion: ["driving"],
+    seed: 5,
+  });
+  return concat(first, pause, second);
+}
+
+describe("applyOverrides", () => {
+  it("lets a segment override win over the inference, also after recomputation", () => {
+    const points = motorwayDrive();
+    const [drive] = moves(processWorld(points));
+    expect(drive?.modeInferred).toBe("car");
+    const correction = override({ from: drive?.startT ?? 0, to: drive?.endT ?? 0, mode: "bus" });
+    const once = moves(processWorld(points, { overrides: [correction] }));
+    expect(once.map((move) => [move.modeUser, move.modeInferred])).toEqual([["bus", "car"]]);
+    expect(once[0]?.features["override"]).toEqual({
+      id: correction.id,
+      kind: "segment",
+      source: "ui",
+    });
+    // Recomputing (new data, a new version) keeps the correction.
+    const again = moves(processWorld(points, { overrides: [correction] }));
+    expect(again).toEqual(once);
+  });
+
+  it("still fits when the segment moved by a few seconds", () => {
+    const points = motorwayDrive();
+    const [drive] = moves(processWorld(points));
+    const shifted = override({
+      from: (drive?.startT ?? 0) + 20,
+      to: (drive?.endT ?? 0) - 15,
+      mode: "bus",
+    });
+    const result = moves(processWorld(points, { overrides: [shifted] }));
+    expect(result).toHaveLength(1);
+    expect(result[0]?.modeUser).toBe("bus");
+  });
+
+  it("cuts a move to fit an override inside it", () => {
+    const points = motorwayDrive();
+    const middle = override({ from: morning + 300, to: morning + 600, mode: "train" });
+    const result = moves(processWorld(points, { overrides: [middle] }));
+    expect(result.map((move) => move.modeUser)).toEqual([null, "train", null]);
+    expect(result.map((move) => move.modeInferred)).toEqual(["car", "car", "car"]);
+    expect(result[1]?.startT).toBe(morning + 300);
+    expect(result[1]?.endT).toBe(morning + 600);
+  });
+
+  it("leaves a move alone that an override only grazes", () => {
+    const points = motorwayDrive();
+    const graze = override({ from: lastT(points) - 20, to: lastT(points) + 3600, mode: "train" });
+    expect(
+      moves(processWorld(points, { overrides: [graze] })).map((move) => move.modeUser),
+    ).toEqual([null]);
+  });
+
+  it("applies overrides in the order they were made", () => {
+    const points = motorwayDrive();
+    const older = override({
+      id: "a",
+      from: morning,
+      to: lastT(points),
+      mode: "bus",
+      createdAt: 1,
+    });
+    const newer = override({
+      id: "b",
+      from: morning,
+      to: lastT(points),
+      mode: "train",
+      createdAt: 2,
+    });
+    expect(moves(processWorld(points, { overrides: [newer, older] }))[0]?.modeUser).toBe("train");
+  });
+
+  it("ends the quick toggle at the next stop", () => {
+    const points = twoDrives();
+    const toggle = override({ kind: "toggle", from: morning + 60, mode: "train" });
+    const result = processWorld(points, { overrides: [toggle] });
+    const [first, second] = moves(result);
+    expect(first?.modeUser).toBe("train");
+    expect(second?.modeUser).toBeNull();
+    expect(second?.modeInferred).toBe("car");
+  });
+
+  it("ends the quick toggle at its until, or at a stop seen before this window", () => {
+    const points = twoDrives();
+    const until = override({
+      kind: "toggle",
+      from: morning + 120,
+      to: morning + 300,
+      mode: "train",
+    });
+    const parts = moves(processWorld(points, { overrides: [until] }));
+    expect(parts.map((move) => move.modeUser)).toEqual([null, "train", null, null]);
+    expect([parts[1]?.startT, parts[1]?.endT]).toEqual([morning + 120, morning + 300]);
+    const known = override({
+      kind: "toggle",
+      from: morning - 3600,
+      endsBy: morning - 600,
+      mode: "train",
+    });
+    expect(
+      moves(processWorld(points, { overrides: [known] })).map((move) => move.modeUser),
+    ).toEqual([null, null]);
+  });
+
+  it("never gives a stop a mode", () => {
+    const points = twoDrives();
+    const everything = override({ from: morning - 60, to: lastT(points) + 60, mode: "bus" });
+    const result = processWorld(points, { overrides: [everything] });
+    for (const segment of result.segments) {
+      expect(segment.modeUser).toBe(segment.kind === "stop" ? null : "bus");
+    }
+  });
+});

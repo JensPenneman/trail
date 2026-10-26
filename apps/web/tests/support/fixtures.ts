@@ -2,6 +2,12 @@ import type { ApiToken } from "@trail/contracts/apiToken";
 import type { PublicConfig } from "@trail/contracts/config";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { TracksResponse } from "@trail/contracts/track";
+import type {
+  DeviceMode,
+  LevelTracksResponse,
+  ProcessingLevel,
+  Segment,
+} from "@trail/contracts/transport";
 import type { SessionUser } from "@trail/contracts/user";
 
 /** Contract-shaped test data: a Brussels user with a phone and a car tracker. */
@@ -12,6 +18,8 @@ export const ids = {
   ceremony: "01926f3d-3f60-7b82-9354-6e7f8091a2b3",
   token: "01926f3e-4a71-7c93-a465-7f8091a2b3c4",
   oldToken: "01926f3e-5b82-7da4-b576-8091a2b3c4d5",
+  stop: "019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d40",
+  train: "019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d41",
 } as const;
 
 export const config: PublicConfig = {
@@ -117,3 +125,98 @@ export function apiToken(overrides: Partial<ApiToken> = {}): ApiToken {
     ...overrides,
   };
 }
+
+/** The phone's day as stops and moves: a stop at home, then a train ride the inference is unsure of. */
+export function timeline(from: string): Segment[] {
+  const start = Date.parse(from) + 7 * 3_600_000;
+  const iso = (ms: number) => new Date(ms).toISOString();
+  return [
+    {
+      id: ids.stop,
+      deviceId: ids.phone,
+      kind: "stop",
+      startedAt: iso(start - 3_600_000),
+      endedAt: iso(start),
+      durationS: 3600,
+      distanceM: 0,
+      mode: null,
+      modeInferred: null,
+      modeUser: null,
+      confidence: null,
+      needsReview: false,
+      averageSpeed: null,
+      maxSpeed: null,
+      pointCount: 40,
+      start: { lat: 50.98452, lon: 3.52683 },
+      end: { lat: 50.98452, lon: 3.52683 },
+      centroid: { lat: 50.98452, lon: 3.52683 },
+    },
+    {
+      id: ids.train,
+      deviceId: ids.phone,
+      kind: "move",
+      startedAt: iso(start),
+      endedAt: iso(start + 2_280_000),
+      durationS: 2280,
+      distanceM: 31_240,
+      mode: "train",
+      modeInferred: "train",
+      modeUser: null,
+      confidence: 0.55,
+      needsReview: true,
+      averageSpeed: 13.7,
+      maxSpeed: 38.1,
+      pointCount: 12,
+      start: { lat: 50.98452, lon: 3.52683 },
+      end: { lat: 51.0362, lon: 3.7104 },
+      centroid: { lat: 51.01, lon: 3.62 },
+    },
+  ];
+}
+
+/** `/api/v1/tracks` at a level: the timeline's segments, or a piece of track. */
+export function levelTracks(from: string, to: string, level: ProcessingLevel): LevelTracksResponse {
+  const start = Date.parse(from) / 1000 + 7 * 3600;
+  const points: [number, number, number][] = [
+    [3.52683, 50.98452, start],
+    [3.6, 51.0, start + 1200],
+    [3.7104, 51.0362, start + 2280],
+  ];
+  const segments =
+    level === "inferred"
+      ? timeline(from).map((segment) => ({
+          id: segment.id,
+          deviceId: segment.deviceId,
+          kind: segment.kind,
+          level: "inferred" as const,
+          mode: segment.mode,
+          modeInferred: segment.modeInferred,
+          modeUser: segment.modeUser,
+          confidence: segment.confidence,
+          needsReview: segment.needsReview,
+          startedAt: segment.startedAt,
+          endedAt: segment.endedAt,
+          distanceM: segment.distanceM,
+          points: segment.kind === "stop" ? [points[0] ?? [0, 0, 0]] : points,
+        }))
+      : [
+          {
+            id: null,
+            deviceId: ids.phone,
+            kind: "track" as const,
+            level,
+            mode: null,
+            modeInferred: null,
+            modeUser: null,
+            confidence: null,
+            needsReview: false,
+            startedAt: new Date(start * 1000).toISOString(),
+            endedAt: new Date((start + 2280) * 1000).toISOString(),
+            distanceM: 31_240,
+            points,
+          },
+        ];
+  return { level, availableLevel: level, from, to, simplified: false, segments };
+}
+
+export const automatic: DeviceMode = { override: null, current: null };

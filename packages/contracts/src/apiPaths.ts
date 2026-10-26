@@ -60,6 +60,7 @@ export const apiPaths = {
       root: "/api/v1/devices",
       one: (deviceId: string) => `/api/v1/devices/${id(deviceId)}`,
       location: (deviceId: string) => `/api/v1/devices/${id(deviceId)}/location`,
+      mode: (deviceId: string) => `/api/v1/devices/${id(deviceId)}/mode`,
     },
     tokens: { verify: "/api/v1/tokens/verify" },
     locations: "/api/v1/locations",
@@ -67,6 +68,12 @@ export const apiPaths = {
     trips: "/api/v1/trips",
     stats: { days: "/api/v1/stats/days", activity: "/api/v1/stats/activity" },
     heatmap: "/api/v1/heatmap",
+    tracks: "/api/v1/tracks",
+    segments: {
+      root: "/api/v1/segments",
+      mode: (segmentId: string) => `/api/v1/segments/${id(segmentId)}/mode`,
+    },
+    statsModes: "/api/v1/stats/modes",
   },
   /** The API reference (Scalar) — a page the API serves itself, outside the SPA. */
   docs: "/docs",

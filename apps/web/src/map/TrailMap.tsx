@@ -3,6 +3,7 @@ import workerUrl from "virtual:maplibre-worker-url";
 import {
   type GeoJSONSource,
   type IControl,
+  type MapLayerMouseEvent,
   Map as MapLibreMap,
   Marker,
   NavigationControl,
@@ -12,11 +13,19 @@ import {
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useMediaQuery } from "../ui/useMediaQuery";
 import { accuracyFeatures } from "./accuracyFeatures";
-import { ensureTrailLayers, trailSources } from "./ensureTrailLayers";
+import { ensureTrailLayers, trailSources, transportLayers } from "./ensureTrailLayers";
 import { heatFeatures } from "./heatFeatures";
-import type { Bounds, MapPoint, MapPosition, MapTrack, MapViewState } from "./mapTypes";
+import type {
+  Bounds,
+  MapPoint,
+  MapPosition,
+  MapTrack,
+  MapTransportSegment,
+  MapViewState,
+} from "./mapTypes";
 import { pointFeatures } from "./pointFeatures";
 import { trackFeatures } from "./trackFeatures";
+import { transportFeatures } from "./transportFeatures";
 import "./TrailMap.css";
 
 setWorkerUrl(workerUrl);
@@ -27,6 +36,12 @@ export interface TrailMapProps {
   styleUrl: string;
   dark: boolean;
   tracks?: readonly MapTrack[];
+  /** Stops and moves in the colours of their modes (the Transport level). */
+  transport?: readonly MapTransportSegment[];
+  /** The segment drawn wider, e.g. the one its dialog is open for. */
+  selectedSegmentId?: string | null;
+  /** A click on a stop or move; the same segments are listed as text on the page. */
+  onSegmentClick?: (segmentId: string) => void;
   positions?: readonly MapPosition[];
   visits?: readonly MapPoint[];
   cursors?: readonly MapPoint[];
@@ -105,6 +120,9 @@ export function TrailMap({
   styleUrl,
   dark,
   tracks,
+  transport,
+  selectedSegmentId = null,
+  onSegmentClick,
   positions,
   visits,
   cursors,
@@ -231,6 +249,52 @@ export function TrailMap({
       setSourceData(map, trailSources.tracks, trackFeatures(tracks ?? []));
     }
   }, [map, styleVersion, tracks]);
+
+  useEffect(() => {
+    if (map !== null && styleVersion > 0 && styleReady.current) {
+      const { lines, stops } = transportFeatures(transport ?? []);
+      setSourceData(map, trailSources.transport, lines);
+      setSourceData(map, trailSources.transportStops, stops);
+    }
+  }, [map, styleVersion, transport]);
+
+  useEffect(() => {
+    if (map !== null && styleVersion > 0 && styleReady.current) {
+      map.setFilter("trail-transport-selected", ["==", ["get", "id"], selectedSegmentId ?? ""]);
+    }
+  }, [map, styleVersion, selectedSegmentId]);
+
+  // Layer listeners outlive style switches; they are added once the layers first exist.
+  const segmentClicked = useEffectEvent((segmentId: string) => onSegmentClick?.(segmentId));
+  const layersReady = styleVersion > 0;
+  useEffect(() => {
+    if (map === null || !layersReady) return;
+    const onClick = (event: MapLayerMouseEvent) => {
+      const feature = event.features?.find(
+        (candidate) => candidate.properties["selectable"] === true,
+      );
+      const id = feature?.properties["id"];
+      if (typeof id === "string") segmentClicked(id);
+    };
+    const pointer = () => {
+      map.getCanvas().style.cursor = "pointer";
+    };
+    const plain = () => {
+      map.getCanvas().style.cursor = "";
+    };
+    for (const layer of transportLayers) {
+      map.on("click", layer, onClick);
+      map.on("mouseenter", layer, pointer);
+      map.on("mouseleave", layer, plain);
+    }
+    return () => {
+      for (const layer of transportLayers) {
+        map.off("click", layer, onClick);
+        map.off("mouseenter", layer, pointer);
+        map.off("mouseleave", layer, plain);
+      }
+    };
+  }, [map, layersReady]);
 
   useEffect(() => {
     if (map !== null && styleVersion > 0 && styleReady.current) {

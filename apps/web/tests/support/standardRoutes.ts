@@ -1,4 +1,16 @@
-import { apiToken, car, config, device, ids, tracks, user } from "./fixtures";
+import type { ProcessingLevel } from "@trail/contracts/transport";
+import {
+  apiToken,
+  automatic,
+  car,
+  config,
+  device,
+  ids,
+  levelTracks,
+  timeline,
+  tracks,
+  user,
+} from "./fixtures";
 
 /** Answers for every read the signed-in screens make. */
 export function standardRoutes() {
@@ -37,6 +49,24 @@ export function standardRoutes() {
         url.searchParams.get("to") ?? iso(now),
       ),
     }),
+    "GET /api/v1/tracks": ({ url }: { url: URL }) => ({
+      status: 200,
+      body: levelTracks(
+        url.searchParams.get("from") ?? iso(now - 86_400_000),
+        url.searchParams.get("to") ?? iso(now),
+        (url.searchParams.get("level") ?? "raw") as ProcessingLevel,
+      ),
+    }),
+    "GET /api/v1/segments": ({ url }: { url: URL }) => ({
+      status: 200,
+      body: {
+        items: timeline(url.searchParams.get("from") ?? iso(now - 86_400_000)),
+        nextCursor: null,
+        pending: false,
+      },
+    }),
+    [`GET /api/v1/devices/${ids.phone}/mode`]: { status: 200, body: { mode: automatic } },
+    [`GET /api/v1/devices/${ids.car}/mode`]: { status: 200, body: { mode: automatic } },
     "GET /api/stats/activity": {
       status: 200,
       body: {

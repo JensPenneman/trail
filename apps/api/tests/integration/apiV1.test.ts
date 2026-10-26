@@ -10,6 +10,7 @@ import { apiErrorSchema } from "@trail/contracts/errors";
 import { profileResponseSchema } from "@trail/contracts/profile";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { v1Routes } from "../../src/v1/v1Routes";
 import { type Agent, agentFor, signUp, signUpWithCookie } from "../support/authFlows";
 import { createDevice, postOverland } from "../support/deviceFlows";
 import { FakeApiTokens, tokenPrincipal, tokenSecret } from "../support/fakeApiTokens";
@@ -322,8 +323,17 @@ describe("v1 plumbing", () => {
       .set("Authorization", bearer(tokenSecret()))
       .set("Cookie", `trail_session=${"x".repeat(43)}`)
       .expect(204);
+    // The methods of the registry, in the order they first appear there.
+    const methods = [
+      ...new Set(
+        v1Routes(() => {
+          throw new Error("not served here");
+        }).map(({ spec }) => spec.method.toUpperCase()),
+      ),
+    ].join(", ");
     expect(response.headers).toMatchObject({
       "access-control-allow-origin": "*",
+      "access-control-allow-methods": methods,
       "access-control-allow-headers": "Authorization, Content-Type, Last-Event-ID",
       "access-control-max-age": "600",
     });
