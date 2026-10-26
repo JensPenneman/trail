@@ -96,11 +96,12 @@ git and its hooks stay on the host. Playwright runs one worker there
 (`E2E_WORKERS`), so the suites of several worktrees can share one machine.
 `scripts/devc.sh down` removes the project, volumes included. The image
 installs the lockfile's `playwright-core` with `npm ci` from a one-package
-lockfile, so the lockfile's integrity covers the package; Playwright then
-verifies its own download per version: the Chromium build its
-`browsers.json` names, of the size the server announces (it checks no hash,
-and none is published). CI builds the image whenever `.devcontainer/`,
-`package-lock.json` or `ci.yml` change (§15).
+lockfile, so the lockfile's sha512 covers the package; that verified package
+pins the Chromium build (`browsers.json`) and fetches it over HTTPS with a
+size check only (Playwright compares the byte count with `Content-Length`,
+and neither Playwright nor Chrome for Testing publishes checksums). CI builds
+the image whenever `.devcontainer/`, `package-lock.json` or `ci.yml` change
+(§15).
 
 ### Production (Launchway)
 

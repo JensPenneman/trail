@@ -46,15 +46,14 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY --from=playwright /tmp/playwright /tmp/playwright
 # The suite's projects run in Chromium, headless, so its headless shell is
 # enough; --with-deps adds the system packages, which apt checks against
-# Debian's signed archive. Playwright verifies its own download per version:
-# the build is the one the verified package names (its browsers.json),
-# fetched over HTTPS from Playwright's CDN (which hands Chrome for Testing
-# builds over to Google's storage), and the archive must have the size the
-# server announces. It checks no hash, and neither Playwright nor Chrome for
-# Testing publishes one; the lockfile's integrity covers playwright-core
-# itself. The `webkit` project of playwright.config.ts only exists for a
-# deployment on another port (E2E_BASE_URL), and WebKit with its packages
-# would double the image.
+# Debian's signed archive. The lockfile's sha512 covers playwright-core; that
+# verified package pins the browser build (its browsers.json) and fetches it
+# over HTTPS from Playwright's CDN, which hands Chrome for Testing builds over
+# to Google's storage, with a size check only: Playwright compares the byte
+# count with Content-Length, and neither Playwright nor Chrome for Testing
+# publishes a checksum. The `webkit` project of playwright.config.ts only
+# exists for a deployment on another port (E2E_BASE_URL), and WebKit with its
+# packages would double the image.
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     cd /tmp/playwright \
     && npm ci --ignore-scripts --no-audit --no-fund --no-update-notifier \
