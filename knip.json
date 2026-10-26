@@ -8,7 +8,7 @@
     "apps/api": {
       "entry": ["tests/**/*.ts", "*.config.ts"],
       "project": ["src/**", "tests/**"],
-      "ignoreDependencies": ["pino-pretty"]
+      "ignoreDependencies": ["pino-pretty", "@scalar/api-reference"]
     },
     "apps/web": {
       "entry": ["tests/**/*.{ts,tsx}", "*.config.ts"],

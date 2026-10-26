@@ -35,9 +35,9 @@ export function statsRouter(ctx: AppContext): Router {
   const { db } = ctx;
 
   router.get(apiPaths.statsDays, async (req, res) => {
-    const { user } = requireAuth(req);
+    const auth = requireAuth(req);
     const query = parseQuery(daysQuerySchema, req);
-    const ids = (await resolveDeviceIds(db, user.id, query.deviceIds)).map((device) => device.id);
+    const ids = (await resolveDeviceIds(db, auth, query.deviceIds)).map((device) => device.id);
     const result =
       ids.length === 0
         ? { rows: [] }
@@ -49,7 +49,7 @@ export function statsRouter(ctx: AppContext): Router {
             ORDER BY date, device_id
           `);
     const body: DaysResponse = {
-      timezone: user.timezone,
+      timezone: auth.user.timezone,
       days: result.rows.map((row) => ({
         date: row.date,
         deviceId: row.device_id,
@@ -63,9 +63,9 @@ export function statsRouter(ctx: AppContext): Router {
   });
 
   router.get(apiPaths.statsActivity, async (req, res) => {
-    const { user } = requireAuth(req);
+    const auth = requireAuth(req);
     const { hours, deviceIds } = parseQuery(activityQuerySchema, req);
-    const ids = (await resolveDeviceIds(db, user.id, deviceIds)).map((device) => device.id);
+    const ids = (await resolveDeviceIds(db, auth, deviceIds)).map((device) => device.id);
     const now = new Date();
     const currentHour = new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000);
     const from = new Date(currentHour.getTime() - (hours - 1) * 3_600_000);

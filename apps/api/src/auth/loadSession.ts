@@ -47,7 +47,7 @@ export function loadSession(db: Database, sessionTtlDays: number): RequestHandle
         .where(eq(sessions.id, id));
       res.append("Set-Cookie", sessionCookie(token, req.secure, ttlMs / 1000));
     }
-    setRequestAuth(req, { user: row.user, sessionId: id });
+    setRequestAuth(req, { kind: "session", user: row.user, sessionId: id });
     next();
   };
 }

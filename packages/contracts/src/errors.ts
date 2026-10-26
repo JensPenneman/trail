@@ -1,11 +1,18 @@
 import { z } from "zod";
 
-/** Machine-readable error codes of the dashboard API (`/api/**` except the Overland ingest). */
+/**
+ * Machine-readable error codes of the HTTP API: the dashboard's `/api/**` and
+ * the public `/api/v1/**` (not the Overland ingest, which speaks Overland's dialect).
+ */
 export const errorCodes = [
   "bad_request",
   "validation_failed",
   "unauthorized",
+  /** An API token past its expiry (401); a new token is needed. */
+  "token_expired",
   "forbidden",
+  /** An API token without a scope the operation needs (403); the message names the scopes. */
+  "insufficient_scope",
   "not_found",
   "conflict",
   "payload_too_large",
@@ -26,7 +33,7 @@ export const errorCodeSchema = z.enum(errorCodes);
 export type ErrorCode = z.infer<typeof errorCodeSchema>;
 
 /**
- * Error body of every non-2xx dashboard API response.
+ * Error body of every non-2xx API response.
  * `fields` maps a request field path (dot-joined) to its validation messages.
  */
 export const apiErrorSchema = z.object({

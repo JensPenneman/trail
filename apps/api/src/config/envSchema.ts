@@ -98,6 +98,8 @@ export const envSchema = z
     RATE_LIMIT_API_PER_MINUTE: env(intSchema(1, 1_000_000).default(600)),
     RATE_LIMIT_INGEST_PER_MINUTE: env(intSchema(1, 1_000_000).default(300)),
     RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES: env(intSchema(1, 1_000_000).default(30)),
+    RATE_LIMIT_TOKEN_PER_MINUTE: env(intSchema(1, 1_000_000).default(600)),
+    RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES: env(intSchema(1, 1_000_000).default(30)),
   })
   .superRefine((values, context) => {
     // A development shell may export DATABASE_URL for an unrelated project:

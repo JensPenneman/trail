@@ -126,7 +126,7 @@ When the two disagree, the pull request that notices fixes the plan.
 |---|---|---|
 | `GET /api/v1/tokens/verify` | any token | `{ id, name, scopes, deviceIds, expiresAt, status }` (Cloudflare's `tokens/verify`) |
 | `GET /api/v1/me` | `profile:read` | id, displayName, timezone |
-| `GET /api/v1/devices` | `devices:read` | `DevicePublic`: no tokenHint, deviceKey, pendingSettings or alerts |
+| `GET /api/v1/devices` | `devices:read` | `DevicePublic`: no tokenHint, deviceKey, pendingSettings or alerts; `lastLocation` only with `locations:read` (left out otherwise) |
 | `GET /api/v1/devices/{id}` | `devices:read` | |
 | `PATCH /api/v1/devices/{id}` | `devices:write` | name, alertsEnabled, pendingSettings |
 | `GET /api/v1/devices/{id}/location` | `locations:read` | latest cached position, battery, inferred mode when known |
@@ -179,6 +179,11 @@ active tokens per user.
 
 `profile:read`, `devices:read`, `devices:write`, `locations:read`,
 `locations:write`, `history:read`, `people:read`, `shares:read`, `shares:write`.
+
+Scopes are the privacy boundary: a position always needs `locations:read`.
+`devices:read` covers the devices, their names, status, last-seen time and
+battery, never where they are; `DevicePublic.lastLocation` is left out for a
+principal without `locations:read`.
 
 Templates in the UI: **Read-only** (all `:read`), **Agent** (read + `locations:write`),
 **Full access**. `devices:write` never rotates a device token or deletes a

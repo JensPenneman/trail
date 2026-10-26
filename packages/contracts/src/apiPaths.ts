@@ -1,4 +1,4 @@
-/** Every dashboard API route, so the server and the client cannot drift apart. */
+/** Every API route (dashboard and public v1), so the server and its clients cannot drift apart. */
 const id = (value: string): string => encodeURIComponent(value);
 
 export const apiPaths = {
@@ -47,4 +47,17 @@ export const apiPaths = {
   locations: "/api/locations",
   deleteLocations: "/api/locations/delete",
   export: "/api/export",
+  /** The public API (docs/api.md); `openApi` is its OpenAPI document. */
+  v1: {
+    root: "/api/v1",
+    openApi: "/api/v1/openapi.json",
+    me: "/api/v1/me",
+    devices: {
+      root: "/api/v1/devices",
+      one: (deviceId: string) => `/api/v1/devices/${id(deviceId)}`,
+      location: (deviceId: string) => `/api/v1/devices/${id(deviceId)}/location`,
+    },
+  },
+  /** The API reference (Scalar) — a page the API serves itself, outside the SPA. */
+  docs: "/docs",
 } as const;

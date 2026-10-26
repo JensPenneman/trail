@@ -1,7 +1,7 @@
 import { apiPaths } from "@trail/contracts/apiPaths";
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
-import { requireAuth } from "../auth/requestAuth";
+import { requireSession } from "../auth/requestAuth";
 import { HttpError } from "../http/httpError";
 import { formatServerEvent } from "./formatServerEvent";
 import { isSessionActive } from "./isSessionActive";
@@ -21,7 +21,7 @@ export function eventsRouter(ctx: AppContext): Router {
   const router = express.Router();
 
   router.get(apiPaths.events, (req, res) => {
-    const { user, sessionId } = requireAuth(req);
+    const { user, sessionId } = requireSession(req);
     if (ctx.bus.connectionCount(user.id) >= maxStreamsPerUser) {
       throw new HttpError(
         429,

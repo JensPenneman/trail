@@ -1,21 +1,17 @@
-import type { Request, RequestHandler } from "express";
+import type { RequestHandler } from "express";
 import { normaliseOrigin } from "../config/normaliseOrigin";
+import { hasBody } from "./hasBody";
 import { HttpError } from "./httpError";
 
 const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
-
-const hasBody = (req: Request): boolean => {
-  if (req.headers["transfer-encoding"] !== undefined) return true;
-  const length = Number(req.headers["content-length"] ?? "0");
-  return Number.isFinite(length) && length > 0;
-};
 
 /**
  * CSRF defence for cookie-authenticated routes (docs/architecture.md §7): every
  * unsafe request must come from an allowed origin, from the same site when the
  * browser says so, and carry JSON if it has a body — a cross-site form post can
  * satisfy none of these. The Overland ingest (bearer token, no cookies) is
- * mounted before this guard.
+ * mounted before this guard; on /api/v1 it guards every request without an
+ * API token.
  */
 export function csrfGuard(allowedOrigins: readonly string[]): RequestHandler {
   const allowed = new Set(allowedOrigins);

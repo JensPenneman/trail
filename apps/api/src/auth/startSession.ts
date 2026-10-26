@@ -19,7 +19,9 @@ export async function startSession(
   input: { userId: string; ttlDays: number },
 ): Promise<string> {
   const previous = getRequestAuth(req);
-  if (previous !== undefined) await db.delete(sessions).where(eq(sessions.id, previous.sessionId));
+  if (previous?.kind === "session") {
+    await db.delete(sessions).where(eq(sessions.id, previous.sessionId));
+  }
 
   const token = randomToken();
   const id = hashToken(token);

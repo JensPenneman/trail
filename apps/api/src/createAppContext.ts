@@ -8,13 +8,15 @@ import type { AlertSender } from "./jobs/alert";
 import { createNtfySender } from "./jobs/createNtfySender";
 import { BackgroundTasks } from "./lib/backgroundTasks";
 import { DailyStatsScheduler } from "./stats/dailyStatsScheduler";
+import { type ApiTokenVerifier, noApiTokens } from "./v1/apiTokens";
 
-/** Wires the shared services; tests may inject an alert sender and a stats debounce. */
+/** Wires the shared services; tests may inject an alert sender, a token verifier and a stats debounce. */
 export function createAppContext(input: {
   config: Config;
   logger: Logger;
   pool: Pool;
   alerts?: AlertSender | null;
+  apiTokens?: ApiTokenVerifier;
   dailyStatsDelayMs?: number;
 }): AppContext {
   const { config, logger, pool } = input;
@@ -34,5 +36,6 @@ export function createAppContext(input: {
     dailyStats: new DailyStatsScheduler(db, logger, input.dailyStatsDelayMs),
     background: new BackgroundTasks(logger),
     alerts,
+    apiTokens: input.apiTokens ?? noApiTokens,
   };
 }

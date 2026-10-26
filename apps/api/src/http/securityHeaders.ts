@@ -4,26 +4,34 @@ import { permissionsPolicy } from "./permissionsPolicy";
 
 const twoYearsInSeconds = 63_072_000;
 
+/** The CSP of docs/architecture.md §12; `mapOrigins` are the map's tile and style servers. */
+export function contentSecurityPolicyDirectives(
+  mapOrigins: readonly string[],
+  https: boolean,
+): Record<string, string[]> {
+  return {
+    "default-src": ["'self'"],
+    "script-src": ["'self'"],
+    "style-src": ["'self'"],
+    "img-src": ["'self'", "data:", "blob:", ...mapOrigins],
+    "connect-src": ["'self'", ...mapOrigins],
+    "worker-src": ["'self'", "blob:"],
+    "child-src": ["'self'", "blob:"],
+    "font-src": ["'self'"],
+    "manifest-src": ["'self'"],
+    "object-src": ["'none'"],
+    "base-uri": ["'none'"],
+    "form-action": ["'self'"],
+    "frame-ancestors": ["'none'"],
+    ...(https ? { "upgrade-insecure-requests": [] } : {}),
+  };
+}
+
 function helmetFor(mapOrigins: readonly string[], https: boolean): RequestHandler {
   const options: HelmetOptions = {
     contentSecurityPolicy: {
       useDefaults: false,
-      directives: {
-        "default-src": ["'self'"],
-        "script-src": ["'self'"],
-        "style-src": ["'self'"],
-        "img-src": ["'self'", "data:", "blob:", ...mapOrigins],
-        "connect-src": ["'self'", ...mapOrigins],
-        "worker-src": ["'self'", "blob:"],
-        "child-src": ["'self'", "blob:"],
-        "font-src": ["'self'"],
-        "manifest-src": ["'self'"],
-        "object-src": ["'none'"],
-        "base-uri": ["'none'"],
-        "form-action": ["'self'"],
-        "frame-ancestors": ["'none'"],
-        ...(https ? { "upgrade-insecure-requests": [] } : {}),
-      },
+      directives: contentSecurityPolicyDirectives(mapOrigins, https),
     },
     // Map tiles come from another origin without CORP headers: no COEP.
     crossOriginEmbedderPolicy: false,

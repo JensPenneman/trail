@@ -34,6 +34,18 @@ describe("the access log", () => {
     expect(logged.join("\n")).not.toContain(token.slice(4));
   });
 
+  it("never contains an API token secret, from the header or a careless URL", async () => {
+    const secret = `trlk_${"Q7".repeat(21)}x`;
+    await request(t.app).get("/api/v1/me").set("Authorization", `Bearer ${secret}`).expect(401);
+    await request(t.app).get(`/api/v1/me?access_token=${secret}`).expect(401);
+    await request(t.app).get(`/api/v1/devices?key=${secret}`).expect(401);
+    await request(t.app).get(`/api/v1/${secret}`).expect(404);
+    await new Promise((resolve) => setImmediate(resolve));
+    const logged = lines.filter((line) => line.includes("/api/v1/"));
+    expect(logged.length).toBeGreaterThanOrEqual(4);
+    expect(lines.join("\n")).not.toContain(secret.slice(5));
+  });
+
   it("never contains the one-time token of a passkey link or invite", async () => {
     const secret = "5JqNf3kP0xYt7RmW2vLc9aBdE4gHs6uK1oZp8iQwXyU";
     await request(t.app).get(`/api/auth/link/${secret}`).expect(404);

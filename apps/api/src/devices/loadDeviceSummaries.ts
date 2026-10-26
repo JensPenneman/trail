@@ -1,19 +1,25 @@
 import type { DeviceSummary } from "@trail/contracts/device";
 import { sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
+import { allowedDeviceIds, type DeviceAccess } from "./deviceAccess";
 import { type DeviceSummaryRow, toDeviceSummary } from "./toDeviceSummary";
 
 /**
- * Summaries of a user's devices (or one of them). The latest position and
- * battery come from the device cache; only the "today" and "last 24 h" counts
- * touch `locations`, as index range scans on (device_id, recorded_at).
- * "Today" starts at local midnight in the owner's time zone.
+ * Summaries of the devices the principal may reach (or one of them). The
+ * latest position and battery come from the device cache; only the "today" and
+ * "last 24 h" counts touch `locations`, as index range scans on (device_id,
+ * recorded_at). "Today" starts at local midnight in the owner's time zone.
  */
 export async function loadDeviceSummaries(
   db: Executor,
-  filter: { userId: string; deviceId?: string },
+  access: DeviceAccess,
+  deviceId?: string,
 ): Promise<DeviceSummary[]> {
-  const onlyDevice = filter.deviceId === undefined ? sql`` : sql`AND d.id = ${filter.deviceId}`;
+  const allowed = allowedDeviceIds(access);
+  if (allowed?.length === 0) return [];
+  const onlyDevice = deviceId === undefined ? sql`` : sql`AND d.id = ${deviceId}`;
+  const onlyAllowed =
+    allowed === null ? sql`` : sql`AND d.id = ANY(${sql.param([...allowed])}::uuid[])`;
   const result = await db.execute<DeviceSummaryRow>(sql`
     SELECT d.id, d.name, d.device_key, d.token_hint, d.alerts_enabled, d.created_at,
       d.last_seen_at, d.last_recorded_at, d.last_lat, d.last_lon, d.last_accuracy, d.last_speed,
@@ -32,7 +38,7 @@ export async function loadDeviceSummaries(
       FROM locations l
       WHERE l.device_id = d.id AND l.recorded_at >= least(bounds.day_start, bounds.day_ago)
     ) counts
-    WHERE d.user_id = ${filter.userId} ${onlyDevice}
+    WHERE d.user_id = ${access.user.id} ${onlyDevice} ${onlyAllowed}
     ORDER BY d.created_at, d.id
   `);
   return result.rows.map(toDeviceSummary);

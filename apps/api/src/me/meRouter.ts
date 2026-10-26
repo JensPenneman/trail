@@ -7,7 +7,7 @@ import {
 import { eq } from "drizzle-orm";
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
-import { requireAuth } from "../auth/requestAuth";
+import { requireAuth, requireSession } from "../auth/requestAuth";
 import { clearedSessionCookie } from "../auth/sessionCookie";
 import { toSessionUser } from "../auth/toSessionUser";
 import { allowLongStatements } from "../db/allowLongStatements";
@@ -49,7 +49,7 @@ export function meRouter(ctx: AppContext): Router {
   });
 
   router.delete(apiPaths.me.root, async (req, res) => {
-    const auth = requireAuth(req);
+    const auth = requireSession(req);
     const { confirmEmail } = parseBody(deleteAccountRequestSchema, req);
     if (confirmEmail !== auth.user.email) {
       throw new HttpError(400, "validation_failed", "Type your email address to confirm.", {

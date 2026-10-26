@@ -8,7 +8,7 @@ import { finishAddPasskey } from "./finishAddPasskey";
 import { finishLink } from "./finishLink";
 import { finishSignIn } from "./finishSignIn";
 import { finishSignUp } from "./finishSignUp";
-import { requireAuth } from "./requestAuth";
+import { requireSession } from "./requestAuth";
 import { requireCeremonyOrigin } from "./requireCeremonyOrigin";
 import { startSession } from "./startSession";
 import { toSessionUser } from "./toSessionUser";
@@ -52,7 +52,7 @@ export async function finishCeremony(
       return { user: toSessionUser(user), created: false };
     }
     case "add_passkey": {
-      const { user } = requireAuth(req);
+      const { user } = requireSession(req);
       await finishAddPasskey(ctx, ceremony, { userId: user.id, response: body.response });
       return { user: toSessionUser(user), created: false };
     }

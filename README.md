@@ -14,7 +14,7 @@ every pull request gets a preview deployment of its own.
 
 - **Overland receiver**: the batch protocol with duplicate-safe storage, a
   reject log for invalid points (a bad point never blocks a phone's queue),
-  visits, trips and app events, and three remote settings presets sent back
+  visits, trips and app events, and four remote settings presets sent back
   to the phone.
 - **Passkeys only**: no passwords. Several people per server, invites,
   one-time links to add a passkey on another device or address.
@@ -28,6 +28,8 @@ every pull request gets a preview deployment of its own.
 - **Alerts** through [ntfy](https://ntfy.sh) when a device goes silent and
   when it recovers.
 - **Your data**: export as GeoJSON, GPX or CSV; delete a range or the account.
+- **Public API**: a versioned JSON API under `/api/v1`, described in OpenAPI
+  3.1 and browsable at `/docs`.
 - **Operations**: one image for amd64 and arm64, releases deployed
   automatically, a preview per pull request, daily database dumps.
 
@@ -212,6 +214,16 @@ code with the iPhone camera; Overland opens with everything filled in. Allow
 location access "Always" and keep Logging Mode on "All Data". Recommended
 settings and troubleshooting: [docs/overland.md](docs/overland.md).
 
+## Public API
+
+Every Trail server documents its public API at `/docs`: a reference generated
+from the server's OpenAPI document (`/api/v1/openapi.json`), with the guide
+[docs/api.md](docs/api.md) on top — authentication, scopes, errors, rate limits,
+CORS and the versioning promise. API tokens for scripts and agents arrive in
+the next release; until then the API answers the signed-in dashboard session.
+How the API is built and how to add an operation: [docs/architecture.md
+§8.3](docs/architecture.md#83-public-api-v1).
+
 ## Tech stack
 
 - **API**: Node.js LTS, TypeScript 7, Express 5, PostgreSQL 18 with Drizzle
@@ -232,7 +244,7 @@ apps/api/            Express API, Overland ingest, CLI (Node LTS, TypeScript)
 apps/web/            React single-page app, served by the API in production
 packages/contracts/  zod schemas and types of the HTTP API
 deploy/              compose stack for Launchway, .env example, local run
-docs/                architecture (the specification), operations, Overland
+docs/                architecture (the specification), API guide, operations, Overland
 scripts/             development, build, hook and release scripts
 tests/e2e/           Playwright end-to-end tests
 .devcontainer/       development container (scripts/devc.sh)

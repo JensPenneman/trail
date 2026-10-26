@@ -6,12 +6,16 @@ export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "trace" |
 interface RateLimitConfig {
   /** Auth ceremonies and link lookups, per IP. */
   authPerMinute: number;
-  /** Every other dashboard API request, per IP. */
+  /** Every other API request (dashboard and v1), per IP. */
   apiPerMinute: number;
   /** Accepted Overland uploads, per device token. */
   ingestPerMinute: number;
   /** Uploads with an unknown token, per IP. */
   ingestFailedPer10Minutes: number;
+  /** v1 requests with a valid API token, per token. */
+  tokenPerMinute: number;
+  /** v1 requests with an invalid API token, per IP. */
+  tokenFailedPer10Minutes: number;
 }
 
 export interface AlertConfig {

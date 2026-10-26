@@ -1,0 +1,1194 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "Trail API",
+    "version": "1.2.3",
+    "description": "(docs/api.md)"
+  },
+  "servers": [
+    {
+      "url": "https://trail.example.com"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Profile",
+      "description": "The account a credential belongs to."
+    },
+    {
+      "name": "Devices",
+      "description": "The phones that record locations (Overland installs), with their latest position and battery."
+    },
+    {
+      "name": "Reference",
+      "description": "This API's own description."
+    }
+  ],
+  "paths": {
+    "/api/v1/me": {
+      "get": {
+        "operationId": "getMe",
+        "summary": "Get the account",
+        "description": "The account the token or session belongs to. Its time zone decides where the account's local days begin and end.\n\n**Access:** an API token with the scope `profile:read`, or a signed-in session.",
+        "tags": [
+          "Profile"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "profile:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/Profile"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/devices": {
+      "get": {
+        "operationId": "listDevices",
+        "summary": "List devices",
+        "description": "Every device of the account — or, for a token limited to some devices, those — with its status, battery, trip in progress and point counts, and with its latest position for a credential that holds `locations:read`.\n\n**Access:** an API token with the scope `devices:read`, or a signed-in session.",
+        "tags": [
+          "Devices"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "devices:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "devices": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Device"
+                      },
+                      "description": "Oldest first."
+                    }
+                  },
+                  "required": [
+                    "devices"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{id}": {
+      "get": {
+        "operationId": "getDevice",
+        "summary": "Get a device",
+        "description": "One device, as in the list.\n\n**Access:** an API token with the scope `devices:read`, or a signed-in session.",
+        "tags": [
+          "Devices"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "devices:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The device's id.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+            },
+            "required": true,
+            "description": "The device's id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "device": {
+                      "$ref": "#/components/schemas/Device"
+                    }
+                  },
+                  "required": [
+                    "device"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{id}/location": {
+      "get": {
+        "operationId": "getDeviceLocation",
+        "summary": "Get a device's location",
+        "description": "Where the device is now: the newest position it reported (a stored point or the phone's current position) with accuracy, speed and course, and its last battery reading. `location` is null until the device sends its first position.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "tags": [
+          "Devices"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The device's id.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+            },
+            "required": true,
+            "description": "The device's id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/DeviceLocation"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Null until the device has sent a position."
+                    }
+                  },
+                  "required": [
+                    "location"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "operationId": "getOpenApiDocument",
+        "summary": "Get the OpenAPI document",
+        "description": "This API described in OpenAPI 3.1, for code generators, HTTP clients and this reference. It changes only with a new release of Trail: cache it for five minutes and revalidate with `If-None-Match`.\n\n**Access:** public, no credential needed.",
+        "tags": [
+          "Reference"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "An OpenAPI 3.1 document: this one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "openapi": {
+                      "type": "string",
+                      "example": "3.1.1"
+                    },
+                    "info": {
+                      "type": "object",
+                      "properties": {
+                        "title": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "title",
+                        "version"
+                      ],
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "openapi",
+                    "info"
+                  ],
+                  "additionalProperties": {},
+                  "description": "An OpenAPI 3.1 document: this one."
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Profile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The account's id.",
+            "example": "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "The name the person chose.",
+            "example": "Jens"
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone; the account's local days and times use it.",
+            "example": "Europe/Brussels"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "timezone"
+        ],
+        "additionalProperties": false,
+        "description": "The account a credential belongs to."
+      },
+      "Device": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device's id.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "name": {
+            "type": "string",
+            "description": "Its name in Trail.",
+            "example": "Jens’s iPhone"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "overland"
+            ],
+            "description": "The app that records it."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the device was added.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "lastSeenAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Time of the last accepted upload of any kind; null before the first one.",
+            "example": "2026-10-26T08:42:00.000Z"
+          },
+          "lastLocation": {
+            "description": "The newest known position; null before the first one. Only for a credential with `locations:read`: without that scope the field is left out.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Position"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "battery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Battery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "liveTrip": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "description": "Overland's trip mode.",
+                    "example": "bicycle"
+                  },
+                  "startedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When the trip started.",
+                    "example": "2026-10-26T08:41:07.000Z"
+                  },
+                  "distanceM": {
+                    "type": "number",
+                    "description": "Distance so far in metres.",
+                    "example": 3120
+                  }
+                },
+                "required": [
+                  "mode",
+                  "startedAt",
+                  "distanceM"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A trip running in Overland right now, or null."
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "today": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "description": "Points recorded since midnight in the owner's time zone.",
+                "example": 1840
+              },
+              "last24h": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "description": "Points recorded in the last 24 hours.",
+                "example": 2310
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "description": "Every point the device ever sent.",
+                "example": 182040
+              }
+            },
+            "required": [
+              "today",
+              "last24h",
+              "total"
+            ],
+            "additionalProperties": false,
+            "description": "Number of stored points."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "source",
+          "createdAt",
+          "lastSeenAt",
+          "battery",
+          "liveTrip",
+          "counts"
+        ],
+        "additionalProperties": false,
+        "description": "A tracker: one install of Overland on a phone. Credentials and settings stay out."
+      },
+      "Position": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "description": "Latitude in degrees (WGS84).",
+            "example": 51.0543
+          },
+          "lon": {
+            "type": "number",
+            "description": "Longitude in degrees (WGS84).",
+            "example": 3.7174
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the phone recorded the position.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "accuracy": {
+            "description": "Horizontal accuracy in metres (radius); null when unknown.",
+            "example": 5,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "speed": {
+            "description": "Speed in metres per second; null when unknown.",
+            "example": 4.2,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "course": {
+            "description": "Direction of travel in degrees clockwise from north; null when unknown.",
+            "example": 87,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "altitude": {
+            "description": "Altitude in metres; null when unknown.",
+            "example": 12,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "motion": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Motion activity iOS reported with the position (`walking`, `automotive` …).",
+            "example": [
+              "cycling"
+            ]
+          }
+        },
+        "required": [
+          "lat",
+          "lon",
+          "recordedAt",
+          "accuracy",
+          "speed",
+          "course",
+          "altitude",
+          "motion"
+        ],
+        "additionalProperties": false,
+        "description": "A position the phone recorded."
+      },
+      "Battery": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Charge from 0 to 1; null when the phone did not report it.",
+            "example": 0.82
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "unknown",
+                  "charging",
+                  "full",
+                  "unplugged"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the phone reported about charging; null when unknown.",
+            "example": "unplugged"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the phone took the reading.",
+            "example": "2026-10-26T08:41:07.000Z"
+          }
+        },
+        "required": [
+          "level",
+          "state",
+          "recordedAt"
+        ],
+        "additionalProperties": false,
+        "description": "The last battery reading of the device."
+      },
+      "DeviceLocation": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "description": "Latitude in degrees (WGS84).",
+            "example": 51.0543
+          },
+          "lon": {
+            "type": "number",
+            "description": "Longitude in degrees (WGS84).",
+            "example": 3.7174
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the phone recorded the position.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "accuracy": {
+            "description": "Horizontal accuracy in metres (radius); null when unknown.",
+            "example": 5,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "speed": {
+            "description": "Speed in metres per second; null when unknown.",
+            "example": 4.2,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "course": {
+            "description": "Direction of travel in degrees clockwise from north; null when unknown.",
+            "example": 87,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "altitude": {
+            "description": "Altitude in metres; null when unknown.",
+            "example": 12,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "motion": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Motion activity iOS reported with the position (`walking`, `automotive` …).",
+            "example": [
+              "cycling"
+            ]
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device's id.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "battery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Battery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "lat",
+          "lon",
+          "recordedAt",
+          "accuracy",
+          "speed",
+          "course",
+          "altitude",
+          "motion",
+          "deviceId",
+          "battery"
+        ],
+        "additionalProperties": false,
+        "description": "The newest position of a device."
+      },
+      "ApiScope": {
+        "type": "string",
+        "enum": [
+          "profile:read",
+          "devices:read",
+          "devices:write",
+          "locations:read",
+          "locations:write",
+          "history:read",
+          "people:read",
+          "shares:read",
+          "shares:write"
+        ],
+        "description": "A permission of an API token.",
+        "example": "devices:read"
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The request is invalid: `validation_failed` lists the offending fields in `fields`; `bad_request` means unreadable JSON.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation_failed",
+                        "bad_request"
+                      ],
+                      "description": "Machine-readable; see Errors in the guide."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "For people; the wording may change."
+                    },
+                    "fields": {
+                      "description": "Validation messages by request field (a dot-joined path).",
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "No credential, or a refused one: `token_expired` for an API token past its expiry, `unauthorized` for everything else (an unknown, revoked or malformed token, or one used from an address it does not allow).",
+        "headers": {
+          "WWW-Authenticate": {
+            "required": true,
+            "description": "The challenge: `Bearer realm=\"trail\"`, with `error=\"invalid_token\"` when a token was refused.",
+            "schema": {
+              "type": "string",
+              "description": "The challenge: `Bearer realm=\"trail\"`, with `error=\"invalid_token\"` when a token was refused."
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "unauthorized",
+                        "token_expired"
+                      ],
+                      "description": "Machine-readable; see Errors in the guide."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "For people; the wording may change."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Authenticated, but not allowed: `insufficient_scope` when the API token lacks a scope (the message names it), `forbidden` for what only a signed-in browser may do, `origin_not_allowed` when a browser session calls from another site.",
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string",
+              "description": "With `insufficient_scope`: `Bearer realm=\"trail\", error=\"insufficient_scope\", scope=\"…\"`, naming the missing scopes."
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "insufficient_scope",
+                        "forbidden",
+                        "origin_not_allowed"
+                      ],
+                      "description": "Machine-readable; see Errors in the guide."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "For people; the wording may change."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "No such resource. Ids that do not exist, belong to someone else, are malformed or lie outside the token's devices all look the same.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "not_found"
+                      ],
+                      "description": "Machine-readable; see Errors in the guide."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "For people; the wording may change."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "The change conflicts with the current state.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "conflict"
+                      ],
+                      "description": "Machine-readable; see Errors in the guide."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "For people; the wording may change."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      },
+      "PayloadTooLarge": {
+        "description": "The request body is larger than 100 kB.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "payload_too_large"
+                      ],
+                      "description": "Machine-readable; see Errors in the guide."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "For people; the wording may change."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      },
+      "UnsupportedMediaType": {
+        "description": "The request body is not `application/json`.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "bad_request"
+                      ],
+                      "description": "Machine-readable; see Errors in the guide."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "For people; the wording may change."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "A rate limit was reached: per client address, per API token, or for refused tokens per address. Retry after the time given.",
+        "headers": {
+          "Retry-After": {
+            "required": true,
+            "description": "Seconds until the limit resets.",
+            "schema": {
+              "type": "string",
+              "description": "Seconds until the limit resets."
+            }
+          },
+          "RateLimit": {
+            "required": true,
+            "description": "The remaining quota of each limit that applies (IETF draft 8).",
+            "schema": {
+              "type": "string",
+              "description": "The remaining quota of each limit that applies (IETF draft 8)."
+            }
+          },
+          "RateLimit-Policy": {
+            "required": true,
+            "description": "The limits that apply (IETF draft 8).",
+            "schema": {
+              "type": "string",
+              "description": "The limits that apply (IETF draft 8)."
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "rate_limited"
+                      ],
+                      "description": "Machine-readable; see Errors in the guide."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "For people; the wording may change."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Something went wrong on the server; it has been logged.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "internal"
+                      ],
+                      "description": "Machine-readable; see Errors in the guide."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "For people; the wording may change."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "The database is temporarily unavailable. Retry shortly.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "unavailable"
+                      ],
+                      "description": "Machine-readable; see Errors in the guide."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "For people; the wording may change."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "trlk_…",
+        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, tracks, the timeline). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read visits, trips, daily statistics, activity and the heatmap. |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |"
+      }
+    }
+  }
+}

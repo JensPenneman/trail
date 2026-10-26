@@ -151,9 +151,9 @@ Trail's database is not reachable. Nothing is lost: the phone keeps the batch
 and retries at the next interval.
 
 **Uploads fail right after going public.**
-The phone still has the LAN endpoint, or Cloudflare challenges the upload. See
-"After the address changes" and the tunnel steps in
-[operations.md](operations.md).
+The phone still posts to the old (LAN) endpoint. Rotate the device's token and
+scan the new QR code, as "Changing the public address" in
+[operations.md](operations.md) describes.
 
 **Does Trail keep duplicate points when a batch is sent twice?**
 No. A point is identified by device and timestamp, so a re-sent batch is

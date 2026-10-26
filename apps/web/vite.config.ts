@@ -93,6 +93,8 @@ export default defineConfig({
           });
         },
       },
+      // The API reference is a page the API serves itself.
+      "/docs": { target: "http://localhost:8787", xfwd: true },
     },
   },
 });
