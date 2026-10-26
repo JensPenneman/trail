@@ -348,7 +348,9 @@ request at a time, at most one every two seconds, a User-Agent that names the
 server (`Trail/<version> (+PUBLIC_URL)`), retries only for busy answers, with
 backoff, and at most `PROCESSING_OVERPASS_DAILY_MB` (300 MB) a day. The first
 days after an install or a long trip use the most; the places you visit again
-are cached. When the budget is spent, mapping pauses until midnight UTC and
+are cached, and flights ask for nothing. The worker holds the map data of at
+most about 256 tiles at a time (a few hundred MB in a city centre), however
+long the trip. When the budget is spent, mapping pauses until midnight UTC and
 the rest goes on (moves without their tiles are shown averaged until the
 tiles arrive). The tiles requested tell the Overpass operator which areas
 your devices visited. To keep that at home, point `PROCESSING_OVERPASS_URL`

@@ -6,7 +6,7 @@ import { persistWindow } from "./persistWindow";
 import type { ProcessingConfig } from "./processingConfig";
 import { awaitTiles, type FromLevel, finishWindows, type QueueRow } from "./processingQueue";
 import { processingVersion } from "./processingVersion";
-import { finishWindow, planWindow } from "./runPipeline";
+import { inferWindow, mapPiece, piecesToMap, planWindow, type StretchMapping } from "./runPipeline";
 import type { TileKey } from "./tileCover";
 import { availableTiles, loadMapData } from "./tileStore";
 import {
@@ -33,9 +33,9 @@ const levels: readonly FromLevel[] = ["averaged", "mapped", "inferred"];
 /**
  * One pass of the worker over a device's queued windows (docs/architecture.md
  * §17.4), in one transaction under the device's processing lock: the window
- * grows to whole segments, the points, visits, trips, overrides and cached map
- * data are read, the pipeline runs, the results replace the window's derived
- * rows and the queue rows are done. Moves whose map tiles are missing are
+ * grows to whole segments, the points, visits, trips and overrides are read,
+ * the pipeline runs with the cached map data loaded a piece at a time, the
+ * results replace the window's derived rows and the queue rows are done. Moves whose map tiles are missing are
  * stored unmapped, and the window waits for those tiles. Null when the
  * device is gone.
  */
@@ -72,12 +72,24 @@ export async function processWindow(
     const overrides = await loadOverrides(tx, deviceId, window.from, window.to);
     const plan = planWindow(raw, visits, config);
     const available = options.mapping ? await availableTiles(tx, plan.tiles) : new Set<TileKey>();
-    const map = options.mapping ? await loadMapData(tx, available) : null;
     const storedMapping =
       fromLevel === "inferred"
         ? await loadStoredMapping(tx, deviceId, plan.raw, processingVersion)
         : undefined;
-    const result = finishWindow(plan, { trips, overrides, map, available, storedMapping }, config);
+    // The map data a piece at a time: a long window never holds all of it.
+    const mappings: StretchMapping[] = [];
+    if (options.mapping) {
+      for (const piece of piecesToMap(plan, available)) {
+        const map = await loadMapData(tx, piece.tiles);
+        mappings.push(...mapPiece(plan, piece, map, storedMapping, config));
+      }
+    }
+    const result = inferWindow(
+      plan,
+      mappings,
+      { trips, overrides, mapping: options.mapping, available },
+      config,
+    );
 
     await persistWindow(tx, {
       deviceId,

@@ -3,7 +3,12 @@ import { levelTracksResponseSchema } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { enqueueBackfill } from "../../src/processing/backfill";
-import { rearmWindows, takeNextWindow } from "../../src/processing/processingQueue";
+import {
+  enqueueWindow,
+  rearmWindows,
+  takeDeviceWindows,
+  takeNextWindow,
+} from "../../src/processing/processingQueue";
 import { processingVersion } from "../../src/processing/processingVersion";
 import { processWindow } from "../../src/processing/processWindow";
 import { planWindow } from "../../src/processing/runPipeline";
@@ -12,6 +17,7 @@ import { createDevice } from "../support/deviceFlows";
 import { FixtureWaySource } from "../support/fixtureWaySource";
 import { morning, motorwayDrive, sparseTrain, tramRide } from "../support/journeys";
 import { uploadJourney } from "../support/overlandPoints";
+import { withPieceBudget } from "../support/processWorld";
 import { resetDatabase } from "../support/resetDatabase";
 import { SseClient } from "../support/sseClient";
 import { distanceToLine, railLine, toXY } from "../support/syntheticWorld";
@@ -282,6 +288,44 @@ describe("the backfill", () => {
     } finally {
       await restarted.close();
     }
+  });
+});
+
+describe("map data a piece at a time", () => {
+  it("works a window out the same from the tile cache in many pieces as in one", async () => {
+    const device = await newDevice("Long rider");
+    const points = sparseTrain(morning + 30_000);
+    await upload(device.token, points);
+    await t.ctx.processing.flush();
+    const derived = async () => ({
+      segments: (
+        await t.ctx.db.execute<{ mode_inferred: string | null }>(sql`
+          SELECT kind, mode_inferred, started_at, ended_at, round(distance_m) AS distance, confidence
+          FROM segments WHERE device_id = ${device.id} ORDER BY started_at
+        `)
+      ).rows,
+      points: (
+        await t.ctx.db.execute(sql`
+          SELECT recorded_at, way_id, round(lat_map::numeric, 6) AS lat, round(lon_map::numeric, 6) AS lon
+          FROM processed_points WHERE device_id = ${device.id} ORDER BY recorded_at
+        `)
+      ).rows,
+    });
+    const before = await derived();
+    expect(before.segments.map((segment) => segment.mode_inferred)).toEqual([null, "train", null]);
+
+    const config = withPieceBudget(6, t.ctx.processing.config);
+    expect(planWindow(points, [], config).pieces.length).toBeGreaterThan(2);
+    const window = {
+      from: new Date((morning + 29_000) * 1000),
+      to: new Date((morning + 33_000) * 1000),
+    };
+    await enqueueWindow(t.ctx.db, { deviceId: device.id, ...window, reason: "reprocess" });
+    const rows = await takeDeviceWindows(t.ctx.db, device.id, window.from, window.to);
+    expect(rows).toHaveLength(1);
+    const outcome = await processWindow(t.ctx.db, rows, { config, mapping: true, now: new Date() });
+    expect(outcome?.missingTiles).toEqual([]);
+    expect(await derived()).toEqual(before);
   });
 });
 

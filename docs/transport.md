@@ -16,7 +16,8 @@ The map on the History and Live pages has a switch with four levels:
 - **Mapped**: the averaged points laid onto the roads, paths and railways of
   OpenStreetMap, with the shape of the way between them. A train ride your
   phone recorded only every few minutes follows the rails instead of cutting
-  straight across the fields.
+  straight across the fields. A flight stays as averaged: no road explains
+  it.
 - **Transport**: your day as stops and moves, each move coloured by how you
   travelled, with a legend. A dashed outline marks a move Trail is unsure of.
 
@@ -72,7 +73,8 @@ again, and the statistics count it.
 
 The map data comes from OpenStreetMap through an Overpass server — by default
 the public one at overpass-api.de. To fetch it, your Trail server asks for the
-map of the squares (about 1.5 by 1 km) your devices passed through, so that
-server learns which areas you visited, though not when or who. Your server's
+map of the squares (about 1.5 by 1 km) your devices passed through — not
+along flights — so that server learns which areas you visited, though not
+when or who. Your server's
 owner can point Trail at an Overpass server of their own, or switch map data
 off ([operations.md](operations.md#processing)).

@@ -3,8 +3,17 @@ import type { OsmPoi, PoiKind } from "./mapData";
 
 const cellDegrees = 0.01;
 
+/** "The nearest stop of these kinds within this radius": over one index or several. */
+export interface PoiLookup {
+  nearest(
+    position: { lat: number; lon: number },
+    kinds: readonly PoiKind[],
+    radiusM: number,
+  ): OsmPoi | null;
+}
+
 /** Stops and airports on a grid of about a kilometre, for "is there a station near here?". */
-export class PoiIndex {
+export class PoiIndex implements PoiLookup {
   readonly #cells = new Map<string, OsmPoi[]>();
 
   constructor(pois: readonly OsmPoi[]) {
@@ -48,4 +57,32 @@ export class PoiIndex {
     }
     return best;
   }
+}
+
+/**
+ * One lookup over the indexes of a long move's pieces: the nearest of their
+ * answers, the lower id on a tie (as within one index).
+ */
+export function combinePois(indexes: readonly PoiIndex[]): PoiLookup {
+  const [only] = indexes;
+  if (only !== undefined && indexes.length === 1) return only;
+  return {
+    nearest(position, kinds, radiusM) {
+      let best: OsmPoi | null = null;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      for (const index of indexes) {
+        const poi = index.nearest(position, kinds, radiusM);
+        if (poi === null) continue;
+        const distance = haversineM(position, poi);
+        if (
+          distance < bestDistance ||
+          (distance === bestDistance && best !== null && poi.id < best.id)
+        ) {
+          best = poi;
+          bestDistance = distance;
+        }
+      }
+      return best;
+    },
+  };
 }

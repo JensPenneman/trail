@@ -73,9 +73,15 @@ export interface ProcessingConfig {
     /** Emission cost of leaving the network (a park, a square, the sea). */
     readonly offRoadCost: number;
     readonly offRoadTransitionCost: number;
-    /** Map data around the straight line between distant points: min(max, factor × chord) on each side. */
+    /** Map data around the straight line between distant points: min(max, factor × chord) on each side … */
     readonly corridorFactor: number;
     readonly corridorMaxM: number;
+    /** … unless covering it takes more than this speed (high-speed trains stay below 90 m/s). A move that typically goes faster is a flight: no map data at all. */
+    readonly groundMaxSpeedMs: number;
+    /** A window's map data is loaded a piece at a time: moves together up to this many tiles, a longer move in stretches of about this many … */
+    readonly pieceMaxTiles: number;
+    /** … each matched with this much of the move beyond its ends, so the seams match as the whole move would. */
+    readonly seamMarginM: number;
   };
   readonly features: {
     /** Interval speeds from pairs at most this far apart; sparser pairs use the distance along the track. */
@@ -207,6 +213,9 @@ export const defaultProcessingConfig: ProcessingConfig = {
     offRoadTransitionCost: 1,
     corridorFactor: 0.1,
     corridorMaxM: 1000,
+    groundMaxSpeedMs: 100,
+    pieceMaxTiles: 256,
+    seamMarginM: 1500,
   },
   features: {
     pairMaxGapS: 600,

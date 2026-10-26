@@ -1213,8 +1213,8 @@ changed: everything below is derived, carries the algorithm version
 be rebuilt with `trail reprocess`. The stages are pure functions over plain
 arrays in `apps/api/src/processing/` (`averagePoints`, `detectStops`,
 `matchToWays`, `extractFeatures`, `scoreModes`, `splitMove`, `applyOverrides`,
-composed by `planWindow` and `finishWindow`); thin adapters read and write the
-database around them. Every threshold is in one typed object,
+composed by `planWindow`, `mapPiece` per piece of map data and `inferWindow`);
+thin adapters read and write the database around them. Every threshold is in one typed object,
 `ProcessingConfig` (`processingConfig.ts`), and `segments.features` keeps what
 each move was judged on, so a change can be evaluated against the stored
 segments and the corrections people made.
@@ -1311,8 +1311,19 @@ model over the ways near each point, solved with Viterbi.
 
 - Map data comes in z14 tiles: the candidate radius around every point, a
   corridor of min(1 km, 10 % of the distance) on each side of the straight
-  line between points far apart, and 300 m around both ends (stations). A
-  move is mapped only when all its tiles are there.
+  line between points far apart (unless covering that distance took more
+  than 100 m/s), and 300 m around both ends (stations). A move is mapped
+  only when all its tiles are there.
+- A flight — a move whose time-weighted median speed between points is over
+  100 m/s (high-speed trains stay below 90) — needs no map data: its points
+  stay where averaging put them, off the network.
+- The map data is loaded a piece at a time (`planPieces`), so a long window
+  never holds all of it: moves go together while their tiles stay within
+  256; a move that needs more is cut into stretches of about 256 tiles, each
+  matched with 1.5 km of the move beyond its ends and keeping only its own
+  points, so the seams fall where the whole move would have matched (the
+  tests compare both). The way samples of the features are taken stretch by
+  stretch as well; only the stops near the move are kept to the end.
 - Points enter the model 30 m apart; the ones between are placed on the
   matched line afterwards, never behind the point before them.
 - Candidates: the nearest point of each way within clamp(1.5 × accuracy,
@@ -1411,10 +1422,10 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   of the device that overlaps it, grows it to whole segments at both edges (at
   most two days out; a segment reaching further back is cut at the window's
   start), and in one transaction under a per-device advisory lock reads the
-  points, visits, trips, overrides and cached map data, runs the pipeline,
-  replaces the window's processed points and segments and finishes the queue
-  rows (only those that did not change meanwhile). It yields to the event loop
-  between windows. A failure re-queues with backoff (30 s × 4ⁿ, at most 6 h).
+  points, visits, trips and overrides, runs the pipeline with the cached map
+  data of one piece at a time, replaces the window's processed points and
+  segments and finishes the queue rows (only those that did not change
+  meanwhile). It yields to the event loop between pieces and windows. A failure re-queues with backoff (30 s × 4ⁿ, at most 6 h).
   Moves without their tiles are stored unmapped and the window waits for them
   (`missing_tiles`, re-checked after a day at the latest); tiles are fetched
   alongside, so a missing tile never holds up other windows.
