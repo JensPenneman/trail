@@ -159,11 +159,13 @@ scripts/devc.sh down        # remove this worktree's containers and volumes
 ```
 
 The first `up` builds the image (1.2 GB) and installs the modules, a minute
-or two on a fast connection; later ones take seconds and run `npm ci` again
-only when `package-lock.json` has changed. Commands start the stack if it is
-not running and run in the matching directory of the container. The test
-databases are preset there (`.env` belongs to the host), so the other suites
-need no variables either:
+or two on a fast connection; later ones take seconds. `up` and every command
+run `npm ci` again when `package-lock.json` has changed since the modules
+were installed (after a pull, a rebase or a checkout); commands started
+together install once.
+Commands start the stack if it is not running and run in the matching
+directory of the container. The test databases are preset there (`.env`
+belongs to the host), so the other suites need no variables either:
 
 ```sh
 scripts/devc.sh npm run test:integration
