@@ -1,11 +1,12 @@
-import { useId } from "react";
+import { type ReactNode, useId } from "react";
 
 interface TokenChoiceProps {
   type: "radio" | "checkbox";
   /** The radio group's name. */
   name?: string;
   label: string;
-  description?: string;
+  /** May hold a link: activating it never toggles the control (it is interactive content). */
+  description?: ReactNode;
   checked: boolean;
   disabled?: boolean;
   /** `option`: a framed card (templates, devices); `scope`: a compact row with a code-style label. */

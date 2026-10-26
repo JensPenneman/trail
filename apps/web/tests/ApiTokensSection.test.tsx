@@ -2,6 +2,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { ApiTokensSection } from "../src/pages/settings/ApiTokensSection";
+import { mcpGuideUrl } from "../src/pages/settings/mcpGuide";
 import { apiToken, ids, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
@@ -39,6 +40,22 @@ describe("ApiTokensSection", () => {
     expect(screen.getByText(/All devices from 203\.0\.113\.0\/24/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Roll Old script" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "API reference" })).toHaveAttribute("href", "/docs");
+    const guide = screen.getByRole("link", { name: "MCP guide" });
+    expect(guide).toHaveAttribute("href", mcpGuideUrl);
+    expect(guide).toHaveAttribute("rel", "noreferrer");
+  });
+
+  it("points the Agent template to the MCP guide", async () => {
+    renderSection();
+    const person = userEvent.setup();
+    await person.click(await screen.findByRole("button", { name: "Create token" }));
+    const dialog = screen.getByRole("dialog", { name: "Create an API token" });
+    const agent = within(dialog).getByRole("radio", { name: "Agent" });
+    expect(agent).toHaveAccessibleDescription(/connected to Trail's MCP server/);
+    expect(within(dialog).getByRole("link", { name: "MCP server" })).toHaveAttribute(
+      "href",
+      mcpGuideUrl,
+    );
   });
 
   it("fills in the scopes from a template, and leaves the templates for a selection of one's own", async () => {

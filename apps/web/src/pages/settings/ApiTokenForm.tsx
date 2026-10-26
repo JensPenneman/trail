@@ -7,7 +7,7 @@ import {
   templateOfScopes,
 } from "@trail/contracts/apiToken";
 import { ipNetworkProblem } from "@trail/contracts/ipNetwork";
-import { type FormEvent, useId, useState } from "react";
+import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { ApiError } from "../../api/ApiError";
 import { useSessionUser } from "../../app/useSessionUser";
 import { useFormatter } from "../../format/useFormatter";
@@ -22,11 +22,12 @@ import { Icon } from "../../ui/Icon";
 import { Notice } from "../../ui/Notice";
 import { SelectField } from "../../ui/SelectField";
 import { TextField } from "../../ui/TextField";
+import { mcpGuideUrl } from "./mcpGuide";
 import { TokenChoice } from "./TokenChoice";
 import { type ExpiryChoice, expiryChoices, expiryInstant } from "./tokenExpiry";
 import "./ApiTokens.css";
 
-const templates: readonly { value: ApiTokenTemplate; label: string; description: string }[] = [
+const templates: readonly { value: ApiTokenTemplate; label: string; description: ReactNode }[] = [
   {
     value: "read-only",
     label: "Read-only",
@@ -35,7 +36,16 @@ const templates: readonly { value: ApiTokenTemplate; label: string; description:
   {
     value: "agent",
     label: "Agent",
-    description: "Read-only, and may correct how you travelled: for an agent that plans with you.",
+    description: (
+      <>
+        Read-only, and may correct how you travelled: for an agent that plans with you, connected to
+        Trail's{" "}
+        <a href={mcpGuideUrl} target="_blank" rel="noreferrer">
+          MCP server
+        </a>
+        .
+      </>
+    ),
   },
   {
     value: "full",
