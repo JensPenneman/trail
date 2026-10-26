@@ -14,9 +14,20 @@ jobs:
     steps:
       - uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
         id: meta
-      # minor/patch merge themselves once the required checks pass; majors
-      # (a new Postgres major among them) wait for a human
-      - if: steps.meta.outputs.update-type != 'version-update:semver-major'
+      # Auto-merge waits for the required checks, so whatever is enabled here
+      # lands on green CI only:
+      # - security updates (the `security` groups of dependabot.yml), majors
+      #   included: a fix for an alert must not wait for a person, and one
+      #   that fails CI is fixed, not left open (SECURITY.md);
+      # - every other minor or patch update and digest bump, except the Biome
+      #   and TypeScript groups: their releases change what the checks accept,
+      #   so they are merged by hand.
+      # Majors (a new Postgres major among them) wait for a human.
+      - if: >-
+          steps.meta.outputs.dependency-group == 'security' ||
+          (steps.meta.outputs.update-type != 'version-update:semver-major' &&
+          steps.meta.outputs.dependency-group != 'biome' &&
+          steps.meta.outputs.dependency-group != 'typescript')
         run: gh pr merge --auto --merge "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

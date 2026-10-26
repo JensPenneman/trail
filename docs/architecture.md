@@ -1379,11 +1379,18 @@ cache; pushes to GHCR only from `main` — pushes, schedule, manual runs — and
 `v*` tags; builds without pushing on PRs). Actions pinned by commit SHA;
 per-job least-privilege permissions (`packages`, `id-token`, `attestations`
 write only in `image`). Dependabot (weekly, Monday 07:00 Europe/Brussels) for
-npm (family groups), GitHub Actions, the Dockerfile digests (the image's and
-the development container's) and the compose files, `.devcontainer/` included
-(only major tags change there; majors never auto-merge);
-`dependabot-auto-merge.yml` enables auto-merge for minor/patch, which lands
-on green CI once branch protection requires the checks.
+npm, GitHub Actions, the Dockerfile digests (the image's and the development
+container's) and the compose files, `.devcontainer/` included (only major
+tags change there; majors never auto-merge). The npm groups: `security`
+(`applies-to: security-updates`, every package; GitHub Actions has one too),
+`biome` and `typescript` alone, the families (`vitest`, `playwright`,
+`react`, …) and the catch-all `minor-and-patch` with the pattern `*`:
+Dependabot gives a dependency to the group whose pattern names it most
+precisely, and a group without patterns would take every dependency.
+`dependabot-auto-merge.yml` enables auto-merge, which lands on green CI once
+branch protection requires the checks, for the `security` groups (majors
+included) and every other minor, patch or digest update except the `biome`
+and `typescript` groups, which are merged by hand.
 
 ## 16. Testing
 
