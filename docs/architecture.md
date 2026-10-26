@@ -1399,9 +1399,9 @@ majors never auto-merge). The npm groups: `security`
 Dependabot gives a dependency to the group whose pattern names it most
 precisely, and a group without patterns would take every dependency.
 `dependabot-auto-merge.yml` enables auto-merge, which lands on green CI once
-branch protection requires the checks, for the `security` groups (majors
-included) and every other minor, patch or digest update except the `biome`
-and `typescript` groups, which are merged by hand.
+branch protection requires the checks, for minor, patch and digest updates,
+the `security` groups' included, except the `biome` and `typescript` groups,
+which are merged by hand; majors wait for a person, security ones too.
 
 ## 16. Testing
 

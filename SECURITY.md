@@ -37,7 +37,8 @@ the host and its deployment platform) is the operator's responsibility.
 
 - Security updates (npm and GitHub Actions) come as soon as Dependabot raises
   an alert, in a group of their own, so a fix never waits behind a version
-  update that breaks the build. They merge themselves once CI is green.
+  update that breaks the build. They merge themselves once CI is green, unless
+  a fix needs a new major version: that waits for a person, like every major.
 - A dependency pull request that fails CI, a security fix or a version
   update, is fixed, never ignored or left open: the alerts it would close must
   not pile up.

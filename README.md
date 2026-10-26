@@ -225,8 +225,8 @@ its changelog. `scripts/release.sh` publishes it as a signed commit and tag
 and a draft GitHub release; CI on the tag publishes the version's images and
 then the release, and Launchway deploys it. To roll back, redeploy an older
 release in Launchway. Dependabot keeps npm packages, GitHub Actions and the
-Node base image current and merges security fixes and minor and patch updates
-once CI is green; majors, Biome and TypeScript are merged by hand
+Node base image current and merges minor and patch updates, security fixes
+among them, once CI is green; majors, Biome and TypeScript are merged by hand
 ([SECURITY.md](SECURITY.md#dependencies)). See
 [Releases](docs/operations.md#releases).
 
