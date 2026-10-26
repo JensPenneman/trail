@@ -1,3 +1,4 @@
+import type { ApiToken } from "@trail/contracts/apiToken";
 import type { PublicConfig } from "@trail/contracts/config";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { TracksResponse } from "@trail/contracts/track";
@@ -9,6 +10,8 @@ export const ids = {
   phone: "01926f3a-9c3d-7e5f-a021-3b4c5d6e7f80",
   car: "01926f3b-1d4e-7f60-b132-4c5d6e7f8091",
   ceremony: "01926f3d-3f60-7b82-9354-6e7f8091a2b3",
+  token: "01926f3e-4a71-7c93-a465-7f8091a2b3c4",
+  oldToken: "01926f3e-5b82-7da4-b576-8091a2b3c4d5",
 } as const;
 
 export const config: PublicConfig = {
@@ -93,5 +96,24 @@ export function tracks(from: string, to: string): TracksResponse {
         ],
       },
     ],
+  };
+}
+
+/** An API token as `GET /api/me/tokens` lists it: Home Assistant, reading the phone. */
+export function apiToken(overrides: Partial<ApiToken> = {}): ApiToken {
+  return {
+    id: ids.token,
+    name: "Home Assistant",
+    hint: "x7Kq",
+    scopes: ["devices:read", "locations:read"],
+    deviceIds: [ids.phone],
+    allowedIps: null,
+    expiresAt: new Date(Date.now() + 20 * 86_400_000).toISOString(),
+    createdAt: "2026-10-01T09:00:00.000Z",
+    lastUsedAt: new Date(Date.now() - 120_000).toISOString(),
+    lastUsedIp: "192.168.1.20",
+    revokedAt: null,
+    status: "active",
+    ...overrides,
   };
 }

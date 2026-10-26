@@ -32,11 +32,14 @@ export function Dialog({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const openerRef = useRef<Element | null>(null);
+  /** Whether the page wants the dialog open: the browser may close it on its own (see below). */
+  const wantOpen = useRef(open);
   const pressStartedOnBackdrop = useRef(false);
   const titleId = useId();
   const descriptionId = useId();
 
   useLayoutEffect(() => {
+    wantOpen.current = open;
     const dialog = dialogRef.current;
     if (dialog === null) return;
     if (open && !dialog.open) {
@@ -70,6 +73,16 @@ export function Dialog({
       if (dismissible) onClose();
     };
     const onNativeClose = () => {
+      // Chromium closes a modal on a second Escape even when `cancel` was prevented. A dialog
+      // that may not be dismissed (a one-time secret, a request halfway) opens again; any
+      // other one tells the page, which still thinks it is open.
+      if (wantOpen.current) {
+        if (!dismissible) {
+          dialog.showModal();
+          return;
+        }
+        onClose();
+      }
       const opener = openerRef.current;
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
       openerRef.current = null;

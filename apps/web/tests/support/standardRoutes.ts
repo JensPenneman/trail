@@ -1,4 +1,4 @@
-import { car, config, device, ids, tracks, user } from "./fixtures";
+import { apiToken, car, config, device, ids, tracks, user } from "./fixtures";
 
 /** Answers for every read the signed-in screens make. */
 export function standardRoutes() {
@@ -179,6 +179,26 @@ export function standardRoutes() {
             lastSeenAt: iso(now - 3_600_000),
             expiresAt: iso(now + 21 * 86_400_000),
           },
+        ],
+      },
+    },
+    "GET /api/me/tokens": {
+      status: 200,
+      body: {
+        tokens: [
+          apiToken(),
+          apiToken({
+            id: ids.oldToken,
+            name: "Old script",
+            hint: "Pq3z",
+            scopes: ["history:read"],
+            deviceIds: null,
+            allowedIps: ["203.0.113.0/24"],
+            lastUsedAt: null,
+            lastUsedIp: null,
+            revokedAt: iso(now - 2 * 86_400_000),
+            status: "revoked",
+          }),
         ],
       },
     },

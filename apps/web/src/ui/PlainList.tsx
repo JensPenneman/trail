@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 interface PlainListProps {
   ordered?: boolean;
   className?: string;
+  /** An accessible name, for a list that has no heading of its own. */
+  label?: string;
   children: ReactNode;
 }
 
@@ -11,10 +13,10 @@ interface PlainListProps {
  * VoiceOver drops list semantics from `list-style: none` unless the role is
  * stated explicitly.
  */
-export function PlainList({ ordered = false, className, children }: PlainListProps) {
+export function PlainList({ ordered = false, className, label, children }: PlainListProps) {
   const List = ordered ? "ol" : "ul";
   return (
-    <List role="list" className={className}>
+    <List role="list" className={className} aria-label={label}>
       {children}
     </List>
   );

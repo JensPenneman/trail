@@ -1,0 +1,200 @@
+/* Settings › API tokens: the list, the create form and the one-time secret. */
+
+.token-item {
+  align-items: flex-start;
+}
+
+.token-item .settings__row-icon {
+  margin-top: var(--space-1);
+}
+
+.token-item__main {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.token-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: var(--space-1) 0;
+  padding: 0;
+}
+
+.token-chip {
+  padding: 0.0625rem 0.5rem;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font-size: var(--text-xs);
+}
+
+.token-group__header {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-5) 0;
+}
+
+.token-group__note {
+  font-size: var(--text-s);
+}
+
+.token-form {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.token-options,
+.token-devices,
+.token-scopes__group {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.token-option,
+.token-scope,
+.token-device {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  cursor: pointer;
+}
+
+.token-option {
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-l);
+}
+
+.token-option:hover {
+  background: var(--color-surface-2);
+}
+
+.token-option.is-chosen {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.token-option:has(input:disabled) {
+  cursor: default;
+}
+
+.token-option input,
+.token-scope input,
+.token-device input {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0.125rem 0 0;
+  accent-color: var(--color-accent);
+}
+
+.token-option:has(input:focus-visible),
+.token-scope:has(input:focus-visible),
+.token-device:has(input:focus-visible) {
+  outline: var(--focus-width) solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.token-option__text {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.token-option__label {
+  font-weight: 650;
+}
+
+.token-option__description {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}
+
+.token-scopes {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.token-scopes__groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: var(--space-4);
+}
+
+.token-scopes__legend {
+  padding: 0;
+  margin-bottom: var(--space-1);
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  font-weight: 650;
+}
+
+.token-scope,
+.token-device {
+  min-height: var(--target);
+  padding: var(--space-1) 0;
+}
+
+.token-scope__name {
+  font-size: var(--text-s);
+  font-weight: 600;
+}
+
+.token-devices {
+  padding-inline-start: var(--space-4);
+}
+
+.token-device {
+  align-items: center;
+}
+
+.token-device input {
+  margin: 0;
+}
+
+.token-expiry {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  align-items: start;
+  gap: var(--space-4);
+}
+
+.token-secret {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.token-secret__try {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.token-secret__command {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-m);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font-size: var(--text-s);
+  /* Wrapped rather than scrolled: a scrolling block would need to be focusable. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (forced-colors: active) {
+  .token-chip,
+  .token-option {
+    border-color: CanvasText;
+  }
+}
