@@ -19,7 +19,9 @@ account on your server there are **public links**.
      7 or 30 days. History is only offered with a precise location: a rough
      position over time would give away more than you chose.
    - **Battery and activity**: your phone's battery, and whether you are
-     walking, cycling or driving.
+     walking, cycling, driving or on a train — as Trail works it out, or as
+     you set it with *Now* on the Live page
+     ([transport.md](transport.md)).
    - **For how long**: one hour, until the end of the day (midnight in your
      time zone), a week, or until you stop it.
 4. Choose **Share**.

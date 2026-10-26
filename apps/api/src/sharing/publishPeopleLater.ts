@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { AppContext } from "../appContext";
 import { devices } from "../db/schema/devices";
+import { currentModeRecentMs, loadCurrentModes } from "./currentModes";
 import { latestOwnPositions } from "./latestOwnPositions";
 import { coversDevice, liveWindowMs, windowStart } from "./shareWindow";
 import { toSharedDevice } from "./toSharedDevice";
@@ -34,6 +35,11 @@ export function publishPeopleLater(ctx: AppContext, ownerId: string, deviceId: s
       receiving.map((share) => share.recipientUserId),
     );
     const live = liveWindowMs(ctx.config);
+    const modes = await loadCurrentModes(
+      ctx.db,
+      receiving.some((share) => share.includeDetails) ? [device.id] : [],
+      { now, recentMs: currentModeRecentMs(ctx.config) },
+    );
     for (const share of receiving) {
       ctx.bus.publish(share.recipientUserId, {
         type: "person",
@@ -45,6 +51,7 @@ export function publishPeopleLater(ctx: AppContext, ownerId: string, deviceId: s
             key,
             from: windowStart(share.historyDays, now, live),
             viewerAt: positions.get(share.recipientUserId) ?? null,
+            modes,
           },
         ),
       });

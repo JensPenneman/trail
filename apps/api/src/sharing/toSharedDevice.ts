@@ -1,9 +1,9 @@
 import type { SharedDevice } from "@trail/contracts/person";
 import type { SharePrecision } from "@trail/contracts/share";
+import type { TransportMode } from "@trail/contracts/transport";
 import type { DeviceRow } from "../devices/findOwnedDevice";
 import { toDeviceLocation } from "../devices/toDeviceLocation";
 import { haversineM } from "../tracks/haversine";
-import { currentModeOf } from "./currentMode";
 import { ownerGridOffset, projectPosition } from "./gridProjection";
 import type { LatLon } from "./latestOwnPositions";
 
@@ -18,7 +18,8 @@ export interface Grant {
  * cut down from the owner's own public view of it (`toDeviceLocation`): its
  * id and name, the newest position recorded since `from` at the grant's
  * precision, and — only when the grant includes details — the battery reading
- * and activity of that window. The distance starts from the viewer's own
+ * and activity of that window, with the device's current transport mode from
+ * `modes` (`loadCurrentModes`). The distance starts from the viewer's own
  * position and ends at the projected one, so it reveals no more than the
  * position does. Nothing else of the device (tokens, keys, settings, alerts,
  * counts) is part of the result.
@@ -26,7 +27,12 @@ export interface Grant {
 export function toSharedDevice(
   device: DeviceRow,
   grant: Grant,
-  context: { key: Buffer; from: Date; viewerAt: LatLon | null },
+  context: {
+    key: Buffer;
+    from: Date;
+    viewerAt: LatLon | null;
+    modes: ReadonlyMap<string, TransportMode>;
+  },
 ): SharedDevice {
   const newest = toDeviceLocation(device);
   const inWindow = (instant: string) => Date.parse(instant) >= context.from.getTime();
@@ -51,7 +57,7 @@ export function toSharedDevice(
         ? {
             motion: visible.motion,
             tripMode: device.liveTrip?.mode ?? null,
-            mode: currentModeOf(device),
+            mode: context.modes.get(device.id) ?? null,
           }
         : null,
     distanceM:

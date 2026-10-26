@@ -580,9 +580,12 @@ specification.
    carry a per-link HMAC key instead of their ids; tracks of history links are
    cached 30 s per link; its per-IP limit is `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE`
    (60).
-10. **Inferred mode:** `activity.mode` comes from `currentModeOf`, null until
-    processing provides a current mode; the web cards read it through
-    `describeActivity`, which works with or without it.
+10. **Inferred mode:** `activity.mode` is the owner's current mode from
+    processing — the rule of `GET /api/v1/devices/{id}/mode`: the quick toggle
+    in force, else the latest stop or move while it is recent — read by
+    `loadCurrentModes` in one query over the shared devices, and only with
+    details; the web cards read it through `describeActivity`, which works
+    with or without it.
 11. **Scopes:** anything that can yield coordinates needs `locations:read`.
     Starting or changing a share, confirming one and making a link take
     `shares:write` and `locations:read` (a share to an address the token

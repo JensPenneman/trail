@@ -3,6 +3,7 @@ import { batterySchema, devicePublicSchema, positionSchema } from "./devicePubli
 import { deviceIdsParamSchema } from "./query";
 import { shareHistoryDaysSchema, sharePrecisionSchema } from "./share";
 import { trackSchema } from "./track";
+import { transportModeSchema } from "./transport";
 
 /*
  * People who share their location with the caller, as their shares allow
@@ -63,9 +64,10 @@ export const personActivitySchema = z
       description: "The mode of a trip running in Overland right now, or null.",
       example: null,
     }),
-    mode: z.string().nullable().meta({
-      description: "The transport mode Trail inferred for the current movement, or null.",
-      example: null,
+    mode: transportModeSchema.nullable().meta({
+      description:
+        "How the device travels now, as Trail's location processing has it: the mode the owner set with the quick toggle, else that of the latest stop or move while it is recent (a stop is `stationary`); null when nothing recent is known.",
+      example: "train",
     }),
   })
   .meta({ id: "PersonActivity", description: "What the device is doing." });

@@ -5003,12 +5003,16 @@
             ]
           },
           "mode": {
-            "description": "The transport mode Trail inferred for the current movement, or null.",
-            "example": null,
-            "type": [
-              "string",
-              "null"
-            ]
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the device travels now, as Trail's location processing has it: the mode the owner set with the quick toggle, else that of the latest stop or move while it is recent (a stop is `stationary`); null when nothing recent is known.",
+            "example": "train"
           }
         },
         "required": [

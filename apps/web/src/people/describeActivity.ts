@@ -1,4 +1,5 @@
 import type { PersonActivity, PersonLocation } from "@trail/contracts/person";
+import type { TransportMode } from "@trail/contracts/transport";
 import { tripModeLabel } from "../devices/tripModeLabel";
 import type { Formatter } from "../format/createFormatter";
 
@@ -13,8 +14,8 @@ const motionNames: Readonly<Record<string, string>> = {
   cycling: "cycling",
 };
 
-/** Words for the transport modes Trail infers; unknown ones are shown as they come. */
-const modeNames: Readonly<Record<string, string>> = {
+/** Words for the transport modes Trail infers; `unknown` says nothing. */
+const modeNames: Readonly<Record<TransportMode, string | null>> = {
   stationary: "not moving",
   walking: "walking",
   running: "running",
@@ -26,6 +27,7 @@ const modeNames: Readonly<Record<string, string>> = {
   train: "by train",
   boat: "by boat",
   plane: "flying",
+  unknown: null,
 };
 
 /**
@@ -42,9 +44,7 @@ export function describeActivity(
 ): string | null {
   if (location === null) return null;
   const mode =
-    activity?.mode === null || activity?.mode === undefined || activity.mode === "unknown"
-      ? null
-      : (modeNames[activity.mode] ?? activity.mode.replaceAll("_", " "));
+    activity?.mode === null || activity?.mode === undefined ? null : modeNames[activity.mode];
   const trip =
     activity?.tripMode === null || activity?.tripMode === undefined
       ? null

@@ -959,9 +959,13 @@ points outside the window, exports or deletion.
   every read, so averaging gains nothing) and cannot be derived from anything
   public. The accuracy reported is the cell size (or the fix's own, when
   worse); altitude and course are dropped, for `area` the speed too.
-- Battery and activity (`motion`, the mode of an Overland trip in progress,
-  and the inferred transport mode through `currentModeOf`, null until location
-  processing provides one) only with `include_details`.
+- Battery and activity only with `include_details`: `motion`, the mode of an
+  Overland trip in progress, and the current transport mode as location
+  processing has it for the owner (`GET /api/v1/devices/{id}/mode`, §17.5:
+  the quick toggle in force, else the latest stop or move while it ended
+  within `LIVE_WINDOW_MINUTES`, a stop being `stationary`) — read by
+  `loadCurrentModes` for all the shared devices of a request, an upload's
+  fan-out or a link page in one query.
 
 **Routes** (`apps/api/src/v1/routes/sharing/`, group `sharingRoutes`, tags
 People and Sharing):
@@ -1717,7 +1721,7 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   whichever comes first. The same mode again changes nothing (but a new
   `until`); another mode ends the running toggle and starts a new one; `mode:
   null` ends it. `GET` on the same path answers the toggle in force and the
-  current mode.
+  current mode, which shares and links with details show too (§8.5).
 - `applyOverrides` applies them in creation order, so a later one wins: a move
   inside an override's span takes its mode; one reaching beyond it is cut at
   the span's edges, the parts outside keep (and are scored for) the inferred

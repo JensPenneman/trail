@@ -1,4 +1,5 @@
 import type { ServerEvent } from "@trail/contracts/events";
+import type { TransportMode } from "@trail/contracts/transport";
 import { describe, expect, it } from "vitest";
 import type { AppContext } from "../../src/appContext";
 import type { TokenPrincipal, UserRow } from "../../src/auth/requestAuth";
@@ -122,9 +123,15 @@ describe("who may see what", () => {
 
 describe("a device as a share shows it", () => {
   const from = new Date(now.getTime() - 12 * hour);
+  const noModes = new Map<string, TransportMode>();
 
   it("names only what it may: no tokens, keys, settings, alerts or counts", () => {
-    const shown = toSharedDevice(device(), grant("precise"), { key, from, viewerAt: null });
+    const shown = toSharedDevice(device(), grant("precise"), {
+      key,
+      from,
+      viewerAt: null,
+      modes: noModes,
+    });
     expect(Object.keys(shown).sort()).toEqual([
       "activity",
       "battery",
@@ -139,10 +146,25 @@ describe("a device as a share shows it", () => {
   });
 
   it("shows battery and activity only with details", () => {
-    const shown = toSharedDevice(device(), grant("precise", false), { key, from, viewerAt: null });
+    const shown = toSharedDevice(device(), grant("precise", false), {
+      key,
+      from,
+      viewerAt: null,
+      modes: noModes,
+    });
     expect(shown.battery).toBeNull();
     expect(shown.activity).toBeNull();
     expect(shown.location).not.toBeNull();
+  });
+
+  it("names the device's current transport mode with details only", () => {
+    const modes = new Map<string, TransportMode>([[device().id, "train"]]);
+    const context = { key, from, viewerAt: null, modes };
+    expect(toSharedDevice(device(), grant("approximate"), context).activity?.mode).toBe("train");
+    expect(toSharedDevice(device(), grant("approximate", false), context).activity).toBeNull();
+    // Another device's mode is not this one's.
+    const other = device({ id: "0199a0f3-5fec-72ad-a30c-5ab9d8908cd4" });
+    expect(toSharedDevice(other, grant("precise"), context).activity?.mode).toBeNull();
   });
 
   it("shows nothing recorded before the share's window", () => {
@@ -150,13 +172,23 @@ describe("a device as a share shows it", () => {
       lastRecordedAt: new Date(from.getTime() - 1000),
       batteryRecordedAt: new Date(from.getTime() - 1000),
     });
-    const shown = toSharedDevice(old, grant("precise"), { key, from, viewerAt: null });
+    const shown = toSharedDevice(old, grant("precise"), {
+      key,
+      from,
+      viewerAt: null,
+      modes: noModes,
+    });
     expect(shown).toMatchObject({ location: null, battery: null, activity: null, distanceM: null });
   });
 
   it("never carries the precise position of an approximate or area share", () => {
     for (const precision of ["approximate", "area"] as const) {
-      const shown = toSharedDevice(device(), grant(precision), { key, from, viewerAt: null });
+      const shown = toSharedDevice(device(), grant(precision), {
+        key,
+        from,
+        viewerAt: null,
+        modes: noModes,
+      });
       expect(shown.location?.lat).not.toBe(51.0543);
       expect(shown.location?.lon).not.toBe(3.7174);
       expect(shown.location?.accuracy).toBe(cellMetres(precision));
@@ -166,7 +198,7 @@ describe("a device as a share shows it", () => {
 
   it("measures the distance to the shown position, not to the real one", () => {
     const viewerAt = { lat: 51.1, lon: 3.8 };
-    const shown = toSharedDevice(device(), grant("area"), { key, from, viewerAt });
+    const shown = toSharedDevice(device(), grant("area"), { key, from, viewerAt, modes: noModes });
     const location = shown.location;
     if (location === null) throw new Error("expected a location");
     expect(shown.distanceM).toBe(Math.round(haversineM(viewerAt, location)));

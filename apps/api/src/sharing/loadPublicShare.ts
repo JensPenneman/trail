@@ -7,6 +7,7 @@ import { shareLinks } from "../db/schema/shareLinks";
 import { HttpError, notFound } from "../http/httpError";
 import { hashToken } from "../lib/hashToken";
 import { buildTrack } from "../tracks/buildTrack";
+import { currentModeRecentMs, loadCurrentModes } from "./currentModes";
 import { publicDeviceKey } from "./gridProjection";
 import { isShareLinkSecret } from "./shareLinkSecret";
 import { liveWindowMs, windowStart } from "./shareWindow";
@@ -52,6 +53,11 @@ export async function loadPublicShare(
   const key = await ctx.sharing.gridKey();
   const from = windowStart(link.historyDays, now, liveWindowMs(ctx.config));
   const grant = { precision: link.precision, includeDetails: link.includeDetails };
+  const modes = await loadCurrentModes(
+    ctx.db,
+    link.includeDetails ? shown.map((device) => device.id) : [],
+    { now, recentMs: currentModeRecentMs(ctx.config) },
+  );
 
   const result: PublicShareResponse = {
     label: link.label,
@@ -65,6 +71,7 @@ export async function loadPublicShare(
       key,
       from,
       viewerAt: null,
+      modes,
     });
     // History is precise only (the table's check): the track needs no projection.
     const track =

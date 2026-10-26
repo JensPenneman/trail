@@ -11,6 +11,7 @@ import {
   resolveAccessibleDevices,
   type Viewer,
 } from "./accessibleDevices";
+import { currentModeRecentMs, loadCurrentModes } from "./currentModes";
 import { latestOwnPositions } from "./latestOwnPositions";
 import { mayReadOwnLocations } from "./mayReadOwnLocations";
 import { toSharedDevice } from "./toSharedDevice";
@@ -70,6 +71,11 @@ export async function loadPeople(
           );
   const byId = new Map(deviceRows.map((device) => [device.id, device]));
   const key = await ctx.sharing.gridKey();
+  const modes = await loadCurrentModes(
+    ctx.db,
+    accessible.filter((device) => device.includeDetails).map((device) => device.deviceId),
+    { now, recentMs: currentModeRecentMs(ctx.config) },
+  );
   const viewerAt = mayReadOwnLocations(viewer)
     ? ((await latestOwnPositions(ctx.db, [viewer.user.id], allowedDeviceIds(viewer))).get(
         viewer.user.id,
@@ -97,7 +103,7 @@ export async function loadPeople(
           toSharedDevice(
             device,
             { precision, includeDetails: access.includeDetails },
-            { key, from: access.from, viewerAt },
+            { key, from: access.from, viewerAt, modes },
           ),
         ];
       }),

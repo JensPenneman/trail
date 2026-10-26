@@ -218,7 +218,7 @@ describe("everything one owner shares, held together", () => {
     settingsAppliedAt: null,
     staleAlertedAt: null,
   });
-  const context = { key, from: new Date("2026-10-26T00:00:00Z"), viewerAt: null };
+  const context = { key, from: new Date("2026-10-26T00:00:00Z"), viewerAt: null, modes: new Map() };
 
   // Thousands of projections per trial: a busy machine needs more than the default 5 s.
   it("never narrows a position below one approximate cell", { timeout: 60_000 }, () => {

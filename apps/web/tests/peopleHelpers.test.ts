@@ -1,3 +1,4 @@
+import type { TransportMode } from "@trail/contracts/transport";
 import { describe, expect, it } from "vitest";
 import { createFormatter } from "../src/format/createFormatter";
 import { assignPersonColors } from "../src/people/assignPersonColors";
@@ -44,7 +45,7 @@ describe("people helpers", () => {
   });
 
   it("describe what someone is doing with whatever the share includes", () => {
-    const activity = (mode: string | null, tripMode: string | null, motion: string[]) => ({
+    const activity = (mode: TransportMode | null, tripMode: string | null, motion: string[]) => ({
       mode,
       tripMode,
       motion,

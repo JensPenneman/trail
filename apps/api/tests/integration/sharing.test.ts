@@ -11,13 +11,20 @@ import {
   shareListResponseSchema,
   shareResponseSchema,
 } from "@trail/contracts/share";
+import {
+  createShareLinkResponseSchema,
+  publicShareResponseSchema,
+  shareSecretHeader,
+} from "@trail/contracts/shareLink";
 import { sql } from "drizzle-orm";
 import pg from "pg";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { signupLockKey } from "../../src/auth/signupLock";
 import { resolveAccessibleDevices } from "../../src/sharing/accessibleDevices";
+import { loadCurrentModes } from "../../src/sharing/currentModes";
 import { haversineM } from "../../src/tracks/haversine";
+import { loadDeviceMode } from "../../src/transport/deviceMode";
 import { type Agent, agentFor, signUp, signUpWithCookie } from "../support/authFlows";
 import { createDevice, postOverland } from "../support/deviceFlows";
 import { FakeApiTokens, tokenPrincipal } from "../support/fakeApiTokens";
@@ -608,6 +615,130 @@ describe("a share and a sign-up at the same moment", () => {
       await stop(share.id);
     } finally {
       await lock.end();
+    }
+  });
+});
+
+describe("what a shared device is doing", () => {
+  const modeOf = (people: Awaited<ReturnType<typeof peopleOf>>) =>
+    people[0]?.devices.find((device) => device.id === phone.id)?.activity?.mode;
+
+  async function publicActivity(includeDetails: boolean) {
+    const made = createShareLinkResponseSchema.parse(
+      (
+        await from(owner.agent, "post", apiPaths.v1.shareLinks.root, {
+          precision: "area",
+          deviceIds: [phone.id],
+          includeDetails,
+        }).expect(201)
+      ).body,
+    );
+    const shown = publicShareResponseSchema.parse(
+      (
+        await request(t.app)
+          .get(apiPaths.publicShare)
+          .set(shareSecretHeader, made.secret)
+          .expect(200)
+      ).body,
+    );
+    await from(owner.agent, "delete", apiPaths.v1.shareLinks.one(made.link.id)).expect(204);
+    return shown.devices[0]?.activity ?? null;
+  }
+
+  it("is the owner's current transport mode, and only with details", async () => {
+    const detailed = await shareWith(ana.email, { precision: "approximate" });
+    const plain = await shareWith(eve.email, { precision: "approximate", includeDetails: false });
+    // The quick toggle: from now on the phone travels by train.
+    await from(owner.agent, "post", apiPaths.v1.devices.mode(phone.id), { mode: "train" }).expect(
+      200,
+    );
+    const anaStream = await stream(ana);
+    const eveStream = await stream(eve);
+    const seen = { ana: anaStream.events.length, eve: eveStream.events.length };
+    await upload(phone.token, [{ ago: 1, ...exact }]);
+    expect((await anaStream.waitFor("person", 5_000, seen.ana)).device.activity?.mode).toBe(
+      "train",
+    );
+    expect((await eveStream.waitFor("person", 5_000, seen.eve)).device.activity).toBeNull();
+    expect(modeOf(await peopleOf(ana))).toBe("train");
+    expect((await peopleOf(eve))[0]?.devices[0]?.activity).toBeNull();
+    expect((await publicActivity(true))?.mode).toBe("train");
+    expect(await publicActivity(false)).toBeNull();
+
+    // The toggle ended: with no recent stop or move, nothing is known.
+    await from(owner.agent, "post", apiPaths.v1.devices.mode(phone.id), { mode: null }).expect(200);
+    expect(modeOf(await peopleOf(ana))).toBeNull();
+    await stop(detailed.id);
+    await stop(plain.id);
+  });
+
+  it("is what location processing tells the owner, for many devices in one query", async () => {
+    const ids = await Promise.all(
+      ["nothing", "bus", "corrected", "stop", "old", "toggle", "toggle ended"].map(
+        async (name) => (await createDevice(owner.agent, { name: `Mode ${name}` })).device.id,
+      ),
+    );
+    const [
+      nothing = "",
+      bus = "",
+      corrected = "",
+      standing = "",
+      old = "",
+      toggled = "",
+      ended = "",
+    ] = ids;
+    const segment = (
+      deviceId: string,
+      kind: "stop" | "move",
+      minutesAgo: [number, number],
+      inferred: string | null,
+      user: string | null = null,
+    ) =>
+      t.ctx.db.execute(sql`
+        INSERT INTO segments (device_id, started_at, ended_at, kind, mode, mode_inferred, mode_user,
+          distance_m, duration_s, point_count, start_lat, start_lon, end_lat, end_lon,
+          centroid_lat, centroid_lon, features, version)
+        VALUES (${deviceId}, now() - make_interval(mins => ${minutesAgo[0]}),
+          now() - make_interval(mins => ${minutesAgo[1]}), ${kind},
+          ${kind === "stop" ? null : (user ?? inferred)}, ${inferred}, ${user},
+          800, 300, 12, 51, 3.7, 51.01, 3.71, 51.005, 3.705, '{}'::jsonb, 1)
+      `);
+    const toggle = (deviceId: string, minutesAgo: number, mode: string) =>
+      t.ctx.db.execute(sql`
+        INSERT INTO mode_overrides (device_id, kind, from_at, mode, source, created_by)
+        VALUES (${deviceId}, 'toggle', now() - make_interval(mins => ${minutesAgo}), ${mode}, 'ui',
+          ${owner.id})
+      `);
+    await segment(bus, "move", [20, 2], "bus");
+    await segment(corrected, "move", [20, 2], "bus", "tram");
+    await segment(standing, "move", [60, 30], "walking");
+    await segment(standing, "stop", [30, 1], null);
+    await segment(old, "move", [180, 120], "car");
+    await segment(toggled, "move", [180, 120], "car");
+    await toggle(toggled, 10, "cycling");
+    await toggle(ended, 40, "train");
+    await segment(ended, "move", [40, 20], "train");
+    await segment(ended, "stop", [20, 5], null);
+
+    const now = new Date();
+    const options = { now, recentMs: t.ctx.config.liveWindowMinutes * 60_000 };
+    const modes = await loadCurrentModes(t.ctx.db, ids, options);
+    expect(Object.fromEntries(modes)).toEqual({
+      [bus]: "bus",
+      [corrected]: "tram",
+      [standing]: "stationary",
+      [toggled]: "cycling",
+      [ended]: "stationary",
+    });
+    expect(modes.has(nothing)).toBe(false);
+    expect(modes.has(old)).toBe(false);
+    const owners = await tokenPrincipal(t.ctx.db, owner.email, { scopes: ["locations:read"] });
+    for (const id of ids) {
+      const own = await loadDeviceMode(t.ctx.db, owners, id, options);
+      expect(modes.get(id) ?? null, id).toBe(own.current?.mode ?? null);
+    }
+    for (const id of ids) {
+      await from(owner.agent, "delete", apiPaths.devices.one(id)).expect(204);
     }
   });
 });

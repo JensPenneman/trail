@@ -313,8 +313,10 @@ Each person has one grid for all their devices, shares and links, and an
 gives the same answer, so neither reading it often nor holding several
 shares or links reveals anything more. Only `precise` shares
 can include history (`historyDays`); the others are live only. Battery and
-activity (`motion`, a running Overland trip's mode, the inferred transport
-mode when Trail knows it) come along when `includeDetails` is true.
+activity (`motion`, a running Overland trip's mode, and the current transport
+mode as `GET /api/v1/devices/{id}/mode` gives it to the owner — the quick
+toggle, else the latest stop or move while it is recent) come along when
+`includeDetails` is true.
 
 - `GET /api/v1/people` (`people:read`) lists the people who share with you,
   each with their devices and the newest position inside the share's window:
