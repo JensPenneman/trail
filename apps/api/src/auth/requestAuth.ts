@@ -65,9 +65,13 @@ export function requireSession(req: Request): SessionPrincipal {
   return auth;
 }
 
-/** The principal of an administrator, or 401/403. */
-export function requireAdmin(req: Request): RequestAuth {
-  const auth = requireAuth(req);
+/**
+ * The browser session of an administrator, or 401/403. Administration takes a
+ * passkey session like the other session-only work: no API token reaches it,
+ * not even an administrator's (403 `forbidden`).
+ */
+export function requireAdmin(req: Request): SessionPrincipal {
+  const auth = requireSession(req);
   if (!auth.user.isAdmin) throw new HttpError(403, "forbidden", "Only administrators can do this.");
   return auth;
 }

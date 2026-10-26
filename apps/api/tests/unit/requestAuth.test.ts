@@ -76,12 +76,26 @@ describe("request principals", () => {
     });
   });
 
-  it("let administrators through, whichever their principal", () => {
+  it("let administrators through with a session only", () => {
     const admin: RequestAuth = { ...session, user: { ...user, isAdmin: true } };
     expect(requireAdmin(requestWith(admin))).toBe(admin);
     expect(failure(() => requireAdmin(requestWith(session)))).toEqual({
       status: 403,
       code: "forbidden",
+    });
+    // Not even an administrator's own token: administration takes a passkey session.
+    const adminToken: RequestAuth = { ...token, user: { ...user, isAdmin: true } };
+    expect(failure(() => requireAdmin(requestWith(adminToken)))).toEqual({
+      status: 403,
+      code: "forbidden",
+    });
+    expect(failure(() => requireAdmin(requestWith(token)))).toEqual({
+      status: 403,
+      code: "forbidden",
+    });
+    expect(failure(() => requireAdmin(requestWith()))).toEqual({
+      status: 401,
+      code: "unauthorized",
     });
   });
 });

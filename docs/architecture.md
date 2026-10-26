@@ -486,7 +486,8 @@ Passkeys only (no passwords), SimpleWebAuthn v14 on both ends.
 - **Principals.** Every request has at most one: a session (cookie) or, on
   `/api/v1` only, an API token. Routes ask for `requireAuth` (either),
   `requireSession` (sessions, passkeys, live events, device credentials,
-  account deletion) or `requireAdmin`; §8.3 has the details.
+  account deletion) or `requireAdmin` (an administrator's session); §8.3 has
+  the details.
 - **Passkey links** (one-time, 15 min): Settings → "Add a passkey on another
   device or address" (`POST /api/me/passkey-links {origin?}`), and the CLI
   `trail passkey-link <email> [--origin URL]` for recovery. Opening
@@ -669,8 +670,10 @@ the user's devices). `requireAuth(req)` accepts either; `requireSession(req)`
 (401 without a principal, 403 `forbidden` for a token) guards what only a person
 signed in with a passkey may do: sessions, passkeys, passkey links, the
 `/api/events` stream, creating, rotating and deleting device tokens, deleting
-the account and finishing an `add_passkey` ceremony. `requireAdmin` is
-unchanged. `hasScope(auth, scope)` is true for every scope of a session.
+the account and finishing an `add_passkey` ceremony. `requireAdmin` takes a
+session too: an API token gets 403 `forbidden`, an administrator's own
+included, although the private chain that serves `/api/admin/*` reads no
+tokens anyway. `hasScope(auth, scope)` is true for every scope of a session.
 Device lookups take the principal (`DeviceAccess`): `findOwnedDevice`,
 `resolveDeviceIds` and `loadDeviceSummaries` never return a device outside a
 token's `deviceIds`, which therefore answers 404 like a foreign one.
