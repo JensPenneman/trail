@@ -104,4 +104,6 @@ export const apiPaths = {
   },
   /** The API reference (Scalar) — a page the API serves itself, outside the SPA. */
   docs: "/docs",
+  /** The MCP server (Streamable HTTP, API tokens only): docs/mcp.md. */
+  mcp: "/mcp",
 } as const;
