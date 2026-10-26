@@ -16,6 +16,7 @@ deploy
 .git
 .github
 .vscode
+.devcontainer
 docs
 tests
 coverage

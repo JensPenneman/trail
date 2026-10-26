@@ -88,9 +88,12 @@ updates:
 
   # Dockerfile: the node:lts-alpine digest. A new digest is the current LTS
   # with fresh Alpine and Node patches; it auto-merges on green CI and CI then
-  # publishes the image the server picks up.
+  # publishes the image the server picks up. .devcontainer/Dockerfile pins
+  # node:lts-trixie-slim the same way; the next `scripts/devc.sh up` rebuilds.
   - package-ecosystem: docker
-    directory: /
+    directories:
+      - /
+      - /.devcontainer
     schedule:
       interval: weekly
       day: monday
@@ -108,6 +111,7 @@ updates:
     directories:
       - /
       - /deploy
+      - /.devcontainer
     schedule:
       interval: weekly
       day: monday

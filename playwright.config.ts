@@ -15,6 +15,20 @@ import {
 const externalBaseUrl = process.env["E2E_BASE_URL"];
 const baseURL = externalBaseUrl ?? e2eServerUrl;
 const onCi = process.env["CI"] !== undefined;
+// Parallel workers, each with its own browser: Playwright's default is half the
+// CPUs. E2E_WORKERS (a count, or a share such as "50%") overrides it; the
+// development container sets 1, so that the suites of several worktrees can
+// share one machine.
+const workers = process.env["E2E_WORKERS"];
+
+/** E2E_WORKERS as Playwright takes it: a share stays a string, a count is a number. */
+function parseWorkers(value: string): number | string {
+  if (!/^[1-9][0-9]*%?$/.test(value)) {
+    throw new Error(`E2E_WORKERS must be a count or a share such as "50%", not "${value}"`);
+  }
+  return value.endsWith("%") ? value : Number(value);
+}
+
 // WebKit refuses a few "restricted" ports, among them 4190 (ManageSieve) of the suite's own
 // server, so its project runs against deployments on other ports (E2E_BASE_URL).
 const webkitCanConnect = new URL(baseURL).port !== "4190";
@@ -22,6 +36,7 @@ const webkitCanConnect = new URL(baseURL).port !== "4190";
 export default defineConfig({
   testDir: "tests/e2e",
   fullyParallel: true,
+  ...(workers ? { workers: parseWorkers(workers) } : {}),
   forbidOnly: onCi,
   // One retry on CI marks a flaky test in the report instead of blocking a deploy.
   retries: onCi ? 1 : 0,
