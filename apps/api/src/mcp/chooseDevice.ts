@@ -6,6 +6,7 @@ import { loadDeviceSummary } from "../devices/loadDeviceSummary";
 import { type OwnedDevice, resolveDeviceIds } from "../devices/resolveDeviceIds";
 import { HttpError, notFound } from "../http/httpError";
 import { isUuid } from "../lib/isUuid";
+import { safeText } from "./safeText";
 
 /* The same answer for an unknown id, someone else's and one outside the
  * token's devices: nothing to probe. It never repeats what was asked for. */
@@ -19,8 +20,11 @@ const ambiguousName = (): HttpError =>
     "Several devices have this name. Pass the device's id from list_devices instead.",
   );
 
+/* Names compare as answers show them (`safeText`): a name copied from
+ * list_devices finds its device, and names that read the same there are
+ * ambiguous here too. */
 const sameName = (a: string, b: string): boolean =>
-  a.normalize("NFC").trim() === b.normalize("NFC").trim();
+  safeText(a.normalize("NFC")) === safeText(b.normalize("NFC"));
 
 /** Most recent position first; devices without one last, the most recent upload first among them. */
 function byNewestPosition(a: DeviceSummary, b: DeviceSummary): number {

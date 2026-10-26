@@ -178,7 +178,11 @@ export const listDevicesOutputSchema = z.object({
           })
           .nullable()
           .describe("A trip running in Overland right now, or null."),
-        currentMode,
+        currentMode: currentMode
+          .optional()
+          .describe(
+            "How the device travels now; null when it has not reported for a while. Only for a token with locations:read: the mode tells when a device moves, so without that scope the field is left out.",
+          ),
       }),
     )
     .describe("The devices this token reaches, oldest first."),

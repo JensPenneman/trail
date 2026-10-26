@@ -145,6 +145,20 @@ describe("list_devices", () => {
     }
   });
 
+  it("says how a device travels now only to a token that may read locations", async () => {
+    const withLocations = await clientFor("agent");
+    const full = await call(withLocations, "list_devices", {}, listDevicesOutputSchema);
+    for (const device of full.data.devices) expect(device).toHaveProperty("currentMode");
+    const devicesOnly = await clientFor("devices");
+    const bare = await call(devicesOnly, "list_devices", {}, listDevicesOutputSchema);
+    expect(bare.data.devices).toHaveLength(3);
+    expect(keysOf(bare.data).has("currentMode")).toBe(false);
+    const resource = await devicesOnly.readResource({ uri: "trail://devices" });
+    const [content] = resource.contents;
+    const text = content !== undefined && "text" in content ? content.text : "";
+    expect(text).not.toContain("currentMode");
+  });
+
   it("shows a device-limited token its devices only", async () => {
     const client = await clientFor("commuterOnly");
     const { data } = await call(client, "list_devices", {}, listDevicesOutputSchema);
@@ -479,6 +493,10 @@ describe("resources", () => {
       `trail://devices/${car}/location`,
       `trail://devices/${hostile}/location`,
     ]);
+    // A listing's titles are no data field: they name devices by id, never by name.
+    expect(resources.slice(1).map((resource) => resource.title)).toEqual(
+      [commuter, car, hostile].map((id) => `Location of device ${id}`),
+    );
     const devices = await client.readResource({ uri: "trail://devices" });
     const [content] = devices.contents;
     const parsed = listDevicesOutputSchema.parse(
@@ -596,5 +614,38 @@ describe("names someone typed", () => {
     const described = JSON.stringify(tools) + (client.getInstructions() ?? "");
     expect(described).not.toContain("Ignore all previous");
     expect(described).not.toContain("Commuter");
+  });
+});
+
+describe("device names as answers show them", () => {
+  beforeAll(async () => {
+    const one = await createDevice(owner, { name: "Twin phone" });
+    const two = await createDevice(owner, { name: "Twin other" });
+    // Reads the same as "Twin phone" once the zero-width space is a space.
+    await t.ctx.db.execute(
+      sql`UPDATE devices SET name = ${"Twin\u200bphone"} WHERE id = ${two.device.id}`,
+    );
+    expect(one.device.id).not.toBe(two.device.id);
+  });
+
+  it("find a device by the name list_devices gave, even a cut or cleaned one", async () => {
+    const client = await clientFor("agent");
+    const { data } = await call(client, "list_devices", {}, listDevicesOutputSchema);
+    const shown = data.devices.find((device) => device.id === hostile)?.name ?? "";
+    expect(shown).not.toBe(hostileName);
+    const found = await call(
+      client,
+      "get_current_location",
+      { device: shown },
+      getCurrentLocationOutputSchema,
+    );
+    expect(found.data.device.id).toBe(hostile);
+  });
+
+  it("refuse a name that two devices read the same as", async () => {
+    const client = await clientFor("agent");
+    expect(await failure(client, "get_current_location", { device: "Twin phone" })).toContain(
+      "Several devices have this name",
+    );
   });
 });

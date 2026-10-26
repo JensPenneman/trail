@@ -4,6 +4,7 @@ import {
   listDevicesInputSchema,
   listDevicesOutputSchema,
 } from "@trail/contracts/mcp";
+import { hasScope } from "../../auth/requestAuth";
 import { loadDeviceSummaries } from "../../devices/loadDeviceSummaries";
 import { currentModeOf } from "../currentModeOf";
 import { defineTool, type ToolAnswer } from "../defineTool";
@@ -17,8 +18,9 @@ const zoned = (value: string | null, timeZone: string): string | null =>
   value === null ? null : formatInZone(new Date(value), timeZone);
 
 /**
- * The devices the token reaches, their freshness, battery and mode — never
- * where they are: `list_devices` and the `trail://devices` resource.
+ * The devices the token reaches, their freshness and battery — never where
+ * they are, and how they travel now only for a token with `locations:read`:
+ * `list_devices` and the `trail://devices` resource.
  */
 export async function devicesAnswer(context: WorkContext): Promise<ToolAnswer<ListDevicesOutput>> {
   const { ctx, timeZone, now } = context;
@@ -27,6 +29,7 @@ export async function devicesAnswer(context: WorkContext): Promise<ToolAnswer<Li
     liveMinutes: ctx.config.liveWindowMinutes,
     staleHours: ctx.config.staleAfterHours,
   };
+  const mayReadLocations = hasScope(context.principal, "locations:read");
   const devices = [];
   for (const summary of summaries) {
     devices.push({
@@ -44,7 +47,8 @@ export async function devicesAnswer(context: WorkContext): Promise<ToolAnswer<Li
               startedAt: formatInZone(new Date(summary.liveTrip.startedAt), timeZone),
               distanceM: Math.round(summary.liveTrip.distanceM),
             },
-      currentMode: await currentModeOf(context, summary.id),
+      // How a device travels says when it moves: location data, as on `GET /api/v1/devices/{id}/mode`.
+      ...(mayReadLocations ? { currentMode: await currentModeOf(context, summary.id) } : {}),
     });
   }
   const lines = devices.map((device) => {
@@ -68,7 +72,7 @@ export const listDevices = defineTool({
   name: "list_devices",
   title: "List devices",
   description:
-    "Lists the account's devices (phones running Overland) that this token reaches: id, name, whether data still comes in (status, last upload), battery, a trip running in Overland and how the device travels now. No positions: get_current_location has those. Call it first to learn the device ids and names the other tools take.",
+    "Lists the account's devices (phones running Overland) that this token reaches: id, name, whether data still comes in (status, last upload), battery, a trip running in Overland and, for a token with locations:read, how the device travels now. No positions: get_current_location has those. Call it first to learn the device ids and names the other tools take.",
   scopes: ["devices:read"],
   input: listDevicesInputSchema,
   output: listDevicesOutputSchema,

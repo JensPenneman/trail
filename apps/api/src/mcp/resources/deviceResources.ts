@@ -16,7 +16,6 @@ import { isUuid } from "../../lib/isUuid";
 import type { ToolAnswer } from "../defineTool";
 import type { McpSession } from "../mcpSession";
 import { runMcpWork, type WorkContext } from "../runMcpWork";
-import { safeText } from "../safeText";
 import { currentLocationAnswer } from "../tools/getCurrentLocation";
 import { devicesAnswer } from "../tools/listDevices";
 
@@ -78,7 +77,8 @@ async function listLocations(session: McpSession): Promise<ListResourcesResult> 
     resources: outcome.value.map((device) => ({
       uri: `trail://devices/${device.id}/location`,
       name: `device-location-${device.id}`,
-      title: `Location of ${JSON.stringify(safeText(device.name))}`,
+      // The id, not the name: a listing's titles reach the model outside any data field.
+      title: `Location of device ${device.id}`,
       mimeType: json,
     })),
   };
@@ -100,7 +100,7 @@ export function registerDeviceResources(server: McpServer, session: McpSession):
       {
         title: "Devices",
         description:
-          "The devices this token reaches: status, last upload, battery and mode, without positions (as list_devices).",
+          "The devices this token reaches: status, last upload and battery, without positions, and the mode with locations:read (as list_devices).",
         mimeType: json,
       },
       (uri) =>
