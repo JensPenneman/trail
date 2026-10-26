@@ -264,6 +264,23 @@ describe("v1 with API tokens", () => {
     }
   });
 
+  it("is accepted under /api/v1 only: the dashboard's own routes never take a token", async () => {
+    const secret = await issue({ scopes: allScopes });
+    for (const path of [
+      apiPaths.me.root,
+      apiPaths.me.sessions,
+      apiPaths.auth.session,
+      apiPaths.devices.root,
+      apiPaths.events,
+    ]) {
+      const response = await request(withTokens.app)
+        .get(path)
+        .set("Authorization", bearer(secret))
+        .expect(401);
+      expect(errorOf(response.body).code, path).toBe("unauthorized");
+    }
+  });
+
   it("refuses malformed credentials without a lookup", async () => {
     const before = tokens.calls.length;
     for (const header of [
