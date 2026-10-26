@@ -44,9 +44,9 @@ claude mcp add --transport http trail https://trail.jenspenneman.com/mcp \
 
 `claude mcp list` shows whether it connected; `/mcp` inside Claude Code shows
 the server and its tools. Claude Code keeps the header in `~/.claude.json`
-(the default, local scope, or `--scope user` for every project), which only
-your user can read. Do not add it with `--scope project`: that writes the
-secret into `.mcp.json`, which is meant to be committed. A project that
+in your home folder (with the default, local scope, or with `--scope user`
+for every project). Do not add it with `--scope project`: that writes the
+secret into the project's `.mcp.json`, which is meant to be committed. A project that
 needs Trail can name the variable instead, as `.mcp.json` expands `${…}` in
 headers:
 
@@ -156,8 +156,8 @@ The data belongs to the account owner. Each tool is one more way to read
 it, so the server was built against these threats:
 
 - **Getting in without a token.** `/mcp` accepts only an API token in the
-  `Authorization` header, checked before anything else is read (an
-  unauthenticated request is never parsed). The session cookie is never
+  `Authorization` header, checked before the request's body is read (an
+  unauthenticated body is never parsed). The session cookie is never
   read there, so a page cannot borrow a signed-in browser.
 - **A token reaching further than it should.** The tools a request's
   server offers are the ones its token's scopes allow, and each call checks
@@ -179,19 +179,18 @@ it, so the server was built against these threats:
   are left out. Like the People page, looking stamps the shares' last view,
   which their owners see.
 - **Prompt injection.** Device names and people's display names reach the
-  agent's model. They are
-  never put into the server's instructions or a tool's description; in
-  answers they are data fields, stripped of control, format and invisible
-  characters (bidirectional overrides, zero-width and tag characters) and
-  cut to 80 characters, and in the summary line they appear only inside
-  JSON quotes.
+  agent's model. They are never put into the server's instructions or a
+  tool's description; in answers they are data fields, stripped of control,
+  format and invisible characters (bidirectional overrides, zero-width and
+  tag characters) and cut to 80 characters, and in the summary line they
+  appear only inside JSON quotes.
 - **Pages on other sites.** A browser always sends `Origin`: unless it is
   one of the instance's origins or listed in `MCP_ALLOWED_ORIGINS`, the
   request is refused with `403` before the token is looked up. CORS answers
   with `*` and never allows credentials.
 - **Too much work.** A call covers at most 31 days and returns at most 500
-  items; the body is limited to 1 MB and one message, so a batch cannot
-  turn one request into a hundred calls; reads run in a read-only transaction
+  items; the body is limited to 1 MB and one message, so a batch cannot turn
+  one request into a hundred calls; reads run in a read-only transaction
   under a 10 s statement timeout; the rate limits are per address and per
   token, and nothing holds a connection open: the server announces no
   changes, so a client that asks to listen is acknowledged and let go.
