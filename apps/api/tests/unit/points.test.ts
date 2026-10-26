@@ -1,3 +1,4 @@
+import { pointSchema } from "@trail/contracts/locationPublic";
 import { describe, expect, it } from "vitest";
 import { HttpError } from "../../src/http/httpError";
 import { decodePointCursor, encodePointCursor } from "../../src/locations/pointCursor";
@@ -50,6 +51,12 @@ describe("points in v1", () => {
   });
 
   it("rename the accuracy as the rest of v1 does", () => {
-    expect(toPoint(row)).toMatchObject({ accuracy: 5, verticalAccuracy: 3, extra: row.extra });
+    expect(toPoint(row)).toMatchObject({ accuracy: 5, verticalAccuracy: 3 });
+  });
+
+  it("carry the documented fields only: no Wi-Fi network, nothing of extra", () => {
+    const point = toPoint({ ...row, wifi: "Home-5G", extra: { device_id: "iphone-jens" } });
+    expect(Object.keys(point).sort()).toEqual(Object.keys(pointSchema.shape).sort());
+    expect(JSON.stringify(point)).not.toMatch(/Home-5G|iphone-jens|wifi|extra/);
   });
 });

@@ -4,7 +4,9 @@ import { instantParamSchema } from "./query";
 
 /*
  * Recorded points as the public API (v1) shows them: spelled out here, apart
- * from the dashboard's `LocationRow`, so a dashboard change never changes v1.
+ * from the dashboard's `LocationRow`, so a dashboard change never changes v1,
+ * and nothing undocumented leaves the server: no Wi-Fi network, no `extra`
+ * (Overland's `device_id`, `unique_id` and whatever a later app version adds).
  */
 
 const metres = (description: string, example: number) =>
@@ -25,20 +27,12 @@ export const pointSchema = positionSchema
     speedAccuracy: metres("Accuracy of the speed in metres per second; null when unknown.", 0.5),
     courseAccuracy: metres("Accuracy of the course in degrees; null when unknown.", 12),
     battery: batterySchema.nullable(),
-    wifi: z.string().nullable().meta({
-      description: "The Wi-Fi network the phone was on, when it reported one.",
-      example: null,
-    }),
-    extra: z
-      .record(z.string(), z.unknown())
-      .nullable()
-      .meta({
-        description:
-          "The other properties Overland sent with the point (tracking statistics, `unique_id` …), as they arrived.",
-        example: { unique_id: "8D2C4E9A", pauses: false },
-      }),
   })
-  .meta({ id: "Point", description: "A point the phone recorded, as it arrived." });
+  .meta({
+    id: "Point",
+    description:
+      "A point the phone recorded, as it arrived: the documented fields only. What else Overland sends with a point (the Wi-Fi network, its own ids, tracking statistics) stays on the server.",
+  });
 export type Point = z.infer<typeof pointSchema>;
 
 /** `GET /api/v1/locations` — one device's points in `[from, to)`, oldest first, page by page. */

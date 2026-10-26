@@ -184,7 +184,8 @@ lists cover a bounded range and come whole: at most 400 days for visits,
 trips and statistics per day.
 
 `GET /api/v1/locations` returns one device's points oldest first, up to 1000
-a page, exactly as the phone sent them. A phone uploads when it can, so points
+a page, exactly as the phone recorded them: the documented fields, not the
+Wi-Fi network or Overland's own ids, which stay on the server. A phone uploads when it can, so points
 may arrive later than newer ones: to keep a copy current, ask again for a
 range that overlaps the end of the previous one.
 
@@ -334,9 +335,7 @@ A page of points:
       "courseAccuracy": 12,
       "altitude": 12,
       "motion": ["cycling"],
-      "battery": { "level": 0.82, "state": "unplugged", "recordedAt": "2026-10-26T08:41:07.000Z" },
-      "wifi": null,
-      "extra": { "unique_id": "8D2C4E9A" }
+      "battery": { "level": 0.82, "state": "unplugged", "recordedAt": "2026-10-26T08:41:07.000Z" }
     }
   ],
   "nextCursor": "MjAyNi0xMC0yNlQwODo0MTowNy4wMDBa"

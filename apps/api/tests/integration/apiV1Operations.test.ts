@@ -6,7 +6,7 @@ import { deviceUpdateResponseSchema } from "@trail/contracts/devicePublic";
 import { apiErrorSchema } from "@trail/contracts/errors";
 import { heatmapPublicResponseSchema } from "@trail/contracts/heatmapPublic";
 import { locationsPageSchema } from "@trail/contracts/location";
-import { pointPageSchema } from "@trail/contracts/locationPublic";
+import { pointPageSchema, pointSchema } from "@trail/contracts/locationPublic";
 import { activityResponseSchema, dayStatsResponseSchema } from "@trail/contracts/statsPublic";
 import { tripsPublicResponseSchema } from "@trail/contracts/tripPublic";
 import { visitsPublicResponseSchema } from "@trail/contracts/visitPublic";
@@ -319,9 +319,25 @@ describe("GET /api/v1/locations", () => {
       accuracy: oldest?.accuracy,
       speed: oldest?.speed,
       motion: oldest?.motion,
-      extra: oldest?.extra,
     });
     expect(first?.battery?.level).toBe(oldest?.batteryLevel);
+  });
+
+  it("leaves out what is not documented: the Wi-Fi network and Overland's other properties", async () => {
+    // The fixture's points carry a Wi-Fi network and Overland's ids (`extra`) on the server.
+    const stored = locationsPageSchema.parse(
+      (await owner.get(`${apiPaths.locations}?${query({ deviceId: ride, limit: 30 })}`).expect(200))
+        .body,
+    ).items;
+    expect(stored.some((point) => point.wifi !== null && point.extra !== null)).toBe(true);
+    const response = await as(
+      "full",
+      `${apiPaths.v1.locations}?${query({ device: ride, limit: 1000 })}`,
+    ).expect(200);
+    for (const point of response.body.items) {
+      expect(Object.keys(point).sort()).toEqual(Object.keys(pointSchema.shape).sort());
+    }
+    expect(JSON.stringify(response.body)).not.toMatch(/wifi|extra|unique_id|device_id|Telenet/);
   });
 
   it("reads an empty cursor as the first page", async () => {

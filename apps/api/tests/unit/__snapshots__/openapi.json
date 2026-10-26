@@ -1768,33 +1768,6 @@
                 "type": "null"
               }
             ]
-          },
-          "wifi": {
-            "description": "The Wi-Fi network the phone was on, when it reported one.",
-            "example": null,
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "extra": {
-            "anyOf": [
-              {
-                "type": "object",
-                "propertyNames": {
-                  "type": "string"
-                },
-                "additionalProperties": {}
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The other properties Overland sent with the point (tracking statistics, `unique_id` …), as they arrived.",
-            "example": {
-              "unique_id": "8D2C4E9A",
-              "pauses": false
-            }
           }
         },
         "required": [
@@ -1811,12 +1784,10 @@
           "verticalAccuracy",
           "speedAccuracy",
           "courseAccuracy",
-          "battery",
-          "wifi",
-          "extra"
+          "battery"
         ],
         "additionalProperties": false,
-        "description": "A point the phone recorded, as it arrived."
+        "description": "A point the phone recorded, as it arrived: the documented fields only. What else Overland sends with a point (the Wi-Fi network, its own ids, tracking statistics) stays on the server."
       },
       "Visit": {
         "type": "object",
