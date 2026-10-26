@@ -26,7 +26,7 @@ trail/
 ├── packages/
 │   └── contracts/      zod schemas + types = the HTTP contract (imported by both)
 ├── deploy/             production compose stack, env example, Windows docs/scripts
-├── docs/               this file, operations docs
+├── docs/               this file, the public API guide (api.md), operations docs
 ├── scripts/            repo tooling (dev, build, hooks, db init)
 ├── tests/e2e/          Playwright end-to-end suite (whole stack)
 ├── .devcontainer/      development container (scripts/devc.sh, §3)
@@ -138,9 +138,11 @@ All configuration is environment variables, validated at boot with zod
 | `LOG_LEVEL` | `info` | pino level |
 | `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` | root package.json version / `dev` / null | Baked into the image by the Dockerfile |
 | `RATE_LIMIT_AUTH_PER_MINUTE` | `20` | Auth routes, per IP (§12) |
-| `RATE_LIMIT_API_PER_MINUTE` | `600` | Every other `/api` route, per IP |
+| `RATE_LIMIT_API_PER_MINUTE` | `600` | Every other `/api` request (dashboard and v1) and `/docs`, per IP |
 | `RATE_LIMIT_INGEST_PER_MINUTE` | `300` | Accepted uploads, per device token |
 | `RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES` | `30` | Uploads with an unknown token, per IP |
+| `RATE_LIMIT_TOKEN_PER_MINUTE` | `600` | `/api/v1` requests with a valid API token, per token (§8.3) |
+| `RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES` | `30` | `/api/v1` requests with an invalid API token, per IP |
 | `NODE_ENV` | `development` | `production` in the image (see below) |
 
 Development safety: when `NODE_ENV !== "production"` the API refuses to start
@@ -423,7 +425,12 @@ Passkeys only (no passwords), SimpleWebAuthn v14 on both ends.
   expired cookie is cleared.
 - **CSRF.** Cookie-authenticated unsafe methods require an allowed `Origin`
   header (and `Sec-Fetch-Site` `same-origin` when present) and a JSON body
-  where there is one. The ingest route is exempt (bearer token, no cookies).
+  where there is one. The ingest route is exempt (bearer token, no cookies),
+  and so are `/api/v1` requests with an API token.
+- **Principals.** Every request has at most one: a session (cookie) or, on
+  `/api/v1` only, an API token. Routes ask for `requireAuth` (either),
+  `requireSession` (sessions, passkeys, live events, device credentials,
+  account deletion) or `requireAdmin`; §8.3 has the details.
 - **Passkey links** (one-time, 15 min): Settings → "Add a passkey on another
   device or address" (`POST /api/me/passkey-links {origin?}`), and the CLI
   `trail passkey-link <email> [--origin URL]` for recovery. Opening
@@ -443,7 +450,8 @@ JSON over `/api`. Request/response shapes are the zod schemas in
 `packages/contracts` (paths in `apiPaths.ts`); the API validates every input
 with them, the web parses every response with them. Errors: `{ error: { code,
 message, fields? } }` (`errors.ts`). All `/api` responses are `Cache-Control:
-no-store` unless stated.
+no-store` unless stated. The routes below are the dashboard's private API; the
+public, versioned one is `/api/v1` (§8.3).
 
 | Method & path | Auth | Contract |
 |---|---|---|
@@ -478,6 +486,8 @@ no-store` unless stated.
 | `POST /api/locations/delete` | cookie (owner) | `deleteLocationsRequest/Response` |
 | `GET /api/export` | cookie | `exportQuery` → streamed GeoJSON / GPX 1.1 / CSV attachment |
 | `GET /api/events` | cookie | SSE, `events.ts` |
+| `/api/v1/*` | API token or cookie | §8.3; `GET /api/v1/openapi.json` is public |
+| `GET /docs` | — | the API reference page (§8.3) |
 
 Ownership: every device-scoped query is filtered by the session user's
 devices; a foreign or unknown id is `404 not_found` (never 403, no probing).
@@ -546,6 +556,193 @@ Pick `cellZoom` = the largest level in {6, 9, 12, 15, 18} that is
 `≤ round(zoom) + 5` (minimum 6); return cell centres in the bbox (handle the
 antimeridian when `west > east`) summed across the requested devices, at most
 20 000 cells (highest counts first, `truncated: true`).
+
+### 8.3 Public API v1
+
+`/api/v1` is the documented, versioned API for other clients: scripts, apps,
+agents and, for new features, the dashboard itself. The guide for its users is
+[docs/api.md](api.md); the OpenAPI 3.1 document at `/api/v1/openapi.json` and
+the reference page at `/docs` are generated from the route registry. A
+breaking change means `/api/v2`, never a silent change in v1. The routes of
+§8 without `v1` stay the dashboard's private API.
+
+**Mounting order.** `createV1Router(ctx)` (`apps/api/src/v1/createV1Router.ts`)
+is mounted at `/api/v1` before the dashboard's `/api` chain, so it sets its own
+order:
+
+1. CORS headers on every response, refusals and 429s included
+   (`Access-Control-Allow-Origin: *`, no credentials; exposed: `ETag`,
+   `RateLimit`, `RateLimit-Policy`, `Retry-After`, `WWW-Authenticate`,
+   `X-Request-Id`). They come before the limiter so a browser client can read
+   a 429.
+2. The per-IP limiter, the same instance as the dashboard's `/api` chain and
+   `/docs` (`RATE_LIMIT_API_PER_MINUTE`, policy `"ip"`).
+3. Preflight: any `OPTIONS` answers 204 with `Allow-Methods` (the methods of
+   the registry), `Allow-Headers: Authorization, Content-Type, Last-Event-ID`
+   and `Max-Age: 600`, before credentials and the session are looked at.
+4. `authenticateBearer(ctx)`: a request with an `Authorization` header is a
+   bearer request. The value must be `Bearer trlk_` + 43 base64url characters
+   (`apiTokenPattern`), else it is refused without a lookup; otherwise
+   `ctx.apiTokens.verify(secret, { ip })` returns a `TokenPrincipal`, which
+   becomes the request's principal, or a refusal. A refused token counts
+   towards the failed-token limiter (per IP, `RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES`,
+   consulted after the lookup and skipping valid tokens, like the ingest's)
+   and answers 401 `unauthorized` — `token_expired` for an expired one — with
+   `WWW-Authenticate: Bearer realm="trail", error="invalid_token"`.
+5. The session (`loadSession`), only when there was no bearer token: a bearer
+   request never reads the cookie.
+6. The CSRF guard of §7 for every request without a token (a token is no
+   ambient credential).
+7. The per-token limiter for token requests (`RATE_LIMIT_TOKEN_PER_MINUTE`,
+   key = token id, policy `"token"`, draft-8 headers).
+8. `express.json` (100 kB; `application/json` and `application/*+json`).
+9. The routes of the registry, then a JSON 404 `not_found` for anything else
+   under `/api/v1`. Errors go through the shared error handler.
+
+**Principals.** `RequestAuth` is `{ kind: "session", user, sessionId }` or
+`{ kind: "token", user, tokenId, scopes, deviceIds }` (`deviceIds` null = all of
+the user's devices). `requireAuth(req)` accepts either; `requireSession(req)`
+(401 without a principal, 403 `forbidden` for a token) guards what only a person
+signed in with a passkey may do: sessions, passkeys, passkey links, the
+`/api/events` stream, creating, rotating and deleting device tokens, deleting
+the account and finishing an `add_passkey` ceremony. `requireAdmin` is
+unchanged. `hasScope(auth, scope)` is true for every scope of a session.
+Device lookups take the principal (`DeviceAccess`): `findOwnedDevice`,
+`resolveDeviceIds` and `loadDeviceSummaries` never return a device outside a
+token's `deviceIds`, which therefore answers 404 like a foreign one.
+
+**Scopes** (`packages/contracts/src/apiScope.ts`): `profile:read`,
+`devices:read`, `devices:write`, `locations:read`, `locations:write`,
+`history:read`, `people:read`, `shares:read`, `shares:write`. A route lists the
+scopes that grant access; any one of them is enough, all of them with
+`all: true`. A failure answers 403 `insufficient_scope`, naming the missing
+scopes in the message and in `WWW-Authenticate: Bearer realm="trail",
+error="insufficient_scope", scope="…"`. Without any principal a scoped route
+answers 401 with `WWW-Authenticate: Bearer realm="trail"`.
+
+**The token seam.** `ApiTokenVerifier` (`apps/api/src/v1/apiTokens.ts`) is the
+only thing a token store has to provide: `verify(secret, { ip })` resolves a
+well-formed secret to a `TokenPrincipal` or a `{ reason: "unknown" | "expired"
+| "revoked" | "ip" }`; it answers rather than throws for a bad token and never
+logs the secret. `AppContext.apiTokens` holds it; `createAppContext` defaults
+to `noApiTokens`, which knows no token, so until the token store exists v1
+takes sessions only. The token store replaces that default; integration tests
+inject a verifier through `createTestContext({ apiTokens })`
+(`tests/support/fakeApiTokens.ts`).
+
+**Route registry.** Every operation is a `defineRoute(spec, handler)`
+(`apps/api/src/v1/defineRoute.ts`) in a module of its own,
+`apps/api/src/v1/routes/<feature>/<operationId>.ts`. Each feature lists its
+operations in reference order in `routes/<feature>/<feature>Routes.ts`
+(`profileRoutes`, `deviceRoutes`), and `apps/api/src/v1/v1Routes.ts`
+aggregates the groups — one line per feature — plus the document's own route.
+The spec:
+
+| Field | Meaning |
+|---|---|
+| `method`, `path` | `"get" \| "post" \| "put" \| "patch" \| "delete"`; an OpenAPI path template under `/api/v1/` with `{param}`s, converted to Express's `:param` (`toExpressPath`; any other brace, colon, `*`, `?`, `(` … is refused) |
+| `operationId` | unique, lowerCamelCase (`getDevice`) |
+| `summary`, `description` | a few words for the sidebar; Markdown, to which the document appends who may call the route |
+| `tags` | names from `v1Tags.ts` |
+| `auth` | `"public"`, or `{ scopes: [...] }` (any one grants access) / `{ scopes: [...], all: true }` |
+| `request` | optional zod schemas: `params` (one key per path parameter; a value that fails it answers 404 — it names nothing), `query` (values are strings: coerce in the schema; failure 400 `validation_failed` with `fields`), `body` (JSON; not JSON 415, invalid 400) |
+| `responses` | the body schema of each success status (`200`, `201`, `202`, `204`); `null` for no body |
+| `errors` | error statuses beyond the implied ones (401, 403 and 503 for scoped routes, 404 with path parameters, 400 with a query or body, 413 and 415 with a body, 429 and 500 always), e.g. `[409]` |
+
+The handler receives `{ ctx, auth, params, query, body, req }`, typed from the
+spec — `auth` is non-null on scoped routes, absent parts are `undefined` — and
+returns `{ status, body, headers? }` with a status the spec lists; the type
+checker enforces both. The body goes out through that status's schema, so
+fields the schema does not name are dropped and a mismatch is a logged 500.
+Errors are thrown as `HttpError`s. Streaming responses (SSE) are not supported
+yet: extend `defineRoute` rather than mounting around the registry. Mistakes in
+a spec (path parameters without params keys, a duplicate operationId or
+method and path, a schema the document generator cannot describe) stop the
+server at startup and fail the unit tests.
+
+Adding a route:
+
+1. The contract in `packages/contracts/src/<resource>.ts`: request and
+   response schemas with `.meta({ id, description, example })` where it helps
+   the reference; a path helper in `apiPaths.v1`.
+2. The route in `apps/api/src/v1/routes/<feature>/<operationId>.ts`, added to
+   the feature's group in `routes/<feature>/<feature>Routes.ts`. The domain
+   logic stays in the feature's own folder (`apps/api/src/<feature>/`) and
+   takes the principal, so device restrictions hold.
+3. A new feature adds its group to `operations` in
+   `apps/api/src/v1/v1Routes.ts` (one line: `...tokenRoutes,`) and its tag to
+   `v1Tags.ts`.
+4. Integration tests (session, a token with and without the scope, a token
+   limited to other devices, another user's ids) and the OpenAPI snapshot:
+   `npm test -w @trail/api -- -u`, then review the diff of
+   `apps/api/tests/unit/__snapshots__/openapi.json`.
+
+A worked example — renaming a device (`devices:write`) in
+`routes/devices/updateDevice.ts`, then listed in `deviceRoutes`;
+`renameDeviceRequestSchema` and `renameDevice` are what such a change adds:
+
+```ts
+import {
+  deviceParamsSchema,
+  devicePublicResponseSchema,
+  renameDeviceRequestSchema,
+} from "@trail/contracts/devicePublic";
+import { renameDevice } from "../../../devices/renameDevice";
+import { toDevicePublic } from "../../../devices/toDevicePublic";
+import { defineRoute } from "../../defineRoute";
+
+/** `PATCH /api/v1/devices/{id}` */
+export const updateDevice = defineRoute(
+  {
+    method: "patch",
+    path: "/api/v1/devices/{id}",
+    operationId: "updateDevice",
+    summary: "Rename a device",
+    description: "Changes the device's name in Trail; the phone keeps sending as before.",
+    tags: ["Devices"],
+    auth: { scopes: ["devices:write"] },
+    request: { params: deviceParamsSchema, body: renameDeviceRequestSchema },
+    responses: { 200: devicePublicResponseSchema },
+  },
+  async ({ ctx, auth, params, body }) => ({
+    status: 200,
+    body: { device: toDevicePublic(await renameDevice(ctx.db, auth, params.id, body.name)) },
+  }),
+);
+```
+
+**OpenAPI document.** `buildOpenApiDocument(info, routes)`
+(`apps/api/src/v1/openapi/`) renders the registry with zod-openapi:
+`openapi: "3.1.1"`, `info` (title "Trail API", the build's version, and
+docs/api.md without its title as the description), `servers` = `PUBLIC_URL`,
+`securitySchemes.bearer` (http bearer, `trlk_…`, the scope table), one security
+requirement per granting scope (`security: []` on public routes), the tags of
+`v1Tags.ts`, shared error responses per status listing their codes, and the
+contracts as components (request parts as input schemas, responses as output
+schemas; regex patterns of UUIDs and timestamps are left out for
+readability). `createV1Router` builds it once at startup; `GET
+/api/v1/openapi.json` (public, operation `getOpenApiDocument`) serves it with a
+weak `ETag` and `Cache-Control: public, max-age=300`. The image has no `docs/`:
+`.dockerignore` lets `docs/api.md` through and the API build (tsdown `copy`)
+puts it next to the bundle, where `src/packagedFiles.ts` finds it; from the
+sources it reads the repository's file.
+
+**Reference page.** `GET /docs` (`apps/api/src/apiReference/`, mounted before
+the SPA router, under the per-IP limiter) is Scalar's standalone bundle
+(`@scalar/api-reference`, a development dependency whose `browser/standalone.js`
+the build copies to `apps/api/dist/api-reference/`), never a CDN. The page
+holds a mount point and three same-origin scripts whose names carry their
+hash (`setup`, `scalar`, `start`; `Cache-Control: public, max-age=31536000,
+immutable`; the 4.6 MB bundle is compressed once per process, brotli and gzip,
+not per request); the page itself revalidates (`no-cache`). Its CSP is the one
+of §12 with `style-src 'self' 'unsafe-inline'` — the reference writes its
+styles at runtime — on this page only; `script-src 'self'` stays. Three
+details keep it free of CSP violations: `setup` switches on zod's jitless mode
+before the bundle runs (zod probes `new Function` otherwise); the mount point
+is not `#api-reference` (the bundle auto-mounts an unconfigured copy there,
+which loads Scalar's web fonts); the configuration turns off default fonts,
+telemetry, Scalar's chat agent, MCP hints and the button that opens Scalar's
+hosted client.
 
 ## 9. Live updates (SSE)
 
@@ -619,6 +816,13 @@ invalid value).
   every page. COOP `same-origin`, CORP `same-origin`, `Origin-Agent-Cluster:
   ?1`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, every
   response tagged with `X-Request-Id` (a well-formed incoming one is kept).
+  The one exception is the API reference at `/docs`, a third-party app that
+  writes its styles at runtime: its page adds `'unsafe-inline'` to
+  `style-src` (scripts stay `'self'`, everything else as above; §8.3).
+- `/api/v1` answers any origin (`Access-Control-Allow-Origin: *`) without
+  credentials: a page on another site reaches it with an API token, never with
+  the visitor's session cookie (which is `SameSite=Lax` and never sent with a
+  credential-less request either).
 - `trust proxy` from `TRUST_PROXY`, by default nobody: the client address (per-IP
   rate limits, session IPs) and HTTPS (`req.secure`: the `__Host-` cookie, HSTS)
   come from `X-Forwarded-For`/`-Proto` of trusted hops only, otherwise anyone
@@ -626,12 +830,13 @@ invalid value).
   Launchway's edge at its fixed address on Launchway's proxy network (§13);
   the app publishes no host port.
 - Rate limits: auth routes ~20/min/IP (all `/api/auth/*` except the session
-  probe); ingest ~300/min/token and ~30 failed tokens/10 min/IP; everything
-  else ~600/min/IP (`/api/health*` and `/api/config` excluded). `429
+  probe); ingest ~300/min/token and ~30 failed tokens/10 min/IP; API tokens
+  ~600/min/token and ~30 failed tokens/10 min/IP; everything else, `/docs`
+  included, ~600/min/IP (`/api/health*` and `/api/config` excluded). `429
   rate_limited` (ingest: Overland's `{"error"}`), IETF `RateLimit` headers.
-  Configurable (§4). The failed-token limit is consulted after the token
+  Configurable (§4). The failed-token limits are consulted after the token
   lookup and only for requests without a valid token: a scanner sharing the
-  phones' address (NAT, proxy) never locks out a valid device.
+  phones' or a client's address (NAT, proxy) never locks out a valid token.
 - Database statements time out after 120 s; deleting a device or an account
   and rebuilding derived data lift that limit for their own transaction.
 - Body limits: 100 kB default, 5 MB on the ingest route.
@@ -639,8 +844,9 @@ invalid value).
   params; coordinates are never logged above `debug`. The access log keeps
   method, redacted URL, status, client address and user agent only. The URL is
   redacted from its parsed parts, as the routers read them (decoded,
-  case-insensitive): device tokens in `token`/`access_token` and the one-time
-  tokens of `/link/…`, `/invite/…` and `/api/auth/link/…`. Database errors are
+  case-insensitive): device tokens in `token`/`access_token`, the one-time
+  tokens of `/link/…`, `/invite/…` and `/api/auth/link/…`, and any API token
+  secret (`trlk_…`) a client puts into a URL. Database errors are
   logged without query parameters or failing-row details; for an error from
   Postgres only its SQLSTATE, routine and the names of what failed (constraint,
   table, column), because its message can quote the refused value.
@@ -649,7 +855,8 @@ invalid value).
   pending daily statistics and background work (≤ 2 s each), close the pool.
   A hung shutdown exits after 13 s, so the container's stop grace period
   should be at least 15 s.
-- Tokens (device, session, invite, link) are stored hashed only.
+- Tokens (device, session, invite, link) are stored hashed only. API token
+  secrets are shape-checked before any lookup and never logged.
 - The container runs as the unprivileged `node` user on a read-only root
   filesystem (`tmpfs /tmp`), `no-new-privileges`, all capabilities dropped.
 - Postgres is not published outside the Docker network in production.
@@ -668,7 +875,8 @@ Runtime: `node:lts-alpine` (digest-pinned, Dependabot keeps it current),
 production `node_modules` of the API only (`npm ci --omit=dev --workspace
 @trail/api`, installed on the build platform — which is why the API's runtime
 dependencies must stay pure JavaScript; the build fails on a `.node` addon),
-`apps/api/dist`, `apps/api/drizzle`, `apps/web/dist`, the CLI wrapper
+`apps/api/dist` (with the API guide and the reference bundle the API build
+copies next to the server, §8.3), `apps/api/drizzle`, `apps/web/dist`, the CLI wrapper
 `/usr/local/bin/trail`; `USER 1000:1000` (`node`); `EXPOSE 8080`;
 `HEALTHCHECK` on `/api/health/live` (busybox `wget`); OCI labels
 (`org.opencontainers.image.source` links the GHCR package to the repo);
@@ -801,13 +1009,23 @@ on green CI once branch protection requires the checks.
 
 - `packages/contracts/tests` — schema and helper unit tests.
 - `apps/api/tests/unit` — pure logic (Overland normalisation, timestamps,
-  RDP, distance, tile math, token hashing, config parsing, presets).
+  RDP, distance, tile math, token hashing, config parsing, presets), the v1
+  route registry (`defineRoute`: path conversion, validation, scopes,
+  response schemas, handler types), principals, and the OpenAPI document:
+  validated against the OpenAPI 3.1 schema and compared with
+  `__snapshots__/openapi.json` (the guide aside); after an API change,
+  `npm test -w @trail/api -- -u` rewrites the snapshot for review.
 - `apps/api/tests/integration` — supertest against the real app and the
   `trail_test` database (`TEST_DATABASE_URL`), including passkey ceremonies
   with a software authenticator (ES256, `none` attestation, CBOR via
   `@levischuck/tiny-cbor`). `migrationUpgrade.test.ts` builds the schema of the
   first release, records data with it, applies every later migration and
   requires every row unchanged — deployed databases are only ever migrated.
+  The v1 tests run the routes with a session and, through a fake
+  `ApiTokenVerifier`, with tokens (scopes, device restrictions, expired,
+  revoked and address-bound tokens, rate limits), check CORS, CSRF and the
+  JSON 404, that the mounted routes and the document list the same
+  operations, and the `/docs` page's headers and scripts.
 - `apps/web/tests` — Vitest + Testing Library (jsdom).
 - `tests/e2e` — Playwright against the built stack. `playwright.config.ts`
   starts `scripts/e2e-server.mjs`: it empties the `trail_e2e` database
@@ -825,5 +1043,6 @@ on green CI once branch protection requires the checks.
   and raw points, remote settings, token rotation, History and its scrubber,
   the heatmap, sign-in by email, passkey button and autofill, invitations and
   isolation, passkeys and passkey links, sessions, export, deleting a period
-  and the account, Overland's protocol, static files and headers, axe (WCAG
-  2.0 A–AAA, 2.1/2.2 AA, best practices), keyboard use and 320 px screens.
+  and the account, Overland's protocol, static files and headers, the API
+  reference at `/docs` and the OpenAPI document, axe (WCAG 2.0 A–AAA, 2.1/2.2
+  AA, best practices), keyboard use and 320 px screens.
