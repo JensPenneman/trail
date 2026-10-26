@@ -175,8 +175,10 @@ the app there. Commands started through the script get that address as
 again.
 
 `scripts/devc.sh down` removes the project's containers, network and volumes,
-the database included; run it before you delete a worktree. The image stays
-for the next `up`.
+the database included; run it before you delete a worktree or switch its
+branch, since the project name follows the branch and the old project would
+stay behind (`docker compose -p trail-<old-branch> down --volumes` removes it
+later). The image stays for the next `up`.
 
 ## Production
 

@@ -29,6 +29,7 @@ trail/
 ├── docs/               this file, operations docs
 ├── scripts/            repo tooling (dev, build, hooks, db init)
 ├── tests/e2e/          Playwright end-to-end suite (whole stack)
+├── .devcontainer/      development container (scripts/devc.sh, §3)
 ├── compose.yaml        development services (Postgres)
 └── Dockerfile          single production image (API + built SPA)
 ```
@@ -78,6 +79,19 @@ Vite dev server :5173  ──/api proxy──▶  API (tsx watch) :8787  ──�
 unrelated `DATABASE_URL`/`NODE_ENV`/`AUTH_SECRET`; they must never leak in).
 Databases: `trail` (dev), `trail_test` (API integration tests), `trail_e2e`
 (Playwright). Passkeys in dev are bound to `localhost`.
+
+**Development container.** `scripts/devc.sh` runs any command of the
+repository in `.devcontainer/`: Node LTS with Chromium's headless shell (the
+build the locked Playwright drives) as the unprivileged `node` user, and a
+Postgres of its own with the same three databases. Each worktree is a Compose
+project of its own, `trail-<branch>` (`/` as `-`), with its own database,
+`node_modules` volumes and network, and publishes no host port, so worktrees
+never share a database or compete for a port; `up --web` adds Vite's port on an
+ephemeral loopback port and passes that origin as `PUBLIC_URL`. In the
+container `npm run dev` takes the project's environment instead of `.env`, and
+git and its hooks stay on the host. Playwright runs one worker there
+(`E2E_WORKERS`), so the suites of several worktrees can share one machine.
+`scripts/devc.sh down` removes the project, volumes included.
 
 ### Production (Launchway)
 
@@ -777,8 +791,9 @@ cache; pushes to GHCR only from `main` — pushes, schedule, manual runs — and
 `v*` tags; builds without pushing on PRs). Actions pinned by commit SHA;
 per-job least-privilege permissions (`packages`, `id-token`, `attestations`
 write only in `image`). Dependabot (weekly, Monday 07:00 Europe/Brussels) for
-npm (family groups), GitHub Actions, the Dockerfile digest and the compose
-files (only major tags change there; majors never auto-merge);
+npm (family groups), GitHub Actions, the Dockerfile digests (the image's and
+the development container's) and the compose files, `.devcontainer/` included
+(only major tags change there; majors never auto-merge);
 `dependabot-auto-merge.yml` enables auto-merge for minor/patch, which lands
 on green CI once branch protection requires the checks.
 
