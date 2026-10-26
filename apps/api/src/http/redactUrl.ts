@@ -43,10 +43,12 @@ export function redactUrl(url: string): string {
   for (const [index, segment] of segments.entries()) {
     if (apiTokenSecret.test(decoded(segment))) segments[index] = redacted;
   }
-  const query = [...parsed.searchParams].map(([name, value]) =>
-    tokenParameters.has(name.toLowerCase()) || apiTokenSecret.test(value)
-      ? `${encodeURIComponent(name)}=${redacted}`
-      : `${encodeURIComponent(name)}=${encodeURIComponent(value)}`,
-  );
+  const query = [...parsed.searchParams].map(([name, value]) => {
+    // A secret can also arrive as a parameter's name (`?trls_…`): then the name goes too.
+    const shownName = apiTokenSecret.test(name) ? redacted : encodeURIComponent(name);
+    return tokenParameters.has(name.toLowerCase()) || apiTokenSecret.test(value)
+      ? `${shownName}=${redacted}`
+      : `${shownName}=${encodeURIComponent(value)}`;
+  });
   return `${segments.join("/")}${query.length === 0 ? "" : `?${query.join("&")}`}`;
 }

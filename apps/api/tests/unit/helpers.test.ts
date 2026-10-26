@@ -91,6 +91,14 @@ describe("logging safety", () => {
     expect(redactUrl("/api/public/share")).toBe("/api/public/share");
   });
 
+  it("removes a secret that a client sends as a parameter's name", () => {
+    const secret = `trls_${"Ab9-_".repeat(8)}xyz`;
+    expect(redactUrl(`/api/public/share?${secret}`)).toBe("/api/public/share?[redacted]=");
+    expect(redactUrl(`/api/v1/me?trlk_${"x".repeat(43)}=1&a=b`)).toBe(
+      "/api/v1/me?[redacted]=1&a=b",
+    );
+  });
+
   it("removes API token secrets wherever a client put them in the URL", () => {
     const secret = `trlk_${"Ab9-_".repeat(8)}xyz`;
     expect(secret).toHaveLength(48);
