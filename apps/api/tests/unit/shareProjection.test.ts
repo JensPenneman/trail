@@ -5,6 +5,7 @@ import {
   gridDegrees,
   gridOffset,
   projectPosition,
+  publicDeviceKey,
   type RecordedPosition,
 } from "../../src/sharing/gridProjection";
 import { haversineM } from "../../src/tracks/haversine";
@@ -172,6 +173,16 @@ describe("approximate and area positions", () => {
       const answer = projectPosition(recorded(lat, 3), "area", offset);
       expect(Math.abs(answer.lat)).toBeLessThanOrEqual(90);
     }
+  });
+});
+
+describe("device keys of public pages", () => {
+  it("are stable for a link, differ between links and never are the device id", () => {
+    const first = publicDeviceKey(key, shareA, device);
+    expect(first).toMatch(/^[0-9a-f]{16}$/);
+    expect(publicDeviceKey(key, shareA, device)).toBe(first);
+    expect(publicDeviceKey(key, shareB, device)).not.toBe(first);
+    expect(device.replaceAll("-", "")).not.toContain(first);
   });
 });
 
