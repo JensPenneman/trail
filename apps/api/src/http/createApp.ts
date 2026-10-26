@@ -21,6 +21,8 @@ import { sessionsRouter } from "../me/sessionsRouter";
 import { overlandRouter } from "../overland/overlandRouter";
 import { apiReferenceScriptPath } from "../packagedFiles";
 import { configRouter } from "../publicConfig/configRouter";
+import { linkPageHeaders } from "../sharing/linkPageHeaders";
+import { publicSharesRouter } from "../sharing/publicSharesRouter";
 import { statsRouter } from "../stats/statsRouter";
 import { tracksRouter } from "../tracks/tracksRouter";
 import { createV1Router } from "../v1/createV1Router";
@@ -59,6 +61,20 @@ export function createApp(ctx: AppContext): Express {
   app.use(apiPaths.overland, overlandRouter(ctx));
   app.use(healthRouter(ctx));
   app.use(configRouter(config));
+
+  // Public links: a per-address limit of their own, no session, no CSRF (they only read).
+  const publicShareRateLimit = ipRateLimit({
+    limit: config.rateLimits.publicSharePerMinute,
+    windowMs: 60_000,
+    logger,
+    identifier: "public-share",
+  });
+  app.use(
+    apiPaths.publicShares.root,
+    linkPageHeaders,
+    publicShareRateLimit,
+    publicSharesRouter(ctx),
+  );
 
   // One per-address budget for the whole API: dashboard, v1 and the reference page.
   const apiRateLimit = ipRateLimit({
@@ -100,6 +116,7 @@ export function createApp(ctx: AppContext): Express {
     app.use(apiPaths.docs, apiRateLimit);
     app.use(apiPaths.docs, reference);
   }
+  app.use(apiPaths.sharePages.root, linkPageHeaders);
   const spa = spaRouter(config.webDistDir, logger);
   if (spa !== null) app.use(spa);
   app.use(pageNotFound);
