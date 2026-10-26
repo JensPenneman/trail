@@ -1,4 +1,4 @@
-import express, { type Router } from "express";
+import express, { type RequestHandler, type Router } from "express";
 import type { AppContext } from "../appContext";
 import { loadSession } from "../auth/loadSession";
 import { getRequestAuth } from "../auth/requestAuth";
@@ -35,7 +35,11 @@ const isPublic = (route: V1Route): boolean => route.spec.auth === "public";
  * body → the other routes of the registry → JSON 404. The OpenAPI document is
  * built here, once, so a spec it cannot describe stops the server at startup.
  */
-export function createV1Router(ctx: AppContext): Router {
+export function createV1Router(
+  ctx: AppContext,
+  /** The per-token limiter; `createApp` passes the one the MCP server shares. */
+  limits: { perToken?: RequestHandler } = {},
+): Router {
   const { config } = ctx;
   let served: ServedDocument | undefined;
   const routes = v1Routes(() => {
@@ -60,7 +64,7 @@ export function createV1Router(ctx: AppContext): Router {
   };
   router.use(corsPreflight(methods));
   router.use(authenticateBearer(ctx));
-  router.use(tokenRateLimit(ctx));
+  router.use(limits.perToken ?? tokenRateLimit(ctx));
   // Public routes never load the session: their answers may be cached by anyone (the
   // OpenAPI document is), and the session's sliding refresh, or the clearing of a stale
   // cookie, must not reach whoever a shared cache serves next.

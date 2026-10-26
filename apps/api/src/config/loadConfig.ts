@@ -51,6 +51,7 @@ export function loadConfig(
     host: env.HOST,
     publicUrl: env.PUBLIC_URL,
     allowedOrigins,
+    mcpAllowedOrigins: [...new Set([...allowedOrigins, ...env.MCP_ALLOWED_ORIGINS])],
     ingestUrl: `${ingestBase}/api/overland`,
     signupAllowlist: env.SIGNUP_ALLOWLIST,
     trustProxy: parseTrustProxy(env.TRUST_PROXY),

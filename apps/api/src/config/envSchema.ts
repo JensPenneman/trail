@@ -83,6 +83,8 @@ export const envSchema = z
     HOST: env(z.string().default("0.0.0.0")),
     PUBLIC_URL: env(originSchema),
     ADDITIONAL_ORIGINS: env(originListSchema.default([])),
+    // Browser-based MCP clients that may call /mcp besides the origins above (docs/mcp.md).
+    MCP_ALLOWED_ORIGINS: env(originListSchema.default([])),
     INGEST_BASE_URL: env(httpUrlSchema.optional()),
     SIGNUP_ALLOWLIST: env(
       z.string().transform(splitList).pipe(z.array(allowlistEntrySchema)).default([]),
