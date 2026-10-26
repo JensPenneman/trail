@@ -244,6 +244,14 @@ describe("credentials", () => {
     expect(response.headers["access-control-allow-origin"]).toBe("*");
   });
 
+  it("reads no other scheme: Basic from a proxy in front is no token", async () => {
+    const response = await post(initialize)
+      .set("Authorization", `Basic ${Buffer.from("proxy:secret").toString("base64")}`)
+      .expect(401);
+    expect(response.headers["www-authenticate"]).toBe('Bearer realm="trail"');
+    expect(errorOf(response.body).code).toBe("unauthorized");
+  });
+
   it("never takes the session cookie: a signed-in browser alone is refused", async () => {
     const response = await request(t.app)
       .post(apiPaths.mcp)
