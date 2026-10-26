@@ -345,18 +345,22 @@ at `https://overpass-api.de/api/interpreter` (`PROCESSING_OVERPASS_URL`), one
 query per map tile of about 1.5 × 1 km, and stays cached for
 `PROCESSING_OSM_TTL_DAYS` (90). Trail follows the instance's usage policy: one
 request at a time, at most one every two seconds, a User-Agent that names the
-server (`Trail/<version> (+PUBLIC_URL)`), retries only for busy answers, with
-backoff, and at most `PROCESSING_OVERPASS_DAILY_MB` (300 MB) a day. The first
+software (`Trail/<version> (+https://github.com/JensPenneman/trail)`, never
+your server's address), retries only for busy answers, with backoff, and at
+most `PROCESSING_OVERPASS_DAILY_MB` (300 MB) a day. The first
 days after an install or a long trip use the most; the places you visit again
 are cached, and flights ask for nothing. The worker holds the map data of at
 most about 256 tiles at a time (a few hundred MB in a city centre), however
 long the trip. When the budget is spent, mapping pauses until midnight UTC and
 the rest goes on (moves without their tiles are shown averaged until the
-tiles arrive). The tiles requested tell the Overpass operator which areas
-your devices visited. To keep that at home, point `PROCESSING_OVERPASS_URL`
-at an Overpass instance of your own — it needs the same interpreter API — or
-set it empty: then nothing is mapped and the mapped level shows the averaged
-one.
+tiles arrive). The tiles requested tell the Overpass operator which squares
+of about 1.5 km your devices passed through and when (fetches follow uploads),
+from your server's IP address — not the tracks, and not who you are. To keep
+that at home, point `PROCESSING_OVERPASS_URL` at an Overpass instance of your
+own — it needs the same interpreter API — or set it empty: then nothing is
+mapped and the mapped level shows the averaged one. Serving the map data from
+a local OpenStreetMap extract is a possible later step (the `WaySource`
+interface is there for it).
 
 | Setting | Effect |
 |---|---|
@@ -379,9 +383,11 @@ tiles it lacks are left to the server, which fetches them politely
 afterwards. The modes people set are kept through every reprocessing.
 
 The log tells what the worker does: `processing window done` (device, range,
-points, segments, missing tiles, milliseconds), `map tile stored` (tile,
-ways, stops, bytes), `processing backfill queued` (days), and warnings when a
-tile fails (it is tried again later) or the daily budget is spent.
+points, segments, missing tiles, milliseconds), `map tile stored` (ways,
+stops, bytes, milliseconds), `processing backfill queued` (days), and warnings
+when a tile fails (with the kind of failure; it is tried again later) or the
+daily budget is spent. Which tile — a place someone has been — is logged at
+`LOG_LEVEL=debug` only, like coordinates.
 
 ## Logs
 
@@ -394,8 +400,8 @@ docker logs launchway-trail-app-1 2>&1 | grep '"msg":"API token'      # API toke
 ```
 
 Every container keeps at most 5 files of 10 MB of logs. Device and API tokens,
-cookies and coordinates never appear in the app's logs at the default level;
-the API token lines carry the token's and the user's id only.
+cookies, coordinates and map tiles never appear in the app's logs at the
+default level; the API token lines carry the token's and the user's id only.
 
 ## Local run
 

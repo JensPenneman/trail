@@ -2,11 +2,23 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { Logger } from "pino";
 import { overpassQuery } from "./overpassQuery";
 import { parseOverpassResponse } from "./parseOverpassResponse";
-import { type TileAddress, type TileData, TileFetchError, type WaySource } from "./waySource";
+import {
+  type TileAddress,
+  type TileData,
+  TileFetchError,
+  type TileFetchReason,
+  type WaySource,
+} from "./waySource";
+
+/** The project, not the instance: the User-Agent must not name the server (or its owner). */
+const projectUrl = "https://github.com/JensPenneman/trail";
+
+/** `Trail/<version> (+<project URL>)`: who is asking, as Overpass's usage policy wants. */
+export const overpassUserAgent = (version: string): string => `Trail/${version} (+${projectUrl})`;
 
 export interface OverpassOptions {
   url: string;
-  /** `Trail/<version> (+<PUBLIC_URL>)`: who is asking, as Overpass's usage policy wants. */
+  /** `overpassUserAgent(version)`. */
   userAgent: string;
   logger: Logger;
   /** At most one request this often (the public instances ask for restraint). */
@@ -33,7 +45,9 @@ async function readCapped(
   const declared = Number(response.headers.get("content-length") ?? Number.NaN);
   if (declared > maxBytes) {
     await response.body?.cancel();
-    throw new TileFetchError(`Overpass answer of ${declared} bytes is over the limit`);
+    throw new TileFetchError(`Overpass answer of ${declared} bytes is over the limit`, {
+      reason: "too_large",
+    });
   }
   const reader = response.body?.getReader();
   if (reader === undefined) return { text: "", bytes: 0 };
@@ -45,7 +59,10 @@ async function readCapped(
     bytes += value.byteLength;
     if (bytes > maxBytes) {
       await reader.cancel();
-      throw new TileFetchError(`Overpass answer over ${maxBytes} bytes`, { bytes });
+      throw new TileFetchError(`Overpass answer over ${maxBytes} bytes`, {
+        reason: "too_large",
+        bytes,
+      });
     }
     chunks.push(value);
   }
@@ -55,7 +72,8 @@ async function readCapped(
 /**
  * Map data from an Overpass API instance (docs/architecture.md §17.3), one
  * query per z14 tile, politely: one request at a time and at most one every
- * two seconds, a 60-second timeout, a descriptive User-Agent, retries with
+ * two seconds, a 60-second timeout, a User-Agent that names the software
+ * (not the instance), retries with
  * backoff for answers worth retrying (honouring Retry-After), a 20 MB cap on
  * the answer and strict parsing. The daily byte budget is the tile fetcher's.
  */
@@ -93,11 +111,17 @@ export class OverpassWaySource implements WaySource {
       if (outcome.ok) return { ...outcome.data, bytes: outcome.data.bytes + bytes };
       bytes += outcome.bytes;
       if (!outcome.retryable || attempt >= attempts || signal.aborted) {
-        throw new TileFetchError(outcome.message, { bytes });
+        throw new TileFetchError(outcome.message, {
+          reason: outcome.reason,
+          ...(outcome.status === undefined ? {} : { status: outcome.status }),
+          bytes,
+        });
       }
       const backoff = outcome.retryAfterMs ?? 5000 * 4 ** (attempt - 1);
+      // Which tile, and what exactly went wrong, only at debug: a tile is where someone was.
+      logger.debug({ tile, attempt, message: outcome.message }, "map tile fetch failed");
       logger.warn(
-        { tile, attempt, backoffMs: backoff, reason: outcome.message },
+        { attempt, backoffMs: backoff, reason: outcome.reason, status: outcome.status },
         "map tile fetch failed, retrying",
       );
       await this.#options.wait(backoff, signal);
@@ -109,7 +133,15 @@ export class OverpassWaySource implements WaySource {
     signal: AbortSignal,
   ): Promise<
     | { ok: true; data: TileData }
-    | { ok: false; retryable: boolean; message: string; bytes: number; retryAfterMs?: number }
+    | {
+        ok: false;
+        retryable: boolean;
+        reason: TileFetchReason;
+        status?: number;
+        message: string;
+        bytes: number;
+        retryAfterMs?: number;
+      }
   > {
     const { minIntervalMs, now } = this.#options;
     const pause = this.#lastRequestAt + minIntervalMs - now();
@@ -133,6 +165,7 @@ export class OverpassWaySource implements WaySource {
       return {
         ok: false,
         retryable: true,
+        reason: error instanceof Error && error.name === "TimeoutError" ? "timeout" : "unreachable",
         message: `Overpass unreachable: ${String(error)}`,
         bytes: 0,
       };
@@ -144,6 +177,8 @@ export class OverpassWaySource implements WaySource {
       return {
         ok: false,
         retryable,
+        reason: "status",
+        status: response.status,
         message: `Overpass answered ${response.status}`,
         bytes: 0,
         ...(Number.isFinite(retryAfter) && retryAfter >= 0
@@ -158,10 +193,12 @@ export class OverpassWaySource implements WaySource {
       if (signal.aborted) throw error;
       const bytes = error instanceof TileFetchError ? error.bytes : 0;
       // A timeout while reading is worth another try; a malformed answer is not.
-      const retryable = error instanceof Error && error.name === "TimeoutError";
+      const timedOut = error instanceof Error && error.name === "TimeoutError";
       return {
         ok: false,
-        retryable,
+        retryable: timedOut,
+        reason:
+          error instanceof TileFetchError ? error.reason : timedOut ? "timeout" : "unreachable",
         message: error instanceof Error ? error.message : String(error),
         bytes,
       };

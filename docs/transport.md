@@ -73,8 +73,15 @@ again, and the statistics count it.
 
 The map data comes from OpenStreetMap through an Overpass server — by default
 the public one at overpass-api.de. To fetch it, your Trail server asks for the
-map of the squares (about 1.5 by 1 km) your devices passed through — not
-along flights — so that server learns which areas you visited, though not
-when or who. Your server's
-owner can point Trail at an Overpass server of their own, or switch map data
-off ([operations.md](operations.md#processing)).
+map of each square of about 1.5 km your devices passed through (not along
+flights), shortly after their points arrive. So that Overpass server learns
+which squares were asked for and when, and the internet address of your Trail
+server — not your tracks, and not who you are: Trail sends no account, device
+or name, and introduces itself as the Trail software, not as your server. A
+square it already has is not asked for again for three months.
+
+Your server's owner can switch this off by setting `PROCESSING_OVERPASS_URL=`
+(empty): Trail then still works out stops, moves and modes, without map data,
+and the Mapped level shows the averaged one. They can also point Trail at an
+Overpass server of their own; serving the map data from a local copy of
+OpenStreetMap is a possible later step ([operations.md](operations.md#processing)).

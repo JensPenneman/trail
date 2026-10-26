@@ -52,9 +52,10 @@ export class TileFetcher {
         const data = await this.#source.fetchTile(tile, signal);
         await saveTile(this.#db, tile, data, now());
         round.fetched += 1;
+        // Counts and times for the log; which tile only at debug: a tile is where someone was.
+        this.#logger.debug({ tile: key, outcome: "stored" }, "map tile");
         this.#logger.info(
           {
-            tile: key,
             source: this.#source.name,
             ways: data.ways.length,
             stops: data.pois.length,
@@ -69,8 +70,11 @@ export class TileFetcher {
         const bytes = error instanceof TileFetchError ? error.bytes : 0;
         await recordTileFailure(this.#db, tile, bytes, now());
         round.failed += 1;
+        this.#logger.debug({ tile: key, outcome: "failed", err: error }, "map tile");
         this.#logger.warn(
-          { tile: key, err: error },
+          error instanceof TileFetchError
+            ? { reason: error.reason, ...(error.status === null ? {} : { status: error.status }) }
+            : { reason: error instanceof Error ? error.name : "unknown" },
           "map tile could not be fetched; trying again later",
         );
       }

@@ -312,14 +312,18 @@ The map data comes through a `WaySource` interface
 (`fetchTile(z, x, y): Promise<TileData>`). The default `OverpassWaySource` uses
 `PROCESSING_OVERPASS_URL` (default `https://overpass-api.de/api/interpreter`;
 empty disables mapping) with: one request every 2 s, concurrency 1, a 60 s
-timeout, retries with backoff, `User-Agent: Trail/<version> (+<PUBLIC_URL>)`,
+timeout, retries with backoff, `User-Agent: Trail/<version>
+(+https://github.com/JensPenneman/trail)` (the project, not the instance),
 a daily byte budget `PROCESSING_OVERPASS_DAILY_MB` (300), a 20 MB response cap
 and strict parsing. One query per tile: every `highway=*` except
 proposed/construction/abandoned, railways (`rail|light_rail|tram|subway|
 narrow_gauge|funicular`), `route=ferry`, and the POIs above, with `out geom`.
 A missing tile leaves the window `needs_map`; the queue retries it later and
-everything else proceeds. A self-hosted extract can implement the same
-interface later.
+everything else proceeds. Overpass learns which ~1.5 km squares are fetched
+and when (fetches follow uploads), from the server's IP address, but not the
+tracks or who the user is; tile keys, like coordinates, are logged at debug
+level only. `PROCESSING_OVERPASS_URL=` (empty) switches it off; a
+self-hosted extract behind the same interface is a possible later step.
 
 **Inferred.**
 

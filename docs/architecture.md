@@ -951,12 +951,18 @@ invalid value).
 - Body limits: 100 kB default, 5 MB on the ingest route.
 - Map data (§17.3) is the only outbound request besides ntfy: tile bounding
   boxes posted to `PROCESSING_OVERPASS_URL` without credentials or cookies,
-  without redirects, with a capped answer parsed strictly. The boxes of the
-  tiles requested show the Overpass operator which areas (about 1.5 km
-  squares) the devices visited; a self-hosted Overpass or an empty
-  `PROCESSING_OVERPASS_URL` keeps that at home.
+  without redirects, with a capped answer parsed strictly, and a User-Agent
+  that names the software (`Trail/<version>
+  (+https://github.com/JensPenneman/trail)`), not the instance. The tiles
+  requested show the Overpass operator which squares of about 1.5 km the
+  devices passed through and when (fetches follow uploads), from the server's
+  IP address — not the tracks or who the user is; a self-hosted Overpass or an
+  empty `PROCESSING_OVERPASS_URL` keeps that at home, and a local extract
+  behind the `WaySource` interface is a possible later step.
 - pino-http redacts `authorization`, `cookie`, `set-cookie` and token query
-  params; coordinates are never logged above `debug`. The access log keeps
+  params; coordinates, map tile keys and OSM ids are never logged above
+  `debug` (the processing log keeps counts, times and the kind of failure,
+  `TileFetchError.reason`). The access log keeps
   method, redacted URL, status, client address and user agent only. The URL is
   redacted from its parsed parts, as the routers read them (decoded,
   case-insensitive): device tokens in `token`/`access_token`, the one-time
@@ -1349,7 +1355,8 @@ proposed/construction/abandoned/razed/disused/planned, the railways
 `out body geom`), and the stations, halts, tram stops, bus stops, ferry
 terminals and aerodromes (`out body center`). It sends one request at a time
 and at most one every 2 s, with a 60 s timeout, `User-Agent: Trail/<version>
-(+<PUBLIC_URL>)` and no redirects; 429, 5xx and network errors are retried
+(+https://github.com/JensPenneman/trail)` (the project, never the instance)
+and no redirects; 429, 5xx and network errors are retried
 three times with backoff (Retry-After honoured); answers over 20 MB are cut
 off and refused; parsing is strict (a malformed element, mismatched nodes and
 shape, or a `remark` about a runtime error refuses the whole tile). The

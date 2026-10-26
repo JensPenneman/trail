@@ -31,13 +31,44 @@ export interface WaySource {
   fetchTile(tile: TileAddress, signal: AbortSignal): Promise<TileData>;
 }
 
-/** A tile that could not be fetched; `bytes` were downloaded anyway (they count towards the budget). */
+/**
+ * Why a tile could not be had, in words that say nothing about where it is:
+ * the log names only this above debug level (docs/architecture.md §12).
+ */
+export type TileFetchReason =
+  /** No connection, or it broke off. */
+  | "unreachable"
+  /** An error status (in `status`). */
+  | "status"
+  | "timeout"
+  | "too_large"
+  | "not_json"
+  /** An answer Trail cannot read. */
+  | "malformed"
+  /** The source gave up on the query (Overpass: a remark about a runtime error). */
+  | "incomplete"
+  /** The source has no data for the tile. */
+  | "unavailable";
+
+/**
+ * A tile that could not be fetched; `bytes` were downloaded anyway (they
+ * count towards the budget). The message may name ways or the tile: it is
+ * logged at debug level only.
+ */
 export class TileFetchError extends Error {
+  readonly reason: TileFetchReason;
+  /** The HTTP status, for reason `status`. */
+  readonly status: number | null;
   readonly bytes: number;
 
-  constructor(message: string, options: { bytes?: number; cause?: unknown } = {}) {
+  constructor(
+    message: string,
+    options: { reason: TileFetchReason; status?: number; bytes?: number; cause?: unknown },
+  ) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "TileFetchError";
+    this.reason = options.reason;
+    this.status = options.status ?? null;
     this.bytes = options.bytes ?? 0;
   }
 }

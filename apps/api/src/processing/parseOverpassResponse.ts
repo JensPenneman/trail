@@ -66,13 +66,20 @@ export function parseOverpassResponse(text: string, bytes: number): TileData {
   try {
     json = JSON.parse(text);
   } catch (error) {
-    throw new TileFetchError("Overpass sent something that is not JSON", { bytes, cause: error });
+    throw new TileFetchError("Overpass sent something that is not JSON", {
+      reason: "not_json",
+      bytes,
+      cause: error,
+    });
   }
   const response = responseSchema.safeParse(json);
-  if (!response.success) throw new TileFetchError("Overpass answered without elements", { bytes });
+  if (!response.success) {
+    throw new TileFetchError("Overpass answered without elements", { reason: "malformed", bytes });
+  }
   const remark = response.data.remark;
   if (remark !== undefined && /error|timed out|out of memory/i.test(remark)) {
     throw new TileFetchError(`Overpass could not complete the query: ${remark.slice(0, 200)}`, {
+      reason: "incomplete",
       bytes,
     });
   }
@@ -82,7 +89,10 @@ export function parseOverpassResponse(text: string, bytes: number): TileData {
   for (const raw of response.data.elements) {
     const parsed = elementSchema.safeParse(raw);
     if (!parsed.success)
-      throw new TileFetchError("Overpass sent an element Trail cannot read", { bytes });
+      throw new TileFetchError("Overpass sent an element Trail cannot read", {
+        reason: "malformed",
+        bytes,
+      });
     const element = parsed.data;
     const tags = element.tags ?? {};
     if (element.type === "way" && element.geometry !== undefined) {
@@ -92,9 +102,7 @@ export function parseOverpassResponse(text: string, bytes: number): TileData {
       if (nodes.length !== element.geometry.length || nodes.length < 2) {
         throw new TileFetchError(
           `Way ${element.id} has ${nodes.length} nodes for ${element.geometry.length} positions`,
-          {
-            bytes,
-          },
+          { reason: "malformed", bytes },
         );
       }
       const kept: Record<string, string> = {};

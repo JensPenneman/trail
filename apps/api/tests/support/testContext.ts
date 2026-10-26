@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { DestinationStream } from "pino";
 import type { AppContext } from "../../src/appContext";
+import type { LogLevel } from "../../src/config/config";
 import { loadConfig } from "../../src/config/loadConfig";
 import { createAppContext } from "../../src/createAppContext";
 import { createPool } from "../../src/db/createPool";
@@ -31,8 +32,10 @@ export async function createTestContext(
   options: {
     env?: Record<string, string>;
     webDistDir?: string;
-    /** Receives the app's log lines (level info) instead of discarding them. */
+    /** Receives the app's log lines instead of discarding them … */
     logDestination?: DestinationStream;
+    /** … from this level on (info by default). */
+    logLevel?: LogLevel;
     /** Resolves API tokens on /api/v1 instead of the `api_tokens` table (a stand-in for every outcome). */
     apiTokens?: ApiTokenVerifier;
     /** Map data for processing (default: none, so the mapped level degrades to averaged). */
@@ -45,7 +48,7 @@ export async function createTestContext(
   const logger =
     options.logDestination === undefined
       ? createLogger({ level: "silent" })
-      : createLogger({ level: "info", destination: options.logDestination });
+      : createLogger({ level: options.logLevel ?? "info", destination: options.logDestination });
   const pool = createPool(config.databaseUrl, logger, { statementTimeoutMs: 30_000, max: 5 });
   const alerts: Alert[] = [];
   const ctx = createAppContext({

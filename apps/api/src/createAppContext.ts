@@ -8,7 +8,7 @@ import { EventBus } from "./events/eventBus";
 import type { AlertSender } from "./jobs/alert";
 import { createNtfySender } from "./jobs/createNtfySender";
 import { BackgroundTasks } from "./lib/backgroundTasks";
-import { OverpassWaySource } from "./processing/overpassWaySource";
+import { OverpassWaySource, overpassUserAgent } from "./processing/overpassWaySource";
 import { processingConfigWith } from "./processing/processingConfig";
 import { ProcessingService } from "./processing/processingService";
 import type { WaySource } from "./processing/waySource";
@@ -21,7 +21,7 @@ function configuredWaySource(config: Config, logger: Logger): WaySource | null {
   if (url === null) return null;
   return new OverpassWaySource({
     url,
-    userAgent: `Trail/${config.build.version} (+${config.publicUrl})`,
+    userAgent: overpassUserAgent(config.build.version),
     logger: logger.child({ component: "overpass" }),
   });
 }

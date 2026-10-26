@@ -31,7 +31,7 @@ export class FixtureWaySource implements WaySource {
     const key = tileKey(tile.z, tile.x, tile.y);
     this.requested.push(key);
     if (this.failing.has(key))
-      throw new TileFetchError(`fixture tile ${key} fails`, { bytes: 100 });
+      throw new TileFetchError(`fixture tile ${key} fails`, { reason: "unavailable", bytes: 100 });
     const [south, west, north, east] = tileBounds(tile.x, tile.y, tile.z);
     const overlaps = (a: readonly [number, number], b: readonly [number, number]) =>
       Math.max(a[1], b[1]) >= south &&
