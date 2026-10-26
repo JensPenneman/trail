@@ -7,6 +7,11 @@ travelled. It is JSON over HTTPS under `/api/v1`. The
 OpenAPI 3.1 document at `/api/v1/openapi.json` describes every operation, and
 the reference at `/docs` renders it with this guide on top.
 
+Agents that speak the Model Context Protocol can use the same tokens and
+scopes at `/mcp`, Trail's MCP server: its tools, how to connect and its
+privacy model are in the
+[MCP guide](https://github.com/JensPenneman/trail/blob/main/docs/mcp.md).
+
 ## Versioning
 
 `/api/v1` is Trail's documented, stable interface:
@@ -287,7 +292,7 @@ change. `fields` appears with `validation_failed` and maps each request field
 | Limit | Default | Counts |
 |---|---|---|
 | Per client address | 600 a minute | every API request from the address, the dashboard's included |
-| Per API token | 600 a minute | every request with the token, from any address |
+| Per API token | 600 a minute | every request with the token, from any address, to `/api/v1` and to the MCP server together |
 | Refused tokens | 30 in 10 minutes | requests with an invalid token, per address; valid tokens are never held back by it |
 
 The server's owner can change them. Responses carry the limits that applied in

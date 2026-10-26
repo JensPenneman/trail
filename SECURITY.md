@@ -68,10 +68,18 @@ yourself: location data is personal data.
   addresses or networks, and expires unless
   its owner chooses otherwise; rolling replaces its secret at once, revoking
   ends it at once. Tokens are accepted only in the `Authorization` header of
-  `/api/v1`, are shape-checked before any lookup, and are never logged; only
-  a person signed in with a passkey can create, change, roll or revoke them,
+  `/api/v1` and `/mcp`, are shape-checked before any lookup, and are never
+  logged; only a person signed in with a passkey can create, change, roll or
+  revoke them,
   and no token reaches sign-in, passkeys, device credentials or other tokens.
   Creating, changing, rolling and revoking are logged with the token's id.
+- **MCP server** (`/mcp`, [docs/mcp.md](docs/mcp.md)): API tokens only,
+  never the session cookie; pages on other origins refused before any token
+  lookup; a token's scopes decide which tools it sees and its devices which
+  data, with positions only for `locations:read`; names typed by users reach
+  an agent's model only as sanitised data, never as instructions; reads are
+  read-only, short and bounded (31 days, 500 items); calls are logged without
+  their arguments or results.
 - **Requests**: origin checks against cross-site requests, input validation of
   every request with zod, body size limits, rate limits per IP, per device
   token and per API token (and for refused tokens per IP); client addresses

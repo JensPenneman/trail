@@ -49,6 +49,10 @@ every pull request gets a preview deployment of its own.
 - **API tokens**: created in Settings, each with its own scopes, devices,
   expiry and optional IP allowlist; the secret is shown once, and a token can
   be rolled or revoked at any time.
+- **MCP server**: agents connect to `/mcp` with an API token and ask where
+  the devices are, where they were at a time, the timeline of stops and
+  moves, a day in figures, visits and trips, and can say how you travel now
+  ([docs/mcp.md](docs/mcp.md)).
 - **Operations**: one image for amd64 and arm64, releases deployed
   automatically, a preview per pull request, daily database dumps.
 
@@ -237,7 +241,7 @@ code with the iPhone camera; Overland opens with everything filled in. Allow
 location access "Always" and keep Logging Mode on "All Data". Recommended
 settings and troubleshooting: [docs/overland.md](docs/overland.md).
 
-## Public API
+## Public API and MCP
 
 Every Trail server documents its public API at `/docs`: a reference generated
 from the server's OpenAPI document (`/api/v1/openapi.json`), with the guide
@@ -249,9 +253,16 @@ promise. Scripts, apps and agents use an API token from Settings › API tokens:
 curl -H "Authorization: Bearer trlk_…" https://trail.example.com/api/v1/tokens/verify
 ```
 
+Agents can also use Trail as an MCP server at `/mcp`, with a token made from
+the Agent template; [docs/mcp.md](docs/mcp.md) has the tools, how to connect
+(Claude Code: `claude mcp add --transport http trail
+https://trail.example.com/mcp --header "Authorization: Bearer trlk_…"`) and
+the privacy model.
+
 How the API is built and how to add an operation: [docs/architecture.md
 §8.3](docs/architecture.md#83-public-api-v1); how tokens work:
-[§8.4](docs/architecture.md#84-api-tokens).
+[§8.4](docs/architecture.md#84-api-tokens); the MCP server:
+[§8.6](docs/architecture.md#86-mcp-server).
 
 ## Tech stack
 
