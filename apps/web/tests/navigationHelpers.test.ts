@@ -20,10 +20,18 @@ describe("sign-in redirects", () => {
   });
 
   it("knows which paths need a session", () => {
-    for (const path of ["/", "/history", "/explore", "/devices", "/devices/abc", "/settings"]) {
+    for (const path of [
+      "/",
+      "/history",
+      "/explore",
+      "/people",
+      "/devices",
+      "/devices/abc",
+      "/settings",
+    ]) {
       expect(isSignedInPath(path)).toBe(true);
     }
-    for (const path of ["/login", "/invite/x", "/link/x", "/nope"]) {
+    for (const path of ["/login", "/invite/x", "/link/x", "/nope", "/s", "/s", "/people/x"]) {
       expect(isSignedInPath(path)).toBe(false);
     }
   });

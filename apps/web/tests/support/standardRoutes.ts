@@ -1,12 +1,16 @@
 import type { ProcessingLevel } from "@trail/contracts/transport";
 import {
+  ana,
   apiToken,
   automatic,
+  bob,
   car,
   config,
   device,
   ids,
   levelTracks,
+  outgoingShare,
+  shareLink,
   timeline,
   tracks,
   user,
@@ -232,6 +236,10 @@ export function standardRoutes() {
         ],
       },
     },
+    "GET /api/v1/people": { status: 200, body: { people: [ana(), bob()] } },
+    "GET /api/v1/shares": { status: 200, body: { shares: [outgoingShare()] } },
+    "GET /api/v1/shares/incoming": { status: 200, body: { shares: [] } },
+    "GET /api/v1/share-links": { status: 200, body: { links: [shareLink()] } },
     "GET /api/admin/invites": { status: 200, body: { invites: [] } },
     "GET /api/admin/users": {
       status: 200,

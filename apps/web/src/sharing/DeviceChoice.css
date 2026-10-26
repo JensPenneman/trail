@@ -1,0 +1,28 @@
+.device-choice {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.device-choice__picks {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0 0 0 var(--space-2);
+  border: 0;
+}
+
+.device-choice__pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target);
+  cursor: pointer;
+}
+
+.device-choice__pick input {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: var(--color-accent);
+}

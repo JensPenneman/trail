@@ -1,0 +1,117 @@
+.public-share {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 100dvh;
+  background: var(--color-bg);
+}
+
+.public-share__bar {
+  display: flex;
+  align-items: center;
+  height: calc(var(--header-height) + var(--safe-top));
+  padding: var(--safe-top) calc(var(--space-4) + var(--safe-right)) 0
+    calc(var(--space-4) + var(--safe-left));
+  border-bottom: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.public-share__main {
+  min-width: 0;
+}
+
+.public-share__main:focus {
+  outline: none;
+}
+
+.public-share:not(.public-share--wide) .public-share__main {
+  width: 100%;
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: var(--space-8) calc(var(--space-4) + var(--safe-right)) var(--space-8)
+    calc(var(--space-4) + var(--safe-left));
+}
+
+.public-share__ended {
+  padding: var(--space-6);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+}
+
+.public-share__devices {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.public-share__device {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-l);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1);
+}
+
+.public-share__device-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-l);
+  font-weight: 650;
+}
+
+.public-share__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.public-share__facts > div {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.public-share__facts dt {
+  color: var(--color-text-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.public-share__facts dd {
+  margin: 0;
+  font-size: var(--text-s);
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+.public-share__expiry {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-m);
+  background: var(--color-accent-soft);
+  font-weight: 600;
+}
+
+.public-share__expiry .icon {
+  margin-top: 0.1em;
+  color: var(--color-accent);
+}
+
+.public-share__about {
+  font-size: var(--text-s);
+}
+
+/* The map layout fills the window below the bar here, like the app's map screens below the header. */
+@media (min-width: 64rem) {
+  .public-share__layout {
+    height: calc(100dvh - var(--header-height) - var(--safe-top));
+  }
+}

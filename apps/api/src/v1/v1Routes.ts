@@ -5,6 +5,7 @@ import { historyRoutes } from "./routes/history/historyRoutes";
 import { locationRoutes } from "./routes/locations/locationRoutes";
 import { profileRoutes } from "./routes/profile/profileRoutes";
 import { getOpenApiDocument } from "./routes/reference/getOpenApiDocument";
+import { sharingRoutes } from "./routes/sharing/sharingRoutes";
 import { tokenRoutes } from "./routes/tokens/tokenRoutes";
 import { transportRoutes } from "./routes/transport/transportRoutes";
 
@@ -20,6 +21,7 @@ const operations: readonly V1Route[] = [
   ...locationRoutes,
   ...transportRoutes,
   ...historyRoutes,
+  ...sharingRoutes,
 ];
 
 /**

@@ -16,6 +16,8 @@ interface RateLimitConfig {
   tokenPerMinute: number;
   /** v1 requests with an invalid API token, per IP. */
   tokenFailedPer10Minutes: number;
+  /** Requests of the public share endpoint (`/api/public/share`), per IP. */
+  publicSharePerMinute: number;
 }
 
 export interface AlertConfig {

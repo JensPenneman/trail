@@ -14,6 +14,8 @@ export const errorCodes = [
   /** An API token without a scope the operation needs (403); the message names the scopes. */
   "insufficient_scope",
   "not_found",
+  /** A public link that expired or was turned off (404); it will not work again. */
+  "share_expired",
   "conflict",
   "payload_too_large",
   "rate_limited",

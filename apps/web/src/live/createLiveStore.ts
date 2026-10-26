@@ -9,10 +9,19 @@ export interface LiveUpload {
   rejected: number;
 }
 
+/** Someone started sharing with this person while the page was open (a `share` event). */
+interface ShareNotice {
+  shareId: string;
+  /** Epoch ms. */
+  at: number;
+}
+
 export interface LiveState {
   connection: LiveConnection;
   /** Newest first, at most `maxUploads`. */
   uploads: readonly LiveUpload[];
+  /** Newest first; dismissed or stopped ones are gone. */
+  shareNotices: readonly ShareNotice[];
 }
 
 export interface LiveStore {
@@ -20,17 +29,19 @@ export interface LiveStore {
   subscribe(listener: () => void): () => void;
   setConnection(connection: LiveConnection): void;
   addUpload(upload: LiveUpload): void;
+  addShareNotice(notice: ShareNotice): void;
+  dismissShareNotice(shareId: string): void;
 }
 
 const maxUploads = 50;
 
 /**
- * Client-only state fed by the event stream: whether the stream is connected
- * and the uploads it announced while this tab was open. One store per signed-in
- * shell, so signing out forgets it.
+ * Client-only state fed by the event stream: whether the stream is connected,
+ * the uploads it announced and the people who started sharing while this tab
+ * was open. One store per signed-in shell, so signing out forgets it.
  */
 export function createLiveStore(): LiveStore {
-  let state: LiveState = { connection: "connecting", uploads: [] };
+  let state: LiveState = { connection: "connecting", uploads: [], shareNotices: [] };
   const listeners = new Set<() => void>();
   const update = (next: LiveState): void => {
     state = next;
@@ -52,6 +63,17 @@ export function createLiveStore(): LiveStore {
           candidate.deviceId === upload.deviceId && candidate.receivedAt === upload.receivedAt,
       );
       if (!known) update({ ...state, uploads: [upload, ...state.uploads].slice(0, maxUploads) });
+    },
+    addShareNotice: (notice) => {
+      if (state.shareNotices.some((known) => known.shareId === notice.shareId)) return;
+      update({ ...state, shareNotices: [notice, ...state.shareNotices].slice(0, maxUploads) });
+    },
+    dismissShareNotice: (shareId) => {
+      if (!state.shareNotices.some((notice) => notice.shareId === shareId)) return;
+      update({
+        ...state,
+        shareNotices: state.shareNotices.filter((notice) => notice.shareId !== shareId),
+      });
     },
   };
 }

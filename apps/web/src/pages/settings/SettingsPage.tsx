@@ -10,9 +10,10 @@ import { PasskeysSection } from "./PasskeysSection";
 import { PeopleSection } from "./PeopleSection";
 import { ProfileSection } from "./ProfileSection";
 import { SessionsSection } from "./SessionsSection";
+import { SharingSection } from "./SharingSection";
 import "./SettingsPage.css";
 
-/** Account, sign-in, API tokens, people (admins), data and build information on one page. */
+/** Account, sign-in, API tokens, sharing, people (admins), data and build information on one page. */
 export function SettingsPage() {
   const user = useSessionUser();
   const ids = {
@@ -21,6 +22,7 @@ export function SettingsPage() {
     link: useId(),
     sessions: useId(),
     tokens: useId(),
+    sharing: useId(),
     people: useId(),
     data: useId(),
     about: useId(),
@@ -30,6 +32,7 @@ export function SettingsPage() {
     { id: ids.passkeys, label: "Passkeys" },
     { id: ids.sessions, label: "Browsers" },
     { id: ids.tokens, label: "API tokens" },
+    { id: ids.sharing, label: "Sharing" },
     ...(user.isAdmin ? [{ id: ids.people, label: "People" }] : []),
     { id: ids.data, label: "Data" },
     { id: ids.about, label: "About" },
@@ -50,6 +53,7 @@ export function SettingsPage() {
       <PasskeyLinkSection headingId={ids.link} />
       <SessionsSection headingId={ids.sessions} />
       <ApiTokensSection headingId={ids.tokens} />
+      <SharingSection headingId={ids.sharing} />
       {user.isAdmin ? <PeopleSection headingId={ids.people} /> : null}
       <DataSection headingId={ids.data} />
       <AboutSection headingId={ids.about} />

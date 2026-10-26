@@ -81,6 +81,7 @@ export function loadConfig(
       ingestFailedPer10Minutes: env.RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES,
       tokenPerMinute: env.RATE_LIMIT_TOKEN_PER_MINUTE,
       tokenFailedPer10Minutes: env.RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES,
+      publicSharePerMinute: env.RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE,
     },
     processing: {
       enabled: env.PROCESSING_ENABLED,

@@ -40,6 +40,14 @@
       "description": "History without coordinates: trips, daily statistics and recent activity (`history:read`)."
     },
     {
+      "name": "People",
+      "description": "The people who share their location with you, with their devices at the precision they chose."
+    },
+    {
+      "name": "Sharing",
+      "description": "Your location shared with people (one way, for as long as you choose) and as public links, and the shares people give you."
+    },
+    {
       "name": "Reference",
       "description": "This API's own description."
     }
@@ -1649,6 +1657,1109 @@
         }
       }
     },
+    "/api/v1/people": {
+      "get": {
+        "operationId": "listPeople",
+        "summary": "List people",
+        "description": "The people who share their location with you, by name, each with the devices they share and where those are, at the precision of the share: approximate and area shares give the centre of a cell around the position, never the position itself. A device's `location` is the newest position inside the share's window (its history, or the last 12 hours for live-only shares); battery and activity appear only when the share includes details. People you hid are left out. `distanceM` starts from your own most recently located device and needs `locations:read` too.\n\n**Access:** an API token with the scope `people:read`, or a signed-in session.",
+        "tags": [
+          "People"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "people:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "people": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Person"
+                      },
+                      "description": "By name."
+                    }
+                  },
+                  "required": [
+                    "people"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/people/{userId}": {
+      "get": {
+        "operationId": "getPerson",
+        "summary": "Get a person",
+        "description": "One person who shares with you, as in the list. Someone who does not share with you (any more), or whom you hid, is 404.\n\n**Access:** an API token with the scope `people:read`, or a signed-in session.",
+        "tags": [
+          "People"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "people:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The person's account id.",
+              "example": "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60"
+            },
+            "required": true,
+            "description": "The person's account id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "person": {
+                      "$ref": "#/components/schemas/Person"
+                    }
+                  },
+                  "required": [
+                    "person"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/people/{userId}/track": {
+      "get": {
+        "operationId": "getPersonTrack",
+        "summary": "Get a person's track",
+        "description": "Where a person has been, when their share includes history (history is only ever shared precisely): the recorded points of their shared devices in `[from, to)`, at most 93 days per call, split where recording paused and simplified to `maxPoints`, like your own tracks. A `from` before the shared history starts is moved up to it, so no older point is returned. A person without a share with history for you is 404.\n\n**Access:** an API token with the scope `people:read`, or a signed-in session.",
+        "tags": [
+          "People"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "people:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The person's account id.",
+              "example": "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60"
+            },
+            "required": true,
+            "description": "The person's account id."
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Start (inclusive). Earlier than the share's history allows: moved up to it.",
+              "example": "2026-10-25T00:00:00.000Z"
+            },
+            "required": true,
+            "description": "Start (inclusive). Earlier than the share's history allows: moved up to it."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "description": "End (exclusive).",
+              "example": "2026-10-26T00:00:00.000Z"
+            },
+            "required": true,
+            "description": "End (exclusive)."
+          },
+          {
+            "in": "query",
+            "name": "deviceIds",
+            "schema": {
+              "description": "Comma-separated ids of their shared devices; all of them by default.",
+              "type": "string"
+            },
+            "description": "Comma-separated ids of their shared devices; all of them by default."
+          },
+          {
+            "in": "query",
+            "name": "maxPoints",
+            "schema": {
+              "default": 8000,
+              "description": "At most this many points per device; longer tracks are simplified.",
+              "example": 8000,
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 50000
+            },
+            "description": "At most this many points per device; longer tracks are simplified."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "The start actually used: the requested one, or the start of the shared history.",
+                      "example": "2026-10-26T08:41:07.000Z"
+                    },
+                    "to": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "The end of the range.",
+                      "example": "2026-10-26T08:41:07.000Z"
+                    },
+                    "tracks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "deviceId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "returned": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "simplified": {
+                            "type": "boolean"
+                          },
+                          "distanceM": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "firstAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lastAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "points": {
+                            "type": "array",
+                            "items": {
+                              "type": "array",
+                              "prefixItems": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                }
+                              ],
+                              "items": false,
+                              "minItems": 6,
+                              "maxItems": 6
+                            }
+                          }
+                        },
+                        "required": [
+                          "deviceId",
+                          "total",
+                          "returned",
+                          "simplified",
+                          "distanceM",
+                          "firstAt",
+                          "lastAt",
+                          "points"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "One track per shared device."
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "to",
+                    "tracks"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/shares": {
+      "get": {
+        "operationId": "listShares",
+        "summary": "List your shares",
+        "description": "The people you share your location with: current shares (not stopped, not ended), newest first, with what each shows and until when, whether the address has an account yet (`pending`), whether someone signed up with it and waits for your confirmation (`joined`), whether the person hid you (`hidden`), and when they last looked.\n\n**Access:** an API token with the scope `shares:read`, or a signed-in session.",
+        "tags": [
+          "Sharing"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "shares:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shares": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OutgoingShare"
+                      },
+                      "description": "Current shares (not stopped, not ended), newest first."
+                    }
+                  },
+                  "required": [
+                    "shares"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createShare",
+        "summary": "Share your location",
+        "description": "Starts sharing your location with a person, one way: they see you under People, you do not see them unless they share back. Pick the devices (all by default, also later ones), the precision, history (precise only; live only by default), whether battery and activity come along (yes by default) and the duration. An address without an account gets a `pending` share: when someone signs up with it, it starts at once only if they came with an invitation to that very address; otherwise it is `joined` and waits until you confirm them. The answer shows whether the address has an account, and its name. One current share per address: change it instead (409). At most 50 at a time (409). A token limited to some devices shares only those, listed by id. Needs `locations:read` as well as `shares:write`: what you share can be precise positions.\n\n**Access:** an API token with the scopes `shares:write` and `locations:read`, or a signed-in session.",
+        "tags": [
+          "Sharing"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "shares:write",
+              "locations:read"
+            ]
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShareRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "share": {
+                      "$ref": "#/components/schemas/OutgoingShare"
+                    }
+                  },
+                  "required": [
+                    "share"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/shares/{id}": {
+      "patch": {
+        "operationId": "updateShare",
+        "summary": "Change a share",
+        "description": "Changes what a current share shows or how long it runs: a `duration` counts from now (extend or shorten), the other fields change only when given. History stays limited to precise shares (400 otherwise). The recipient sees the change at once. A token limited to some devices changes only shares that show nothing but its devices, before and after the change (403). Needs `locations:read` as well as `shares:write`.\n\n**Access:** an API token with the scopes `shares:write` and `locations:read`, or a signed-in session.",
+        "tags": [
+          "Sharing"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "shares:write",
+              "locations:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The share's id.",
+              "example": "019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a23"
+            },
+            "required": true,
+            "description": "The share's id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateShareRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "share": {
+                      "$ref": "#/components/schemas/OutgoingShare"
+                    }
+                  },
+                  "required": [
+                    "share"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteShare",
+        "summary": "Stop sharing",
+        "description": "Stops a share at once: from this moment the person sees nothing of you, in any read or live event. A pending share is withdrawn before anyone could see it.\n\n**Access:** an API token with the scope `shares:write`, or a signed-in session.",
+        "tags": [
+          "Sharing"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "shares:write"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The share's id.",
+              "example": "019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a23"
+            },
+            "required": true,
+            "description": "The share's id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/shares/{id}/confirm": {
+      "post": {
+        "operationId": "confirmShare",
+        "summary": "Confirm who joined",
+        "description": "Someone signed up with the address of a share that waited for it (`joined`): confirm that they are the person you meant, and the share starts. Trail does not verify addresses, so it does not start on its own — unless they signed up with an invitation to that very address. 409 when nobody has signed up with the address yet, or when the share already reaches its person. A token limited to some devices confirms only shares that show nothing but its devices (403).\n\n**Access:** an API token with the scopes `shares:write` and `locations:read`, or a signed-in session.",
+        "tags": [
+          "Sharing"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "shares:write",
+              "locations:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The share's id.",
+              "example": "019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a23"
+            },
+            "required": true,
+            "description": "The share's id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "share": {
+                      "$ref": "#/components/schemas/OutgoingShare"
+                    }
+                  },
+                  "required": [
+                    "share"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/shares/incoming": {
+      "get": {
+        "operationId": "listIncomingShares",
+        "summary": "List shares with you",
+        "description": "The current shares other people give you, newest first — also the ones of people you hid (`hiddenAt`), so you can show them again. Their positions are under People.\n\n**Access:** an API token with the scope `shares:read`, or a signed-in session.",
+        "tags": [
+          "Sharing"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "shares:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shares": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IncomingShare"
+                      },
+                      "description": "Current shares with you, hidden ones included, newest first."
+                    }
+                  },
+                  "required": [
+                    "shares"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/shares/incoming/{id}/hide": {
+      "post": {
+        "operationId": "hideIncomingShare",
+        "summary": "Hide a person",
+        "description": "Hides the person who gives you this share: they disappear from People and their live updates stop reaching you until you show them again — a later share from them starts hidden too, without a notice. They keep sharing and are told that you hid them.\n\n**Access:** an API token with the scope `shares:write`, or a signed-in session.",
+        "tags": [
+          "Sharing"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "shares:write"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The share's id.",
+              "example": "019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a23"
+            },
+            "required": true,
+            "description": "The share's id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "share": {
+                      "$ref": "#/components/schemas/IncomingShare"
+                    }
+                  },
+                  "required": [
+                    "share"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/shares/incoming/{id}/unhide": {
+      "post": {
+        "operationId": "unhideIncomingShare",
+        "summary": "Show a hidden person",
+        "description": "Shows a person you hid under People again.\n\n**Access:** an API token with the scope `shares:write`, or a signed-in session.",
+        "tags": [
+          "Sharing"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "shares:write"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The share's id.",
+              "example": "019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a23"
+            },
+            "required": true,
+            "description": "The share's id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "share": {
+                      "$ref": "#/components/schemas/IncomingShare"
+                    }
+                  },
+                  "required": [
+                    "share"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/share-links": {
+      "get": {
+        "operationId": "listShareLinks",
+        "summary": "List public links",
+        "description": "Your public links that were not turned off — the working ones, then expired ones (kept for 30 days), each newest first, at most 50 — with what each shows, when it expires and how often it was opened. Secrets are never listed: a link's address is shown once, when it is made.\n\n**Access:** an API token with the scope `shares:read`, or a signed-in session.",
+        "tags": [
+          "Sharing"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "shares:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ShareLink"
+                      },
+                      "description": "Links that were not turned off: the working ones, then expired ones, each newest first, at most 50."
+                    }
+                  },
+                  "required": [
+                    "links"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createShareLink",
+        "summary": "Make a public link",
+        "description": "Makes a secret web address that shows your location to anyone who has it, without an account: a page with the label, the devices you pick at the precision you pick, optionally their track of the last days (precise only) and battery and activity. Without a label it reads “Shared location”, never your name. It always expires — in 24 hours unless you choose another time, at least an hour and at most 30 days away — and you can turn it off at any time. The answer carries the secret and the address once; Trail keeps only a hash. At most 20 links work at a time (409). Needs `locations:read` as well as `shares:write`: the link can show precise positions.\n\n**Access:** an API token with the scopes `shares:write` and `locations:read`, or a signed-in session.",
+        "tags": [
+          "Sharing"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "shares:write",
+              "locations:read"
+            ]
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShareLinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "link": {
+                      "$ref": "#/components/schemas/ShareLink"
+                    },
+                    "secret": {
+                      "type": "string",
+                      "pattern": "^trls_[A-Za-z0-9_-]{43}$",
+                      "description": "The link's secret, shown this once.",
+                      "example": "trls_8kKZ2mQ1xVtC4pLr7nWb0sYe5uJa9dHf3gTq6oNi1Bc"
+                    },
+                    "url": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "The page to send: `<server>/s#<secret>`, shown this once. The secret is the fragment, which browsers never send to a server.",
+                      "example": "https://trail.example.com/s#trls_8kKZ2mQ1xVtC4pLr7nWb0sYe5uJa9dHf3gTq6oNi1Bc"
+                    }
+                  },
+                  "required": [
+                    "link",
+                    "secret",
+                    "url"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/share-links/{id}": {
+      "delete": {
+        "operationId": "deleteShareLink",
+        "summary": "Turn a public link off",
+        "description": "Turns a link off at once: its page says that it has ended.\n\n**Access:** an API token with the scope `shares:write`, or a signed-in session.",
+        "tags": [
+          "Sharing"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "shares:write"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The link's id.",
+              "example": "019a2b4f-0c33-7a51-8d4e-6b7f1c2d3e4f"
+            },
+            "required": true,
+            "description": "The link's id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/openapi.json": {
       "get": {
         "operationId": "getOpenApiDocument",
@@ -1815,6 +2926,199 @@
           "mode"
         ],
         "description": "Set the transport mode from now on."
+      },
+      "CreateShareRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "description": "The person's address. Without an account yet, the share waits for them.",
+            "example": "ana@example.com",
+            "type": "string",
+            "maxLength": 254
+          },
+          "deviceIds": {
+            "anyOf": [
+              {
+                "minItems": 1,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The devices to share: ids of your devices, or null for all of them, also the ones added later.",
+            "example": null
+          },
+          "precision": {
+            "$ref": "#/components/schemas/SharePrecision"
+          },
+          "historyDays": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many days of past positions the recipient may see; null for live only (the newest position). Only with `precise`.",
+            "example": null
+          },
+          "includeDetails": {
+            "type": "boolean",
+            "description": "Whether battery and activity (motion, trip, transport mode) are shared too.",
+            "example": true
+          },
+          "duration": {
+            "$ref": "#/components/schemas/ShareDuration"
+          }
+        },
+        "required": [
+          "email",
+          "precision",
+          "duration"
+        ],
+        "description": "Start sharing your location with a person."
+      },
+      "SharePrecision": {
+        "type": "string",
+        "enum": [
+          "precise",
+          "approximate",
+          "area"
+        ],
+        "description": "`precise`: the position as recorded. `approximate`: the centre of a cell about 560 m across (a neighbourhood). `area`: a cell about 5.6 km across (a town or a part of a city). The cells are fixed per share, so repeated reads always give the same answer and cannot be averaged back to the real position.",
+        "example": "approximate"
+      },
+      "ShareDuration": {
+        "type": "string",
+        "enum": [
+          "hour",
+          "endOfDay",
+          "week",
+          "indefinitely"
+        ],
+        "description": "`hour`: one hour. `endOfDay`: until midnight in the owner's time zone. `week`: seven days. `indefinitely`: until it is stopped.",
+        "example": "endOfDay"
+      },
+      "UpdateShareRequest": {
+        "type": "object",
+        "properties": {
+          "duration": {
+            "description": "A new duration, counted from now: extends or shortens the share.",
+            "$ref": "#/components/schemas/ShareDuration"
+          },
+          "deviceIds": {
+            "anyOf": [
+              {
+                "minItems": 1,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The devices to share: ids of your devices, or null for all of them, also the ones added later.",
+            "example": null
+          },
+          "precision": {
+            "$ref": "#/components/schemas/SharePrecision"
+          },
+          "historyDays": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many days of past positions the recipient may see; null for live only (the newest position). Only with `precise`.",
+            "example": null
+          },
+          "includeDetails": {
+            "type": "boolean",
+            "description": "Whether battery and activity (motion, trip, transport mode) are shared too.",
+            "example": true
+          }
+        },
+        "description": "Change a share: only the fields given change. History stays limited to precise shares."
+      },
+      "CreateShareLinkRequest": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "description": "Defaults to “Shared location”: visitors see nothing of your account.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "example": "On the way home"
+          },
+          "deviceIds": {
+            "anyOf": [
+              {
+                "minItems": 1,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The devices to share: ids of your devices, or null for all of them, also the ones added later.",
+            "example": null
+          },
+          "precision": {
+            "$ref": "#/components/schemas/SharePrecision"
+          },
+          "historyDays": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 7
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Days of the past track visitors see (1–7); null for the newest position only. Only with `precise`.",
+            "example": null
+          },
+          "includeDetails": {
+            "type": "boolean",
+            "description": "Whether visitors see battery and activity too.",
+            "example": false
+          },
+          "expiresAt": {
+            "description": "When the link stops working: at least 1 hour and at most 30 days away. Defaults to 24 hours from now.",
+            "example": "2026-10-27T08:41:07.000Z",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "precision"
+        ],
+        "description": "Make a public link to your location."
       },
       "Profile": {
         "type": "object",
@@ -3435,6 +4739,654 @@
         ],
         "additionalProperties": false,
         "description": "One hour of one device."
+      },
+      "Person": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The person's account id.",
+            "example": "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Their name in Trail.",
+            "example": "Jens"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "description": "Their address.",
+            "example": "jens@example.com"
+          },
+          "share": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The share's id.",
+                "example": "019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a23"
+              },
+              "precision": {
+                "$ref": "#/components/schemas/SharePrecision"
+              },
+              "historyDays": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 365
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "How many days of past positions the recipient may see; null for live only (the newest position). Only with `precise`.",
+                "example": null
+              },
+              "includeDetails": {
+                "type": "boolean",
+                "description": "Whether battery and activity are shared.",
+                "example": true
+              },
+              "expiresAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "When the share ends by itself; null when it runs until stopped.",
+                "example": null
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When they started sharing.",
+                "example": "2026-10-26T08:41:07.000Z"
+              }
+            },
+            "required": [
+              "id",
+              "precision",
+              "historyDays",
+              "includeDetails",
+              "expiresAt",
+              "createdAt"
+            ],
+            "additionalProperties": false,
+            "description": "What they share with you."
+          },
+          "devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedDevice"
+            },
+            "description": "The devices they share, oldest first."
+          }
+        },
+        "required": [
+          "userId",
+          "displayName",
+          "email",
+          "share",
+          "devices"
+        ],
+        "additionalProperties": false,
+        "description": "Someone who shares their location with you."
+      },
+      "SharedDevice": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device's id.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "name": {
+            "type": "string",
+            "description": "Its name in Trail.",
+            "example": "Jens’s iPhone"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonLocation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The newest position inside the share's window: within the last `historyDays` days, or for live-only shares within the server's live window (12 hours by default). Null when there is none."
+          },
+          "battery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Battery"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The last battery reading; null unless the share includes details."
+          },
+          "activity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonActivity"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null unless the share includes details."
+          },
+          "distanceM": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Metres from the caller's most recently located device to this position; null when either is unknown.",
+            "example": 1830
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "location",
+          "battery",
+          "activity",
+          "distanceM"
+        ],
+        "additionalProperties": false,
+        "description": "A device someone shares with you."
+      },
+      "PersonLocation": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "description": "Latitude in degrees (WGS84); the centre of the share's cell when not precise.",
+            "example": 51.0543
+          },
+          "lon": {
+            "type": "number",
+            "description": "Longitude in degrees (WGS84).",
+            "example": 3.7174
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the phone recorded the position.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "accuracy": {
+            "description": "Radius in metres within which the device is; at least the cell size when not precise.",
+            "example": 556,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "speed": {
+            "description": "Speed in metres per second; null when unknown, and for `area` shares.",
+            "example": 4.2,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "course": {
+            "description": "Direction of travel in degrees from north; precise shares only.",
+            "example": 87,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "altitude": {
+            "description": "Altitude in metres; precise shares only.",
+            "example": 12,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "precision": {
+            "$ref": "#/components/schemas/SharePrecision"
+          }
+        },
+        "required": [
+          "lat",
+          "lon",
+          "recordedAt",
+          "accuracy",
+          "speed",
+          "course",
+          "altitude",
+          "precision"
+        ],
+        "additionalProperties": false,
+        "description": "A shared position, at the share's precision."
+      },
+      "PersonActivity": {
+        "type": "object",
+        "properties": {
+          "motion": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Motion activity iOS reported with the position (`walking`, `automotive` …).",
+            "example": [
+              "walking"
+            ]
+          },
+          "tripMode": {
+            "description": "The mode of a trip running in Overland right now, or null.",
+            "example": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the device travels now, as Trail's location processing has it: the mode the owner set with the quick toggle, else that of the latest stop or move while it is recent (a stop is `stationary`); null when nothing recent is known.",
+            "example": "train"
+          }
+        },
+        "required": [
+          "motion",
+          "tripMode",
+          "mode"
+        ],
+        "additionalProperties": false,
+        "description": "What the device is doing."
+      },
+      "OutgoingShare": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The share's id.",
+            "example": "019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a23"
+          },
+          "recipient": {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "string",
+                "format": "email",
+                "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+                "description": "The address shared with (lower-case).",
+                "example": "ana@example.com"
+              },
+              "userId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The recipient's account; null until the share is bound to one (`pending`, `joined`).",
+                "example": "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60"
+              },
+              "displayName": {
+                "description": "The recipient's name in Trail — for `joined`, the name of whoever signed up with the address; null while nobody has.",
+                "example": "Ana",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "email",
+              "userId",
+              "displayName"
+            ],
+            "additionalProperties": false,
+            "description": "Who sees the location."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "joined",
+              "active",
+              "hidden"
+            ],
+            "description": "`pending`: the address has no account yet. `joined`: someone signed up with the address; they see nothing until you confirm it is the person you meant (`POST /api/v1/shares/{id}/confirm`) — an invitation to that address skips this. `active`: the recipient sees the location. `hidden`: the recipient has hidden you; nothing is sent to them until they show you again.",
+            "example": "active"
+          },
+          "deviceIds": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The devices shared: ids of the owner's devices, or null for all of them, also the ones added later. Empty when every device it named has been deleted.",
+            "example": null
+          },
+          "precision": {
+            "$ref": "#/components/schemas/SharePrecision"
+          },
+          "historyDays": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many days of past positions the recipient may see; null for live only (the newest position). Only with `precise`.",
+            "example": null
+          },
+          "includeDetails": {
+            "type": "boolean",
+            "description": "Whether battery and activity (motion, trip, transport mode) are shared too.",
+            "example": true
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the share ends by itself; null when it runs until stopped.",
+            "example": "2026-10-26T22:59:59.000Z"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the share started.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "lastViewedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the recipient last looked at the location (to the minute); null if never.",
+            "example": "2026-10-26T22:59:59.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "recipient",
+          "status",
+          "deviceIds",
+          "precision",
+          "historyDays",
+          "includeDetails",
+          "expiresAt",
+          "createdAt",
+          "lastViewedAt"
+        ],
+        "additionalProperties": false,
+        "description": "Your location, shared with one person."
+      },
+      "IncomingShare": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The share's id.",
+            "example": "019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a23"
+          },
+          "owner": {
+            "type": "object",
+            "properties": {
+              "userId": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The account that shares.",
+                "example": "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60"
+              },
+              "displayName": {
+                "type": "string",
+                "description": "Their name in Trail.",
+                "example": "Jens"
+              },
+              "email": {
+                "type": "string",
+                "format": "email",
+                "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+                "description": "Their address.",
+                "example": "jens@example.com"
+              }
+            },
+            "required": [
+              "userId",
+              "displayName",
+              "email"
+            ],
+            "additionalProperties": false,
+            "description": "Who shares."
+          },
+          "precision": {
+            "$ref": "#/components/schemas/SharePrecision"
+          },
+          "historyDays": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many days of past positions the recipient may see; null for live only (the newest position). Only with `precise`.",
+            "example": null
+          },
+          "includeDetails": {
+            "type": "boolean",
+            "description": "Whether battery and activity (motion, trip, transport mode) are shared too.",
+            "example": true
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the share ends by itself; null when it runs until stopped.",
+            "example": "2026-10-26T22:59:59.000Z"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the share started.",
+            "example": "2026-10-26T08:41:07.000Z"
+          },
+          "hiddenAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When you hid this person; null while they are shown.",
+            "example": "2026-10-26T22:59:59.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "precision",
+          "historyDays",
+          "includeDetails",
+          "expiresAt",
+          "createdAt",
+          "hiddenAt"
+        ],
+        "additionalProperties": false,
+        "description": "Someone's location, shared with you."
+      },
+      "ShareLink": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The link's id.",
+            "example": "019a2b4f-0c33-7a51-8d4e-6b7f1c2d3e4f"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Shown to visitors as the page's title.",
+            "example": "On the way home"
+          },
+          "deviceIds": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The devices shared: ids of the owner's devices, or null for all of them, also the ones added later. Empty when every device it named has been deleted.",
+            "example": null
+          },
+          "precision": {
+            "$ref": "#/components/schemas/SharePrecision"
+          },
+          "historyDays": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 7
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Days of the past track visitors see (1–7); null for the newest position only. Only with `precise`.",
+            "example": null
+          },
+          "includeDetails": {
+            "type": "boolean",
+            "description": "Whether visitors see battery and activity too.",
+            "example": false
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the link stops working.",
+            "example": "2026-10-27T08:41:07.000Z"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the link was made.",
+            "example": "2026-10-27T08:41:07.000Z"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "expired"
+            ],
+            "description": "`expired` links stay listed for 30 days, then they are removed.",
+            "example": "active"
+          },
+          "viewCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "How often the page was opened, counting at most once a minute.",
+            "example": 12
+          },
+          "lastViewedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the page was last opened; null if never.",
+            "example": "2026-10-26T09:12:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "deviceIds",
+          "precision",
+          "historyDays",
+          "includeDetails",
+          "expiresAt",
+          "createdAt",
+          "status",
+          "viewCount",
+          "lastViewedAt"
+        ],
+        "additionalProperties": false,
+        "description": "A secret web address that shows your location."
       },
       "ApiScope": {
         "type": "string",

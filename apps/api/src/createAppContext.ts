@@ -12,6 +12,7 @@ import { OverpassWaySource, overpassUserAgent } from "./processing/overpassWaySo
 import { processingConfigWith } from "./processing/processingConfig";
 import { ProcessingService } from "./processing/processingService";
 import type { WaySource } from "./processing/waySource";
+import { SharingState } from "./sharing/sharingState";
 import { DailyStatsScheduler } from "./stats/dailyStatsScheduler";
 import type { ApiTokenVerifier } from "./v1/apiTokens";
 
@@ -71,5 +72,6 @@ export function createAppContext(input: {
       dailyBytes: config.processing.overpassDailyBytes,
       ...(input.processingDelayMs === undefined ? {} : { delayMs: input.processingDelayMs }),
     }),
+    sharing: new SharingState(db),
   };
 }

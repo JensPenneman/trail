@@ -3,6 +3,7 @@ import type { AppContext } from "../appContext";
 import { publishDeviceLater } from "../devices/publishDevice";
 import { recoveredDeviceAlert } from "../jobs/alertMessages";
 import { localDate } from "../lib/localDate";
+import { publishPeopleLater } from "../sharing/publishPeopleLater";
 import type { IngestDevice } from "./ingestDevice";
 import type { IngestOutcome } from "./ingestUpload";
 
@@ -20,8 +21,9 @@ const toTrackPoint = (point: IngestOutcome["inserted"][number]): TrackPoint => [
 
 /**
  * Step 5 of docs/architecture.md §6.2, after the commit and the response: live
- * events for the owner's dashboards, the debounced daily-stats refresh for the
- * touched days, the new points' window in the processing queue, and the
+ * events for the owner's dashboards and for the people the device is shared
+ * with, the debounced daily-stats refresh for the touched days, the new
+ * points' window in the processing queue, and the
  * recovery alert when the device had been reported silent.
  */
 export function afterIngest(ctx: AppContext, device: IngestDevice, outcome: IngestOutcome): void {
@@ -36,6 +38,7 @@ export function afterIngest(ctx: AppContext, device: IngestDevice, outcome: Inge
     points: inserted.slice(-maxLivePoints).map(toTrackPoint),
   });
   publishDeviceLater(ctx, device.userId, device.id);
+  publishPeopleLater(ctx, device.userId, device.id);
 
   const first = inserted[0];
   const last = inserted.at(-1);

@@ -31,6 +31,16 @@ export const v1Tags = [
     description:
       "History without coordinates: trips, daily statistics and recent activity (`history:read`).",
   },
+  {
+    name: "People",
+    description:
+      "The people who share their location with you, with their devices at the precision they chose.",
+  },
+  {
+    name: "Sharing",
+    description:
+      "Your location shared with people (one way, for as long as you choose) and as public links, and the shares people give you.",
+  },
   { name: "Reference", description: "This API's own description." },
 ] as const satisfies readonly { name: string; description: string }[];
 

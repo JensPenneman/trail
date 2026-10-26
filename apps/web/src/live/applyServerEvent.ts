@@ -4,6 +4,9 @@ import type { TracksResponse } from "@trail/contracts/track";
 import { queryKeys } from "../api/queryKeys";
 import { removeDeviceFromCache } from "../devices/removeDeviceFromCache";
 import { upsertDeviceInCache } from "../devices/upsertDeviceInCache";
+import { forgetShareInCache } from "../people/forgetShareInCache";
+import { updatePersonInCache } from "../people/updatePersonInCache";
+import { invalidateSharing } from "../queries/invalidateSharing";
 import { appendTrackPoints } from "./appendTrackPoints";
 import type { LiveStore } from "./createLiveStore";
 import { isRangeParams } from "./isRangeParams";
@@ -22,6 +25,20 @@ export function applyServerEvent(
       return;
     case "device":
       upsertDeviceInCache(queryClient, event.device);
+      // Distances to people start from one's own newest position.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.people, refetchType: "active" });
+      return;
+    case "person":
+      updatePersonInCache(queryClient, event.userId, event.device);
+      return;
+    case "share":
+      if (event.change === "revoked") {
+        forgetShareInCache(queryClient, event.shareId);
+        store.dismissShareNotice(event.shareId);
+      }
+      if (event.change === "created")
+        store.addShareNotice({ shareId: event.shareId, at: Date.now() });
+      void invalidateSharing(queryClient);
       return;
     case "device-removed":
       removeDeviceFromCache(queryClient, event.deviceId);

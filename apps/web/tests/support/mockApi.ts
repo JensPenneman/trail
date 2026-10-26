@@ -13,12 +13,20 @@ type Handler = (request: { url: URL; method: string; body: unknown }) => {
 export function mockApi(
   routes: Readonly<Record<string, Handler | { status: number; body?: unknown }>>,
 ) {
-  const calls: { method: string; path: string; body: unknown }[] = [];
+  const calls: {
+    method: string;
+    path: string;
+    /** The whole address, query string included. */
+    url?: string;
+    body: unknown;
+    headers?: Readonly<Record<string, string>>;
+  }[] = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), "http://localhost");
     const method = init?.method ?? "GET";
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
-    calls.push({ method, path: url.pathname, body });
+    const headers = Object.fromEntries(new Headers(init?.headers).entries());
+    calls.push({ method, path: url.pathname, url: url.toString(), body, headers });
     const route = routes[`${method} ${url.pathname}`];
     const answer =
       route === undefined

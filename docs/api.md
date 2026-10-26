@@ -154,6 +154,9 @@ after `PATCH /api/v1/devices/{id}`) carries its `lastLocation` only for a
 credential with that scope; with `devices:read` alone the field is left out,
 so a token for a status display never learns where anyone is. `history:read`
 is the history without coordinates: trips, statistics per day and activity.
+The same goes for everything else that can yield coordinates: a share or a
+public link shows your positions, so making, changing or confirming one needs
+`locations:read` as well as `shares:write`.
 
 A token can also be limited to some of the account's devices. The other
 devices then look as if they did not exist: they are missing from lists and
@@ -292,6 +295,79 @@ no credential. There are no credentialed cross-origin requests: a page on
 another site uses a token, never the visitor's session. A token in a web page
 can be read by anyone who opens that page, so give such a token as few
 scopes and devices as it needs.
+
+## People and sharing
+
+Sharing works like Find My: one person shares their location with another,
+one way, for as long as they choose; the other may share back. Each share has
+a precision:
+
+| Precision | What the recipient gets |
+|---|---|
+| `precise` | the position as recorded |
+| `approximate` | the centre of a cell about 560 m across, accuracy 556 m or more; no altitude or course |
+| `area` | the centre of a cell about 5.6 km across, accuracy 5560 m or more; no altitude, course or speed |
+
+Each person has one grid for all their devices, shares and links, and an
+`area` cell is a block of whole `approximate` cells: the same position always
+gives the same answer, so neither reading it often nor holding several
+shares or links reveals anything more. Only `precise` shares
+can include history (`historyDays`); the others are live only. Battery and
+activity (`motion`, a running Overland trip's mode, and the current transport
+mode as `GET /api/v1/devices/{id}/mode` gives it to the owner — the quick
+toggle, else the latest stop or move while it is recent) come along when
+`includeDetails` is true.
+
+- `GET /api/v1/people` (`people:read`) lists the people who share with you,
+  each with their devices and the newest position inside the share's window:
+  the last `historyDays` days, or the last 12 hours for live-only shares.
+  `distanceM` starts from your own most recently located device and needs
+  `locations:read` as well. `GET /api/v1/people/{userId}/track` returns
+  their track for shares with history, never older than the history allows.
+- `GET`, `POST /api/v1/shares` and `PATCH`, `DELETE /api/v1/shares/{id}`
+  manage your own shares: listing needs `shares:read`, stopping
+  `shares:write`, starting and changing `shares:write` and `locations:read`.
+  A `duration` (`hour`, `endOfDay` in your time zone, `week`,
+  `indefinitely`) counts from the request. The answer shows whether the
+  address has an account, and its name.
+- An address without an account gets a `pending` share. Trail does not verify
+  addresses, so it starts by itself only when someone signs up with an
+  invitation to that very address. After any other sign-up with it the share
+  is `joined`: the new account's name and address appear in the share, they
+  see nothing yet, and `POST /api/v1/shares/{id}/confirm` (`shares:write` and
+  `locations:read`) starts it once you know it is the person you meant — or
+  `DELETE` withdraws it.
+- `GET /api/v1/shares/incoming` lists the shares with you, and
+  `POST /api/v1/shares/incoming/{id}/hide` and `…/unhide` hide or show a
+  person. The owner sees that you hid them. Hiding holds for the person: a
+  later share from them starts hidden too.
+- `POST /api/v1/share-links` (`shares:write` and `locations:read`) makes a
+  public link: anyone with its address sees your location without an
+  account, until it expires (24 hours by default, at least an hour, at most
+  30 days) or you delete it. Without a `label` the page reads “Shared
+  location”, never your name. `GET /api/v1/share-links` lists the working
+  links, then expired ones, at most 50. The answer carries the `secret` and the
+  `url` (`<server>/s#<secret>`) once; Trail keeps only a hash. The secret is
+  the address's fragment, which browsers never send to a server, a proxy or
+  as a referrer. The page sends it in a header instead:
+  `GET /api/public/share` with `X-Share-Secret: trls_…` — no other
+  credential, 60 requests a minute per address, `404 not_found` for a
+  missing or unknown secret and `404 share_expired` for an ended link. That
+  endpoint belongs to the page and is not part of `/api/v1`.
+
+A token limited to some devices shares only those, named in `deviceIds`, and
+changes or confirms only shares that show nothing but its devices, before and
+after the change (`403 forbidden`); it can always stop one.
+
+```sh
+# Share your location with someone until the end of your day, within about 560 m
+curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" -H "Content-Type: application/json" \
+  -d '{"email": "ana@example.com", "precision": "approximate", "duration": "endOfDay"}' \
+  "$TRAIL/api/v1/shares"
+
+# Who shares with you, and where they are
+curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/people"
+```
 
 ## Examples
 

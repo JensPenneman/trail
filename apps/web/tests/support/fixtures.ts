@@ -1,6 +1,9 @@
 import type { ApiToken } from "@trail/contracts/apiToken";
 import type { PublicConfig } from "@trail/contracts/config";
 import type { DeviceSummary } from "@trail/contracts/device";
+import type { Person, SharedDevice } from "@trail/contracts/person";
+import type { OutgoingShare } from "@trail/contracts/share";
+import type { ShareLink } from "@trail/contracts/shareLink";
 import type { TracksResponse } from "@trail/contracts/track";
 import type {
   DeviceMode,
@@ -13,6 +16,14 @@ import type { SessionUser } from "@trail/contracts/user";
 /** Contract-shaped test data: a Brussels user with a phone and a car tracker. */
 export const ids = {
   user: "01926f3a-8b2c-7d4e-9f10-2a3b4c5d6e7f",
+  ana: "01926f3a-8b2c-7d4e-9f10-2a3b4c5d6e80",
+  bob: "01926f3a-8b2c-7d4e-9f10-2a3b4c5d6e81",
+  anaPhone: "01926f3c-2e5f-7a71-8243-5d6e7f8091a2",
+  bobPhone: "01926f3c-2e5f-7a71-8243-5d6e7f8091a3",
+  anaShare: "019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a23",
+  bobShare: "019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a24",
+  myShare: "019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a25",
+  link: "019a2b4f-0c33-7a51-8d4e-6b7f1c2d3e4f",
   phone: "01926f3a-9c3d-7e5f-a021-3b4c5d6e7f80",
   car: "01926f3b-1d4e-7f60-b132-4c5d6e7f8091",
   ceremony: "01926f3d-3f60-7b82-9354-6e7f8091a2b3",
@@ -220,3 +231,109 @@ export function levelTracks(from: string, to: string, level: ProcessingLevel): L
 }
 
 export const automatic: DeviceMode = { override: null, current: null };
+
+/** A device someone shares: precise, with details, seen two minutes ago. */
+export function sharedDevice(overrides: Partial<SharedDevice> = {}): SharedDevice {
+  return {
+    id: ids.anaPhone,
+    name: "Ana’s iPhone",
+    location: {
+      lat: 51.0543,
+      lon: 3.7174,
+      accuracy: 8,
+      recordedAt: new Date(Date.now() - 120_000).toISOString(),
+      speed: 4.4,
+      course: 90,
+      altitude: 9,
+      precision: "precise",
+    },
+    battery: { level: 0.58, state: "unplugged", recordedAt: new Date().toISOString() },
+    activity: { motion: ["cycling"], tripMode: null, mode: null },
+    distanceM: 1830,
+    ...overrides,
+  };
+}
+
+/** Ana shares precisely with details; Bob approximately, without details, until tonight. */
+export const ana = (overrides: Partial<Person> = {}): Person => ({
+  userId: ids.ana,
+  displayName: "Ana Bell",
+  email: "ana@example.com",
+  share: {
+    id: ids.anaShare,
+    precision: "precise",
+    historyDays: null,
+    includeDetails: true,
+    expiresAt: null,
+    createdAt: "2026-10-20T08:00:00.000Z",
+  },
+  devices: [sharedDevice()],
+  ...overrides,
+});
+
+export const bob = (): Person => ({
+  userId: ids.bob,
+  displayName: "bob",
+  email: "bob@example.com",
+  share: {
+    id: ids.bobShare,
+    precision: "approximate",
+    historyDays: null,
+    includeDetails: false,
+    expiresAt: new Date(Date.now() + 3 * 3_600_000).toISOString(),
+    createdAt: "2026-10-22T08:00:00.000Z",
+  },
+  devices: [
+    sharedDevice({
+      id: ids.bobPhone,
+      name: "Bob’s phone",
+      location: {
+        lat: 50.8502,
+        lon: 4.3487,
+        accuracy: 556,
+        recordedAt: new Date(Date.now() - 40 * 60_000).toISOString(),
+        speed: null,
+        course: null,
+        altitude: null,
+        precision: "approximate",
+      },
+      battery: null,
+      activity: null,
+      distanceM: 48_200,
+    }),
+  ],
+});
+
+/** The signed-in person shares with Ana. */
+export function outgoingShare(overrides: Partial<OutgoingShare> = {}): OutgoingShare {
+  return {
+    id: ids.myShare,
+    recipient: { email: "ana@example.com", userId: ids.ana, displayName: "Ana Bell" },
+    status: "active",
+    deviceIds: null,
+    precision: "precise",
+    historyDays: null,
+    includeDetails: true,
+    expiresAt: null,
+    createdAt: "2026-10-21T08:00:00.000Z",
+    lastViewedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+    ...overrides,
+  };
+}
+
+export function shareLink(overrides: Partial<ShareLink> = {}): ShareLink {
+  return {
+    id: ids.link,
+    label: "Jens on the way home",
+    deviceIds: null,
+    precision: "approximate",
+    historyDays: null,
+    includeDetails: false,
+    expiresAt: new Date(Date.now() + 20 * 3_600_000).toISOString(),
+    createdAt: new Date(Date.now() - 4 * 3_600_000).toISOString(),
+    status: "active",
+    viewCount: 12,
+    lastViewedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+    ...overrides,
+  };
+}

@@ -98,15 +98,28 @@ class FitControl implements IControl {
   }
 }
 
-function markerElement(): HTMLDivElement {
+interface PlacedMarker {
+  marker: Marker;
+  element: HTMLDivElement;
+  /** The initials' element of a person's marker; null for a device dot. */
+  initials: HTMLSpanElement | null;
+}
+
+function markerElement(person: boolean): Omit<PlacedMarker, "marker"> {
   const element = document.createElement("div");
   element.setAttribute("aria-hidden", "true");
   const pulse = document.createElement("span");
-  pulse.className = "map-position__pulse";
-  const dot = document.createElement("span");
-  dot.className = "map-position__dot";
-  element.append(pulse, dot);
-  return element;
+  pulse.className = person ? "map-person__pulse" : "map-position__pulse";
+  if (!person) {
+    const dot = document.createElement("span");
+    dot.className = "map-position__dot";
+    element.append(pulse, dot);
+    return { element, initials: null };
+  }
+  const initials = document.createElement("span");
+  initials.className = "map-person__initials";
+  element.append(pulse, initials);
+  return { element, initials };
 }
 
 /**
@@ -142,7 +155,7 @@ export function TrailMap({
   // False from the moment a style swap starts until its `style.load`: sources and layers can
   // only be touched in between. A ref, because effects of the same commit must see the change.
   const styleReady = useRef(false);
-  const markers = useRef(new Map<string, { marker: Marker; element: HTMLDivElement }>());
+  const markers = useRef(new Map<string, PlacedMarker>());
   const fittedKey = useRef<string | null>(null);
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 
@@ -327,19 +340,30 @@ export function TrailMap({
     const seen = new Set<string>();
     for (const position of positions ?? []) {
       seen.add(position.id);
+      const person = position.initials !== undefined;
       let entry = placed.get(position.id);
+      if (entry !== undefined && (entry.initials !== null) !== person) {
+        entry.marker.remove();
+        placed.delete(position.id);
+        entry = undefined;
+      }
       if (entry === undefined) {
-        const element = markerElement();
+        const parts = markerElement(person);
         entry = {
-          element,
-          marker: new Marker({ element, anchor: "center" })
+          ...parts,
+          marker: new Marker({ element: parts.element, anchor: "center" })
             .setLngLat([position.lon, position.lat])
             .addTo(map),
         };
         placed.set(position.id, entry);
       }
       entry.marker.setLngLat([position.lon, position.lat]);
-      entry.element.className = `map-position device-color-${position.slot}${position.live ? " map-position--live" : ""}`;
+      if (entry.initials === null) {
+        entry.element.className = `map-position device-color-${position.slot}${position.live ? " map-position--live" : ""}`;
+      } else {
+        entry.element.className = `map-person person-color-${position.slot}${position.live ? " map-person--live" : ""}`;
+        entry.initials.textContent = position.initials ?? "";
+      }
     }
     for (const [id, entry] of placed) {
       if (!seen.has(id)) {

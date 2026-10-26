@@ -39,6 +39,14 @@ export function createAppRouter() {
           ],
         },
         {
+          // A public link (`/s#<secret>`): no session, no navigation, a layout of its own.
+          path: "s",
+          lazy: () =>
+            import("../pages/publicShare/PublicSharePage").then((m) => ({
+              Component: m.PublicSharePage,
+            })),
+        },
+        {
           Component: RequireSession,
           children: [
             {
@@ -62,6 +70,11 @@ export function createAppRouter() {
                     import("../pages/explore/ExplorePage").then((m) => ({
                       Component: m.ExplorePage,
                     })),
+                },
+                {
+                  path: "people",
+                  lazy: () =>
+                    import("../pages/people/PeoplePage").then((m) => ({ Component: m.PeoplePage })),
                 },
                 {
                   path: "devices",

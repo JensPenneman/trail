@@ -47,6 +47,8 @@ test.describe("accessibility", () => {
     await open(page, "/explore", "Explore", "Busiest places in view");
     await expect(page.getByText(/^\d+ points$/).first()).toBeVisible();
     await expectAccessible(page, "Explore");
+    await open(page, "/people", "People", "Nobody shares with you yet");
+    await expectAccessible(page, "People without anyone");
     await open(page, "/devices", "Devices", "Checked phone");
     await expectAccessible(page, "Devices");
     await open(page, `/devices/${device.id}`, "Checked phone", "Uploads of this device");

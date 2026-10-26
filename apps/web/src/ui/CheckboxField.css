@@ -1,0 +1,33 @@
+.checkbox-field {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: var(--target);
+  cursor: pointer;
+}
+
+.checkbox-field[data-disabled] {
+  cursor: not-allowed;
+}
+
+.checkbox-field input {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0.125rem 0 0;
+  accent-color: var(--color-accent);
+}
+
+.checkbox-field__text {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.checkbox-field__label {
+  font-weight: 600;
+}
+
+.checkbox-field__hint {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}

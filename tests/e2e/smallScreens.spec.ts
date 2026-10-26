@@ -20,6 +20,7 @@ test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account 
     ["/", "Live", "Last upload"],
     ["/history", "History", "30 points"],
     ["/explore", "Explore", /^\d+ points$/],
+    ["/people", "People", "Nobody shares with you yet"],
     ["/devices", "Devices", "30 points"],
     [`/devices/${device.id}`, "A phone with a rather long name", "25 shown"],
     ["/settings", "Settings", "works on this address"],

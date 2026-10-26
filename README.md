@@ -30,6 +30,13 @@ every pull request gets a preview deployment of its own.
   corrections that survive every recomputation, and a quick "now I'm on the
   train" toggle ([docs/transport.md](docs/transport.md)).
 - **Explore**: an all-time heatmap.
+- **People**: share your location with family and friends in the spirit of
+  Find My — one way, for an hour, until the end of the day, a week or until
+  you stop, precisely or only roughly (about 500 m or 5 km), with or without
+  history — and see who shares with you on a map, with their battery, what
+  they are doing and how far away they are. Public links show your location
+  to someone without an account until the link expires. How it works:
+  [docs/sharing.md](docs/sharing.md).
 - **Devices**: set up a phone by scanning a QR code; per-device ingest log,
   raw points, token rotation.
 - **Alerts** through [ntfy](https://ntfy.sh) when a device goes silent and
@@ -262,7 +269,7 @@ apps/api/            Express API, Overland ingest, CLI (Node LTS, TypeScript)
 apps/web/            React single-page app, served by the API in production
 packages/contracts/  zod schemas and types of the HTTP API
 deploy/              compose stack for Launchway, .env example, local run
-docs/                architecture (the specification), API guide, operations, Overland, transport modes
+docs/                architecture (the specification), API and sharing guides, operations, Overland, transport modes
 scripts/             development, build, hook and release scripts
 tests/e2e/           Playwright end-to-end tests
 .devcontainer/       development container (scripts/devc.sh)

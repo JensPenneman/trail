@@ -1,0 +1,32 @@
+.outgoing-shares__item {
+  flex-wrap: wrap;
+  padding-block: var(--space-3);
+}
+
+.outgoing-shares__status {
+  display: inline-block;
+  margin-inline-start: var(--space-2);
+  padding: 0.0625rem 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-3);
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  vertical-align: 0.1em;
+}
+
+.outgoing-shares__status--joined {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.outgoing-shares__status--active {
+  background: var(--color-live-soft);
+  color: var(--color-live);
+}
+
+.outgoing-shares__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-1);
+}
