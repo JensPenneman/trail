@@ -253,11 +253,10 @@ promise. Scripts, apps and agents use an API token from Settings › API tokens:
 curl -H "Authorization: Bearer trlk_…" https://trail.example.com/api/v1/tokens/verify
 ```
 
-Agents can also use Trail as an MCP server at `/mcp`, with a token made from
-the Agent template; [docs/mcp.md](docs/mcp.md) has the tools, how to connect
-(Claude Code: `claude mcp add --transport http trail
-https://trail.example.com/mcp --header "Authorization: Bearer trlk_…"`) and
-the privacy model.
+Agents can also use Trail as an MCP server at `/mcp`: any MCP client that
+speaks Streamable HTTP, with a token made from the Agent template in the
+`Authorization` header. [docs/mcp.md](docs/mcp.md) has the tools, how to
+connect and the privacy model.
 
 How the API is built and how to add an operation: [docs/architecture.md
 §8.3](docs/architecture.md#83-public-api-v1); how tokens work:

@@ -35,35 +35,6 @@ configuration. [docs/api.md](api.md#tokens) explains rolling and revoking.
 
 ## Connect
 
-### Claude Code
-
-```sh
-claude mcp add --transport http trail https://trail.jenspenneman.com/mcp \
-  --header "Authorization: Bearer trlk_…"
-```
-
-`claude mcp list` shows whether it connected; `/mcp` inside Claude Code shows
-the server and its tools. Claude Code keeps the header in `~/.claude.json`
-in your home folder (with the default, local scope, or with `--scope user`
-for every project). Do not add it with `--scope project`: that writes the
-secret into the project's `.mcp.json`, which is meant to be committed. A project that
-needs Trail can name the variable instead, as `.mcp.json` expands `${…}` in
-headers:
-
-```json
-{
-  "mcpServers": {
-    "trail": {
-      "type": "http",
-      "url": "https://trail.jenspenneman.com/mcp",
-      "headers": { "Authorization": "Bearer ${TRAIL_TOKEN}" }
-    }
-  }
-}
-```
-
-### Other clients
-
 Any MCP client that speaks Streamable HTTP and can send a header works:
 point it at `https://<your Trail>/mcp` and send `Authorization: Bearer
 trlk_…` with every request. The server keeps no session, so a client that
@@ -77,6 +48,33 @@ server's owner lists in `MCP_ALLOWED_ORIGINS`; requests from any other page
 are refused with `403` (see [Privacy and security](#privacy-and-security)).
 Clients that are not browsers send no `Origin` and are not affected.
 
+### Example: Claude Code
+
+```sh
+claude mcp add --transport http trail https://trail.jenspenneman.com/mcp \
+  --header "Authorization: Bearer trlk_…"
+```
+
+`claude mcp list` shows whether it connected; `/mcp` inside Claude Code shows
+the server and its tools. Claude Code keeps the header in `~/.claude.json`
+in your home folder (with the default, local scope, or with `--scope user`
+for every project). Do not add it with `--scope project`: that writes the
+secret into the project's `.mcp.json`, which is meant to be committed. A
+project that needs Trail can name the variable instead, as `.mcp.json`
+expands `${…}` in headers:
+
+```json
+{
+  "mcpServers": {
+    "trail": {
+      "type": "http",
+      "url": "https://trail.jenspenneman.com/mcp",
+      "headers": { "Authorization": "Bearer ${TRAIL_TOKEN}" }
+    }
+  }
+}
+```
+
 ## Tools
 
 A token sees the tools its scopes allow; a tool it may not use is not
@@ -86,7 +84,7 @@ every scope in its row. Anything that can yield coordinates needs
 
 | Tool | Scopes | What it answers |
 |---|---|---|
-| `list_devices` | `devices:read` | The devices: id, name, status (`live`, `idle`, `stale`, `never`), last upload, last position time, battery, a trip running in Overland, how it travels now. No positions. |
+| `list_devices` | `devices:read` | The devices: id, name, status (`live`, `idle`, `stale`, `never`), last upload, last position time, battery, a trip running in Overland, and how it travels now for a token with `locations:read` too. No positions. |
 | `get_current_location({ device? })` | `locations:read` | The newest known position (latitude, longitude, accuracy), its age, speed, motion, mode and battery. |
 | `get_location_at({ at, device?, toleranceMinutes? })` | `locations:read` | The recorded position nearest to `at`, within `toleranceMinutes` (30 by default, at most 1440), and how far from `at` it lies. |
 | `get_timeline({ from, to, device? })` | `locations:read` | Stops (place, arrival, departure, duration) and moves (mode, whether you set it, confidence, distance, duration, average speed), oldest first. The main tool for an agent that plans. |
@@ -96,7 +94,8 @@ every scope in its row. Anything that can yield coordinates needs
 | `set_transport_mode({ mode, device?, until? })` | `locations:read`, `locations:write` | Tells Trail how a device travels from now on, until `until` or the next stop; `mode: null` ends it. Recorded with the source `mcp`. Its answer is the mode now, which is location data, hence both scopes. |
 | `get_people` | `people:read` | The people who share their location with you, as each chose: name, precision and until when, and per shared device its newest position at that precision, how old it is, and battery and mode only where they share details; the distance from your own newest position needs `locations:read` too. |
 
-`device` takes a device's id (from `list_devices`) or its exact name. Without
+`device` takes a device's id (from `list_devices`) or its name as
+`list_devices` shows it. Without
 it, the single-device tools use the device that reported a position most
 recently, and the range tools cover every device the token reaches. An id
 or name the token cannot reach — unknown, someone else's, or outside a
@@ -107,7 +106,7 @@ Two resources serve the same data for clients that read resources:
 | Resource | Scope | Content |
 |---|---|---|
 | `trail://devices` | `devices:read` | `list_devices`'s answer |
-| `trail://devices/{id}/location` | `locations:read` | `get_current_location`'s answer for that device; one is listed per device the token reaches |
+| `trail://devices/{id}/location` | `locations:read` | `get_current_location`'s answer for that device; one is listed per device the token reaches, titled with its id |
 
 There are no prompts.
 
@@ -144,7 +143,7 @@ text only.
 | Range per call | 31 days (local days: the night the clocks go back has 25 hours) |
 | Items per answer | 500; an answer that hit it says `truncated: true` — ask again with a narrower range |
 | Request body | 1 MB, one JSON-RPC message (no batches) |
-| Database time per statement | 10 s; a call that needs more answers "This took too long" |
+| Database time per statement | 10 s, in a read-only transaction (`get_people` reads through the sharing code on the server's general limit); a call that needs more answers "This took too long" |
 | Requests | the API's: 600 a minute per client address and 600 a minute per token, shared with `/api/v1`, and 30 refused tokens in 10 minutes per address |
 
 Every answer carries the `RateLimit` and `RateLimit-Policy` headers;
@@ -166,10 +165,11 @@ it, so the server was built against these threats:
   ones.
 - **Coordinates through a side door.** Only tools behind `locations:read`
   carry positions. `list_devices` and the `trail://devices` resource show
-  status, battery and mode, never a position; `get_day_summary` and
-  `get_trips` give times, counts and distances, never a place; every
-  answer goes out through its output schema, which drops whatever it does
-  not name.
+  status and battery, never a position, and how a device travels now only
+  with `locations:read` too — the mode tells when it moves, as on the API;
+  `get_day_summary` and `get_trips` give times, counts and distances, never
+  a place; resource listings name devices by id; every answer goes out
+  through its output schema, which drops whatever it does not name.
 - **Other people's positions.** `get_people` reads them only through the
   sharing rules the People page uses (`resolveAccessibleDevices` and
   `toSharedDevice`): only people who share with you and whom you have not
@@ -191,8 +191,10 @@ it, so the server was built against these threats:
 - **Too much work.** A call covers at most 31 days and returns at most 500
   items; the body is limited to 1 MB and one message, so a batch cannot turn
   one request into a hundred calls; reads run in a read-only transaction
-  under a 10 s statement timeout; the rate limits are per address and per
-  token, and nothing holds a connection open: the server announces no
+  under a 10 s statement timeout — except `get_people`, which reads through
+  the sharing code and stamps the shares' last view; the rate limits are
+  per address and per token, with one budget for refused tokens shared with
+  `/api/v1`, and nothing holds a connection open: the server announces no
   changes, so a client that asks to listen is acknowledged and let go.
 - **Logs.** A call is logged with the tool's name, the outcome, the
   duration, the number of items and the size of the answer, and the

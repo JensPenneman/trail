@@ -648,7 +648,7 @@ scopes it holds (all of them); calling another answers like an unknown tool.
 
 | Tool | Scopes | Purpose |
 |---|---|---|
-| `list_devices` | `devices:read` | devices with status, last seen, battery, current mode (no positions) |
+| `list_devices` | `devices:read` | devices with status, last seen, battery (no positions); the current mode only with `locations:read` too |
 | `get_current_location({ device? })` | `locations:read` | latest position, accuracy, age, speed, mode, battery; `device` by id or exact name; default = the device with the newest position |
 | `get_location_at({ at, device?, toleranceMinutes? })` | `locations:read` | the nearest point around a time (default tolerance 30 min, at most 24 h) |
 | `get_timeline({ from, to, device? })` | `locations:read` | stops and moves with mode, distance, duration, speed — the appointment agent's main tool |
@@ -689,8 +689,9 @@ own client in both eras.
   (only times, counts and distances), like the trips. **`set_transport_mode`
   needs `locations:read` too**, as `POST /api/v1/devices/{id}/mode` does: its
   answer is the device's mode now.
-- **`list_devices` shows the current mode** with `devices:read`: an activity
-  like the battery or Overland's trip mode, without position or segment id.
+- **`list_devices` shows the current mode only with `locations:read`**, as
+  `GET /api/v1/devices/{id}/mode` does: the mode tells when a device moves.
+  Without the scope the field is left out, as `DevicePublic.lastLocation` is.
 - **CORS** also allows `Mcp-Method` and `Mcp-Name` (required by 2026-07-28)
   and lets GET and DELETE through the preflight, so a browser-based client
   sees the 405 rather than a network error.

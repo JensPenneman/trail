@@ -78,8 +78,10 @@ yourself: location data is personal data.
   lookup; a token's scopes decide which tools it sees and its devices which
   data, with positions only for `locations:read` and other people's only
   through the sharing rules, at their precision; names typed by users reach
-  an agent's model only as sanitised data, never as instructions; reads are
-  read-only, short and bounded (31 days, 500 items); calls are logged without
+  an agent's model only as sanitised data, never as instructions; reads run
+  read-only under a 10 s statement timeout (except `get_people`, which reads
+  through the sharing code and stamps the shares' last view) and are bounded
+  (31 days, 500 items, one message per request); calls are logged without
   their arguments or results.
 - **Requests**: origin checks against cross-site requests, input validation of
   every request with zod, body size limits, rate limits per IP, per device

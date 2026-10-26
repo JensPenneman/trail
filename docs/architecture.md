@@ -1094,7 +1094,9 @@ rest:
    (GET and DELETE only to reach their 405), `Allow-Headers: Authorization,
    Content-Type, Mcp-Protocol-Version, Mcp-Session-Id, Mcp-Method, Mcp-Name`
    and `Max-Age: 600`.
-5. `authenticateBearer(ctx)` with its failed-token limiter, then
+5. `authenticateBearer(ctx)` with its failed-token limiter — one chain per
+   app, so refused tokens count once per address for `/api/v1` and `/mcp` —
+   then
    `requireApiToken`: without a token principal 401 `unauthorized` with
    `WWW-Authenticate: Bearer realm="trail"`. The session is never loaded, so a
    cookie alone is refused.
@@ -1135,7 +1137,7 @@ and answers a generic message.
 
 | Tool | Scopes | Built on |
 |---|---|---|
-| `list_devices` | `devices:read` | `loadDeviceSummaries`, `loadDeviceMode`; no position, no segment id |
+| `list_devices` | `devices:read` | `loadDeviceSummaries`; `loadDeviceMode` only for a token with `locations:read` too (the mode tells when a device moves, as `GET /api/v1/devices/{id}/mode`); no position, no segment id |
 | `get_current_location` | `locations:read` | the device cache (`loadDeviceSummaries`), `loadDeviceMode` |
 | `get_location_at` | `locations:read` | `readPoints`, twice: the last point at or before `at` and the first after it within the tolerance |
 | `get_timeline` | `locations:read` | `loadTimeline`, 500 items a call |
@@ -1145,15 +1147,18 @@ and answers a generic message.
 | `set_transport_mode` | `locations:read`, `locations:write` | `setDeviceMode(…, { source: "mcp" })`, then `processing.notify()` and the `segments` event, like `POST /api/v1/devices/{id}/mode` |
 | `get_people` | `people:read` | `loadPeople` — the sharing gate (`resolveAccessibleDevices`, `toSharedDevice`, §8.5); names, precision, expiry and per device the projected position, its age, and battery and mode only with details; no addresses or ids; queries on the pool (`transaction: false`), and looking stamps `last_viewed_at` |
 
-`device` is an id or the exact name (NFC, trimmed) of one device the token
-reaches (`chooseDevice`); without it a single-device tool takes the device
+`device` is an id or the name of one device the token reaches, compared as
+answers show names (`safeText`, NFC), so a name copied from `list_devices`
+finds its device and names that read the same are refused as ambiguous
+(`chooseDevice`); without it a single-device tool takes the device
 with the newest position and a range tool every device. Ranges are at most 31
 days (plus the hour of a night the clocks go back) and answers at most 500
 items (`truncated` and a "narrow the range" sentence otherwise).
 Resources: `trail://devices` (`devices:read`, `list_devices`'s answer) and
 the template `trail://devices/{id}/location` (`locations:read`,
-`get_current_location`'s answer; listed per device the token reaches; any
-other id is `ResourceNotFoundError`, `-32602`). No prompts.
+`get_current_location`'s answer; listed per device the token reaches, titled
+by id — a listing's titles are no data field; any other id is
+`ResourceNotFoundError`, `-32602`). No prompts.
 
 **Text from users.** Device names and people's display names reach the
 agent's model. `safeText` turns control, format and
@@ -1279,8 +1284,10 @@ invalid value).
   `locations:read` — and every answer leaves through its output schema;
   names typed by users reach the agent's model only as sanitised data fields
   (`safeText`), never in instructions or descriptions. Reads run read-only
-  under a 10 s statement timeout, a call covers at most 31 days and 500
-  items, and a call is logged with its tool, outcome, duration and size only.
+  under a 10 s statement timeout (except `get_people`, which reads through
+  `loadPeople` on the pool and stamps the shares' `last_viewed_at`), a call
+  covers at most 31 days and 500 items in one message, and a call is logged
+  with its tool, outcome, duration and size only.
 - `trust proxy` from `TRUST_PROXY`, by default nobody: the client address (per-IP
   rate limits, session IPs) and HTTPS (`req.secure`: the `__Host-` cookie, HSTS)
   come from `X-Forwarded-For`/`-Proto` of trusted hops only, otherwise anyone
