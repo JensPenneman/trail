@@ -812,14 +812,18 @@ the SPA router, under the per-IP limiter) is Scalar's standalone bundle
 the build copies to `apps/api/dist/api-reference/`), never a CDN. The page
 holds a mount point and three same-origin scripts whose names carry their
 hash (`setup`, `scalar`, `start`; `Cache-Control: public, max-age=31536000,
-immutable`; the 4.6 MB bundle is compressed once per process, brotli and gzip,
-not per request); the page itself revalidates (`no-cache`). Its CSP is the one
-of §12 with `style-src 'self' 'unsafe-inline'` — the reference writes its
-styles at runtime — on this page only; `script-src 'self'` stays. Three
-details keep it free of CSP violations: `setup` switches on zod's jitless mode
-before the bundle runs (zod probes `new Function` otherwise); the mount point
-is not `#api-reference` (the bundle auto-mounts an unconfigured copy there,
-which loads Scalar's web fonts); the configuration turns off default fonts,
+immutable`, and a weak `ETag` that answers a revalidation with 304). The
+4.6 MB bundle is read and hashed once, when `createApp` builds the router at
+startup, so no request waits for the disk (an unreadable bundle leaves
+`/docs` out, like a missing one); it is compressed once per process on first
+request, brotli and gzip, not per request. The page itself revalidates
+(`no-cache`). Its CSP is the one of §12 with
+`style-src 'self' 'unsafe-inline'` — the reference writes its styles at
+runtime — on this page only; `script-src 'self'` stays. Three details keep it
+free of CSP violations: `setup` switches on zod's jitless mode before the
+bundle runs (zod probes `new Function` otherwise); the mount point is not
+`#api-reference` (the bundle auto-mounts an unconfigured copy there, which
+loads Scalar's web fonts); the configuration turns off default fonts,
 telemetry, Scalar's chat agent, MCP hints and the button that opens Scalar's
 hosted client.
 
@@ -1389,7 +1393,8 @@ on green CI once branch protection requires the checks.
   number of an owner's devices, shares and links narrows a position below one
   approximate cell — and the sharing access rules), the v1
   route registry (`defineRoute`: path conversion, validation, scopes,
-  response schemas, handler types), principals, and the OpenAPI document:
+  response schemas, handler types), principals, the `/docs` router (the
+  bundle read at startup, revalidations), and the OpenAPI document:
   validated against the OpenAPI 3.1 schema and compared with
   `__snapshots__/openapi.json` (the guide aside); after an API change,
   `npm test -w @trail/api -- -u` rewrites the snapshot for review. The

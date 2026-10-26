@@ -20,13 +20,16 @@ const encodeFrom = 1024;
 export class ImmutableScript {
   /** `<base>-<hash>.js` */
   readonly fileName: string;
+  /** A weak validator: compression changes the bytes on the wire, never the script. */
+  readonly etag: string;
   readonly #body: Buffer;
   readonly #encoded = new Map<Encoding, Promise<Buffer>>();
 
   constructor(base: string, body: Buffer | string) {
     this.#body = Buffer.isBuffer(body) ? body : Buffer.from(body, "utf8");
-    const hash = createHash("sha256").update(this.#body).digest("hex").slice(0, 12);
-    this.fileName = `${base}-${hash}.js`;
+    const hash = createHash("sha256").update(this.#body).digest("hex");
+    this.fileName = `${base}-${hash.slice(0, 12)}.js`;
+    this.etag = `W/"${hash}"`;
   }
 
   #encode(encoding: Encoding): Promise<Buffer> {
@@ -49,9 +52,16 @@ export class ImmutableScript {
   }
 
   async send(req: Request, res: Response): Promise<void> {
-    res.setHeader("Content-Type", "text/javascript; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     res.setHeader("Vary", "Accept-Encoding");
+    res.setHeader("ETag", this.etag);
+    // A client that revalidates anyway (a reload, a cache that ignores `immutable`)
+    // gets a 304, before any compression.
+    if (req.fresh) {
+      res.status(304).end();
+      return;
+    }
+    res.setHeader("Content-Type", "text/javascript; charset=utf-8");
     const accepted = this.#body.length < encodeFrom ? false : req.acceptsEncodings("br", "gzip");
     if (accepted === "br" || accepted === "gzip") {
       const body = await this.#encode(accepted);
