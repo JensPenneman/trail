@@ -1,7 +1,7 @@
 import type { WayKind } from "@trail/contracts/transport";
 
 /** Public transport stops and airports, by what matters to the mode rules. */
-export const poiKinds = [
+const poiKinds = [
   "station",
   "halt",
   "tram_stop",

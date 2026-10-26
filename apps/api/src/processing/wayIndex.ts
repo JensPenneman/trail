@@ -154,10 +154,6 @@ export class WayIndex {
     }
   }
 
-  get isEmpty(): boolean {
-    return this.ways.length === 0;
-  }
-
   /** Calls `visit` with every segment code in the cells within `radius` of (x, y). */
   #forEachSegmentNear(x: number, y: number, radius: number, visit: (code: number) => void): void {
     const minX = Math.floor((x - radius) / cellSizeM);
@@ -229,25 +225,5 @@ export class WayIndex {
       if (projection.distanceSquared <= limit) mask |= bit;
     });
     return mask;
-  }
-
-  /** Distance to the nearest way that `accept`s, if one is within `radius`; Infinity otherwise. */
-  nearest(x: number, y: number, radius: number, accept: (kind: WayKind) => boolean): number {
-    let nearest = Number.POSITIVE_INFINITY;
-    this.#forEachSegmentNear(x, y, radius, (code) => {
-      const way = this.ways[Math.floor(code / segmentSlots)];
-      if (way === undefined || !accept(way.kind)) return;
-      const segment = code % segmentSlots;
-      const projection = projectOntoSegment(
-        x,
-        y,
-        way.xs[segment] ?? 0,
-        way.ys[segment] ?? 0,
-        way.xs[segment + 1] ?? 0,
-        way.ys[segment + 1] ?? 0,
-      );
-      nearest = Math.min(nearest, Math.sqrt(projection.distanceSquared));
-    });
-    return nearest <= radius ? nearest : Number.POSITIVE_INFINITY;
   }
 }

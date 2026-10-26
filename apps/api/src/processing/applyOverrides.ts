@@ -4,7 +4,7 @@ import type { ProcessingConfig } from "./processingConfig";
 import type { ScoredPart } from "./splitMoves";
 
 /** A stop of the window, by kept-point indices. */
-export interface DraftStop {
+interface DraftStop {
   kind: "stop";
   first: number;
   last: number;

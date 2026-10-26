@@ -31,7 +31,7 @@ interface BuildInfo {
 }
 
 /** Location processing (docs/architecture.md §17.7). */
-export interface ProcessingSettings {
+interface ProcessingSettings {
   enabled: boolean;
   /** Overpass interpreter for map data; null when mapping is switched off. */
   overpassUrl: string | null;

@@ -17,7 +17,7 @@ export interface MapContext {
 }
 
 /** A pause inside a move. */
-export interface Dwell {
+interface Dwell {
   /** Positions in the move (inclusive). */
   first: number;
   last: number;
