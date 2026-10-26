@@ -27,7 +27,7 @@ export type McpWork<Input, Answer> = (input: Input, context: WorkContext) => Pro
  * small by construction (31 days, 500 items), and a connection of the shared
  * pool must not sit with an agent for the two minutes the dashboard gets.
  */
-export const mcpStatementTimeout = "10s";
+const mcpStatementTimeout = "10s";
 
 type Checked<Value> =
   | { ok: true; value: Value }
