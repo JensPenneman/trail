@@ -24,3 +24,12 @@ export function tileCentre(x: number, y: number, z: number): [number, number] {
   const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + 0.5)) / tiles))) * 180) / Math.PI;
   return [lon, lat];
 }
+
+/** Edges of tile (x, y) at zoom `z` in degrees: `[south, west, north, east]` (Overpass's bbox order). */
+export function tileBounds(x: number, y: number, z: number): [number, number, number, number] {
+  const tiles = 2 ** z;
+  const lonOf = (column: number) => (column / tiles) * 360 - 180;
+  const latOf = (row: number) =>
+    (Math.atan(Math.sinh(Math.PI * (1 - (2 * row) / tiles))) * 180) / Math.PI;
+  return [latOf(y + 1), lonOf(x), latOf(y), lonOf(x + 1)];
+}

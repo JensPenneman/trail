@@ -1,0 +1,153 @@
+import type { ChosenMode } from "@trail/contracts/transport";
+import type { OverrideSpan } from "./pipelineTypes";
+import type { ProcessingConfig } from "./processingConfig";
+import type { ScoredPart } from "./splitMoves";
+
+/** A stop of the window, by kept-point indices. */
+export interface DraftStop {
+  kind: "stop";
+  first: number;
+  last: number;
+  startT: number;
+  endT: number;
+}
+
+/** A move (or part of one) of the window: kept-point indices, its scores, the person's mode. */
+export interface DraftMove {
+  kind: "move";
+  first: number;
+  last: number;
+  startT: number;
+  endT: number;
+  /** Which detected move (series) the part belongs to. */
+  move: number;
+  part: ScoredPart;
+  modeUser: ChosenMode | null;
+  override: OverrideSpan | null;
+}
+
+export type Draft = DraftStop | DraftMove;
+
+/** What applying overrides needs of the window: point times and scoring a part on its own. */
+export interface OverrideContext {
+  /** Time of kept point `index`. */
+  timeAt: (index: number) => number;
+  /** Scores kept points `first..last` of detected move `move` as a part. */
+  rescore: (move: number, first: number, last: number) => ScoredPart;
+  overrides: ProcessingConfig["overrides"];
+}
+
+/** Where an override applies: a segment override its span, a toggle until the next stop. */
+function effectiveSpan(
+  override: OverrideSpan,
+  segments: readonly Draft[],
+): { from: number; to: number } | null {
+  let to = override.to ?? Number.POSITIVE_INFINITY;
+  if (override.kind === "toggle") {
+    if (override.endsBy !== null) to = Math.min(to, override.endsBy);
+    for (const segment of segments) {
+      if (segment.kind === "stop" && segment.startT > override.from) {
+        to = Math.min(to, segment.startT);
+        break;
+      }
+    }
+  }
+  return to > override.from ? { from: override.from, to } : null;
+}
+
+/**
+ * The person's corrections win (docs/architecture.md §17.5), applied last and
+ * in the order they were made, so a later one wins where they overlap. A move
+ * inside an override's span takes its mode; one that reaches beyond it is cut
+ * at the span's edges, and the parts outside keep (and are scored for) what
+ * the inference says. Parts too short to stand alone join the corrected part,
+ * so an override still fits after the segments moved by a few seconds; an
+ * override that only grazes a move leaves it alone. Stops never take a mode.
+ */
+export function applyOverrides(
+  segments: readonly Draft[],
+  overrides: readonly OverrideSpan[],
+  context: OverrideContext,
+): Draft[] {
+  const ordered = [...overrides].sort(
+    (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+  let result: Draft[] = [...segments];
+  for (const override of ordered) {
+    const span = effectiveSpan(override, result);
+    if (span === null) continue;
+    const next: Draft[] = [];
+    for (const segment of result) {
+      if (segment.kind !== "move" || segment.endT <= span.from || segment.startT >= span.to) {
+        next.push(segment);
+      } else if (span.from <= segment.startT && segment.endT <= span.to) {
+        next.push({ ...segment, modeUser: override.mode, override });
+      } else {
+        next.push(...cutMove(segment, span, override, context));
+      }
+    }
+    result = next;
+  }
+  return result;
+}
+
+/** Splits a move at an override's edges and gives the part inside the override's mode. */
+function cutMove(
+  move: DraftMove,
+  span: { from: number; to: number },
+  override: OverrideSpan,
+  context: OverrideContext,
+): Draft[] {
+  const { timeAt, rescore } = context;
+  const short = (part: ScoredPart) => part.features.durationS < context.overrides.sliverS;
+  const indexNear = (t: number): number => {
+    let best = move.first;
+    for (let index = move.first + 1; index <= move.last; index += 1) {
+      if (Math.abs(timeAt(index) - t) < Math.abs(timeAt(best) - t)) best = index;
+    }
+    return best;
+  };
+  const start = span.from > move.startT ? indexNear(span.from) : move.first;
+  const end = span.to < move.endT ? indexNear(span.to) : move.last;
+  if (end <= start) return [move];
+
+  const before = start > move.first ? rescore(move.move, move.first, start) : null;
+  const after = end < move.last ? rescore(move.move, end, move.last) : null;
+  const inside = rescore(move.move, start, end);
+  const majority = inside.features.durationS * 2 >= move.part.features.durationS;
+  if (short(inside) && !majority) return [move];
+
+  // Short leftovers join the corrected part.
+  const keepBefore = before !== null && !short(before);
+  const keepAfter = after !== null && !short(after);
+  const first = keepBefore ? start : move.first;
+  const last = keepAfter ? end : move.last;
+  const corrected = first === start && last === end ? inside : rescore(move.move, first, last);
+
+  const piece = (
+    part: ScoredPart,
+    from: number,
+    to: number,
+    modeUser: ChosenMode | null,
+    by: OverrideSpan | null,
+  ): DraftMove => ({
+    kind: "move",
+    first: from,
+    last: to,
+    startT: from === move.first ? move.startT : timeAt(from),
+    endT: to === move.last ? move.endT : timeAt(to),
+    move: move.move,
+    part,
+    modeUser,
+    override: by,
+  });
+  const parts: Draft[] = [];
+  if (keepBefore && before !== null) {
+    parts.push(piece(before, move.first, start, move.modeUser, move.override));
+  }
+  parts.push(piece(corrected, first, last, override.mode, override));
+  if (keepAfter && after !== null) {
+    parts.push(piece(after, end, move.last, move.modeUser, move.override));
+  }
+  return parts;
+}

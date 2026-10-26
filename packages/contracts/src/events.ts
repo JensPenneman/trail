@@ -23,6 +23,16 @@ export const serverEventSchema = z.discriminatedUnion("type", [
     points: z.array(trackPointSchema),
   }),
   /**
+   * Processing finished a window of a device's history: its stops, moves and
+   * the averaged and mapped levels of `[from, to)` changed. Refetch that range.
+   */
+  z.object({
+    type: z.literal("segments"),
+    deviceId: z.uuid(),
+    from: z.iso.datetime(),
+    to: z.iso.datetime(),
+  }),
+  /**
    * The session behind this stream ended — signed out, revoked from another
    * browser, expired, or the account was deleted. The server closes the stream
    * next; reconnecting would only be refused.
