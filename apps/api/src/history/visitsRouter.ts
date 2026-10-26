@@ -27,11 +27,9 @@ export function visitsRouter(ctx: AppContext): Router {
   const router = express.Router();
 
   router.get(apiPaths.visits, async (req, res) => {
-    const { user } = requireAuth(req);
+    const auth = requireAuth(req);
     const query = parseQuery(eventRangeQuerySchema, req);
-    const ids = (await resolveDeviceIds(ctx.db, user.id, query.deviceIds)).map(
-      (device) => device.id,
-    );
+    const ids = (await resolveDeviceIds(ctx.db, auth, query.deviceIds)).map((device) => device.id);
     const from = new Date(query.from).toISOString();
     const to = new Date(query.to).toISOString();
     const result =

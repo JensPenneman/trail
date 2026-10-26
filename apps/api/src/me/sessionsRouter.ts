@@ -3,7 +3,7 @@ import type { SessionListResponse } from "@trail/contracts/session";
 import { and, desc, eq, gt, ne } from "drizzle-orm";
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
-import { requireAuth } from "../auth/requestAuth";
+import { requireSession } from "../auth/requestAuth";
 import { clearedSessionCookie } from "../auth/sessionCookie";
 import { sessions } from "../db/schema/sessions";
 import { notFound } from "../http/httpError";
@@ -27,12 +27,12 @@ export function sessionsRouter(ctx: AppContext): Router {
   };
 
   router.get(apiPaths.me.sessions, async (req, res) => {
-    const { user, sessionId } = requireAuth(req);
+    const { user, sessionId } = requireSession(req);
     res.json(await listSessions(user.id, sessionId));
   });
 
   router.post(apiPaths.me.revokeOtherSessions, async (req, res) => {
-    const { user, sessionId } = requireAuth(req);
+    const { user, sessionId } = requireSession(req);
     const revoked = await db
       .delete(sessions)
       .where(and(eq(sessions.userId, user.id), ne(sessions.id, sessionId)))
@@ -42,7 +42,7 @@ export function sessionsRouter(ctx: AppContext): Router {
   });
 
   router.delete("/api/me/sessions/:id", async (req, res) => {
-    const { user, sessionId } = requireAuth(req);
+    const { user, sessionId } = requireSession(req);
     const [revoked] = await db
       .delete(sessions)
       .where(and(eq(sessions.id, req.params.id), eq(sessions.userId, user.id)))

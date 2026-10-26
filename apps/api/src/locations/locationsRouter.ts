@@ -22,9 +22,9 @@ export function locationsRouter(ctx: AppContext): Router {
   const { db } = ctx;
 
   router.get(apiPaths.locations, async (req, res) => {
-    const { user } = requireAuth(req);
+    const auth = requireAuth(req);
     const query = parseQuery(locationsQuerySchema, req);
-    const device = await findOwnedDevice(db, user.id, query.deviceId);
+    const device = await findOwnedDevice(db, auth, query.deviceId);
     const rows = await db
       .select()
       .from(locations)
@@ -63,9 +63,10 @@ export function locationsRouter(ctx: AppContext): Router {
   });
 
   router.post(apiPaths.deleteLocations, async (req, res) => {
-    const { user } = requireAuth(req);
+    const auth = requireAuth(req);
+    const { user } = auth;
     const request = parseBody(deleteLocationsRequestSchema, req);
-    const device = await findOwnedDevice(db, user.id, request.deviceId);
+    const device = await findOwnedDevice(db, auth, request.deviceId);
     const deleted = await deleteLocationRange(db, {
       deviceId: device.id,
       timezone: user.timezone,

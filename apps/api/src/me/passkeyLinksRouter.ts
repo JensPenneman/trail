@@ -5,7 +5,7 @@ import {
 } from "@trail/contracts/passkeyLink";
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
-import { requireAuth } from "../auth/requestAuth";
+import { requireSession } from "../auth/requestAuth";
 import { normaliseOrigin } from "../config/normaliseOrigin";
 import { HttpError } from "../http/httpError";
 import { parseBody } from "../http/parseInput";
@@ -16,7 +16,7 @@ export function passkeyLinksRouter(ctx: AppContext): Router {
   const router = express.Router();
 
   router.post(apiPaths.me.passkeyLinks, async (req, res) => {
-    const { user } = requireAuth(req);
+    const { user } = requireSession(req);
     const request = parseBody(createPasskeyLinkRequestSchema, req);
     const origin =
       request.origin === undefined ? ctx.config.publicUrl : normaliseOrigin(request.origin);

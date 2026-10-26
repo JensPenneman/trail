@@ -25,11 +25,9 @@ export function tripsRouter(ctx: AppContext): Router {
   const router = express.Router();
 
   router.get(apiPaths.trips, async (req, res) => {
-    const { user } = requireAuth(req);
+    const auth = requireAuth(req);
     const query = parseQuery(eventRangeQuerySchema, req);
-    const ids = (await resolveDeviceIds(ctx.db, user.id, query.deviceIds)).map(
-      (device) => device.id,
-    );
+    const ids = (await resolveDeviceIds(ctx.db, auth, query.deviceIds)).map((device) => device.id);
     const result =
       ids.length === 0
         ? { rows: [] }

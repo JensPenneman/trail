@@ -11,7 +11,7 @@ export function publishDevice(ctx: AppContext, userId: string, device: DeviceSum
 export function publishDeviceLater(ctx: AppContext, userId: string, deviceId: string): void {
   if (ctx.bus.connectionCount(userId) === 0) return;
   ctx.background.run("publish device summary", async () => {
-    const [device] = await loadDeviceSummaries(ctx.db, { userId, deviceId });
+    const [device] = await loadDeviceSummaries(ctx.db, { user: { id: userId } }, deviceId);
     if (device !== undefined) publishDevice(ctx, userId, device);
   });
 }

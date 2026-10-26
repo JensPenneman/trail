@@ -13,7 +13,7 @@ import { consumeCeremony, createCeremony } from "../auth/ceremonies";
 import { currentRpId } from "../auth/currentRpId";
 import { finishAddPasskey } from "../auth/finishAddPasskey";
 import { registrationOptions } from "../auth/registrationOptions";
-import { requireAuth } from "../auth/requestAuth";
+import { requireSession } from "../auth/requestAuth";
 import { requireCeremonyOrigin } from "../auth/requireCeremonyOrigin";
 import { toPasskey } from "../auth/toPasskey";
 import { passkeys } from "../db/schema/passkeys";
@@ -27,7 +27,7 @@ export function passkeysRouter(ctx: AppContext): Router {
   const { db } = ctx;
 
   router.get(apiPaths.me.passkeys, async (req, res) => {
-    const { user } = requireAuth(req);
+    const { user } = requireSession(req);
     const rows = await db
       .select()
       .from(passkeys)
@@ -39,7 +39,7 @@ export function passkeysRouter(ctx: AppContext): Router {
   });
 
   router.post(apiPaths.me.passkeyOptions, async (req, res) => {
-    const { user } = requireAuth(req);
+    const { user } = requireSession(req);
     const { origin, rpId } = requireCeremonyOrigin(req, ctx.config.allowedOrigins);
     const existing = await db
       .select({ id: passkeys.id, transports: passkeys.transports })
@@ -64,7 +64,7 @@ export function passkeysRouter(ctx: AppContext): Router {
   });
 
   router.post(apiPaths.me.passkeys, async (req, res) => {
-    const { user } = requireAuth(req);
+    const { user } = requireSession(req);
     const { origin, rpId } = requireCeremonyOrigin(req, ctx.config.allowedOrigins);
     const request = parseBody(addPasskeyRequestSchema, req);
     const ceremony = await consumeCeremony(db, request.ceremonyId);
@@ -81,7 +81,7 @@ export function passkeysRouter(ctx: AppContext): Router {
   });
 
   router.patch("/api/me/passkeys/:id", async (req, res) => {
-    const { user } = requireAuth(req);
+    const { user } = requireSession(req);
     const { name } = parseBody(renamePasskeyRequestSchema, req);
     const [row] = await db
       .update(passkeys)
@@ -96,7 +96,7 @@ export function passkeysRouter(ctx: AppContext): Router {
   });
 
   router.delete("/api/me/passkeys/:id", async (req, res) => {
-    const { user } = requireAuth(req);
+    const { user } = requireSession(req);
     const passkeyId = req.params.id;
     await db.transaction(async (tx) => {
       // Serialise deletions per account so two parallel requests cannot remove the last two.

@@ -35,9 +35,10 @@ export function exportRouter(ctx: AppContext): Router {
   const router = express.Router();
 
   router.get(apiPaths.export, async (req, res) => {
-    const { user } = requireAuth(req);
+    const auth = requireAuth(req);
+    const { user } = auth;
     const query = parseQuery(exportQuerySchema, req);
-    const owned = await resolveDeviceIds(ctx.db, user.id, query.deviceIds);
+    const owned = await resolveDeviceIds(ctx.db, auth, query.deviceIds);
     const from = new Date(query.from);
     const to = new Date(query.to);
     const formatter = formatterFor(query.format, new Date());

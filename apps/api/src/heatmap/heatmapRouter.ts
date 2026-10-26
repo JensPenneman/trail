@@ -24,9 +24,9 @@ export function heatmapRouter(ctx: AppContext): Router {
   const router = express.Router();
 
   router.get(apiPaths.heatmap, async (req, res) => {
-    const { user } = requireAuth(req);
+    const auth = requireAuth(req);
     const query = parseQuery(heatmapQuerySchema, req);
-    const owned = await resolveDeviceIds(ctx.db, user.id, query.deviceIds);
+    const owned = await resolveDeviceIds(ctx.db, auth, query.deviceIds);
     const z = chooseCellZoom(query.zoom);
     const [west, south, east, north] = query.bbox;
     if (owned.length === 0) {

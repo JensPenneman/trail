@@ -7,7 +7,7 @@ import { routeParam } from "../http/routeParam";
 import { finishCeremony } from "./finishCeremony";
 import { linkInfo } from "./linkInfo";
 import { logout } from "./logout";
-import { requireAuth } from "./requestAuth";
+import { requireSession } from "./requestAuth";
 import { startAuth } from "./startAuth";
 import { startDiscoverableSignIn } from "./startDiscoverableSignIn";
 import { startLinkRegistration } from "./startLinkRegistration";
@@ -23,7 +23,7 @@ export function authRouter(ctx: AppContext): Router {
   });
 
   router.get(apiPaths.auth.session, (req, res) => {
-    const { user } = requireAuth(req);
+    const { user } = requireSession(req);
     const body: SessionResponse = { user: toSessionUser(user) };
     res.json(body);
   });
