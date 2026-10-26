@@ -7,7 +7,7 @@ import { users } from "../db/schema/users";
 import { HttpError } from "../http/httpError";
 import { activeToken } from "./activeToken";
 import { futureExpiry } from "./futureExpiry";
-import { generateApiTokenSecret } from "./generateApiTokenSecret";
+import { generateApiToken } from "./generateApiToken";
 import { lockTokenDevices } from "./lockTokenDevices";
 import type { ApiTokenRow } from "./toApiToken";
 
@@ -30,7 +30,7 @@ export async function createApiToken(
   input: NewApiToken,
 ): Promise<{ row: ApiTokenRow; secret: string }> {
   const expiresAt = futureExpiry(input.expiresAt);
-  const generated = generateApiTokenSecret();
+  const generated = generateApiToken();
   const row = await db.transaction(async (tx) => {
     // One creation at a time per account: two parallel requests cannot both take the last place.
     await tx.execute(sql`SELECT 1 FROM ${users} WHERE ${users.id} = ${userId} FOR NO KEY UPDATE`);
@@ -72,5 +72,5 @@ export async function createApiToken(
     if (created === undefined) throw new Error("The new API token was not stored");
     return created;
   });
-  return { row, secret: generated.secret };
+  return { row, secret: generated.token };
 }

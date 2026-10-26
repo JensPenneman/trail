@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/database";
 import { apiTokens } from "../db/schema/apiTokens";
-import { generateApiTokenSecret } from "./generateApiTokenSecret";
+import { generateApiToken } from "./generateApiToken";
 import { lockActiveToken } from "./lockActiveToken";
 import type { ApiTokenRow } from "./toApiToken";
 
@@ -15,7 +15,7 @@ export async function rollApiToken(
   userId: string,
   tokenId: string,
 ): Promise<{ row: ApiTokenRow; secret: string }> {
-  const generated = generateApiTokenSecret();
+  const generated = generateApiToken();
   const row = await db.transaction(async (tx) => {
     const token = await lockActiveToken(tx, userId, tokenId);
     const [rolled] = await tx
@@ -26,5 +26,5 @@ export async function rollApiToken(
     if (rolled === undefined) throw new Error("The rolled API token was not stored");
     return rolled;
   });
-  return { row, secret: generated.secret };
+  return { row, secret: generated.token };
 }
