@@ -45,7 +45,7 @@ describe("OwnTracks setup", () => {
   const connection: OwnTracksConnection = {
     url: "https://trail.example.com/api/owntracks",
     username: "pixel-8-k3f9",
-    password: token,
+    token,
     deviceId: "pixel-8-k3f9",
     trackerId: "P8",
   };
@@ -59,14 +59,15 @@ describe("OwnTracks setup", () => {
     return JSON.parse(new TextDecoder().decode(bytes));
   };
 
-  it("links to the HTTP configuration for an iPhone", () => {
+  it("links an iPhone to the HTTP configuration, the token in a bearer header", () => {
     expect(imported(owntracksSetupUrl(connection, "ios"))).toEqual({
       _type: "configuration",
       mode: 3,
       url: "https://trail.example.com/api/owntracks",
-      auth: true,
+      // OwnTracks for iOS adds its HTTP headers to every request: no password in Basic.
+      auth: false,
       username: "pixel-8-k3f9",
-      password: token,
+      httpHeaders: `Authorization: Bearer ${token}`,
       deviceId: "pixel-8-k3f9",
       tid: "P8",
       extendedData: true,
@@ -76,17 +77,31 @@ describe("OwnTracks setup", () => {
     });
   });
 
+  it("offers an iPhone significant changes too, with Trail's values for Move kept", () => {
+    const significant = owntracksConfiguration(connection, "iosSignificant");
+    expect(significant).toEqual({
+      ...owntracksConfiguration(connection, "ios"),
+      monitoring: 1,
+    });
+    expect(imported(owntracksSetupUrl(connection, "iosSignificant"))).toEqual(significant);
+  });
+
   it("links to Android's own tracking settings, which read the keys differently", () => {
     expect(owntracksConfiguration(connection, "android")).toMatchObject({
       mode: 3,
+      // Android sends HTTP Basic, and only with a user name and a password.
+      auth: true,
+      username: "pixel-8-k3f9",
       password: token,
       monitoring: 1,
       locatorDisplacement: 25,
       locatorInterval: 15,
       moveModeLocatorInterval: 15,
-      locatorPriority: 0,
+      // By name: Android reads a number as a position in its list (0 would be High Accuracy, 3 No Power).
+      locatorPriority: "HighAccuracy",
       pegLocatorFastestIntervalToInterval: true,
     });
+    expect(owntracksConfiguration(connection, "android")).not.toHaveProperty("httpHeaders");
     expect(imported(owntracksSetupUrl(connection, "android"))).toEqual(
       owntracksConfiguration(connection, "android"),
     );
@@ -147,6 +162,7 @@ describe("device credentials", () => {
       trackerId: "PI",
       setupUrls: {
         ios: "owntracks:///config?inline=e30%3D",
+        iosSignificant: "owntracks:///config?inline=e30%3D",
         android: "owntracks:///config?inline=e30%3D",
       },
     });

@@ -1,18 +1,24 @@
 import type { DeviceSummary } from "@trail/contracts/device";
 import { deviceAppInfo, type PhonePlatform, platformsLabel } from "@trail/contracts/deviceApp";
-import { trackerIdFor } from "@trail/contracts/owntracksSetup";
+import {
+  type OwnTracksProfile,
+  platformOfProfile,
+  trackerIdFor,
+} from "@trail/contracts/owntracksSetup";
 import { type ReactNode, useId, useState } from "react";
 import { RecommendedSettings } from "../../devices/RecommendedSettings";
-import { platformOptions } from "../../devices/setup/OwnTracksCredentials";
+import { OwnTracksProfileChoice } from "../../devices/setup/OwnTracksProfileChoice";
 import { useConfig } from "../../queries/useConfig";
-import { SegmentedControl } from "../../ui/SegmentedControl";
 
 interface DeviceSetupSectionProps {
   device: DeviceSummary;
 }
 
 /** The connection as the app on the phone has it, without the token (shown once, when it was issued). */
-function ConnectionFacts({ device }: DeviceSetupSectionProps) {
+function ConnectionFacts({
+  device,
+  platform,
+}: DeviceSetupSectionProps & { platform: PhonePlatform }) {
   const config = useConfig();
   const urls = config.data?.ingestUrls;
   const token = <span className="mono">the access token (…{device.tokenHint})</span>;
@@ -37,8 +43,10 @@ function ConnectionFacts({ device }: DeviceSetupSectionProps) {
         <dl className="facts card">
           {fact("Mode", "HTTP")}
           {fact("URL", url(urls?.owntracks))}
+          {platform === "ios"
+            ? fact("HTTP Headers", <>Authorization: Bearer {token}</>)
+            : fact("Password", token)}
           {fact("Username", <span className="mono">{device.deviceKey}</span>)}
-          {fact("Password", token)}
           {fact("Device ID", <span className="mono">{device.deviceKey}</span>)}
           {fact("Tracker ID", <span className="mono">{trackerIdFor(device.name)}</span>)}
         </dl>
@@ -69,7 +77,7 @@ function ConnectionFacts({ device }: DeviceSetupSectionProps) {
 /** Which app the device records with, how it is connected and the settings Trail recommends for it. */
 export function DeviceSetupSection({ device }: DeviceSetupSectionProps) {
   const headingId = useId();
-  const [platform, setPlatform] = useState<PhonePlatform>("ios");
+  const [profile, setProfile] = useState<OwnTracksProfile>("ios");
   const app = deviceAppInfo[device.source];
   return (
     <section className="section" aria-labelledby={headingId}>
@@ -82,16 +90,11 @@ export function DeviceSetupSection({ device }: DeviceSetupSectionProps) {
           app, issue a new token below: Trail shows the token only when it issues one.
         </p>
       </div>
-      <ConnectionFacts device={device} />
       {device.source === "owntracks" ? (
-        <SegmentedControl
-          label="The phone"
-          value={platform}
-          options={platformOptions}
-          onChange={setPlatform}
-        />
+        <OwnTracksProfileChoice value={profile} onChange={setProfile} />
       ) : null}
-      <RecommendedSettings app={device.source} platform={platform} />
+      <ConnectionFacts device={device} platform={platformOfProfile(profile)} />
+      <RecommendedSettings app={device.source} owntracksProfile={profile} />
     </section>
   );
 }

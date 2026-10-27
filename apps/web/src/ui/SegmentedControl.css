@@ -1,5 +1,8 @@
 .segmented {
   display: inline-flex;
+  /* Long labels go to a second row on a narrow screen rather than past its edge. */
+  flex-wrap: wrap;
+  max-width: 100%;
   margin: 0;
   padding: 0.1875rem;
   border: var(--border-width) solid var(--color-border-strong);

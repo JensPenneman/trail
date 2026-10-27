@@ -53,6 +53,7 @@ describe("CredentialsView", () => {
       trackerId: "LP",
       setupUrls: {
         ios: "owntracks:///config?inline=aW9z",
+        iosSignificant: "owntracks:///config?inline=c2lnbmlmaWNhbnQ%3D",
         android: "owntracks:///config?inline=YW5kcm9pZA%3D%3D",
       },
     });
@@ -60,15 +61,40 @@ describe("CredentialsView", () => {
     expect(link()).toHaveAttribute("href", "owntracks:///config?inline=aW9z");
     expect(screen.getByText(/Allow external configuration/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /on an iPhone/ })).toBeInTheDocument();
+    // Move is the default; what it costs is said where it is chosen.
+    expect(screen.getByRole("radio", { name: "Move" })).toBeChecked();
+    expect(screen.getByText(/at a high battery cost/)).toBeInTheDocument();
+    // An iPhone sends the token as a header: authentication stays off.
+    expect(screen.getByLabelText("HTTP Headers (access token)")).toHaveValue(
+      `Authorization: Bearer ${token}`,
+    );
+    expect(screen.queryByLabelText("Password (access token)")).toBeNull();
+
+    await person.click(screen.getByRole("radio", { name: "Significant changes" }));
+    expect(link()).toHaveAttribute("href", "owntracks:///config?inline=c2lnbmlmaWNhbnQ%3D");
+    expect(screen.getByText(/^Significant changes leaves the fixes to iOS/)).toBeInTheDocument();
+    expect(
+      screen.getByText("iOS decides when to report: low battery use, sparse points.", {
+        exact: false,
+      }),
+    ).toBeInTheDocument();
+
     await person.click(screen.getByRole("radio", { name: "Android" }));
     expect(link()).toHaveAttribute("href", "owntracks:///config?inline=YW5kcm9pZA%3D%3D");
+    expect(screen.queryByRole("radio", { name: "Move" })).toBeNull();
     expect(screen.getByRole("heading", { name: /on Android/ })).toBeInTheDocument();
     expect(screen.getByText("Location interval (Move mode)")).toBeInTheDocument();
     expect(screen.getByLabelText("URL")).toHaveValue("https://trail.example.com/api/owntracks");
     expect(screen.getByLabelText("Username")).toHaveValue("lottes-phone-x2k8");
     expect(screen.getByLabelText("Password (access token)")).toHaveValue(token);
+    expect(screen.queryByLabelText("HTTP Headers (access token)")).toBeNull();
     expect(screen.getByLabelText("Device ID")).toHaveValue("lottes-phone-x2k8");
     expect(screen.getByLabelText("Tracker ID")).toHaveValue("LP");
+
+    // Back on the iPhone, the tracking chosen before is still chosen.
+    await person.click(screen.getByRole("radio", { name: "iPhone" }));
+    expect(screen.getByRole("radio", { name: "Significant changes" })).toBeChecked();
+    expect(link()).toHaveAttribute("href", "owntracks:///config?inline=c2lnbmlmaWNhbnQ%3D");
   });
 
   it("links Traccar Client and says that its identifier is the token", () => {

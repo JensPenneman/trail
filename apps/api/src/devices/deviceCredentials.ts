@@ -32,7 +32,7 @@ export function deviceCredentials(input: {
       const connection = {
         url: ingestUrls.owntracks,
         username: deviceKey,
-        password: accessToken,
+        token: accessToken,
         deviceId: deviceKey,
         trackerId: trackerIdFor(input.deviceName),
       };
@@ -45,6 +45,7 @@ export function deviceCredentials(input: {
         trackerId: connection.trackerId,
         setupUrls: {
           ios: owntracksSetupUrl(connection, "ios"),
+          iosSignificant: owntracksSetupUrl(connection, "iosSignificant"),
           android: owntracksSetupUrl(connection, "android"),
         },
       };

@@ -1,5 +1,5 @@
-import type { DeviceApp, PhonePlatform } from "@trail/contracts/deviceApp";
-import { owntracksTracking } from "@trail/contracts/owntracksSetup";
+import type { DeviceApp } from "@trail/contracts/deviceApp";
+import { type OwnTracksProfile, owntracksTracking } from "@trail/contracts/owntracksSetup";
 import { traccarTracking } from "@trail/contracts/traccarSetup";
 
 interface RecommendedSetting {
@@ -54,32 +54,51 @@ const overland: RecommendedSettingsList = {
   ],
 };
 
+/* The iPhone's settings but for monitoring, which the two setup links differ in. */
+const owntracksIosSettings = (monitoring: RecommendedSetting): readonly RecommendedSetting[] => [
+  { name: "Mode", value: "HTTP", why: "Required: Trail speaks OwnTracks’ HTTP mode." },
+  { name: "Authentication", value: "Off", why: "The access token goes in the HTTP Headers." },
+  { name: "HTTP Headers", value: "Authorization: Bearer <access token>" },
+  monitoring,
+  {
+    name: "locatorDisplacement",
+    value: `${ios.locatorDisplacement} m`,
+    why: "In Move, a point after every 30 m.",
+  },
+  {
+    name: "locatorInterval",
+    value: `${ios.locatorInterval} s`,
+    why: "And at least one a minute.",
+  },
+  { name: "extendedData", value: "On", why: "Adds battery, Wi-Fi and motion activity." },
+  {
+    name: "Location access",
+    value: "Always, Precise",
+    why: "Set in the iPhone’s Settings › OwnTracks.",
+  },
+  { name: "Motion & Fitness", value: "On", why: "For the motion activity." },
+];
+
 const owntracksIos: RecommendedSettingsList = {
   title: "Recommended OwnTracks settings on an iPhone",
   intro:
-    "The setup link sets these. Move mode records the detail Trail needs to tell walking from cycling from driving, at a noticeable battery cost; Significant changes reports every few hundred metres, enough for where you were but not for how you travelled.",
-  settings: [
-    { name: "Mode", value: "HTTP", why: "Required: Trail speaks OwnTracks’ HTTP mode." },
-    { name: "Authentication", value: "On", why: "The password is the access token." },
-    { name: "Monitoring", value: "Move", why: "GPS stays on while tracking." },
-    {
-      name: "locatorDisplacement",
-      value: `${ios.locatorDisplacement} m`,
-      why: "A point after every 30 m.",
-    },
-    {
-      name: "locatorInterval",
-      value: `${ios.locatorInterval} s`,
-      why: "And at least one a minute.",
-    },
-    { name: "extendedData", value: "On", why: "Adds battery, Wi-Fi and motion activity." },
-    {
-      name: "Location access",
-      value: "Always, Precise",
-      why: "Set in the iPhone’s Settings › OwnTracks.",
-    },
-    { name: "Motion & Fitness", value: "On", why: "For the motion activity." },
-  ],
+    "The setup link sets these. Move records the detail Trail needs to tell walking from cycling from driving; GPS stays on, which costs a lot of battery.",
+  settings: owntracksIosSettings({
+    name: "Monitoring",
+    value: "Move",
+    why: "GPS stays on while tracking: detailed tracks, high battery use.",
+  }),
+};
+
+const owntracksIosSignificant: RecommendedSettingsList = {
+  title: "Recommended OwnTracks settings on an iPhone",
+  intro:
+    "The setup link sets these. Significant changes reports every few hundred metres or minutes for very little battery: enough for where you were, not for how you travelled. Switch to Move in OwnTracks when you want a detailed track.",
+  settings: owntracksIosSettings({
+    name: "Monitoring",
+    value: "Significant changes",
+    why: "iOS decides when to report: low battery use, sparse points.",
+  }),
 };
 
 const owntracksAndroid: RecommendedSettingsList = {
@@ -202,16 +221,20 @@ const gpslogger: RecommendedSettingsList = {
   ],
 };
 
-/** The settings Trail recommends for an app (and, for OwnTracks, the platform). */
+/** The settings Trail recommends for an app (and, for OwnTracks, the phone and how it tracks). */
 export function recommendedSettings(
   app: DeviceApp,
-  platform: PhonePlatform = "ios",
+  owntracksProfile: OwnTracksProfile = "ios",
 ): RecommendedSettingsList {
   switch (app) {
     case "overland":
       return overland;
     case "owntracks":
-      return platform === "ios" ? owntracksIos : owntracksAndroid;
+      return {
+        ios: owntracksIos,
+        iosSignificant: owntracksIosSignificant,
+        android: owntracksAndroid,
+      }[owntracksProfile];
     case "traccar":
       return traccar;
     case "osmand":

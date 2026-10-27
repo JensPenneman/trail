@@ -4,55 +4,89 @@ import type { PhonePlatform } from "./deviceApp";
 export interface OwnTracksConnection {
   /** The endpoint, `<ingest base>/api/owntracks`. */
   url: string;
-  /** Any user name works: Trail reads the password only. */
+  /** Any user name works: Trail reads the token only. OwnTracks names the device's topic with it. */
   username: string;
-  /** The device token, sent with HTTP Basic authentication. */
-  password: string;
+  /** The device token: the HTTP Basic password on Android, a bearer token in a header on iPhones. */
+  token: string;
   deviceId: string;
   /** Up to two letters or digits, shown for the device in OwnTracks. */
   trackerId: string;
 }
 
+/**
+ * The setups Trail offers: one per platform, and on iPhones a second one with
+ * the battery-saving tracking (`iosSignificant`).
+ */
+export const owntracksProfiles = ["ios", "iosSignificant", "android"] as const;
+export type OwnTracksProfile = (typeof owntracksProfiles)[number];
+
 /*
- * Per platform, because the apps read the same keys differently. On iOS,
+ * Per profile, because the apps read the same keys differently. On iOS,
  * "move" monitoring (2) keeps GPS on and reports a point after every
- * `locatorDisplacement` metres and every `locatorInterval` seconds. Android's
- * move mode reports every `moveModeLocatorInterval` seconds whether the phone
- * moves or not, so Android gets "significant" monitoring (1) with the
- * high-accuracy locator (`locatorPriority` 0), a short interval and a small
- * displacement: a point every 15 to 30 s while moving, none while still.
+ * `locatorDisplacement` metres and at least every `locatorInterval` seconds:
+ * the detail transport inference needs, at a high battery cost. "Significant
+ * changes" (1) leaves the fixes to iOS — a point every few hundred metres or
+ * every few minutes — for very little battery; it keeps Trail's move values for
+ * when the person switches to Move in the app. Android's move mode reports every
+ * `moveModeLocatorInterval` seconds whether the phone moves or not, so Android
+ * gets significant monitoring (1) with the high-accuracy locator, a short
+ * interval and a small displacement: a point every 15 to 30 s while moving,
+ * none while still. The locator goes by name: Android reads a number as a
+ * position in its own list, which does not match its documented values.
  * Points every 10–30 s, at most ~30 m apart, are what transport inference
  * needs (docs/transport.md).
  */
 export const owntracksTracking = {
   ios: { monitoring: 2, locatorDisplacement: 30, locatorInterval: 60 },
+  iosSignificant: { monitoring: 1, locatorDisplacement: 30, locatorInterval: 60 },
   android: {
     monitoring: 1,
     locatorDisplacement: 25,
     locatorInterval: 15,
     moveModeLocatorInterval: 15,
-    locatorPriority: 0,
+    locatorPriority: "HighAccuracy",
     pegLocatorFastestIntervalToInterval: true,
   },
-} as const satisfies Record<PhonePlatform, Record<string, number | boolean>>;
+} as const satisfies Record<OwnTracksProfile, Record<string, number | string | boolean>>;
 
-/** The configuration message (`_type: configuration`, an `.otrc` file's content) for one platform. */
+/** The phone a profile is for. */
+export const platformOfProfile = (profile: OwnTracksProfile): PhonePlatform =>
+  profile === "android" ? "android" : "ios";
+
+/**
+ * How each app sends the token. Android sends HTTP Basic only, and only with
+ * a user name and a password. OwnTracks for iOS sends the lines of its "HTTP
+ * Headers" setting (`Name: value`, lines separated by a literal `\n`) with every
+ * request, so its link sends the token as a bearer token and leaves
+ * authentication off.
+ */
+const credentialsFor = (
+  connection: OwnTracksConnection,
+  profile: OwnTracksProfile,
+): Record<string, string | boolean> =>
+  platformOfProfile(profile) === "android"
+    ? { auth: true, username: connection.username, password: connection.token }
+    : {
+        auth: false,
+        username: connection.username,
+        httpHeaders: `Authorization: Bearer ${connection.token}`,
+      };
+
+/** The configuration message (`_type: configuration`, an `.otrc` file's content) for one profile. */
 export function owntracksConfiguration(
   connection: OwnTracksConnection,
-  platform: PhonePlatform,
+  profile: OwnTracksProfile,
 ): Record<string, string | number | boolean> {
   return {
     _type: "configuration",
     mode: 3,
     url: connection.url,
-    auth: true,
-    username: connection.username,
-    password: connection.password,
+    ...credentialsFor(connection, profile),
     deviceId: connection.deviceId,
     tid: connection.trackerId,
     // Battery, connection and (on iPhones) motion activity come only with extended data.
     extendedData: true,
-    ...owntracksTracking[platform],
+    ...owntracksTracking[profile],
   };
 }
 
@@ -70,9 +104,9 @@ const base64 = (text: string): string => {
  */
 export function owntracksSetupUrl(
   connection: OwnTracksConnection,
-  platform: PhonePlatform,
+  profile: OwnTracksProfile,
 ): string {
-  const json = JSON.stringify(owntracksConfiguration(connection, platform));
+  const json = JSON.stringify(owntracksConfiguration(connection, profile));
   return `owntracks:///config?inline=${encodeURIComponent(base64(json))}`;
 }
 

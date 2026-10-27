@@ -56,11 +56,20 @@ describe("DevicePage", () => {
     expect(within(setup).getByText(/^OwnTracks \(iOS and Android\)/)).toBeInTheDocument();
     expect(within(setup).getByText("https://trail.example.com/api/owntracks")).toBeInTheDocument();
     expect(within(setup).getByText("P8")).toBeInTheDocument();
+    // On an iPhone the token goes in a header; on Android it is the password.
+    const fact = (label: string) => within(setup).queryByText(label, { selector: ".facts dt" });
+    expect(fact("HTTP Headers")).toBeInTheDocument();
     expect(within(setup).getByText(/…q7Zx/)).toBeInTheDocument();
+    await person.click(within(setup).getByRole("radio", { name: "Significant changes" }));
+    expect(
+      within(setup).getByText(/^Significant changes leaves the fixes to iOS/),
+    ).toBeInTheDocument();
     await person.click(within(setup).getByRole("radio", { name: "Android" }));
     expect(
       within(setup).getByText("Recommended OwnTracks settings on Android"),
     ).toBeInTheDocument();
+    expect(fact("Password")).toBeInTheDocument();
+    expect(fact("HTTP Headers")).toBeNull();
   });
 
   it("issues a new token for another app and shows that app's setup", async () => {

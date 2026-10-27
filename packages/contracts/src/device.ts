@@ -123,17 +123,22 @@ export const deviceCredentialsSchema = z.discriminatedUnion("app", [
     app: z.literal("owntracks"),
     /** OwnTracks "URL" in HTTP mode. */
     endpoint: z.url(),
-    /** "Username" / "UserID": any name works, Trail reads only the password. */
+    /** "Username" / "UserID": any name works, Trail reads only the token. */
     username: z.string(),
-    /** "Password": the device token, sent with HTTP Basic authentication. */
+    /** The device token: Android's "Password" (HTTP Basic), an iPhone's `Authorization: Bearer` header. */
     accessToken: z.string(),
     /** "Device ID" / "DeviceID". */
     deviceId: z.string(),
     /** "Tracker ID" / "TrackerID": up to two letters or digits. */
     trackerId: z.string(),
-    /** `owntracks:///config?inline=…` per platform: imports the connection and the recommended settings. */
+    /**
+     * `owntracks:///config?inline=…` per platform — and on iPhones with the
+     * battery-saving tracking as well — importing the connection and the
+     * recommended settings.
+     */
     setupUrls: z.object({
       ios: z.string().startsWith("owntracks:///config?inline="),
+      iosSignificant: z.string().startsWith("owntracks:///config?inline="),
       android: z.string().startsWith("owntracks:///config?inline="),
     }),
   }),

@@ -62,6 +62,8 @@ test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account 
   const setup = page.getByRole("dialog", { name: "Set up Narrow Pixel" });
   await expect(setup.getByRole("link", { name: "Open in OwnTracks" })).toBeVisible();
   expect(await overflow(page), "OwnTracks' setup").toBe(0);
+  await setup.getByRole("radio", { name: "Significant changes" }).check();
+  expect(await overflow(page), "OwnTracks' setup for an iPhone saving battery").toBe(0);
   await setup.getByRole("radio", { name: "Android" }).check();
   await expect(setup.getByText("Recommended OwnTracks settings on Android")).toBeVisible();
   expect(await overflow(page), "OwnTracks' setup for Android").toBe(0);

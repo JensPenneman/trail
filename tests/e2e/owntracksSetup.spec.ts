@@ -35,32 +35,43 @@ test("an OwnTracks phone is set up from its link and its first point turns up", 
     dialog.getByRole("textbox", { name: label, exact: true }).inputValue();
   const url = await value("URL");
   const username = await value("Username");
-  const token = await value("Password (access token)");
+  // An iPhone sends the token in a header, which works over HTTP and HTTPS alike.
+  const header = await value("HTTP Headers (access token)");
+  const token = header.replace(/^Authorization: Bearer /, "");
   expect(url).toBe(`${baseURL}/api/owntracks`);
   expect(token).toMatch(/^trl_[A-Za-z0-9_-]{43}$/);
   expect(await value("Tracker ID")).toBe("LP");
 
   const link = dialog.getByRole("link", { name: "Open in OwnTracks" });
-  expect(await importedConfiguration(link)).toEqual({
+  const iphone = {
     _type: "configuration",
     mode: 3,
     url,
-    auth: true,
+    auth: false,
     username,
-    password: token,
+    httpHeaders: `Authorization: Bearer ${token}`,
     deviceId: await value("Device ID"),
     tid: "LP",
     extendedData: true,
     monitoring: 2,
     locatorDisplacement: 30,
     locatorInterval: 60,
-  });
+  };
+  expect(await importedConfiguration(link)).toEqual(iphone);
   await expect(dialog.getByRole("img", { name: /^Setup code for Lotte’s Pixel/ })).toBeVisible();
+  await expect(dialog.getByText(/at a high battery cost/)).toBeVisible();
+  // Significant changes saves battery: the same link with iOS's own sparse fixes.
+  await dialog.getByRole("radio", { name: "Significant changes" }).check();
+  expect(await importedConfiguration(link)).toEqual({ ...iphone, monitoring: 1 });
   await dialog.getByRole("radio", { name: "Android" }).check();
+  expect(await value("Password (access token)")).toBe(token);
   expect(await importedConfiguration(link)).toMatchObject({
+    auth: true,
+    username,
     password: token,
     monitoring: 1,
-    locatorPriority: 0,
+    // By name: Android reads a number as a position in its list of priorities.
+    locatorPriority: "HighAccuracy",
     locatorInterval: 15,
     locatorDisplacement: 25,
   });
@@ -81,33 +92,34 @@ test("an OwnTracks phone is set up from its link and its first point turns up", 
     bs: 1,
     tid: "LP",
   };
-  // The suite's server runs on plain HTTP behind no proxy: Basic authentication is refused there.
+  // The suite's server was given an http:// address: Android's Basic authentication works on it
+  // like the iPhone's bearer header (an https:// address would refuse both over plain HTTP).
   const basic = `Basic ${Buffer.from(`${username}:${token}`).toString("base64")}`;
-  const refused = await request.post("/api/owntracks", {
+  const android = await request.post("/api/owntracks", {
     headers: { Authorization: basic, "Content-Type": "application/json" },
     data: location,
   });
-  expect(refused.status()).toBe(403);
-  // OwnTracks for iOS can send the token as a bearer token instead.
-  const accepted = await request.post("/api/owntracks", {
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    data: location,
-  });
-  expect(accepted.status()).toBe(200);
-  expect(await accepted.json()).toEqual([]);
+  expect(android.status()).toBe(200);
+  expect(await android.json()).toEqual([]);
   await expect(dialog.getByText("First upload received")).toBeVisible();
+  const iphoneUpload = await request.post("/api/owntracks", {
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    data: { ...location, tst: location.tst + 1 },
+  });
+  expect(iphoneUpload.status()).toBe(200);
 
   await dialog.getByRole("link", { name: "Open device page" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Lotte’s Pixel" })).toBeVisible();
   const overview = page.getByRole("region", { name: "Overview" });
   await expect(overview.getByText("OwnTracks", { exact: true })).toBeVisible();
   // "today" would depend on the minute after midnight; the total does not.
-  await expect(overview.getByText(/· 1 in total$/)).toBeVisible();
+  await expect(overview.getByText(/· 2 in total$/)).toBeVisible();
   // Overland's presets are Overland's: no tracking settings for OwnTracks.
   await expect(page.getByRole("region", { name: "Tracking settings" })).toHaveCount(0);
   const setup = page.getByRole("region", { name: "Setup" });
   await expect(setup.getByText(url)).toBeVisible();
   const uploads = page.getByRole("table", { name: "Uploads of this device" });
-  await expect(uploads.getByRole("row")).toHaveCount(2);
+  // The header row and one row per upload.
+  await expect(uploads.getByRole("row")).toHaveCount(3);
   await expectAccessible(page, "an OwnTracks device's page");
 });
