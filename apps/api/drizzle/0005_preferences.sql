@@ -1,0 +1,2 @@
+ALTER TABLE "users" ADD COLUMN "preferences" jsonb DEFAULT '{}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "users_preferences_check" CHECK (jsonb_typeof("users"."preferences") = 'object');

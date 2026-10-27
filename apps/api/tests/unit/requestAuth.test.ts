@@ -18,6 +18,7 @@ const user: UserRow = {
   webauthnUserId: Buffer.alloc(32),
   isAdmin: false,
   timezone: "Europe/Brussels",
+  preferences: {},
   createdAt: new Date(0),
   updatedAt: new Date(0),
 };

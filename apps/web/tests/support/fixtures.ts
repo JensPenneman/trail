@@ -2,6 +2,7 @@ import type { ApiToken } from "@trail/contracts/apiToken";
 import type { PublicConfig } from "@trail/contracts/config";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { Person, SharedDevice } from "@trail/contracts/person";
+import { defaultPreferences } from "@trail/contracts/preferences";
 import type { OutgoingShare } from "@trail/contracts/share";
 import type { ShareLink } from "@trail/contracts/shareLink";
 import type { TracksResponse } from "@trail/contracts/track";
@@ -52,6 +53,7 @@ export const user: SessionUser = {
   isAdmin: true,
   timezone: "Europe/Brussels",
   createdAt: "2026-03-02T19:20:11.000Z",
+  preferences: { ...defaultPreferences },
 };
 
 export function device(overrides: Partial<DeviceSummary> = {}): DeviceSummary {

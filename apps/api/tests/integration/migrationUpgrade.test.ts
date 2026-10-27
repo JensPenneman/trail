@@ -152,6 +152,26 @@ const laterTables: {
           FROM hidden_people) AS hidden_people
     `,
   },
+  {
+    // Preferences: what the first account set; the accounts that set nothing hold `{}`.
+    migration: tagOf("preferences"),
+    record: async (pool, { userId }) => {
+      await pool.query(
+        `UPDATE users SET preferences = '{"mapStyle": "satellite", "level": "raw", "showOwnActivity": true}'
+         WHERE id = $1`,
+        [userId],
+      );
+    },
+    fingerprint: `
+      SELECT count(*)::int AS rows,
+        string_agg(
+          concat_ws('|', id, email, display_name, webauthn_user_id::text, is_admin, timezone,
+            preferences::text, created_at::text),
+          ' / ' ORDER BY email
+        ) AS digest
+      FROM users
+    `,
+  },
 ];
 
 /*
@@ -254,6 +274,11 @@ describe("migrations on an existing database", () => {
       "SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations",
     );
     expect(applied.rows[0]?.count).toBe(journal.entries.length);
+  });
+
+  it("gives the accounts of before the preferences none of their own", async () => {
+    const ana = await pool.query("SELECT preferences FROM users WHERE email = 'ana@example.com'");
+    expect(ana.rows[0]?.preferences).toEqual({});
   });
 
   it("keeps settings stored by the first release", async () => {
