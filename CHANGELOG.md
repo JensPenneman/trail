@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.4.0](https://github.com/JensPenneman/trail/compare/v0.3.0...v0.4.0) (2026-10-27)
+
+
+### Features
+
+* a data access log of who reads or changes whose data ([#47](https://github.com/JensPenneman/trail/issues/47)) ([94f743b](https://github.com/JensPenneman/trail/commit/94f743bd554849ee2d644ad8ae3237e9691dccc2))
+* **api:** account preferences, set with PATCH /api/me ([0456391](https://github.com/JensPenneman/trail/commit/045639111aad58d56d2989a096e667864cd0f1c8))
+* **api:** Insights, statistics of how the owner travelled ([948d167](https://github.com/JensPenneman/trail/commit/948d167a6e854b72067002997d0bff4ba1080920))
+* **api:** record who reads or changes whose data ([fca9336](https://github.com/JensPenneman/trail/commit/fca933635d609087f8c65073092276110e654871))
+* **api:** the access log of one actor, and its days by channel ([ec46dc6](https://github.com/JensPenneman/trail/commit/ec46dc6ca28604975c6844d1359dc78316ccea9b))
+* **api:** the data access log under /api/v1/access-log ([a928721](https://github.com/JensPenneman/trail/commit/a9287210f035c8bb8ff91e641273d450d6922c87))
+* Insights, statistics of how you travelled, with accessible charts ([#49](https://github.com/JensPenneman/trail/issues/49)) ([9ee2b97](https://github.com/JensPenneman/trail/commit/9ee2b972eaeb13cfb1246c64e0a1fce5d1b53a49))
+* People is the home page, with the map and everyone who shares ([#46](https://github.com/JensPenneman/trail/issues/46)) ([8cfc2fe](https://github.com/JensPenneman/trail/commit/8cfc2fed66af7be86e33e96fa39423baa20e4053))
+* **processing:** way kind shares per move, versions per level ([16019c6](https://github.com/JensPenneman/trail/commit/16019c623b9c59ff69210103681470d3a86d7ebb))
+* Settings as a tree of pages in the style of the iPhone, with account preferences ([#48](https://github.com/JensPenneman/trail/issues/48)) ([7102dc9](https://github.com/JensPenneman/trail/commit/7102dc97ae9f3204f7f56658cdeb63f0764b4f04))
+* **web:** charts for Insights ([a2b3952](https://github.com/JensPenneman/trail/commit/a2b3952afc449e8bdc5513b5b6ccbe1dd2ab37be))
+* **web:** charts in categorical colours, with axes of counts ([4de74ba](https://github.com/JensPenneman/trail/commit/4de74ba8ec04dd2dcb89ee4a2f5c8fd3929a3013))
+* **web:** Insights, its tab and the way from a move to the map ([6829b2b](https://github.com/JensPenneman/trail/commit/6829b2bbe9090c5a8e901c68ec264bddedb112d1))
+* **web:** People is the home page, with the map and everyone who shares ([6eafd00](https://github.com/JensPenneman/trail/commit/6eafd0062bd8de49751b06219aff2336d017796d))
+* **web:** Settings as a tree of pages, in the style of the iPhone ([3ccbb1f](https://github.com/JensPenneman/trail/commit/3ccbb1ff9c408d2440255414a1ffc263466460ea))
+* **web:** Who viewed you, a page per viewer, and the access log ([9f612ae](https://github.com/JensPenneman/trail/commit/9f612aef86c82edf057f8febb6e1e69fd071e0b4))
+* Who viewed you, the access log and the use of tokens, links and shares ([#50](https://github.com/JensPenneman/trail/issues/50)) ([a7774a0](https://github.com/JensPenneman/trail/commit/a7774a0fb6dbf0988d60081711d0fbc9e702635c))
+
+
+### Bug Fixes
+
+* **api:** a 6to4 visitor is the /24 of the IPv4 address it carries ([28bdfc2](https://github.com/JensPenneman/trail/commit/28bdfc2b6a1bf70380d41e74204f3fe5abf1ac6b))
+* **api:** a token's people reads in its own log, an agent's look as People ([985bc28](https://github.com/JensPenneman/trail/commit/985bc28e4e89006de2ccf029a3ff17164104ee1d))
+* **api:** access log ids and cursors without the table's sequence ([62af7b6](https://github.com/JensPenneman/trail/commit/62af7b60bb4e81c61cb9bafa619a752bb88d224b))
+* **api:** audit:read needs a token for every device ([78d2b63](https://github.com/JensPenneman/trail/commit/78d2b639f749b95b99c302bd14259811add8f55d))
+* **api:** fold limits per actor and per network, with the devices kept ([21a64b4](https://github.com/JensPenneman/trail/commit/21a64b4815eabe766dc9e7d16dbf8548c28ccbd0))
+* **api:** no new names after a share ends, and current names cleaned ([940edff](https://github.com/JensPenneman/trail/commit/940edff9e3b8ec244558d9fc7d3f3d7c5fc8e317))
+* **api:** the recorder refuses unknown actions and resources, and keeps going ([5db1d8c](https://github.com/JensPenneman/trail/commit/5db1d8cd23d5be0e8c2556b8bf4fc31e336d02ac))
+* **api:** the summary's period by local day, like its series ([2c6f12a](https://github.com/JensPenneman/trail/commit/2c6f12a7cc9f9c99fd4f4714c5e1cedb158c5111))
+* **auth:** Strict session cookies, refused from other sites' pages ([337bc12](https://github.com/JensPenneman/trail/commit/337bc1270480ebb7b3b8ef5c8220a959e12191b6))
+* **web:** a person's initials stay readable in the people filter ([218065e](https://github.com/JensPenneman/trail/commit/218065ef29c5ba3bcf930612c16a28fb534e7aa1))
+
+
+### Documentation
+
+* Insights in the architecture, the guides and the plan ([83a6dc1](https://github.com/JensPenneman/trail/commit/83a6dc184375a077d4fa1fdb1fb9fb1656bb39c3))
+* People is the home page ([c1ca333](https://github.com/JensPenneman/trail/commit/c1ca3334b18356cd9e7073079c0d57c7767834c3))
+* plan for the people home page, settings, the access log and insights ([bf67c2c](https://github.com/JensPenneman/trail/commit/bf67c2c80e0d02a1faec761806bdd36b81125e53))
+* plan for the people home page, settings, the access log and insights ([#44](https://github.com/JensPenneman/trail/issues/44)) ([4439fc8](https://github.com/JensPenneman/trail/commit/4439fc86c04e24caafeacc582fba4fd5e0c5abaf))
+* Settings as a tree of pages, and the account's preferences ([96f3e1b](https://github.com/JensPenneman/trail/commit/96f3e1be5e1478fe8f5e7658662b62d93cdae521))
+* the access log's pages in the architecture, the guides and the plan ([66f07ea](https://github.com/JensPenneman/trail/commit/66f07ea8f8a1d4971ddebe3fa084c9556f5317ce))
+* the data access log is §8.8 of the architecture, after Insights ([89e3747](https://github.com/JensPenneman/trail/commit/89e3747af8771ff85201d1b42c54a9b0c145c948))
+* the data access log, its threat model and what was settled ([68384b0](https://github.com/JensPenneman/trail/commit/68384b0a5b2f2f7098ffc2a38083ee99ceda8c02))
+* the plans' rules in the architecture, and the plans gone ([9660929](https://github.com/JensPenneman/trail/commit/9660929bc3e4406a89af302b77be851195546fca))
+
 ## [0.3.0](https://github.com/JensPenneman/trail/compare/v0.2.0...v0.3.0) (2026-10-27)
 
 
