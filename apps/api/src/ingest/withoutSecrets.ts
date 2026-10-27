@@ -31,12 +31,16 @@ const isSecretKey = (key: string): boolean =>
 const maxDepth = 16;
 
 /**
- * A text with every token-shaped part replaced, made storable first: a NUL
- * inside a token would hide it from the pattern, and Postgres drops it later.
- * Before any cut: a token cut in half no longer has the shape, and would stay.
+ * A text with every token-shaped part replaced. The pattern is matched on the
+ * text as it will be stored — a NUL inside a token would hide it, and storing
+ * drops NULs — and a text without a token comes back unchanged, for the
+ * normalisers to judge as it arrived. Before any cut: a token cut in half no
+ * longer has the shape, and would stay.
  */
 export function redactSecrets(text: string): string {
-  return storableText(text).replace(secretPattern, "[redacted]");
+  const storable = storableText(text);
+  const redacted = storable.replace(secretPattern, "[redacted]");
+  return redacted === storable ? text : redacted;
 }
 
 /**

@@ -495,10 +495,11 @@ newest battery reading); `ingest/` stores it the same way for every app
   (a Wi-Fi name, a motion activity, an event's action), `extra` or the dead
   letter (`withoutSecrets`): keys that hold one (`password`, `token`,
   `accessToken` and the like, however spelled) are left out, and token-shaped
-  text is replaced, NULs dropped first so that none hides a token. OwnTracks'
-  message and Overland's upload pass it as a whole before anything reads them;
-  the OsmAnd format's parameters, whose text Trail keeps in `extra` only, lose
-  `id`, `deviceid`, `token` and `access_token` too. A preview of a body that is
+  text is replaced — found in the text as it will be stored, so that a NUL
+  cannot hide a token; a text without one reaches the normalisers unchanged.
+  OwnTracks' message and Overland's upload pass it as a whole before anything
+  reads them; the OsmAnd format's parameters, whose text Trail keeps in
+  `extra` only, lose `id`, `deviceid`, `token` and `access_token` too. A preview of a body that is
   no JSON is redacted whole, after JSON's `\uXXXX` escapes are decoded (as
   `JSON.parse` would have), and only then cut.
 - A body the endpoint cannot read at all — OwnTracks text that is no JSON, a
