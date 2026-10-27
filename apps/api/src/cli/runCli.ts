@@ -1,5 +1,6 @@
 import { parseArgs } from "node:util";
 import { ConfigError } from "../config/loadConfig";
+import { ownEntry } from "../lib/ownEntry";
 import { type CliContext, openCliContext } from "./cliContext";
 import { inviteCommand } from "./commands/inviteCommand";
 import { passkeyLinkCommand } from "./commands/passkeyLinkCommand";
@@ -93,7 +94,7 @@ export async function runCli(argv: readonly string[], entryUrl: string): Promise
     console.error(usage);
     return 2;
   }
-  const command = commands[name];
+  const command = ownEntry(commands, name);
   if (command === undefined) {
     console.error(`trail: unknown command "${name}"\n\n${usage}`);
     return 2;

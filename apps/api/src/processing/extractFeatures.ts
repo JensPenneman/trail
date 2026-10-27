@@ -1,4 +1,5 @@
 import { type TransportMode, type WayKind, wayKinds } from "@trail/contracts/transport";
+import { ownEntry } from "../lib/ownEntry";
 import { haversineM } from "../tracks/haversine";
 import type { MoveSeries } from "./moveSeries";
 import { zeroCounts } from "./moveSeries";
@@ -182,7 +183,7 @@ export function extractFeatures(
     let bestOverlap = 0;
     for (const trip of trips) {
       const overlap = Math.min(trip.endedAt, end.t) - Math.max(trip.startedAt, start.t);
-      const mode = tripModes[trip.mode];
+      const mode = ownEntry(tripModes, trip.mode);
       if (
         mode !== undefined &&
         overlap >= config.tripOverlapShare * durationS &&

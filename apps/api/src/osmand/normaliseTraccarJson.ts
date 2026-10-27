@@ -12,6 +12,7 @@ import {
 import { type Normalised, rejected } from "../ingest/normalised";
 import { recordTime } from "../ingest/recordTime";
 import { withoutSecrets } from "../ingest/withoutSecrets";
+import { ownEntry } from "../lib/ownEntry";
 import type { OsmandPoint } from "./normaliseOsmandPoint";
 
 /*
@@ -78,7 +79,7 @@ export function normaliseTraccarLocation(
   if (!coordinates.ok) return rejected(coordinates.reason);
   const altitudeAccuracy = finiteOrNull(coords["altitude_accuracy"]);
   const activity = asRecord(location["activity"])?.["type"];
-  const motion = typeof activity === "string" ? activities[activity] : undefined;
+  const motion = typeof activity === "string" ? ownEntry(activities, activity) : undefined;
   return {
     ok: true,
     value: {

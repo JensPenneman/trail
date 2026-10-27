@@ -1,4 +1,5 @@
 import type { WayKind } from "@trail/contracts/transport";
+import { ownEntry } from "../lib/ownEntry";
 
 const railways: Readonly<Record<string, WayKind>> = {
   rail: "rail",
@@ -47,11 +48,11 @@ const notBuilt = new Set(["proposed", "construction", "abandoned", "razed", "dis
 export function classifyWay(tags: Readonly<Record<string, string>>): WayKind | null {
   const railway = tags["railway"];
   if (railway !== undefined) {
-    const kind = railways[railway];
+    const kind = ownEntry(railways, railway);
     if (kind !== undefined) return kind;
   }
   if (tags["route"] === "ferry") return "ferry";
   const highway = tags["highway"];
   if (highway === undefined || notBuilt.has(highway)) return null;
-  return highways[highway] ?? "other";
+  return ownEntry(highways, highway) ?? "other";
 }

@@ -1,3 +1,5 @@
+import { ownEntry } from "../lib/ownEntry";
+
 /** CoreMotion's activities as Overland reports them ("driving" is CMMotionActivity.automotive). */
 export type MotionActivity = "stationary" | "walking" | "running" | "cycling" | "automotive";
 
@@ -18,7 +20,7 @@ export function motionActivity(motion: readonly string[]): MotionActivity | null
   let still = false;
   let moving: MotionActivity | null = null;
   for (const value of motion) {
-    const activity = activities[value];
+    const activity = ownEntry(activities, value);
     if (activity === "stationary") still = true;
     else if (activity !== undefined && moving === null) moving = activity;
   }
