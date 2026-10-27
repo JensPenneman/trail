@@ -89,9 +89,17 @@ async function rowsOf(userId: string): Promise<Row[]> {
   return rows;
 }
 
-/** Starts a scenario with an empty log. */
-async function clearLog(): Promise<void> {
+/** Every row any scenario wrote, kept for the scan at the end before a scenario clears the log. */
+const written: Row[] = [];
+
+async function keepRows(): Promise<void> {
   await settle();
+  written.push(...(await t.ctx.db.execute<Row>(sql`SELECT * FROM data_access_events`)).rows);
+}
+
+/** Starts a scenario with an empty log; what was in it stays for the final scan. */
+async function clearLog(): Promise<void> {
+  await keepRows();
   await t.ctx.db.execute(sql`DELETE FROM data_access_events`);
 }
 
@@ -661,11 +669,12 @@ describe("public links", () => {
 
 describe("every row", () => {
   it("holds no coordinate, no secret and no network address but a link visitor's coarse one", async () => {
-    await settle();
-    const { rows } = await t.ctx.db.execute<Row & Record<string, unknown>>(
-      sql`SELECT * FROM data_access_events`,
+    await keepRows();
+    // Every row of every scenario, as each one was before the next cleared the log.
+    const rows = written;
+    expect(new Set(rows.map((row) => row.channel))).toEqual(
+      new Set(["web", "api", "mcp", "people", "live", "link"]),
     );
-    // The scan runs over everything the earlier scenarios left, plus this file's whole history.
     const all = JSON.stringify(rows);
     for (const value of [exact.lat, exact.lon]) {
       expect(all).not.toContain(String(value));
