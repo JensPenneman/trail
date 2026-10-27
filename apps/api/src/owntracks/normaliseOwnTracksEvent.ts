@@ -3,6 +3,7 @@ import { extraOf, finiteOrNull, textOrNull } from "../ingest/ingestValues";
 import { type Normalised, rejected } from "../ingest/normalised";
 import type { NormalisedEvent } from "../ingest/normalisedRecords";
 import { checkRecordTime } from "../ingest/recordTime";
+import { storableText } from "../ingest/storableText";
 import { withoutSecrets } from "../ingest/withoutSecrets";
 import { epochSecondsOf } from "./owntracksValues";
 
@@ -16,10 +17,9 @@ function actionOf(message: Record<string, unknown>): string | null {
   if (event !== "enter" && event !== "leave") return null;
   // Two regions can be entered in the same second; the key keeps both.
   const region = textOrNull(message["rid"]) ?? textOrNull(message["desc"]);
-  return (region === null ? `region_${event}` : `region_${event}:${region}`).slice(
-    0,
-    maxActionLength,
-  );
+  const action = region === null ? `region_${event}` : `region_${event}:${region}`;
+  // Made storable again after the cut, which may split an emoji's surrogate pair.
+  return storableText(action.slice(0, maxActionLength));
 }
 
 /**

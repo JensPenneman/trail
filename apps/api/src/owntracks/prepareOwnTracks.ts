@@ -1,7 +1,7 @@
 import { deadLetterRecord } from "../ingest/deadLetterRecord";
 import { asRecord } from "../ingest/ingestValues";
 import { emptyBatch, type PreparedBatch } from "../ingest/preparedBatch";
-import { withoutSecrets } from "../ingest/withoutSecrets";
+import { redactSecrets, withoutSecrets } from "../ingest/withoutSecrets";
 import { normaliseOwnTracksEvent } from "./normaliseOwnTracksEvent";
 import { normaliseOwnTracksLocation } from "./normaliseOwnTracksLocation";
 import type { OwnTracksBody } from "./readOwnTracksBody";
@@ -81,6 +81,9 @@ export function prepareOwnTracks(body: OwnTracksBody, receivedAt: Date): Prepare
       // The key stays on the phone: Trail cannot read these, a later fix might.
       return rejectedAs("encrypted message: turn off encryption in OwnTracks", message);
     default:
-      return rejectedAs(`unknown _type ${JSON.stringify(type.slice(0, 40))}`, message);
+      return rejectedAs(
+        `unknown _type ${JSON.stringify(redactSecrets(type).slice(0, 40))}`,
+        message,
+      );
   }
 }

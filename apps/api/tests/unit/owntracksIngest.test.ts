@@ -37,6 +37,15 @@ describe("the OwnTracks body", () => {
       preview: "{oops",
     });
   });
+
+  it("keeps no token of a body that is no JSON, even one cut where the preview ends", () => {
+    // The token starts 20 characters before the preview's end: cut first, its start would stay.
+    const body = readOwnTracksBody(Buffer.from(`{${"a".repeat(1979)}${token}${"b".repeat(100)}`));
+    if (body.kind !== "unreadable") throw new Error("the body was read");
+    expect(body.preview).toHaveLength(2000);
+    expect(body.preview).toContain("[redacted]");
+    expect(body.preview).not.toContain(token.slice(0, 12));
+  });
 });
 
 describe("OwnTracks locations", () => {
@@ -168,6 +177,9 @@ describe("other OwnTracks messages", () => {
     ]);
     const { rid: _rid, ...withoutRid } = owntracksTransition(at, "leave", "Garden");
     expect(message(withoutRid).batch.events[0]?.action).toBe("region_leave:Garden");
+    // An action is cut to 100 characters, never between the halves of an emoji.
+    const long = message({ ...owntracksTransition(at, "enter"), rid: `${"a".repeat(86)}😀` });
+    expect(long.batch.events[0]?.action).toBe(`region_enter:${"a".repeat(86)}\uFFFD`);
     const { lat: _lat, lon: _lon, ...noPosition } = owntracksTransition(at, "leave");
     expect(message(noPosition).batch.events[0]).toMatchObject({ lat: null, lon: null });
     expect(message({ ...owntracksTransition(at, "enter"), event: "dwell" }).batch.rejects).toEqual([
@@ -211,6 +223,10 @@ describe("other OwnTracks messages", () => {
     ]);
     expect(reasons({ _type: "tour", password: token, note: `id=${token}` })).toEqual([
       ['unknown _type "tour"', { _type: "tour", note: "id=[redacted]" }],
+    ]);
+    // The reason quotes the type: a token in it is gone before the quote is cut.
+    expect(reasons({ _type: `x${token}` })).toEqual([
+      ['unknown _type "x[redacted]"', { _type: "x[redacted]" }],
     ]);
     expect(reasons({ lat: 51, lon: 3 })).toEqual([["message without _type", { lat: 51, lon: 3 }]]);
     expect(reasons([1, 2])).toEqual([["message is not a JSON object", [1, 2]]]);

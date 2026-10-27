@@ -20,21 +20,26 @@ const secretKeys = new Set([
 const maxDepth = 16;
 
 /**
+ * A text with every token-shaped part replaced. Before any cut: a token cut in
+ * half no longer has the shape, and would stay.
+ */
+export function redactSecrets(text: string): string {
+  return text.replace(secretPattern, "[redacted]");
+}
+
+/**
  * A record as Trail may keep it (`extra`, the dead letter): without keys that
  * hold a credential, and with every token-shaped text replaced — whatever a
  * phone sent, its token never lands in the database or a log.
  */
 export function withoutSecrets(value: unknown, depth = 0): unknown {
-  if (typeof value === "string") return value.replace(secretPattern, "[redacted]");
+  if (typeof value === "string") return redactSecrets(value);
   if (typeof value !== "object" || value === null) return value;
   if (depth >= maxDepth) return null;
   if (Array.isArray(value)) return value.map((item: unknown) => withoutSecrets(item, depth + 1));
   return Object.fromEntries(
     Object.entries(value)
       .filter(([key]) => !secretKeys.has(key.toLowerCase()))
-      .map(([key, item]) => [
-        key.replace(secretPattern, "[redacted]"),
-        withoutSecrets(item, depth + 1),
-      ]),
+      .map(([key, item]) => [redactSecrets(key), withoutSecrets(item, depth + 1)]),
   );
 }
