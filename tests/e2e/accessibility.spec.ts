@@ -1,8 +1,6 @@
 import { expect, type Page } from "@playwright/test";
-import { adminStatePath } from "./support/adminState";
 import { expectAccessible } from "./support/expectAccessible";
 import { overlandBatch } from "./support/overlandBatch";
-import { currentUser } from "./support/signUp";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
 
@@ -54,17 +52,7 @@ test.describe("accessibility", () => {
     await expectAccessible(page, "Devices");
     await open(page, `/devices/${device.id}`, "Checked phone", "Uploads of this device");
     await expectAccessible(page, "the device page");
-    for (const [section, ready] of [
-      ["profile", "Time zone"],
-      ["passkeys", "works on this address"],
-      ["tokens", "No active tokens."],
-      ["sharing", "Nobody sees your location."],
-      ["data", "Delete a period"],
-      ["about", "Receiver endpoint"],
-    ] as const) {
-      await open(page, `/settings/${section}`, "Settings", ready);
-      await expectAccessible(page, `Settings › ${section}`);
-    }
+    // Settings, every page of it and the administrators' one: settings.spec.ts.
   });
 
   test("the setup code of a new device", async ({ page, account }) => {
@@ -75,18 +63,5 @@ test.describe("accessibility", () => {
     await form.getByRole("button", { name: "Add device" }).click();
     await expect(page.getByRole("dialog", { name: "Set up Scanned phone" })).toBeVisible();
     await expectAccessible(page, "the setup code dialog");
-  });
-
-  test("Settings of an administrator, with people and invitations", async ({ openBrowser }) => {
-    const admin = await openBrowser({ storageState: adminStatePath });
-    test.skip(
-      !(await currentUser(admin.page)).isAdmin,
-      "The server's first account belongs to someone else",
-    );
-    await open(admin.page, "/settings/people", "Settings", "Invite someone");
-    await expect(
-      admin.page.getByRole("heading", { name: "Accounts on this server" }),
-    ).toBeVisible();
-    await expectAccessible(admin.page, "Settings of an administrator");
   });
 });

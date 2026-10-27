@@ -31,16 +31,19 @@ test.describe("MCP server", () => {
   }) => {
     await uploadedDevice(page, "Agent's phone", overlandBatch(account.timezone));
 
-    await page.goto("/settings/tokens");
-    const section = page.getByRole("region", { name: "API tokens" });
-    await expect(section.getByRole("link", { name: "MCP guide" })).toHaveAttribute(
-      "href",
-      /docs\/mcp\.md$/,
+    // Settings › MCP: how to connect, and the Agent template a click away.
+    await page.goto("/settings/mcp");
+    await expect(
+      page.getByRole("link", { name: "MCP guide (opens in a new tab)" }),
+    ).toHaveAttribute("href", /docs\/mcp\.md$/);
+    await expect(page.getByRole("textbox", { name: "Server address" })).toHaveValue(
+      new URL(apiPaths.mcp, page.url()).href,
     );
-    await section.getByRole("button", { name: "Create token" }).click();
+    await expectAccessible(page, "Settings › MCP");
+    await page.getByRole("button", { name: "Create an Agent token" }).click();
     const form = page.getByRole("dialog", { name: "Create an API token" });
+    await expect(form.getByRole("radio", { name: "Agent" })).toBeChecked();
     await form.getByLabel("Name").fill("Appointments");
-    await form.getByRole("radio", { name: "Agent" }).check();
     await expect(form.getByRole("link", { name: "MCP server" })).toHaveAttribute(
       "href",
       /docs\/mcp\.md$/,

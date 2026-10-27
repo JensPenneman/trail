@@ -1,0 +1,137 @@
+/* A page of Settings: the bar with the way back, a large title, then its groups. */
+
+.settings-page {
+  display: grid;
+  align-content: start;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+/*
+ * Phones: a bar under the app's header, flush with the screen's edges. It is
+ * see-through while the large title shows and takes the title once that
+ * scrolls under it.
+ */
+.settings-page__bar {
+  position: sticky;
+  top: calc(var(--header-height) + var(--safe-top));
+  z-index: 15;
+  display: grid;
+  /* The way back keeps its whole name; the title in the middle gives way first. */
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, max-content) minmax(0, 1fr);
+  align-items: center;
+  min-height: calc(var(--target) + var(--space-1));
+  margin: calc(var(--space-4) * -1) calc((var(--space-4) + var(--safe-right)) * -1)
+    calc(var(--space-4) * -1) calc((var(--space-4) + var(--safe-left)) * -1);
+  padding: 0 calc(var(--space-2) + var(--safe-right)) 0 calc(var(--space-2) + var(--safe-left));
+  border-bottom: var(--border-width) solid transparent;
+  transition:
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+
+.settings-page__bar[data-compact] {
+  border-bottom-color: var(--color-border);
+  background: var(--color-surface);
+}
+
+.settings-back {
+  display: inline-flex;
+  grid-column: 1;
+  align-items: center;
+  justify-self: start;
+  gap: 0.125rem;
+  max-width: 100%;
+  min-height: var(--target);
+  padding: 0 var(--space-2) 0 var(--space-1);
+  border-radius: var(--radius-m);
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.settings-back:hover {
+  color: var(--color-accent-hover);
+  text-decoration: none;
+}
+
+.settings-back__icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  stroke-width: 2.25;
+}
+
+.settings-back__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-page__compact-title {
+  grid-column: 2;
+  overflow: hidden;
+  font-weight: 650;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity var(--duration-fast) ease;
+}
+
+.settings-page__bar[data-compact] .settings-page__compact-title {
+  opacity: 1;
+}
+
+.settings-page__header {
+  display: grid;
+  gap: var(--space-1);
+  padding: 0 var(--space-1);
+}
+
+.settings-page__title {
+  font-size: var(--text-3xl);
+  letter-spacing: -0.02em;
+}
+
+.settings-page__description {
+  color: var(--color-text-2);
+}
+
+/* Beside the list: no sticky bar; the way back only on the pages of single items. */
+@media (min-width: 64rem) {
+  .settings-page__bar {
+    position: static;
+    display: block;
+    min-height: 0;
+    margin: 0 0 calc(var(--space-4) * -1);
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .settings-page__bar[data-compact] {
+    background: none;
+  }
+
+  .settings-page__bar:not(.settings-page__bar--always) {
+    display: none;
+  }
+
+  .settings-page__compact-title {
+    display: none;
+  }
+
+  .settings-back {
+    margin-inline-start: calc(var(--space-2) * -1);
+  }
+
+  .settings-page__title {
+    font-size: var(--text-2xl);
+  }
+}
+
+@media (forced-colors: active) {
+  .settings-page__bar[data-compact] {
+    border-bottom-color: CanvasText;
+  }
+}

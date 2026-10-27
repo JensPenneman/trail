@@ -7,6 +7,7 @@ import { CopyField } from "../../ui/CopyField";
 import { ErrorState } from "../../ui/ErrorState";
 import { Notice } from "../../ui/Notice";
 import { TextField } from "../../ui/TextField";
+import "./settings.css";
 
 /** Admins invite people by link; the link (with its secret) is shown only right after creating it. */
 export function CreateInviteForm() {

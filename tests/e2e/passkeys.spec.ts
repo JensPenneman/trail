@@ -10,46 +10,45 @@ test.describe("passkeys", () => {
   }) => {
     expect(account.email).toContain("@");
     await page.goto("/settings/passkeys");
-    const passkeys = page.getByRole("region", { name: "Passkeys", exact: true });
-    const rows = passkeys.getByRole("listitem");
+    const rows = page.getByRole("list", { name: "Your passkeys" }).getByRole("link");
     await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText("works on this address");
+    await expect(rows.first()).toHaveAccessibleDescription(/works on this address$/);
 
     // A security key; the built-in authenticator, which already holds a passkey, is not touched.
     const securityKey = await authenticator.addSecurityKey();
     await authenticator.setPresence(false);
-    await passkeys.getByRole("button", { name: "Add a passkey here" }).click();
+    await page.getByRole("button", { name: "Add a passkey here" }).click();
     await expect(rows).toHaveCount(2);
     expect(await securityKey.passkeys()).toHaveLength(1);
     await authenticator.setPresence(true);
 
-    await rows
-      .nth(1)
-      .getByRole("button", { name: /^Rename / })
-      .click();
+    // Each passkey has a page of its own: rename and delete are there.
+    await rows.nth(1).click();
+    await expect(page).toHaveURL(/\/settings\/passkeys\/[^/]+$/);
+    await page.getByRole("button", { name: "Rename" }).click();
     const rename = page.getByRole("dialog", { name: "Rename passkey" });
     await rename.getByLabel("Name").fill("Security key");
     await rename.getByRole("button", { name: "Save" }).click();
     await expect(rename).toBeHidden();
-    await expect(rows.nth(1)).toContainText("Security key");
+    await expect(page.getByRole("heading", { level: 1, name: "Security key" })).toBeVisible();
 
-    await passkeys.getByRole("button", { name: "Delete Security key" }).click();
+    await page.getByRole("button", { name: "Delete passkey" }).click();
     const remove = page.getByRole("dialog", { name: "Delete “Security key”?" });
     await remove.getByRole("button", { name: "Delete passkey" }).click();
-    await expect(remove).toBeHidden();
+    // Back to the list, which no longer has it.
+    await expect(page).toHaveURL(/\/settings\/passkeys$/);
     await expect(rows).toHaveCount(1);
 
     // The server refuses to delete the only passkey left (409 last_passkey).
     consoleGuard.expectFailedResponse(409, /\/api\/me\/passkeys\/[^/]+$/);
-    await rows
-      .first()
-      .getByRole("button", { name: /^Delete / })
-      .click();
+    await rows.first().click();
+    await page.getByRole("button", { name: "Delete passkey" }).click();
     const last = page.getByRole("dialog", { name: /^Delete “/ });
     await last.getByRole("button", { name: "Delete passkey" }).click();
     await expect(last.getByRole("alert")).toContainText("This is your only passkey");
     await expect(last.getByRole("button", { name: "Delete passkey" })).toBeDisabled();
     await last.getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("link", { name: "Back to Passkeys" }).click();
     await expect(rows).toHaveCount(1);
   });
 
@@ -60,10 +59,7 @@ test.describe("passkeys", () => {
     consoleGuard,
   }) => {
     await page.goto("/settings/passkeys");
-    const section = page.getByRole("region", {
-      name: "Add a passkey on another device or address",
-      exact: true,
-    });
+    const section = page.getByRole("region", { name: "Passkeys", exact: true });
     await section.getByRole("button", { name: "Create link" }).click();
     await expect(
       section.getByRole("img", { name: "Code with the one-time passkey link" }),
@@ -82,9 +78,9 @@ test.describe("passkeys", () => {
     expect(await phone.authenticator.passkeys()).toHaveLength(1);
 
     await page.reload();
-    await expect(
-      page.getByRole("region", { name: "Passkeys", exact: true }).getByRole("listitem"),
-    ).toHaveCount(2);
+    await expect(page.getByRole("list", { name: "Your passkeys" }).getByRole("link")).toHaveCount(
+      2,
+    );
 
     // The link worked once.
     consoleGuard.expectFailedResponse(404, /\/api\/auth\/link\/[A-Za-z0-9_-]+$/);

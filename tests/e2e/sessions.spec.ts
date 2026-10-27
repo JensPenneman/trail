@@ -20,12 +20,13 @@ test.describe("signed-in browsers", () => {
     await expect(other.page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
     await expect(other.page.getByText("Live updates on")).toBeAttached();
 
-    await page.goto("/settings/passkeys");
-    const browsers = page.getByRole("region", { name: "Signed-in browsers", exact: true });
+    await page.goto("/settings/browsers");
+    const browsers = page.getByRole("list", { name: "Signed-in browsers" });
     await expect(browsers.getByRole("listitem")).toHaveCount(2);
     await expect(browsers.getByText("This browser")).toHaveCount(1);
-    await browsers.getByRole("button", { name: "Sign out everywhere else" }).click();
+    await page.getByRole("button", { name: "Sign out everywhere else" }).click();
     await expect(browsers.getByRole("listitem")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Sign out everywhere else" })).toHaveCount(0);
 
     // The other browser hears about it over its event stream and shows the sign-in page.
     await expect(other.page.getByRole("heading", { level: 1, name: "Sign in" })).toBeVisible();

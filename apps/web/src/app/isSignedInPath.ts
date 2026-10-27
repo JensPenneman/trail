@@ -1,9 +1,8 @@
-import { settingsSections } from "./settingsSections";
+import { settingsPathsSource } from "../settings/settingsTree";
 
-const sections = settingsSections.map((section) => section.id).join("|");
 // `history`, `explore` and `people` only redirect to the People page, which needs a session.
 const signedIn = new RegExp(
-  `^/(?:history|explore|people|devices(?:/[^/]+)?|settings(?:/(?:${sections}))?)?/?$`,
+  `^(?:/(?:history|explore|people|devices(?:/[^/]+)?)?|${settingsPathsSource()})/?$`,
 );
 
 /** Paths that only exist for signed-in people (see createAppRouter); public links (`/s#…`) are not. */

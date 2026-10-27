@@ -5,6 +5,8 @@ interface PlainListProps {
   className?: string;
   /** An accessible name, for a list that has no heading of its own. */
   label?: string;
+  /** The id of the heading that names the list. */
+  labelledBy?: string;
   children: ReactNode;
 }
 
@@ -13,10 +15,16 @@ interface PlainListProps {
  * VoiceOver drops list semantics from `list-style: none` unless the role is
  * stated explicitly.
  */
-export function PlainList({ ordered = false, className, label, children }: PlainListProps) {
+export function PlainList({
+  ordered = false,
+  className,
+  label,
+  labelledBy,
+  children,
+}: PlainListProps) {
   const List = ordered ? "ol" : "ul";
   return (
-    <List role="list" className={className} aria-label={label}>
+    <List role="list" className={className} aria-label={label} aria-labelledby={labelledBy}>
       {children}
     </List>
   );

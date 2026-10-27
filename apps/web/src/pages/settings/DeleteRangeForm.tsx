@@ -11,6 +11,7 @@ import { ErrorState } from "../../ui/ErrorState";
 import { Notice } from "../../ui/Notice";
 import { SelectField } from "../../ui/SelectField";
 import { TextField } from "../../ui/TextField";
+import "./settings.css";
 
 /** Removes one device's points, visits and trips for some days — after an explicit confirmation. */
 export function DeleteRangeForm() {

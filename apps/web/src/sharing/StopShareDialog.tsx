@@ -9,10 +9,12 @@ import { recipientName } from "./recipientName";
 interface StopShareDialogProps {
   share: OutgoingShare | null;
   onClose: () => void;
+  /** After the share has ended, when the dialog has closed. */
+  onStopped?: () => void;
 }
 
 /** "Stop sharing with Ana?" — the share ends the moment it is confirmed. */
-export function StopShareDialog({ share, onClose }: StopShareDialogProps) {
+export function StopShareDialog({ share, onClose, onStopped }: StopShareDialogProps) {
   const stop = useStopShare();
   const announce = useAnnounce();
   const name = share === null ? "" : recipientName(share);
@@ -48,6 +50,7 @@ export function StopShareDialog({ share, onClose }: StopShareDialogProps) {
               onSuccess: () => {
                 announce(`You no longer share your location with ${name}.`);
                 close();
+                onStopped?.();
               },
             });
           }}

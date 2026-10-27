@@ -14,6 +14,8 @@ export function useUpdateProfile() {
   return useMutation({
     mutationFn: (body: UpdateMeRequest) =>
       apiFetch(apiPaths.me.root, sessionResponseSchema, { method: "PATCH", body }),
+    // In turn with preference changes, which answer with the whole account too.
+    scope: { id: "me" },
     onSuccess: ({ user }) => {
       const previous = queryClient.getQueryData<SessionUser | null>(queryKeys.session);
       queryClient.setQueryData(queryKeys.session, user);

@@ -1,6 +1,7 @@
 import type { StyleSpecification } from "maplibre-gl";
-import { startTransition, useCallback, useMemo, useOptimistic } from "react";
+import { startTransition, useCallback, useContext, useMemo, useOptimistic } from "react";
 import { useSearchParams } from "react-router";
+import { SessionUserContext } from "../app/SessionUserContext";
 import { useConfig } from "../queries/useConfig";
 import { usePrefersDark } from "../ui/usePrefersDark";
 import { isMapStyleChoice, type MapStyleChoice, mapStyleChoices } from "./mapStyleChoices";
@@ -18,6 +19,25 @@ function remembered(): MapStyleChoice | null {
   }
 }
 
+/** This browser follows the account's preference again (Settings › Preferences saved one). */
+export function forgetMapStyleChoice(): void {
+  try {
+    window.localStorage.removeItem(storageKey);
+  } catch {
+    // Private browsing: nothing was remembered.
+  }
+}
+
+/** `?style=` › the choice remembered on this browser › the account's preference › Auto. */
+export function resolveMapStyleChoice(
+  fromUrl: string | null,
+  rememberedChoice: MapStyleChoice | null,
+  preferred: MapStyleChoice | undefined,
+): MapStyleChoice {
+  if (isMapStyleChoice(fromUrl)) return fromUrl;
+  return rememberedChoice ?? preferred ?? "auto";
+}
+
 export interface MapStyle {
   /** The MapLibre style (a URL, or a document built here); null until the config has loaded. */
   style: string | StyleSpecification | null;
@@ -32,7 +52,8 @@ export interface MapStyle {
 
 /**
  * The map's style (docs/architecture.md §14): `?style=` in the URL, else the
- * one last chosen on this browser, else Auto, which follows the light or dark
+ * one last chosen on this browser, else the account's preference (Settings ›
+ * Preferences; signed in only), else Auto, which follows the light or dark
  * setting of the system live. Satellite falls back to Auto on a server without
  * imagery, so an old link or choice never leaves the map blank.
  */
@@ -41,9 +62,10 @@ export function useMapStyle(): MapStyle {
   const prefersDark = usePrefersDark();
   const [params, setParams] = useSearchParams();
   const fromUrl = params.get("style");
+  const preferred = useContext(SessionUserContext)?.preferences.mapStyle;
   const wanted = useMemo(
-    () => (isMapStyleChoice(fromUrl) ? fromUrl : (remembered() ?? "auto")),
-    [fromUrl],
+    () => resolveMapStyleChoice(fromUrl, remembered(), preferred),
+    [fromUrl, preferred],
   );
   // The router applies the new URL in a transition; until then the control shows the choice.
   const [shown, show] = useOptimistic(wanted);

@@ -29,9 +29,16 @@ test("the main navigation: People, Devices, Settings, a tab bar on phones", asyn
   await expect(nav.getByRole("link", { name: "Devices" })).toHaveAttribute("aria-current", "page");
   await expect(nav.getByRole("link", { name: "People" })).not.toHaveAttribute("aria-current");
 
+  // The list of Settings on a phone; beside it on wide screens, with its first page.
   await nav.getByRole("link", { name: "Settings" }).click();
-  await expect(page).toHaveURL(/\/settings\/profile$/);
-  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeFocused();
+  if (testInfo.project.name === "iphone") {
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeFocused();
+  } else {
+    await expect(page).toHaveURL(/\/settings\/profile$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Profile" })).toBeFocused();
+  }
+  await expect(nav.getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
 
   await nav.getByRole("link", { name: "People" }).click();
   await expect(page).toHaveURL((url) => url.pathname === "/" && url.search === "");

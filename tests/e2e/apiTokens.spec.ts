@@ -21,10 +21,9 @@ test.describe("API tokens", () => {
   }) => {
     expect(account.id).toBeTruthy();
     await page.goto("/settings/tokens");
-    const section = page.getByRole("region", { name: "API tokens" });
-    await expect(section.getByText("No active tokens.")).toBeVisible();
+    await expect(page.getByText("No active tokens.")).toBeVisible();
 
-    await section.getByRole("button", { name: "Create token" }).click();
+    await page.getByRole("button", { name: "Create token" }).click();
     const form = page.getByRole("dialog", { name: "Create an API token" });
     await expect(form.getByRole("radio", { name: "Read-only" })).toBeChecked();
     await expectAccessible(page, "the create-token dialog");
@@ -54,12 +53,19 @@ test.describe("API tokens", () => {
 
     await shown.getByRole("button", { name: "I have saved it" }).click();
     await expect(shown).toBeHidden();
-    const item = section.getByRole("listitem").filter({ hasText: "Calendar agent" });
-    await expect(item.getByText(`trlk_…${secret.slice(-4)}`)).toBeVisible();
-    await expect(item.getByText("Active", { exact: true })).toBeVisible();
+    const item = page.getByRole("list", { name: "Active tokens" }).getByRole("link", {
+      name: "Calendar agent",
+    });
+    await expect(item).toHaveAccessibleDescription(
+      new RegExp(`^trlk_…${secret.slice(-4)} · All devices · Expires `),
+    );
     expect(await page.content()).not.toContain(secret);
 
-    await item.getByRole("button", { name: "Roll Calendar agent" }).click();
+    // Rolling and revoking happen on the token's own page.
+    await item.click();
+    await expect(page.getByRole("heading", { level: 1, name: "Calendar agent" })).toBeVisible();
+    await expect(page.getByText(`trlk_…${secret.slice(-4)}`)).toBeVisible();
+    await page.getByRole("button", { name: "Roll token" }).click();
     const confirmRoll = page.getByRole("dialog", { name: "Roll “Calendar agent”?" });
     await confirmRoll.getByRole("button", { name: "Roll token" }).click();
     const rolled = page.getByRole("dialog", { name: "Copy the new secret of “Calendar agent”" });
@@ -73,22 +79,27 @@ test.describe("API tokens", () => {
     });
     expect(fresh.status()).toBe(200);
     await rolled.getByRole("button", { name: "I have saved it" }).click();
-    await expect(item.getByText(`trlk_…${newSecret.slice(-4)}`)).toBeVisible();
+    await expect(page.getByText(`trlk_…${newSecret.slice(-4)}`)).toBeVisible();
 
-    await item.getByRole("button", { name: "Revoke Calendar agent" }).click();
+    await page.getByRole("button", { name: "Revoke token" }).click();
     await page
       .getByRole("dialog", { name: "Revoke “Calendar agent”?" })
       .getByRole("button", { name: "Revoke token" })
       .click();
-    await expect(item.getByText("Revoked", { exact: true })).toBeVisible();
-    await expect(section.getByRole("heading", { name: "Expired and revoked" })).toBeVisible();
-    await expect(item.getByRole("button", { name: "Roll Calendar agent" })).toHaveCount(0);
+    await expect(page.getByText("Revoked", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Roll token" })).toHaveCount(0);
     const revoked = await request.get(apiPaths.v1.tokens.verify, {
       headers: authorization(newSecret),
     });
     expect(revoked.status()).toBe(401);
     expect((await revoked.json()).error.code).toBe("unauthorized");
-    await expectAccessible(page, "Settings with a revoked token");
+    await expectAccessible(page, "the page of a revoked token");
+    await page.getByRole("link", { name: "Back to API tokens" }).click();
+    await expect(
+      page.getByRole("list", { name: "Expired and revoked" }).getByRole("link", {
+        name: "Calendar agent",
+      }),
+    ).toHaveAccessibleDescription(/ Revoked$/);
   });
 
   test("limit a token to some devices and an expiry date", async ({ page, account }) => {
@@ -103,8 +114,7 @@ test.describe("API tokens", () => {
       .click();
 
     await page.goto("/settings/tokens");
-    const section = page.getByRole("region", { name: "API tokens" });
-    await section.getByRole("button", { name: "Create token" }).click();
+    await page.getByRole("button", { name: "Create token" }).click();
     const form = page.getByRole("dialog", { name: "Create an API token" });
     await form.getByLabel("Name").fill("Home Assistant");
     await form.getByRole("radio", { name: "Only some devices" }).check();
@@ -117,8 +127,11 @@ test.describe("API tokens", () => {
     const shown = page.getByRole("dialog", { name: "Copy the token “Home Assistant”" });
     await shown.getByRole("button", { name: "I have saved it" }).click();
 
-    const item = section.getByRole("listitem").filter({ hasText: "Home Assistant" });
-    await expect(item.getByText(/Tracked phone from any address/)).toBeVisible();
-    await expect(item.getByText(/Expires 31.*2099.*23:59/)).toBeVisible();
+    const item = page.getByRole("list", { name: "Active tokens" }).getByRole("link", {
+      name: "Home Assistant",
+    });
+    await expect(item).toHaveAccessibleDescription(/ · Tracked phone · Expires 31.*2099.*23:59$/);
+    await item.click();
+    await expect(page.getByText("Any", { exact: true })).toBeVisible();
   });
 });
