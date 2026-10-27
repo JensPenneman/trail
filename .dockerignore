@@ -33,4 +33,4 @@ lefthook.yml
 lefthook-local.yml
 commitlint.config.mjs
 knip.json
-biome.json
+biome.jsonc

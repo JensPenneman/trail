@@ -61,6 +61,12 @@ function holdSignOut() {
   return () => answer(new Response(null, { status: 204 }));
 }
 
+/** The sign-in page of `holdSignInPage`: it suspends until `ready` resolves. */
+function SignInPage({ ready }: { ready: Promise<void> }) {
+  use(ready);
+  return <p>Sign-in page</p>;
+}
+
 /**
  * A sign-in page that cannot render until `show()`. React Router renders the
  * next route in a transition, so the page that was shown stays mounted until
@@ -73,11 +79,7 @@ function holdSignInPage() {
   const ready = new Promise<void>((resolve) => {
     show = resolve;
   });
-  function SignInPage() {
-    use(ready);
-    return <p>Sign-in page</p>;
-  }
-  return { page: <SignInPage />, show: () => act(async () => show()) };
+  return { page: <SignInPage ready={ready} />, show: () => act(async () => show()) };
 }
 
 /** TanStack Query tells React about cache changes on a timer; one timer later, React knows. */

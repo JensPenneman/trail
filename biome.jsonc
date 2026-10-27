@@ -29,6 +29,13 @@
   "json": {
     "formatter": { "enabled": true }
   },
+  // Markdown stays formatted by hand (wrapped prose, compact tables). Biome's
+  // formatter would pad every table to aligned columns, turn the "+" that
+  // starts a wrapped line into "-", and fail the CHANGELOG that release-please
+  // writes on every release pull request.
+  "markdown": {
+    "formatter": { "enabled": false }
+  },
   "assist": {
     "actions": {
       "source": { "organizeImports": "on" }
@@ -43,7 +50,12 @@
       "correctness": {
         "noUnusedImports": "error",
         "noUnusedVariables": "error",
-        "noUnusedFunctionParameters": "error"
+        "noUnusedFunctionParameters": "error",
+        // Off while Biome is 2.6.2, which compares the rows of grid-template-areas
+        // by their text length and reports valid areas (layout.css, .map-layout):
+        // https://github.com/biomejs/biome/issues/12502. 2.6.3 counts cells; turn
+        // the rule on again with it.
+        "noInvalidGridAreas": "off"
       },
       "style": {
         "useImportType": "error",
