@@ -43,6 +43,8 @@ interface BarChartProps {
   categoryLabel?: string;
   /** A total in the tooltips, the marks' descriptions and the table; by default for stacks of two or more series. */
   totals?: boolean;
+  /** The values are counts: the axis steps by whole numbers (no "0.5 views"). */
+  integer?: boolean;
 }
 
 /** A vertical chart's height, the x axis' labels included, so its card never scrolls. */
@@ -91,6 +93,7 @@ interface BarInput {
   formatValue: (value: number) => string;
   formatTick: (value: number) => string;
   valueLabels: boolean;
+  integer: boolean;
 }
 
 const tickCount = (length: number, spacing: number): number =>
@@ -102,7 +105,7 @@ function columnModel(input: BarInput): BarModel {
   const top = Math.ceil(input.valueLabels ? small * 2 : small * 0.85);
   const bottom = Math.ceil(small * 2.5);
   const plotHeight = columnChartHeight - top - bottom;
-  const tickValues = niceTicks(input.max, tickCount(plotHeight, 48));
+  const tickValues = niceTicks(input.max, tickCount(plotHeight, 48), { integer: input.integer });
   const tickLabels = tickValues.map((value) => input.formatTick(value));
   const offset = Math.round(small * 0.66);
   const yAxis =
@@ -268,12 +271,14 @@ function barModel(input: BarInput): BarModel {
     plotWidth / (ticks.length - 1) <
     Math.max(...ticks.map((value) => textWidth(input.formatTick(value), small))) + 12;
   let approx = tickCount(width, 110);
-  let tickValues = input.valueLabels ? [] : niceTicks(input.max, approx);
+  let tickValues = input.valueLabels
+    ? []
+    : niceTicks(input.max, approx, { integer: input.integer });
   let layout = layoutFor(tickValues);
   // Fewer gridlines when their labels would touch.
   while (approx > 1 && tickValues.length > 2 && crowded(tickValues, layout.plotWidth)) {
     approx -= 1;
-    tickValues = niceTicks(input.max, approx);
+    tickValues = niceTicks(input.max, approx, { integer: input.integer });
     layout = layoutFor(tickValues);
   }
   const { labelColumn, left } = layout;
@@ -422,6 +427,7 @@ export function BarChart({
   tableLabel = "Show the numbers",
   categoryLabel,
   totals,
+  integer = false,
 }: BarChartProps) {
   const { measure, width, rem } = useChartWidth();
   const id = useId();
@@ -446,6 +452,7 @@ export function BarChart({
       formatValue,
       formatTick: formatTick ?? formatValue,
       valueLabels,
+      integer,
     };
     return orientation === "horizontal" ? barModel(input) : columnModel(input);
   }, [
@@ -458,6 +465,7 @@ export function BarChart({
     formatValue,
     formatTick,
     valueLabels,
+    integer,
     orientation,
   ]);
   const contents = useMemo(

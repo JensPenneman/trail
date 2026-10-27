@@ -1,0 +1,39 @@
+/* Who viewed you, an actor's page and the access log: the controls above, the content below. */
+
+.viewers__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.viewers__content {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.viewers__content[aria-busy="true"] {
+  opacity: 0.6;
+  transition: opacity var(--duration-fast) ease;
+}
+
+.viewer__sentence {
+  margin: 0;
+  font-size: var(--text-l);
+  line-height: 1.45;
+}
+
+.viewers__lines {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* Above the cards of the days, whose titles are a step smaller. */
+.viewers__lines-title {
+  padding: 0 var(--space-1);
+  font-size: var(--text-l);
+  font-weight: 650;
+  line-height: 1.3;
+}

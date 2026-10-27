@@ -105,7 +105,7 @@ export function PreferencesPage() {
       <SettingsGroup
         title="Access log"
         id="access-log"
-        footer="The access log comes with a later version of Trail; this choice is kept for it."
+        footer="Who viewed you and the access log count what you did yourself only with this on. The switch on those pages changes it too."
       >
         <SettingsRow
           kind="switch"

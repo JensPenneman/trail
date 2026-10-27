@@ -1,4 +1,5 @@
 import type { ProcessingLevel } from "@trail/contracts/transport";
+import { emptySummary } from "./accessLogFixtures";
 import {
   ana,
   apiToken,
@@ -240,6 +241,11 @@ export function standardRoutes() {
     "GET /api/v1/shares": { status: 200, body: { shares: [outgoingShare()] } },
     "GET /api/v1/shares/incoming": { status: 200, body: { shares: [] } },
     "GET /api/v1/share-links": { status: 200, body: { links: [shareLink()] } },
+    "GET /api/v1/access-log/summary": ({ url }: { url: URL }) => ({
+      status: 200,
+      body: emptySummary(Number(url.searchParams.get("days") ?? "30")),
+    }),
+    "GET /api/v1/access-log": { status: 200, body: { items: [], nextCursor: null } },
     "GET /api/admin/invites": { status: 200, body: { invites: [] } },
     "GET /api/admin/users": {
       status: 200,

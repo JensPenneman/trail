@@ -45,6 +45,7 @@ export type SettingsBadgeId =
   | "browsers"
   | "sharing"
   | "links"
+  | "viewers"
   | "tokens"
   | "notifications"
   | "about";
@@ -205,6 +206,9 @@ export const settingsNodes = [
     description: "Who looked at your location, and how often.",
     keywords: ["who looked", "views", "visitors", "viewers", "watched", "privacy"],
     adminOnly: false,
+    badge: "viewers",
+    rows: [{ label: "Your own activity", keywords: ["own sessions", "yourself", "my browsers"] }],
+    details: [{ id: "viewer", path: "/settings/privacy/viewers/:actor", label: "Viewer" }],
   },
   {
     kind: "page",
@@ -217,6 +221,7 @@ export const settingsNodes = [
     description: "Every read of your data, and every change to who may see it.",
     keywords: ["audit", "log", "reads", "who read", "api calls", "mcp calls", "privacy"],
     adminOnly: false,
+    rows: [{ label: "What is recorded", anchor: "recorded", keywords: ["what is logged", "kept"] }],
   },
   {
     kind: "page",

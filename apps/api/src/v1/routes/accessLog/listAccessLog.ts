@@ -1,4 +1,5 @@
 import { dataAccessLogQuerySchema, dataAccessLogResponseSchema } from "@trail/contracts/dataAccess";
+import { parseDataAccessActorId } from "@trail/contracts/dataAccessActorId";
 import { loadAccessLog } from "../../../dataAccess/loadAccessLog";
 import { defineRoute } from "../../defineRoute";
 
@@ -10,7 +11,7 @@ export const listAccessLog = defineRoute(
     operationId: "listAccessLog",
     summary: "List the data access log",
     description:
-      "Who read or changed your data, a line per hour and kind of access, newest first: you in your browser, your API tokens (directly or through the MCP server), the people you share with — when they looked at you, through which share, and what — and the visitors of your public links, as their network and kind of browser. Each line says what was read or changed (devices, a range, a level, a share …), never where. Filter by period, kinds of actor, channels and action; follow `nextCursor` for older lines. The log is yours alone: nobody else, an administrator neither, can read it. Reading it is not recorded.",
+      "Who read or changed your data, a line per hour and kind of access, newest first: you in your browser, your API tokens (directly or through the MCP server), the people you share with — when they looked at you, through which share, and what — and the visitors of your public links, as their network and kind of browser. Each line says what was read or changed (devices, a range, a level, a share …), never where. Filter by period, kinds of actor, channels, action or one actor (`actorId`: a person, a token, a link or one of your browsers); follow `nextCursor` for older lines. The log is yours alone: nobody else, an administrator neither, can read it. Reading it is not recorded.",
     tags: ["Access log"],
     // The log is the whole account's: a token limited to some devices may not read it.
     auth: { scopes: ["audit:read"], allDevices: true },
@@ -21,6 +22,12 @@ export const listAccessLog = defineRoute(
   },
   async ({ ctx, auth, query }) => ({
     status: 200,
-    body: await loadAccessLog(ctx.db, auth.user.id, query),
+    body: await loadAccessLog(ctx.db, auth.user.id, {
+      ...query,
+      only:
+        query.actorId === undefined
+          ? undefined
+          : (parseDataAccessActorId(query.actorId) ?? undefined),
+    }),
   }),
 );

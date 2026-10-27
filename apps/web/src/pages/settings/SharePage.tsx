@@ -1,6 +1,7 @@
 import type { OutgoingShare } from "@trail/contracts/share";
 import { useState } from "react";
 import { useParams } from "react-router";
+import { ShareUsage } from "../../accessLog/ShareUsage";
 import { useFormatter } from "../../format/useFormatter";
 import { useConfirmShare } from "../../queries/useConfirmShare";
 import { useDevices } from "../../queries/useDevices";
@@ -25,7 +26,8 @@ import { shareStatusLabels } from "./shareStatus";
 
 /**
  * Settings › Sharing › one person: what they see of you — devices, precision,
- * history, details — until when, when they last looked; change it or stop.
+ * history, details — until when, when they last looked and at what (the
+ * access log); change it or stop.
  */
 export function SharePage() {
   const { shareId } = useParams();
@@ -102,6 +104,9 @@ export function SharePage() {
         </SettingsFact>
         <SettingsFact label="Shared since">{format.dateTime(share.createdAt)}</SettingsFact>
       </SettingsGroup>
+      {share.recipient.userId === null ? null : (
+        <ShareUsage userId={share.recipient.userId} name={name} />
+      )}
       <SettingsGroup>
         {joined ? (
           <SettingsRow

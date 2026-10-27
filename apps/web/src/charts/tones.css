@@ -6,3 +6,16 @@
 .chart-tone-muted {
   --mode-color: var(--color-border-strong);
 }
+
+/* Categorical slots, for series that are not transport modes (who looked, which channel). */
+.chart-tone-category-1 {
+  --mode-color: var(--chart-category-1);
+}
+
+.chart-tone-category-2 {
+  --mode-color: var(--chart-category-2);
+}
+
+.chart-tone-category-3 {
+  --mode-color: var(--chart-category-3);
+}

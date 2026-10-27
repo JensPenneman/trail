@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useSessionUser } from "../app/useSessionUser";
 import { useFormatter } from "../format/useFormatter";
+import { useAccessSummary } from "../queries/useAccessSummary";
 import { useApiTokens } from "../queries/useApiTokens";
 import { useConfig } from "../queries/useConfig";
 import { useDevices } from "../queries/useDevices";
@@ -49,6 +50,7 @@ export function useSettingsTree(): SettingsTree {
     tokens: useApiTokens().data,
     devices: useDevices().data,
     config: useConfig().data,
+    viewers: useAccessSummary({ days: 30, actorId: null }).data,
   };
   const index = useMemo(() => settingsSearchIndex(user.isAdmin), [user.isAdmin]);
   return {

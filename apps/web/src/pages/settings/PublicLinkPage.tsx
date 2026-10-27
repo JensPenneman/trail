@@ -1,6 +1,7 @@
 import type { ShareLink } from "@trail/contracts/shareLink";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
+import { LinkUsage } from "../../accessLog/LinkUsage";
 import { useFormatter } from "../../format/useFormatter";
 import { useDevices } from "../../queries/useDevices";
 import { useShareLinks } from "../../queries/useShareLinks";
@@ -27,7 +28,8 @@ import "./settings.css";
 
 /**
  * Settings › Public links › one link: what it shows and until when, how often
- * it was opened, and turning it off. Right after it was made, the page shows
+ * it was opened and by how many visitors, per day (the access log), and
+ * turning it off. Right after it was made, the page shows
  * its address with a code to scan — once: Trail keeps only a fingerprint of
  * the secret in it.
  */
@@ -122,6 +124,7 @@ export function PublicLinkPage() {
         <SettingsFact label="Views">{linkViewsText(link, format, now)}</SettingsFact>
         <SettingsFact label="Made">{format.dateTime(link.createdAt)}</SettingsFact>
       </SettingsGroup>
+      <LinkUsage linkId={link.id} />
       <SettingsGroup>
         {active ? (
           <SettingsRow

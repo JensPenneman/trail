@@ -2,9 +2,14 @@ import type { TransportMode } from "@trail/contracts/transport";
 
 /**
  * What colours a series: a transport mode (its `--mode-<mode>` token), the
- * accent (one series not about a mode), or muted (de-emphasis, "Other").
+ * accent (one series not about a mode), muted (de-emphasis, "Other"), or a
+ * categorical slot for series of other things (`--chart-category-<n>`),
+ * given in this order and always to the same thing, never by rank.
  */
-export type ChartTone = TransportMode | "accent" | "muted";
+export type ChartTone = TransportMode | "accent" | "muted" | ChartCategory;
+
+/** The categorical slots, in their fixed order (validated as a set: tokens.css). */
+type ChartCategory = "category-1" | "category-2" | "category-3";
 
 export interface ChartSeries {
   key: string;

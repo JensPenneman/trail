@@ -59,6 +59,17 @@
   --device-6: #4a3aa7;
   --device-7: #e34948;
 
+  /*
+   * Categorical chart slots (see src/charts/tones.ts), for series that are not
+   * transport modes: the first three of the documented categorical palette,
+   * in its order, validated as a set on the surfaces of both schemes (adjacent
+   * CVD ΔE ≥ 9.2, normal vision ≥ 26.5). The third is under 3:1 on the light
+   * surface, so every chart that uses it has its table of numbers.
+   */
+  --chart-category-1: #2a78d6;
+  --chart-category-2: #eb6834;
+  --chart-category-3: #1baf7a;
+
   /* People's identity colours, a second ring (see src/people/personPalette.ts). */
   --person-0: #00838f;
   --person-1: #8e24aa;
@@ -222,6 +233,10 @@
     --device-5: #008300;
     --device-6: #9085e9;
     --device-7: #e66767;
+
+    --chart-category-1: #3987e5;
+    --chart-category-2: #d95926;
+    --chart-category-3: #199e70;
 
     --person-0: #26c6da;
     --person-1: #ce93d8;

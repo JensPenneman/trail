@@ -1,11 +1,20 @@
 import type { ChartTone } from "./chartTypes";
 import "./tones.css";
 
+const ownTones: ReadonlySet<ChartTone> = new Set([
+  "accent",
+  "muted",
+  "category-1",
+  "category-2",
+  "category-3",
+]);
+
 /**
  * The class that gives an element its tone as `--mode-color`: a mode's own
- * swatch class from tokens.css, or the accent or muted class, so every mark,
- * legend key and tooltip key reads the one variable.
+ * swatch class from tokens.css, or the class of the accent, muted or a
+ * categorical slot, so every mark, legend key and tooltip key reads the one
+ * variable.
  */
 export function toneClass(tone: ChartTone): string {
-  return tone === "accent" || tone === "muted" ? `chart-tone-${tone}` : `mode-color-${tone}`;
+  return ownTones.has(tone) ? `chart-tone-${tone}` : `mode-color-${tone}`;
 }

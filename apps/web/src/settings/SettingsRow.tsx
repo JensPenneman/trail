@@ -71,6 +71,9 @@ interface PlainRow extends RowLook {
 
 export type SettingsRowProps = LinkRow | ExternalRow | ActionRow | SwitchRow | SelectRow | PlainRow;
 
+/** The path of an address, without its query and part. */
+const pathOf = (to: string): string => to.split(/[?#]/, 1)[0] ?? to;
+
 /** Where a row was opened from, so the page's back control can go back instead of on. */
 export interface SettingsLocationState {
   settingsFrom: string;
@@ -135,8 +138,9 @@ export function SettingsRow(props: SettingsRowProps) {
             aria-labelledby={labelId}
             aria-describedby={describedBy}
             aria-current={props.current === true ? "page" : undefined}
-            // Coming back from this row's page, focus returns to it (see useRouteFocus).
-            data-route-focus={returnedFrom === props.to ? "" : undefined}
+            // Coming back from this row's page, focus returns to it (see useRouteFocus), whatever
+            // the page's query or part (`?days=7`, `#access-log`).
+            data-route-focus={returnedFrom === pathOf(props.to) ? "" : undefined}
           >
             {tile}
             {text}

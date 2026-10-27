@@ -15,6 +15,7 @@ import { stackPieces } from "../src/charts/stackPieces";
 import { describeBars, describeExtremes, nothingToShow } from "../src/charts/summaries";
 import { fitText, textWidth } from "../src/charts/textWidth";
 import { niceTicks, tickStride } from "../src/charts/ticks";
+import { toneClass } from "../src/charts/tones";
 import { placeTooltip } from "../src/charts/tooltipPlacement";
 
 const km = (metres: number) => `${Number((metres / 1000).toFixed(1))} km`;
@@ -430,5 +431,14 @@ describe("summaries", () => {
     expect(markDescription({ title: "Monday", keyed: true, entries: [], total: "0 m" })).toBe(
       "Total 0 m",
     );
+  });
+});
+
+describe("toneClass", () => {
+  it("names a mode's swatch, the accent, muted or a categorical slot", () => {
+    expect(toneClass("train")).toBe("mode-color-train");
+    expect(toneClass("accent")).toBe("chart-tone-accent");
+    expect(toneClass("muted")).toBe("chart-tone-muted");
+    expect(toneClass("category-3")).toBe("chart-tone-category-3");
   });
 });

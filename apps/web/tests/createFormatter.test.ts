@@ -67,6 +67,26 @@ describe("createFormatter", () => {
     );
   });
 
+  it("names the day of an instant for “last … at”, in the account's time zone", () => {
+    const format = brussels();
+    // 2026-09-30 is a Wednesday; now is 14:00 in Brussels.
+    const now = Date.parse("2026-09-30T12:00:00.000Z");
+    expect(format.onDay("2026-09-30T06:00:00.000Z", now)).toBe("today");
+    // Half past midnight in Brussels is still the day before in UTC.
+    expect(format.onDay("2026-09-29T22:30:00.000Z", now)).toBe("today");
+    expect(format.onDay("2026-09-29T21:30:00.000Z", now)).toBe("yesterday");
+    expect(format.onDay("2026-09-27T10:00:00.000Z", now)).toBe("on Sunday");
+    expect(format.onDay("2026-09-24T10:00:00.000Z", now)).toBe("on Thursday");
+    expect(format.onDay("2026-09-23T10:00:00.000Z", now)).toBe("on 23 September");
+    expect(format.onDay("2025-12-31T10:00:00.000Z", now)).toBe("on 31 December 2025");
+    // A clock a moment ahead of the server's is still today.
+    expect(format.onDay("2026-09-30T12:00:30.000Z", now)).toBe("today");
+    // 23:00 and 02:00 in Kiritimati (UTC+14): one day apart there, the same day in UTC.
+    expect(
+      createFormatter("en-GB", "Pacific/Kiritimati").onDay("2026-09-30T09:00:00.000Z", now),
+    ).toBe("yesterday");
+  });
+
   it("formats durations with the largest sensible units", () => {
     const format = brussels();
     expect(format.duration(45)).toBe("45 secs");

@@ -23,6 +23,12 @@ export interface Formatter {
   weekdays(firstDay: number): { short: string; long: string }[];
   /** "12 sec ago", "5 min ago", "yesterday"; older than a week → the date. */
   relative(instant: number | string, now: number): string;
+  /**
+   * The local day of an instant as words fit for "last … at 18:03": "today",
+   * "yesterday", "on Tuesday" within the week, else "on 12 October" (with the
+   * year when it is not this year's).
+   */
+  onDay(instant: number | string, now: number): string;
   /** 1 hr 12 min */
   duration(seconds: number): string;
   /** 850 m, 12.3 km */
@@ -45,6 +51,8 @@ export interface Formatter {
 
 const toTime = (instant: number | string): number =>
   typeof instant === "string" ? Date.parse(instant) : instant;
+
+const dayMs = 86_400_000;
 
 /** Noon UTC keeps a calendar date on the same day whatever zone formats it. */
 const calendarDate = (date: string): number => Date.parse(`${date}T12:00:00Z`);
@@ -118,6 +126,27 @@ export function createFormatter(locale: string, timeZone: string): Formatter {
     month: "short",
     year: "numeric",
   });
+  // The local calendar day of an instant, as a day number that subtracts.
+  const localDay = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  });
+  const dayNumber = (instant: number): number => {
+    const parts = localDay.formatToParts(instant);
+    const part = (type: string) => Number(parts.find((entry) => entry.type === type)?.value);
+    return Math.round(Date.UTC(part("year"), part("month") - 1, part("day")) / dayMs);
+  };
+  const zonedWeekday = new Intl.DateTimeFormat(locale, { timeZone, weekday: "long" });
+  const zonedDate = new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "long" });
+  const zonedDateWithYear = new Intl.DateTimeFormat(locale, {
+    timeZone,
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const zonedYear = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric" });
   const weekdayShort = new Intl.DateTimeFormat(locale, { timeZone: "UTC", weekday: "short" });
   const weekdayLong = new Intl.DateTimeFormat(locale, { timeZone: "UTC", weekday: "long" });
   const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "short" });
@@ -197,6 +226,16 @@ export function createFormatter(locale: string, timeZone: string): Formatter {
       if (elapsed < 86_400) return relative.format(-Math.floor(elapsed / 3600), "hour");
       if (elapsed < 7 * 86_400) return relative.format(-Math.floor(elapsed / 86_400), "day");
       return dateTime.format(toTime(instant));
+    },
+    onDay: (instant, now) => {
+      const time = toTime(instant);
+      const daysAgo = dayNumber(now) - dayNumber(time);
+      if (daysAgo <= 0) return "today";
+      if (daysAgo === 1) return "yesterday";
+      if (daysAgo < 7) return `on ${zonedWeekday.format(time)}`;
+      return zonedYear.format(time) === zonedYear.format(now)
+        ? `on ${zonedDate.format(time)}`
+        : `on ${zonedDateWithYear.format(time)}`;
     },
     duration: (totalSeconds) => {
       const rounded = Math.max(0, Math.round(totalSeconds));

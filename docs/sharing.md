@@ -55,8 +55,14 @@ their open page, by the hour, with what they saw (which devices, how
 precisely, which days). It shows the person and the share, never their
 devices, browser or address. Your public links appear there too, with how
 often each was opened and by how many visitors, and so do your API tokens and
-your own sessions. The API has it now (`GET /api/v1/access-log`,
-[api.md](api.md#access-log)); the pages in Settings follow.
+your own sessions. **Settings › Who viewed you** sums it up for the last 7, 30
+or 90 days — "Ana looked at your live position 14 times and your history
+twice, last on Tuesday at 18:03" — with a page for each person, link and
+token that says hour by hour what they saw; **Settings › Access log** lists
+every line, filtered by who, channel, period and action; and a share's page
+says what that person looked at. Your own activity is left out unless you
+switch it on (on those pages or in Preferences). The API has the same
+(`GET /api/v1/access-log`, [api.md](api.md#access-log)).
 
 ## People who share with you
 
@@ -99,7 +105,8 @@ and says when it expires. The list and each link's page show how often it was
 opened; **Turn off link** on its page ends it at once. Your data access log
 counts the views per visitor and hour; a visitor is anonymous and only known
 by their network (the first three parts of an IPv4 address, or the first 48
-bits of an IPv6 one) and the kind of browser — never their address.
+bits of an IPv6 one) and the kind of browser — never their address. A link's
+page shows its views per day and how many distinct visitors it had.
 
 The secret is the part of the address after `#`. Browsers keep that part to
 themselves: it never reaches your server's or any proxy's logs, and no other

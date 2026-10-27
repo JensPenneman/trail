@@ -69,6 +69,56 @@ npm only — never pnpm/yarn).
 - Units: metres, m/s, degrees internally; the UI shows km, km/h, local time.
 - No AI/assistant mentions anywhere (code, comments, commits, docs).
 
+Every change, besides:
+
+- **Recorded data is never changed.** `locations`, `visits`, `trips`,
+  `device_events` and `ingest_rejects` stay as they were received; what is
+  derived from them lives in tables of its own, carries the version of its
+  algorithms and can be rebuilt (`trail reprocess`). A table of user data
+  that a migration adds joins `laterTables` of the migration-upgrade test
+  (§16).
+- **Contracts first.** Every request and answer is a zod schema in
+  `packages/contracts` with `.meta({ id, description, example })` for the
+  OpenAPI document; the API validates what comes in, `apiFetch` what comes
+  back. Errors keep `{ error: { code, message, fields? } }` with the codes of
+  `errors.ts`; an unknown or someone else's id answers 404, never 403.
+- **One migration per pull request**, generated
+  (`npm run db:generate -w @trail/api`) and generated again after a rebase
+  onto a `main` that gained one, so the chain stays linear; a statement
+  written by hand at its end is kept when it is generated again. An applied
+  migration is never edited.
+- **A threat model first** for every new endpoint, event, table and page:
+  who may read or change what, through which principal and scope, and what
+  the owner, the people they share with, a link's visitors and a token's
+  holder learn of each other. It goes into the pull request.
+- **Scopes.** Whatever can yield coordinates needs `locations:read`, other
+  data its own read scope. A new scope takes a migration of
+  `api_tokens_scopes_check`, a line of `apiScopeDescriptions` and a row of
+  docs/api.md (a test compares them).
+- **Secrets** are random (32 bytes or more), kept as SHA-256, shown once and
+  shape-checked before any lookup; a path or query name that carries one goes
+  into the log redaction (§12). Every public endpoint has a rate limit; every
+  change is tested against another account, a wrong scope and an expired or
+  revoked credential.
+- **A new environment variable** goes into `envSchema.ts`, `loadConfig.ts`,
+  `deploy/.env.example`, `deploy/compose.yaml`, §4 and
+  `tests/e2e/support/serverEnvironment.ts`.
+- **The OpenAPI snapshot** is refreshed on purpose
+  (`npm test -w @trail/api -- -u`) and read in the diff; every route has a
+  summary, a description and examples.
+- **Budgets.** No endpoint reads unbounded rows (93 days of points, pages of
+  20 000); processing is incremental; the OpenAPI document is built once per
+  process. Trail runs as one instance (the bus and the limiters are in
+  memory); a queue that must survive a restart is a table.
+- **Tests at every level** (§16): pure logic in unit tests, every route in
+  integration tests (what it does and who may), every flow end to end on
+  desktop and iPhone, axe green, no console errors; with Postgres or a
+  browser in the development container (§3), the end-to-end suite after a
+  build and under the machine's lock
+  (`E2E_WORKERS=4 lockf -t 5400 /tmp/trail-e2e.lock scripts/devc.sh npm run test:e2e`).
+- **Docs move with the code**: the sections of this document a change
+  touches, the README's features, the guides in `docs/`.
+
 ## 3. Runtime topology
 
 ### Development (macOS)
@@ -1429,8 +1479,8 @@ Read-only template includes, the Agent template not):
 
 | Operation | Notes |
 |---|---|
-| `GET /api/v1/access-log` | the owner's rows, newest hour first (within an hour by dedupe key), `limit` 1–200 (50), keyset `cursor` on `(bucket_start, dedupe_key)` — the unique key, which never changes once a row exists, so a row counted again while someone pages stays where it was; filters `from`, `to` (the hours they touch), `actor` and `channel` (comma-separated kinds), `action`. A line's `id` is its hour and dedupe key (`498630.<key>`): the identity column, which counts the rows of every account, never leaves the server — its gaps would tell an owner how much others are read |
-| `GET /api/v1/access-log/summary` | `days` 7, 30 (default) or 90 local days, today included, in the account's time zone: totals per actor kind, channel and kind of access; a dense series per day (an hour counts on the local day it starts in — the totals' period follows the same rule, so in a zone with half hours they always add up); the people (with their actions), links (with distinct visitor keys) and tokens (api and mcp apart, with their actions), each with events and last seen, at most 20 each; the owner's own sessions apart |
+| `GET /api/v1/access-log` | the owner's rows, newest hour first (within an hour by dedupe key), `limit` 1–200 (50), keyset `cursor` on `(bucket_start, dedupe_key)` — the unique key, which never changes once a row exists, so a row counted again while someone pages stays where it was; filters `from`, `to` (the hours they touch), `actor` and `channel` (comma-separated kinds), `action`, and `actorId` — one actor (`actorCondition`): `person:<userId>` (every share they looked through), `token:<tokenId>`, `link:<linkId>` (all its visitors) or `session:<browser>` (the owner's browser by the row's label, as the summary lists the sessions: the log shows no session ids), made and read by `dataAccessActorId` and `parseDataAccessActorId` in the contracts. A line's `id` is its hour and dedupe key (`498630.<key>`): the identity column, which counts the rows of every account, never leaves the server — its gaps would tell an owner how much others are read |
+| `GET /api/v1/access-log/summary` | `days` 7, 30 (default) or 90 local days, today included, in the account's time zone: totals per actor kind, channel and kind of access, and the distinct people and link visitors (visitor keys); a dense series per day by actor kind and by channel (an hour counts on the local day it starts in — the totals' period follows the same rule, so in a zone with half hours they always add up); the people (with their actions), links (with distinct visitor keys) and tokens (api and mcp apart, with their actions), each with events and last seen, at most 20 each; the owner's own sessions apart. `actorId`, as for the list, sums up that actor alone — the pages of an actor, a token, a link and a share (§14) |
 
 Every query filters by the principal's user: no route reads another
 account's log, an administrator's neither. The log covers the whole
@@ -1443,8 +1493,8 @@ the share they looked through is in force (in the summary: while a share
 with them is), so the owner learns no new name of someone they no longer
 share with — and the snapshot otherwise; current names are cleaned like
 the stored ones. Reading the log is not recorded (`access: false`). The
-pages (Settings › Privacy, a later change) hide the owner's own sessions
-unless the `showOwnActivity` preference says otherwise; the API returns
+pages (Settings › Who viewed you and Access log, §14) hide the owner's own
+sessions unless the `showOwnActivity` preference says otherwise; the API returns
 them unless the `actor` filter leaves them out.
 
 **Threat model.**
@@ -1780,7 +1830,7 @@ on wide screens.
 | `/insights`, `/insights/transport/:mode`, `/insights/time`, `/insights/roads` | Insights: the overview, a transport mode's page, when you travel, roads |
 | `/settings` | Settings: on phones the list with search; on wide screens the first page (Profile) beside the list. An anchor of the single page of 0.2 (`/settings#tokens`, `#browsers`, …) opens its page (`settingsPathFor`) |
 | `/settings/profile`, `…/passkeys`, `…/browsers`, `…/sharing`, `…/links`, `…/privacy/viewers`, `…/privacy/access-log`, `…/data`, `…/tokens`, `…/mcp`, `…/preferences`, `…/notifications`, `…/about`, `…/accounts` | a page of Settings each; `…/accounts` for administrators only, everyone else lands on `/settings` |
-| `/settings/passkeys/:id`, `…/sharing/:shareId`, `…/links/:id`, `…/tokens/:id` | the page of one passkey, share, public link or API token |
+| `/settings/passkeys/:id`, `…/sharing/:shareId`, `…/links/:id`, `…/tokens/:id`, `…/privacy/viewers/:actor` | the page of one passkey, share, public link, API token or viewer — an actor of the access log, its actor id (§8.8) as base64url |
 | `/settings/people` | Accounts' address of 0.3: redirects (replacing the entry) to `/settings/accounts` |
 | `/history?…`, `/explore?…` | redirect (replacing the entry) to `/?view=history&…` and `/?view=heat&…`, every parameter kept (`legacyMapPath`) |
 | `/people?…` | redirect (replacing the entry) to `/?…`, every parameter kept (`legacyPeoplePath`): People had an address of its own before it took in the map |
@@ -1919,9 +1969,12 @@ count among them, since they lead to signed-in pages.
     distance by mode as one bar per mode in its colour, labelled with the
     distance and share; the distance or time per day, week or month stacked
     by mode in the modes' fixed order, past seven modes the smallest folding
-    into "Other modes" (`foldModes`); and the table of modes — distance,
+    into "Other modes" (`foldModes`); the table of modes — distance,
     time, moves, average speed, share and change — whose rows open the modes'
-    pages.
+    pages; and, once someone but you looked at your data in the last 30
+    days, **Who viewed you** (`WhoViewedYouCard`): people, link visitors and
+    token calls, who looked most often, and the way to Settings › Who viewed
+    you. It follows the access log, not the period of the page.
   - **A mode** (`/insights/transport/:mode`) — tiles (distance, time, moves,
     average and typical speed, the longest move, the top speed), the
     distance over the period as a line, distance or time per hour of the day
@@ -1946,11 +1999,15 @@ count among them, since they lead to signed-in pages.
   grouped, columns or horizontal bars; one series may give each row its own
   tone, as the bars per mode do), `LineChart` (up to four lines on one axis,
   a wash under a single one), `Histogram`, `HeatGrid` with its scale legend,
-  `StatTiles`/`StatTile`, `Legend` and `ChartTable`. Inline SVG drawn at the
+  `StatTiles`/`StatTile`, `Legend` and `ChartTable`; `BarChart`'s `integer`
+  keeps an axis of counts to whole steps. Inline SVG drawn at the
   box's real width (a `ResizeObserver`; the viewBox is in CSS pixels, so
   text stays crisp) with fixed heights that include the axes. Marks keep the
   modes' `--mode-*` colours (single-series charts not about a mode take the
-  accent), the grid a neutral sequential ramp (`--heat-0` … `--heat-5`, light
+  accent; series of other things — who looked, which channel — take the
+  categorical slots `--chart-category-1` … `-3` in their fixed order, always
+  for the same thing, with "You" muted: the first three of the validated
+  categorical palette, light and dark), the grid a neutral sequential ramp (`--heat-0` … `--heat-5`, light
   and dark, monotone in lightness); text never wears a series colour. Bars
   are at most 24 px thick with a rounded data end, touching fills are
   separated by a 2 px surface gap, lines are 2 px, gridlines solid
@@ -1984,7 +2041,9 @@ count among them, since they lead to signed-in pages.
   administrators only, and the value on the right of a row from the lists
   the pages load anyway (one cache) — the display name; the number of
   passkeys, browsers, people shared with, working links ("3 active") and
-  active tokens; whether alerts are on; the version.
+  active tokens; how many people, links and tokens looked in the last 30
+  days (the summary Who viewed you and Insights' card load too); whether
+  alerts are on; the version.
 
   The frame (`SettingsShell`): on phones (below 64rem) the list — the search
   field, then the groups as inset cards of rows — is the page at `/settings`,
@@ -2026,12 +2085,13 @@ count among them, since they lead to signed-in pages.
   made its page shows the address and its QR code, once: the secret exists
   only in the answer to making it (the server keeps a hash), and the page
   holds it in memory, never in the history's state, until it is left;
-  **Who viewed you** and **Access log** (pages saying what they will show
-  once the access log's pages arrive, and pointing to what Sharing, Public
-  links and API tokens tell already); **Your data** (export, delete a
+  **Who viewed you**, its pages of each viewer and **Access log** (below);
+  **Your data** (export, delete a
   period, delete the account); **API tokens** (the list, creating one) and a
   token's page (status, hint, template, devices, addresses, lifetime, last
-  use, its scopes with what each allows; roll, revoke); **MCP** (the steps of
+  use, its use, its scopes with what each allows; roll, revoke — renaming it
+  or changing its scopes and devices is in the API, `PATCH
+  /api/me/tokens/:id`, not on the page yet); **MCP** (the steps of
   docs/mcp.md — a token from the Agent template, whose form a button opens,
   the server address, the header, a client configuration — and the guide);
   **API reference** (`/docs`, outside the app); **Preferences**;
@@ -2041,9 +2101,68 @@ count among them, since they lead to signed-in pages.
   (administrators: invite someone, invitations, the accounts on the server).
   An item that does not exist gets a page that says so.
 
+  **The access log's pages** (`apps/web/src/accessLog/`, from §8.8 with the
+  session):
+  - **Who viewed you** (`/settings/privacy/viewers?days=7|30|90`, 30 by
+    default, a step of the history): tiles — people, link visitors, API
+    calls, MCP calls and, with your own activity, yours —, the accesses per
+    day stacked by who, and a row per person, link, token and (with your own
+    activity) browser, each leading to its page. A person's row is a
+    sentence from their actions (`viewerSentence`): "Ana looked at your live
+    position 14 times and your history twice, last on Tuesday at 18:03" —
+    position for `listPeople` and `getPerson`, history for
+    `getPersonTrack`, live updates (`live.position`) apart; once, twice,
+    *n* times; the day as the formatter's `onDay` (today, yesterday, a
+    weekday within the week, else the date). A link's says its views and
+    distinct visitors, a token's its API and MCP calls apart.
+  - **A viewer** (`/settings/privacy/viewers/:actor`, the period kept): the
+    actor id (`person:<userId>`, `token:<tokenId>`, `link:<linkId>`,
+    `session:<browser>`; `dataAccessActorId` in the contracts) as one
+    base64url segment (`actorAddress.ts`: only it makes and reads the
+    segment, so the address holds no name to escape, and one that names no
+    actor shows a page saying so). It shows the summary of that actor (its
+    sentence and the accesses per day by channel: looks and live updates,
+    views, API and MCP), then hour by hour its lines with what each read,
+    and the way to the person's share, the link's or the token's page.
+  - **Access log** (`/settings/privacy/access-log`): the lines, newest
+    first, a card per local day (within an hour the last access first),
+    each line a disclosure that opens to who, the channel, the action (in
+    words and by its name), when, how often, the devices by name (a deleted
+    one as such, and only once the list has come), the period, level,
+    precision, mode, format, history and the share, link or token it named,
+    the answer, and the way to its viewer's page; a line that counts
+    what is not listed one by one (`folded`, a link's other visitors) reads
+    "… and 37 more". The filters — who, channel, period (today, 7, 30 or 90
+    local days, or everything kept) and action (looks at you, downloads,
+    changes of who may see you and of your data) — are the address
+    (`?actor=&channel=&days=&action=`, `parseAccessLogSearch`), each in a
+    select, two columns on a phone; a period starts with the first hour
+    that starts on its first local day, as the summary counts it. Pages of
+    50 follow the keyset cursor (`useAccessLog`, an infinite query): with
+    **Load more**, which keeps its focus while it loads (it is never
+    disabled), says how many lines came and, after the last page, hands
+    its focus to the line that says so; and by themselves as the end of
+    the list comes into view (an `IntersectionObserver`, set up again
+    after each page so a short one brings the next; never twice at once).
+    Empty, filtered-empty and error states; what is recorded, with the
+    sharing and API guides.
+  - Both pages and the viewer's leave your own sessions out
+    (`actor=person,link,token`) unless `showOwnActivity` is on; both have
+    its switch, which saves the preference as Preferences does (shown at
+    once, put back if the save fails).
+  - **Use on the pages of a token, a link and a share** (the last 30 days,
+    the summary of that actor): a token's calls per day, API and MCP
+    stacked, and its last five actions; a link's views, distinct visitors
+    and last view as tiles, and its views per day; what the person of a
+    share looked at (every share of theirs), as their sentence and a bar per
+    kind of look. Each leads to the viewer's page; every chart has its table
+    of numbers. A share changing refetches the log (`invalidateSharing`):
+    it records the change, and names people only while a share is in force.
+
   **Preferences** (§8): the map style (Auto · Light · Dark, and Satellite
-  where the server has imagery), the level of the tracks, and whether the
-  access log lists your own activity. A change is saved at once (a choice, a
+  where the server has imagery), the level of the tracks, and whether Who
+  viewed you and the access log count your own activity (their switch
+  changes it too). A change is saved at once (a choice, a
   switch), announced, and shown before the answer arrives (the session in
   the cache, put back if the save fails); changes go out one after another.
   Saving the map style or the level forgets this browser's own choice of it,
@@ -2221,7 +2340,10 @@ which are merged by hand; majors wait for a person, security ones too.
   coordinates, secrets and addresses; `dataAccessLog.test.ts` the list and
   the summary — order, filters, keyset pages that hold still while a row is
   counted again, `audit:read` (Read-only yes, Agent no), refused to a token
-  limited to some devices, nothing for another account or an administrator, current
+  limited to some devices, nothing for another account or an administrator,
+  one actor (`actorId`: a person, a token, a link and a browser, in the
+  list with its pages and in the summary, refused when it is not one), the
+  series by channel adding up, current
   and remembered names, the retention, the account's deletion and the
   shutdown's last write. The migration-upgrade test fingerprints its rows and
   the visitor key.
@@ -2250,8 +2372,15 @@ which are merged by hand; majors wait for a person, security ones too.
   names, folding modes) and its four pages against a mocked API (periods and
   devices in the address and the requests, a custom range, the
   processing notice, a mode's link to the map, the mode switch, a page
-  without map data); and a link to one move opening its dialog on the People
-  page.
+  without map data); a link to one move opening its dialog on the People
+  page; and the access log's pages (`accessLogHelpers.test.ts`: actor ids
+  and their segments, the sentences and their plurals, the filters and the
+  request they make, lines by local day across pages, folded lines, what a
+  line says and the names it shows; `AccessLogPages.test.tsx`: Who viewed
+  you with and without one's own activity and its switch saving the
+  preference, a period in the address, a viewer's page with its lines,
+  the access log's filters, Load more with the cursor, empty and error
+  states, the use on a token's, link's and share's page, Insights' card).
 - `tests/e2e` — Playwright against the built stack. `playwright.config.ts`
   starts `scripts/e2e-server.mjs`: it empties the `trail_e2e` database
   (`E2E_DATABASE_URL`; any database not named `trail…e2e` is refused) and runs
@@ -2299,7 +2428,15 @@ which are merged by hand; majors wait for a person, security ones too.
   address, a chart by keyboard — one tab stop, arrow keys, the tooltip and
   Escape —, a mode's page from the table and its link to the move on the
   map, when you travel with a mode, roads without map data, and every page
-  at 320 px), axe (WCAG 2.0 A–AAA, 2.1/2.2 AA, best practices) on every
+  at 320 px), the access log with what the server really recorded
+  (`accessLog.spec.ts`: someone with a precise share and history reads your
+  track in their browser and is under People with the sentence the summary's
+  numbers make, on their page hour by hour and on the share's page; a public
+  link opened twice in a fresh browser is one visitor and two views, on the
+  link's page too; a token's two API calls and one MCP tool, counted apart,
+  with its last actions; your own browsing out of the log until the switch
+  shows it and saves the preference; the filters in the address and Load
+  more; the pages at 320 px), axe (WCAG 2.0 A–AAA, 2.1/2.2 AA, best practices) on every
   view and page, keyboard use and 320 px screens. The suite's server
   has no map data (`PROCESSING_OVERPASS_URL` empty), so the mapped level
   degrades to averaged there.
