@@ -107,10 +107,11 @@ On the phone, Overland's Tracker screen shows:
 - **Last Sent**: time since the last accepted upload.
 - **Send Now**: uploads immediately, handy while testing.
 
-In Trail, the map's **Live** view shows every device's last upload ("2 min ago"),
-battery and position, plus a feed of uploads as they arrive; the device page
-lists every upload in its ingest log with the number of points. The two should
-agree: when Last Sent changes on the phone, a new entry appears in Trail.
+In Trail, the **Devices** page shows every device's status and last upload
+("2 min ago"), battery, movement and position, its points per hour over two
+days, plus a feed of uploads as they arrive; the device page lists every upload
+in its ingest log with the number of points. The two should agree: when Last
+Sent changes on the phone, a new entry appears in Trail.
 
 To test the endpoint and token without the phone, from any computer:
 

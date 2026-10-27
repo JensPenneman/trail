@@ -18,15 +18,17 @@ every pull request gets a preview deployment of its own.
   to the phone.
 - **Passkeys only**: no passwords. Several people per server, invites,
   one-time links to add a passkey on another device or address.
-- **People, the home page**: one map with three views — **Live** (every
-  device's position, battery, motion and last upload, updated over
-  server-sent events, plus a feed of uploads as they arrive), **History**
-  (tracks per day or date range with distance, visits and trips, and a time
-  scrubber) and **Heat** (an all-time heatmap) — and beside it you and
-  everyone who shares with you, a card each: show anyone on the map, alone
-  or together, as far as their share allows, with the devices you pick, on a
-  light, dark or (where the server has imagery) satellite map. Everything it
-  shows is in its address, so a view can be bookmarked or shared.
+- **People, the home page**: one map with three views — **Live** (where
+  everyone is now and today's tracks, updated over server-sent events, with
+  your day so far as a timeline), **History** (tracks per day or date range
+  with distance, visits and trips, and a time scrubber) and **Heat** (an
+  all-time heatmap) — and beside it you and everyone who shares with you, a
+  card each in the style of Find My: where they are, what they are doing and
+  how fresh that is in two lines, where they have been while they are on the
+  map, and everything else one tap away under Details. Show anyone on the
+  map, alone or together, as far as their share allows, on a light, dark or
+  (where the server has imagery) satellite map. Everything it shows is in its
+  address, so a view can be bookmarked or shared.
 - **How you travelled**: tracks in four levels — raw, averaged (noise
   smoothed), mapped onto OpenStreetMap roads and railways, and transport:
   stops and moves, each move with its mode (walking, cycling, car, bus, tram,
@@ -46,8 +48,10 @@ every pull request gets a preview deployment of its own.
   doing and how far away they are. Public links show your location to
   someone without an account until the link expires. How it works:
   [docs/sharing.md](docs/sharing.md).
-- **Devices**: set up a phone by scanning a QR code; per-device ingest log,
-  raw points, token rotation.
+- **Devices**: set up a phone by scanning a QR code; the proof that data
+  still comes in — each phone's status, last upload, battery, movement, trip,
+  position and two days of points and uploads per hour, and a feed of uploads
+  as they arrive; per-device ingest log, raw points, token rotation.
 - **Alerts** through [ntfy](https://ntfy.sh) when a device goes silent and
   when it recovers.
 - **Your data**: export as GeoJSON, GPX or CSV; delete a range or the account.

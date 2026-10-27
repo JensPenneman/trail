@@ -20,7 +20,7 @@ account on your server there are **public links**.
      position over time would give away more than you chose.
    - **Battery and activity**: your phone's battery, and whether you are
      walking, cycling, driving or on a train — as Trail works it out, or as
-     you set it with *Now* in the map's Live view
+     you set it with *Now* on your own card, **Me**, in People
      ([transport.md](transport.md)).
    - **For how long**: one hour, until the end of the day (midnight in your
      time zone), a week, or until you stop it.
@@ -67,19 +67,33 @@ switch it on (on those pages or in Preferences). The API has the same
 ## People who share with you
 
 **People**, Trail's home page, has the map and, beside it (below it on a
-phone), a card for you, **Me**, then one for each person who shares with you:
-their devices, when the position was updated, what they are doing, battery and
-the distance from you, with **Show on map**, **Apple Maps**, **Google Maps**
-and **Share back**. **Show on map** shows them alone on the map (pressed
-again, it brings the map back to them); **Show on map** on **Me** brings your
-own devices back, **Show everyone** shows everyone at once, and under *People*
-in the map's options (*Map options* on a phone) you choose any mix. A history
-they share shows as their track in History; without one the map shows only
-where they are now. Your own levels, timeline, visits, trips and heatmap are
-there while you are on the map. **Hide** removes someone from your People page
-without asking them to stop; they still share, are told that you hid them, and
-you can show them again under *Hidden*. Hiding holds for the person: when they
-share with you again later, the new share starts hidden too, without a notice.
+phone), a card for you, **Me**, then one for each person who shares with you —
+people, not their phones. Each card reads in two lines, as in Find My: the
+name, how fresh the position is ("Live, 2 min ago") and the distance from you,
+then what they are doing ("Cycling · 16 km/h", or "Within about 500 m" when
+that is all their share says) with their battery when they share it. **Show on
+map** shows them alone on the map (pressed again, it brings the map back to
+them); **Details** opens the rest: each device they share, with when it was
+updated, what it is doing, its battery, accuracy, trip and distance; what they
+share (how precisely, their history, battery and activity, until when, since
+when); **Apple Maps**, **Google Maps**, **Share back** (or **Stop**, when you
+share with them too) and **Hide**. **Show on map** on **Me** brings you back,
+**Show everyone** shows everyone at once, and under *People* in the map's
+options (*Map options* on a phone) you choose any mix.
+
+While someone is on the map, their card says **where they've been**: in Live
+their track today ("14.9 km · 06:30 – 07:15"), with the day before a tap
+away — it opens History on that day, where the card steps through the days
+too. The card of someone who shares no history says "Shares live location
+only", and the map shows only where they are now. Your own card says what you are doing now
+("At the same place since 08:12"), from the phone that reported last, with
+*Now* to set how you travel; its **Details** list your devices, and the
+**Devices** page shows what they upload. Your own levels, timeline (under your
+card in Live), visits, trips and heatmap are there while you are on the map.
+**Hide** removes someone from your People page without asking them to stop;
+they still share, are told that you hid them, and you can show them again
+under *Hidden*. Hiding holds for the person: when they share with you again
+later, the new share starts hidden too, without a notice.
 
 The people who share with you can see when and what you looked at: each look
 at their position or their history — in People, on the map, with your own API

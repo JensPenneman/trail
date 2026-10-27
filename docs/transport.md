@@ -62,10 +62,13 @@ sure, especially between a car and a train.
   was, the speeds, distance and time. Pick the right mode under Change mode;
   the move shows "set by you" from then on. Reset to detected hands it back to
   Trail. For a move marked as unsure, "Yes" confirms Trail's guess.
-- **From now on**: in the map's Live view every device card has a row
+- **From now on**: your own card, **Me**, on the People page has a row
   *Now: Walk · Bike · Car · Bus · Train · Tram · Metro · Other · Auto*. Tap
   the mode you are switching to — getting on a train, say — and it holds
   until your next stop. Auto hands it back to Trail; Other has every mode.
+  It sets the phone that reported last, which the row names; with a second
+  device (a tracker in the car, say) that one keeps the mode Trail works
+  out for it, and its own page under **Devices** has the same row, for it.
 
 What you set always wins: Trail keeps it when it works your history out
 again, and the statistics count it.
