@@ -370,10 +370,10 @@ the whole of it; the shapes are `packages/contracts/src/dataAccess.ts`):
 - **Live** rows are per recipient, device and hour (`resource.deviceIds`),
   not per recipient and owner only.
 - **Bounded growth** needs more than hour rows: beyond 50 distinct rows of
-  one action by one actor in an hour, the rest folds into one row with
-  `resource: { folded: true }`; beyond 50 visitors of a link in an hour, the
-  rest are counted on one row with `visitor: null`. Show them as "… and N
-  more".
+  one action by one actor in an hour (or 200 over all its actions), the rest
+  folds into one row per action with `resource: { deviceIds?, folded: true
+  }`; beyond 50 visitor networks of a link in an hour, the rest are counted
+  on one row with `visitor: null`. Show them as "… and N more".
 - **Order and paging**: newest hour first, within an hour by dedupe key; the
   cursor is keyed on `(bucket_start, dedupe_key)`, the unique key, which never
   changes once a row exists. A line's `id` is `<hour>.<dedupe key>`, opaque

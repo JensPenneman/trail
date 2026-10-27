@@ -456,8 +456,10 @@ the kind of browser (`iPhone · Safari`), and a `key` that stands for one
 network and kind of browser on your links and cannot be turned back into an
 address. Names show as they are now while the token, link or person still
 exists, and as they were otherwise. When one actor does one thing with more
-different data in an hour than fifty lines hold, or a link has more than
-fifty visitors in an hour, the rest is counted on one line marked `folded`.
+different data in an hour than fifty lines hold (or anything with more than
+two hundred), or a link has visitors from more than fifty networks in an
+hour, the rest is counted on one line marked `folded`, which keeps only the
+devices.
 
 - `GET /api/v1/access-log` (`audit:read`) lists the lines, newest hour first,
   a page of `limit` (50 by default, at most 200) at a time; follow

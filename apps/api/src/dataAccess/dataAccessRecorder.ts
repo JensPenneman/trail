@@ -20,8 +20,12 @@ export interface DataAccessOptions {
   maxPending?: number;
   /** An actor's distinct rows of one action in an hour before the rest folds into one (50). */
   foldAfter?: number;
-  /** A link's distinct visitors in one hour, before the rest are counted together (50). */
+  /** … and of all actions together, before every further one of each action folds (200). */
+  rowsPerActor?: number;
+  /** A link's distinct visitors (networks) in one hour, before the rest are counted together (50). */
   visitorsPerLink?: number;
+  /** Distinct rows and visitors remembered for those limits per hour; past it, all new ones fold. */
+  maxRegistered?: number;
   /** A row the database could not take is tried this often, then dropped (3). */
   maxAttempts?: number;
 }
@@ -59,6 +63,12 @@ const cleaned = <A extends AccessActor>(actor: A): A => ({
   ...actor,
   label: safeText(actor.label, labelLength),
 });
+
+/** What a folded row keeps: the devices, and that it stands for more. */
+const folded = (resource: DataAccessResource): DataAccessResource =>
+  resource.deviceIds === undefined
+    ? { folded: true }
+    : { deviceIds: resource.deviceIds, folded: true };
 
 const later = (a: Date, b: Date): Date => (a.getTime() >= b.getTime() ? a : b);
 const earlier = (a: Date, b: Date): Date => (a.getTime() <= b.getTime() ? a : b);
@@ -119,7 +129,12 @@ export class DataAccessRecorder {
   #stopped = false;
   /** The hour the fold counts below are for: they start again with every hour. */
   #hour = 0;
+  /** Distinct rows per actor and action, and visitors' networks per link, of the hour. */
   readonly #distinct = new Map<string, Set<string>>();
+  /** Distinct rows per actor, all actions together, of the hour. */
+  readonly #perActor = new Map<string, number>();
+  /** Entries of the sets above, against `maxRegistered`. */
+  #registered = 0;
   #dropped = 0;
   #droppedLoggedAt = 0;
   /** A write was asked for because a batch is full; the next one to start takes it. */
@@ -134,7 +149,9 @@ export class DataAccessRecorder {
       batchSize: options.batchSize ?? 500,
       maxPending: options.maxPending ?? 10_000,
       foldAfter: options.foldAfter ?? 50,
+      rowsPerActor: options.rowsPerActor ?? 200,
       visitorsPerLink: options.visitorsPerLink ?? 50,
+      maxRegistered: options.maxRegistered ?? 50_000,
       maxAttempts: options.maxAttempts ?? 3,
     };
   }
@@ -178,6 +195,8 @@ export class DataAccessRecorder {
     if (hour > this.#hour) {
       this.#hour = hour;
       this.#distinct.clear();
+      this.#perActor.clear();
+      this.#registered = 0;
     }
     let resource = canonicalResource(access.resource);
     if (resource === null) {
@@ -188,14 +207,19 @@ export class DataAccessRecorder {
     let record = { ...access, actor: cleaned(access.actor), resource } as AccessRecord;
     record = this.#foldVisitor(record, hour);
     let key = dedupeKey(record);
-    const actor = JSON.stringify(actorIdentity(record.actor));
-    const rows = this.#seen(`${record.ownerUserId}|${hour}|${actor}|${record.action}`);
+    const actor = `${record.ownerUserId}|${hour}|${JSON.stringify(actorIdentity(record.actor))}`;
+    const rows = this.#seen(`${actor}|${record.action}`);
     if (!rows.has(key)) {
-      if (rows.size >= this.#options.foldAfter) {
-        record = { ...record, resource: { folded: true } };
+      const actorRows = this.#perActor.get(actor) ?? 0;
+      if (
+        rows.size >= this.#options.foldAfter ||
+        actorRows >= this.#options.rowsPerActor ||
+        this.#registered >= this.#options.maxRegistered
+      ) {
+        record = { ...record, resource: folded(record.resource) };
         key = dedupeKey(record);
       }
-      rows.add(key);
+      if (this.#register(rows, key)) this.#perActor.set(actor, actorRows + 1);
     }
     this.#merge({
       record,
@@ -213,18 +237,34 @@ export class DataAccessRecorder {
     }
   }
 
-  /** Beyond `visitorsPerLink` visitors of a link in an hour, the next ones are counted together. */
+  /**
+   * Beyond `visitorsPerLink` visitors of a link in an hour, the next ones are
+   * counted together. A visitor is a network here: another kind of browser
+   * from a network that came already is no new visitor, so switching browsers
+   * never buys more rows than the handful of kinds there are.
+   */
   #foldVisitor(record: AccessRecord, hour: number): AccessRecord {
     if (record.channel !== "link" || record.actor.visitor === null) return record;
     const visitors = this.#seen(`${record.ownerUserId}|${hour}|${record.actor.linkId}|visitors`);
-    const visitor = `${record.actor.visitor.ipCoarse}|${record.actor.visitor.uaFamily}`;
-    if (visitors.has(visitor)) return record;
-    if (visitors.size < this.#options.visitorsPerLink) {
-      visitors.add(visitor);
+    const network = record.actor.visitor.ipCoarse ?? "";
+    if (visitors.has(network)) return record;
+    if (visitors.size < this.#options.visitorsPerLink && this.#register(visitors, network)) {
       return record;
     }
-    const folded: DataAccessResource = { folded: true };
-    return { ...record, actor: { ...record.actor, visitor: null }, resource: folded };
+    return {
+      ...record,
+      actor: { ...record.actor, visitor: null },
+      resource: folded(record.resource),
+    };
+  }
+
+  /** Remembers `key` in `set` while the hour's registry has room; whether it did. */
+  #register(set: Set<string>, key: string): boolean {
+    if (set.has(key)) return true;
+    if (this.#registered >= this.#options.maxRegistered) return false;
+    set.add(key);
+    this.#registered += 1;
+    return true;
   }
 
   #seen(group: string): Set<string> {

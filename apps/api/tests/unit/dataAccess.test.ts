@@ -180,8 +180,8 @@ describe("the data access recorder", () => {
   it("writes two seconds after the first access, and at once when 500 rows wait", async () => {
     vi.useFakeTimers();
     const store = new MemoryStore();
-    // Distinct reads of one action fold after 50 by default: these must stay 500 rows.
-    const log = new DataAccessRecorder(store, quiet, { foldAfter: 1_000 });
+    // Distinct reads of one actor fold after 50 (200 across actions): these must stay 500 rows.
+    const log = new DataAccessRecorder(store, quiet, { foldAfter: 1_000, rowsPerActor: 1_000 });
     log.record(ownRead());
     await vi.advanceTimersByTimeAsync(1_900);
     expect(store.writes).toHaveLength(0);
@@ -198,7 +198,12 @@ describe("the data access recorder", () => {
   });
 
   it("writes a long batch in statements of 500 rows", async () => {
-    const { store, log } = recorder({ batchSize: 500, foldAfter: 2_000, maxPending: 2_000 });
+    const { store, log } = recorder({
+      batchSize: 500,
+      foldAfter: 2_000,
+      rowsPerActor: 2_000,
+      maxPending: 2_000,
+    });
     vi.useFakeTimers();
     for (let index = 0; index < 1_200; index += 1) {
       log.record(ownRead({ resource: { hours: index + 1 } }));
@@ -279,6 +284,55 @@ describe("the data access recorder", () => {
     expect(store.rows.filter((row) => row.action === "dashboard.visits")).toHaveLength(1);
   });
 
+  it("keeps the devices on a folded row", async () => {
+    const { store, log } = recorder({ foldAfter: 1 });
+    log.record(ownRead({ resource: { deviceIds: [phone], hours: 1 } }));
+    log.record(ownRead({ resource: { deviceIds: [phone], hours: 2 } }));
+    log.record(ownRead({ resource: { deviceIds: [watch], hours: 3 } }));
+    await log.flush();
+    expect(store.rows.map((row) => row.resource)).toEqual([
+      { deviceIds: [phone], hours: 1 },
+      { deviceIds: [phone], folded: true },
+      { deviceIds: [watch], folded: true },
+    ]);
+  });
+
+  it("folds an actor's distinct accesses across actions beyond the limit of the actor", async () => {
+    const { store, log } = recorder({ foldAfter: 100, rowsPerActor: 3 });
+    for (const action of ["dashboard.tracks", "dashboard.visits", "dashboard.trips"]) {
+      log.record(ownRead({ action, resource: { hours: 1 } }));
+    }
+    log.record(ownRead({ action: "dashboard.heatmap", resource: { hours: 1 } }));
+    log.record(ownRead({ action: "dashboard.heatmap", resource: { hours: 2 } }));
+    log.record(ownRead({ action: "dashboard.export", resource: { hours: 1 } }));
+    // Someone else has a limit of their own.
+    log.record(personLook());
+    await log.flush();
+    const own = store.rows.filter((row) => row.actorKind === "owner");
+    expect(own.filter((row) => row.resource.folded !== true)).toHaveLength(3);
+    expect(
+      own.filter((row) => row.resource.folded === true).map((row) => [row.action, row.count]),
+    ).toEqual([
+      ["dashboard.heatmap", 2],
+      ["dashboard.export", 1],
+    ]);
+    expect(store.rows.filter((row) => row.actorKind === "person")).toHaveLength(1);
+  });
+
+  it("bounds what it remembers of an hour: past the limit every new access folds", async () => {
+    const { store, log } = recorder({ maxRegistered: 2 });
+    log.record(ownRead({ resource: { hours: 1 } }));
+    log.record(ownRead({ resource: { hours: 2 } }));
+    log.record(ownRead({ resource: { hours: 3 } }));
+    log.record(ownRead({ resource: { hours: 1 } }));
+    await log.flush();
+    expect(store.rows.map((row) => [row.resource, row.count])).toEqual([
+      [{ hours: 1 }, 2],
+      [{ hours: 2 }, 1],
+      [{ folded: true }, 1],
+    ]);
+  });
+
   it("starts the limits again with every hour", async () => {
     const { store, log } = recorder({ foldAfter: 1 });
     log.record(ownRead({ resource: { hours: 1 } }));
@@ -312,6 +366,21 @@ describe("the data access recorder", () => {
     expect(first?.visitorKey).toBe(
       visitorKey(secret, owner, { ipCoarse: "81.82.83.0/24", uaFamily: "iPhone · Safari" }),
     );
+  });
+
+  it("counts a link's visitors by their network: other browsers of one network are no new visitors", async () => {
+    const { store, log } = recorder({ visitorsPerLink: 2 });
+    log.record(linkView("81.82.83.0/24", "iPhone · Safari"));
+    log.record(linkView("81.82.83.0/24", "Mac · Firefox"));
+    log.record(linkView("81.82.84.0/24", "iPhone · Safari"));
+    log.record(linkView("81.82.85.0/24", "iPhone · Safari"));
+    await log.flush();
+    expect(store.rows.map((row) => [row.ipCoarse, row.uaFamily])).toEqual([
+      ["81.82.83.0/24", "iPhone · Safari"],
+      ["81.82.83.0/24", "Mac · Firefox"],
+      ["81.82.84.0/24", "iPhone · Safari"],
+      [null, null],
+    ]);
   });
 
   it("keeps a person and their share, never their own credentials", async () => {

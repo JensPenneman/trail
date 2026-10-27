@@ -119,7 +119,7 @@ export const dataAccessResourceSchema = z
     tokenId: uuid("The API token.").optional(),
     folded: z.literal(true).optional().meta({
       description:
-        "More accesses of this kind by this actor in this hour than are listed one by one: they are counted together here, without their details.",
+        "More accesses of this kind by this actor in this hour than are listed one by one: they are counted together here, with their devices and without their other details.",
     }),
   })
   .meta({

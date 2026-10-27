@@ -1358,13 +1358,17 @@ A link visitor's key needs the `data-access-visitor` key of
 
 **Bounded.** Hour rows bound repetition but not variety: a caller could ask
 for a new range every second. So per owner, hour, actor and action at most
-50 distinct rows are kept; further accesses of that action are counted on
-one row whose resource is `{ "folded": true }`. Per link and hour at most 50
-distinct visitors are kept; further ones are counted together on a row
-without a visitor (no key, network or browser). Nobody — a recipient, a
-script, a botnet opening a link — can grow somebody's log faster than that,
-and the retention ends every row (`DATA_ACCESS_RETENTION_DAYS`, 365 days by
-default; §10). The table has `fillfactor = 70`, so counting a row again is a
+50 distinct rows are kept, and per owner, hour and actor 200 over all
+actions; further accesses are counted on one row per action whose resource
+keeps only the devices and `"folded": true`. Per link and hour at most 50
+distinct visitors are kept, a visitor being a network — other kinds of
+browser from a network that came already add rows, but there are only a
+handful of kinds — and further ones are counted together on a row without a
+visitor (no key, network or browser). What tells rows apart for these
+limits is itself bounded: 50 000 entries an hour, past which every new
+access folds. Nobody — a recipient, a script, a botnet opening a link — can
+grow somebody's log faster than that, and the retention ends every row
+(`DATA_ACCESS_RETENTION_DAYS`, 365 days by default; §10). The table has `fillfactor = 70`, so counting a row again is a
 heap-only update.
 
 **What is recorded, and where.**

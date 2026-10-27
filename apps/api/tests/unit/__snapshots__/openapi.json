@@ -8020,7 +8020,7 @@
             "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
           },
           "folded": {
-            "description": "More accesses of this kind by this actor in this hour than are listed one by one: they are counted together here, without their details.",
+            "description": "More accesses of this kind by this actor in this hour than are listed one by one: they are counted together here, with their devices and without their other details.",
             "type": "boolean",
             "const": true
           }
