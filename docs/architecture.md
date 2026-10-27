@@ -69,6 +69,56 @@ npm only — never pnpm/yarn).
 - Units: metres, m/s, degrees internally; the UI shows km, km/h, local time.
 - No AI/assistant mentions anywhere (code, comments, commits, docs).
 
+Every change, besides:
+
+- **Recorded data is never changed.** `locations`, `visits`, `trips`,
+  `device_events` and `ingest_rejects` stay as they were received; what is
+  derived from them lives in tables of its own, carries the version of its
+  algorithms and can be rebuilt (`trail reprocess`). A table of user data
+  that a migration adds joins `laterTables` of the migration-upgrade test
+  (§16).
+- **Contracts first.** Every request and answer is a zod schema in
+  `packages/contracts` with `.meta({ id, description, example })` for the
+  OpenAPI document; the API validates what comes in, `apiFetch` what comes
+  back. Errors keep `{ error: { code, message, fields? } }` with the codes of
+  `errors.ts`; an unknown or someone else's id answers 404, never 403.
+- **One migration per pull request**, generated
+  (`npm run db:generate -w @trail/api`) and generated again after a rebase
+  onto a `main` that gained one, so the chain stays linear; a statement
+  written by hand at its end is kept when it is generated again. An applied
+  migration is never edited.
+- **A threat model first** for every new endpoint, event, table and page:
+  who may read or change what, through which principal and scope, and what
+  the owner, the people they share with, a link's visitors and a token's
+  holder learn of each other. It goes into the pull request.
+- **Scopes.** Whatever can yield coordinates needs `locations:read`, other
+  data its own read scope. A new scope takes a migration of
+  `api_tokens_scopes_check`, a line of `apiScopeDescriptions` and a row of
+  docs/api.md (a test compares them).
+- **Secrets** are random (32 bytes or more), kept as SHA-256, shown once and
+  shape-checked before any lookup; a path or query name that carries one goes
+  into the log redaction (§12). Every public endpoint has a rate limit; every
+  change is tested against another account, a wrong scope and an expired or
+  revoked credential.
+- **A new environment variable** goes into `envSchema.ts`, `loadConfig.ts`,
+  `deploy/.env.example`, `deploy/compose.yaml`, §4 and
+  `tests/e2e/support/serverEnvironment.ts`.
+- **The OpenAPI snapshot** is refreshed on purpose
+  (`npm test -w @trail/api -- -u`) and read in the diff; every route has a
+  summary, a description and examples.
+- **Budgets.** No endpoint reads unbounded rows (93 days of points, pages of
+  20 000); processing is incremental; the OpenAPI document is built once per
+  process. Trail runs as one instance (the bus and the limiters are in
+  memory); a queue that must survive a restart is a table.
+- **Tests at every level** (§16): pure logic in unit tests, every route in
+  integration tests (what it does and who may), every flow end to end on
+  desktop and iPhone, axe green, no console errors; with Postgres or a
+  browser in the development container (§3), the end-to-end suite after a
+  build and under the machine's lock
+  (`E2E_WORKERS=4 lockf -t 5400 /tmp/trail-e2e.lock scripts/devc.sh npm run test:e2e`).
+- **Docs move with the code**: the sections of this document a change
+  touches, the README's features, the guides in `docs/`.
+
 ## 3. Runtime topology
 
 ### Development (macOS)
