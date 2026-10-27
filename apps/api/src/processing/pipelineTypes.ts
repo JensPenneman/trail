@@ -48,8 +48,10 @@ export interface MappedPoint {
 /** An iOS visit (CLVisit) as stops use it. */
 export interface VisitSpan {
   arrivedAt: number;
-  /** Null while the visit is still open. */
+  /** Null while the visit is still open (or its departure was never reported). */
   departedAt: number | null;
+  /** Without a departure: the next visit's arrival, by which this one was over (else none). */
+  endsBy?: number | null;
   lat: number;
   lon: number;
   accuracy: number | null;

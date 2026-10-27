@@ -108,8 +108,10 @@ function gapBefore(points: readonly KeptPoint[], index: number, config: StopsCon
 }
 
 /**
- * Kept points in no span. A point alone between two recording gaps (or a gap
- * and the edge of the window) cannot make a move, and is left out of this.
+ * Kept points in no span. A point alone — after a recording gap, or after a
+ * stop that lasted until the phone left, and before a gap or the edge of the
+ * window — cannot make a move; near the stop it is the stop's, farther away
+ * it is left out of this.
  */
 export function uncoveredPoints(
   points: readonly KeptPoint[],
@@ -119,11 +121,16 @@ export function uncoveredPoints(
   const covered = new Uint8Array(points.length);
   for (const span of spans)
     for (let index = span.first; index <= span.last; index += 1) covered[index] = 1;
+  const endedStop = new Set(
+    spans
+      .filter((span) => span.kind === "stop" && span.endT > (points[span.last]?.t ?? 0))
+      .map((span) => span.last),
+  );
   const missing: number[] = [];
   for (let index = 0; index < points.length; index += 1) {
     if (covered[index] === 1) continue;
-    const alone = gapBefore(points, index, config) && gapBefore(points, index + 1, config);
-    if (!alone) missing.push(index);
+    const after = gapBefore(points, index, config) || endedStop.has(index - 1);
+    if (!(after && gapBefore(points, index + 1, config))) missing.push(index);
   }
   return missing;
 }

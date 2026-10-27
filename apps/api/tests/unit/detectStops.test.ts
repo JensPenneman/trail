@@ -5,7 +5,7 @@ import { keptPoints } from "../../src/processing/keptPoint";
 import type { RawPoint, VisitSpan } from "../../src/processing/pipelineTypes";
 import { defaultProcessingConfig } from "../../src/processing/processingConfig";
 import { morning, walkInTown } from "../support/journeys";
-import { stopsHoldingTravel } from "../support/segmentChecks";
+import { stopsHoldingTravel, uncoveredPoints } from "../support/segmentChecks";
 import { concat, lastT, stay, toLonLat, travel } from "../support/syntheticWorld";
 
 const kept = (points: readonly RawPoint[]) =>
@@ -349,9 +349,123 @@ describe("detectStops", () => {
     };
     const points = concat(atA, toB, atB, back, again);
     const spans = detectStops(kept(points), [visit], defaultProcessingConfig.stops);
-    const stopsOnly = spans.filter((span) => span.kind === "stop");
-    expect(stopsOnly.length).toBeGreaterThan(1);
     expect(stopsHoldingTravel(kept(points), spans, defaultProcessingConfig.stops)).toEqual([]);
+    // Three stays, A, B and A again, with the walks between them as moves: B is no move.
+    expect(spans.map((span) => span.kind)).toEqual(["stop", "move", "stop", "move", "stop"]);
+    const [, , atBStop] = spans;
+    expect(atBStop?.startT).toBeGreaterThanOrEqual(lastT(toB) - 20);
+    expect(atBStop?.endT).toBeLessThanOrEqual(lastT(atB) + 20);
+  });
+
+  it("keeps a stay apart that overlapping visits chained to another place", () => {
+    // Three visits in a row 250 m apart, each reported to overlap the next: three stays.
+    const places = [-250, 0, 250];
+    const legs = places.flatMap((x, index) => {
+      const startT = morning + index * 2 * 3600;
+      return [
+        stay([x, -2000], { startT, durationS: 3600 + 600, intervalS: 10, seed: 70 + index }),
+        travel(
+          [
+            [x, -2000],
+            [x + 250, -2000],
+          ],
+          { startT: startT + 4210, speedMs: 1.3, intervalS: 10, motion: ["walking"] },
+        ),
+      ];
+    });
+    const points = concat(...legs.slice(0, -1));
+    const visits = places.map((x, index): VisitSpan => {
+      const [lon, lat] = toLonLat(x, -2000);
+      const arrivedAt = morning + index * 2 * 3600;
+      return { arrivedAt, departedAt: arrivedAt + 2 * 3600 + 900, lat, lon, accuracy: 120 };
+    });
+    const spans = detectStops(kept(points), visits, defaultProcessingConfig.stops);
+    expect(stopsHoldingTravel(kept(points), spans, defaultProcessingConfig.stops)).toEqual([]);
+    // Every stay of an hour and more is a stop for most of its time.
+    for (const index of [0, 1, 2]) {
+      const from = morning + index * 2 * 3600;
+      let still = 0;
+      for (const span of spans) {
+        if (span.kind !== "stop") continue;
+        still += Math.max(0, Math.min(from + 4200, span.endT) - Math.max(from, span.startT));
+      }
+      expect(still / 4200, `stay ${index}`).toBeGreaterThan(0.9);
+    }
+  });
+
+  it("splits a stay at a real walk even within a dwell's radius", () => {
+    // Four minutes at the bike shed, 45 m on foot, five minutes on the platform: one dwell's radius.
+    const shed = stay([0, -2000], { startT: morning, durationS: 240, intervalS: 1, noiseM: 2 });
+    const walk = travel(
+      [
+        [0, -2000],
+        [45, -2000],
+      ],
+      { startT: lastT(shed) + 1, speedMs: 1.3, intervalS: 1, motion: ["walking"] },
+    );
+    const platform = stay([45, -2000], {
+      startT: lastT(walk) + 1,
+      durationS: 300,
+      intervalS: 1,
+      noiseM: 2,
+    });
+    const spans = spansOf(concat(shed, walk, platform));
+    expect(spans.map((span) => span.kind)).toEqual(["stop", "move", "stop"]);
+    expect(spans[1]?.to).toBeLessThanOrEqual(lastT(walk) - morning + 2);
+  });
+
+  it("gives the stop a point recorded just after it when no move can start there", () => {
+    // Under a visit until 5 s after the last point, one more point 10 s on, then the phone
+    // sleeps and wakes up 3 km away two hours later.
+    const atHome = stay([0, -2000], { startT: morning, durationS: 3600, intervalS: 10 });
+    const after = stay([5, -2000], { startT: lastT(atHome) + 10, durationS: 0, intervalS: 10 });
+    const later = travel(
+      [
+        [3000, -2000],
+        [4000, -2000],
+      ],
+      { startT: lastT(atHome) + 3610, speedMs: 1.4, intervalS: 5, motion: ["walking"] },
+    );
+    const visit = visitAt(0, -2000, morning, lastT(atHome) + 5);
+    const points = concat(atHome, after, later);
+    const spans = detectStops(kept(points), [visit], defaultProcessingConfig.stops);
+    expect(spans.map((span) => span.kind)).toEqual(["stop", "move"]);
+    expect(uncoveredPoints(kept(points), spans, defaultProcessingConfig.stops)).toEqual([]);
+    expect(spans[0]?.endT).toBe(lastT(after));
+  });
+
+  it("ends a visit whose departure never came at the next visit's arrival", () => {
+    // At home under a visit iOS never reported leaving, three minutes on foot, then an hour next
+    // door, 200 m on: within the open visit's (wide) radius, but the next visit says it was over.
+    const atHome = stay([0, -2000], { startT: morning, durationS: 3600, intervalS: 10 });
+    const walk = travel(
+      [
+        [0, -2000],
+        [0, -1800],
+      ],
+      { startT: lastT(atHome) + 5, speedMs: 1.1, intervalS: 5, motion: ["walking"] },
+    );
+    const nextDoor = stay([0, -1800], { startT: lastT(walk) + 5, durationS: 3600, intervalS: 10 });
+    const points = concat(atHome, walk, nextDoor);
+    const [lon, lat] = toLonLat(0, -2000);
+    const home: VisitSpan = {
+      arrivedAt: morning,
+      departedAt: null,
+      endsBy: lastT(walk) - 30,
+      lat,
+      lon,
+      accuracy: 300,
+    };
+    const spans = detectStops(kept(points), [home], defaultProcessingConfig.stops);
+    expect(spans.map((span) => span.kind)).toEqual(["stop", "move", "stop"]);
+    expect(spans[0]?.endT).toBeLessThanOrEqual(lastT(atHome) + 5);
+    // Without the next arrival the open visit takes in the walk and the hour next door.
+    const unbounded = detectStops(
+      kept(points),
+      [{ ...home, endsBy: null }],
+      defaultProcessingConfig.stops,
+    );
+    expect(unbounded.map((span) => span.kind)).toEqual(["stop"]);
   });
 
   it("does not join two stays with a real walk between them: the transfer is a move", () => {

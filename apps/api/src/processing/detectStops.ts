@@ -40,6 +40,82 @@ export function centroidOf(
   return weights === 0 ? { lat: 0, lon: 0 } : { lat: lat / weights, lon: lon / weights };
 }
 
+/** Prefix sums of the accuracy weights and weighted positions: a range's centroid in O(1). */
+interface Sums {
+  weight: Float64Array;
+  lat: Float64Array;
+  lon: Float64Array;
+}
+
+function prefixSums(points: readonly KeptPoint[]): Sums {
+  const sums = {
+    weight: new Float64Array(points.length + 1),
+    lat: new Float64Array(points.length + 1),
+    lon: new Float64Array(points.length + 1),
+  };
+  for (const [index, point] of points.entries()) {
+    const weight = 1 / Math.max(point.accuracy, 5) ** 2;
+    sums.weight[index + 1] = (sums.weight[index] ?? 0) + weight;
+    sums.lat[index + 1] = (sums.lat[index] ?? 0) + weight * point.lat;
+    sums.lon[index + 1] = (sums.lon[index] ?? 0) + weight * point.lon;
+  }
+  return sums;
+}
+
+/** `centroidOf` from the prefix sums. */
+function centroidIn(sums: Sums, first: number, last: number): { lat: number; lon: number } {
+  const weight = (sums.weight[last + 1] ?? 0) - (sums.weight[first] ?? 0);
+  if (weight <= 0) return { lat: 0, lon: 0 };
+  return {
+    lat: ((sums.lat[last + 1] ?? 0) - (sums.lat[first] ?? 0)) / weight,
+    lon: ((sums.lon[last + 1] ?? 0) - (sums.lon[first] ?? 0)) / weight,
+  };
+}
+
+/** The bounding box of points `first..last` (empty when there are none). */
+interface Box {
+  south: number;
+  north: number;
+  west: number;
+  east: number;
+}
+
+const emptyBox: Box = { south: 90, north: -90, west: 180, east: -180 };
+
+function boxOf(points: readonly KeptPoint[], first: number, last: number): Box {
+  const box = { ...emptyBox };
+  for (let index = first; index <= last; index += 1) {
+    const point = points[index];
+    if (point === undefined) continue;
+    box.south = Math.min(box.south, point.lat);
+    box.north = Math.max(box.north, point.lat);
+    box.west = Math.min(box.west, point.lon);
+    box.east = Math.max(box.east, point.lon);
+  }
+  return box;
+}
+
+const joinBoxes = (a: Box, b: Box): Box => ({
+  south: Math.min(a.south, b.south),
+  north: Math.max(a.north, b.north),
+  west: Math.min(a.west, b.west),
+  east: Math.max(a.east, b.east),
+});
+
+/**
+ * The farthest a point of `box` can lie from `centre`, which lies in it: the
+ * farthest corner. Within `pauseRadiusM` of it, no point can be travel.
+ */
+function reachOf(box: Box, centre: { lat: number; lon: number }): number {
+  if (box.south > box.north) return 0;
+  let reach = 0;
+  for (const lat of [box.south, box.north]) {
+    for (const lon of [box.west, box.east])
+      reach = Math.max(reach, haversineM(centre, { lat, lon }));
+  }
+  return reach;
+}
+
 /**
  * How far apart the points `first..last` lie, in metres: the distance between
  * the point farthest from their centroid and the point farthest from that one
@@ -264,8 +340,8 @@ function visitStay(
  * there before it, the last one lasting until the departure when nothing was
  * recorded in between; one whose departure is not known (still open, or never
  * reported) only the stay from its arrival on, which ends when the phone
- * leaves: never at the end of the window. Moving points at both ends are left
- * out, as for dwells.
+ * leaves — never at the end of the window, at the latest at the next visit's
+ * arrival. Moving points at both ends are left out, as for dwells.
  */
 function visitStops(
   points: readonly KeptPoint[],
@@ -274,7 +350,7 @@ function visitStops(
 ): StopRange[] {
   const stops: StopRange[] = [];
   for (const visit of visits) {
-    const until = visit.departedAt ?? Number.POSITIVE_INFINITY;
+    const until = visit.departedAt ?? visit.endsBy ?? Number.POSITIVE_INFINITY;
     if (until < visit.arrivedAt) continue;
     const open = visit.departedAt === null;
     const radius = Math.min(
@@ -432,11 +508,13 @@ function union(
  */
 function travelRuns(
   points: readonly KeptPoint[],
+  sums: Sums,
   first: number,
   last: number,
   config: StopsConfig,
 ): StopRange[] {
-  const centre = centroidOf(points, first, last);
+  const centre = centroidIn(sums, first, last);
+  if (reachOf(boxOf(points, first, last), centre) <= config.pauseRadiusM) return [];
   const runs: StopRange[] = [];
   let start = -1;
   const close = (end: number) => {
@@ -487,17 +565,21 @@ function walkedBetween(
  * a recording pause, or two stops close together with only a short wander
  * between them (GPS drifting indoors breaks a stay in two) — not a real walk —
  * and joined they must not hold travel (a short stay hundreds of metres from a
- * long one is another place).
+ * long one is another place). `joined` is the box of both and what lies
+ * between: when the joined stay's centroid is within `pauseRadiusM` of all of
+ * it, nothing in it can be travel, and the points need not be looked at again.
  */
 function oneStay(
   points: readonly KeptPoint[],
   paces: Float64Array,
+  sums: Sums,
   previous: StopRange,
   stop: StopRange,
+  joined: Box,
   config: StopsConfig,
 ): boolean {
-  const left = centroidOf(points, previous.first, previous.last);
-  const right = centroidOf(points, stop.first, stop.last);
+  const left = centroidIn(sums, previous.first, previous.last);
+  const right = centroidIn(sums, stop.first, stop.last);
   const apart = haversineM(left, right);
   const leftEnd = points[previous.last];
   const rightStart = points[stop.first];
@@ -514,26 +596,37 @@ function oneStay(
     wander <= 2 * config.radiusM &&
     !walkedBetween(points, paces, previous.last, stop.first, config);
   if (!((pause && apart <= config.pauseRadiusM) || shortWander)) return false;
-  return travelRuns(points, previous.first, stop.last, config).length === 0;
+  const centre = centroidIn(sums, previous.first, stop.last);
+  if (reachOf(joined, centre) <= config.pauseRadiusM) return true;
+  return travelRuns(points, sums, previous.first, stop.last, config).length === 0;
 }
 
 /** Neighbouring stops that are one stay become one (`oneStay`). */
 function joinStays(
   points: readonly KeptPoint[],
   paces: Float64Array,
+  sums: Sums,
   stops: StopRange[],
   config: StopsConfig,
 ): StopRange[] {
   const joined: StopRange[] = [];
+  // The box of the last joined stop, kept as it grows: a long chain of joins stays linear.
+  let box = emptyBox;
   for (const stop of stops) {
+    const own = boxOf(points, stop.first, stop.last);
     const previous = joined.at(-1);
-    if (previous !== undefined && oneStay(points, paces, previous, stop, config)) {
-      previous.last = stop.last;
-      if (stop.untilT === undefined) delete previous.untilT;
-      else previous.untilT = stop.untilT;
-      continue;
+    if (previous !== undefined) {
+      const both = joinBoxes(joinBoxes(box, own), boxOf(points, previous.last + 1, stop.first - 1));
+      if (oneStay(points, paces, sums, previous, stop, both, config)) {
+        previous.last = stop.last;
+        if (stop.untilT === undefined) delete previous.untilT;
+        else previous.untilT = stop.untilT;
+        box = both;
+        continue;
+      }
     }
     joined.push({ ...stop });
+    box = own;
   }
   return joined;
 }
@@ -541,32 +634,49 @@ function joinStays(
 /**
  * A stop never holds travel: where `travelMinS` or more of its points lie
  * farther than `pauseRadiusM` from its centroid, it is cut, and those points
- * go to the move between its parts. A part that no longer lasts
- * `minDurationS` is no stop; the others are checked again on their own.
+ * go to the move between its parts — except the stays among them: a stop found
+ * there on its own (a dwell 400 m away that a visit's wide radius took in)
+ * stays a stop. A part that no longer lasts `minDurationS` is no stop; the
+ * others are checked again on their own.
  */
 function withoutTravel(
   points: readonly KeptPoint[],
+  sums: Sums,
+  candidates: readonly StopRange[],
   stop: StopRange,
   config: StopsConfig,
 ): StopRange[] {
-  const runs = travelRuns(points, stop.first, stop.last, config);
+  const runs = travelRuns(points, sums, stop.first, stop.last, config);
   if (runs.length === 0) return [stop];
   const parts: StopRange[] = [];
   let from = stop.first;
   for (const run of runs) {
     parts.push({ first: from, last: run.first - 1 });
+    // Smaller than the stop, so the cutting ends.
+    const within = candidates.filter(
+      (candidate) =>
+        candidate.first >= run.first &&
+        candidate.last <= run.last &&
+        candidate.last - candidate.first < stop.last - stop.first,
+    );
+    parts.push(...union(points, within, config));
     from = run.last + 1;
   }
   parts.push({ first: from, last: stop.last });
   return parts
-    .map((part) => withoutMovingEnds(points, part))
+    .map((part): StopRange => {
+      const trimmed = withoutMovingEnds(points, part);
+      // A stay that lasted until a visit's departure keeps it while it keeps its last point.
+      const until =
+        trimmed.last === stop.last
+          ? stop.untilT
+          : trimmed.last === part.last
+            ? part.untilT
+            : undefined;
+      return until === undefined ? trimmed : { ...trimmed, untilT: until };
+    })
     .filter((part) => lasts(points, part, config))
-    .map((part) =>
-      part.last === stop.last && stop.untilT !== undefined
-        ? { ...part, untilT: stop.untilT }
-        : part,
-    )
-    .flatMap((part) => withoutTravel(points, part, config));
+    .flatMap((part) => withoutTravel(points, sums, candidates, part, config));
 }
 
 /** Whether the interval before `next` is a recording gap the device did not travel through. */
@@ -625,25 +735,20 @@ export function detectStops(
 ): Span[] {
   if (points.length === 0) return [];
   const paces = walkingPaces(points, config);
-  const stops = joinStays(
-    points,
-    paces,
-    union(
-      points,
-      [
-        ...dwellStops(points, paces, config),
-        ...visitStops(points, visits, config),
-        ...motionStops(points, config),
-        ...gapStops(points, config),
-      ],
-      config,
-    ),
-    config,
-  ).flatMap((stop) => withoutTravel(points, stop, config));
+  const sums = prefixSums(points);
+  const candidates = [
+    ...dwellStops(points, paces, config),
+    ...visitStops(points, visits, config),
+    ...motionStops(points, config),
+    ...gapStops(points, config),
+  ];
+  const stops = joinStays(points, paces, sums, union(points, candidates, config), config).flatMap(
+    (stop) => withoutTravel(points, sums, candidates, stop, config),
+  );
 
   const spans: Span[] = [];
   let moveStart = 0;
-  for (const stop of stops) {
+  for (const [position, stop] of stops.entries()) {
     const first = points[stop.first];
     const last = points[stop.last];
     if (first === undefined || last === undefined) continue;
@@ -663,15 +768,25 @@ export function detectStops(
     const next = points[stop.last + 1];
     moveStart = stop.last;
     if (next !== undefined) {
-      const centre = centroidOf(points, stop.first, stop.last);
+      const centre = centroidIn(sums, stop.first, stop.last);
+      const near = haversineM(centre, next) <= config.pauseRadiusM;
       const pause = next.t - last.t >= config.pauseGapS;
-      if (pause && haversineM(centre, next) <= config.pauseRadiusM) {
+      const extended = span.endT > last.t || (pause && near);
+      if (pause && near) {
         // Still there until the phone reported from outside the stop.
         span.endT = next.t;
+      }
+      if (extended || isGap(points, stop.last + 1, config)) {
+        // There until it left (a visit's departure, a pause), or a gap with travel: the move
+        // starts after it.
         moveStart = stop.last + 1;
-      } else if (span.endT > last.t || isGap(points, stop.last + 1, config)) {
-        // There until a visit's departure, or a gap with travel: the move starts after it.
-        moveStart = stop.last + 1;
+      }
+      // A point alone after the stop's end — the window's last, or a gap with travel after it,
+      // and no stop starting there — can start no move: near the stop, it is the stop's.
+      const alone = stop.last + 2 >= points.length || isGap(points, stop.last + 2, config);
+      if (extended && near && alone && stops[position + 1]?.first !== stop.last + 1) {
+        span.last = stop.last + 1;
+        span.endT = Math.max(span.endT, next.t);
       }
     }
   }
