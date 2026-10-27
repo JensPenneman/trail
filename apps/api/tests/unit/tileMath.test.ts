@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chooseCellZoom } from "../../src/heatmap/chooseCellZoom";
-import { recordedHeatLevels } from "../../src/heatmap/fillHeatLevels";
 import { heatCellWindow } from "../../src/heatmap/heatCellWindow";
+import { levelsToRebuild } from "../../src/heatmap/levelsToRebuild";
 import { storedCellZoom } from "../../src/heatmap/storedCellZoom";
 import { latToTileY, lonToTileX, tileCentre } from "../../src/heatmap/tileMath";
 
@@ -64,15 +64,27 @@ describe("storedCellZoom", () => {
   });
 });
 
-describe("recordedHeatLevels", () => {
-  it("reads the levels recorded in processing_state", () => {
-    expect(recordedHeatLevels({ levels: [6, 9, 12, 15, 18, 20] })).toEqual([6, 9, 12, 15, 18, 20]);
+describe("levelsToRebuild", () => {
+  const totals = (entries: [number, number][]) => new Map(entries);
+
+  it("leaves a device whose levels all hold its points", () => {
+    expect(levelsToRebuild(totals([6, 9, 12, 15, 18, 20].map((z) => [z, 3400])))).toEqual([]);
+    expect(levelsToRebuild(totals([]))).toEqual([]);
   });
 
-  it("takes an install that recorded nothing for one with the five levels of old", () => {
-    expect(recordedHeatLevels(null)).toEqual([6, 9, 12, 15, 18]);
-    expect(recordedHeatLevels({ levels: ["20"] })).toEqual([6, 9, 12, 15, 18]);
-    expect(recordedHeatLevels("levels")).toEqual([6, 9, 12, 15, 18]);
+  it("rebuilds a level added since, or left behind by an older release, against level 18", () => {
+    // Before level 20, or after an older release rebuilt the device's cells: none at 20.
+    expect(levelsToRebuild(totals([6, 9, 12, 15, 18].map((z) => [z, 3400])))).toEqual([20]);
+    // After an older release's uploads: level 20 behind by their points.
+    expect(
+      levelsToRebuild(
+        totals([...[6, 9, 12, 15, 18].map((z): [number, number] => [z, 3400]), [20, 3000]]),
+      ),
+    ).toEqual([20]);
+  });
+
+  it("rebuilds every level when level 18 itself has nothing to go by", () => {
+    expect(levelsToRebuild(totals([[20, 12]]))).toEqual([6, 9, 12, 15, 18, 20]);
   });
 });
 

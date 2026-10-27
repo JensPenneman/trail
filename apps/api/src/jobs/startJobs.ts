@@ -25,14 +25,18 @@ export function startJobs(ctx: AppContext): Jobs {
         }
       },
     }),
-    // Once after an upgrade that added a stored heat level: the cells of earlier uploads get it.
+    // At every start: the heat levels a release added, or an older one left behind, are rebuilt.
     oneOffJob({
       name: "heat levels",
       delayMs: 5_000,
       logger: ctx.logger,
       task: async (signal) => {
         const filled = await fillHeatLevels(ctx.db, ctx.logger, signal);
-        if (filled.levels.length > 0) ctx.logger.info(filled, "heat levels filled in");
+        if (!filled.complete) {
+          ctx.logger.info(filled, "heat levels stopped before every device was done");
+        } else if (filled.devices > 0) {
+          ctx.logger.info(filled, "heat levels filled in");
+        }
       },
     }),
   ];
