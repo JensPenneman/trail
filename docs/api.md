@@ -210,7 +210,11 @@ points ever recorded in each cell, busiest first, at most 20 000 cells
 tiles of level `cellZoom`, the rounded `zoom` + 5 from 6 to 20, about 16
 pixels wide on a MapLibre map (512-pixel tiles) at that zoom. A cell at the
 edge of the viewport counts all of its points, and points less accurate than
-200 m are left out.
+200 m are left out. Up to Trail 0.4, `cellZoom` was one of 6, 9, 12, 15 and
+18 and could be coarser: the same `bbox` and `zoom` now answer with cells up
+to four times finer on each axis (at zoom 12, level 17 instead of 15), so
+`truncated` comes for areas up to sixteen times smaller, and `cellZoom` takes
+any of the fifteen levels from 6 to 20.
 
 ## Levels, tracks and the timeline
 

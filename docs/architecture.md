@@ -318,9 +318,9 @@ fine as GPS accuracy is worth); the heatmap answers at every level from 6 to
 Maintained in the same statement that
 inserts locations (a CTE over `INSERT … RETURNING`, SQL tile math, upsert
 `count = count + excluded.count`), only for points with horizontal accuracy
-≤ 200 m or unknown. Rebuilt per device after deletions (`recompute`), and a
-stored level that a release adds is built once after the upgrade (§10); the
-levels every device has are recorded in `processing_state` (`heat_levels`).
+≤ 200 m or unknown. Rebuilt per device after deletions (`recompute`), and at
+every start a device's levels that miss points — one a release added, or one
+an older release left behind after a rollback — are rebuilt (§8.2, §10).
 
 **daily_stats** — PK `(device_id, date)` where `date` is the local calendar day
 in the owner's time zone: `points`, `distance_m`, `first_at`, `last_at`.
@@ -758,16 +758,23 @@ Every upload adds its points to the six stored levels in its one statement
 upload's median 87–92 ms with five levels, 120–151 ms with six, in the
 development container under load); in production, before it, uploads took
 28 ms at the median and the largest ones (about 900 points) 76 ms, 135 ms at
-most — far from the 10 s an upload in flight gets at shutdown. A level that a release adds (level 20) is empty for the points
-uploaded before it; `fillHeatLevels` builds it once after the upgrade, a
-device at a time, from its points, in a transaction under the device's row
-lock — the lock an upload takes first, so an upload of that device waits
-rather than being counted twice (about 4 s for 1.2 M points) — and records
-the levels in `processing_state` (`heat_levels`) once every device has them.
-A start that finds nothing recorded takes the install for one with the five
-levels of earlier releases; stopped half-way, the next start begins again,
-since rebuilding a device's level is the same however often it is done.
-`trail recompute` rebuilds every level, under the same lock.
+most — far from the 10 s an upload in flight gets at shutdown.
+
+Every point adds one to every stored level, so a device's levels hold the
+same total unless one was not kept: a level a release adds (level 20) misses
+the points uploaded before it, and after a rollback to a release without it,
+that release's uploads skip it and its rebuilds (a deleted period, its
+`trail recompute`) drop it. So at every start `fillHeatLevels` reads the
+total of each device's levels (one pass over the cells: milliseconds for
+1.2 M points) and rebuilds from the device's points every level whose total
+differs from level 18's — the finest level every release has stored; all of
+them when level 18 has none (`levelsToRebuild`). It goes a device at a time,
+each in a transaction under the device's row lock — the lock an upload takes
+first, so an upload of that device waits rather than being counted twice
+(1–4 s for 1.2 M points). A stop cancels the statement in progress (that of
+its own transaction, found by backend and start) and the transaction rolls
+back; the next start finds what is left. `trail recompute` rebuilds every
+level under the same lock, then the daily statistics without it.
 
 ### 8.3 Public API v1
 
@@ -1624,9 +1631,9 @@ events and refetches people and shares on `share` events.
   the owner's time zone at run time; a failed pass is retried with the next.
   Changing the time zone (`PATCH /api/me`) rebuilds every day of the user's
   devices in the background.
-- once, 5 s after the start — the stored heat levels that a release added are
-  built from every device's points (`fillHeatLevels`, §8.2), unless
-  `processing_state` (`heat_levels`) says every device has them.
+- once, 5 s after the start — the heat levels of every device whose totals
+  disagree are rebuilt from its points (`fillHeatLevels`, §8.2). A shutdown
+  does not wait for it: it is cancelled and rolls back.
 - the processing worker (§17.4) — 3 s after new work, every minute for
   retries and every 15 minutes for windows waiting on map data and lost
   windows; the boot-time backfill when a level's algorithms changed version;
@@ -1942,14 +1949,21 @@ count among them, since they lead to signed-in pages.
     numbers. The classes take the steps of one ramp (`heatRamp`), spread
     over all six when there are fewer: pink to purple at even steps of OKLCH
     lightness, darker for more on a light map and brighter for more on a
-    dark or satellite one, the lightest step 2:1 against the light map's
-    ground and the darkest 3:1 against the dark map's, neighbouring steps
-    apart for protanopia and deuteranopia, in hues the basemaps hardly use
-    (their parks, water and roads are green, blue, yellow and orange). The
-    squares lie over the basemap's areas, roads and buildings, which would
-    otherwise cut them apart (the dark style draws its roads above its first
-    label), and under its names — below its first text after its last area
-    — at 80 % opacity, so the streets under a square still read. The key
+    dark or satellite one, in hues the basemaps hardly use (their parks,
+    water and roads are green, blue, yellow and orange). The squares are
+    opaque, so each is exactly its colour in the key and the ramp's numbers
+    are what the map shows: against the ground of OpenFreeMap's styles the
+    lightest step of the light ramp has 2.24:1 (#f8f4f0) and the darkest of
+    the dark one 3.28:1 (#0c0c0c); neighbouring steps are 0.08 or more
+    apart in lightness and 8.9–10.0 (light) and 8.4–10.1 (dark) in ΔE
+    (OKLab × 100), at least 7.0 and 6.6 for protanopia and 8.9 and 7.9 for
+    deuteranopia. The squares lie over every area, road, building and
+    boundary of the basemap, which would otherwise cut them apart, and under
+    every name (`heatLayerPlacement`): below the first of the symbols after
+    the style's last other layer, with the names a style draws earlier
+    moved over the squares (OpenFreeMap's dark style draws its water names
+    under its buildings and its road names under its boundaries), once
+    Trail's lines are in under the style's first symbol. The key
     (`HeatLegend`) is that scale: "Points recorded in each square", a
     swatch and the counts of every class, "Rarely" and "Often" at its ends
     as a visual cue only; it follows the view, as the squares do. Nothing in
@@ -2369,7 +2383,8 @@ which are merged by hand; majors wait for a person, security ones too.
 
 - `packages/contracts/tests` — schema and helper unit tests.
 - `apps/api/tests/unit` — pure logic (Overland normalisation, timestamps,
-  RDP, distance, tile math and the heatmap's levels and whole-cell windows,
+  RDP, distance, tile math and the heatmap's levels, whole-cell windows and
+  the levels a device's totals call for rebuilding,
   token hashing, config parsing, presets, share
   durations across DST and skipped midnights, the sharing grids — one per
   owner, fixed, within the cell around the position, area cells made of whole
@@ -2436,9 +2451,12 @@ which are merged by hand; majors wait for a person, security ones too.
   `history.test.ts` holds the heatmap at every zoom from 0 to 18 (levels 6
   to 20) against the finest stored cells summed, several devices summed, a
   whole cell at the edge of the view, the antimeridian and the cap of 20 000
-  cells; `heatLevels.test.ts` fills level 20 in after an upgrade (once, the
-  points of an upload after the upgrade counted once, the other levels left
-  as they are, nothing recorded when stopped half-way).
+  cells; `heatLevels.test.ts` the start-up fill: nothing to do while the
+  levels agree, level 20 built for the points from before it (an upload
+  after the upgrade counted once), what an older release left behind after
+  a rollback (its uploads, its rebuild) repaired, a stop after one device
+  with the rest done at the next start, an upload that waits for the
+  device's rebuild and counts once, and the levels that agree left alone.
   Processing is tested in the real app with map tiles cut from the hand-made
   world by a `FixtureWaySource` (no network): uploads to segments and the
   `segments` event, every level and its degradation, windows waiting for map
@@ -2524,9 +2542,11 @@ which are merged by hand; majors wait for a person, security ones too.
   `legacyPeoplePath`, and the redirects through the app's own route table),
   Settings' tree (groups, paths, levels, administrators' rows), its search
   index and row values, the old anchors (`settingsPathFor`),
-  `isSignedInPath`, the precedence of the map's defaults and the heatmap's
-  scale, classes and squares (`heatHelpers.test.ts`) have unit tests of
-  their own; Settings itself renders through its real routes
+  `isSignedInPath`, the precedence of the map's defaults, the heatmap's
+  scale, classes and squares (`heatHelpers.test.ts`) and where its layer
+  goes in OpenFreeMap's two styles, their layers as served
+  (`heatLayers.test.ts`: over every shape, under every name, Trail's lines
+  where they were) have unit tests of their own; Settings itself renders through its real routes
   (`renderSettings`, phone or wide screen) for the list, search, going
   deeper and back with focus, and every page. The charts' helpers (scales,
   nice ticks, bands, tick thinning, the heat grid's bins, summaries, tooltip
