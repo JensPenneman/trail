@@ -1,3 +1,4 @@
+import { gzipSync } from "node:zlib";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import { deviceResponseSchema } from "@trail/contracts/device";
 import { apiErrorSchema } from "@trail/contracts/errors";
@@ -218,25 +219,13 @@ describe("OwnTracks ingest", () => {
     await postOwnTracks(t.app, "hunter2", owntracksAndroidLocation(at)).expect(401);
   });
 
-  it("refuses Basic authentication over plain HTTP before any lookup", async () => {
-    const response = await request(t.app)
+  it("takes Basic over plain HTTP when the phones were given an http:// address", async () => {
+    // The suite's PUBLIC_URL is http://: the address the phones got is the rule (§6).
+    await request(t.app)
       .post(apiPaths.owntracks)
       .set("Authorization", basicAuth("pixel", token))
       .send(JSON.stringify(owntracksAndroidLocation(minutesAgo(26))))
-      .expect(403);
-    expect(response.body.error).toMatch(/HTTPS/);
-    // From a proxy Trail does not trust, X-Forwarded-Proto says nothing.
-    const untrusted = await createTestContext({ env: { TRUST_PROXY: "" } });
-    try {
-      await request(untrusted.app)
-        .post(apiPaths.owntracks)
-        .set("Authorization", basicAuth("pixel", token))
-        .set("X-Forwarded-Proto", "https")
-        .send("{}")
-        .expect(403);
-    } finally {
-      await untrusted.close();
-    }
+      .expect(200, []);
   });
 
   it("takes a token at its app's endpoint only, and names the app elsewhere", async () => {
@@ -252,14 +241,27 @@ describe("OwnTracks ingest", () => {
     await request(t.app).get(apiPaths.overland).set("Authorization", `Bearer ${token}`).expect(403);
   });
 
-  it("refuses other methods and bodies over 1 MB", async () => {
+  it("refuses other methods, bodies over 256 kB and compressed bodies", async () => {
     const get = await request(t.app).get(apiPaths.owntracks).expect(405);
     expect(get.headers["allow"]).toBe("POST");
+    // A point of interest's photo, which the apps scale to 192 px, fits with room to spare.
+    await postOwnTracks(t.app, token, {
+      ...owntracksAndroidLocation(minutesAgo(25)),
+      image: "x".repeat(150 * 1024),
+    }).expect(200);
     const large = await postOwnTracks(t.app, token, {
       ...owntracksAndroidLocation(at),
-      image: "x".repeat(1.1 * 1024 * 1024),
+      image: "x".repeat(260 * 1024),
     }).expect(413);
     expect(large.body).toEqual({ error: "Payload too large" });
+    const compressed = await request(t.app)
+      .post(apiPaths.owntracks)
+      .set("Authorization", basicAuth("pixel", token))
+      .set("Content-Type", "application/json")
+      .set("Content-Encoding", "gzip")
+      .send(gzipSync(JSON.stringify(owntracksAndroidLocation(at))))
+      .expect(415);
+    expect(compressed.body).toEqual({ error: "Unsupported request body encoding." });
   });
 
   it("refuses settings presets for an OwnTracks device", async () => {

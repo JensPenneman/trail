@@ -8,8 +8,10 @@ import {
   isDeviceToken,
 } from "../../src/ingest/deviceToken";
 import { batteryPercentOf, positiveRealOrNull } from "../../src/ingest/ingestValues";
+import { previewText } from "../../src/ingest/previewText";
 import { checkRecordTime } from "../../src/ingest/recordTime";
 import { withoutSecrets } from "../../src/ingest/withoutSecrets";
+import { ownEntry } from "../../src/lib/ownEntry";
 
 const token = "trl_Xq8vM2kPz7LtR4nW9cYb3hJd6fGs1aEe0uTiKoNpQrS";
 
@@ -77,6 +79,42 @@ describe("shared ingest checks", () => {
       apiToken: "[redacted]",
       count: 3,
     });
+  });
+
+  it("knows a credential's key however it is spelled, and a token with a NUL inside", () => {
+    expect(
+      withoutSecrets({
+        accesstoken: "osmand-cloud",
+        accessToken: "osmand-cloud",
+        "Access-Token": "osmand-cloud",
+        api_key: "k",
+        passwd: "p",
+        id: "kept",
+        _id: "kept too",
+        note: `${token.slice(0, 20)}\u0000${token.slice(20)}`,
+      }),
+    ).toEqual({ id: "kept", _id: "kept too", note: "[redacted]" });
+  });
+
+  it("previews a body it cannot read without a token, however JSON spelled it", () => {
+    // `_` is the underscore; JSON.parse would have decoded it, so the preview does too.
+    expect(previewText(`{"password":"trl\\u005f${token.slice(4)}", `)).toBe(
+      '{"password":"[redacted]", ',
+    );
+    expect(previewText(`${"a".repeat(1990)}${token}`)).toBe(`${"a".repeat(1990)}[redacted]`);
+    expect(previewText("x".repeat(3000))).toHaveLength(2000);
+    // A cut through an emoji leaves no lone surrogate behind.
+    expect(previewText(`${"a".repeat(1999)}😀`).isWellFormed()).toBe(true);
+  });
+});
+
+describe("tables keyed by what a phone or a map sends", () => {
+  it("find their own entries only, never what every object inherits", () => {
+    const table: Readonly<Record<string, string>> = { walking: "walking" };
+    expect(ownEntry(table, "walking")).toBe("walking");
+    for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect(ownEntry(table, key), key).toBeUndefined();
+    }
   });
 });
 

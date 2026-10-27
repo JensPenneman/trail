@@ -69,6 +69,7 @@ export function loadConfig(
       owntracks: `${ingestBase}${apiPaths.owntracks}`,
       osmand: `${ingestBase}${apiPaths.osmand}`,
     },
+    ingestHttpsOnly: new URL(ingestBase).protocol === "https:",
     signupAllowlist: env.SIGNUP_ALLOWLIST,
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
     sessionTtlDays: env.SESSION_TTL_DAYS,

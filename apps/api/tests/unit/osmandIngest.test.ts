@@ -7,6 +7,7 @@ import {
   type OsmandRequest,
   osmandRequestOf,
   readOsmandRequest,
+  readParameters,
 } from "../../src/osmand/osmandRequest";
 import { osmandToken } from "../../src/osmand/osmandToken";
 import { booleanOf, decimalOf, timestampOf } from "../../src/osmand/osmandValues";
@@ -238,6 +239,18 @@ describe("an upload in the OsmAnd format", () => {
     expect(JSON.stringify({ batch, singles })).not.toContain(token);
   });
 
+  it("reads an activity as a value, never as the name of an object's own method", () => {
+    for (const type of ["constructor", "toString", "__proto__"]) {
+      const location = { ...traccarJson(token, at).location, activity: { type } };
+      const { batch } = prepareOsmand(
+        request({ json: { ok: true, value: { location } } }),
+        "traccar",
+        receivedAt,
+      );
+      expect(batch.locations[0]?.motion, type).toEqual([]);
+    }
+  });
+
   it("stores a JSON batch's points once per time and its heartbeats as events", () => {
     const location = traccarJson(token, at).location;
     const { coords: _coords, ...withoutFix } = location;
@@ -327,6 +340,29 @@ describe("the token of the OsmAnd format", () => {
   });
 });
 
+describe("the parameters of the OsmAnd format", () => {
+  const read = (text: string, left = 100) => {
+    const into = new Map<string, string>();
+    const budget = { left };
+    const overflow = readParameters(text, into, budget);
+    return { params: Object.fromEntries(into), overflow, left: budget.left };
+  };
+
+  it("are decoded as URLSearchParams decodes them, the first value of each name kept", () => {
+    const text = "lat=51.05&lon=3.71&name=a+b%20c&euro=%E2%82%AC&odd=%zz&lat=2&flag&=empty";
+    expect(read(text).params).toEqual(Object.fromEntries([...new URLSearchParams(text)].reverse()));
+    expect(read(text)).toMatchObject({ overflow: false, left: 92 });
+  });
+
+  it("are read up to the budget and no further, whatever follows", () => {
+    // 64 kB of `a&a&…`: a hundred parts read, the rest never looked at.
+    expect(read("a&".repeat(32 * 1024))).toEqual({ params: { a: "" }, overflow: true, left: 0 });
+    expect(read("&".repeat(64 * 1024))).toEqual({ params: {}, overflow: true, left: 0 });
+    expect(read("a=1&b=2&", 2)).toMatchObject({ overflow: false, left: 0 });
+    expect(read("a=1&b=2&c=3", 2)).toEqual({ params: { a: "1", b: "2" }, overflow: true, left: 0 });
+  });
+});
+
 describe("the body of the OsmAnd format", () => {
   const withType = (type?: string) =>
     ({ headers: type === undefined ? {} : { "content-type": type } }) as IncomingMessage;
@@ -350,6 +386,24 @@ describe("the body of the OsmAnd format", () => {
     ]) {
       expect(isJsonBody(withType(type)), String(type)).toBe(false);
     }
+  });
+
+  it("finds Traccar Client 9's device_id without parsing the JSON", () => {
+    const tokenOf = (body: string) => {
+      const req = {
+        originalUrl: "/api/osmand",
+        body: Buffer.from(body),
+        get: () => undefined,
+        headers: { "content-type": "application/json" },
+      } as unknown as Request;
+      readOsmandRequest(req, {} as never, () => {});
+      return osmandToken(req);
+    };
+    // Cut off, so no parser could read it: the token is found all the same.
+    expect(tokenOf(`{"device_id":"${token}","location":{"timestamp":`)).toBe(token);
+    expect(tokenOf(`{ "device_id" : "${token}" }`)).toBe(token);
+    expect(tokenOf(`{"device_id":"${token.slice(0, 40)}"}`)).toBeNull();
+    expect(tokenOf(`{"device":"${token}"}`)).toBeNull();
   });
 
   it("keeps a JSON body it cannot read without a token, even one cut where the preview ends", () => {

@@ -86,9 +86,10 @@ const singleMessage: RequestHandler = (req, res, next) => {
  * limiter the whole API shares; here follow the `Origin` check → preflight →
  * the API token (bearer only: the session cookie is never read, and the
  * failed-token limiter counts refusals) → the per-token limiter `/api/v1`
- * shares → POST with JSON only → the 1 MB body parser → one message, no
- * batch → the SDK. Refusals before the SDK use the API's error body; once the
- * SDK has the request, it answers in JSON-RPC.
+ * shares → POST with JSON only → the 1 MB body parser (a compressed body is
+ * refused, 415) → one message, no batch → the SDK. Refusals before the SDK
+ * use the API's error body; once the SDK has the request, it answers in
+ * JSON-RPC.
  */
 export function mcpRouter(ctx: AppContext): Router {
   const endpoint = createMcpEndpoint((request) => {
@@ -103,7 +104,10 @@ export function mcpRouter(ctx: AppContext): Router {
   router.use(requireApiToken);
   router.use(tokenRateLimit(ctx));
   router.all("/", postJsonOnly);
-  router.post("/", express.json({ limit: mcpBodyLimitBytes, type: "application/json" }));
+  router.post(
+    "/",
+    express.json({ limit: mcpBodyLimitBytes, type: "application/json", inflate: false }),
+  );
   router.post("/", singleMessage);
   router.post("/", async (req, res) => {
     const principal = getRequestAuth(req);

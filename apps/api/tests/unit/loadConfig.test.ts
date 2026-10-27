@@ -201,6 +201,25 @@ describe("loadConfig", () => {
       defaults,
     );
     expect(config.ingestUrl).toBe("http://192.168.1.20:8080/api/overland");
+    // The phones were given an http:// address: every credential is taken over HTTP.
+    expect(config.ingestHttpsOnly).toBe(false);
+  });
+
+  it("takes uploads over HTTPS only once the phones are given an https:// address", () => {
+    expect(loadConfig(minimal, defaults).ingestHttpsOnly).toBe(true);
+    expect(
+      loadConfig({ ...minimal, PUBLIC_URL: "http://localhost:5173" }, defaults).ingestHttpsOnly,
+    ).toBe(false);
+    expect(
+      loadConfig(
+        {
+          ...minimal,
+          PUBLIC_URL: "http://localhost:5173",
+          INGEST_BASE_URL: "https://trail.example.com",
+        },
+        defaults,
+      ).ingestHttpsOnly,
+    ).toBe(true);
   });
 
   it("reports every invalid variable", () => {

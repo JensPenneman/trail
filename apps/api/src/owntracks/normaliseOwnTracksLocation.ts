@@ -12,7 +12,6 @@ import {
 import { type Normalised, rejected } from "../ingest/normalised";
 import type { NormalisedLocation } from "../ingest/normalisedRecords";
 import { checkRecordTime } from "../ingest/recordTime";
-import { withoutSecrets } from "../ingest/withoutSecrets";
 import { batteryStatusOf, epochSecondsOf, speedOf } from "./owntracksValues";
 
 /*
@@ -42,7 +41,8 @@ const mapped = new Set([
  * Both apps leave out what they do not know: Android every reading that is 0,
  * iOS the negative ones. iOS sends `alt` without `vac` when the altitude is
  * invalid (its vertical accuracy is negative), so an altitude of exactly 0
- * without a vertical accuracy is no reading; Android never sends 0.
+ * without a vertical accuracy is no reading; Android never sends 0. The
+ * message comes without its secrets (`prepareOwnTracks`).
  */
 export function normaliseOwnTracksLocation(
   message: Record<string, unknown>,
@@ -60,7 +60,6 @@ export function normaliseOwnTracksLocation(
   const altitude = realOrNull(message["alt"]);
   const batteryLevel = batteryPercentOf(message["batt"]);
   const batteryState = batteryStatusOf(message["bs"]);
-  const scrubbed = withoutSecrets(message) as Record<string, unknown>;
   return {
     ok: true,
     value: {
@@ -80,7 +79,7 @@ export function normaliseOwnTracksLocation(
       batteryState,
       // Android writes `SSID`, iOS `ssid`.
       wifi: textOrNull(message["SSID"]) ?? textOrNull(message["ssid"]),
-      extra: extraOf(scrubbed, mapped),
+      extra: extraOf(message, mapped),
       battery:
         batteryLevel === null && batteryState === null
           ? null

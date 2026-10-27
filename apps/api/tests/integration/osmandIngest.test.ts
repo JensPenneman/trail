@@ -1,3 +1,4 @@
+import { brotliCompressSync, gzipSync } from "node:zlib";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import { deviceResponseSchema } from "@trail/contracts/device";
 import { ingestLogResponseSchema } from "@trail/contracts/ingestLog";
@@ -155,34 +156,46 @@ describe("the OsmAnd format", () => {
     expect(point?.extra).not.toHaveProperty("_");
   });
 
-  it("takes a Traccar Client 9 batch of several hundred points, JSON up to 1 MB", async () => {
+  it("finds Traccar Client 9's token before reading its JSON, which may be 64 kB", async () => {
     const created = await createDevice(owner, { name: "Phone with Traccar 9", source: "traccar" });
     const token = created.credentials.accessToken;
-    const start = minutesAgo(300).getTime();
-    const location = Array.from(
-      { length: 300 },
-      (_, n) => traccarJson(token, new Date(start + n * 1000)).location,
-    );
-    const batch = JSON.stringify({ location, device_id: token });
-    // Over the 64 kB of a form: a 413 here would keep the phone's whole queue waiting.
-    expect(batch.length).toBeGreaterThan(64 * 1024);
+    // Not JSON at all: the token is found without parsing, the body kept in the dead letter.
     await request(t.app)
       .post(apiPaths.osmand)
       .set("Content-Type", "application/json")
-      .send(batch)
-      .expect(200);
-    expect(await latestLog(created.device.id)).toMatchObject({
-      source: "traccar",
-      records: 300,
-      locations: 300,
-      rejected: 0,
-    });
+      .send(`{"device_id":"${token}","location":{"timestamp":`)
+      .expect(200, "");
+    expect(await latestLog(created.device.id)).toMatchObject({ records: 1, rejected: 1 });
     const tooLarge = await request(t.app)
       .post(apiPaths.osmand)
       .set("Content-Type", "application/json")
-      .send(JSON.stringify({ device_id: token, location: [], padding: "x".repeat(1_100_000) }))
+      .send(JSON.stringify({ ...traccarJson(token, minutesAgo(36)), padding: "x".repeat(66_000) }))
       .expect(413);
     expect(tooLarge.body).toEqual({ error: "Payload too large" });
+  });
+
+  it("decompresses no body: a compressed one is refused before it is read, token or not", async () => {
+    // 19 bytes of brotli that would inflate to 1 MB of nested JSON.
+    const bomb = brotliCompressSync("[".repeat(512 * 1024) + "]".repeat(512 * 1024));
+    expect(bomb.length).toBeLessThan(64);
+    for (const headers of [
+      { "Content-Type": "application/json", "Content-Encoding": "br" },
+      { "Content-Type": "application/x-www-form-urlencoded", "Content-Encoding": "gzip" },
+    ]) {
+      const refused = await request(t.app)
+        .post(apiPaths.osmand)
+        .set(headers)
+        .send(headers["Content-Encoding"] === "br" ? bomb : gzipSync("lat=1"))
+        .expect(415);
+      expect(refused.body).toEqual({ error: "Unsupported request body encoding." });
+    }
+    const withToken = await request(t.app)
+      .post(apiPaths.osmand)
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .set("Content-Encoding", "gzip")
+      .send(gzipSync(traccarForm(devices.traccar.token, minutesAgo(36))))
+      .expect(415);
+    expect(withToken.body).toEqual({ error: "Unsupported request body encoding." });
   });
 
   it("stores OsmAnd's GET with its milliseconds and m/s", async () => {
@@ -262,21 +275,18 @@ describe("the OsmAnd format", () => {
   it("refuses missing, unknown and malformed tokens", async () => {
     const missing = await request(t.app).get(`${apiPaths.osmand}?lat=1&lon=2`).expect(401);
     expect(missing.body).toEqual({ error: "Invalid access token" });
-    expect(missing.headers["www-authenticate"]).toContain("Bearer");
+    // One challenge per scheme the endpoint takes.
+    expect(missing.headers["www-authenticate"]).toContain('Bearer realm="trail"');
+    expect(missing.headers["www-authenticate"]).toContain('Basic realm="trail"');
     await postForm(traccarForm(`trl_${"Q".repeat(43)}`, minutesAgo(31))).expect(401);
     // Traccar Client's own random identifiers are no token: no lookup, 401.
     await postForm(traccarForm("12345678", minutesAgo(31))).expect(401);
   });
 
-  it("takes Basic over HTTPS only", async () => {
+  it("takes Basic over plain HTTP when the phones were given an http:// address", async () => {
     const { token } = devices.gpslogger;
     const url = `${apiPaths.osmand}?${gpsloggerQuery(minutesAgo(30))}`;
-    await request(t.app).get(url).set("Authorization", basicAuth("phone", token)).expect(403);
-    await request(t.app)
-      .get(url)
-      .set("Authorization", basicAuth("phone", token))
-      .set("X-Forwarded-Proto", "https")
-      .expect(200);
+    await request(t.app).get(url).set("Authorization", basicAuth("phone", token)).expect(200);
   });
 
   it("refuses other methods, HEAD included, and bodies over 64 kB", async () => {

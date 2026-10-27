@@ -1,3 +1,4 @@
+import { gzipSync } from "node:zlib";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import { deviceResponseSchema } from "@trail/contracts/device";
 import { ingestLogResponseSchema } from "@trail/contracts/ingestLog";
@@ -165,6 +166,40 @@ describe("Overland ingest", () => {
     expect(rejects.some((reject) => reject.record === "not a feature")).toBe(true);
   });
 
+  it("keeps no token a phone put into its upload: not in a column, extra or the dead letter", async () => {
+    const leaked = await postOverland(t.app, token, {
+      locations: [
+        {
+          ...point("2026-09-30T09:00:00Z"),
+          properties: {
+            timestamp: "2026-09-30T09:00:00Z",
+            wifi: token,
+            note: `token=${token}`,
+            token,
+            motion: [token],
+          },
+        },
+        { ...point("2026-09-30T09:00:01Z", [0, 0]), properties: { note: token } },
+      ],
+    }).expect(200);
+    expect(leaked.body).toEqual({ result: "ok" });
+    const stored = await t.ctx.db.execute<{ found: number }>(sql`
+      SELECT (
+        (SELECT count(*) FROM locations WHERE device_id = ${deviceId}
+           AND (extra::text LIKE ${`%${token}%`} OR wifi LIKE ${`%${token}%`}
+             OR motion::text LIKE ${`%${token}%`}))
+        + (SELECT count(*) FROM ingest_rejects WHERE record::text LIKE ${`%${token}%`})
+      )::int AS found
+    `);
+    expect(stored.rows[0]?.found).toBe(0);
+    const response = await owner.get(`/api/locations?deviceId=${deviceId}&limit=500`).expect(200);
+    const kept = locationsPageSchema
+      .parse(response.body)
+      .items.find((item) => item.recordedAt === "2026-09-30T09:00:00.000Z");
+    expect(kept).toMatchObject({ wifi: "[redacted]", extra: { note: "token=[redacted]" } });
+    expect(kept?.extra).not.toHaveProperty("token");
+  });
+
   it("accepts legacy offsets without a colon", async () => {
     await postOverland(t.app, token, { locations: [point("2015-10-01T08:00:00-0700")] }).expect(
       200,
@@ -217,6 +252,17 @@ describe("Overland ingest", () => {
       .send("{oops")
       .expect(400);
     expect(typeof malformed.body.error).toBe("string");
+  });
+
+  it("refuses a compressed body: Overland never sends one", async () => {
+    const response = await request(t.app)
+      .post(apiPaths.overland)
+      .set("Authorization", `Bearer ${token}`)
+      .set("Content-Type", "application/json")
+      .set("Content-Encoding", "gzip")
+      .send(gzipSync(JSON.stringify({ locations: [point("2026-09-30T10:00:00Z")] })))
+      .expect(415);
+    expect(response.body).toEqual({ error: "Unsupported request body encoding." });
   });
 
   it("refuses bodies over 5 MB", async () => {

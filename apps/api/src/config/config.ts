@@ -71,6 +71,12 @@ export interface Config {
   ingestUrl: string;
   /** Every ingest endpoint shown to phones (`INGEST_BASE_URL` + the protocol's path). */
   ingestUrls: Readonly<Record<IngestProtocol, string>>;
+  /**
+   * The phones were given an `https:` address: an upload over plain HTTP is
+   * refused, whatever credential it carries (§6). With an `http:` address — a
+   * home network while Trail is set up — every credential is taken over HTTP.
+   */
+  ingestHttpsOnly: boolean;
   /** Lower-cased addresses or `*@domain` entries. */
   signupAllowlist: readonly string[];
   trustProxy: TrustProxySetting;

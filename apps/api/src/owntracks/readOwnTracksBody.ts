@@ -1,5 +1,4 @@
-import { storableText } from "../ingest/storableText";
-import { redactSecrets } from "../ingest/withoutSecrets";
+import { previewText } from "../ingest/previewText";
 
 export type OwnTracksBody =
   /** OwnTracks posts an empty body when a friend is removed: nothing to store, still acknowledged. */
@@ -16,7 +15,6 @@ export function readOwnTracksBody(body: unknown): OwnTracksBody {
   try {
     return { kind: "message", value: JSON.parse(text) as unknown };
   } catch {
-    // Redacted whole, then cut: a token cut in half would no longer be recognised.
-    return { kind: "unreadable", preview: storableText(redactSecrets(text).slice(0, 2000)) };
+    return { kind: "unreadable", preview: previewText(text) };
   }
 }

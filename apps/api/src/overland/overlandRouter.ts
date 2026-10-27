@@ -8,11 +8,13 @@ import { ingestDeviceOf } from "../ingest/ingestDevice";
 import { ingestErrorHandler } from "../ingest/ingestErrorHandler";
 import { ingestUpload } from "../ingest/ingestUpload";
 import { perDeviceLimit } from "../ingest/perDeviceLimit";
+import { refuseCredentialsOverHttp } from "../ingest/refuseCredentialsOverHttp";
 import { requireApp } from "../ingest/requireApp";
 import { requireIngestDevice } from "../ingest/requireIngestDevice";
 import { invalidTokenMessage, sendIngestError } from "../ingest/sendIngestError";
+import { withoutSecrets } from "../ingest/withoutSecrets";
 import { extractDeviceToken } from "./extractDeviceToken";
-import { isOverlandPayload, payloadShapeError } from "./overlandPayload";
+import { isOverlandPayload, type OverlandPayload, payloadShapeError } from "./overlandPayload";
 import { presetSettings } from "./overlandPresets";
 import { prepareBatch } from "./prepareBatch";
 
@@ -28,9 +30,11 @@ export function overlandRouter(ctx: AppContext): Router {
     status: 429,
     identifier: "ingest-overland",
   });
-  // Batches of 1000 points are ~600 kB; 5 MB leaves room without inviting abuse.
-  const json = express.json({ limit: "5mb" });
+  /* Batches of 1000 points are ~600 kB; 5 MB leaves room without inviting abuse.
+   * Overland never compresses an upload: a compressed body is refused (415). */
+  const json = express.json({ limit: "5mb", inflate: false });
   const authenticated = [
+    refuseCredentialsOverHttp(ctx.config, "overland"),
     identifyDevice(ctx.db, extractDeviceToken),
     failedTokenLimit(ctx),
     requireIngestDevice(),
@@ -44,11 +48,13 @@ export function overlandRouter(ctx: AppContext): Router {
   router.post("/", ...authenticated, perDevice, requireApp("overland"), json, async (req, res) => {
     const started = performance.now();
     const device = ingestDeviceOf(req);
-    const payload: unknown = req.body;
-    if (!isOverlandPayload(payload)) {
+    const body: unknown = req.body;
+    if (!isOverlandPayload(body)) {
       sendIngestError(res, 400, payloadShapeError);
       return;
     }
+    // Before anything reads it: no token a phone sent reaches a column, `extra` or the dead letter.
+    const payload = withoutSecrets(body) as OverlandPayload;
     const receivedAt = new Date();
     const outcome = await ingestUpload(ctx.db, device, {
       batch: prepareBatch(payload, receivedAt),

@@ -4,7 +4,6 @@ import { type Normalised, rejected } from "../ingest/normalised";
 import type { NormalisedEvent } from "../ingest/normalisedRecords";
 import { checkRecordTime } from "../ingest/recordTime";
 import { storableText } from "../ingest/storableText";
-import { withoutSecrets } from "../ingest/withoutSecrets";
 import { epochSecondsOf } from "./owntracksValues";
 
 /* The action is part of the table's key, whose index cannot hold long values. */
@@ -25,7 +24,8 @@ function actionOf(message: Record<string, unknown>): string | null {
 /**
  * An OwnTracks `transition` (a region entered or left, at `tst`) or `lwt`
  * message as a device event. A transition's position is optional; one that is
- * unusable stays in `extra` with the rest of the message.
+ * unusable stays in `extra` with the rest of the message. The message comes
+ * without its secrets (`prepareOwnTracks`): a region's name is part of the action.
  */
 export function normaliseOwnTracksEvent(
   message: Record<string, unknown>,
@@ -48,7 +48,7 @@ export function normaliseOwnTracksEvent(
       action,
       lat: coordinates.ok ? coordinates.lat : null,
       lon: coordinates.ok ? coordinates.lon : null,
-      extra: extraOf(withoutSecrets(message) as Record<string, unknown>, mapped),
+      extra: extraOf(message, mapped),
       battery: null,
     },
   };

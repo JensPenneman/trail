@@ -100,7 +100,8 @@ export function createApp(ctx: AppContext): Express {
 
   app.use("/api", apiRateLimit);
   app.use("/api", csrfGuard(config.allowedOrigins));
-  app.use("/api", express.json({ limit: "100kb" }));
+  // Before the session is known: browsers never compress a request, so no body is decompressed (415).
+  app.use("/api", express.json({ limit: "100kb", inflate: false }));
   app.use("/api", loadSession(ctx.db, config.sessionTtlDays));
   app.use("/api", sameOriginSessions);
 

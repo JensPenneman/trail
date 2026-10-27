@@ -7,22 +7,31 @@ import { ingestDeviceOf } from "../ingest/ingestDevice";
 import { ingestErrorHandler } from "../ingest/ingestErrorHandler";
 import { ingestUpload } from "../ingest/ingestUpload";
 import { perDeviceLimit } from "../ingest/perDeviceLimit";
-import { refuseBasicOverHttp } from "../ingest/refuseBasicOverHttp";
+import { refuseCredentialsOverHttp } from "../ingest/refuseCredentialsOverHttp";
 import { requireApp } from "../ingest/requireApp";
 import { requireIngestDevice } from "../ingest/requireIngestDevice";
-import { invalidTokenMessage, sendIngestError } from "../ingest/sendIngestError";
+import {
+  basicChallenge,
+  bearerChallenge,
+  invalidTokenMessage,
+  sendIngestError,
+} from "../ingest/sendIngestError";
 import { isOsmandApp } from "./osmandApps";
-import { isJsonBody, osmandRequestOf, readOsmandRequest } from "./osmandRequest";
+import { osmandRequestOf, readOsmandRequest } from "./osmandRequest";
 import { osmandToken } from "./osmandToken";
 import { prepareOsmand } from "./prepareOsmand";
+
+/** The schemes of the `Authorization` header this endpoint takes, for the 401's challenges. */
+const challenges = [bearerChallenge, basicChallenge];
 
 /**
  * `GET/POST /api/osmand` — the OsmAnd format (docs/architecture.md §6.6) that
  * Traccar's server speaks: Traccar Client posts a form, OsmAnd and GPSLogger
  * send their URL templates, Traccar Client 9 posts JSON. Every accepted
  * request is answered `200` with an empty body, which is all these clients
- * look at. The body is read before the token, since Traccar Client puts the
- * token — its device identifier — into the form; bodies stay small.
+ * look at. Traccar Client puts the token — its device identifier — into the
+ * form, so the raw body is read before the lookup, but parsed only as far as
+ * the token needs: at most 100 parameters, a JSON body not at all.
  */
 export function osmandRouter(ctx: AppContext): Router {
   const router = express.Router();
@@ -31,12 +40,10 @@ export function osmandRouter(ctx: AppContext): Router {
     status: 429,
     identifier: "ingest-osmand",
   });
-  /* Traccar Client 9's JSON holds as many points as its plugin had to send (about
-   * 500 bytes each, up to 1000); a position's parameters are a few hundred
-   * bytes, GPSLogger's every placeholder fits many times in 64 kB. The second
-   * parser skips a body the first has read. */
-  const jsonBody = express.raw({ type: isJsonBody, limit: "1mb" });
-  const body = express.raw({ type: () => true, limit: "64kb" });
+  /* A position's parameters, or Traccar Client 9's JSON of one location, are a
+   * few hundred bytes; GPSLogger's every placeholder fits many times. No client
+   * compresses an upload: a compressed body is refused (415) before it is read. */
+  const body = express.raw({ type: () => true, limit: "64kb", inflate: false });
 
   const onlyGetAndPost: express.RequestHandler = (req, res, next) => {
     // Not HEAD: the GET of this format stores what it carries.
@@ -51,13 +58,12 @@ export function osmandRouter(ctx: AppContext): Router {
   router.all(
     "/",
     onlyGetAndPost,
-    refuseBasicOverHttp,
-    jsonBody,
+    refuseCredentialsOverHttp(ctx.config, "osmand"),
     body,
     readOsmandRequest,
     identifyDevice(ctx.db, osmandToken),
     failedTokenLimit(ctx),
-    requireIngestDevice(),
+    requireIngestDevice(challenges),
     perDevice,
     requireApp("osmand"),
     async (req, res) => {
@@ -75,7 +81,7 @@ export function osmandRouter(ctx: AppContext): Router {
         deliversSettings: false,
       });
       if (outcome === null) {
-        sendIngestError(res, 401, invalidTokenMessage);
+        sendIngestError(res, 401, invalidTokenMessage, challenges);
         return;
       }
       res.status(200).end();

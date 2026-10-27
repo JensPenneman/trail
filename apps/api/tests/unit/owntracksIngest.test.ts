@@ -45,6 +45,9 @@ describe("the OwnTracks body", () => {
     expect(body.preview).toHaveLength(2000);
     expect(body.preview).toContain("[redacted]");
     expect(body.preview).not.toContain(token.slice(0, 12));
+    // JSON would have decoded `_` to the underscore: so does the preview, before redacting.
+    const escaped = readOwnTracksBody(Buffer.from(`{"password":"trl\\u005f${token.slice(4)}", `));
+    expect(escaped).toEqual({ kind: "unreadable", preview: '{"password":"[redacted]", ' });
   });
 });
 
@@ -210,6 +213,24 @@ describe("other OwnTracks messages", () => {
       expect(prepared.batch).toMatchObject({ records: 1, rejects: [], locations: [], events: [] });
       expect(JSON.stringify(prepared)).not.toContain(token);
     }
+  });
+
+  it("keeps no token in a column: not as a Wi-Fi name, a motion activity or a region", () => {
+    const location = onlyLocation({
+      ...owntracksIosLocation(at),
+      ssid: token,
+      motionactivities: ["walking", token],
+    });
+    expect(location).toMatchObject({ wifi: "[redacted]", motion: ["walking", "[redacted]"] });
+    expect(onlyLocation({ ...owntracksAndroidLocation(at), SSID: `wifi ${token}` }).wifi).toBe(
+      "wifi [redacted]",
+    );
+    const byRid = message({ ...owntracksTransition(at, "enter"), rid: token }).batch.events[0];
+    expect(byRid?.action).toBe("region_enter:[redacted]");
+    const { rid: _rid, ...withoutRid } = owntracksTransition(at, "leave");
+    const byDesc = message({ ...withoutRid, desc: `Home ${token}` }).batch.events[0];
+    expect(byDesc?.action).toBe("region_leave:Home [redacted]");
+    expect(JSON.stringify([location, byRid, byDesc])).not.toContain(token);
   });
 
   it("keeps what it cannot read in the dead letter, without credentials", () => {

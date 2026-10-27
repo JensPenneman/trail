@@ -20,7 +20,10 @@ export interface PreparedOsmand {
   singles: { record: unknown; batch: PreparedBatch }[];
 }
 
-/* Transistorsoft's plugin sends up to its batch size in one body; more is no client. */
+/* Traccar Client 9 sends one location per request (it leaves the plugin's
+ * `batchSync` off); an array, as the plugin sends with it on, is read too. 64 kB
+ * hold about 130 locations as the plugin writes them: more entries than this
+ * are no client's, and one record of the dead letter rather than thousands. */
 const maxJsonLocations = 1000;
 
 const rejectedAs = (reason: string, record: unknown): PreparedOsmand => {

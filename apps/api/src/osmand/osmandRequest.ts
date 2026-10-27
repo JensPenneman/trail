@@ -1,9 +1,8 @@
 import type { IncomingMessage } from "node:http";
 import type { Request, RequestHandler } from "express";
-import { storableText } from "../ingest/storableText";
-import { redactSecrets } from "../ingest/withoutSecrets";
+import { previewText } from "../ingest/previewText";
 
-/** One request in the OsmAnd format, its parameters read once for the token and the record. */
+/** One request in the OsmAnd format: its parameters, and a JSON body parsed once the device is known. */
 export interface OsmandRequest {
   /** Query and form parameters, the first value of each name, the query's first. */
   params: ReadonlyMap<string, string>;
@@ -16,7 +15,16 @@ export interface OsmandRequest {
 /** Traccar's own clients send about a dozen; GPSLogger's whole set is 26. */
 const maxParameters = 100;
 
-const requests = new WeakMap<Request, OsmandRequest>();
+/** What `readOsmandRequest` read before the token lookup. */
+interface ReadRequest {
+  params: Map<string, string>;
+  overflow: boolean;
+  /** A JSON body's text: parsed only once the device is known (`osmandRequestOf`). */
+  jsonText: string | null;
+  parsed: OsmandRequest | null;
+}
+
+const requests = new WeakMap<Request, ReadRequest>();
 
 /**
  * Traccar Client 9's body: `application/json` (or a `+json` type); any other
@@ -26,51 +34,92 @@ export function isJsonBody(req: IncomingMessage): boolean {
   return /^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/i.test(req.headers["content-type"] ?? "");
 }
 
-function collect(
+/**
+ * Reads the parameters of a query or a form as `URLSearchParams` does — `&`
+ * between them, `=` between a name and its value, `+` for a space, percent
+ * escapes decoded — keeping the first value of each name, but no more than
+ * `budget.left` parts: what follows is never looked at, so a body costs no
+ * more than its first hundred parameters, whatever its size. True when there
+ * was more.
+ */
+export function readParameters(
+  text: string,
   into: Map<string, string>,
-  search: URLSearchParams,
-  counted: { total: number },
-): void {
-  for (const [name, value] of search) {
-    counted.total += 1;
-    if (counted.total > maxParameters) return;
-    if (!into.has(name)) into.set(name, value);
+  budget: { left: number },
+): boolean {
+  let start = 0;
+  while (start < text.length) {
+    if (budget.left === 0) return true;
+    budget.left -= 1;
+    const separator = text.indexOf("&", start);
+    const end = separator < 0 ? text.length : separator;
+    if (end > start) {
+      for (const [name, value] of new URLSearchParams(text.slice(start, end))) {
+        if (!into.has(name)) into.set(name, value);
+      }
+    }
+    start = end + 1;
   }
+  return false;
 }
 
 /**
- * Reads the parameters of a GET or POST in the OsmAnd format: the query
- * string, and the body when it is a form (Traccar Client 10 posts one) or has
- * no type; a JSON body is kept as JSON. Before the token is looked up, since
- * Traccar Client sends its identifier — the token — in the form.
+ * Reads a request in the OsmAnd format before its token is looked up, as
+ * cheaply as that allows: the query's parameters and, for a form or a body
+ * without a type (Traccar Client 10 posts a form), the form's — at most 100
+ * together. A JSON body stays text: before the lookup only its `device_id` is
+ * looked for (`jsonDeviceId`); it is parsed once the device is known. The
+ * body is raw, at most 64 kB and never decompressed (`osmandRouter`).
  */
 export const readOsmandRequest: RequestHandler = (req, _res, next) => {
   const params = new Map<string, string>();
-  const counted = { total: 0 };
+  const budget = { left: maxParameters };
   const query = req.originalUrl.indexOf("?");
-  if (query >= 0) collect(params, new URLSearchParams(req.originalUrl.slice(query + 1)), counted);
-  let json: OsmandRequest["json"] = null;
+  let overflow = query >= 0 && readParameters(req.originalUrl.slice(query + 1), params, budget);
+  let jsonText: string | null = null;
   const body: unknown = req.body;
   if (Buffer.isBuffer(body) && body.length > 0) {
     const text = body.toString("utf8").replace(/^﻿/, "");
-    if (isJsonBody(req)) {
-      try {
-        json = { ok: true, value: JSON.parse(text) as unknown };
-      } catch {
-        // Redacted whole, then cut: a token cut in half would no longer be recognised.
-        json = { ok: false, preview: storableText(redactSecrets(text).slice(0, 2000)) };
-      }
-    } else {
-      collect(params, new URLSearchParams(text), counted);
-    }
+    if (isJsonBody(req)) jsonText = text;
+    else overflow = readParameters(text, params, budget) || overflow;
   }
-  requests.set(req, { params, overflow: counted.total > maxParameters, json });
+  requests.set(req, { params, overflow, jsonText, parsed: null });
   next();
 };
 
-/** The request as `readOsmandRequest` read it; routes behind it always have one. */
-export function osmandRequestOf(req: Request): OsmandRequest {
+function readRequestOf(req: Request): ReadRequest {
   const request = requests.get(req);
   if (request === undefined) throw new Error("OsmAnd route reached without its parameters");
   return request;
+}
+
+/** The query and form parameters, as `readOsmandRequest` read them before the lookup. */
+export function osmandParametersOf(req: Request): ReadonlyMap<string, string> {
+  return readRequestOf(req).params;
+}
+
+/* Traccar Client 9's `device_id`, in the JSON text as the plugin writes it. */
+const deviceIdPattern = /"device_id"\s*:\s*"(trl_[A-Za-z0-9_-]{43})"/;
+
+/** A token-shaped `device_id` of a JSON body, found without parsing it: one pass over at most 64 kB. */
+export function jsonDeviceId(req: Request): string | null {
+  const { jsonText } = readRequestOf(req);
+  return jsonText === null ? null : (deviceIdPattern.exec(jsonText)?.[1] ?? null);
+}
+
+/** The whole request, its JSON body parsed — for the handler, once the device is known. */
+export function osmandRequestOf(req: Request): OsmandRequest {
+  const request = readRequestOf(req);
+  if (request.parsed !== null) return request.parsed;
+  const { params, overflow, jsonText } = request;
+  let json: OsmandRequest["json"] = null;
+  if (jsonText !== null) {
+    try {
+      json = { ok: true, value: JSON.parse(jsonText) as unknown };
+    } catch {
+      json = { ok: false, preview: previewText(jsonText) };
+    }
+  }
+  request.parsed = { params, overflow, json };
+  return request.parsed;
 }

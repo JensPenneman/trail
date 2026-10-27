@@ -7,7 +7,7 @@ import { ingestDeviceOf } from "../ingest/ingestDevice";
 import { ingestErrorHandler } from "../ingest/ingestErrorHandler";
 import { ingestUpload } from "../ingest/ingestUpload";
 import { perDeviceLimit } from "../ingest/perDeviceLimit";
-import { refuseBasicOverHttp } from "../ingest/refuseBasicOverHttp";
+import { refuseCredentialsOverHttp } from "../ingest/refuseCredentialsOverHttp";
 import { requireApp } from "../ingest/requireApp";
 import { requireIngestDevice } from "../ingest/requireIngestDevice";
 import {
@@ -24,11 +24,12 @@ const challenges = [basicChallenge, bearerChallenge];
 
 /**
  * `POST /api/owntracks` — OwnTracks in HTTP mode (docs/architecture.md §6.5):
- * one JSON message per request, the device token as HTTP Basic password (over
- * HTTPS only) or bearer token, checked before the body is read. Every
- * accepted request is answered `200 []`, the empty list of messages the apps
- * expect back. Over the per-device limit the answer is 503, never a 4xx:
- * OwnTracks for iOS drops a message that gets a 4xx.
+ * one JSON message per request, the device token as HTTP Basic password
+ * (Android) or bearer token (the iPhone's setup link sends it as a header),
+ * checked before the body is read. Every accepted request is answered
+ * `200 []`, the empty list of messages the apps expect back. Over the
+ * per-device limit the answer is 503, never a 4xx: OwnTracks for iOS drops a
+ * message that gets a 4xx.
  */
 export function owntracksRouter(ctx: AppContext): Router {
   const router = express.Router();
@@ -37,12 +38,14 @@ export function owntracksRouter(ctx: AppContext): Router {
     status: 503,
     identifier: "ingest-owntracks",
   });
-  // A message is a few hundred bytes; a point of interest's photo (192 px) some kilobytes.
-  const body = express.raw({ type: () => true, limit: "1mb" });
+  /* A message is a few hundred bytes; a point of interest's photo, which the app
+   * scales to 192 px, stays under 150 kB in base64. Neither app compresses an
+   * upload: a compressed body is refused (415) before it is read. */
+  const body = express.raw({ type: () => true, limit: "256kb", inflate: false });
 
   router.post(
     "/",
-    refuseBasicOverHttp,
+    refuseCredentialsOverHttp(ctx.config, "owntracks"),
     identifyDevice(ctx.db, owntracksToken),
     failedTokenLimit(ctx),
     requireIngestDevice(challenges),
