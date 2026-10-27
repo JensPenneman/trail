@@ -2382,9 +2382,10 @@ count among them, since they lead to signed-in pages.
   key only for Overland and OwnTracks), then what that app needs
   (`CredentialsView`, one component per app in `devices/setup/`): Overland's
   QR of `overland://setup` and "Open in Overland"; OwnTracks' configuration
-  link per platform (an iPhone · Android switch, "Allow external
-  configuration" first) with URL, user name, password, device ID and tracker
-  ID; Traccar Client's `org.traccar.client://` link with server URL and device
+  link per platform (an iPhone · Android switch, on an iPhone Move ·
+  Significant changes with what each costs in battery, "Allow external
+  configuration" first) with URL, user name, device ID, tracker ID and the
+  token — the iPhone's *HTTP Headers* line, Android's password; Traccar Client's `org.traccar.client://` link with server URL and device
   identifier (and a word that it is the token); OsmAnd's web address and
   GPSLogger's URL, header and method to copy — every value with a copy button,
   the settings Trail recommends for that app (`recommendedSettings.ts`, the
@@ -2895,8 +2896,9 @@ which are merged by hand; majors wait for a person, security ones too.
   Scenarios: sign-up and refusal, device setup and the live upload (on the
   Devices page: status, points, battery, trip, activity and the upload feed;
   on People the Me card), setting up OwnTracks (its links for both platforms
-  decoded, Basic refused over plain HTTP, the first upload with a bearer
-  token, the device page), ingest log and raw points, remote settings, token
+  and both ways an iPhone tracks decoded, the first uploads with Android's
+  Basic and the iPhone's bearer header over the suite's http:// address, the
+  device page), ingest log and raw points, remote settings, token
   rotation, History and its scrubber,
   the heatmap (its squares on the map, found by their colours in a
   screenshot of the canvas, its key and the busiest places), sign-in by email,
