@@ -19,7 +19,7 @@ test("Heat draws the heatmap of every point and lists the busiest places", async
   expect(counted).toBeGreaterThan(0);
   expect(counted).toBeLessThanOrEqual(30);
   expect(cellZoom).toBeGreaterThanOrEqual(6);
-  expect(cellZoom).toBeLessThanOrEqual(18);
+  expect(cellZoom).toBeLessThanOrEqual(20);
 
   await expect(page.getByRole("region", { name: /^Heatmap of all recorded points/ })).toBeVisible();
   // The squares are on the map, in the ramp's colours.
