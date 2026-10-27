@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { unitTestOptions } from "../../vitest.shared.ts";
 
 /*
  * `unit` — pure logic, parallel. `integration` — the real app against the
@@ -13,6 +14,7 @@ export default defineConfig({
           name: "unit",
           include: ["tests/unit/**/*.test.ts"],
           environment: "node",
+          ...unitTestOptions(),
         },
       },
       {

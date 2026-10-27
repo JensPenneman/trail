@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { unitTestOptions } from "../../vitest.shared.ts";
 
 const maplibreWorkerModule = "maplibre-gl/dist/maplibre-gl-worker.mjs";
 const workerUrlModule = "virtual:maplibre-worker-url";
@@ -73,6 +74,7 @@ export default defineConfig({
     restoreMocks: true,
     unstubGlobals: true,
     css: false,
+    ...unitTestOptions(),
   },
   server: {
     port: 5173,
