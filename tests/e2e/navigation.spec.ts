@@ -2,14 +2,14 @@ import { expect } from "@playwright/test";
 import { mapView } from "./support/mapControls";
 import { test } from "./support/test";
 
-test("the main navigation: People, Devices, Settings, a tab bar on phones", async ({
+test("the main navigation: People, Devices, Insights, Settings, a tab bar on phones", async ({
   page,
   account,
 }, testInfo) => {
   expect(account.email).toBeTruthy();
   await page.goto("/");
   const nav = page.getByRole("navigation", { name: "Main" });
-  await expect(nav.getByRole("link")).toHaveText(["People", "Devices", "Settings"]);
+  await expect(nav.getByRole("link")).toHaveText(["People", "Devices", "Insights", "Settings"]);
   await expect(nav.getByRole("link", { name: "People" })).toHaveAttribute("aria-current", "page");
   await expect(page).toHaveTitle("Live · People · Trail");
 
@@ -28,6 +28,11 @@ test("the main navigation: People, Devices, Settings, a tab bar on phones", asyn
   await expect(page.getByRole("heading", { level: 1, name: "Devices" })).toBeFocused();
   await expect(nav.getByRole("link", { name: "Devices" })).toHaveAttribute("aria-current", "page");
   await expect(nav.getByRole("link", { name: "People" })).not.toHaveAttribute("aria-current");
+
+  await nav.getByRole("link", { name: "Insights" }).click();
+  await expect(page).toHaveURL(/\/insights$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Insights" })).toBeFocused();
+  await expect(nav.getByRole("link", { name: "Insights" })).toHaveAttribute("aria-current", "page");
 
   // The list of Settings on a phone; beside it on wide screens, with its first page.
   await nav.getByRole("link", { name: "Settings" }).click();
