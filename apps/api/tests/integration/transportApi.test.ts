@@ -106,6 +106,53 @@ describe("GET /api/v1/tracks", () => {
     }
   });
 
+  it("gives a stop its place and the points within it, simplified with the rest", async () => {
+    const inferred = levelTracksResponseSchema.parse(
+      (
+        await owner
+          .get(apiPaths.v1.tracks)
+          .query({ ...day, devices: train, level: "inferred" })
+          .expect(200)
+      ).body,
+    );
+    const { items } = await timeline(owner, { devices: train });
+    expect(inferred.segments.map((segment) => segment.kind)).toEqual(["stop", "move", "stop"]);
+    for (const [index, segment] of inferred.segments.entries()) {
+      const listed = items[index];
+      if (segment.kind === "stop") {
+        // The dot's place is the timeline's, and the stop's points are served like a move's.
+        expect(segment.centroid).toEqual(listed?.centroid);
+        expect(segment.points.length).toBeGreaterThan(1);
+      } else {
+        expect(segment.centroid).toBeNull();
+      }
+    }
+    // Consecutive segments meet: the stop's last point is the move's first.
+    const [platform, ride] = inferred.segments;
+    expect(platform?.points.at(-1)).toEqual(ride?.points[0]);
+    // The other levels have no stops, so no places.
+    const mapped = levelTracksResponseSchema.parse(
+      (
+        await owner
+          .get(apiPaths.v1.tracks)
+          .query({ ...day, devices: train, level: "mapped" })
+          .expect(200)
+      ).body,
+    );
+    expect(mapped.segments.every((segment) => segment.centroid === null)).toBe(true);
+    // Simplified to maxPoints with everything else, the stops' points included.
+    const small = levelTracksResponseSchema.parse(
+      (
+        await owner
+          .get(apiPaths.v1.tracks)
+          .query({ ...day, devices: train, level: "inferred", maxPoints: 100 })
+          .expect(200)
+      ).body,
+    );
+    expect(small.segments.flatMap((segment) => segment.points).length).toBeLessThanOrEqual(100);
+    expect(small.segments.map((segment) => segment.kind)).toEqual(["stop", "move", "stop"]);
+  });
+
   it("defaults to raw, simplifies to maxPoints and refuses ranges over 93 days", async () => {
     const raw = levelTracksResponseSchema.parse(
       (
@@ -191,6 +238,10 @@ describe("GET /api/v1/segments", () => {
     expect(move?.averageSpeed).toBeGreaterThan(20);
     const stop = all.items[0];
     expect(stop).toMatchObject({ mode: null, confidence: null, averageSpeed: null });
+    // A stop says how far apart its points lie (the platform: a few metres); a move does not.
+    expect(stop?.spreadM).toBeGreaterThanOrEqual(0);
+    expect(stop?.spreadM).toBeLessThan(60);
+    expect(move?.spreadM).toBeNull();
   });
 
   it("refuses a cursor it did not make", async () => {
@@ -220,6 +271,12 @@ describe("GET /api/v1/segments", () => {
       .get(apiPaths.v1.segments.root)
       .query(day)
       .set("Authorization", await issue(["devices:read"]))
+      .expect(403);
+    // A stop's spread is no position, yet it comes from them: history:read alone gets nothing.
+    await request(t.app)
+      .get(apiPaths.v1.segments.root)
+      .query(day)
+      .set("Authorization", await issue(["history:read"]))
       .expect(403);
   });
 });

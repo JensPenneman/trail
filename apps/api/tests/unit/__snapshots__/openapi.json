@@ -4678,6 +4678,17 @@
             "description": "Distance in metres.",
             "example": 31240
           },
+          "centroid": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Coordinate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a stop: its place, the middle of its points (`points` are where the device went within it). Null for moves and pieces of track."
+          },
           "points": {
             "type": "array",
             "items": {
@@ -4698,10 +4709,32 @@
           "startedAt",
           "endedAt",
           "distanceM",
+          "centroid",
           "points"
         ],
         "additionalProperties": false,
         "description": "A drawable piece of a device's track."
+      },
+      "Coordinate": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "description": "Latitude in degrees (WGS84).",
+            "example": 51.0362
+          },
+          "lon": {
+            "type": "number",
+            "description": "Longitude in degrees (WGS84).",
+            "example": 3.7104
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "additionalProperties": false,
+        "description": "A position in WGS84 degrees."
       },
       "LevelPoint": {
         "type": "array",
@@ -4903,6 +4936,19 @@
           "centroid": {
             "description": "The middle of its points: a stop's place.",
             "$ref": "#/components/schemas/Coordinate"
+          },
+          "spreadM": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a stop: how far apart its points lie, in metres — the walk within a station, say. Null for a move, and for a stop worked out before Trail kept it.",
+            "example": 120
           }
         },
         "required": [
@@ -4923,31 +4969,11 @@
           "pointCount",
           "start",
           "end",
-          "centroid"
+          "centroid",
+          "spreadM"
         ],
         "additionalProperties": false,
-        "description": "A stop or a move. Stops and moves follow each other without overlap; a gap in the recording leaves a gap between them."
-      },
-      "Coordinate": {
-        "type": "object",
-        "properties": {
-          "lat": {
-            "type": "number",
-            "description": "Latitude in degrees (WGS84).",
-            "example": 51.0362
-          },
-          "lon": {
-            "type": "number",
-            "description": "Longitude in degrees (WGS84).",
-            "example": 3.7104
-          }
-        },
-        "required": [
-          "lat",
-          "lon"
-        ],
-        "additionalProperties": false,
-        "description": "A position in WGS84 degrees."
+        "description": "A stop or a move. Stops and moves follow each other without overlap. A recording gap the phone lay still through is a stop; a gap with travel leaves a gap between them."
       },
       "DeviceMode": {
         "type": "object",

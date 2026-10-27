@@ -167,11 +167,16 @@ export const segmentSchema = z
     start: coordinateSchema.meta({ description: "Where the segment starts." }),
     end: coordinateSchema.meta({ description: "Where the segment ends." }),
     centroid: coordinateSchema.meta({ description: "The middle of its points: a stop's place." }),
+    spreadM: z.number().nonnegative().nullable().meta({
+      description:
+        "For a stop: how far apart its points lie, in metres — the walk within a station, say. Null for a move, and for a stop worked out before Trail kept it.",
+      example: 120,
+    }),
   })
   .meta({
     id: "Segment",
     description:
-      "A stop or a move. Stops and moves follow each other without overlap; a gap in the recording leaves a gap between them.",
+      "A stop or a move. Stops and moves follow each other without overlap. A recording gap the phone lay still through is a stop; a gap with travel leaves a gap between them.",
   });
 export type Segment = z.infer<typeof segmentSchema>;
 
@@ -272,6 +277,10 @@ export const levelTrackSegmentSchema = z
       .number()
       .nonnegative()
       .meta({ description: "Distance in metres.", example: 31_240 }),
+    centroid: coordinateSchema.nullable().meta({
+      description:
+        "For a stop: its place, the middle of its points (`points` are where the device went within it). Null for moves and pieces of track.",
+    }),
     points: z.array(levelPointSchema),
   })
   .meta({ id: "TrackSegment", description: "A drawable piece of a device's track." });

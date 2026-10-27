@@ -179,6 +179,7 @@ const trackPiece = (deviceId: string, served: Served[]): Piece => ({
     startedAt: new Date((served[0]?.t ?? 0) * 1000).toISOString(),
     endedAt: new Date((served.at(-1)?.t ?? 0) * 1000).toISOString(),
     distanceM: null,
+    centroid: null,
   },
   served,
 });
@@ -199,7 +200,11 @@ function splitAtGaps(deviceId: string, served: Served[]): Piece[] {
   return pieces;
 }
 
-/** Stops and moves with their points; points outside every segment become pieces of track. */
+/**
+ * Stops and moves with their points — a stop's too, so the map can draw where
+ * the device went within it — and points outside every segment as pieces of
+ * track. Consecutive segments share their boundary point.
+ */
 function piecesOfSegments(
   deviceId: string,
   served: Served[],
@@ -250,6 +255,7 @@ function piecesOfSegments(
         startedAt: segment.startedAt,
         endedAt: segment.endedAt,
         distanceM: segment.distanceM,
+        centroid: segment.kind === "stop" ? segment.centroid : null,
       },
       served: inside,
     });

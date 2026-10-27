@@ -24,13 +24,16 @@ export interface SegmentRow extends Record<string, unknown> {
   end_lon: number;
   centroid_lat: number;
   centroid_lon: number;
+  /** A stop's `features.spreadM`; null for moves and stops from before it was kept. */
+  spread_m: number | null;
 }
 
 /** The columns of `SegmentRow`, for `SELECT ${segmentColumns} FROM segments s`. */
 export const segmentColumns = sql.raw(`
   s.id, s.device_id, s.kind, s.started_at::text, s.ended_at::text, s.duration_s, s.distance_m,
   s.mode, s.mode_inferred, s.mode_user, s.confidence, s.review, s.max_speed, s.point_count,
-  s.start_lat, s.start_lon, s.end_lat, s.end_lon, s.centroid_lat, s.centroid_lon
+  s.start_lat, s.start_lon, s.end_lat, s.end_lon, s.centroid_lat, s.centroid_lon,
+  (s.features->>'spreadM')::float8 AS spread_m
 `);
 
 const round = (value: number, digits: number): number => {
@@ -64,5 +67,6 @@ export function toSegment(row: SegmentRow): Segment {
     start: { lat: row.start_lat, lon: row.start_lon },
     end: { lat: row.end_lat, lon: row.end_lon },
     centroid: { lat: row.centroid_lat, lon: row.centroid_lon },
+    spreadM: move || row.spread_m === null ? null : Math.round(row.spread_m),
   };
 }
