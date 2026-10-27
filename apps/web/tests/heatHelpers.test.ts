@@ -43,6 +43,16 @@ describe("heatScale", () => {
     expect(heatScale(counts).starts).toEqual([157, 300, 1_000, 3_000, 10_000, 30_000]);
   });
 
+  it("keeps the busiest of a small view apart from the rest", () => {
+    // Fewer than 34 cells: the top class is the busiest cell's alone.
+    const two = heatScale([1, 1_000_000]);
+    expect(two.starts).toEqual([1, 100, 10_000, 1_000_000]);
+    expect([1, 1_000_000].map((count) => heatShadeOf(heatClassOf(two, count), 4))).toEqual([1, 6]);
+    const three = heatScale([3, 3, 900]);
+    expect(three.starts).toEqual([3, 10, 30, 100, 300]);
+    expect(heatClassOf(three, 900)).toBe(4);
+  });
+
   it("keeps its round numbers while the counts in view change a little", () => {
     const before = spread([1, 30], [40, 30], [310, 10]);
     const after = spread([2, 25], [35, 33], [450, 12]);

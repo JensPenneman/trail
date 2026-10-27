@@ -21,11 +21,11 @@ const heatShades = 6;
 const maxClasses = heatShades;
 
 /**
- * Where the scale ends: the busiest few per cent of the cells share the top
- * class, so that one place (home) does not stretch the scale until the rest
- * looks alike.
+ * Where the scale ends: the busiest 3 % of the cells share the top class (in a
+ * view of fewer than 34 cells, the busiest alone), so that one place (home)
+ * does not stretch the scale until the rest looks alike.
  */
-const topQuantile = 0.97;
+const topShare = 0.03;
 
 interface RoundSeries {
   /** The round numbers of a decade: 1, 2 and 5 make 1 2 5 10 20 50 100 … */
@@ -68,7 +68,7 @@ export function heatScale(counts: readonly number[]): HeatScale {
     .sort((a, b) => a - b);
   const lowest = sorted[0];
   if (lowest === undefined) return { starts: [] };
-  const top = sorted[Math.floor((sorted.length - 1) * topQuantile)] ?? lowest;
+  const top = sorted[sorted.length - 1 - Math.floor(sorted.length * topShare)] ?? lowest;
   const wanted = maxClasses - 1;
   let starts: number[] = [];
   for (const series of roundSeries) {
