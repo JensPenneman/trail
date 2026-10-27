@@ -185,7 +185,8 @@ Snake_case columns, `timestamptz` everywhere, ids `uuid DEFAULT uuidv7()`.
 `display_name` (text, default = local part of the email), `webauthn_user_id`
 (bytea, 32 random bytes, unique — the WebAuthn user handle, never the uuid),
 `is_admin` (bool; the first account ever created is admin), `timezone` (text),
-`created_at`, `updated_at`.
+`preferences` (jsonb, default `{}`, checked to be an object: only the
+preferences the person set, see §8), `created_at`, `updated_at`.
 
 **passkeys** — `id` (text PK = credential ID base64url), `user_id` → users
 (cascade), `rp_id` (text), `public_key` (bytea), `counter` (bigint),
@@ -535,7 +536,7 @@ public, versioned one is `/api/v1` (§8.3).
 | `POST /api/auth/logout` | cookie | 204 |
 | `GET /api/auth/link/:token` | — | `linkInfoResponse` (404 `link_invalid` when unknown/used/expired) |
 | `POST /api/auth/link/:token/start` | — | `linkStartResponse` |
-| `GET/PATCH/DELETE /api/me` | cookie | `sessionResponse` / `updateMeRequest` / `deleteAccountRequest` |
+| `GET/PATCH/DELETE /api/me` | cookie | `sessionResponse` / `updateMeRequest` (name, time zone, preferences) / `deleteAccountRequest` |
 | `GET /api/me/passkeys` | cookie | `passkeyListResponse` |
 | `POST /api/me/passkeys/options`, `POST /api/me/passkeys` | cookie | `addPasskeyOptionsResponse`, `addPasskeyRequest/Response` |
 | `PATCH/DELETE /api/me/passkeys/:id` | cookie | `renamePasskeyRequest`; delete refuses the last passkey (`409 last_passkey`) |
@@ -574,6 +575,20 @@ sessions. Invalid input → `400 validation_failed` with `fields`; malformed JSO
 payload_too_large`; database down → `503 unavailable`; unknown `/api` route →
 JSON `404 not_found`. Stack traces are logged, never sent.
 
+- **Preferences** (`preferences.ts`): defaults an account takes to every
+  browser — `mapStyle` (`auto|light|dark|satellite`), `level`
+  (`raw|averaged|mapped|inferred`) and `showOwnActivity` (whether the access
+  log lists the account's own activity too). `PATCH /api/me { preferences }`
+  changes the ones it names and leaves the others: the statement merges them
+  into the stored object (`preferences || $patch`), so two changes at once
+  keep each other's. A name it does not know, or a value outside a
+  preference's choices, is `400 validation_failed` and nothing is stored, so
+  the column only ever holds these. The column keeps only what was set;
+  `SessionUser.preferences` (the session, `GET/PATCH /api/me`, the sign-in
+  answers) has every one filled in — a preference never set, or holding a
+  value this version does not know (a later release's), reads as its default
+  (`auto`, `inferred`, `false`). They are the owner's only: the v1 profile,
+  MCP, shares, links and the administrators' account list do not carry them.
 - **Visits** returned are those recorded, arrived or departed inside the
   range, or spanning it; iOS reports a visit on arrival and again on
   departure, and the two reports are merged (the one knowing the departure
@@ -1448,7 +1463,9 @@ fallbacks), system font stack, no web fonts, no third-party scripts, CSP-clean.
 Navigation (`PrimaryNav`, one landmark): **People · Devices · Settings**,
 in the header on wide screens and as a tab bar along the bottom edge on
 phones (the same element, restyled); the current item carries
-`aria-current="page"` on every address below it.
+`aria-current="page"` on every address below it. Settings leads to
+`/settings`: the list of Settings on phones, its first page beside the list
+on wide screens.
 
 | Route | Page |
 |---|---|
@@ -1456,15 +1473,17 @@ phones (the same element, restyled); the current item carries
 | `/s` | a public link; its secret is the fragment, `/s#trls_…` (public) |
 | `/` | **People**, the home page: the map with Live, History and Heat, and the people list (signed in) |
 | `/devices`, `/devices/:id` | Devices, one device |
-| `/settings/profile`, `…/passkeys`, `…/tokens`, `…/sharing`, `…/people`, `…/data`, `…/about` | Settings, a section each; `…/people` (Accounts) for administrators only, Profile for everyone else |
-| `/settings` | opens Profile; an anchor of the single page of old (`/settings#tokens`, `#browsers`, …) opens its section (`settingsPathFor`) |
+| `/settings` | Settings: on phones the list with search; on wide screens the first page (Profile) beside the list. An anchor of the single page of 0.2 (`/settings#tokens`, `#browsers`, …) opens its page (`settingsPathFor`) |
+| `/settings/profile`, `…/passkeys`, `…/browsers`, `…/sharing`, `…/links`, `…/privacy/viewers`, `…/privacy/access-log`, `…/data`, `…/tokens`, `…/mcp`, `…/preferences`, `…/notifications`, `…/about`, `…/accounts` | a page of Settings each; `…/accounts` for administrators only, everyone else lands on `/settings` |
+| `/settings/passkeys/:id`, `…/sharing/:shareId`, `…/links/:id`, `…/tokens/:id` | the page of one passkey, share, public link or API token |
+| `/settings/people` | Accounts' address of 0.3: redirects (replacing the entry) to `/settings/accounts` |
 | `/history?…`, `/explore?…` | redirect (replacing the entry) to `/?view=history&…` and `/?view=heat&…`, every parameter kept (`legacyMapPath`) |
 | `/people?…` | redirect (replacing the entry) to `/?…`, every parameter kept (`legacyPeoplePath`): People had an address of its own before it took in the map |
 | anything else | 404 |
 
-`isSignedInPath` lists the signed-in paths (it decides whether the session is
-fetched at startup); the redirects count among them, since they lead to the
-People page.
+`isSignedInPath` lists the signed-in paths, those of Settings taken from its
+tree (it decides whether the session is fetched at startup); the redirects
+count among them, since they lead to signed-in pages.
 
 - **People** (`pages/people/PeoplePage`, the home page) — one map and three
   **views** of it, chosen with a switch in the head (Live · History · Heat),
@@ -1520,9 +1539,12 @@ People page.
   devices in their colour from `personPalette`), the **map style** (Auto,
   which follows the system's light or dark setting, Light, Dark, and
   Satellite when the server has imagery; remembered in localStorage
-  `trail.mapStyle`, a dark or satellite map drawing Trail's lines and dots
-  in their dark-background steps whatever the page's scheme), and the
-  tracks' **level** with the mode legend (Live and History, with Me). On
+  `trail.mapStyle`, else the account's preference, a dark or satellite map
+  drawing Trail's lines and dots in their dark-background steps whatever the
+  page's scheme), and the tracks' **level** with the mode legend (Live and
+  History, with Me). The style and the level resolve in the same order: the
+  address (`?style=`, `?level=`) › the choice last made on this browser › the
+  account's preference (Settings › Preferences) › Auto and Transport. On
   phones and small tablets they fold into one "Map options" button with a
   one-line summary, so the map stays near the top; beside a full-height map
   (≥ 64rem) the panel scrolls by itself under a sticky title and view switch.
@@ -1562,24 +1584,90 @@ People page.
   by the share's id and history, so a share that changes (a `share` event
   refetches the people) is never asked for what it allowed before, and they
   are not cached once off screen (`gcTime` 0); `person` events refetch them.
-- **Settings** — one header, a navigation of the sections (current one
-  marked) and the section; moving between sections moves focus to the
-  section's heading. Profile (name, time zone); passkeys (list with provider,
-  add, rename, delete), "add a passkey on another device or address" (link +
-  QR) and the signed-in browsers (revoke); API tokens (list with hint, scope chips, devices,
-  addresses, expiry, last use and status; create with a name, a template —
-  Read-only, Agent, Full access — that fills in the scope checkboxes, all or
-  some devices, an expiry of 30 or 90 days, a year, a date or never (with a
-  warning) and an optional address allowlist; the secret shown once with a
-  copy button, the dialog closing only with "I have saved it"; roll and revoke
-  after a confirmation; a link to `/docs`), sharing (make public links — the
-  address once, with a QR code —, their views and Turn off; the outgoing
-  shares, `OutgoingShareList`: status, devices, precision, history, details,
-  expiry and the last look, with Change and Stop, and "<name> (<address>)
-  joined Trail — confirm?" with Confirm and Cancel), accounts
-  (`/settings/people`, admins: invites, users), data (export GeoJSON/GPX/CSV,
-  delete a range, delete account), about (version, commit, build time, and
-  Sign out — the place for it on phones).
+- **Devices** — list; "Add device" flow: name → big QR of `setupUrl` ("scan
+  with the iPhone camera, Overland opens with everything filled in"), "Open in
+  Overland" button (on the phone itself), manual values with copy buttons,
+  recommended Overland settings, then "Waiting for the first upload…" that
+  turns into a success state via SSE. Device page: status, ingest log, raw
+  points (paginated), remote settings preset, rotate token (re-shows the QR),
+  rename, alerts toggle, delete (type the name to confirm).
+- **Settings** — a tree of pages in the style of the iPhone's Settings app
+  (`apps/web/src/settings/`). The tree is data (`settingsTree.ts`): the
+  groups Account · Privacy & data · Developer · App · Admin, and each row's
+  id, path, label, icon and tile colour, keywords for search, `adminOnly`,
+  the parts of its page that search lists on their own (with their heading's
+  id) and the pages of its items (`/settings/tokens/:tokenId`). The routes
+  (`settingsRoutes.tsx`, a chunk per page), `isSignedInPath`, the old anchors
+  (`settingsPathFor`, own keys only) and the search index are built from it.
+  `useSettingsTree` adds what the person sees: the administrators' group for
+  administrators only, and the value on the right of a row from the lists
+  the pages load anyway (one cache) — the display name; the number of
+  passkeys, browsers, people shared with, working links ("3 active") and
+  active tokens; whether alerts are on; the version.
+
+  The frame (`SettingsShell`): on phones (below 64rem) the list — the search
+  field, then the groups as inset cards of rows — is the page at `/settings`,
+  and every other page has the screen to itself under a bar with the way back
+  and the page's title, which starts large and moves into the bar once it
+  scrolls under it; going deeper slides the new page in from the right,
+  coming back from the left, with no motion under `prefers-reduced-motion`.
+  On wide screens the list stands beside the page (as in the Mac's System
+  Settings), marks the row of the page on screen (`aria-current`), scrolls by
+  itself and keeps its search while pages change; `/settings` opens the first
+  page there. The components: `SettingsGroup` (a titled card of rows, of
+  label/value facts or of a form, with small print below; a list is named by
+  its title), `SettingsRow` (an icon tile, the label, a second line and the
+  value, then a chevron — or a switch, a choice, an action, an arrow for a
+  page outside the app; a row's link is named by its label and described by
+  the rest), `SettingsPage` (a region named by its h1, the bar, the title and
+  description) and `SettingsSearch`. Every page has the document title
+  "<page> · Settings" ("<item> · <page> · Settings" one level deeper) and
+  takes focus when it opens; coming back up, focus returns to the row of the
+  page that was left, and an address with `#part` focuses that part's
+  heading. The way back goes back in the history when the page was opened
+  from the one above it (a row puts its address in the location's state),
+  so Back and Forward keep making sense; opened from a bookmark it goes to
+  the page above. Search folds case, accents and punctuation, finds rows by
+  label and keywords (every word of the query, anywhere; the best label
+  matches first) and shows each with where it is ("Privacy & data › Your
+  data"); Enter opens the first.
+
+  The pages: **Profile** (name, time zone); **Passkeys** (the list, adding
+  one here, a one-time link with a QR code for another device or address)
+  and a passkey's page (where it is kept, synced or not, its address, added,
+  last used; rename, delete — never the last); **Browsers** (the signed-in
+  browsers; sign out one, or all but this one); **Sharing** (the people you
+  share with, Share my location) and a share's page (devices, precision,
+  history, details, end, last look; change it, confirm someone who signed up
+  with its address, stop); **Public links** (the list; making one in a
+  dialog) and a link's page (what it shows, until when, its views; turn it
+  off after a confirmation, or remove an ended one) — right after a link is
+  made its page shows the address and its QR code, once: the secret exists
+  only in the answer to making it (the server keeps a hash), and the page
+  holds it in memory, never in the history's state, until it is left;
+  **Who viewed you** and **Access log** (pages saying what they will show
+  once the access log's pages arrive, and pointing to what Sharing, Public
+  links and API tokens tell already); **Your data** (export, delete a
+  period, delete the account); **API tokens** (the list, creating one) and a
+  token's page (status, hint, template, devices, addresses, lifetime, last
+  use, its scopes with what each allows; roll, revoke); **MCP** (the steps of
+  docs/mcp.md — a token from the Agent template, whose form a button opens,
+  the server address, the header, a client configuration — and the guide);
+  **API reference** (`/docs`, outside the app); **Preferences**;
+  **Notifications** (whether the server sends alerts through ntfy, and a
+  switch per device); **About** (version, commit, build time, receiver
+  endpoint, and Sign out — the place for it on phones); **Accounts**
+  (administrators: invite someone, invitations, the accounts on the server).
+  An item that does not exist gets a page that says so.
+
+  **Preferences** (§8): the map style (Auto · Light · Dark, and Satellite
+  where the server has imagery), the level of the tracks, and whether the
+  access log lists your own activity. A change is saved at once (a choice, a
+  switch), announced, and shown before the answer arrives (the session in
+  the cache, put back if the save fails); changes go out one after another.
+  Saving the map style or the level forgets this browser's own choice of it,
+  so the browser follows the account again. A public link's page has no
+  session and uses the built-in defaults.
 - **Public link** (`/s#<secret>`) — no session, no navigation: the label, a map
   of the shared devices (with the route for history links), how fresh each
   position is, details when included, the expiry, a refresh every 15 s, and a
@@ -1719,8 +1807,12 @@ which are merged by hand; majors wait for a person, security ones too.
   selection of a card (`selectionShowing`, `everyoneToggled`), the line about
   one's own sharing (`sharingSummary`), the old addresses (`legacyMapPath`,
   `legacyPeoplePath`, and the redirects through the app's own route table),
-  Settings' anchors (`settingsPathFor`) and `isSignedInPath` have unit tests
-  of their own.
+  Settings' tree (groups, paths, levels, administrators' rows), its search
+  index and row values, the old anchors (`settingsPathFor`),
+  `isSignedInPath` and the precedence of the map's defaults have unit tests
+  of their own; Settings itself renders through its real routes
+  (`renderSettings`, phone or wide screen) for the list, search, going
+  deeper and back with focus, and every page.
 - `tests/e2e` — Playwright against the built stack. `playwright.config.ts`
   starts `scripts/e2e-server.mjs`: it empties the `trail_e2e` database
   (`E2E_DATABASE_URL`; any database not named `trail…e2e` is refused) and runs
@@ -1757,10 +1849,14 @@ which are merged by hand; majors wait for a person, security ones too.
   for; someone who shares their history shows their track, until their share
   changes; Me again brings everything back; Show everyone; a card kept live
   by an upload; sharing back and stopping from a card; a deep link to
-  someone alone), Settings' sections and old anchors, the navigation (a tab
-  bar on phones, the current item, focus on the new page's heading, `/people`
-  leading home with its parameters), axe (WCAG 2.0 A–AAA, 2.1/2.2 AA, best
-  practices) on every view and section, keyboard use and 320 px screens. The suite's server
+  someone alone), Settings (the list with its values and search, on phones a
+  page of its own and beside the page on wide screens, every page and the
+  page of each kind of item, going deeper and back by address and through
+  the history, the old anchors and addresses, the preferences the map opens
+  with, the administrators' page), the navigation (a tab bar on phones, the
+  current item, focus on the new page's heading, `/people` leading home with
+  its parameters), axe (WCAG 2.0 A–AAA, 2.1/2.2 AA, best practices) on every
+  view and page, keyboard use and 320 px screens. The suite's server
   has no map data (`PROCESSING_OVERPASS_URL` empty), so the mapped level
   degrades to averaged there.
 
@@ -2060,8 +2156,8 @@ raw-only, and `/stats/days` is not extended.
 
 The dashboard calls these with its session (`apps/web/src/transport/`):
 History and Live get the level `SegmentedControl` (Raw · Averaged · Mapped ·
-Transport; `?level=` in the URL and remembered in `localStorage`, Transport
-by default) with a word on what is missing; at Transport the map draws stops
+Transport; `?level=` in the URL and remembered in `localStorage`, else the
+account's preference, Transport by default) with a word on what is missing; at Transport the map draws stops
 and moves in the mode colours (`--mode-*` tokens, apart from the device
 colours, every mark ≥ 3:1) with a dashed outline for moves to review and a
 legend. A click on a segment — or "Details" in the day's timeline list next

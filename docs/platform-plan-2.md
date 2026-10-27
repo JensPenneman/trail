@@ -118,6 +118,10 @@ bar has four items; desktop shows the same four in the header.
 
 ## 2. Settings in the style of the iPhone
 
+**Done** (`feat/settings-shell`): `docs/architecture.md` §14 (and §8 for the
+preferences) is the specification now; §2.7 lists what the pull request
+settled.
+
 ### 2.1 Shape
 
 - **Root** (`/settings`): a search field, then grouped lists of rows. A row
@@ -186,6 +190,46 @@ deep links, back navigation, search, the switch rows, 320 px.
 
 `/settings/people` → `/settings/accounts`; old anchors keep mapping; the
 section ids of 0.3.0 keep their paths where the table above keeps them.
+
+### 2.7 Settled in the pull request
+
+1. **`/settings`** is the list on phones and opens the first page (Profile)
+   beside the list from 64rem; the Settings tab leads there. An anchor of
+   0.2's single page opens its page (`#browsers` → Browsers, `#link` →
+   Passkeys › `#passkey-link`); one for administrators only, or none, shows
+   `/settings` itself. Non-administrators who open Accounts land on
+   `/settings`.
+2. **The tree is data without requests**: the start-up code reads it for
+   `isSignedInPath`. A row's badge names its value (`badge: "tokens"`), and
+   `useSettingsTree` makes the values from the lists the pages load anyway
+   (one cache). Values: the display name, passkeys, browsers, people shared
+   with, working links ("3 active"), active tokens, alerts On/Off, the
+   version; Accounts has none (it would load the administrators' account
+   list on every visit).
+3. **Back** goes back in the history when the page was opened from the one
+   above it (the row puts its address in the location's state), otherwise to
+   the page above; coming back, focus returns to the row of the page that was
+   left. Search results lead to the heading of their part (`#export`), which
+   takes focus. After deleting a passkey, stopping a share or turning off a
+   link, the page goes back to its list the same way.
+4. **A public link's QR code** is on its page right after it is made, once:
+   the secret exists only in the answer to making it and is held in memory
+   (not in the history's state) until the page is left. Later visits say why
+   it cannot be shown again. Turning a link off asks first.
+5. **Who viewed you and Access log** are pages with an informative empty
+   state that point to what Sharing, Public links and API tokens show today.
+   `/settings/privacy/viewers/:actor` comes with wave 2, with the actor key of
+   the access-log API.
+6. **Preferences** store only what was set (`{}` for everyone else), read
+   with defaults (a value a later release wrote reads as the default); the
+   merge happens in the statement; unknown names are refused. Saving the map
+   style or level forgets this browser's own choice of it, so the browser
+   follows the account again; Satellite is offered only where the server has
+   imagery. `showOwnActivity` is stored now for the access log of wave 2.
+7. **Not in this round**: renaming a token or changing its scopes on its page
+   (the API has `PATCH /api/me/tokens/:id`; the page shows them), and the
+   usage of tokens, the views per day of links and what a person looked at
+   (wave 2, §3.6).
 
 ---
 
