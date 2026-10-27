@@ -82,9 +82,18 @@ export interface OverrideSpan {
 /** A stop or move over a range of the window's kept points (indices into the kept list). */
 export interface Span {
   kind: "stop" | "move";
-  /** First and last kept point (inclusive). A move shares its end points with the stops beside it. */
+  /**
+   * First and last kept point (inclusive). A move shares its end points with
+   * the stops beside it, unless the stop lasted beyond its last point.
+   */
   first: number;
   last: number;
+  /**
+   * A stop's last point of its own when `last` is a later one: the point the
+   * phone resumed or woke up at, which no move starts at, so the stop takes
+   * it — it only says when the phone had left.
+   */
+  ownLast?: number;
   startT: number;
   endT: number;
 }
@@ -180,7 +189,9 @@ export interface InferredSegment {
   maxSpeedMs: number | null;
   /**
    * `segments.features`: of a move what the mode was judged on, the scores and
-   * the override that applies; of a stop how far apart its points lie (`spreadM`).
+   * the override that applies; of a stop how far apart its points lie
+   * (`spreadM`) and when its last point of its own was recorded
+   * (`lastPointT`, epoch seconds: a stop can last until after it).
    */
   features: Record<string, unknown>;
 }

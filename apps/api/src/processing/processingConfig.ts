@@ -5,8 +5,10 @@
  * be evaluated against stored segments (and the corrections people made)
  * before it ships. A change bumps the version of its level and of every level
  * above it (`processingVersions`): `averaging` belongs to the averaged level,
- * `stops` and `mapping` to the mapped level (stops are found before map
- * matching), the rest to the inferred level.
+ * `mapping` to the mapped level, `stops` and the rest to the inferred level —
+ * stops are found before map matching, but a window worked out again from the
+ * inferred level matches afresh every move with a point of a former stop, so
+ * a change to them needs the inferred level alone.
  */
 export interface ProcessingConfig {
   readonly averaging: {

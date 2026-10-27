@@ -8,6 +8,8 @@ interface DraftStop {
   kind: "stop";
   first: number;
   last: number;
+  /** Its last point of its own (`Span.ownLast`): `last`, or the point before it. */
+  ownLast: number;
   startT: number;
   endT: number;
 }

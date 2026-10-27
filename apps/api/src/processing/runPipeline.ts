@@ -273,6 +273,7 @@ export function inferWindow(
         kind: "stop",
         first: span.first,
         last: span.last,
+        ownLast: span.ownLast ?? span.last,
         startT: span.startT,
         endT: span.endT,
       });
@@ -398,8 +399,12 @@ function toSegment(
       confidence: null,
       averageSpeedMs: null,
       maxSpeedMs: null,
-      // How far apart its points lie: the walk within a station (the segment dialog says so).
-      features: { spreadM: Math.round(spreadOf(kept, draft.first, draft.last)) },
+      features: {
+        // How far apart its points lie, the walk within a station (the segment dialog says so) …
+        spreadM: Math.round(spreadOf(kept, draft.first, draft.ownLast)),
+        // … and when the last of its own was recorded: it lasts until the phone left.
+        lastPointT: kept[draft.ownLast]?.t ?? draft.endT,
+      },
     };
   }
   return moveSegment(draft, kept, pointCount, config);

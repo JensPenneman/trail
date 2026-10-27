@@ -116,19 +116,31 @@ function reachOf(box: Box, centre: { lat: number; lon: number }): number {
   return reach;
 }
 
+/** Faster than this, a point at the edge of a stay is arriving or leaving (m/s). */
+const stillSpeedMs = 0.5;
+
+const moving = (points: readonly KeptPoint[], index: number): boolean =>
+  (points[index]?.speed ?? 0) > stillSpeedMs;
+
 /**
- * How far apart the points `first..last` lie, in metres: the distance between
- * the point farthest from their centroid and the point farthest from that one
- * (the walk within a station, GPS wandering indoors). Deterministic, and never
- * more than the largest distance between two of them.
+ * How far apart a stop's points `first..last` lie, in metres: the distance
+ * between the point farthest from their centroid and the point farthest from
+ * that one (the walk within a station, GPS wandering indoors). Only the points
+ * the phone was still at count — not a fix jumping off for a moment, nor one
+ * it was already riding at — unless it was still at none. Deterministic, and
+ * never more than the largest distance between two of them.
  */
 export function spreadOf(points: readonly KeptPoint[], first: number, last: number): number {
+  const still: KeptPoint[] = [];
+  for (let index = first; index <= last; index += 1) {
+    const point = points[index];
+    if (point !== undefined && !moving(points, index)) still.push(point);
+  }
+  const counted = still.length > 0 ? still : points.slice(first, last + 1);
   const farthestFrom = (origin: { lat: number; lon: number }) => {
     let best: KeptPoint | null = null;
     let distance = -1;
-    for (let index = first; index <= last; index += 1) {
-      const point = points[index];
-      if (point === undefined) continue;
+    for (const point of counted) {
       const here = haversineM(origin, point);
       if (here > distance) {
         best = point;
@@ -137,15 +149,9 @@ export function spreadOf(points: readonly KeptPoint[], first: number, last: numb
     }
     return { best, distance };
   };
-  const { best } = farthestFrom(centroidOf(points, first, last));
+  const { best } = farthestFrom(centroidOf(counted, 0, counted.length - 1));
   return best === null ? 0 : Math.max(0, farthestFrom(best).distance);
 }
-
-/** Faster than this, a point at the edge of a stay is arriving or leaving (m/s). */
-const stillSpeedMs = 0.5;
-
-const moving = (points: readonly KeptPoint[], index: number): boolean =>
-  (points[index]?.speed ?? 0) > stillSpeedMs;
 
 /** Arriving and leaving are not part of the stay: the range without the moving points at its ends. */
 function withoutMovingEnds(points: readonly KeptPoint[], range: StopRange): StopRange {
@@ -334,8 +340,12 @@ function visitStay(
  * (within max(`visitRadiusM`, its accuracy), at most `pauseRadiusM`, so GPS
  * drifting indoors stays one stay) from its arrival on, for as long as the
  * phone stays. An excursion away from the place does not end the stay when
- * it is short — back within `mergeMoveMaxS`, never farther than
- * `pauseRadiusM` — and neither does a recording pause the phone spent there.
+ * it is short — away for at most `mergeMoveMaxS` from its first point to its
+ * last, never `travelMinS` on end farther than `pauseRadiusM` (a fix 350 m
+ * off now and then is no departure), and without a recording gap longer than
+ * `mergeMoveMaxS` that could hide where the phone went — and neither does a
+ * recording pause the phone spent there. With a point every five minutes, one
+ * fix off between two at the place is such an excursion too.
  * A visit whose departure is known gives a stay for every time the phone was
  * there before it, the last one lasting until the departure when nothing was
  * recorded in between; one whose departure is not known (still open, or never
@@ -357,9 +367,13 @@ function visitStops(
       config.pauseRadiusM,
       Math.max(config.visitRadiusM, visit.accuracy ?? 0),
     );
-    // The stay in progress: its first point and its last point near the place.
+    // The stay in progress: its first point and its last point near the place …
     let first = -1;
     let last = -1;
+    // … and the excursion in progress: its first point away, and where its run beyond
+    // `pauseRadiusM` began (-1: none).
+    let away = -1;
+    let far = -1;
     const close = () => {
       if (first >= 0) {
         const stay = visitStay(points, visit, radius, { first, last }, config);
@@ -381,13 +395,15 @@ function visitStops(
       }
       first = -1;
       last = -1;
+      away = -1;
+      far = -1;
     };
     for (let index = firstAtOrAfter(points, visit.arrivedAt); index < points.length; index += 1) {
       const point = points[index];
       if (point === undefined || point.t > until) break;
-      const near = haversineM(visit, point) <= radius;
-      const lastNear = points[last];
-      if (first < 0 || lastNear === undefined) {
+      const distance = haversineM(visit, point);
+      const near = distance <= radius;
+      if (first < 0) {
         if (near) {
           first = index;
           last = index;
@@ -397,19 +413,27 @@ function visitStops(
         }
         continue;
       }
-      const away = point.t - lastNear.t;
+      // Nothing recorded for longer than an excursion may last: where the phone went is unknown.
+      const unseen = point.t - (points[index - 1]?.t ?? point.t) > config.mergeMoveMaxS;
       if (near) {
-        // Back from an excursion that took too long: the stay ended before it.
-        if (index > last + 1 && away > config.mergeMoveMaxS) {
+        // Back from an excursion that a recording gap hid: the stay ended before it.
+        if (away >= 0 && unseen) {
           close();
           if (open) break;
           first = index;
         }
         last = index;
+        away = -1;
+        far = -1;
         continue;
       }
-      // An excursion, or the phone left.
-      if (away > config.mergeMoveMaxS || haversineM(visit, point) > config.pauseRadiusM) {
+      if (away < 0) away = index;
+      if (distance <= config.pauseRadiusM) far = -1;
+      else if (far < 0) far = index;
+      const awayS = point.t - (points[away]?.t ?? point.t);
+      const farS = far < 0 ? 0 : point.t - (points[far]?.t ?? point.t);
+      if (unseen || awayS > config.mergeMoveMaxS || farS >= config.travelMinS) {
+        // The phone left.
         close();
         if (open) break;
       }
@@ -419,7 +443,11 @@ function visitStops(
   return stops;
 }
 
-/** CoreMotion said stationary, and nothing else, for long enough (indoors, where GPS drifts). */
+/**
+ * CoreMotion said stationary, and nothing else, for long enough (indoors,
+ * where GPS drifts) — at one place: a recording pause after which the phone
+ * is farther than `pauseRadiusM` away ends it (it was carried there).
+ */
 function motionStops(points: readonly KeptPoint[], config: StopsConfig): StopRange[] {
   const stops: StopRange[] = [];
   let start = -1;
@@ -440,6 +468,15 @@ function motionStops(points: readonly KeptPoint[], config: StopsConfig): StopRan
     start = -1;
   };
   for (const [index, point] of points.entries()) {
+    const before = points[index - 1];
+    if (
+      start >= 0 &&
+      before !== undefined &&
+      point.t - before.t >= config.pauseGapS &&
+      haversineM(before, point) > config.pauseRadiusM
+    ) {
+      close(index - 1);
+    }
     if (motionActivity(point.motion) === "stationary") {
       if (start < 0) start = index;
     } else if (start >= 0) {
@@ -452,8 +489,10 @@ function motionStops(points: readonly KeptPoint[], config: StopsConfig): StopRan
 
 /**
  * Recording gaps the phone lay still through: longer than `gapSplitS`, with
- * their two ends within `pauseRadiusM` of each other. Each is a stop of those
- * two points, so the time is covered; a gap with travel belongs to no segment.
+ * their two ends within `pauseRadiusM` of each other. Each is a stop of the
+ * point before it that lasts until the point after it, so the time is
+ * covered; that point is where the phone woke up — 150 m on and riding, it
+ * starts the move. A gap with travel belongs to no segment.
  */
 function gapStops(points: readonly KeptPoint[], config: StopsConfig): StopRange[] {
   const stops: StopRange[] = [];
@@ -462,7 +501,7 @@ function gapStops(points: readonly KeptPoint[], config: StopsConfig): StopRange[
     const after = points[index];
     if (before === undefined || after === undefined) continue;
     if (after.t - before.t > config.gapSplitS && haversineM(before, after) <= config.pauseRadiusM) {
-      stops.push({ first: index - 1, last: index });
+      stops.push({ first: index - 1, last: index - 1, untilT: after.t });
     }
   }
   return stops;
@@ -553,6 +592,8 @@ function walkedBetween(
 ): boolean {
   if (to - from < 2) return false;
   if (walksIn(points, paces, from + 1, to - 1, config).length > 0) return true;
+  // Too short for a walk, whatever CoreMotion said (one "walking" reading as the fix jumps).
+  if ((points[to]?.t ?? 0) - (points[from]?.t ?? 0) < config.walkMinS) return false;
   for (let index = from + 1; index < to; index += 1) {
     const point = points[index];
     if (point !== undefined && !onFoot(point)) return false;
@@ -563,7 +604,9 @@ function walkedBetween(
 /**
  * Whether two neighbouring stops are one stay: the same place on both sides of
  * a recording pause, or two stops close together with only a short wander
- * between them (GPS drifting indoors breaks a stay in two) — not a real walk —
+ * between them (GPS drifting indoors breaks a stay in two): seen away for at
+ * most `mergeMoveMaxS`, from the first point after the one stop to the last
+ * before the other, with no recording gap that long in it — not a real walk —
  * and joined they must not hold travel (a short stay hundreds of metres from a
  * long one is another place). `joined` is the box of both and what lies
  * between: when the joined stay's centroid is within `pauseRadiusM` of all of
@@ -585,14 +628,27 @@ function oneStay(
   const rightStart = points[stop.first];
   const between = leftEnd !== undefined && rightStart !== undefined ? rightStart.t - leftEnd.t : 0;
   const pause = stop.first === previous.last + 1 && between >= config.pauseGapS;
+  // How far and how long the phone was seen away between them — with a point every three
+  // minutes, one fix off is no excursion of six — and whether a recording gap could hide more.
   let wander = 0;
-  for (let index = previous.last + 1; index < stop.first; index += 1) {
+  let unseen = false;
+  for (let index = previous.last + 1; index <= stop.first; index += 1) {
     const point = points[index];
-    if (point !== undefined) wander = Math.max(wander, haversineM(left, point));
+    const before = points[index - 1];
+    if (point === undefined || before === undefined) continue;
+    if (point.t - before.t > config.mergeMoveMaxS) unseen = true;
+    if (index < stop.first) wander = Math.max(wander, haversineM(left, point));
   }
+  const firstAway = points[previous.last + 1];
+  const lastAway = points[stop.first - 1];
+  const awayS =
+    stop.first > previous.last + 1 && firstAway !== undefined && lastAway !== undefined
+      ? lastAway.t - firstAway.t
+      : 0;
   const shortWander =
     apart <= config.mergeRadiusM &&
-    between <= config.mergeMoveMaxS &&
+    awayS <= config.mergeMoveMaxS &&
+    !unseen &&
     wander <= 2 * config.radiusM &&
     !walkedBetween(points, paces, previous.last, stop.first, config);
   if (!((pause && apart <= config.pauseRadiusM) || shortWander)) return false;
@@ -724,9 +780,12 @@ function movesBetween(
  * or close together with only a short wander (no real walk) between them, are
  * one stop, and no stop holds travel. Moves fill the time between stops and
  * share their end points with them, so the line of a move starts where the
- * stop before it ends. After a recording pause the stop lasts until the first
- * point outside it (iOS resumes outside its geofence). A recording gap with
- * travel ends a move: the time between belongs to no segment.
+ * stop before it ends — except after a stop that lasted beyond its last
+ * point: after a recording pause the stop lasts until the first point outside
+ * it (iOS resumes outside its geofence), after a still recording gap until
+ * the phone woke up, under a visit until its departure, and the move starts
+ * at the point after it. A recording gap with travel ends a move: the time
+ * between belongs to no segment.
  */
 export function detectStops(
   points: readonly KeptPoint[],
@@ -786,6 +845,7 @@ export function detectStops(
       const alone = stop.last + 2 >= points.length || isGap(points, stop.last + 2, config);
       if (extended && near && alone && stops[position + 1]?.first !== stop.last + 1) {
         span.last = stop.last + 1;
+        span.ownLast = stop.last;
         span.endT = Math.max(span.endT, next.t);
       }
     }

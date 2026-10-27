@@ -89,7 +89,7 @@ describe("detectStops", () => {
     expect(spans[1]?.from).toBe(resumedAt - morning);
   });
 
-  it("turns a recording gap the phone lay still through into a stop of its two ends", () => {
+  it("turns a recording gap the phone lay still through into a stop until it woke up", () => {
     // The phone died at 08:10 and came back 100 m on in the evening: it lay there all along.
     const walk = travel(street, { startT: morning, speedMs: 1.4, intervalS: 1 });
     const later = travel(
@@ -101,7 +101,7 @@ describe("detectStops", () => {
     );
     const spans = spansOf(concat(walk, later));
     expect(spans.map((span) => span.kind)).toEqual(["move", "stop", "move"]);
-    // The day stays covered: the stop spans the gap, sharing its ends with the moves.
+    // The day stays covered: the stop spans the gap, from where the phone lay to where it woke.
     expect(spans[1]).toEqual({
       kind: "stop",
       from: lastT(walk) - morning,
@@ -109,6 +109,11 @@ describe("detectStops", () => {
     });
     expect(spans[0]?.to).toBe(spans[1]?.from);
     expect(spans[1]?.to).toBe(spans[2]?.from);
+    // The point it woke up at is the move's: the stop is the point it lay at.
+    const points = kept(concat(walk, later));
+    const [, stop, after] = detectStops(points, [], defaultProcessingConfig.stops);
+    expect(points[stop?.last ?? -1]?.t).toBe(lastT(walk));
+    expect(after?.first).toBe((stop?.last ?? 0) + 1);
   });
 
   it("leaves a gap with travel out of every segment", () => {
@@ -537,5 +542,125 @@ describe("detectStops", () => {
       noiseM: 3,
     });
     expect(spansOf(concat(first, wander, second)).map((span) => span.kind)).toEqual(["stop"]);
+  });
+
+  it("does not split a stay at one CoreMotion walking reading as the fix jumps", () => {
+    const first = stay([0, -2000], { startT: morning, durationS: 600, intervalS: 2, noiseM: 3 });
+    const [lon, lat] = toLonLat(70, -2000);
+    const jump: RawPoint = {
+      t: lastT(first) + 2,
+      lat,
+      lon,
+      accuracy: 30,
+      speed: null,
+      altitude: null,
+      verticalAccuracy: null,
+      motion: ["walking"],
+    };
+    const second = stay([0, -2000], {
+      startT: lastT(first) + 4,
+      durationS: 600,
+      intervalS: 2,
+      noiseM: 3,
+      seed: 9,
+    });
+    expect(spansOf(concat(first, [jump], second)).map((span) => span.kind)).toEqual(["stop"]);
+  });
+
+  it("joins two stays one fix apart with a point every three minutes", () => {
+    // One fix 100 m off between two at home: no excursion of six minutes.
+    const before = stay([0, -2000], { startT: morning, durationS: 3600, intervalS: 180 });
+    const [lon, lat] = toLonLat(100, -2000);
+    const off: RawPoint = {
+      t: lastT(before) + 180,
+      lat,
+      lon,
+      accuracy: 30,
+      speed: null,
+      altitude: null,
+      verticalAccuracy: null,
+      motion: [],
+    };
+    const after = stay([0, -2000], { startT: off.t + 180, durationS: 3600, intervalS: 180 });
+    expect(spansOf(concat(before, [off], after)).map((span) => span.kind)).toEqual(["stop"]);
+  });
+
+  it("does not merge stays across a jump of more than 300 m", () => {
+    // Ten minutes without a point between two places: within 300 m iOS resumed outside its
+    // geofence (one stop), farther the phone was carried there (a move in between).
+    const here = stay([0, -2000], { startT: morning, durationS: 600, intervalS: 10 });
+    const there = (x: number) =>
+      stay([x, -2000], { startT: lastT(here) + 600, durationS: 600, intervalS: 10, seed: 4 });
+    expect(spansOf(concat(here, there(250))).map((span) => span.kind)).toEqual(["stop"]);
+    const spans = spansOf(concat(here, there(400)));
+    expect(spans.map((span) => span.kind)).toEqual(["stop", "move", "stop"]);
+    expect(spans[1]).toEqual({
+      kind: "move",
+      from: lastT(here) - morning,
+      to: lastT(here) + 600 - morning,
+    });
+  });
+});
+
+describe("a visit's stay and a fix far off", () => {
+  // Four hours at home, one fix 350 m off, four hours more: a point every 10 s, minute or 5 min.
+  const night = (intervalS: number) => {
+    const before = stay([-600, -400], {
+      startT: morning,
+      durationS: 4 * 3600,
+      intervalS,
+      noiseM: 10,
+      accuracy: 30,
+    });
+    const [lon, lat] = toLonLat(-250, -400);
+    const outlier: RawPoint = {
+      t: lastT(before) + intervalS,
+      lat,
+      lon,
+      accuracy: 65,
+      speed: null,
+      altitude: null,
+      verticalAccuracy: null,
+      motion: [],
+    };
+    const after = stay([-600, -400], {
+      startT: outlier.t + intervalS,
+      durationS: 4 * 3600,
+      intervalS,
+      noiseM: 10,
+      accuracy: 30,
+      seed: 5,
+    });
+    return { points: concat(before, [outlier], after), outlierT: outlier.t };
+  };
+
+  for (const intervalS of [10, 60, 300]) {
+    for (const departedAt of [null, morning + 9 * 3600]) {
+      it(`keeps the night one stop, a point every ${intervalS} s, departure ${departedAt === null ? "unknown" : "known"}`, () => {
+        const { points, outlierT } = night(intervalS);
+        const spans = spansOf(points, [visitAt(-600, -400, morning - 60, departedAt)]);
+        const stops = spans.filter((span) => span.kind === "stop");
+        expect(stops).toHaveLength(1);
+        expect(stops[0]?.from).toBeLessThan(outlierT - morning - 3600);
+        expect(stops[0]?.to).toBeGreaterThan(outlierT - morning + 3600);
+      });
+    }
+  }
+
+  it("ends the stay when the phone is beyond 300 m for two minutes, however sparse", () => {
+    // Two fixes five minutes apart on the way out and back: the phone went somewhere.
+    const home = stay([-600, -400], { startT: morning, durationS: 3600, intervalS: 300 });
+    const gone = travel(
+      [
+        [-200, -400],
+        [300, -400],
+      ],
+      { startT: lastT(home) + 300, speedMs: 500 / 300, intervalS: 300 },
+    );
+    const back = stay([-600, -400], { startT: lastT(gone) + 300, durationS: 3600, intervalS: 300 });
+    const visit = visitAt(-600, -400, morning - 60, lastT(back) + 60);
+    const spans = spansOf(concat(home, gone, back), [visit]);
+    expect(spans.map((span) => span.kind)).toEqual(["stop", "move", "stop"]);
+    expect(spans[0]?.to).toBe(lastT(home) - morning);
   });
 });

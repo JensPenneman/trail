@@ -183,6 +183,46 @@ describe("the pattern that made multi-day stops on production", () => {
   });
 });
 
+/**
+ * What indoors does to a stay's points, in place: a fix far off now and then,
+ * a few in a row somewhere else (a Wi-Fi position), and CoreMotion reading a
+ * step, a bike or a car for a moment. The first and last three stay as they are.
+ */
+function disturb(points: RawPoint[], at: Vertex, next: () => number): void {
+  const inner = points.length - 6;
+  if (inner <= 0) return;
+  const somewhere = () => 3 + Math.floor(next() * inner);
+  const moveTo = (index: number, x: number, y: number) => {
+    const point = points[index];
+    if (point === undefined) return;
+    const [lon, lat] = toLonLat(at[0] + x, at[1] + y);
+    points[index] = { ...point, lat, lon, accuracy: 65 };
+  };
+  if (next() < 0.4) {
+    const distanceM = 150 + next() * 350;
+    const heading = next() * 2 * Math.PI;
+    moveTo(somewhere(), Math.cos(heading) * distanceM, Math.sin(heading) * distanceM);
+  }
+  if (next() < 0.3) {
+    const distanceM = 60 + next() * 90;
+    const heading = next() * 2 * Math.PI;
+    const from = somewhere();
+    const count = 2 + Math.floor(next() * 3);
+    for (let index = from; index < Math.min(from + count, points.length - 3); index += 1) {
+      moveTo(index, Math.cos(heading) * distanceM, Math.sin(heading) * distanceM);
+    }
+  }
+  if (next() < 0.4) {
+    const readings = ["walking", "cycling", "driving"] as const;
+    for (let count = 1 + Math.floor(next() * 3); count > 0; count -= 1) {
+      const index = somewhere();
+      const point = points[index];
+      const motion = readings[Math.floor(next() * readings.length)] ?? "walking";
+      if (point !== undefined) points[index] = { ...point, motion: [motion] };
+    }
+  }
+}
+
 /** A random history: stays (some under visits) and travel, with recording gaps now and then. */
 function randomHistory(seed: number): { points: RawPoint[]; visits: VisitSpan[]; legs: Leg[] } {
   const next = random(seed);
@@ -207,6 +247,7 @@ function randomHistory(seed: number): { points: RawPoint[]; visits: VisitSpan[];
       motion: pick([["stationary"], [], ["walking"]]),
       seed: seed * 97 + leg,
     });
+    disturb(here, at, next);
     parts.push(here);
     legs.push({ kind: "home", startT: t, endT: lastT(here) });
     const [lon, lat] = toLonLat(at[0] + (next() - 0.5) * 40, at[1] + (next() - 0.5) * 40);
@@ -280,7 +321,7 @@ function randomHistory(seed: number): { points: RawPoint[]; visits: VisitSpan[];
 describe("random walks and stays", () => {
   for (let seed = 1; seed <= 60; seed += 1) {
     it(
-      `never overlap, cover every point and keep travel out of stops (seed ${seed})`,
+      `never overlap, cover every point, keep travel out of stops and visits whole (seed ${seed})`,
       heavy,
       () => {
         const history = randomHistory(seed);
@@ -297,6 +338,15 @@ describe("random walks and stays", () => {
             secondsCovered(spans, "move", leg.startT, leg.endT) / seconds,
             `leg from ${leg.startT}`,
           ).toBeGreaterThan(0.8);
+        }
+        // A stay under a visit of its own is one stop, whatever the fix and CoreMotion did.
+        for (const leg of history.legs.filter((part) => part.kind === "home")) {
+          if (!history.visits.some((visit) => visit.arrivedAt === leg.startT + 30)) continue;
+          const inside = spans.filter(
+            (span) =>
+              span.kind === "move" && span.startT > leg.startT + 30 && span.endT < leg.endT - 30,
+          );
+          expect(inside, `stay from ${leg.startT}`).toEqual([]);
         }
       },
     );
