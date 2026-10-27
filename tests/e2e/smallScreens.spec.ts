@@ -38,7 +38,7 @@ test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account 
     ["/settings/mcp", "MCP", "Server address"],
     ["/settings/preferences", "Preferences", "Detail of the tracks"],
     ["/settings/notifications", "Notifications", "A phone with a rather long name"],
-    ["/settings/about", "About", "Receiver endpoint"],
+    ["/settings/about", "About", "OwnTracks endpoint"],
     ["/no/such/page", "This trail goes nowhere", "Go to the map"],
   ] as const) {
     await page.goto(path);
@@ -51,6 +51,20 @@ test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account 
   await page.getByRole("dialog").getByRole("button", { name: "Add device" }).click();
   await expect(page.getByRole("dialog", { name: "Set up Narrow phone" })).toBeVisible();
   expect(await overflow(page), "the setup dialog").toBe(0);
+
+  // OwnTracks' setup: long URLs, a link per platform, two lists of settings.
+  await page.goto("/devices?add=1");
+  const form = page.getByRole("dialog", { name: "Add a device" });
+  await form.getByLabel("Name").fill("Narrow Pixel");
+  await form.getByRole("radio", { name: /^OwnTracks/ }).check();
+  expect(await overflow(page), "the add-device form with its apps").toBe(0);
+  await form.getByRole("button", { name: "Add device" }).click();
+  const setup = page.getByRole("dialog", { name: "Set up Narrow Pixel" });
+  await expect(setup.getByRole("link", { name: "Open in OwnTracks" })).toBeVisible();
+  expect(await overflow(page), "OwnTracks' setup").toBe(0);
+  await setup.getByRole("radio", { name: "Android" }).check();
+  await expect(setup.getByText("Recommended OwnTracks settings on Android")).toBeVisible();
+  expect(await overflow(page), "OwnTracks' setup for Android").toBe(0);
 });
 
 test("the People page with someone who shares fits a 320 px wide screen", async ({
