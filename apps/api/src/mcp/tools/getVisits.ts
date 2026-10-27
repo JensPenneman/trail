@@ -3,6 +3,7 @@ import { findVisits } from "../../history/findVisits";
 import { chooseDevices } from "../chooseDevice";
 import { defineTool } from "../defineTool";
 import { deviceRef } from "../deviceRef";
+import { ownAccess } from "../toolAccess";
 import { capItems, narrowTheRange, toolRange } from "../toolRange";
 import { oneDecimal, secondsBetween } from "../units";
 import { formatInZone } from "../zonedTime";
@@ -59,6 +60,10 @@ export const getVisits = defineTool({
       text: `${count} from ${result.from} to ${result.to}.${truncated ? ` ${narrowTheRange}` : ""}`,
       items: result.visits.length,
       truncated,
+      access: ownAccess(input.device === undefined ? null : devices, {
+        from: range.from.toISOString(),
+        to: range.to.toISOString(),
+      }),
     };
   },
 });

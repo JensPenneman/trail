@@ -68,6 +68,7 @@ export function loadConfig(
     sessionTtlDays: env.SESSION_TTL_DAYS,
     liveWindowMinutes: env.LIVE_WINDOW_MINUTES,
     staleAfterHours: env.STALE_AFTER_HOURS,
+    dataAccessRetentionDays: env.DATA_ACCESS_RETENTION_DAYS,
     alerts:
       env.ALERT_NTFY_URL === undefined
         ? null

@@ -17,7 +17,7 @@ export function startJobs(ctx: AppContext): Jobs {
       initialDelayMs: 30_000,
       logger: ctx.logger,
       task: async () => {
-        const pruned = await pruneExpiredData(ctx.db);
+        const pruned = await pruneExpiredData(ctx.db, ctx.config);
         if (Object.values(pruned).some((count) => count > 0)) {
           ctx.logger.info({ pruned }, "expired data removed");
         }

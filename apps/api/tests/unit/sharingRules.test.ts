@@ -23,7 +23,14 @@ const user = { id: "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60" } as UserRow;
 const deviceId = "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3";
 const other = "0199a0f3-5fec-72ad-a30c-5ab9d8908cd4";
 const token = (scopes: TokenPrincipal["scopes"], deviceIds: string[] | null = null) =>
-  ({ kind: "token", user, tokenId: "t", scopes, deviceIds }) satisfies TokenPrincipal;
+  ({
+    kind: "token",
+    user,
+    tokenId: "t",
+    tokenName: "Script",
+    scopes,
+    deviceIds,
+  }) satisfies TokenPrincipal;
 const session = { kind: "session" as const, user, sessionId: "s" };
 
 const device = (changes: Partial<DeviceRow> = {}): DeviceRow => ({

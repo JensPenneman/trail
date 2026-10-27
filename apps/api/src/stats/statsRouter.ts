@@ -8,6 +8,8 @@ import {
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
 import { requireAuth } from "../auth/requestAuth";
+import { inputResource } from "../dataAccess/inputResource";
+import { recordDashboardAccess } from "../dataAccess/recordDashboardAccess";
 import { parseQuery } from "../http/parseInput";
 import { findActivity } from "./findActivity";
 import { findDayStats } from "./findDayStats";
@@ -25,6 +27,11 @@ export function statsRouter(ctx: AppContext): Router {
       days: await findDayStats(db, auth, query),
     };
     res.json(body);
+    recordDashboardAccess(ctx, req, {
+      action: "statsDays",
+      kind: "read",
+      resource: inputResource([query]),
+    });
   });
 
   router.get(apiPaths.statsActivity, async (req, res) => {
@@ -32,6 +39,11 @@ export function statsRouter(ctx: AppContext): Router {
     const query = parseQuery(activityQuerySchema, req);
     const body: ActivityResponse = await findActivity(db, auth, query);
     res.json(body);
+    recordDashboardAccess(ctx, req, {
+      action: "statsActivity",
+      kind: "read",
+      resource: inputResource([query]),
+    });
   });
 
   return router;

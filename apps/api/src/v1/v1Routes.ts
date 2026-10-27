@@ -1,5 +1,6 @@
 import type { V1Route } from "./defineRoute";
 import type { ServedDocument } from "./openapi/servedDocument";
+import { accessLogRoutes } from "./routes/accessLog/accessLogRoutes";
 import { deviceRoutes } from "./routes/devices/deviceRoutes";
 import { historyRoutes } from "./routes/history/historyRoutes";
 import { insightsRoutes } from "./routes/insights/insightsRoutes";
@@ -24,6 +25,7 @@ const operations: readonly V1Route[] = [
   ...historyRoutes,
   ...insightsRoutes,
   ...sharingRoutes,
+  ...accessLogRoutes,
 ];
 
 /**

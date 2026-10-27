@@ -8,6 +8,7 @@ import {
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
 import { requireAuth } from "../auth/requestAuth";
+import { recordDashboardAccess } from "../dataAccess/recordDashboardAccess";
 import { findOwnedDevice } from "../devices/findOwnedDevice";
 import { publishDeviceLater } from "../devices/publishDevice";
 import { parseBody, parseQuery } from "../http/parseInput";
@@ -51,6 +52,12 @@ export function locationsRouter(ctx: AppContext): Router {
       nextCursor: more ? (items.at(-1)?.recordedAt.toISOString() ?? null) : null,
     };
     res.json(body);
+    // Every page of the device's points is the same read: the cursor stays out.
+    recordDashboardAccess(ctx, req, {
+      action: "locations",
+      kind: "read",
+      resource: { deviceIds: [device.id] },
+    });
   });
 
   router.post(apiPaths.deleteLocations, async (req, res) => {
@@ -70,6 +77,15 @@ export function locationsRouter(ctx: AppContext): Router {
     publishDeviceLater(ctx, user.id, device.id);
     const body: DeleteLocationsResponse = { deleted };
     res.json(body);
+    recordDashboardAccess(ctx, req, {
+      action: "deleteLocations",
+      kind: "write",
+      resource: {
+        deviceIds: [device.id],
+        from: new Date(request.from).toISOString(),
+        to: new Date(request.to).toISOString(),
+      },
+    });
   });
 
   return router;

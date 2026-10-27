@@ -1,14 +1,17 @@
 import type { SharePrecision } from "@trail/contracts/share";
 import type { TrackPoint } from "@trail/contracts/track";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { Database } from "../db/database";
 import { shares } from "../db/schema/shares";
+import { users } from "../db/schema/users";
 import { loadGridKey } from "./gridKey";
 
 /** A share of one owner as the live fan-out needs it. */
 export interface OwnerShare {
   id: string;
   recipientUserId: string;
+  /** What the owner's data access log calls the recipient. */
+  recipientName: string;
   deviceIds: readonly string[] | null;
   precision: SharePrecision;
   historyDays: number | null;
@@ -111,10 +114,12 @@ export class SharingState {
   }
 
   async #load(ownerId: string): Promise<OwnerShare[]> {
-    const rows = await this.#db
+    // The join keeps the bound shares only: pending ones reach nobody.
+    return this.#db
       .select({
         id: shares.id,
-        recipientUserId: shares.recipientUserId,
+        recipientUserId: users.id,
+        recipientName: users.displayName,
         deviceIds: shares.deviceIds,
         precision: shares.precision,
         historyDays: shares.historyDays,
@@ -123,15 +128,7 @@ export class SharingState {
         hiddenAt: shares.hiddenAt,
       })
       .from(shares)
-      .where(
-        and(
-          eq(shares.ownerUserId, ownerId),
-          isNull(shares.revokedAt),
-          isNotNull(shares.recipientUserId),
-        ),
-      );
-    return rows.flatMap(({ recipientUserId, ...share }) =>
-      recipientUserId === null ? [] : [{ ...share, recipientUserId }],
-    );
+      .innerJoin(users, eq(users.id, shares.recipientUserId))
+      .where(and(eq(shares.ownerUserId, ownerId), isNull(shares.revokedAt)));
   }
 }

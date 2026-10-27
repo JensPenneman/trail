@@ -9,6 +9,9 @@ import { standardRoutes } from "./support/standardRoutes";
 const nav = () => screen.getByRole("navigation", { name: "Settings" });
 const row = (name: string) => within(nav()).getByRole("link", { name });
 const heading = (name: string) => screen.findByRole("heading", { level: 1, name });
+/** Focus moves to a new page's heading in an effect, just after the heading is on screen. */
+const headingHasFocus = (name: string) =>
+  waitFor(() => expect(screen.getByRole("heading", { level: 1, name })).toHaveFocus());
 
 describe("Settings on a phone", () => {
   it("is a list of groups with search, each row with its value", async () => {
@@ -89,10 +92,10 @@ describe("Settings on a phone", () => {
     const person = userEvent.setup();
     const { router } = renderSettings("/settings");
     await person.click(await screen.findByRole("link", { name: "Passkeys" }));
-    expect(await heading("Passkeys")).toHaveFocus();
+    await headingHasFocus("Passkeys");
     expect(document.title).toBe("Passkeys · Settings · Trail");
     await person.click(await screen.findByRole("link", { name: "iCloud Keychain" }));
-    expect(await heading("iCloud Keychain")).toHaveFocus();
+    await headingHasFocus("iCloud Keychain");
     expect(router.state.location.pathname).toBe("/settings/passkeys/pk-1");
     expect(document.title).toBe("iCloud Keychain · Passkeys · Settings · Trail");
 
@@ -169,7 +172,7 @@ describe("Settings beside the list", () => {
     expect(document.title).toBe("Profile · Settings · Trail");
 
     await person.click(row("API tokens"));
-    expect(await heading("API tokens")).toHaveFocus();
+    await headingHasFocus("API tokens");
     expect(row("API tokens")).toHaveAttribute("aria-current", "page");
     expect(row("Profile")).not.toHaveAttribute("aria-current");
 

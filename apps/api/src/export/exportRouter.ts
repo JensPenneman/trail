@@ -3,6 +3,8 @@ import { exportQuerySchema } from "@trail/contracts/exportQuery";
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
 import { requireAuth } from "../auth/requestAuth";
+import { inputResource } from "../dataAccess/inputResource";
+import { recordDashboardAccess } from "../dataAccess/recordDashboardAccess";
 import { resolveDeviceIds } from "../devices/resolveDeviceIds";
 import { parseQuery } from "../http/parseInput";
 import { localDate } from "../lib/localDate";
@@ -48,6 +50,12 @@ export function exportRouter(ctx: AppContext): Router {
     res.status(200);
     res.setHeader("Content-Type", formatter.contentType);
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    // Recorded as the download starts: a client that leaves halfway has still taken data.
+    recordDashboardAccess(ctx, req, {
+      action: "export",
+      kind: "export",
+      resource: inputResource([query]),
+    });
 
     if (!(await writeChunk(res, formatter.begin()))) return;
     for (const device of owned) {

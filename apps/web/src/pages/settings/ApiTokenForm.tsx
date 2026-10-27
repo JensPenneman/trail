@@ -3,6 +3,7 @@ import {
   type ApiTokenTemplate,
   type ApiTokenWithSecretResponse,
   apiTokenTemplates,
+  everyDeviceScopes,
   maxAllowedIpNetworks,
   templateOfScopes,
 } from "@trail/contracts/apiToken";
@@ -38,8 +39,8 @@ const templates: readonly { value: ApiTokenTemplate; label: string; description:
     label: "Agent",
     description: (
       <>
-        Read-only, and may correct how you travelled: for an agent that plans with you, connected to
-        Trail's{" "}
+        Read-only but for the access log, and may correct how you travelled: for an agent that plans
+        with you, connected to Trail's{" "}
         <a href={mcpGuideUrl} target="_blank" rel="noreferrer">
           MCP server
         </a>
@@ -136,6 +137,10 @@ export function ApiTokenForm({
   };
 
   const template = templateOfScopes(scopes);
+  // Scopes for the whole account (the access log) need a token for every device.
+  const unavailable = (scope: ApiScope) =>
+    deviceMode === "some" && everyDeviceScopes.includes(scope);
+  const granted = scopes.filter((scope) => !unavailable(scope));
   const ownDevices = devices.data ?? [];
   const expiresAt =
     expiry === "date" && date < today
@@ -162,7 +167,7 @@ export function ApiTokenForm({
       .find((problem) => problem !== null);
     const found: Problems = {
       ...(trimmed === "" || trimmed.length > 60 ? { name: "Use 1 to 60 characters." } : {}),
-      ...(scopes.length === 0 ? { scopes: "Choose at least one permission." } : {}),
+      ...(granted.length === 0 ? { scopes: "Choose at least one permission." } : {}),
       ...(deviceMode === "some" && picked.length === 0
         ? { devices: "Pick at least one device, or allow them all." }
         : {}),
@@ -180,7 +185,7 @@ export function ApiTokenForm({
     create.mutate(
       {
         name: trimmed,
-        scopes: [...scopes],
+        scopes: [...granted],
         deviceIds: deviceMode === "all" ? null : [...picked],
         allowedIps: networks.length === 0 ? null : networks,
         expiresAt: expiryInstant(expiry, { now: Date.now(), date, timeZone: timezone }),
@@ -248,8 +253,13 @@ export function ApiTokenForm({
                   type="checkbox"
                   look="scope"
                   label={scope}
-                  description={apiScopeDescriptions[scope]}
-                  checked={scopes.includes(scope)}
+                  description={
+                    unavailable(scope)
+                      ? `${apiScopeDescriptions[scope]} Only for a token with every device.`
+                      : apiScopeDescriptions[scope]
+                  }
+                  checked={scopes.includes(scope) && !unavailable(scope)}
+                  disabled={unavailable(scope)}
                   onChange={(checked) => toggleScope(scope, checked)}
                 />
               ))}

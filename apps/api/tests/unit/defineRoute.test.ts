@@ -5,14 +5,27 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { AppContext } from "../../src/appContext";
 import { type RequestAuth, setRequestAuth, type UserRow } from "../../src/auth/requestAuth";
+import type { AccessRecord } from "../../src/dataAccess/accessRecord";
 import { createErrorHandler } from "../../src/http/errorHandler";
+import { HttpError } from "../../src/http/httpError";
 import { createLogger } from "../../src/logging/createLogger";
 import { defineRoute, missingScopes, type V1Route } from "../../src/v1/defineRoute";
 import { pathParameters, toExpressPath } from "../../src/v1/toExpressPath";
 
 const logger = createLogger({ level: "silent" });
-// The handlers below never touch the context; the route only hands it through.
-const ctx = { logger } as unknown as AppContext;
+/** What the routes below record in the data access log. */
+const recorded: AccessRecord[] = [];
+let recordFails = false;
+// The handlers below never touch the context; the route hands it through and records into it.
+const ctx = {
+  logger,
+  dataAccess: {
+    record: (access: AccessRecord) => {
+      if (recordFails) throw new Error("the log is broken");
+      recorded.push(access);
+    },
+  },
+} as unknown as AppContext;
 
 const user: UserRow = {
   id: "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60",
@@ -31,6 +44,7 @@ const token = (scopes: ApiScope[]): RequestAuth => ({
   kind: "token",
   user,
   tokenId: "t1",
+  tokenName: "Script",
   scopes,
   deviceIds: null,
 });
@@ -265,6 +279,34 @@ describe("authorization", () => {
     ]);
   });
 
+  it("serves a route for the whole account to sessions and tokens for every device only", async () => {
+    const route = defineRoute(
+      {
+        method: "get",
+        path: "/api/v1/whole",
+        operationId: "wholeAccount",
+        summary: "Whole account",
+        description: "",
+        tags: ["Profile"],
+        auth: { scopes: ["audit:read"], allDevices: true },
+        responses: { 200: z.object({}) },
+        access: false,
+      },
+      () => ({ status: 200, body: {} }),
+    );
+    await request(appFor(route, session)).get("/api/v1/whole").expect(200);
+    await request(appFor(route, token(["audit:read"])))
+      .get("/api/v1/whole")
+      .expect(200);
+    const limited = { ...token(["audit:read"]), deviceIds: [itemId] } as RequestAuth;
+    const refused = await request(appFor(route, limited)).get("/api/v1/whole").expect(403);
+    expect(refused.body.error.code).toBe("insufficient_scope");
+    expect(refused.body.error.message).toContain("every device");
+    expect(refused.headers["www-authenticate"]).toBe(
+      'Bearer realm="trail", error="insufficient_scope", scope="audit:read"',
+    );
+  });
+
   it("serves token routes to any API token, refuses sessions with a 400", async () => {
     const route = defineRoute(
       {
@@ -418,5 +460,287 @@ describe("responses", () => {
     const response = await request(appFor(route)).delete("/api/v1/answer").expect(204);
     expect(response.text).toBe("");
     expect(response.headers["x-forgotten"]).toBe("yes");
+  });
+});
+
+describe("the data access log", () => {
+  const ownerId = user.id;
+  const probe = defineRoute(
+    {
+      method: "get",
+      path: "/api/v1/devices/{id}/probe",
+      operationId: "probeDevice",
+      summary: "Probe a device",
+      description: "Answers what it was asked.",
+      tags: ["Devices"],
+      auth: { scopes: ["devices:read"] },
+      request: {
+        params: itemParams,
+        query: z.object({
+          from: z.iso.datetime({ offset: true }).optional(),
+          name: z.string().optional(),
+          fail: z.enum(["409", "500"]).optional(),
+        }),
+      },
+      responses: { 200: z.object({ ok: z.boolean() }) },
+    },
+    ({ query }) => {
+      if (query.fail === "409") throw new HttpError(409, "conflict", "No.");
+      // A body its schema refuses: the answer is a 500, which is no access.
+      if (query.fail === "500") return { status: 200, body: { ok: "yes" as unknown as boolean } };
+      return { status: 200, body: { ok: true } };
+    },
+  );
+  const fresh = () => {
+    recorded.length = 0;
+    recordFails = false;
+  };
+
+  it("records a scoped route's answer for the caller once it went out", async () => {
+    fresh();
+    await request(appFor(probe, session))
+      .get(`/api/v1/devices/${itemId}/probe?from=2026-10-26T10:00:00%2B02:00&name=Home`)
+      .set(
+        "User-Agent",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Safari/604.1",
+      )
+      .expect(200);
+    expect(recorded).toEqual([
+      {
+        action: "probeDevice",
+        access: "read",
+        status: 200,
+        channel: "web",
+        actor: { kind: "owner", sessionId: "s".repeat(64), label: "Safari on iPhone" },
+        ownerUserId: ownerId,
+        // The path's device and the range; the name is no part of what was read.
+        resource: { deviceIds: [itemId], from: "2026-10-26T08:00:00.000Z" },
+      },
+    ]);
+  });
+
+  it("names a token by its name, on the api channel", async () => {
+    fresh();
+    await request(appFor(probe, token(["devices:read"])))
+      .get(`/api/v1/devices/${itemId}/probe`)
+      .expect(200);
+    expect(recorded).toMatchObject([
+      { channel: "api", actor: { kind: "token", tokenId: "t1", label: "Script" } },
+    ]);
+  });
+
+  it("records nothing for a refusal, a failure or an invalid request", async () => {
+    fresh();
+    await request(appFor(probe)).get(`/api/v1/devices/${itemId}/probe`).expect(401);
+    await request(appFor(probe, token(["locations:read"])))
+      .get(`/api/v1/devices/${itemId}/probe`)
+      .expect(403);
+    await request(appFor(probe, session)).get("/api/v1/devices/nope/probe").expect(404);
+    await request(appFor(probe, session))
+      .get(`/api/v1/devices/${itemId}/probe?from=yesterday`)
+      .expect(400);
+    await request(appFor(probe, session))
+      .get(`/api/v1/devices/${itemId}/probe?fail=409`)
+      .expect(409);
+    await request(appFor(probe, session))
+      .get(`/api/v1/devices/${itemId}/probe?fail=500`)
+      .expect(500);
+    expect(recorded).toEqual([]);
+  });
+
+  it("never fails an answer when the log fails", async () => {
+    fresh();
+    recordFails = true;
+    const answer = await request(appFor(probe, session)).get(`/api/v1/devices/${itemId}/probe`);
+    expect(answer.status).toBe(200);
+    expect(answer.body).toEqual({ ok: true });
+  });
+
+  it("takes the kind from the method unless the spec names it, and adds what the answer names", async () => {
+    fresh();
+    const write = defineRoute(
+      {
+        method: "post",
+        path: "/api/v1/share-links",
+        operationId: "makeProbe",
+        summary: "Make",
+        description: "",
+        tags: ["Sharing"],
+        auth: { scopes: ["shares:write"] },
+        request: { body: z.object({ precision: z.enum(["precise", "area"]), label: z.string() }) },
+        responses: { 201: z.object({ id: z.uuid() }) },
+      },
+      () => ({ status: 201, body: { id: itemId }, resource: { linkId: itemId } }),
+    );
+    const exported = defineRoute(
+      {
+        method: "get",
+        path: "/api/v1/stats/days",
+        operationId: "exportProbe",
+        summary: "Export",
+        description: "",
+        tags: ["History"],
+        auth: { scopes: ["history:read"] },
+        responses: { 200: z.object({}) },
+        access: { kind: "export" },
+      },
+      () => ({ status: 200, body: {} }),
+    );
+    await request(appFor(write, session))
+      .post("/api/v1/share-links")
+      .send({ precision: "area", label: "Typed by the caller" })
+      .expect(201);
+    await request(appFor(exported, session)).get("/api/v1/stats/days").expect(200);
+    expect(recorded).toMatchObject([
+      {
+        action: "makeProbe",
+        access: "write",
+        status: 201,
+        resource: { precision: "area", linkId: itemId },
+      },
+      { action: "exportProbe", access: "export", resource: {} },
+    ]);
+    expect(JSON.stringify(recorded)).not.toContain("Typed by the caller");
+  });
+
+  it("records nothing for a route that opts out, a token route or a public one", async () => {
+    fresh();
+    const quiet = defineRoute(
+      {
+        method: "get",
+        path: "/api/v1/quiet",
+        operationId: "quietProbe",
+        summary: "Quiet",
+        description: "",
+        tags: ["Reference"],
+        auth: { scopes: ["audit:read"] },
+        responses: { 200: z.object({}) },
+        access: false,
+      },
+      () => ({ status: 200, body: {} }),
+    );
+    const own = defineRoute(
+      {
+        method: "get",
+        path: "/api/v1/self",
+        operationId: "selfProbe",
+        summary: "Self",
+        description: "",
+        tags: ["Tokens"],
+        auth: "token",
+        responses: { 200: z.object({}) },
+      },
+      () => ({ status: 200, body: {} }),
+    );
+    const open = defineRoute(
+      {
+        method: "get",
+        path: "/api/v1/open",
+        operationId: "openProbe",
+        summary: "Open",
+        description: "",
+        tags: ["Reference"],
+        auth: "public",
+        responses: { 200: z.object({}) },
+      },
+      () => ({ status: 200, body: {} }),
+    );
+    await request(appFor(quiet, session)).get("/api/v1/quiet").expect(200);
+    await request(appFor(own, token([])))
+      .get("/api/v1/self")
+      .expect(200);
+    await request(appFor(open, token([])))
+      .get("/api/v1/open")
+      .expect(200);
+    expect(recorded).toEqual([]);
+  });
+
+  it("records a people route for the owners it names, never for the caller", async () => {
+    fresh();
+    const alice = "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a70";
+    const bob = "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a71";
+    const shareOfAlice = "019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a23";
+    const people = defineRoute(
+      {
+        method: "get",
+        path: "/api/v1/people",
+        operationId: "peopleProbe",
+        summary: "People",
+        description: "",
+        tags: ["People"],
+        auth: { scopes: ["people:read"] },
+        responses: { 200: z.object({ count: z.number() }) },
+        access: { people: true },
+      },
+      () => ({
+        status: 200,
+        body: { count: 2 },
+        owners: [
+          {
+            ownerUserId: alice,
+            shareId: shareOfAlice,
+            resource: { deviceIds: [itemId], precision: "area" },
+          },
+          { ownerUserId: bob, shareId: null, resource: {} },
+        ],
+      }),
+    );
+    // A session's look at others is not counted for the one who looked…
+    await request(appFor(people, session)).get("/api/v1/people").expect(200);
+    expect(recorded.filter((access) => access.ownerUserId === ownerId)).toEqual([]);
+    recorded.length = 0;
+    await request(appFor(people, token(["people:read"])))
+      .get("/api/v1/people")
+      .expect(200);
+    expect(recorded).toEqual([
+      {
+        action: "peopleProbe",
+        access: "read",
+        status: 200,
+        ownerUserId: alice,
+        channel: "people",
+        // The person, whatever credential they came with: no token, no session, no browser.
+        actor: { kind: "person", userId: ownerId, shareId: shareOfAlice, label: "Jens" },
+        resource: { deviceIds: [itemId], precision: "area" },
+      },
+      {
+        action: "peopleProbe",
+        access: "read",
+        status: 200,
+        ownerUserId: bob,
+        channel: "people",
+        actor: { kind: "person", userId: ownerId, shareId: null, label: "Jens" },
+        resource: {},
+      },
+      // … but a token's call is, like all of them: that it happened, nothing of whom it showed.
+      {
+        action: "peopleProbe",
+        access: "read",
+        status: 200,
+        ownerUserId: ownerId,
+        channel: "api",
+        actor: { kind: "token", tokenId: "t1", label: "Script" },
+        resource: {},
+      },
+    ]);
+  });
+
+  it("refuses a spec that would count a route without scopes", () => {
+    expect(() =>
+      defineRoute(
+        {
+          method: "get",
+          path: "/api/v1/nothing",
+          operationId: "nothingProbe",
+          summary: "Nothing",
+          description: "",
+          tags: ["Reference"],
+          auth: "public",
+          responses: { 200: z.object({}) },
+          access: { kind: "read" },
+        },
+        () => ({ status: 200, body: {} }),
+      ),
+    ).toThrow(/data access log/);
   });
 });

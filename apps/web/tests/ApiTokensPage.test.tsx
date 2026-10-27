@@ -144,6 +144,31 @@ describe("Settings › API tokens", () => {
     expect(screen.queryByDisplayValue(secret)).not.toBeInTheDocument();
   });
 
+  it("does not offer the access log to a token limited to some devices", async () => {
+    const created = apiToken({ id: ids.token, name: "Car only" });
+    const { calls } = renderTokens("/settings/tokens", {
+      "POST /api/me/tokens": { status: 201, body: { token: created, secret } },
+    });
+    const person = userEvent.setup();
+    await person.click(await screen.findByRole("button", { name: "Create token" }));
+    const dialog = screen.getByRole("dialog", { name: "Create an API token" });
+    const audit = within(dialog).getByRole("checkbox", { name: "audit:read" });
+    expect(audit).toBeChecked();
+    await person.type(within(dialog).getByLabelText("Name"), "Car only");
+    await person.click(within(dialog).getByRole("radio", { name: "Only some devices" }));
+    expect(audit).not.toBeChecked();
+    expect(audit).toBeDisabled();
+    expect(audit).toHaveAccessibleDescription(/Only for a token with every device/);
+    // The template stays what was chosen: the scope comes back with every device.
+    expect(within(dialog).getByRole("radio", { name: "Read-only" })).toBeChecked();
+    await person.click(within(dialog).getByRole("checkbox", { name: "Car" }));
+    await person.click(within(dialog).getByRole("button", { name: "Create token" }));
+    await screen.findByRole("dialog", { name: "Copy the token “Car only”" });
+    const post = calls.find((call) => call.method === "POST");
+    expect((post?.body as { scopes?: string[] } | undefined)?.scopes).not.toContain("audit:read");
+    expect(post?.body).toMatchObject({ deviceIds: [ids.car] });
+  });
+
   it("shows a token that expired while the page was open as expired", async () => {
     renderTokens("/settings/tokens", {
       "GET /api/me/tokens": {
@@ -170,6 +195,7 @@ describe("Settings › API tokens", () => {
       "history:read",
       "people:read",
       "shares:read",
+      "audit:read",
     ]) {
       await person.click(within(dialog).getByRole("checkbox", { name: scope }));
     }

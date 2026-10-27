@@ -4,6 +4,7 @@ import { chooseDevice } from "../chooseDevice";
 import { presentCurrentMode } from "../currentModeOf";
 import { defineTool } from "../defineTool";
 import { deviceRef, quoted } from "../deviceRef";
+import { ownAccess } from "../toolAccess";
 import { formatInZone } from "../zonedTime";
 
 /**
@@ -66,6 +67,7 @@ export const setTransportMode = defineTool({
         override === null
           ? `${quoted(device.name)}: no mode set any more; Trail works it out again.`
           : `${quoted(device.name)} travels by ${override.mode} from ${override.from}, ${until}.`,
+      access: ownAccess([summary], { mode: input.mode }),
     };
   },
 });

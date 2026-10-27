@@ -12,6 +12,7 @@ import express, { type Router } from "express";
 import { forgetDeviceInTokens } from "../apiTokens/forgetDeviceInTokens";
 import type { AppContext } from "../appContext";
 import { requireAuth, requireSession } from "../auth/requestAuth";
+import { recordDashboardAccess } from "../dataAccess/recordDashboardAccess";
 import { allowLongStatements } from "../db/allowLongStatements";
 import { devices } from "../db/schema/devices";
 import { ingestLog } from "../db/schema/ingestLog";
@@ -103,6 +104,12 @@ export function devicesRouter(ctx: AppContext): Router {
     }
     ctx.logger.info({ deviceId: existing.id, userId: user.id }, "device deleted");
     res.status(204).end();
+    recordDashboardAccess(ctx, req, {
+      action: "deleteDevice",
+      kind: "write",
+      resource: { deviceIds: [existing.id] },
+      status: 204,
+    });
   });
 
   router.post("/api/devices/:id/token", async (req, res) => {

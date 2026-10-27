@@ -1,7 +1,10 @@
+import { apiPaths } from "@trail/contracts/apiPaths";
 import { apiErrorSchema } from "@trail/contracts/errors";
 import { sessionListResponseSchema } from "@trail/contracts/session";
 import { sessionResponseSchema } from "@trail/contracts/user";
+import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { bearer, createApiToken } from "../support/apiTokenFlows";
 import { type Agent, agentFor, signInWithPasskey, signUp } from "../support/authFlows";
 import { resetDatabase } from "../support/resetDatabase";
 import { SoftwareAuthenticator } from "../support/softwareAuthenticator";
@@ -147,6 +150,42 @@ describe("CSRF protection", () => {
       .send({ name: "x", padding: "y".repeat(120_000) })
       .expect(413);
     expect(errorCode(response.body)).toBe("payload_too_large");
+  });
+});
+
+describe("requests from other sites", () => {
+  // A navigation or an image from another site carries no Origin, and GET passes the CSRF
+  // guard: only Sec-Fetch-Site tells. A signed-in browser reaches the API from Trail's pages.
+  const from = (site: string | undefined, path: string) => {
+    const call = laptop.get(path);
+    return site === undefined ? call : call.set("Sec-Fetch-Site", site);
+  };
+
+  it("refuses a signed-in browser's requests that another site made, whatever the method", async () => {
+    for (const path of ["/api/me", apiPaths.v1.devices.root, apiPaths.statsActivity]) {
+      for (const site of ["cross-site", "same-site"]) {
+        const refused = await from(site, path).expect(403);
+        expect(errorCode(refused.body), `${site} ${path}`).toBe("origin_not_allowed");
+      }
+      for (const site of ["same-origin", "none", undefined]) {
+        await from(site, path).expect(200);
+      }
+    }
+  });
+
+  it("lets API tokens and requests without a session through, from anywhere", async () => {
+    const { secret } = await createApiToken(laptop, {
+      name: "Elsewhere",
+      scopes: ["profile:read"],
+      expiresAt: null,
+    });
+    await request(t.app)
+      .get(apiPaths.v1.me)
+      .set("Authorization", bearer(secret))
+      .set("Sec-Fetch-Site", "cross-site")
+      .expect(200);
+    await request(t.app).get(apiPaths.config).set("Sec-Fetch-Site", "cross-site").expect(200);
+    await request(t.app).get("/api/me").set("Sec-Fetch-Site", "cross-site").expect(401);
   });
 });
 

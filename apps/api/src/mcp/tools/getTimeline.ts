@@ -8,6 +8,7 @@ import { loadTimeline } from "../../transport/loadTimeline";
 import { chooseDevices } from "../chooseDevice";
 import { defineTool } from "../defineTool";
 import { deviceRef } from "../deviceRef";
+import { ownAccess } from "../toolAccess";
 import { narrowTheRange, toolRange } from "../toolRange";
 import { kmh } from "../units";
 import { formatInZone } from "../zonedTime";
@@ -86,6 +87,10 @@ export const getTimeline = defineTool({
       }${truncated ? ` ${narrowTheRange}` : ""}`,
       items: items.length,
       truncated,
+      access: ownAccess(input.device === undefined ? null : devices, {
+        from: range.from.toISOString(),
+        to: range.to.toISOString(),
+      }),
     };
   },
 });

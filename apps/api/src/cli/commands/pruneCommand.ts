@@ -11,11 +11,12 @@ const lines: readonly (readonly [keyof PruneResult, string])[] = [
   ["shares", "old shares"],
   ["shareLinks", "old share links"],
   ["ingestLog", "upload log (> 90 days)"],
+  ["dataAccessEvents", "data access log"],
 ];
 
 /** `trail prune` — the hourly retention cleanup, now. */
 export async function pruneCommand(ctx: CliContext): Promise<void> {
-  const pruned = await pruneExpiredData(ctx.db);
+  const pruned = await pruneExpiredData(ctx.db, ctx.config);
   console.log("Removed:");
   for (const [kind, label] of lines) console.log(`  ${label.padEnd(24)}${pruned[kind]}`);
 }

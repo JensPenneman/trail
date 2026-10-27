@@ -15,6 +15,7 @@ import { toApiToken } from "../apiTokens/toApiToken";
 import { updateApiToken } from "../apiTokens/updateApiToken";
 import type { AppContext } from "../appContext";
 import { requireSession } from "../auth/requestAuth";
+import { recordDashboardAccess } from "../dataAccess/recordDashboardAccess";
 import { parseBody } from "../http/parseInput";
 
 /**
@@ -22,7 +23,8 @@ import { parseBody } from "../http/parseInput";
  * a person signed in with a passkey manages them: this is the private API, an
  * API token never reaches it, and `requireSession` would refuse one anyway.
  * Creating, rolling, changing and revoking are logged with the token's id,
- * never with its secret.
+ * never with its secret, and recorded in the data access log: a token
+ * decides who else may read the account's data.
  */
 export function apiTokensRouter(ctx: AppContext): Router {
   const router = express.Router();
@@ -44,6 +46,12 @@ export function apiTokensRouter(ctx: AppContext): Router {
     logger.info({ tokenId: row.id, userId: user.id, scopes: row.scopes }, "API token created");
     const body: ApiTokenWithSecretResponse = { token: toApiToken(row), secret };
     res.status(201).json(body);
+    recordDashboardAccess(ctx, req, {
+      action: "createApiToken",
+      kind: "write",
+      resource: { tokenId: row.id },
+      status: 201,
+    });
   });
 
   router.patch("/api/me/tokens/:id", async (req, res) => {
@@ -56,6 +64,11 @@ export function apiTokensRouter(ctx: AppContext): Router {
     );
     const body: ApiTokenResponse = { token: toApiToken(row) };
     res.json(body);
+    recordDashboardAccess(ctx, req, {
+      action: "updateApiToken",
+      kind: "write",
+      resource: { tokenId: row.id },
+    });
   });
 
   router.post("/api/me/tokens/:id/roll", async (req, res) => {
@@ -64,12 +77,25 @@ export function apiTokensRouter(ctx: AppContext): Router {
     logger.info({ tokenId: row.id, userId: user.id }, "API token rolled");
     const body: ApiTokenWithSecretResponse = { token: toApiToken(row), secret };
     res.json(body);
+    recordDashboardAccess(ctx, req, {
+      action: "rollApiToken",
+      kind: "write",
+      resource: { tokenId: row.id },
+    });
   });
 
   router.delete("/api/me/tokens/:id", async (req, res) => {
     const { user } = requireSession(req);
     if (await revokeApiToken(db, user.id, req.params.id)) {
       logger.info({ tokenId: req.params.id, userId: user.id }, "API token revoked");
+      res.status(204).end();
+      recordDashboardAccess(ctx, req, {
+        action: "revokeApiToken",
+        kind: "write",
+        resource: { tokenId: req.params.id },
+        status: 204,
+      });
+      return;
     }
     res.status(204).end();
   });

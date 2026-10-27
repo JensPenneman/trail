@@ -72,6 +72,8 @@ export interface Config {
   sessionTtlDays: number;
   liveWindowMinutes: number;
   staleAfterHours: number;
+  /** Rows of the data access log are kept this many days. */
+  dataAccessRetentionDays: number;
   /** Silent/recovered device alerts, or null when not configured. */
   alerts: AlertConfig | null;
   defaultTimezone: string;

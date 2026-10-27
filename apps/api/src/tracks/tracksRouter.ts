@@ -3,6 +3,8 @@ import { type TracksResponse, tracksQuerySchema } from "@trail/contracts/track";
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
 import { requireAuth } from "../auth/requestAuth";
+import { inputResource } from "../dataAccess/inputResource";
+import { recordDashboardAccess } from "../dataAccess/recordDashboardAccess";
 import { resolveDeviceIds } from "../devices/resolveDeviceIds";
 import { parseQuery } from "../http/parseInput";
 import { buildTrack } from "./buildTrack";
@@ -31,6 +33,11 @@ export function tracksRouter(ctx: AppContext): Router {
     }
     const body: TracksResponse = { from: from.toISOString(), to: to.toISOString(), tracks };
     res.json(body);
+    recordDashboardAccess(ctx, req, {
+      action: "tracks",
+      kind: "read",
+      resource: { ...inputResource([query]), level: "raw" },
+    });
   });
 
   return router;

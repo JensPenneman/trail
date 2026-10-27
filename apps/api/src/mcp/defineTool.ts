@@ -3,18 +3,20 @@ import type { ApiScope } from "@trail/contracts/apiScope";
 import type { z } from "zod";
 import { hasScope } from "../auth/requestAuth";
 import type { McpSession } from "./mcpSession";
-import { type McpWork, runMcpWork } from "./runMcpWork";
+import { type McpWork, runMcpWork, type WorkAccess } from "./runMcpWork";
 
 /**
  * What a tool answers: the structured result (put through the output schema
  * on the way out), a short summary for people and for clients that show text
- * only, and, for the log, how many items it holds and whether it was capped.
+ * only, for the log how many items it holds and whether it was capped, and
+ * for the data access log what it read or changed.
  */
 export interface ToolAnswer<Output> {
   result: Output;
   text: string;
   items?: number;
   truncated?: boolean;
+  access: WorkAccess;
 }
 
 export interface ToolSpec<Input extends z.ZodObject, Output extends z.ZodObject> {
@@ -64,7 +66,8 @@ const writeAnnotations: ToolAnnotations = {
  * request's server is built and again on the call. An answer leaves through
  * the output schema, so nothing it does not name gets out; a failure becomes
  * a tool error with a message written for the agent (never a stack, a query
- * or anyone's data); the call is logged without its arguments or its result.
+ * or anyone's data); the call is logged without its arguments or its result,
+ * and counted in the data access log as `mcp.<name>` with what it read.
  */
 export function defineTool<const Input extends z.ZodObject, const Output extends z.ZodObject>(
   spec: ToolSpec<Input, Output>,
@@ -96,6 +99,7 @@ export function defineTool<const Input extends z.ZodObject, const Output extends
                 ? "read-only transaction"
                 : "pool",
             allowed: spec.scopes.every((scope) => hasScope(session.principal, scope)),
+            record: { action: `mcp.${spec.name}`, kind: spec.access },
             work: (context) => spec.run(input, context),
             check: (answer) => {
               const parsed = spec.output.safeParse(answer.result);

@@ -97,6 +97,11 @@ export const apiPaths = {
       root: "/api/v1/share-links",
       one: (linkId: string) => `/api/v1/share-links/${id(linkId)}`,
     },
+    /** The data access log of the caller's account (`audit:read`). */
+    accessLog: {
+      root: "/api/v1/access-log",
+      summary: "/api/v1/access-log/summary",
+    },
   },
   /** What a public link shows, without an account; its secret travels in the `X-Share-Secret` header. */
   publicShare: "/api/public/share",

@@ -4,6 +4,7 @@ import { loadSession } from "../auth/loadSession";
 import { getRequestAuth } from "../auth/requestAuth";
 import { apiNotFound } from "../http/apiNotFound";
 import { csrfGuard } from "../http/csrfGuard";
+import { sameOriginSessions } from "../http/sameOriginSessions";
 import { authenticateBearer } from "./authenticateBearer";
 import type { V1Route } from "./defineRoute";
 import { buildOpenApiDocument } from "./openapi/buildOpenApiDocument";
@@ -31,8 +32,9 @@ const isPublic = (route: V1Route): boolean => route.spec.auth === "public";
  * sets its own order (docs/architecture.md §8.3). `createApp` puts the CORS
  * headers and the per-IP limiter it shares with the dashboard API in front;
  * then come the preflight → API token → per-token limit → the public routes →
- * session (only without a token) → CSRF guard (only without a token) → JSON
- * body → the other routes of the registry → JSON 404. The OpenAPI document is
+ * session (only without a token) → no session from another site → CSRF guard
+ * (only without a token) → JSON body → the other routes of the registry →
+ * JSON 404. The OpenAPI document is
  * built here, once, so a spec it cannot describe stops the server at startup.
  */
 export function createV1Router(ctx: AppContext): Router {
@@ -69,6 +71,8 @@ export function createV1Router(ctx: AppContext): Router {
   router.use((req, res, next) =>
     getRequestAuth(req) === undefined ? session(req, res, next) : next(),
   );
+  // A session works from Trail's own pages only, for every method (a GET too).
+  router.use(sameOriginSessions);
   // A token is no ambient credential, so CSRF cannot forge it; everything else is guarded.
   router.use((req, res, next) =>
     getRequestAuth(req)?.kind === "token" ? next() : csrf(req, res, next),

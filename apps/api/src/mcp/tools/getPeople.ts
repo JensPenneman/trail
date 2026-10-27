@@ -1,5 +1,6 @@
 import { getPeopleInputSchema, getPeopleOutputSchema } from "@trail/contracts/mcp";
 import { loadPeople } from "../../sharing/loadPeople";
+import { personAccess } from "../../sharing/personAccess";
 import { defineTool } from "../defineTool";
 import { quoted } from "../deviceRef";
 import { presentBattery } from "../presentBattery";
@@ -14,7 +15,8 @@ import { formatInZone } from "../zonedTime";
  * only where they share details, and the distance only for a token that may
  * read the owner's own positions. Their addresses and account and device ids
  * stay out: an agent needs none of them. Like the People page, looking
- * stamps the shares' last view, which their owners see.
+ * stamps the shares' last view and counts in each person's data access log,
+ * which their owners see.
  */
 export const getPeople = defineTool({
   name: "get_people",
@@ -28,7 +30,8 @@ export const getPeople = defineTool({
   transaction: false,
   async run(_input, context) {
     const { timeZone, now } = context;
-    const people = (await loadPeople(context.ctx, context.principal)).map((person) => ({
+    const shown = await loadPeople(context.ctx, context.principal);
+    const people = shown.map((person) => ({
       name: safeText(person.displayName),
       precision: person.share.precision,
       sharedUntil:
@@ -61,6 +64,8 @@ export const getPeople = defineTool({
           ? "Nobody shares their location with the owner."
           : `${people.length} ${people.length === 1 ? "person shares" : "people share"} with the owner: ${names.join(", ")}.`,
       items: people.length,
+      // To the people shown it is a look at People: that someone asked an agent is theirs.
+      access: { owners: shown.map(personAccess), ownersSee: "listPeople" },
     };
   },
 });

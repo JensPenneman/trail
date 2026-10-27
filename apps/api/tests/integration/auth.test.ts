@@ -63,7 +63,7 @@ describe("sign-up", () => {
     });
     const cookie = String(finished.headers["set-cookie"]);
     expect(cookie).toMatch(
-      /^trail_session=[A-Za-z0-9_-]{43}; Max-Age=2592000; Path=\/; HttpOnly; SameSite=Lax/,
+      /^trail_session=[A-Za-z0-9_-]{43}; Max-Age=2592000; Path=\/; HttpOnly; SameSite=Strict/,
     );
     expect(cookie).not.toContain("Secure");
 
@@ -289,7 +289,7 @@ describe("session", () => {
       .expect(200);
     const cookie = String(finished.headers["set-cookie"]);
     expect(cookie).toMatch(
-      /^__Host-trail_session=[A-Za-z0-9_-]{43}; Max-Age=\d+; Path=\/; HttpOnly; Secure; SameSite=Lax$/,
+      /^__Host-trail_session=[A-Za-z0-9_-]{43}; Max-Age=\d+; Path=\/; HttpOnly; Secure; SameSite=Strict$/,
     );
     const token = /=([A-Za-z0-9_-]{43});/.exec(cookie)?.[1] ?? "";
     await agentFor(t.app)
