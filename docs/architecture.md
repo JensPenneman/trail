@@ -3106,9 +3106,11 @@ none holds travel. A stop is:
   the departure when nothing was recorded after its last point: iOS pauses the
   updates of a phone lying still); one whose departure is not known — still
   open, or never reported — only the stay from its arrival on, which ends when
-  the phone leaves, never at the end of the window. Its moving ends are
-  trimmed, as a dwell's, and it must last 180 s with at least half of its
-  points near the place (iOS reports a visit now and then mid-journey).
+  the phone leaves, never at the end of the window, and at the latest at the
+  next visit's arrival (a visit over before the window is not read at all).
+  Its moving ends are trimmed, as a dwell's, and it must last 180 s with at
+  least half of its points near the place (iOS reports a visit now and then
+  mid-journey).
 - **CoreMotion** reporting stationary and nothing else throughout, within
   300 m of its centroid.
 - a **still gap**: a recording gap of more than 30 minutes whose two ends lie
@@ -3121,9 +3123,15 @@ pause (300 m), or within 80 m with at most five minutes of wandering between
 them and no real walk (as above, or CoreMotion on foot throughout), are one
 stop — unless joined they would hold travel. No stop holds travel: where two
 minutes or more of its points lie farther than 300 m from its centroid, it is
-cut there, and the parts that still last 180 s stay stops. After a pause of
-five minutes or more the stop lasts until the first point outside it when
-that point is within 300 m (iOS resumes outside its geofence). Moves fill the
+cut there, the parts that still last 180 s stay stops, and so do the stays
+found within the cut-out stretch on their own (a dwell 400 m away that a
+visit's wide radius took in). After a pause of five minutes or more the stop
+lasts until the first point outside it when that point is within 300 m (iOS
+resumes outside its geofence); a point recorded alone after a stop's end —
+the window's last, or a gap with travel after it — is the stop's when it lies
+within 300 m. The checks keep a window linear: centroids come from prefix
+sums, and a stop or a join whose bounding box lies within 300 m of its
+centroid cannot hold travel, so its points are not looked at again. Moves fill the
 time between stops and share their end points with them. A gap of more than
 30 minutes ends a move unless the device travelled at 10 m/s or more
 meanwhile (a flight, a train through tunnels); a gap with travel (its ends
@@ -3254,10 +3262,17 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   start, and the part of one reaching beyond its end stays as a segment from
   the window's end, so no time drops out of the timeline; both keep their
   other values until a window over them works them out again — a stale
-  multi-day stop is replaced piece by piece as the windows over it run), and
-  in one transaction under a per-device advisory lock reads the
-  points, visits, trips and overrides, runs the pipeline with the cached map
-  data of one piece at a time, replaces the window's processed points and
+  multi-day stop is replaced piece by piece as the windows over it run). When
+  no segment meets the window's start — a recording gap lies before it, the
+  night the phone slept through — it reaches back to the segment before the
+  gap (or, with none yet, the point before it), so that the gap is worked out
+  with both its ends whether the next morning came in an upload of its own or
+  the backfill works a local day at a time. The point a window shares with a
+  segment that began before it keeps its stored levels (that segment was
+  worked out with it). Then, in one transaction under a per-device advisory
+  lock, it reads the points, visits, trips and overrides, runs the pipeline
+  with the cached map data of one piece at a time, replaces the window's
+  processed points and
   segments and finishes the queue rows (only those that did not change
   meanwhile). It yields to the event loop between pieces and windows. A
   failure re-queues with backoff (30 s × 4ⁿ, at most 6 h). Moves without
