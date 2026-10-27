@@ -86,6 +86,10 @@ export const iconPaths = {
     "M21 13.5l-8-4.5V4.25a1 1 0 0 0-2 0V9l-8 4.5v2l8-2.5v4.25l-2.5 1.75v1.5L12 19.75l3.5.75V19L13 17.25V13l8 2.5z",
   unknown:
     "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M9.5 9.25a2.5 2.5 0 1 1 3.6 2.25c-.75.4-1.1.95-1.1 1.75v.5M12 16.75h.01",
+  // Changes against an earlier period.
+  arrowUpRight: "M7 17L17 7M8 7h9v9",
+  arrowDownRight: "M7 7l10 10M17 8v9H8",
+  arrowRight: "M5 12h14M13 6l6 6-6 6",
 } as const;
 
 export type IconName = keyof typeof iconPaths;

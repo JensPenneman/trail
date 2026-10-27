@@ -1,0 +1,47 @@
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--text-s);
+}
+
+.legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.legend__key {
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.legend__swatch {
+  fill: var(--mode-color);
+}
+
+.legend__line {
+  stroke: var(--mode-color);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+@media (forced-colors: active) {
+  .legend__key {
+    forced-color-adjust: none;
+  }
+
+  .legend__swatch {
+    fill: var(--chart-texture, CanvasText);
+    stroke: CanvasText;
+    stroke-width: 1;
+  }
+
+  .legend__line {
+    stroke: CanvasText;
+    stroke-dasharray: var(--chart-dash, none);
+  }
+}

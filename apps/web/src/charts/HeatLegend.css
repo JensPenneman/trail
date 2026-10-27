@@ -1,0 +1,30 @@
+.heat-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-size: var(--text-xs);
+}
+
+.heat-legend__end {
+  color: var(--color-text-2);
+}
+
+.heat-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.heat-legend__swatch {
+  flex-shrink: 0;
+}
+
+@media (forced-colors: active) {
+  .heat-legend__swatch {
+    forced-color-adjust: none;
+  }
+}

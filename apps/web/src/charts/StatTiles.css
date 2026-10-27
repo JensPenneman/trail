@@ -1,0 +1,17 @@
+.stat-tiles {
+  container-type: inline-size;
+}
+
+/* Two columns on a phone, as many as fit from there. */
+.stat-tiles__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+@container (min-width: 36rem) {
+  .stat-tiles__list {
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  }
+}

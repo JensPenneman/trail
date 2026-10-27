@@ -1,0 +1,14 @@
+/* Only ever referenced in forced colours (see textures.ts), so system colours throughout. */
+.chart-texture__ground {
+  fill: Canvas;
+}
+
+.chart-texture__ink {
+  fill: none;
+  stroke: CanvasText;
+  stroke-width: 1.25;
+}
+
+.chart-texture__dot {
+  fill: CanvasText;
+}
