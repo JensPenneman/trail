@@ -766,14 +766,17 @@ the points uploaded before it, and after a rollback to a release without it,
 that release's uploads skip it and its rebuilds (a deleted period, its
 `trail recompute`) drop it. So at every start `fillHeatLevels` reads the
 total of each device's levels (one pass over the cells: milliseconds for
-1.2 M points) and rebuilds from the device's points every level whose total
-differs from level 18's — the finest level every release has stored; all of
-them when level 18 has none (`levelsToRebuild`). It goes a device at a time,
-each in a transaction under the device's row lock — the lock an upload takes
-first, so an upload of that device waits rather than being counted twice
-(1–4 s for 1.2 M points). A stop cancels the statement in progress (that of
-its own transaction, found by backend and start) and the transaction rolls
-back; the next start finds what is left. `trail recompute` rebuilds every
+1.2 M points) and rebuilds from the device's points every level below the
+highest of them (`levelsToRebuild`): uploads and rebuilds write every level
+in one statement under the device's lock, so no level ever holds more points
+than the device has, and a level short of cells for any other reason is
+rebuilt too — that level alone. It goes a device at a time, each in a
+transaction under the device's row lock — the lock an upload takes first, so
+an upload of that device waits rather than being counted twice (1–4 s for
+1.2 M points). A stop cancels the statement in progress, a wait for that
+lock included (that of its own transaction, found by backend and start), or
+throws between two statements, and the transaction rolls back; the next
+start finds what is left. `trail recompute` rebuilds every
 level under the same lock, then the daily statistics without it.
 
 ### 8.3 Public API v1
@@ -1939,7 +1942,10 @@ count among them, since they lead to signed-in pages.
     degree and its zoom to a whole level, so that small moves hit the
     cache), totals and the busiest places in view. The cells are drawn as
     squares (`heatFeatures`: each the tile of its level, with a gap of the
-    map 1.5 px wide between neighbours at the zoom they arrive at) in the
+    map 1.5 px wide between neighbours at the zoom they arrive at, and at
+    most 20 px wide, centred in its tile — past map zoom 15 the cells of
+    level 20 grow on screen, their squares do not, so the busiest places
+    never blank whole blocks of the map) in the
     classes of `heatScale`, taken from the cells in view: from the smallest
     count to the busiest 3 % of the cells, the classes start at round
     numbers — 1, 2, 5, 10 … over a short range, 1, 3, 10, 30 … over a longer
@@ -2384,7 +2390,8 @@ which are merged by hand; majors wait for a person, security ones too.
 - `packages/contracts/tests` — schema and helper unit tests.
 - `apps/api/tests/unit` — pure logic (Overland normalisation, timestamps,
   RDP, distance, tile math and the heatmap's levels, whole-cell windows and
-  the levels a device's totals call for rebuilding,
+  the levels a device's totals call for rebuilding (those below the highest,
+  level 18 included),
   token hashing, config parsing, presets, share
   durations across DST and skipped midnights, the sharing grids — one per
   owner, fixed, within the cell around the position, area cells made of whole
@@ -2455,7 +2462,8 @@ which are merged by hand; majors wait for a person, security ones too.
   levels agree, level 20 built for the points from before it (an upload
   after the upgrade counted once), what an older release left behind after
   a rollback (its uploads, its rebuild) repaired, a stop after one device
-  with the rest done at the next start, an upload that waits for the
+  with the rest done at the next start, a stop while it waits for a
+  device's lock (back at once, nothing kept), an upload that waits for the
   device's rebuild and counts once, and the levels that agree left alone.
   Processing is tested in the real app with map tiles cut from the hand-made
   world by a `FixtureWaySource` (no network): uploads to segments and the
