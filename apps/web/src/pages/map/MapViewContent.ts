@@ -9,8 +9,8 @@ type MapContent = Omit<
 >;
 
 /**
- * A view of the Map page: what it draws on the shared map and puts into each
- * part of the page. A view that is not shown gives `inactiveView`.
+ * A view of the People page's map: what it draws on the shared map and puts
+ * into each part of the page. A view that is not shown gives `inactiveView`.
  */
 export interface MapViewContent {
   /** The view's name, for the document title. */
@@ -27,7 +27,10 @@ export interface MapViewContent {
   /** Below the map on phones, over its foot on wide screens: History's time slider. */
   foot: ReactNode;
   panelLabel: string;
+  /** The view's details: Live's go into the Me card, the other views' above the people. */
   panel: ReactNode;
+  /** A word about the people shown, above their cards (a track that could not be loaded). */
+  peopleNotice?: ReactNode;
   /** A dialog the view opened (a stop's or move's details). */
   dialog: ReactNode;
 }

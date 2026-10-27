@@ -16,9 +16,9 @@ export interface MapSearchControls {
 }
 
 /**
- * The Map page's state lives in its URL, so it survives reloads, can be shared
- * and works with Back: every change is a history entry of its own (the level
- * and the map style replace theirs, see useTrackLevel and useMapStyle).
+ * The People page's state lives in its URL, so it survives reloads, can be
+ * shared and works with Back: every change is a history entry of its own (the
+ * level and the map style replace theirs, see useTrackLevel and useMapStyle).
  */
 export function useMapSearch(): MapSearchControls {
   const [params, setParams] = useSearchParams();

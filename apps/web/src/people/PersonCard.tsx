@@ -9,6 +9,7 @@ import { PlainList } from "../ui/PlainList";
 import { RelativeTime } from "../ui/RelativeTime";
 import { describeActivity } from "./describeActivity";
 import { appleMapsUrl, googleMapsUrl } from "./mapLinks";
+import { OnMapBadge } from "./OnMapBadge";
 import { PersonAvatar } from "./PersonAvatar";
 import { primaryDevice } from "./primaryDevice";
 import "./PersonCard.css";
@@ -21,8 +22,12 @@ interface PersonCardProps {
   liveMinutes: number;
   /** Whether the signed-in person shares back with them. */
   sharesBack: boolean;
+  /** Whether the map shows them now (the People page's selection). */
+  selected?: boolean;
   onShowOnMap: (device: SharedDevice) => void;
   onShareBack: () => void;
+  /** Stops sharing back with them (with a confirmation); offered while one does. */
+  onStopSharing?: () => void;
   onHide: () => void;
   hiding?: boolean;
 }
@@ -31,7 +36,7 @@ interface PersonCardProps {
  * Someone who shares their location, Find My style: who, where and how fresh,
  * what they are doing, battery and distance — everything the map shows, in
  * text — and what to do: show them on the map, open the spot in Apple or
- * Google Maps, share back, hide them.
+ * Google Maps, share back (or stop sharing back), hide them.
  */
 export function PersonCard({
   person,
@@ -39,8 +44,10 @@ export function PersonCard({
   now,
   liveMinutes,
   sharesBack,
+  selected = false,
   onShowOnMap,
   onShareBack,
+  onStopSharing,
   onHide,
   hiding = false,
 }: PersonCardProps) {
@@ -52,7 +59,10 @@ export function PersonCard({
   const precision = person.share.precision;
 
   return (
-    <article className="person-card" aria-labelledby={titleId}>
+    <article
+      className={selected ? "person-card person-card--selected" : "person-card"}
+      aria-labelledby={titleId}
+    >
       <header className="person-card__header">
         <PersonAvatar name={person.displayName} slot={colorSlot} />
         <div className="person-card__heading">
@@ -69,6 +79,7 @@ export function PersonCard({
               </>
             )}
           </p>
+          {selected ? <OnMapBadge /> : null}
         </div>
         {primary?.distanceM === null || primary?.distanceM === undefined ? null : (
           <p className="person-card__distance">
@@ -135,8 +146,10 @@ export function PersonCard({
       </p>
 
       <div className="person-card__actions">
+        {/* Every card has these: the name, as a description, says whose. */}
         <Button
           icon="pin"
+          aria-describedby={titleId}
           disabled={primary === null || where === null}
           onClick={() => {
             if (primary !== null) onShowOnMap(primary);
@@ -169,11 +182,22 @@ export function PersonCard({
           </>
         )}
         {sharesBack ? (
-          <p className="person-card__back">
-            <Icon name="check" /> You share with {person.displayName}
-          </p>
+          <>
+            <p className="person-card__back">
+              <Icon name="check" /> You share with {person.displayName}
+            </p>
+            {onStopSharing === undefined ? null : (
+              <Button
+                variant="danger-outline"
+                onClick={onStopSharing}
+                aria-label={`Stop sharing your location with ${person.displayName}`}
+              >
+                Stop
+              </Button>
+            )}
+          </>
         ) : (
-          <Button icon="users" onClick={onShareBack}>
+          <Button icon="users" aria-describedby={titleId} onClick={onShareBack}>
             Share back
           </Button>
         )}

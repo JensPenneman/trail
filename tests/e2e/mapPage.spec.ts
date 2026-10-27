@@ -16,10 +16,10 @@ test("Live, History and Heat share one map and keep their place in the URL", asy
 }) => {
   await uploadedDevice(page, "Viewed phone", overlandBatch(account.timezone));
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1, name: "Map" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
   await expect(mapView(page, "Live")).toBeChecked();
   await expect(deviceCard(page, "Viewed phone")).toBeVisible();
-  await expect(page).toHaveTitle("Live · Map · Trail");
+  await expect(page).toHaveTitle("Live · People · Trail");
   const canvas = page.locator(".maplibregl-canvas");
   await expect(canvas).toHaveAccessibleName(/^Map of today’s tracks/);
   await canvas.evaluate((element, name) => Reflect.set(window, name, element), canvasMarked);
@@ -32,7 +32,7 @@ test("Live, History and Heat share one map and keep their place in the URL", asy
     "30 points",
   );
   await expect(page.getByRole("slider", { name: "Position at" })).toBeVisible();
-  await expect(page).toHaveTitle("History · Map · Trail");
+  await expect(page).toHaveTitle("History · People · Trail");
   // Switching keeps focus on the switch, where the person is.
   await expect(mapView(page, "History")).toBeFocused();
 

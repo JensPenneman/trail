@@ -3,7 +3,7 @@ import { parseHistorySelection } from "./history/parseHistorySelection";
 import { isMapView, type MapView } from "./mapViews";
 import { me } from "./me";
 
-/** What the Map page shows, as its URL says (`/?view=…&people=…&devices=…&date=…`). */
+/** What the People page's map shows, as its URL says (`/?view=…&people=…&devices=…&date=…`). */
 export interface MapSearch {
   view: MapView;
   /** `me` and the user ids of people sharing with the signed-in person; never empty. */
@@ -26,9 +26,10 @@ export function parsePeople(params: URLSearchParams): readonly string[] {
 }
 
 /**
- * Reads the Map page's URL defensively, like History always did: an unknown
- * view is Live, a hand-edited or outdated link falls back to defaults instead
- * of an error. Other parameters (`level`, `style`) belong to their controls.
+ * Reads the People page's URL defensively, like History always did: an
+ * unknown view is Live, a hand-edited or outdated link falls back to defaults
+ * instead of an error. Other parameters (`level`, `style`) belong to their
+ * controls.
  */
 export function parseMapSearch(params: URLSearchParams, today: string): MapSearch {
   const view = params.get("view");

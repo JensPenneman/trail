@@ -17,7 +17,7 @@ test.describe("signed-in browsers", () => {
     await other.authenticator.importPasskey(passkey);
     await other.page.goto("/login");
     await other.page.getByRole("button", { name: "Use a passkey" }).click();
-    await expect(other.page.getByRole("heading", { level: 1, name: "Map" })).toBeVisible();
+    await expect(other.page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
     await expect(other.page.getByText("Live updates on")).toBeAttached();
 
     await page.goto("/settings/passkeys");

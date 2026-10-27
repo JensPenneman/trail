@@ -1445,58 +1445,73 @@ vector styles, light/dark and optional satellite imagery from `/api/config`),
 `uqr` for QR codes. Plain CSS with custom properties (LCH colours with sRGB
 fallbacks), system font stack, no web fonts, no third-party scripts, CSP-clean.
 
-Navigation (`PrimaryNav`, one landmark): **Map · People · Devices ·
-Settings**, in the header on wide screens and as a four-item tab bar along
-the bottom edge on phones (the same element, restyled); the current item
-carries `aria-current="page"` on every address below it.
+Navigation (`PrimaryNav`, one landmark): **People · Devices · Settings**,
+in the header on wide screens and as a tab bar along the bottom edge on
+phones (the same element, restyled); the current item carries
+`aria-current="page"` on every address below it.
 
 | Route | Page |
 |---|---|
 | `/login`, `/invite/:token`, `/link/:token` | sign-in and sign-up (public) |
 | `/s` | a public link; its secret is the fragment, `/s#trls_…` (public) |
-| `/` | **Map**: Live, History and Heat (signed in) |
-| `/people` | People |
+| `/` | **People**, the home page: the map with Live, History and Heat, and the people list (signed in) |
 | `/devices`, `/devices/:id` | Devices, one device |
 | `/settings/profile`, `…/passkeys`, `…/tokens`, `…/sharing`, `…/people`, `…/data`, `…/about` | Settings, a section each; `…/people` (Accounts) for administrators only, Profile for everyone else |
 | `/settings` | opens Profile; an anchor of the single page of old (`/settings#tokens`, `#browsers`, …) opens its section (`settingsPathFor`) |
 | `/history?…`, `/explore?…` | redirect (replacing the entry) to `/?view=history&…` and `/?view=heat&…`, every parameter kept (`legacyMapPath`) |
+| `/people?…` | redirect (replacing the entry) to `/?…`, every parameter kept (`legacyPeoplePath`): People had an address of its own before it took in the map |
 | anything else | 404 |
 
 `isSignedInPath` lists the signed-in paths (it decides whether the session is
-fetched at startup).
+fetched at startup); the redirects count among them, since they lead to the
+People page.
 
-- **Map** (`pages/map/MapPage`) — one map and three **views** of it, chosen
-  with a switch in the head (Live · History · Heat). The state is the URL:
+- **People** (`pages/people/PeoplePage`, the home page) — one map and three
+  **views** of it, chosen with a switch in the head (Live · History · Heat),
+  and beside it (below it on phones) the people: **Me** first, then a card for
+  everyone who shares with you. The state is the URL:
   `/?view=live|history|heat&people=me,<userId>,…&devices=<id>,…&date=…` or
   `&from=…&to=…`, plus `level=` (§17.6) and `style=`. Defaults (Live, Me,
   every device, today) are left out of it; an unknown view is Live, unknown
   people and devices are dropped once the lists have loaded, and every
   control changes its own parameter only, so a day chosen in History is still
   there after a look at Heat. Every view keeps its queries and state in a
-  hook (`useLiveView`, `useHistoryView`, `useHeatView`) that asks for nothing
-  while another view is shown, and hands the page what to draw: the page has
-  one `TrailMap` for all three, so switching views keeps the map — no new
-  canvas, style or tiles. The camera frames what is drawn when that changes
-  (another day, other people or devices; Live and History on today share it),
-  never merely because the view did; Heat frames it only when the page opened
-  on it.
+  hook (`useLiveView`, `useHistoryView`, `useHeatView`, in `pages/map`) that
+  asks for nothing while another view is shown, and hands the page what to
+  draw: the page has one `TrailMap` for all three, so switching views keeps
+  the map — no new canvas, style or tiles. The camera frames what is drawn
+  when that changes (another day, other people or devices; Live and History
+  on today share it), never merely because the view did; Heat frames it only
+  when the page opened on it.
+
+  **Whose data**: the map shows the people chosen, Me alone by default (not
+  remembered). **Show on map** on a card makes that person the choice — the
+  map then shows them alone — or, for someone on the map already, only moves
+  the camera to them; **Show everyone** (a toggle, once two or more people
+  share) chooses everyone and, pressed again, Me alone; the person selector
+  in the head chooses any mix. The page offers what can be shown of whoever
+  is chosen: one's own levels, legend, timeline, corrections, visits, trips
+  and Heat exist only while Me is chosen. Without Me they are not there (not
+  disabled), since the API has none of them for other people, and an address
+  that asks for Heat shows Live until Me is chosen again (`shownView`; the
+  address keeps its `view`). A card on the map says "On the map".
   - **Live** — every shown device's latest position (accuracy circle,
-    pulsing when live) and today's tracks; device cards: status badge
-    (`deviceStatus()`), last upload ("2 min ago", ticking), battery, speed /
-    motion, current trip, points today, 48 h activity sparkline, the quick
-    toggle of the transport mode (§17.6); live feed of uploads from SSE. This
-    is the "data still comes in" proof screen. The people chosen appear as
-    their initials and with their cards (`PersonCard`; Show on map moves the
-    camera to them).
+    pulsing when live) and today's tracks; in the Me card, device cards:
+    status badge (`deviceStatus()`), last upload ("2 min ago", ticking),
+    battery, speed / motion, current trip, points today, 48 h activity
+    sparkline, the quick toggle of the transport mode (§17.6); and the live
+    feed of uploads from SSE. This is the "data still comes in" proof
+    screen. The people chosen appear as their initials.
   - **History** — pick a day (prev/next, calendar with days that have data
     from `/api/stats/days`) or a range ≤ 93 days; tracks per device at a
     level (Raw · Averaged · Mapped · Transport, §17.6), stops and moves in
     their modes' colours with a legend; time scrubber showing the position at
     a moment; distance, points, first/last; the timeline of stops and moves,
-    with a dialog to correct a mode; visits and trips of the day.
+    with a dialog to correct a mode; visits and trips of the day. Other
+    people's tracks as their shares allow (below).
   - **Heat** — all-time heatmap (`/api/heatmap`, refetched as the map moves),
     totals and the busiest places in view. Heatmaps cover one's own devices
-    only, so Heat offers no people and says so when some are chosen.
+    only, so Heat offers no people and says so when some are chosen with Me.
 
   The head holds the controls the views share, in this order: **people**
   (Me and everyone who shares with me, plus Everyone — a checkbox for all,
@@ -1507,47 +1522,46 @@ fetched at startup).
   Satellite when the server has imagery; remembered in localStorage
   `trail.mapStyle`, a dark or satellite map drawing Trail's lines and dots
   in their dark-background steps whatever the page's scheme), and the
-  tracks' **level** with the mode legend (Live and History). On phones and
-  small tablets they fold into one "Map options" button with a one-line
-  summary, so the map stays near the top; beside a full-height map (≥ 64rem)
-  the panel scrolls by itself under a sticky title and view switch.
+  tracks' **level** with the mode legend (Live and History, with Me). On
+  phones and small tablets they fold into one "Map options" button with a
+  one-line summary, so the map stays near the top; beside a full-height map
+  (≥ 64rem) the panel scrolls by itself under a sticky title and view switch.
+
+  **The people list** — Find My for Trail (§8.5). The **Me** card: your
+  initials in the accent ring, and while Me is on the map what the view has
+  of one's own (Live's device cards and uploads), otherwise a line with how
+  many devices, how many are live and the last upload, and Show on map. Then
+  "Sharing with you": a card per person (`PersonCard`), each as their
+  initials in their colour (`personPalette`, a second ring beside the device
+  colours, assigned in the order they started sharing): the shared devices,
+  how fresh their position is, what they are doing (`describeActivity`,
+  which takes the inferred mode when there is one), battery, distance; Show
+  on map, Apple Maps and Google Maps links, Share back — or, when you share
+  with them, "You share with <name>" and Stop (`StopShareDialog`) — and Hide.
+  People you hid are listed under Hidden, to be shown again. A notice says
+  who started sharing while the page was open. Last, one's own side: **Share my
+  location** (`ShareDialog`): address (with the people who share with you as
+  suggestions), devices, precision with plain-language explanations, history
+  (precise only), details, duration; a pending address gets "They will see
+  you once they sign up and you confirm", an administrator a one-click
+  invitation to that address (which skips the confirmation); and a line "You
+  share with N people" — with how many signed up and wait for a confirmation
+  — that leads to Settings › Sharing, where the outgoing shares are changed,
+  stopped and confirmed. `person` and `share` events keep cards, markers and
+  the line live.
 
   **People, as their shares allow** (§8.5): positions come from
   `GET /api/v1/people` (projected by the server) and `person` events; an
   approximate or area position is drawn as a circle of the precision it was
-  cut to, never as a track. A track — Live's today, History's period — is
-  asked for (`/api/v1/people/{id}/track`, one request per person) only when
-  the share is precise with history; everyone else gets a calm note in
-  History instead of a request, so no 404 ever reaches the console. Those
-  queries are keyed by the share's id and history, so a share that changes
-  (a `share` event refetches the people) is never asked for what it allowed
-  before, and they are not cached once off screen (`gcTime` 0); `person`
-  events refetch them.
-- **Devices** — list; "Add device" flow: name → big QR of `setupUrl` ("scan
-  with the iPhone camera, Overland opens with everything filled in"), "Open in
-  Overland" button (on the phone itself), manual values with copy buttons,
-  recommended Overland settings, then "Waiting for the first upload…" that
-  turns into a success state via SSE. Device page: status, ingest log, raw
-  points (paginated), remote settings preset, rotate token (re-shows the QR),
-  rename, alerts toggle, delete (type the name to confirm).
-- **People** — Find My for Trail (§8.5): a map of everyone who shares with
-  you, each person as their initials in their colour (`personPalette`, a
-  second ring beside the device colours, assigned in the order they started
-  sharing), and a card per person (`PersonCard`): the shared devices, how
-  fresh their position is, what they are doing (`describeActivity`, which
-  takes the inferred mode when there is one), battery, distance; Show on map,
-  Apple Maps and Google Maps links, Share back, Hide. Hidden people can be
-  shown again; Show on map opens the Map page with that person alone
-  (`/?view=live&people=<userId>`). "You share with" (`OutgoingShareList`) lists status, devices,
-  precision, history, details, expiry and the last look, with Change and Stop
-  — and, when someone signed up with the address of a pending share,
-  "<name> (<address>) joined Trail — confirm?" with Confirm and Cancel.
-  **Share my location** (`ShareDialog`): address (with the people who share
-  with you as suggestions), devices, precision with plain-language
-  explanations, history (precise only), details, duration; a pending address
-  gets "They will see you once they sign up and you confirm", an
-  administrator a one-click invitation to that address (which skips the
-  confirmation). `person` and `share` events keep it all live.
+  cut to, never as a track, and the camera frames the whole circle
+  (`positionExtent`) rather than its centre, which would pass for an exact
+  spot. A track — Live's today, History's period — is asked for
+  (`/api/v1/people/{id}/track`, one request per person) only when the share
+  is precise with history; everyone else gets a calm note in History instead
+  of a request, so no 404 ever reaches the console. Those queries are keyed
+  by the share's id and history, so a share that changes (a `share` event
+  refetches the people) is never asked for what it allowed before, and they
+  are not cached once off screen (`gcTime` 0); `person` events refetch them.
 - **Settings** — one header, a navigation of the sections (current one
   marked) and the section; moving between sections moves focus to the
   section's heading. Profile (name, time zone); passkeys (list with provider,
@@ -1560,9 +1574,12 @@ fetched at startup).
   copy button, the dialog closing only with "I have saved it"; roll and revoke
   after a confirmation; a link to `/docs`), sharing (make public links — the
   address once, with a QR code —, their views and Turn off; the outgoing
-  shares), accounts (`/settings/people`, admins: invites, users), data
-  (export GeoJSON/GPX/CSV, delete a range, delete account), about (version,
-  commit, build time, and Sign out — the place for it on phones).
+  shares, `OutgoingShareList`: status, devices, precision, history, details,
+  expiry and the last look, with Change and Stop, and "<name> (<address>)
+  joined Trail — confirm?" with Confirm and Cancel), accounts
+  (`/settings/people`, admins: invites, users), data (export GeoJSON/GPX/CSV,
+  delete a range, delete account), about (version, commit, build time, and
+  Sign out — the place for it on phones).
 - **Public link** (`/s#<secret>`) — no session, no navigation: the label, a map
   of the shared devices (with the route for history links), how fresh each
   position is, details when included, the expiry, a refresh every 15 s, and a
@@ -1694,11 +1711,14 @@ which are merged by hand; majors wait for a person, security ones too.
   and the access log.
 - `apps/web/tests` — Vitest + Testing Library (jsdom). Pages render through
   `renderPage` with the API answered by `mockApi` and the map replaced by a
-  stub that shows what it was handed; the Map page's tests also check that
-  switching views keeps that one map, and that a view not shown asks for
-  nothing. The Map page's URL (`parseMapSearch`, the updates in
-  `mapSearchUpdates`, `resolveMapSelection`), the old addresses
-  (`legacyMapPath`, and the redirects through the app's own route table),
+  stub that shows what it was handed; the People page's tests also check
+  that switching views keeps that one map, that a view not shown asks for
+  nothing, and that with someone else chosen alone nothing of one's own is
+  offered or asked for. The page's URL (`parseMapSearch`, the updates in
+  `mapSearchUpdates`, `resolveMapSelection`, `viewsFor` and `shownView`), the
+  selection of a card (`selectionShowing`, `everyoneToggled`), the line about
+  one's own sharing (`sharingSummary`), the old addresses (`legacyMapPath`,
+  `legacyPeoplePath`, and the redirects through the app's own route table),
   Settings' anchors (`settingsPathFor`) and `isSignedInPath` have unit tests
   of their own.
 - `tests/e2e` — Playwright against the built stack. `playwright.config.ts`
@@ -1725,16 +1745,22 @@ which are merged by hand; majors wait for a person, security ones too.
   `/api/v1/tokens/verify` with it, roll, revoke and see the old secrets
   refused; devices and an expiry date), the levels of the tracks and
   correcting a move's mode, the quick toggle, sharing between two accounts
-  in two browsers (live updates, hiding, stopping) and public links (opened
-  signed out, turned off, too short, unknown), the Map page (its three views
-  on one map, Back through them, the old addresses and deep links, the
+  in two browsers (Share my location from the home page, live updates,
+  hiding, stopping in Settings › Sharing) and public links (opened signed
+  out, turned off, too short, unknown), the People page's map (its three
+  views on one map, Back through them, the old addresses and deep links, the
   device filter across views, the map style — Auto following the system, a
-  remembered choice, satellite imagery — and people on the map: a share with
-  history drawn in History, a share without history never asked for, Show on
-  map from People), Settings' sections and old anchors, the navigation (a
-  tab bar on phones, the current item, focus on the new page's heading),
-  axe (WCAG 2.0 A–AAA, 2.1/2.2 AA, best practices) on every view and
-  section, keyboard use and 320 px screens. The suite's server
+  remembered choice, satellite imagery), the People page's people (three
+  accounts: Me first, a card per person; someone who shares roughly and live
+  only, chosen alone, shows where they are and nothing of one's own — no
+  Heat, levels, timeline, visits or trips — and their history is never asked
+  for; someone who shares their history shows their track, until their share
+  changes; Me again brings everything back; Show everyone; a card kept live
+  by an upload; sharing back and stopping from a card; a deep link to
+  someone alone), Settings' sections and old anchors, the navigation (a tab
+  bar on phones, the current item, focus on the new page's heading, `/people`
+  leading home with its parameters), axe (WCAG 2.0 A–AAA, 2.1/2.2 AA, best
+  practices) on every view and section, keyboard use and 320 px screens. The suite's server
   has no map data (`PROCESSING_OVERPASS_URL` empty), so the mapped level
   degrades to averaged there.
 

@@ -39,9 +39,13 @@
   color: var(--color-text-2);
 }
 
-.filter-chip:not(.is-on) .device-swatch,
-.filter-chip:not(.is-on) .person-avatar {
+.filter-chip:not(.is-on) .device-swatch {
   opacity: 0.35;
+}
+
+/* Someone not chosen: their ring fades, their initials stay as readable as any text. */
+.filter-chip:not(.is-on) .person-avatar {
+  border-color: color-mix(in srgb, var(--person-color) 35%, var(--color-surface));
 }
 
 .filter-chip input {

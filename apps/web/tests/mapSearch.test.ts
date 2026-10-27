@@ -7,6 +7,7 @@ import {
   withRange,
   withView,
 } from "../src/pages/map/mapSearchUpdates";
+import { shownView, viewsFor } from "../src/pages/map/mapViews";
 import { parseMapSearch } from "../src/pages/map/parseMapSearch";
 import { resolveMapSelection } from "../src/pages/map/resolveMapSelection";
 
@@ -15,7 +16,7 @@ const anna = "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60";
 const bob = "0199a0f2-22d5-7f1c-8d2e-3a6b9f5c8b71";
 const parse = (search: string) => parseMapSearch(new URLSearchParams(search), today);
 
-describe("the Map page's URL", () => {
+describe("the People page's URL", () => {
   it("defaults to Live, the signed-in person, every device and today", () => {
     expect(parse("")).toEqual({
       view: "live",
@@ -97,6 +98,20 @@ describe("the Map page's URL", () => {
         devicesOf,
       ).has("devices"),
     ).toBe(false);
+  });
+});
+
+describe("the views there are", () => {
+  it("offer Heat with the signed-in person only, whose heatmap it is", () => {
+    expect(viewsFor(true)).toEqual(["live", "history", "heat"]);
+    expect(viewsFor(false)).toEqual(["live", "history"]);
+  });
+
+  it("show Live for Heat without Me, and Heat again with Me", () => {
+    expect(shownView("heat", false)).toBe("live");
+    expect(shownView("heat", true)).toBe("heat");
+    expect(shownView("history", false)).toBe("history");
+    expect(shownView("live", false)).toBe("live");
   });
 });
 

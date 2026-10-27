@@ -17,6 +17,11 @@
   font-size: var(--text-m);
 }
 
+/* The signed-in person: the accent ring, apart from the people's identity colours. */
+.person-avatar--me {
+  --person-color: var(--color-accent);
+}
+
 .person-avatar--s {
   width: 2rem;
   height: 2rem;

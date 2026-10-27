@@ -1,317 +1,369 @@
-import type { Person } from "@trail/contracts/person";
-import type { OutgoingShare } from "@trail/contracts/share";
-import { useContext, useId, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import type { Person, SharedDevice } from "@trail/contracts/person";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { DocumentTitle } from "../../app/DocumentTitle";
 import { useSessionUser } from "../../app/useSessionUser";
-import { useFormatter } from "../../format/useFormatter";
-import { LiveStoreContext } from "../../live/LiveStoreContext";
-import { useLiveState } from "../../live/useLiveState";
-import { boundsOf } from "../../map/boundsOf";
+import { useDeviceColors } from "../../devices/useDeviceColors";
 import { LazyTrailMap } from "../../map/LazyTrailMap";
+import { mapStyleLabels } from "../../map/mapStyleChoices";
+import type { MapViewState } from "../../map/mapTypes";
 import { useMapStyle } from "../../map/useMapStyle";
-import { PersonCard } from "../../people/PersonCard";
-import { personPositions } from "../../people/personPositions";
 import { usePersonColors } from "../../people/usePersonColors";
 import { useConfig } from "../../queries/useConfig";
 import { useDevices } from "../../queries/useDevices";
-import { useHidePerson } from "../../queries/useHidePerson";
-import { useIncomingShares } from "../../queries/useIncomingShares";
 import { usePeople } from "../../queries/usePeople";
-import { useShares } from "../../queries/useShares";
-import { OutgoingShareList } from "../../sharing/OutgoingShareList";
-import { ShareDialog, type ShareDialogMode } from "../../sharing/ShareDialog";
-import { StopShareDialog } from "../../sharing/StopShareDialog";
 import { useNow } from "../../time/useNow";
-import { Button } from "../../ui/Button";
-import { EmptyState } from "../../ui/EmptyState";
-import { ErrorState } from "../../ui/ErrorState";
-import { Icon } from "../../ui/Icon";
-import { LinkButton } from "../../ui/LinkButton";
-import { LoadingBlock } from "../../ui/LoadingBlock";
-import { Notice } from "../../ui/Notice";
+import { LevelControl, levelLabels } from "../../transport/LevelControl";
+import { ModeLegend } from "../../transport/ModeLegend";
+import { useTrackLevel } from "../../transport/useTrackLevel";
 import { PageHeader } from "../../ui/PageHeader";
-import { PlainList } from "../../ui/PlainList";
-import { Skeleton } from "../../ui/Skeleton";
 import { useAnnounce } from "../../ui/useAnnounce";
+import { useMediaQuery } from "../../ui/useMediaQuery";
 import { useScrollableFocus } from "../../ui/useScrollableFocus";
+import { DeviceFilter, type DeviceFilterGroup } from "../map/DeviceFilter";
+import { useHeatView } from "../map/heat/useHeatView";
+import { useHistoryView } from "../map/history/useHistoryView";
+import { useLiveView } from "../map/live/useLiveView";
+import { MapOptions } from "../map/MapOptions";
+import type { MapPerson } from "../map/MapPerson";
+import { MapStyleControl } from "../map/MapStyleControl";
+import { type MapView, shownView, viewsFor } from "../map/mapViews";
+import { me } from "../map/me";
+import { PersonSelector } from "../map/PersonSelector";
+import { resolveMapSelection } from "../map/resolveMapSelection";
+import { useMapSearch } from "../map/useMapSearch";
+import { ViewSwitch } from "../map/ViewSwitch";
+import { MeCard } from "./MeCard";
+import { PeopleList } from "./PeopleList";
+import { everyoneToggled, selectionShowing } from "./peopleSelection";
 import "./PeoplePage.css";
 
-const defaultLiveMinutes = 15;
-/** How close "Show on map" goes, by what the share reveals. */
+const defaultThresholds = { liveMinutes: 15, staleHours: 12 };
+/** Where the map sits beside the panel instead of inside the scrolling page. */
+const besideThePanel = "(min-width: 64rem)";
+/** How close "Show on map" goes for someone the map shows already, by what their share reveals. */
+const focusZoom = { precise: 16, approximate: 14, area: 11 } as const;
 
-const sharesBackWith = (person: Person, shares: readonly OutgoingShare[]): boolean =>
-  shares.some(
-    (share) => share.recipient.userId === person.userId || share.recipient.email === person.email,
-  );
+type Focus = { key: string; lon: number; lat: number; zoom: number };
 
 /**
- * People, after Find My: a calm map of everyone who shares their location with
- * you, a card per person with everything the map shows in text, and the
- * people you share with — each a tap away from changing or stopping it.
+ * The People page, Trail's home (docs/architecture.md §14): one map with its
+ * three views — Live, History and Heat — and the choices they share (whose
+ * data, which devices, the map style, the tracks' level), all in the URL;
+ * beside it the people: Me first, then everyone who shares with the signed-in
+ * person. "Show on map" on a card makes that person the map's choice, and the
+ * page offers what can be shown of them: one's own levels, timeline, visits,
+ * trips and heatmap only while Me is chosen. Every view keeps its state and
+ * its queries in a hook that asks for nothing while another view is shown, so
+ * the map itself, with its camera, stays as it is when the view changes.
  */
 export function PeoplePage() {
   const user = useSessionUser();
-  const format = useFormatter();
-  const peopleHeadingId = useId();
-  const youHeadingId = useId();
-  const hiddenId = useId();
-  const scrollable = useScrollableFocus();
+  const { search, today, setView, setPeople, setDevices, showDay, showRange } = useMapSearch();
+  const { level, setLevel } = useTrackLevel();
+  const mapStyle = useMapStyle();
   const config = useConfig();
-  const people = usePeople();
-  const shares = useShares();
-  const incoming = useIncomingShares();
   const devices = useDevices();
-  const { style, dark } = useMapStyle();
-  const colors = usePersonColors({ dark });
+  const people = usePeople();
+  const colors = useDeviceColors({ dark: mapStyle.dark });
+  const personColors = usePersonColors({ dark: mapStyle.dark });
   const now = useNow(15_000);
-  const hide = useHidePerson();
+  const wide = useMediaQuery(besideThePanel);
+  const scrollable = useScrollableFocus();
   const announce = useAnnounce();
-  const live = useLiveState();
-  const store = useContext(LiveStoreContext);
-  const navigate = useNavigate();
-  const [dialog, setDialog] = useState<ShareDialogMode | null>(null);
-  const [stopping, setStopping] = useState<OutgoingShare | null>(null);
-  const liveMinutes = config.data?.thresholds.liveMinutes ?? defaultLiveMinutes;
+  const thresholds = config.data?.thresholds ?? defaultThresholds;
+  const [viewport, setViewport] = useState<MapViewState | null>(null);
 
-  const list = people.data ?? [];
-  const outgoing = shares.data ?? [];
-  const hidden = (incoming.data ?? []).filter((share) => share.hiddenAt !== null);
-  const suggestions = list
-    .filter((person) => !sharesBackWith(person, outgoing))
-    .map((person) => ({ name: person.displayName, email: person.email }));
-
-  const positions = useMemo(
+  const available = useMemo<MapPerson[]>(
+    () => [
+      {
+        key: me,
+        name: "Me",
+        devices: (devices.data ?? []).map((device) => ({ id: device.id, name: device.name })),
+      },
+      ...(people.data ?? []).map((person) => ({
+        key: person.userId,
+        name: person.displayName,
+        devices: person.devices.map((device) => ({ id: device.id, name: device.name })),
+      })),
+    ],
+    [devices.data, people.data],
+  );
+  // Without the people (a failed request) the map still shows one's own.
+  const complete = devices.data !== undefined && (people.data !== undefined || people.isError);
+  const selection = useMemo(
     () =>
-      personPositions(
-        people.data ?? [],
-        (userId) =>
-          people.data
-            ?.find((person) => person.userId === userId)
-            ?.devices.map((device) => device.id) ?? [],
-        colors,
-        (recordedAt) => now - Date.parse(recordedAt) <= liveMinutes * 60_000,
+      resolveMapSelection({ people: search.people, devices: search.devices }, available, complete),
+    [search.people, search.devices, available, complete],
+  );
+  const shownKeys = selection.people.map((person) => person.key);
+  const meShown = shownKeys.includes(me);
+  // Heat is one's own: with only others chosen the page shows Live, and Heat again with Me.
+  const view = shownView(search.view, meShown);
+
+  // Heat frames the camera only when the page opened on it; the other views share theirs.
+  const [openedOn] = useState(view);
+  const [leftFirstView, setLeftFirstView] = useState(false);
+  if (!leftFirstView && view !== openedOn) setLeftFirstView(true);
+
+  const shownPeople = useMemo(
+    () =>
+      (people.data ?? []).filter((person) =>
+        selection.people.some((selected) => selected.key === person.userId),
       ),
-    [people.data, colors, now, liveMinutes],
+    [people.data, selection],
   );
-  const bounds = useMemo(
-    () => boundsOf(positions.map((position) => [position.lon, position.lat] as const)),
-    [positions],
-  );
-  const fitKey = list
-    .map((person) => person.userId)
-    .sort()
-    .join(",");
-  const located = list.filter((person) =>
-    person.devices.some((device) => device.location !== null),
-  );
-  const mapLabel =
-    located.length === 0
-      ? "Map. Nobody who shares with you has a recent location."
-      : `Map of where ${format.list(located.map((person) => person.displayName))} ${located.length === 1 ? "is" : "are"}. The same details are in the cards on this page.`;
 
-  // The Map page shows them, Live and on their own, with what their share allows.
-  const showOnMap = (person: Person) =>
-    void navigate(`/?view=live&people=${encodeURIComponent(person.userId)}`);
+  // On phones the map scrolls with the page: "Show on map" brings it into view.
+  const mapArea = useRef<HTMLDivElement>(null);
+  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const revealMap = useCallback(() => {
+    if (!wide) {
+      mapArea.current?.scrollIntoView({
+        block: "nearest",
+        behavior: reducedMotion ? "auto" : "smooth",
+      });
+    }
+  }, [wide, reducedMotion]);
 
-  const notices = live.shareNotices.flatMap((notice) => {
-    const person = list.find((candidate) => candidate.share.id === notice.shareId);
-    return person === undefined ? [] : [{ notice, person }];
+  const shared = {
+    selection,
+    devices,
+    people: shownPeople,
+    colors,
+    personColors,
+    level,
+    dark: mapStyle.dark,
+    today,
+    timeZone: user.timezone,
+  };
+  const live = useLiveView({
+    ...shared,
+    active: view === "live",
+    now,
+    thresholds,
   });
+  const history = useHistoryView({
+    ...shared,
+    active: view === "history",
+    period: search.period,
+    showDay,
+    showRange,
+  });
+  const heat = useHeatView({
+    active: view === "heat",
+    selection,
+    devices,
+    viewport,
+    framesCamera: openedOn === "heat" && !leftFirstView,
+    dark: mapStyle.dark,
+    today,
+  });
+  const content = view === "live" ? live : view === "history" ? history : heat;
 
-  const description =
-    people.isPending || shares.isPending
-      ? undefined
-      : list.length === 0 && outgoing.length === 0
-        ? "Share your location with family and friends, one way and for as long as you choose."
-        : `${list.length === 0 ? "Nobody shares" : `${format.count(list.length)} ${list.length === 1 ? "person shares" : "people share"}`} with you · you share with ${format.count(outgoing.length)}`;
+  // "Show on map" for someone shown already moves the camera, over the view's last move. Once the
+  // view moves it again (or another view is shown) that one is the latest, and Show on map's is done:
+  // the map remembers only the last move it made, so an old one handed back would be made again.
+  const [shownFocus, setShownFocus] = useState<{ focus: Focus; over: string | null } | null>(null);
+  const focusCount = useRef(0);
+  const viewFocus = content.map.focus ?? null;
+  const viewFocusKey = viewFocus?.key ?? null;
+  if (shownFocus !== null && shownFocus.over !== viewFocusKey) setShownFocus(null);
+  const focus =
+    shownFocus !== null && shownFocus.over === viewFocusKey ? shownFocus.focus : viewFocus;
+
+  const devicesOf = (person: string) =>
+    available.find((candidate) => candidate.key === person)?.devices.map((device) => device.id) ??
+    [];
+  /** Shows someone: them alone when the map does not show them yet, else the camera goes there. */
+  const show = (key: string, name: string, target: Omit<Focus, "key"> | null) => {
+    const next = selectionShowing(shownKeys, key);
+    if (next !== null) {
+      // A new choice frames itself: what the map draws for it has a camera fit of its own.
+      setPeople(next, devicesOf);
+    } else if (target !== null) {
+      focusCount.current += 1;
+      setShownFocus({
+        focus: { ...target, key: `show:${key}#${focusCount.current}` },
+        over: viewFocusKey,
+      });
+    }
+    revealMap();
+    announce(`The map shows ${name}.`);
+  };
+  const showMe = () => {
+    const latest = (devices.data ?? [])
+      .flatMap((device) => (device.lastLocation === null ? [] : [device.lastLocation]))
+      .sort((a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt))[0];
+    show(me, "you", latest === undefined ? null : { lon: latest.lon, lat: latest.lat, zoom: 15 });
+  };
+  const showPerson = (person: Person, device: SharedDevice) => {
+    if (device.location === null) return;
+    show(person.userId, person.displayName, {
+      lon: device.location.lon,
+      lat: device.location.lat,
+      zoom: focusZoom[person.share.precision],
+    });
+  };
+  const everyoneKeys = available.map((person) => person.key);
+  const everyoneShown = everyoneKeys.every((key) => shownKeys.includes(key));
+  const showEveryone = () => {
+    const next = everyoneToggled(shownKeys, everyoneKeys);
+    setPeople(next, devicesOf);
+    revealMap();
+    announce(next.length === 1 ? "The map shows you." : "The map shows everyone.");
+  };
+
+  // Beside the map the panel scrolls by itself: another view starts at its top.
+  const panel = useRef<HTMLElement | null>(null);
+  const panelRef = useCallback(
+    (element: HTMLElement | null) => {
+      panel.current = element;
+      return scrollable(element);
+    },
+    [scrollable],
+  );
+  const switchView = (next: MapView) => {
+    if (panel.current !== null) panel.current.scrollTop = 0;
+    setView(next);
+  };
+
+  // Heatmaps are one's own: in Heat, people do not apply and the filter lists one's devices.
+  const choosesPeople = available.length > 1 && view !== "heat";
+  const groups: DeviceFilterGroup[] = selection.people
+    .filter((person) => view !== "heat" || person.key === me)
+    .map((person) => ({
+      key: person.key,
+      name: person.name,
+      devices: person.devices.map((device) =>
+        person.key === me
+          ? { ...device, slot: colors.slot(device.id), palette: "device" as const }
+          : { ...device, slot: personColors.slot(person.key), palette: "person" as const },
+      ),
+    }));
+  const deviceCount = groups.reduce((sum, group) => sum + group.devices.length, 0);
+  const shownCount = groups.reduce(
+    (sum, group) =>
+      sum + group.devices.filter((device) => selection.filter?.includes(device.id) ?? true).length,
+    0,
+  );
+  const transport = content.transport;
+  const summary = [
+    ...(choosesPeople
+      ? [
+          selection.people.length === available.length
+            ? "Everyone"
+            : selection.people.map((person) => person.name).join(", "),
+        ]
+      : []),
+    ...(deviceCount > 1
+      ? [
+          shownCount === deviceCount
+            ? `All ${deviceCount} devices`
+            : `${shownCount} of ${deviceCount} devices`,
+        ]
+      : []),
+    ...(transport === null ? [] : [levelLabels[level]]),
+    `${mapStyleLabels[mapStyle.choice]} map`,
+  ].join(" · ");
 
   return (
-    <div className="map-layout people-page">
-      <DocumentTitle title="People" />
-      <div className="map-layout__head">
-        <PageHeader
-          title="People"
-          description={description}
-          actions={
-            <Button variant="primary" icon="users" onClick={() => setDialog({ kind: "create" })}>
-              Share my location
-            </Button>
-          }
-        />
-      </div>
-
-      <div className="map-layout__map">
-        {style === null ? null : (
-          <LazyTrailMap
-            label={mapLabel}
-            mapStyle={style}
-            dark={dark}
-            positions={positions}
-            fit={{ key: fitKey, bounds: people.isPending ? null : bounds, maxZoom: 14 }}
-            cooperativeGestures
+    <div className="map-page">
+      <DocumentTitle title={`${content.title} · People`} />
+      <section className="map-page__panel" aria-labelledby="people-page-title" ref={panelRef}>
+        <div className="map-page__top">
+          <PageHeader
+            title="People"
+            titleId="people-page-title"
+            description={content.description}
           />
-        )}
-      </div>
-
-      <section className="map-layout__body" aria-label="People and sharing" ref={scrollable}>
-        {notices.map(({ notice, person }) => (
-          <Notice
-            key={notice.shareId}
-            tone="success"
-            role="status"
-            title={`${person.displayName} shares their location with you`}
-            action={
-              <Button variant="ghost" onClick={() => store?.dismissShareNotice(notice.shareId)}>
-                OK
-              </Button>
-            }
-          />
-        ))}
-
-        <section className="section" aria-labelledby={peopleHeadingId}>
-          <h2 className="section__title" id={peopleHeadingId}>
-            Sharing with you
-          </h2>
-          {people.isPending ? (
-            <LoadingBlock label="Loading people">
-              <Skeleton height="12rem" />
-            </LoadingBlock>
-          ) : people.isError ? (
-            <ErrorState
-              title="People could not be loaded"
-              error={people.error}
-              onRetry={() => void people.refetch()}
-              retrying={people.isFetching}
-            />
-          ) : list.length === 0 ? (
-            <div className="card">
-              <EmptyState icon="users" title="Nobody shares with you yet" level={3}>
-                <p>
-                  When someone shares their location with {user.email}, they appear here and on the
-                  map. Sharing works one way: share yours and they can share back.
-                </p>
-              </EmptyState>
-            </div>
-          ) : (
-            <PlainList className="people-page__cards">
-              {list.map((person) => (
-                <li key={person.userId}>
-                  <PersonCard
-                    person={person}
-                    colorSlot={colors.slot(person.userId)}
-                    now={now}
-                    liveMinutes={liveMinutes}
-                    sharesBack={sharesBackWith(person, outgoing)}
-                    onShowOnMap={() => showOnMap(person)}
-                    onShareBack={() => setDialog({ kind: "create", email: person.email })}
-                    hiding={hide.isPending && hide.variables.shareId === person.share.id}
-                    onHide={() =>
-                      hide.mutate(
-                        { shareId: person.share.id, hidden: true },
-                        {
-                          onSuccess: () =>
-                            announce(
-                              `${person.displayName} is hidden. Show them again under Hidden.`,
-                            ),
-                        },
-                      )
-                    }
-                  />
-                </li>
-              ))}
-            </PlainList>
+          <ViewSwitch view={view} views={viewsFor(meShown)} onChange={switchView} />
+        </div>
+        <div className="map-page__head">
+          {content.controls === null ? null : (
+            <div className="map-page__controls">{content.controls}</div>
           )}
-          {hide.isError ? <ErrorState title="Nobody was hidden" error={hide.error} /> : null}
-
-          {hidden.length === 0 ? null : (
-            <details className="disclosure people-page__hidden">
-              <summary>
-                <Icon name="chevronDown" className="disclosure__chevron" />
-                <span id={hiddenId}>Hidden ({format.count(hidden.length)})</span>
-              </summary>
-              <PlainList className="card card--flush row-list">
-                {hidden.map((share) => (
-                  <li key={share.id} className="row-list__item">
-                    <div className="row-list__main">
-                      <p className="row-list__title">{share.owner.displayName}</p>
-                      <p className="row-list__meta">
-                        Still shares with you; you see nothing of them while they are hidden.
-                      </p>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      busy={hide.isPending && hide.variables.shareId === share.id}
-                      aria-label={`Show ${share.owner.displayName} again`}
-                      onClick={() =>
-                        hide.mutate(
-                          { shareId: share.id, hidden: false },
-                          {
-                            onSuccess: () => announce(`${share.owner.displayName} is shown again.`),
-                          },
-                        )
-                      }
-                    >
-                      Show
-                    </Button>
-                  </li>
-                ))}
-              </PlainList>
-            </details>
-          )}
-        </section>
-
-        <section className="section" aria-labelledby={youHeadingId}>
-          <div className="section__header">
-            <h2 className="section__title" id={youHeadingId}>
-              You share with
-            </h2>
-          </div>
-          {shares.isPending ? (
-            <LoadingBlock label="Loading your shares">
-              <Skeleton height="4rem" />
-            </LoadingBlock>
-          ) : shares.isError ? (
-            <ErrorState
-              title="Your shares could not be loaded"
-              error={shares.error}
-              onRetry={() => void shares.refetch()}
-              retrying={shares.isFetching}
-            />
-          ) : outgoing.length === 0 ? (
-            <div className="card">
-              <p>
-                Nobody sees your location. Share it with someone, for an hour, until the end of the
-                day or for as long as you like.
-              </p>
-              <div className="cluster">
-                <Button icon="users" onClick={() => setDialog({ kind: "create" })}>
-                  Share my location
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="card card--flush">
-              <OutgoingShareList
-                shares={outgoing}
-                devices={devices.data ?? []}
-                now={now}
-                onChange={(share) => setDialog({ kind: "edit", share })}
-                onStop={setStopping}
+          <MapOptions summary={summary}>
+            {choosesPeople ? (
+              <PersonSelector
+                people={available.map((person) => ({
+                  key: person.key,
+                  name: person.name,
+                  slot: person.key === me ? null : personColors.slot(person.key),
+                }))}
+                selected={shownKeys}
+                onChange={(next) => setPeople(next, devicesOf)}
               />
-            </div>
-          )}
-          <p className="muted people-page__links">
-            <Icon name="globe" /> For someone without an account, make a public link in{" "}
-            <LinkButton to="/settings/sharing" variant="ghost">
-              Settings › Sharing
-            </LinkButton>
-          </p>
-        </section>
-      </section>
+            ) : null}
+            {deviceCount > 1 ? (
+              <DeviceFilter groups={groups} selected={selection.filter} onChange={setDevices} />
+            ) : null}
+            <MapStyleControl
+              choice={mapStyle.choice}
+              choices={mapStyle.choices}
+              onChange={mapStyle.setChoice}
+            />
+            {transport === null ? null : (
+              <div className="map-page__level">
+                <p className="map-options__label" aria-hidden="true">
+                  Detail of the tracks
+                </p>
+                <LevelControl level={level} available={transport.available} onChange={setLevel} />
+              </div>
+            )}
+          </MapOptions>
+          {transport !== null && level === "inferred" ? (
+            <ModeLegend modes={transport.modes} review={transport.review} />
+          ) : null}
+        </div>
 
-      <ShareDialog mode={dialog} onClose={() => setDialog(null)} suggestions={suggestions} />
-      <StopShareDialog share={stopping} onClose={() => setStopping(null)} />
+        <div className="map-page__map" ref={mapArea}>
+          <div className="map-page__canvas">
+            {mapStyle.style === null ? null : (
+              <LazyTrailMap
+                {...content.map}
+                focus={focus}
+                mapStyle={mapStyle.style}
+                dark={mapStyle.dark}
+                onViewChange={setViewport}
+                // Two fingers move a map inside a scrolling page; beside the panel one is enough.
+                cooperativeGestures={!wide}
+              />
+            )}
+            {content.chip}
+          </div>
+          {content.foot === null ? null : <div className="map-page__foot">{content.foot}</div>}
+        </div>
+
+        <div className="map-page__body">
+          {view === "live" || content.panel === null ? null : (
+            <section className="map-page__details" aria-label={content.panelLabel}>
+              {content.panel}
+            </section>
+          )}
+          <MeCard
+            name={user.displayName}
+            devices={devices}
+            now={now}
+            thresholds={thresholds}
+            shown={meShown}
+            onShowOnMap={showMe}
+          >
+            {view === "live" ? content.panel : null}
+          </MeCard>
+          <PeopleList
+            people={people}
+            shown={shownKeys}
+            everyone={available.length > 2 ? everyoneShown : null}
+            personColors={personColors}
+            now={now}
+            liveMinutes={thresholds.liveMinutes}
+            onShow={showPerson}
+            onShowEveryone={showEveryone}
+            notice={content.peopleNotice}
+          />
+        </div>
+      </section>
+      {content.dialog}
     </div>
   );
 }

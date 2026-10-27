@@ -50,9 +50,10 @@ export function UploadFeed({ devices, slotOf }: UploadFeedProps) {
   return (
     <section className="section upload-feed" aria-labelledby={headingId}>
       <div className="section__header">
-        <h2 className="section__title" id={headingId}>
+        {/* In the Me card, under its "Me". */}
+        <h3 className="section__title" id={headingId}>
           Uploads
-        </h2>
+        </h3>
         <p className="section__description">Each request from Overland, newest first.</p>
       </div>
       {pending && feed.length === 0 ? (

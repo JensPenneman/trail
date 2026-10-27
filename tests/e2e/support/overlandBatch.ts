@@ -81,3 +81,21 @@ export function overlandBatch(timeZone: string, now = Date.now()): OverlandBatch
 export function laterBatch(batch: OverlandBatch, deltaMs: number): OverlandBatch {
   return shifted(batch, deltaMs) as OverlandBatch;
 }
+
+/**
+ * The same upload a minute later with every battery reading changed: what the
+ * phone sends next. Later, as a device keeps only a newer reading than the one
+ * it has.
+ */
+export function withBattery(batch: OverlandBatch, level: number): OverlandBatch {
+  const charged = (feature: OverlandFeature) => ({
+    ...feature,
+    properties: { ...feature.properties, battery_level: level },
+  });
+  const later = laterBatch(batch, 60_000);
+  return {
+    ...later,
+    locations: later.locations.map(charged),
+    ...(later.current === undefined ? {} : { current: charged(later.current) }),
+  };
+}

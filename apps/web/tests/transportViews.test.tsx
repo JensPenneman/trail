@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../src/api/queryKeys";
 import { applyServerEvent } from "../src/live/applyServerEvent";
 import { createLiveStore } from "../src/live/createLiveStore";
-import { MapPage } from "../src/pages/map/MapPage";
+import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { automatic, ids, timeline, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
@@ -22,7 +22,7 @@ afterEach(() => {
 describe("the Transport level on History", () => {
   it("draws stops and moves by mode, with a legend and the day's timeline", async () => {
     mockApi(standardRoutes());
-    renderPage(<MapPage />, { url: "/?view=history", user });
+    renderPage(<PeoplePage />, { url: "/?view=history", user });
     const level = screen.getByRole("group", { name: "Detail of the tracks" });
     expect(within(level).getByRole("radio", { name: "Transport" })).toBeChecked();
     await waitFor(() =>
@@ -43,7 +43,7 @@ describe("the Transport level on History", () => {
   it("keeps the level in the URL and remembers it", async () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
-    const { router } = renderPage(<MapPage />, { url: "/?view=history", user });
+    const { router } = renderPage(<PeoplePage />, { url: "/?view=history", user });
     await person.click(screen.getByRole("radio", { name: "Raw" }));
     expect(router.state.location.search).toBe("?view=history&level=raw");
     expect(window.localStorage.getItem("trail.level")).toBe("raw");
@@ -68,7 +68,7 @@ describe("the Transport level on History", () => {
       },
     });
     const person = userEvent.setup();
-    renderPage(<MapPage />, { url: "/?view=history", user });
+    renderPage(<PeoplePage />, { url: "/?view=history", user });
     await person.click(await screen.findByRole("button", { name: /Details of the train/ }));
     const dialog = await screen.findByRole("dialog", { name: "Train" });
     expect(within(dialog).getByText("Was this a train ride?")).toBeInTheDocument();
@@ -116,7 +116,7 @@ describe("the quick toggle on Live", () => {
       },
     });
     const person = userEvent.setup();
-    renderPage(<MapPage />, { user });
+    renderPage(<PeoplePage />, { user });
     const card = await screen.findByRole("article", { name: "iPhone 16" });
     const chips = within(card).getByRole("group", { name: "Now:" });
     expect(
