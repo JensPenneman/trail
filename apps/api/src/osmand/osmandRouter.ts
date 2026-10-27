@@ -58,7 +58,7 @@ export function osmandRouter(ctx: AppContext): Router {
   router.all(
     "/",
     onlyGetAndPost,
-    refuseCredentialsOverHttp(ctx.config, "osmand"),
+    refuseCredentialsOverHttp(ctx, "osmand"),
     body,
     readOsmandRequest,
     identifyDevice(ctx.db, osmandToken),

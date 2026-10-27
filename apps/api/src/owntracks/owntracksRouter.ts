@@ -45,7 +45,7 @@ export function owntracksRouter(ctx: AppContext): Router {
 
   router.post(
     "/",
-    refuseCredentialsOverHttp(ctx.config, "owntracks"),
+    refuseCredentialsOverHttp(ctx, "owntracks"),
     identifyDevice(ctx.db, owntracksToken),
     failedTokenLimit(ctx),
     requireIngestDevice(challenges),

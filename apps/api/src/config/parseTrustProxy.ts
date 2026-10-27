@@ -15,3 +15,11 @@ export function parseTrustProxy(value: string): TrustProxySetting {
     .filter((part) => part.length > 0)
     .join(", ");
 }
+
+/**
+ * Whether the setting trusts no proxy at all — `false`, `0` hops or an empty
+ * list: then no request can be HTTPS for Express, as Trail serves plain HTTP.
+ */
+export function trustsNoProxy(setting: TrustProxySetting): boolean {
+  return setting === false || setting === 0 || setting === "";
+}

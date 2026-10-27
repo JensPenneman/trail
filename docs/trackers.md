@@ -261,7 +261,9 @@ seconds.
 - **403 Uploads need HTTPS**: the phone posts to `http://`, but Trail gives
   phones an `https://` address, and then takes no token over plain HTTP — no
   bearer token, password, `?token=` or identifier. Use the address the setup
-  shows.
+  shows. If the phone does use `https://`, the proxy in front of Trail is not
+  the one `TRUST_PROXY` trusts, so Trail cannot see the HTTPS: the server's
+  log says so once (docs/operations.md, Troubleshooting).
 - **415 Unsupported request body encoding**: the client compresses its
   uploads. None of these apps does; turn compression off.
 - **429 / 503 Too many requests**: a phone sends a long backlog; it tries again

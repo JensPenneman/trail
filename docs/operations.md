@@ -549,6 +549,8 @@ Day-to-day development uses `npm run dev` instead (README).
 | `app` keeps restarting; its log says "Invalid configuration" | A value is invalid; the log names it. Fix it in Launchway and redeploy. |
 | `/api/health` answers 503 | The database is down: `docker logs launchway-trail-db-1`. |
 | Requests all share one client address, or the session cookie is not `Secure` | `TRUST_PROXY` does not name Launchway's edge address. |
+| `app` will not start: "TRUST_PROXY: PUBLIC_URL is https://, but Trail serves plain HTTP and trusts no proxy …" | Trail serves plain HTTP, so only a trusted proxy can say a phone's upload came over HTTPS; without one every upload would be refused. Set `TRUST_PROXY` to the proxy that terminates TLS (Launchway's edge, `10.210.0.2`, is the compose default). |
+| Phones get 403 "Uploads need HTTPS" while the dashboard works; the log says "a proxy that TRUST_PROXY does not trust says they came over HTTPS" | `TRUST_PROXY` names another proxy than the one in front of Trail: the log line shows the address it came from. |
 | An API token with an IP allowlist is refused (401) from an allowed address | The same: without the edge in `TRUST_PROXY` every request seems to come from the edge. Settings › API tokens shows the address a token was last used from. |
 | "No passkey for this address" | Passkeys are per host name: a preview needs its own account; a new production address needs [a new passkey](#changing-the-public-address). |
 | `backup` restarts with "pg_dump failed" | The database is not reachable; the log line before it shows why. |

@@ -95,17 +95,26 @@ describe("uploads to an https:// address", () => {
     }
   });
 
-  it("are refused when only an untrusted proxy claims HTTPS", async () => {
+  it("are refused when only an untrusted proxy claims HTTPS, which is logged once", async () => {
+    // Trail trusts another proxy than the one in front (the tests connect from loopback).
+    const lines: string[] = [];
     const untrusted = await createTestContext({
-      env: { INGEST_BASE_URL: "https://trail.example.test", TRUST_PROXY: "" },
+      env: { INGEST_BASE_URL: "https://trail.example.test", TRUST_PROXY: "10.210.0.2" },
+      logDestination: { write: (line: string) => lines.push(line) },
+      logLevel: "warn",
     });
     try {
-      await request(untrusted.app)
-        .post(apiPaths.owntracks)
-        .set("Authorization", basicAuth("pixel", tokens.owntracks))
-        .set("X-Forwarded-Proto", "https")
-        .send("{}")
-        .expect(403);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await request(untrusted.app)
+          .post(apiPaths.owntracks)
+          .set("Authorization", basicAuth("pixel", tokens.owntracks))
+          .set("X-Forwarded-Proto", "https")
+          .send("{}")
+          .expect(403);
+      }
+      const hints = lines.filter((line) => line.includes("TRUST_PROXY does not trust"));
+      expect(hints).toHaveLength(1);
+      expect(hints[0]).not.toContain(tokens.owntracks);
     } finally {
       await untrusted.close();
     }

@@ -188,7 +188,7 @@ All configuration is environment variables, validated at boot with zod
 | `MCP_ALLOWED_ORIGINS` | empty | Origins of browser-based MCP clients that may call `/mcp` besides `PUBLIC_URL` and `ADDITIONAL_ORIGINS` (§8.6), comma-separated |
 | `INGEST_BASE_URL` | `PUBLIC_URL` | Base URL shown to phones; endpoints `<base>/api/overland`, `<base>/api/owntracks`, `<base>/api/osmand` (§6). An `https:` base makes the endpoints refuse uploads over plain HTTP |
 | `SIGNUP_ALLOWLIST` | empty | Emails (or `*@domain`) that may create an account without an invite |
-| `TRUST_PROXY` | `false` (nobody) | Express `trust proxy`: the proxies whose `X-Forwarded-For`/`-Proto` decide client address and HTTPS; `deploy/compose.yaml` defaults to Launchway's edge, `10.210.0.2` (§12) |
+| `TRUST_PROXY` | `false` (nobody) | Express `trust proxy`: the proxies whose `X-Forwarded-For`/`-Proto` decide client address and HTTPS; `deploy/compose.yaml` defaults to Launchway's edge, `10.210.0.2` (§12). Required with an `https:` address for the phones: Trail will not start without a trusted proxy then (§6) |
 | `SESSION_TTL_DAYS` | `30` | Sliding session lifetime |
 | `LIVE_WINDOW_MINUTES` | `15` | "live" status window |
 | `STALE_AFTER_HOURS` | `12` | "stale" status + silent-device alert threshold; also how old the position of a live-only share may be (§8.5) |
@@ -441,9 +441,13 @@ the address the phones were given — `INGEST_BASE_URL`, else `PUBLIC_URL`
 (`ingestHttpsOnly`). An `https:` address: an upload over plain HTTP is refused
 with `403 {"error":"Uploads need HTTPS: use https://…"}` before anything is read
 or looked up, whatever would carry its token — a bearer token, a Basic
-password, `?token=`, a form's `id`, a JSON `device_id`. HTTPS is `req.secure`:
-TLS to Trail itself, or a trusted proxy's `X-Forwarded-Proto: https`
-(`TRUST_PROXY`, §12), the rule of the `__Host-` session cookie. An `http:`
+password, `?token=`, a form's `id`, a JSON `device_id`. HTTPS is `req.secure`,
+the rule of the `__Host-` session cookie: as Trail serves plain HTTP, a
+trusted proxy's `X-Forwarded-Proto: https` (`TRUST_PROXY`, §12). So Trail
+refuses to start with an `https:` address and no proxy trusted (`false`, `0`,
+none listed) — every upload would be refused while the dashboard seemed to
+work — and the first refused upload that an untrusted hop says came over
+HTTPS logs a warning that names `TRUST_PROXY`. An `http:`
 address — a home network while Trail is set up (README, docs/overland.md) —
 takes every credential over HTTP, Basic included: the phones were told to use
 it, and refusing one scheme there would protect nothing while breaking the

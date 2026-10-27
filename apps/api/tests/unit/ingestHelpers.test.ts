@@ -1,4 +1,7 @@
+import type { Request, Response } from "express";
+import type { Logger } from "pino";
 import { describe, expect, it } from "vitest";
+import type { Config } from "../../src/config/config";
 import { deviceCredentials } from "../../src/devices/deviceCredentials";
 import { checkCoordinates } from "../../src/ingest/checkCoordinates";
 import {
@@ -10,6 +13,7 @@ import {
 import { batteryPercentOf, positiveRealOrNull } from "../../src/ingest/ingestValues";
 import { previewText } from "../../src/ingest/previewText";
 import { checkRecordTime } from "../../src/ingest/recordTime";
+import { refuseCredentialsOverHttp } from "../../src/ingest/refuseCredentialsOverHttp";
 import { withoutSecrets } from "../../src/ingest/withoutSecrets";
 import { ownEntry } from "../../src/lib/ownEntry";
 
@@ -109,6 +113,78 @@ describe("shared ingest checks", () => {
     expect(previewText("x".repeat(3000))).toHaveLength(2000);
     // A cut through an emoji leaves no lone surrogate behind.
     expect(previewText(`${"a".repeat(1999)}😀`).isWellFormed()).toBe(true);
+  });
+});
+
+describe("uploads over plain HTTP to an https:// address", () => {
+  const config = {
+    ingestHttpsOnly: true,
+    ingestUrls: {
+      overland: "https://trail.example.com/api/overland",
+      owntracks: "https://trail.example.com/api/owntracks",
+      osmand: "https://trail.example.com/api/osmand",
+    },
+    trustProxy: "10.210.0.2",
+  } as unknown as Config;
+
+  it("are refused, and a proxy Trail does not trust that says HTTPS is logged once", () => {
+    const warnings: unknown[] = [];
+    const logger = { warn: (...args: unknown[]) => warnings.push(args) } as unknown as Logger;
+    const refuse = refuseCredentialsOverHttp({ config, logger }, "owntracks");
+    const answer = (headers: Record<string, string>) => {
+      const sent: { status?: number; body?: unknown } = {};
+      const res = {
+        setHeader: () => {},
+        status(code: number) {
+          sent.status = code;
+          return this;
+        },
+        json(body: unknown) {
+          sent.body = body;
+        },
+      } as unknown as Response;
+      const req = {
+        secure: false,
+        socket: { remoteAddress: "172.18.0.5" },
+        get: (name: string) => headers[name.toLowerCase()],
+      } as unknown as Request;
+      let passed = false;
+      refuse(req, res, () => {
+        passed = true;
+      });
+      return { ...sent, passed };
+    };
+    expect(answer({})).toEqual({
+      status: 403,
+      body: { error: "Uploads need HTTPS: use https://trail.example.com/api/owntracks" },
+      passed: false,
+    });
+    expect(warnings).toEqual([]);
+    for (let request = 0; request < 3; request += 1) {
+      expect(answer({ "x-forwarded-proto": "https" }).status).toBe(403);
+    }
+    expect(warnings).toEqual([
+      [
+        { remoteAddress: "172.18.0.5", trustProxy: "10.210.0.2" },
+        "uploads refused: a proxy that TRUST_PROXY does not trust says they came over HTTPS",
+      ],
+    ]);
+  });
+
+  it("pass with HTTPS, and every one passes for an http:// address", () => {
+    const pass = (secure: boolean, httpsOnly: boolean) => {
+      let passed = false;
+      const refuse = refuseCredentialsOverHttp(
+        { config: { ...config, ingestHttpsOnly: httpsOnly }, logger: {} as Logger },
+        "osmand",
+      );
+      refuse({ secure } as Request, {} as Response, () => {
+        passed = true;
+      });
+      return passed;
+    };
+    expect(pass(true, true)).toBe(true);
+    expect(pass(false, false)).toBe(true);
   });
 });
 

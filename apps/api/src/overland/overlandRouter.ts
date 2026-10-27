@@ -34,7 +34,7 @@ export function overlandRouter(ctx: AppContext): Router {
    * Overland never compresses an upload: a compressed body is refused (415). */
   const json = express.json({ limit: "5mb", inflate: false });
   const authenticated = [
-    refuseCredentialsOverHttp(ctx.config, "overland"),
+    refuseCredentialsOverHttp(ctx, "overland"),
     identifyDevice(ctx.db, extractDeviceToken),
     failedTokenLimit(ctx),
     requireIngestDevice(),
