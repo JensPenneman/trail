@@ -1,0 +1,19 @@
+.chart__grid {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
+.chart__baseline {
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+}
+
+@media (forced-colors: active) {
+  .chart__grid {
+    stroke: GrayText;
+  }
+
+  .chart__baseline {
+    stroke: CanvasText;
+  }
+}

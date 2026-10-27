@@ -151,7 +151,7 @@ needs them all. A signed-in session holds every scope.
 | `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |
 | `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |
 | `locations:write` | Correct how you travelled (transport mode overrides). |
-| `history:read` | Read trips, daily statistics and activity: the history without coordinates. |
+| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates. |
 | `people:read` | See the people who share their location with you. |
 | `shares:read` | List your shares, the ones you receive and your public links. |
 | `shares:write` | Start and stop sharing, hide people and manage public links. |
@@ -255,6 +255,44 @@ People (and agents) can put a mode right, with `locations:write` and
 days, at most 400) gives distance, time and segments per day, device and
 mode. Segment ids stay the same while a segment keeps its start; after a
 correction or new data, read the timeline again.
+
+## Insights
+
+Insights are statistics of how you travelled, worked out from the stops and
+moves of the timeline — never from coordinates, so they need `history:read`
+only. A period is a range of local days in the account's time zone: `from`
+and `to` (both included, at most three years apart). Leave out `to` for today
+and `from` for the first day with stops or moves; `devices` narrows them to
+some devices. A move across the period's edge, or across midnight, counts in
+each day (and hour) with the part of its distance and time that falls there;
+counts of moves and stops are of those that started in the period. `pending`
+is true while recorded points of the period still wait for processing.
+
+- `GET /api/v1/insights/overview` — distance, time on the move, moves, stops
+  and active days; every transport mode's distance, time, moves, average
+  speed and share, with the change since the period of as many days just
+  before (`previous`, with its own totals); and `series`: distance and time
+  per mode for every day (periods up to 31 days), week (up to 26 weeks, from
+  Monday) or month, listed in `period.buckets`.
+- `GET /api/v1/insights/modes/{mode}` — one mode: its totals with the
+  typical speed (the moves' median speeds, weighted by time), the longest and
+  the fastest move; the series; distance and time per hour of the day
+  (`byHour`) and day of the week (`byWeekday`, 1 = Monday); the distance by
+  kind of way (`roads`: motorway down to path, the railways, ferry routes
+  and `other` off every mapped way, from map matching); for trains, trams and
+  metros the part on railway track (`rail`) and the halts at stations along
+  the way (`stationStops`), for boats the part on ferry routes (`ferry`); the
+  moves by their median speed (`speedHistogram`); and the five longest,
+  fastest and most recent moves (`topMoves`) with their segment ids, times,
+  distance and speeds.
+- `GET /api/v1/insights/time` — time and distance in every hour of every day
+  of the week (168 cells), for one `mode` or all of them; `modes` lists the
+  modes moved in.
+- `GET /api/v1/insights/roads` — the distance by kind of way and by family
+  (motorway, road, cycleway, foot, rail, tram, subway, ferry, none), for one
+  `mode` or all. Shares are of the distance with map data (`mappedM`): moves
+  without it — map data switched off or not fetched yet — count towards
+  `distanceM` only.
 
 ## Errors
 
@@ -441,6 +479,12 @@ curl -sS -G -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/segments" \
 curl -sS -G -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/tracks" \
   --data-urlencode "from=2026-10-25T00:00:00+02:00" --data-urlencode "to=2026-10-26T00:00:00+01:00" \
   -d level=inferred
+
+# How you travelled in October (compared with the 31 days before), and by bike
+curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" \
+  "$TRAIL/api/v1/insights/overview?from=2026-10-01&to=2026-10-31"
+curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" \
+  "$TRAIL/api/v1/insights/modes/cycling?from=2026-10-01&to=2026-10-31"
 
 # That move was a train ride; and from now on I am on a bus
 curl -sS -X PUT -H "Authorization: Bearer $TRAIL_TOKEN" -H "Content-Type: application/json" \

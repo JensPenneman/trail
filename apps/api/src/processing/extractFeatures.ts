@@ -1,4 +1,4 @@
-import type { TransportMode } from "@trail/contracts/transport";
+import { type TransportMode, type WayKind, wayKinds } from "@trail/contracts/transport";
 import { haversineM } from "../tracks/haversine";
 import type { MoveSeries } from "./moveSeries";
 import { zeroCounts } from "./moveSeries";
@@ -14,6 +14,18 @@ const round = (value: number, digits = 3): number => {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 };
+
+/** The position of `other` in `wayKinds`, which a point without a way kind counts towards. */
+const otherKind = wayKinds.indexOf("other");
+
+/** Each way kind's share of `total`, every kind present (all 0 when there is no distance). */
+const kindShares = (distances: Float64Array, total: number): Record<WayKind, number> =>
+  Object.fromEntries(
+    wayKinds.map((kind, position) => [
+      kind,
+      total > 0 ? round((distances[position] ?? 0) / total) : 0,
+    ]),
+  ) as Record<WayKind, number>;
 
 /** Overland's trip modes in Trail's vocabulary. */
 const tripModes: Readonly<Record<string, TransportMode>> = {
@@ -55,6 +67,7 @@ export function extractFeatures(
   const speeds: number[] = [];
   const weights: number[] = [];
   const shares = emptyShares();
+  const kindDistances = new Float64Array(wayKinds.length);
   let sharedDistance = 0;
   let nearTram = 0;
   let nearCycleway = 0;
@@ -71,14 +84,18 @@ export function extractFeatures(
       speeds.push(series.speed[k] ?? 0);
       weights.push(dt);
     }
+    const half = distance / 2;
     const family = series.families[k];
     if (family !== null && family !== undefined) {
       for (const [key, share] of Object.entries(family) as [keyof WayShares, number][]) {
         shares[key] += share * distance;
       }
+      const from = series.wayKindAt[k - 1] ?? otherKind;
+      const to = series.wayKindAt[k] ?? otherKind;
+      kindDistances[from] = (kindDistances[from] ?? 0) + half;
+      kindDistances[to] = (kindDistances[to] ?? 0) + half;
       sharedDistance += distance;
     }
-    const half = distance / 2;
     nearTram += half * ((series.nearTram[k - 1] ?? 0) + (series.nearTram[k] ?? 0));
     nearCycleway += half * ((series.nearCycleway[k - 1] ?? 0) + (series.nearCycleway[k] ?? 0));
     nearFoot += half * ((series.nearFoot[k - 1] ?? 0) + (series.nearFoot[k] ?? 0));
@@ -127,6 +144,7 @@ export function extractFeatures(
   } else if (series.mapped) {
     ways = emptyShares();
   }
+  const kinds = series.mapped ? kindShares(kindDistances, sharedDistance) : null;
 
   let dwells: StopCounts | null = null;
   let ends: StopCounts | null = null;
@@ -220,6 +238,7 @@ export function extractFeatures(
     },
     accelerationVariance,
     ways,
+    wayKinds: kinds,
     near: hasMap
       ? { tram: nearShare(nearTram), cycleway: nearShare(nearCycleway), foot: nearShare(nearFoot) }
       : null,

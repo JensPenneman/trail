@@ -1,0 +1,19 @@
+.mode-time {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.mode-time__charts {
+  display: grid;
+  gap: var(--space-6);
+  justify-self: stretch;
+  min-width: 0;
+}
+
+@media (min-width: 64rem) {
+  .mode-time__charts {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}

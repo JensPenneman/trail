@@ -3,6 +3,7 @@ import type { DeviceSummary } from "@trail/contracts/device";
 import type { Person } from "@trail/contracts/person";
 import type { ProcessingLevel } from "@trail/contracts/transport";
 import { useId, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import type { DeviceColors } from "../../../devices/useDeviceColors";
 import { useFormatter } from "../../../format/useFormatter";
 import { boundsOf } from "../../../map/boundsOf";
@@ -90,6 +91,22 @@ export function useHistoryView({
   const format = useFormatter();
   const calendarId = useId();
   const [openSegment, setOpenSegment] = useState<string | null>(null);
+  // A link to one move (`&segment=<id>`, Insights' "Show on the map") opens its details
+  // once the day's timeline has it; closing them drops the parameter.
+  const [params, setParams] = useSearchParams();
+  const linkedSegment = active ? params.get("segment") : null;
+  const closeSegment = () => {
+    setOpenSegment(null);
+    if (linkedSegment === null) return;
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("segment");
+        return next;
+      },
+      { replace: true },
+    );
+  };
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [browsing, setBrowsing] = useState<{ anchor: string; month: string } | null>(null);
   const [scrub, setScrub] = useState<{ key: string; value: number } | null>(null);
@@ -181,7 +198,8 @@ export function useHistoryView({
     return byDevice;
   }, [people]);
   const segments = range === null ? undefined : timeline.data?.items;
-  const shownSegment = segments?.find((segment) => segment.id === openSegment) ?? null;
+  const shownSegment =
+    segments?.find((segment) => segment.id === (openSegment ?? linkedSegment)) ?? null;
   const visitPoints = useMemo<MapPoint[]>(
     () =>
       (visitList ?? []).map((visit) => ({
@@ -548,7 +566,7 @@ export function useHistoryView({
         <SegmentDialog
           segment={shownSegment}
           deviceName={deviceName(shownSegment.deviceId)}
-          onClose={() => setOpenSegment(null)}
+          onClose={closeSegment}
         />
       ),
   };

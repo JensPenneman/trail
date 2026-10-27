@@ -3,7 +3,10 @@
  * typed object. The stages take it as an argument, so tests can vary it, and
  * `segments.features` keeps what each move was judged on, so a change here can
  * be evaluated against stored segments (and the corrections people made)
- * before it ships. Bump `processingVersion` with any change.
+ * before it ships. A change bumps the version of its level and of every level
+ * above it (`processingVersions`): `averaging` belongs to the averaged level,
+ * `stops` and `mapping` to the mapped level (stops are found before map
+ * matching), the rest to the inferred level.
  */
 export interface ProcessingConfig {
   readonly averaging: {

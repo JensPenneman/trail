@@ -14,13 +14,13 @@ const current = () =>
     .map((link) => link.textContent);
 
 describe("the main navigation", () => {
-  it("offers People, Devices and Settings, and says which one is current", () => {
+  it("offers People, Devices, Insights and Settings, and says which one is current", () => {
     renderPage(<PrimaryNav />, { path: "/", url: "/?view=history&date=2026-09-01" });
     expect(
       within(nav())
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["People", "Devices", "Settings"]);
+    ).toEqual(["People", "Devices", "Insights", "Settings"]);
     expect(current()).toEqual(["People"]);
     expect(within(nav()).getByRole("link", { name: "People" })).toHaveAttribute("href", "/");
     expect(within(nav()).getByRole("link", { name: "Settings" })).toHaveAttribute(
@@ -32,6 +32,18 @@ describe("the main navigation", () => {
   it("keeps an item current on every address below it", () => {
     renderPage(<PrimaryNav />, { path: "/devices/:deviceId", url: "/devices/abc" });
     expect(current()).toEqual(["Devices"]);
+  });
+
+  it("marks Insights on each of its pages", () => {
+    renderPage(<PrimaryNav />, {
+      path: "/insights/transport/:mode",
+      url: "/insights/transport/car",
+    });
+    expect(current()).toEqual(["Insights"]);
+    expect(within(nav()).getByRole("link", { name: "Insights" })).toHaveAttribute(
+      "href",
+      "/insights",
+    );
   });
 
   it("marks Settings on each of its pages", () => {

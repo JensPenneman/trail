@@ -83,6 +83,22 @@ describe("the Transport level on History", () => {
   });
 });
 
+describe("a link to one move", () => {
+  it("opens its details on its day, and closing them drops the link", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, {
+      url: `/?view=history&segment=${ids.train}`,
+      user,
+    });
+    const dialog = await screen.findByRole("dialog", { name: "Train" }, { timeout: 5000 });
+    expect(within(dialog).getByText("Was this a train ride?")).toBeInTheDocument();
+    await person.click(within(dialog).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(router.state.location.search).toBe("?view=history"));
+    expect(screen.queryByRole("dialog", { name: "Train" })).toBeNull();
+  });
+});
+
 describe("the quick toggle on Live", () => {
   it("sets the mode from now on and hands it back to Auto", async () => {
     let mode = automatic;

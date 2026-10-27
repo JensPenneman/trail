@@ -84,6 +84,34 @@ export function appRoutes(): RouteObject[] {
                   lazy: () =>
                     import("../pages/device/DevicePage").then((m) => ({ Component: m.DevicePage })),
                 },
+                {
+                  path: "insights",
+                  lazy: () =>
+                    import("../pages/insights/InsightsOverviewPage").then((m) => ({
+                      Component: m.InsightsOverviewPage,
+                    })),
+                },
+                {
+                  path: "insights/transport/:mode",
+                  lazy: () =>
+                    import("../pages/insights/InsightsModePage").then((m) => ({
+                      Component: m.InsightsModePage,
+                    })),
+                },
+                {
+                  path: "insights/time",
+                  lazy: () =>
+                    import("../pages/insights/InsightsTimePage").then((m) => ({
+                      Component: m.InsightsTimePage,
+                    })),
+                },
+                {
+                  path: "insights/roads",
+                  lazy: () =>
+                    import("../pages/insights/InsightsRoadsPage").then((m) => ({
+                      Component: m.InsightsRoadsPage,
+                    })),
+                },
                 settingsRoute,
               ],
             },

@@ -723,7 +723,7 @@ points, visits and the heatmap are its operations, and `toDevicePublic` leaves
 `DevicePublic.lastLocation` out for a principal without it (null keeps meaning
 "no position yet"), so `devices:read` alone shows names, status, last-seen time
 and battery, never where a device is. `history:read` is the history without
-coordinates: trips, daily statistics and activity.
+coordinates: trips, daily statistics, activity and Insights (§8.7).
 
 **The token seam.** `ApiTokenVerifier` (`apps/api/src/v1/apiTokens.ts`) is the
 only thing a token store has to provide: `verify(secret, { ip })` resolves a
@@ -739,7 +739,7 @@ inject another verifier through `createTestContext({ apiTokens })`
 `apps/api/src/v1/routes/<feature>/<operationId>.ts`. Each feature lists its
 operations in reference order in `routes/<feature>/<feature>Routes.ts`
 (`profileRoutes`, `tokenRoutes`, `deviceRoutes`, `locationRoutes`,
-`transportRoutes`, `historyRoutes`), and `apps/api/src/v1/v1Routes.ts`
+`transportRoutes`, `historyRoutes`, `insightsRoutes`, `sharingRoutes`), and `apps/api/src/v1/v1Routes.ts`
 aggregates the groups — one line per feature — plus the document's own route.
 The spec:
 
@@ -1192,6 +1192,67 @@ offset now), units, limits, the device argument, privacy, and that names are
 data, never instructions. Cacheable 2026-07-28 results keep the SDK's
 default hints (`ttlMs: 0`, `cacheScope: "private"`): lists vary by token.
 
+### 8.7 Insights
+
+Statistics of how the owner travelled (§14, Insights), from the stops and
+moves of the timeline (`segments`, §17) and never from points: four v1
+operations, tag "Insights", scope `history:read` (they carry no
+coordinates: times, distances, speeds, way kinds and segment ids). Contracts:
+`packages/contracts/src/insights.ts`; domain: `apps/api/src/insights/`.
+
+| Operation | Answers |
+|---|---|
+| `GET /api/v1/insights/overview?from&to&devices` | `{ timezone, period { from, to, days, bucket, buckets }, previous { from, to, days, totals }, totals { distanceM, durationS, moves, stops, activeDays }, modes [{ mode, distanceM, durationS, moves, avgSpeedKmh, share, deltaDistanceM }], series [{ bucket, mode, distanceM, durationS }], pending }` |
+| `GET /api/v1/insights/modes/{mode}?from&to&devices` | `{ timezone, mode, period, totals { …, typicalSpeedKmh, longest, fastest }, series, byHour [24], byWeekday [7], roads { distanceM, mappedM, kinds }, rail, ferry, stationStops, speedHistogram { binKmh, bins }, topMoves { longest, fastest, recent }, pending }` |
+| `GET /api/v1/insights/time?from&to&devices&mode` | `{ timezone, period, mode, modes, cells [168: weekday × hour], pending }` |
+| `GET /api/v1/insights/roads?from&to&devices&mode` | `{ timezone, period, mode, modes, distanceM, mappedM, kinds, families, pending }` |
+
+- **The period** is local days in the owner's zone, `from` and `to`
+  included, at most three years (`lastInsightsDay`: the day before the same
+  date three years on). `to` left out is today; `from` left out is the first
+  local day with a segment of the devices (one index lookup per device), but
+  no earlier than three years before `to` (`resolvePeriod`); a left-out end
+  that breaks the span or the order answers 400 like the schema does.
+  `devices` goes through `resolveDeviceIds` (another person's or a device
+  outside the token: 404); a token limited to some devices sees only theirs.
+- **Reading.** One query per operation reads the moves overlapping the
+  period (`loadInsightMoves`: id, device, mode, start and end, distance, top
+  speed and from `features` the median speed, `wayKinds` and `dwells`); the
+  overview reads its previous period with it and counts the stops that
+  started in both. Everything else is pure TypeScript, unit-tested without a
+  database.
+- **Prorating.** `localHours` lists the period's local hours (a day of 24
+  hours numbers them from 0; a day of 23 or 25 hours, or one that starts after
+  a skipped midnight, asks the zone for each hour's number, so 02:00 is
+  missing on the day summer time starts and comes twice on the day it ends).
+  `hourParts` splits every move over them by time, its distance in
+  proportion — as `GET /api/v1/stats/modes` does by day — so a move across
+  midnight or the period's edge counts with the part inside; days, weeks,
+  months, hours of the day and weekdays add up those parts. Counts (moves,
+  stops) are of what started inside the period, as are the statistics of
+  whole moves: the typical speed (median of the moves' median speeds,
+  weighted by time), the longest and fastest (top speed), the halts at
+  stations (`features.dwells`: stations for trains, tram stops for trams,
+  metro stations for metros), the speed histogram and the top five longest,
+  fastest and most recent.
+- **Steps.** By the period's length: up to 31 days by day, up to 26 weeks
+  by week (Monday to Sunday, named by the Monday, the first possibly before
+  `from`), else by month; `period.buckets` lists them all, `series` leaves out
+  empty ones (a mode page's series lists every step).
+- **Deltas** compare with the period of as many days just before; the
+  overview gives that period's totals, and each mode's `deltaDistanceM`.
+- **Roads.** `features.wayKinds` (§17.3) gives every move's distance per
+  kind of way, scaled so the stored, rounded shares add up to the whole;
+  `mappedM` is the distance of moves that have them, which the shares are
+  of. Moves without (no map data; or worked out before inferred version 2,
+  until the backfill reaches them) count towards `distanceM` only. Families
+  are the kinds grouped as the inference groups them (`wayFamilyOf`); the
+  rail share of trains, trams and metros is rail, light rail, tram and subway
+  track, the ferry share of boats ferry routes.
+- `pending` is the timeline's (`hasPendingWork` over the period's devices
+  and instants). A request covering three years reads at most the segments
+  of those years and builds about 26 000 local hours in some 30 ms.
+
 ## 9. Live updates (SSE)
 
 `GET /api/events` — `text/event-stream`, `Cache-Control: no-store`,
@@ -1247,8 +1308,8 @@ events and refetches people and shares on `share` events.
   devices in the background.
 - the processing worker (§17.4) — 3 s after new work, every minute for
   retries and every 15 minutes for windows waiting on map data and lost
-  windows; the boot-time backfill when the algorithms' version changed; map
-  tiles fetched alongside, within the daily budget.
+  windows; the boot-time backfill when a level's algorithms changed version;
+  map tiles fetched alongside, within the daily budget.
 Jobs must never crash the process; failures are logged. Runs never overlap.
 
 ## 11. CLI
@@ -1460,9 +1521,9 @@ vector styles, light/dark and optional satellite imagery from `/api/config`),
 `uqr` for QR codes. Plain CSS with custom properties (LCH colours with sRGB
 fallbacks), system font stack, no web fonts, no third-party scripts, CSP-clean.
 
-Navigation (`PrimaryNav`, one landmark): **People · Devices · Settings**,
-in the header on wide screens and as a tab bar along the bottom edge on
-phones (the same element, restyled); the current item carries
+Navigation (`PrimaryNav`, one landmark): **People · Devices · Insights ·
+Settings**, in the header on wide screens and as a tab bar along the bottom
+edge on phones (the same element, restyled); the current item carries
 `aria-current="page"` on every address below it. Settings leads to
 `/settings`: the list of Settings on phones, its first page beside the list
 on wide screens.
@@ -1473,6 +1534,7 @@ on wide screens.
 | `/s` | a public link; its secret is the fragment, `/s#trls_…` (public) |
 | `/` | **People**, the home page: the map with Live, History and Heat, and the people list (signed in) |
 | `/devices`, `/devices/:id` | Devices, one device |
+| `/insights`, `/insights/transport/:mode`, `/insights/time`, `/insights/roads` | Insights: the overview, a transport mode's page, when you travel, roads |
 | `/settings` | Settings: on phones the list with search; on wide screens the first page (Profile) beside the list. An anchor of the single page of 0.2 (`/settings#tokens`, `#browsers`, …) opens its page (`settingsPathFor`) |
 | `/settings/profile`, `…/passkeys`, `…/browsers`, `…/sharing`, `…/links`, `…/privacy/viewers`, `…/privacy/access-log`, `…/data`, `…/tokens`, `…/mcp`, `…/preferences`, `…/notifications`, `…/about`, `…/accounts` | a page of Settings each; `…/accounts` for administrators only, everyone else lands on `/settings` |
 | `/settings/passkeys/:id`, `…/sharing/:shareId`, `…/links/:id`, `…/tokens/:id` | the page of one passkey, share, public link or API token |
@@ -1591,6 +1653,82 @@ count among them, since they lead to signed-in pages.
   turns into a success state via SSE. Device page: status, ingest log, raw
   points (paginated), remote settings preset, rotate token (re-shows the QR),
   rename, alerts toggle, delete (type the name to confirm).
+- **Insights** (`pages/insights/`) — how the signed-in person travelled,
+  from the operations of §8.7, on four pages that share a heading, a
+  navigation of their own (Overview · When you travel · Roads; a mode's page
+  has a way back instead), one row of filters above everything they scope and
+  a notice while processing has work in the period ("Processing is still
+  catching up"). The state is the URL: `?period=7d|30d|90d|year|all` or
+  `?from=…&to=…` (a custom range of local days, three years at most), plus
+  `devices=` and, on When you travel and Roads, `mode=`; the default (the
+  last 30 days, every device, every mode) is left out, anything that cannot
+  be one is dropped (`parseInsightsSearch`), and links between the pages keep
+  the period and the devices (`insightsLink`). A new period or mode is a step
+  of the history; device toggles replace it. The period's chips and a custom
+  range behind the last one (`PeriodPicker`), the device filter of the People
+  page when there are two devices or more. Refetching keeps the previous
+  numbers on screen, dimmed (`aria-busy`); `segments` events refetch every
+  Insights query.
+  - **Overview** (`/insights`) — tiles for distance, time on the move, moves,
+    stops and active days, each with its change against the period of as
+    many days before ("12% more than the 30 days before", "3 fewer than …";
+    none for all of the history, nor against a period without moves); the
+    distance by mode as one bar per mode in its colour, labelled with the
+    distance and share; the distance or time per day, week or month stacked
+    by mode in the modes' fixed order, past seven modes the smallest folding
+    into "Other modes" (`foldModes`); and the table of modes — distance,
+    time, moves, average speed, share and change — whose rows open the modes'
+    pages.
+  - **A mode** (`/insights/transport/:mode`) — tiles (distance, time, moves,
+    average and typical speed, the longest move, the top speed), the
+    distance over the period as a line, distance or time per hour of the day
+    and per weekday, then by mode: the distance by kind of road (walking,
+    running, cycling, car, bus), the share on railway track and the halts at
+    stations (train, tram, metro), the share on ferry routes (boat), with a
+    word when map data is missing or covers only part; the top moves
+    (Longest · Fastest · Latest, five each), each with "Show on the map",
+    which opens History on the move's local day with its details
+    (`/?view=history&date=…&segment=<id>`: `useHistoryView` opens the
+    dialog of the segment the address names once the day's timeline has it,
+    and closing it drops the parameter); and the moves by median speed as a
+    histogram. An unknown mode is a page saying so, asking for nothing.
+  - **When you travel** (`/insights/time`) — time on the move in every hour
+    of every weekday as a grid, for every mode or the one chosen (the modes
+    of the period in a select).
+  - **Roads** (`/insights/roads`) — the distance by kind of way and by group
+    of ways, for every mode or one, with how much of the distance map data
+    covers; a notice where it covers none.
+
+  The charts (`apps/web/src/charts/`, no library): `BarChart` (stacked or
+  grouped, columns or horizontal bars; one series may give each row its own
+  tone, as the bars per mode do), `LineChart` (up to four lines on one axis,
+  a wash under a single one), `Histogram`, `HeatGrid` with its scale legend,
+  `StatTiles`/`StatTile`, `Legend` and `ChartTable`. Inline SVG drawn at the
+  box's real width (a `ResizeObserver`; the viewBox is in CSS pixels, so
+  text stays crisp) with fixed heights that include the axes. Marks keep the
+  modes' `--mode-*` colours (single-series charts not about a mode take the
+  accent), the grid a neutral sequential ramp (`--heat-0` … `--heat-5`, light
+  and dark, monotone in lightness); text never wears a series colour. Bars
+  are at most 24 px thick with a rounded data end, touching fills are
+  separated by a 2 px surface gap, lines are 2 px, gridlines solid
+  hairlines; ticks are round and thinned so labels never collide, at 320 px
+  too. Every chart is a figure named by its visible title and described by
+  its visible one-line summary (`describeBars`, `describeExtremes`, or the
+  page's own words); it is not an image as a whole, since its marks are
+  focusable, which a role with presentational children would hide from
+  assistive technology: the SVG is a group of marks, each an image named by
+  its row (a day, an hour, a mode, a cell "Monday, 08:00–09:00") and
+  described by its values ("Car 12.3 km, Train 30 km, total 42.3 km"). The
+  marks are one tab stop: arrow keys, Home and End move between them (in two
+  dimensions on the grid, Ctrl+Home/End to its corners), Escape hides the
+  tooltip. One tooltip per chart, for the hovered, tapped or focused mark —
+  the whole band or cell is the target, values first, then their names with
+  a line key of their colour — never the only way to a number: every chart
+  has its numbers as a table in a disclosure ("Show the numbers"). Legends
+  for two or more series. Forced colours: marks in system colours, series
+  told apart by line textures at 45° and 135° that the legend repeats, focus
+  in `Highlight`; nothing in the charts moves, and the dimming on refetch
+  only fades without `prefers-reduced-motion: reduce`.
 - **Settings** — a tree of pages in the style of the iPhone's Settings app
   (`apps/web/src/settings/`). The tree is data (`settingsTree.ts`): the
   groups Account · Privacy & data · Developer · App · Admin, and each row's
@@ -1741,7 +1879,17 @@ which are merged by hand; majors wait for a person, security ones too.
   subway and a ferry) with journeys recorded through it (`journeys.ts`: a
   dense walk, a drive, a bus, a bike ride, a train every 3 to 5 minutes, walk
   → train → walk, a tram, a ferry, a flight, a phone on a desk); a benchmark
-  holds a dense day of 21 000 points to its CPU budget. `mcpServer.test.ts`
+  holds a dense day of 21 000 points to its CPU budget, and `wayKinds.test.ts`
+  puts every journey on its kinds of way (adding up to the whole and, by
+  family, to the family shares). Insights' pure parts
+  (`insightsCalendar.test.ts`, `insightsAggregation.test.ts`): the local hours
+  of a period across both changes of the clocks, in zones half an hour off
+  UTC and in one that skips midnight; moves prorated over them at local
+  midnight, at the period's edges and on the night of 25 hours; periods left
+  open or too long, the period before, the steps and their names; totals,
+  modes, shares and deltas; a mode's hours, weekdays, kinds of way, rail
+  share, halts, typical speed, top moves and speed bins; the road shares
+  scaled from rounded ones; the 7 × 24 grid. `mcpServer.test.ts`
   covers the MCP server's pure parts (names made safe, times with the zone's
   offset, the nearest point, ranges and caps, the Origin rule, the
   instructions, the tool runner's refusals, failures, schema check and log
@@ -1782,6 +1930,13 @@ which are merged by hand; majors wait for a person, security ones too.
   position, details or distance where not granted, no addresses or ids,
   hidden and stopped shares left out), the read-only transaction and its
   timeout, and a device and a sharer named to instruct the agent.
+  `insightsApi.test.ts` runs the four Insights operations on processed
+  journeys (with map data, so the kinds of way are there): totals against
+  the timeline, no coordinate anywhere in an answer, the period left out,
+  empty and pending periods, the three-year cap, an unknown mode, scopes
+  (`history:read`), a token limited to some devices, other people's devices
+  and their own data, and segments written at exact times across local
+  midnight and the night summer time ends.
   The migration-upgrade test also records rows in the user-data tables that
   later migrations add (`api_tokens`, `mode_overrides`, and `shares`,
   `share_links`, `hidden_people` and the grid key of sharing), each with the
@@ -1812,7 +1967,18 @@ which are merged by hand; majors wait for a person, security ones too.
   `isSignedInPath` and the precedence of the map's defaults have unit tests
   of their own; Settings itself renders through its real routes
   (`renderSettings`, phone or wide screen) for the list, search, going
-  deeper and back with focus, and every page.
+  deeper and back with focus, and every page. The charts' helpers (scales,
+  nice ticks, bands, tick thinning, the heat grid's bins, summaries, tooltip
+  placement) and components (named and described figures, marks with their
+  values as descriptions, one tab stop and the arrow keys, tooltips by
+  pointer, focus and Escape, tables, empty charts without NaN, a row's own
+  tone); Insights' address (`parseInsightsSearch` and the parameters it
+  changes), its words (changes against the period before, ticks, the steps'
+  names, folding modes) and its four pages against a mocked API (periods and
+  devices in the address and the requests, a custom range, the
+  processing notice, a mode's link to the map, the mode switch, a page
+  without map data); and a link to one move opening its dialog on the People
+  page.
 - `tests/e2e` — Playwright against the built stack. `playwright.config.ts`
   starts `scripts/e2e-server.mjs`: it empties the `trail_e2e` database
   (`E2E_DATABASE_URL`; any database not named `trail…e2e` is refused) and runs
@@ -1855,7 +2021,12 @@ which are merged by hand; majors wait for a person, security ones too.
   the history, the old anchors and addresses, the preferences the map opens
   with, the administrators' page), the navigation (a tab bar on phones, the
   current item, focus on the new page's heading, `/people` leading home with
-  its parameters), axe (WCAG 2.0 A–AAA, 2.1/2.2 AA, best practices) on every
+  its parameters), Insights (a walk and a drive worked out by the server
+  without map data: the overview and its numbers, another period in the
+  address, a chart by keyboard — one tab stop, arrow keys, the tooltip and
+  Escape —, a mode's page from the table and its link to the move on the
+  map, when you travel with a mode, roads without map data, and every page
+  at 320 px), axe (WCAG 2.0 A–AAA, 2.1/2.2 AA, best practices) on every
   view and page, keyboard use and 320 px screens. The suite's server
   has no map data (`PROCESSING_OVERPASS_URL` empty), so the mapped level
   degrades to averaged there.
@@ -1864,9 +2035,11 @@ which are merged by hand; majors wait for a person, security ones too.
 
 Trail works out how a device travelled from the recorded points, in four
 levels of calculation, each built on the one before. Recorded data is never
-changed: everything below is derived, carries the algorithm version
-(`processingVersion`, `apps/api/src/processing/processingVersion.ts`) and can
-be rebuilt with `trail reprocess`. The stages are pure functions over plain
+changed: everything below is derived, carries the version of its level's
+algorithms (`processingVersions` in `apps/api/src/processing/processingVersion.ts`:
+a level's version counts the changes to it and to the levels below it, so a
+change bumps its own level and every level above) and can be rebuilt with
+`trail reprocess`. The stages are pure functions over plain
 arrays in `apps/api/src/processing/` (`averagePoints`, `detectStops`,
 `matchToWays`, `extractFeatures`, `scoreModes`, `splitMove`, `applyOverrides`,
 composed by `planWindow`, `mapPiece` per piece of map data and `inferWindow`);
@@ -1900,15 +2073,16 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   `kept`, `lat_avg`, `lon_avg`, `speed_avg`, `lat_map`/`lon_map` (null: not
   mapped), `way_id`, `way_kind` (null for stop points, `other` off every
   way), `snap_m`, `path_map` (jsonb `[[lon, lat], …]`: the way's shape since
-  the move's previous point, both ends excluded), `version`, `processed_at`.
+  the move's previous point, both ends excluded), `version` (the mapped
+  level's: the row holds the averaged and mapped levels), `processed_at`.
 - **segments** — `id` (uuidv7, kept while a segment keeps its start),
   `device_id` → devices (cascade), `started_at`, `ended_at`, `kind`
   `stop|move`, `mode` (the one that counts: `mode_user`, else
   `mode_inferred`; null for stops), `mode_inferred`, `mode_user`,
   `confidence`, `review` (the inference was unsure; `needsReview` = review and
   no `mode_user`), `distance_m`, `duration_s`, `max_speed`, `point_count`,
-  start, end and centroid lat/lon, `features` (jsonb), `version`,
-  `computed_at`. Unique `(device_id, started_at)`, index
+  start, end and centroid lat/lon, `features` (jsonb), `version` (the
+  inferred level's), `computed_at`. Unique `(device_id, started_at)`, index
   `(device_id, ended_at)`. Stops and moves follow each other without overlap
   and share their boundary point; a recording gap without travel lies outside
   every segment.
@@ -1928,7 +2102,10 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   **osm_tile_ways** `(z, x, y, way_id)`; **osm_pois** (`id` `n…|w…|r…`,
   `kind` `station|halt|tram_stop|subway_station|bus_stop|ferry_terminal|aerodrome`,
   `lat`, `lon`, `name`, the tile it came with).
-- **processing_state** — key/value: the version the history was backfilled for.
+- **processing_state** — key/value: `backfill` holds the versions the history
+  was backfilled for, `{ "versions": { "averaged": 1, "mapped": 1, "inferred": 2 } }`
+  (`{ "version": n }`, from before the levels had versions of their own, means
+  n for every level).
 
 ### 17.3 Algorithms
 
@@ -2024,8 +2201,10 @@ time-weighted median, p85 and p98 (top) speed — the points' own speeds for
 intervals up to 30 s, distance along the track over time beyond that — the
 average speed, the acceleration variance of dense intervals, the shares of the
 distance by matched way family (rail, subway, tram, motorway, road, cycleway,
-foot, ferry, none) and near tram tracks, cycleways and footways (they run
-beside roads), the corridor ratio (samples every 250 m along the straight
+foot, ferry, none) and by way kind (`wayKinds`: every kind, a matched point
+without one counting as `other`; summed by family they give the family
+shares), and near tram tracks, cycleways and footways (they run beside
+roads), the corridor ratio (samples every 250 m along the straight
 lines between points within 200 m of a railway, and of a motorway), pauses
 inside the move (≤ 1 m/s for ≥ 15 s, or one slow reading between long
 intervals) near stations and halts (300 m), tram stops (60 m), metro stations
@@ -2094,11 +2273,15 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   queues the gap of any device whose newest point is more than 15 minutes
   newer than its newest processed point (a window lost when the process
   stopped between an upload and its queueing).
-- When `processingVersion` differs from the one in `processing_state`, the
-  worker's start queues every day with points of every device (from
-  `daily_stats`, in the owner's time zone) at low priority and records the
-  version in the same transaction: the backfill runs once per version and
-  resumes after a restart, because the queue is a table.
+- When a level's version (`processingVersions`) differs from the one in
+  `processing_state`, the worker's start queues every day with points of
+  every device (from `daily_stats`, in the owner's time zone) at low
+  priority, from the lowest level that changed (averaged when the history
+  was never processed; a day already queued keeps the more thorough level),
+  and records the versions in the same transaction: the backfill runs once
+  per change and resumes after a restart, because the queue is a table.
+  After a change to the inference alone, the days are worked out again from
+  the stored mapped points and the cached map data, without map matching.
 - `trail reprocess [--device <id>] [--from <iso> --to <iso>] [--from-level
   averaged|mapped|inferred]` queues the range in day windows, then processes
   them itself with the map data already cached; tiles still missing are left

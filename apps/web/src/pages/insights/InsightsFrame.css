@@ -1,0 +1,16 @@
+.insights-page__content {
+  display: grid;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+/* Refetching keeps the frame: the previous numbers stay, dimmed, until the new ones arrive. */
+.insights-page__content[aria-busy="true"] {
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .insights-page__content {
+    transition: opacity var(--duration-medium) ease;
+  }
+}

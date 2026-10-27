@@ -1,0 +1,8 @@
+/* The two tones that are not a transport mode, on the variable the mode classes (tokens.css) set. */
+.chart-tone-accent {
+  --mode-color: var(--color-accent);
+}
+
+.chart-tone-muted {
+  --mode-color: var(--color-border-strong);
+}

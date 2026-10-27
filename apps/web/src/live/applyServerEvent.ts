@@ -49,11 +49,13 @@ export function applyServerEvent(
       removeDeviceFromCache(queryClient, event.deviceId);
       return;
     case "segments":
-      // Processing finished a window: its levels, stops, moves and the current mode changed.
+      // Processing finished a window: its levels, stops, moves and the current mode changed,
+      // and with them the statistics of Insights.
       for (const queryKey of [
         queryKeys.all.levelTracks,
         queryKeys.all.timeline,
         queryKeys.deviceMode(event.deviceId),
+        queryKeys.all.insights,
       ]) {
         void queryClient.invalidateQueries({ queryKey });
       }

@@ -98,6 +98,12 @@ export interface MoveFeatures {
   accelerationVariance: number | null;
   /** Shares of the distance by the way the points were matched to; null without map data. */
   ways: WayShares | null;
+  /**
+   * The same shares by way kind, every kind present (a matched point without a
+   * way kind counts as `other`): what `ways` sums up by family. Null exactly
+   * when `ways` is.
+   */
+  wayKinds: Record<WayKind, number> | null;
   /** Shares of the distance near tram tracks, cycleways and footways (they run beside roads). */
   near: { tram: number; cycleway: number; foot: number } | null;
   /** Share of points sampled every 250 m along the straight lines between points that lie near a railway / motorway. */

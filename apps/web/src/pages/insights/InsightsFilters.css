@@ -1,0 +1,11 @@
+.insights-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-4) var(--space-8);
+  min-width: 0;
+}
+
+.insights-filters > * {
+  min-width: 0;
+}

@@ -1,0 +1,76 @@
+.chart-tooltip {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  gap: var(--space-1);
+  width: max-content;
+  max-width: min(17rem, 100%);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-m);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.chart-tooltip__title {
+  color: var(--color-text-2);
+}
+
+/* Value, then name: the reader came for the number. */
+.chart-tooltip__rows {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.125rem var(--space-2);
+}
+
+.chart-tooltip__rows--plain {
+  grid-template-columns: auto;
+}
+
+.chart-tooltip__key {
+  width: 0.75rem;
+  height: 0.1875rem;
+  border-radius: 1px;
+  background: var(--mode-color);
+}
+
+.chart-tooltip__value {
+  font-size: var(--text-s);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+/* A single value sits under the title; only a column of values aligns on their ends. */
+.chart-tooltip__rows--plain .chart-tooltip__value {
+  text-align: start;
+}
+
+.chart-tooltip__label {
+  color: var(--color-text-2);
+}
+
+/* Sets the total apart from the series above it, across the whole row. */
+.chart-tooltip__rule {
+  grid-column: 1 / -1;
+  height: var(--border-width);
+  margin-block: 0.125rem;
+  background: var(--color-border);
+}
+
+@media (forced-colors: active) {
+  .chart-tooltip {
+    border-color: CanvasText;
+  }
+
+  .chart-tooltip__key,
+  .chart-tooltip__rule {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+}

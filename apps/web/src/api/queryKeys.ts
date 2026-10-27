@@ -38,6 +38,18 @@ export type PersonTrackParams = {
   share: string;
 };
 
+/**
+ * A period of Insights (`/api/v1/insights/*`): local dates, either end left
+ * out for the server's default (the first day with data, today), the devices
+ * (null = all) and a mode for the pages that filter by one.
+ */
+export type InsightsParams = {
+  from: string | null;
+  to: string | null;
+  deviceIds: readonly string[] | null;
+  mode: string | null;
+};
+
 export type ActivityParams = {
   hours: number;
   deviceIds: readonly string[] | null;
@@ -61,6 +73,7 @@ export const queryKeys = {
     timeline: ["timeline"],
     deviceMode: ["device-mode"],
     personTracks: ["person-tracks"],
+    insights: ["insights"],
   },
   config: ["config"],
   session: ["session"],
@@ -77,6 +90,11 @@ export const queryKeys = {
   levelTracks: (params: LevelTracksParams) => ["level-tracks", params] as const,
   timeline: (params: RangeParams) => ["timeline", params] as const,
   deviceMode: (deviceId: string) => ["device-mode", deviceId] as const,
+  insightsOverview: (params: InsightsParams) => ["insights", "overview", params] as const,
+  insightsMode: (mode: string, params: InsightsParams) =>
+    ["insights", "mode", mode, params] as const,
+  insightsTime: (params: InsightsParams) => ["insights", "time", params] as const,
+  insightsRoads: (params: InsightsParams) => ["insights", "roads", params] as const,
   personTracksOf: (userId: string) => ["person-tracks", userId] as const,
   personTracks: (userId: string, params: PersonTrackParams) =>
     ["person-tracks", userId, params] as const,

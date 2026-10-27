@@ -1,0 +1,26 @@
+.chart__focus {
+  pointer-events: none;
+}
+
+/* A halo of the surface under the ring keeps it visible on light and dark fills alike. */
+.chart__focus-halo {
+  fill: none;
+  stroke: var(--chart-surface, var(--color-surface));
+  stroke-width: calc(var(--focus-width) + 4px);
+}
+
+.chart__focus-ring {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: var(--focus-width);
+}
+
+@media (forced-colors: active) {
+  .chart__focus-halo {
+    stroke: Canvas;
+  }
+
+  .chart__focus-ring {
+    stroke: Highlight;
+  }
+}

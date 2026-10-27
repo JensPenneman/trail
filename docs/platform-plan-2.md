@@ -356,6 +356,10 @@ cleaned), must not slow or fail requests, and must not grow without bound
 
 ## 4. Insights
 
+**Done** (`feat/insights`): `docs/architecture.md` §8.7 (the API), §14 (the
+pages and the charts) and §17 (`wayKinds`, versions per level) are the
+specification now; §4.6 lists what the pull request settled.
+
 ### 4.1 Pages
 
 - `/insights` **Overview**: period selector (7 days · 30 days · 90 days ·
@@ -434,6 +438,50 @@ pending flag, empty periods; e2e: Overview with uploaded fixture data (modes
 inferred by the pipeline in the test server — use a fixture journey with at
 least two modes), navigate to a mode page, switch periods, keyboard through a
 chart, axe on every page, 320 px.
+
+### 4.6 Settled in the pull request
+
+1. **Periods are local days**, `from` and `to` included (like
+   `/api/v1/stats/modes`), at most three years apart (the day before the same
+   date three years on). Both may be left out: `to` is today, `from` the first
+   day with a stop or move (at most three years back). The page's "All" asks
+   without `from`. The period before is as many days just before `from`.
+2. **Proration happens in TypeScript**, not SQL: one query reads the moves
+   overlapping the period from `segments`, and the period's local hours
+   (23 or 25 on the days the clocks change) split them by time, the distance
+   in proportion. That keeps the proration unit-tested, DST included, and a
+   request of three years builds its 26 000 hours in about 30 ms. Counts
+   (moves, stops, the statistics of whole moves) are of what started in the
+   period.
+3. **Shapes beyond the list of §4.2**: `period` carries `bucket` and every
+   step (`buckets`), since `series` leaves out empty steps; a mode's page has
+   a `series` too (its line chart), `typicalSpeedKmh` (the median of the
+   moves' median speeds, weighted by time), `longest` and `fastest` (top
+   speed); `stationStops` counts halts at stations for trains, at tram stops
+   for trams and at metro stations for metros; time and roads list the modes
+   of the period (`modes`) for the mode switch; roads give `mappedM`, the
+   distance the shares are of. `wayKinds` stores every kind, families are
+   derived from it.
+4. **Versions per level**: `processingVersion` became `processingVersions`
+   (averaged 1, mapped 1, inferred 2); the backfill starts at the lowest
+   level that changed, so production re-runs only the inference, on its
+   stored mapped points.
+5. **The figure is not `role="img"`**: its marks are focusable, and a role
+   with presentational children would hide them (axe `nested-interactive`).
+   The figure is named by its visible title and described by its visible
+   summary; the SVG is a group of marks, each an image named by its row and
+   described (`aria-describedby`) by its values, all one tab stop with arrow
+   keys.
+6. **Colour**: the `--mode-*` palette fails the categorical checks of the
+   dataviz method for some neighbours (walking and running, train and boat),
+   so stacks carry 2 px gaps, a legend, tooltips and a table, keep the modes'
+   fixed order and fold past seven modes into "Other modes". The grid's
+   ramp (`--heat-*`) is a warm grey checked for monotone lightness.
+7. **"Show on the map"** opens `/?view=history&date=…&segment=<id>`; the
+   History view opens that move's dialog, and closing it drops `segment`.
+8. **Not done here**: people in Insights (their shares give no segments),
+   comparisons against the same period a year before, and the access log's
+   card (wave 2).
 
 ---
 

@@ -1,0 +1,65 @@
+.heat-grid__cell--0 {
+  fill: var(--heat-0);
+}
+
+.heat-grid__cell--1 {
+  fill: var(--heat-1);
+}
+
+.heat-grid__cell--2 {
+  fill: var(--heat-2);
+}
+
+.heat-grid__cell--3 {
+  fill: var(--heat-3);
+}
+
+.heat-grid__cell--4 {
+  fill: var(--heat-4);
+}
+
+.heat-grid__cell--5 {
+  fill: var(--heat-5);
+}
+
+/* The hovered cell lifts with a hairline of text colour around it. */
+.heat-grid__hover {
+  fill: none;
+  stroke: var(--color-text);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+/* Forced colours: the ramp as rising strengths of the one ink; an empty cell is the canvas, outlined. */
+@media (forced-colors: active) {
+  .heat-grid__cell {
+    forced-color-adjust: none;
+    fill: CanvasText;
+  }
+
+  .heat-grid__cell--0 {
+    fill: Canvas;
+    stroke: GrayText;
+    stroke-width: 1;
+  }
+
+  .heat-grid__cell--1 {
+    fill-opacity: 0.2;
+  }
+
+  .heat-grid__cell--2 {
+    fill-opacity: 0.4;
+  }
+
+  .heat-grid__cell--3 {
+    fill-opacity: 0.6;
+  }
+
+  .heat-grid__cell--4 {
+    fill-opacity: 0.8;
+  }
+
+  .heat-grid__hover {
+    stroke: CanvasText;
+  }
+}

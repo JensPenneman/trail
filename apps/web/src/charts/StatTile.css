@@ -1,0 +1,56 @@
+.stat-tile {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-l);
+  background: var(--color-surface);
+}
+
+.stat-tile__label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}
+
+/* On the first line of text, however many lines it wraps to. */
+.stat-tile__icon {
+  margin-block-start: 0.125em;
+}
+
+/* A big standalone number keeps the font's proportional figures; tabular ones look loose at this size. */
+.stat-tile__value {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 650;
+  font-variant-numeric: proportional-nums;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+
+.stat-tile__detail,
+.stat-tile__delta {
+  margin: 0;
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}
+
+.stat-tile__delta {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+@container (min-width: 36rem) {
+  .stat-tile {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .stat-tile__value {
+    font-size: var(--text-2xl);
+  }
+}

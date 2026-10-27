@@ -1,0 +1,44 @@
+.line-chart__line {
+  fill: none;
+  stroke: var(--mode-color);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.line-chart__area {
+  fill: var(--mode-color);
+  fill-opacity: 0.1;
+}
+
+/* An 8 px dot in a 2 px ring of the surface, legible where it crosses another line. */
+.line-chart__marker {
+  fill: var(--mode-color);
+  stroke: var(--chart-surface, var(--color-surface));
+  stroke-width: 2;
+}
+
+.line-chart__crosshair {
+  stroke: var(--color-text-2);
+  stroke-width: 1;
+}
+
+@media (forced-colors: active) {
+  .line-chart__line {
+    stroke: CanvasText;
+    stroke-dasharray: var(--chart-dash, none);
+  }
+
+  .line-chart__area {
+    fill: none;
+  }
+
+  .line-chart__marker {
+    fill: CanvasText;
+    stroke: Canvas;
+  }
+
+  .line-chart__crosshair {
+    stroke: CanvasText;
+  }
+}

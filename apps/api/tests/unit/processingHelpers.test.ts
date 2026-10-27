@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { latToTileY, lonToTileX, tileBounds } from "../../src/heatmap/tileMath";
 import { averagePoints } from "../../src/processing/averagePoints";
+import { backfillLevel } from "../../src/processing/backfill";
 import { keptPoints } from "../../src/processing/keptPoint";
 import { motionActivity } from "../../src/processing/motionActivity";
 import {
   defaultProcessingConfig,
   processingConfigWith,
 } from "../../src/processing/processingConfig";
+import { processingVersions } from "../../src/processing/processingVersion";
 import { moveTiles, parseTileKey, tileKey } from "../../src/processing/tileCover";
 import { weightedQuantile } from "../../src/processing/weightedQuantile";
 import { decodeTimelineCursor, encodeTimelineCursor } from "../../src/transport/timelineCursor";
@@ -73,6 +75,47 @@ describe("the configuration", () => {
     expect(config.stops.minDurationS).toBe(240);
     expect(config.mapping.tileMaxAgeDays).toBe(30);
     expect(config.mapping.pieceMaxTiles).toBe(defaultProcessingConfig.mapping.pieceMaxTiles);
+  });
+});
+
+describe("the backfill's level", () => {
+  const recorded = (averaged: number, mapped: number, inferred: number) => ({
+    versions: { averaged, mapped, inferred },
+  });
+  const current = { averaged: 1, mapped: 1, inferred: 2 };
+
+  it("works out a history never processed from averaging on", () => {
+    expect(backfillLevel(null, current)).toBe("averaged");
+    expect(backfillLevel({}, current)).toBe("averaged");
+    expect(backfillLevel("version 1", current)).toBe("averaged");
+  });
+
+  it("reads a single version as every level's", () => {
+    expect(backfillLevel({ version: 1 }, current)).toBe("inferred");
+    expect(backfillLevel({ version: 1 }, { averaged: 1, mapped: 1, inferred: 1 })).toBeNull();
+    expect(backfillLevel({ version: 0 }, current)).toBe("averaged");
+    // What production recorded before the levels had versions: only the inference runs again.
+    expect(backfillLevel({ version: 1 }, processingVersions)).toBe("inferred");
+  });
+
+  it("starts at the lowest level whose version changed, or nowhere", () => {
+    expect(backfillLevel(recorded(1, 1, 2), current)).toBeNull();
+    expect(backfillLevel(recorded(1, 1, 2), { averaged: 1, mapped: 1, inferred: 3 })).toBe(
+      "inferred",
+    );
+    expect(backfillLevel(recorded(1, 1, 2), { averaged: 1, mapped: 2, inferred: 3 })).toBe(
+      "mapped",
+    );
+    expect(backfillLevel(recorded(1, 1, 2), { averaged: 2, mapped: 2, inferred: 3 })).toBe(
+      "averaged",
+    );
+    // Going back to older algorithms is a change too.
+    expect(backfillLevel(recorded(1, 1, 3), current)).toBe("inferred");
+  });
+
+  it("counts a level missing from the record as changed", () => {
+    expect(backfillLevel({ versions: { averaged: 1, mapped: 1 } }, current)).toBe("inferred");
+    expect(backfillLevel({ versions: { averaged: 1, inferred: 2 } }, current)).toBe("mapped");
   });
 });
 
