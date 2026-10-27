@@ -1,7 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import { deviceCard, fact } from "./support/deviceCard";
 import { expectAccessible } from "./support/expectAccessible";
-import { mapView, openMapOptions } from "./support/mapControls";
+import { localDate, mapView, openMapOptions } from "./support/mapControls";
 import { overlandBatch, withBattery } from "./support/overlandBatch";
 import { postOverland } from "./support/postOverland";
 import { sharingFriend } from "./support/sharingFriend";
@@ -13,6 +12,19 @@ const personCard = (page: Page, name: string) =>
   page.getByRole("region", { name: "Sharing with you" }).getByRole("article", { name });
 const onTheMap = (card: Locator) => card.getByText("On the map", { exact: true });
 const ownOnly = ["Timeline", "Visits", "Trips"] as const;
+/** One's own day so far, right under the Me card in Live while Me is on the map. */
+const myDay = (page: Page) => page.getByRole("region", { name: "Your day so far" });
+/** What a card on the map says of where they have been: the part under its heading. */
+const whereBeen = (card: Locator) =>
+  card
+    .locator("div", { has: card.page().getByRole("heading", { name: "Where they’ve been" }) })
+    .last();
+/** Opens a card's Details: what it holds follows its button. */
+async function details(card: Locator): Promise<void> {
+  const button = card.getByRole("button", { name: "Details" });
+  await button.click();
+  await expect(button).toHaveAttribute("aria-expanded", "true");
+}
 
 /** The tracks of people the page asks for: only precise shares with history may be asked. */
 function trackRequests(page: Page): string[] {
@@ -42,14 +54,24 @@ test("a person's card shows them alone, with only what their share allows", asyn
   });
   const asked = trackRequests(page);
 
-  // Home: Me first, with one's own devices on the map, then everyone who shares, none of them on it.
+  // Home: Me first, a person on the map with their day so far, then everyone who shares, as people.
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
   await expect(onTheMap(meCard(page))).toBeVisible();
-  await expect(meCard(page).getByRole("article", { name: "My phone" })).toBeVisible();
+  // The fixture's phone is on a bike ride at 18 km/h, 90 seconds ago.
+  await expect(meCard(page).getByText(/18\skm\/h$/)).toBeVisible();
+  await expect(meCard(page).getByText("Live", { exact: true })).toBeVisible();
+  await expect(myDay(page).getByRole("heading", { name: "Timeline" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "My phone" })).toHaveCount(0);
   const historianCard = personCard(page, historian.account.displayName);
   const roughCard = personCard(page, rough.account.displayName);
+  await expect(historianCard.getByText(/18\skm\/h$/)).toBeVisible();
+  // Their devices and the terms of their share are in Details, closed at first.
+  await expect(historianCard.getByText(historian.device.name)).toHaveCount(0);
+  await details(historianCard);
   await expect(historianCard.getByText(historian.device.name)).toBeVisible();
+  await expect(historianCard.getByText("Last 7 days")).toBeVisible();
+  await details(roughCard);
   await expect(roughCard.getByText("Approximate location, within about 500 m")).toBeVisible();
   await expect(onTheMap(historianCard)).toHaveCount(0);
   await expect(onTheMap(roughCard)).toHaveCount(0);
@@ -67,7 +89,8 @@ test("a person's card shows them alone, with only what their share allows", asyn
   await expect(page).toHaveURL(new RegExp(`/\\?people=${rough.account.id}$`));
   await expect(onTheMap(roughCard)).toBeVisible();
   await expect(onTheMap(meCard(page))).toHaveCount(0);
-  await expect(deviceCard(page, "My phone")).toHaveCount(0);
+  await expect(myDay(page)).toHaveCount(0);
+  await expect(whereBeen(roughCard)).toContainText("Shares live location only");
   await expect(page.locator(".map-person")).toHaveCount(1);
   await expect(page.locator(".maplibregl-canvas")).toHaveAccessibleName(
     new RegExp(`latest position of ${rough.account.displayName}`),
@@ -79,11 +102,8 @@ test("a person's card shows them alone, with only what their share allows", asyn
   await expectAccessible(page, "Live with someone else alone");
 
   await mapView(page, "History").click();
-  await expect(
-    page.getByText(
-      `${rough.account.displayName} shares where they are now, not where they have been.`,
-    ),
-  ).toBeVisible();
+  await expect(page).toHaveURL(/[?&]view=history/);
+  await expect(whereBeen(roughCard)).toContainText("Shares live location only");
   for (const name of ["Summary", ...ownOnly]) {
     await expect(page.getByRole("region", { name, exact: true }), name).toHaveCount(0);
   }
@@ -102,12 +122,32 @@ test("a person's card shows them alone, with only what their share allows", asyn
     `${historian.account.displayName} · ${historian.device.name}`,
   );
   await expect(page.getByRole("slider", { name: "Position at" })).toBeVisible();
+  // Their card says where they have been today, and steps through the days.
+  const theirDay = whereBeen(historianCard);
+  await expect(theirDay.getByText("Today", { exact: true })).toBeVisible();
+  await expect(theirDay).toContainText(/\d+(\.\d)? km · \d\d:\d\d – \d\d:\d\d/);
+  await expect(theirDay.getByRole("button", { name: "Next day" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   for (const name of ownOnly) {
     await expect(page.getByRole("region", { name, exact: true }), name).toHaveCount(0);
   }
   await expect(page.getByRole("group", { name: "Detail of the tracks" })).toHaveCount(0);
   await expectAccessible(page, "History of someone who shares it");
   expect(new Set(asked)).toEqual(new Set([`/api/v1/people/${historian.account.id}/track`]));
+  // Live has their day too; a day back is History's.
+  await mapView(page, "Live").click();
+  await expect(theirDay.getByText("Today", { exact: true })).toBeVisible();
+  await theirDay.getByRole("button", { name: "Previous day" }).click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.get("view") === "history" &&
+      url.searchParams.get("date") === localDate(account.timezone, -1),
+  );
+  await expect(theirDay).toContainText("Nothing recorded on");
+  await theirDay.getByRole("button", { name: "Next day" }).click();
+  await expect(theirDay.getByText("Today", { exact: true })).toBeVisible();
 
   // Approximate and live only from now on: the page stops asking for their history.
   asked.length = 0;
@@ -119,11 +159,7 @@ test("a person's card shows them alone, with only what their share allows", asyn
     },
   );
   expect(changed.status()).toBe(200);
-  await expect(
-    page.getByText(
-      `${historian.account.displayName} shares where they are now, not where they have been.`,
-    ),
-  ).toBeVisible();
+  await expect(whereBeen(historianCard)).toContainText("Shares live location only");
   await expect(summary).toHaveCount(0);
   expect(asked).toEqual([]);
 
@@ -166,7 +202,15 @@ test("everyone at once, a card kept live, and sharing back and stopping from it"
   await page.goto("/");
   const nearCard = personCard(page, nearName);
   const farCard = personCard(page, far.account.displayName);
-  await expect(fact(nearCard, "Battery")).toContainText("77%");
+  // A battery glyph where the share includes it.
+  await expect(nearCard.getByRole("img", { name: "Battery 77%" })).toBeVisible();
+  // An area share: no speed is shared, only roughly where.
+  // Always how roughly, and a distance that says it is about that much.
+  await expect(
+    farCard.getByText(/^(On\sa\sbike\sride|Cycling)\s·\swithin\sabout\s5\skm$/),
+  ).toBeVisible();
+  await expect(farCard.getByText(/km$/).first()).toContainText("≈");
+  await details(farCard);
   await expect(farCard.getByText("Area only, within about 5 km")).toBeVisible();
   await expect(page.getByText("Live updates on")).toBeAttached();
 
@@ -191,13 +235,14 @@ test("everyone at once, a card kept live, and sharing back and stopping from it"
     withBattery(overlandBatch(near.account.timezone), 0.42),
   );
   expect(next.status()).toBe(200);
-  await expect(fact(nearCard, "Battery")).toContainText("42%");
+  await expect(nearCard.getByRole("img", { name: "Battery 42%" })).toBeVisible();
   expect(await page.evaluate(() => Reflect.get(window, "trailE2eSamePage"))).toBe(true);
   await everyone.click();
   await expect(page).toHaveURL((url) => url.pathname === "/" && url.search === "");
 
-  // Share back from their card, and stop again from it.
-  await nearCard.getByRole("button", { name: "Share back" }).click();
+  // Share back from their card's Details, and stop again from it.
+  await details(nearCard);
+  await nearCard.getByRole("button", { name: `Share back with ${nearName}` }).click();
   const dialog = page.getByRole("dialog", { name: "Share my location" });
   await expect(dialog.getByLabel("Email address")).toHaveValue(near.account.email);
   await dialog.getByRole("button", { name: "Share", exact: true }).click();
@@ -213,13 +258,13 @@ test("everyone at once, a card kept live, and sharing back and stopping from it"
   const stop = page.getByRole("dialog", { name: `Stop sharing with ${nearName}?` });
   await expectAccessible(page, "the stop-sharing dialog");
   await stop.getByRole("button", { name: "Stop sharing" }).click();
-  await expect(nearCard.getByRole("button", { name: "Share back" })).toBeVisible();
+  await expect(nearCard.getByRole("button", { name: `Share back with ${nearName}` })).toBeVisible();
   await expect(page.getByRole("link", { name: /^You share with nobody/ })).toBeVisible();
 
   // A link to someone alone (the old People page's Show on map) shows them alone.
   await page.goto(`/?view=live&people=${far.account.id}`);
   await expect(onTheMap(farCard)).toBeVisible();
-  await expect(deviceCard(page, "My phone")).toHaveCount(0);
+  await expect(myDay(page)).toHaveCount(0);
   await expect(page.locator(".map-person")).toHaveCount(1);
   await expect(page.locator(".maplibregl-canvas")).toHaveAccessibleName(
     new RegExp(`latest position of ${far.account.displayName}`),

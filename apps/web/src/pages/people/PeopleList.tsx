@@ -1,14 +1,16 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { Person, SharedDevice } from "@trail/contracts/person";
 import type { OutgoingShare } from "@trail/contracts/share";
-import { type ReactNode, useContext, useId, useState } from "react";
+import { useContext, useId, useState } from "react";
 import { Link } from "react-router";
 import { useSessionUser } from "../../app/useSessionUser";
 import { useFormatter } from "../../format/useFormatter";
 import { LiveStoreContext } from "../../live/LiveStoreContext";
 import { useLiveState } from "../../live/useLiveState";
 import { PersonCard } from "../../people/PersonCard";
+import type { PersonTrackState } from "../../people/PersonTrackState";
 import type { PersonColors } from "../../people/usePersonColors";
+import type { WhereTheyveBeenPeriod } from "../../people/WhereTheyveBeen";
 import { useHidePerson } from "../../queries/useHidePerson";
 import { useIncomingShares } from "../../queries/useIncomingShares";
 import { useShares } from "../../queries/useShares";
@@ -42,8 +44,13 @@ interface PeopleListProps {
   liveMinutes: number;
   onShow: (person: Person, device: SharedDevice) => void;
   onShowEveryone: () => void;
-  /** A notice about the people shown, above their cards (a track that could not be loaded). */
-  notice?: ReactNode;
+  /**
+   * Where someone has been, for the card of a person on the map while the
+   * view draws tracks; undefined for everyone else.
+   */
+  whereOf: (
+    person: Person,
+  ) => { period: WhereTheyveBeenPeriod; track: PersonTrackState | null } | undefined;
 }
 
 /**
@@ -61,7 +68,7 @@ export function PeopleList({
   liveMinutes,
   onShow,
   onShowEveryone,
-  notice,
+  whereOf,
 }: PeopleListProps) {
   const user = useSessionUser();
   const format = useFormatter();
@@ -120,7 +127,6 @@ export function PeopleList({
             }
           />
         ))}
-        {notice}
 
         {people.isPending ? (
           <LoadingBlock label="Loading people">
@@ -155,6 +161,7 @@ export function PeopleList({
                     liveMinutes={liveMinutes}
                     sharesBack={share !== null}
                     selected={shown.includes(person.userId)}
+                    where={whereOf(person)}
                     onShowOnMap={(device) => onShow(person, device)}
                     onShareBack={() => setDialog({ kind: "create", email: person.email })}
                     {...(share === null ? {} : { onStopSharing: () => setStopping(share) })}

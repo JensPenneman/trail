@@ -1,0 +1,23 @@
+.disclosure-button {
+  gap: var(--space-1);
+  padding-inline: var(--space-3);
+}
+
+.disclosure-button__chevron {
+  transition: rotate var(--duration-fast) ease;
+}
+
+.disclosure-button[aria-expanded="true"] .disclosure-button__chevron {
+  rotate: 180deg;
+}
+
+.disclosure-button[aria-expanded="true"] {
+  background: var(--color-accent-soft);
+}
+
+@media (forced-colors: active) {
+  .disclosure-button[aria-expanded="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

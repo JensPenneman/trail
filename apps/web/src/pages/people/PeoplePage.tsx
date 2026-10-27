@@ -8,6 +8,7 @@ import { mapStyleLabels } from "../../map/mapStyleChoices";
 import type { MapViewState } from "../../map/mapTypes";
 import { useMapStyle } from "../../map/useMapStyle";
 import { usePersonColors } from "../../people/usePersonColors";
+import type { WhereTheyveBeenPeriod } from "../../people/WhereTheyveBeen";
 import { useConfig } from "../../queries/useConfig";
 import { useDevices } from "../../queries/useDevices";
 import { usePeople } from "../../queries/usePeople";
@@ -15,6 +16,7 @@ import { useNow } from "../../time/useNow";
 import { LevelControl, levelLabels } from "../../transport/LevelControl";
 import { ModeLegend } from "../../transport/ModeLegend";
 import { useTrackLevel } from "../../transport/useTrackLevel";
+import { Icon } from "../../ui/Icon";
 import { PageHeader } from "../../ui/PageHeader";
 import { useAnnounce } from "../../ui/useAnnounce";
 import { useMediaQuery } from "../../ui/useMediaQuery";
@@ -49,16 +51,20 @@ type Focus = { key: string; lon: number; lat: number; zoom: number };
  * The People page, Trail's home (docs/architecture.md §14): one map with its
  * three views — Live, History and Heat — and the choices they share (whose
  * data, which devices, the map style, the tracks' level), all in the URL;
- * beside it the people: Me first, then everyone who shares with the signed-in
- * person. "Show on map" on a card makes that person the map's choice, and the
- * page offers what can be shown of them: one's own levels, timeline, visits,
- * trips and heatmap only while Me is chosen. Every view keeps its state and
- * its queries in a hook that asks for nothing while another view is shown, so
- * the map itself, with its camera, stays as it is when the view changes.
+ * beside it the people, as people rather than their devices: Me first, then
+ * everyone who shares with the signed-in person, each where they are, what
+ * they are doing and, while on the map, where they have been. "Show on map"
+ * on a card makes that person the map's choice, and the page offers what can
+ * be shown of them: one's own levels, timeline, visits, trips and heatmap only
+ * while Me is chosen. Every view keeps its state and its queries in a hook
+ * that asks for nothing while another view is shown, so the map itself, with
+ * its camera, stays as it is when the view changes. What the devices send is
+ * the Devices page's.
  */
 export function PeoplePage() {
   const user = useSessionUser();
-  const { search, today, setView, setPeople, setDevices, showDay, showRange } = useMapSearch();
+  const { search, today, setView, setPeople, setDevices, showDay, showHistoryDay, showRange } =
+    useMapSearch();
   const { level, setLevel } = useTrackLevel();
   const mapStyle = useMapStyle();
   const config = useConfig();
@@ -72,6 +78,8 @@ export function PeoplePage() {
   const announce = useAnnounce();
   const thresholds = config.data?.thresholds ?? defaultThresholds;
   const [viewport, setViewport] = useState<MapViewState | null>(null);
+  // The device filter is folded away among the map's options, and open when an address sets one.
+  const [filterOpen] = useState(() => search.devices !== null);
 
   const available = useMemo<MapPerson[]>(
     () => [
@@ -213,6 +221,27 @@ export function PeoplePage() {
     announce(next.length === 1 ? "The map shows you." : "The map shows everyone.");
   };
 
+  // Where the people on the map have been: Live's today (a day back is History), History's day or
+  // period. Heat draws nobody else.
+  const period = search.period;
+  const wherePeriod: WhereTheyveBeenPeriod | null =
+    view === "live"
+      ? { day: today, from: today, to: today, today, onDay: showHistoryDay, opensHistory: true }
+      : view === "history"
+        ? {
+            day: period.mode === "day" ? period.from : null,
+            from: period.from,
+            to: period.to,
+            today,
+            onDay: period.mode === "day" ? showDay : null,
+            opensHistory: false,
+          }
+        : null;
+  const whereOf = (person: Person) =>
+    wherePeriod === null || !shownKeys.includes(person.userId)
+      ? undefined
+      : { period: wherePeriod, track: content.personTracks.get(person.userId) ?? null };
+
   // Beside the map the panel scrolls by itself: another view starts at its top.
   const panel = useRef<HTMLElement | null>(null);
   const panelRef = useCallback(
@@ -255,12 +284,9 @@ export function PeoplePage() {
             : selection.people.map((person) => person.name).join(", "),
         ]
       : []),
-    ...(deviceCount > 1
-      ? [
-          shownCount === deviceCount
-            ? `All ${deviceCount} devices`
-            : `${shownCount} of ${deviceCount} devices`,
-        ]
+    // Which devices draw only matters when some do not.
+    ...(deviceCount > 1 && shownCount < deviceCount
+      ? [`${shownCount} of ${deviceCount} devices`]
       : []),
     ...(transport === null ? [] : [levelLabels[level]]),
     `${mapStyleLabels[mapStyle.choice]} map`,
@@ -294,9 +320,6 @@ export function PeoplePage() {
                 onChange={(next) => setPeople(next, devicesOf)}
               />
             ) : null}
-            {deviceCount > 1 ? (
-              <DeviceFilter groups={groups} selected={selection.filter} onChange={setDevices} />
-            ) : null}
             <MapStyleControl
               choice={mapStyle.choice}
               choices={mapStyle.choices}
@@ -310,6 +333,15 @@ export function PeoplePage() {
                 <LevelControl level={level} available={transport.available} onChange={setLevel} />
               </div>
             )}
+            {deviceCount > 1 ? (
+              <details className="disclosure map-page__advanced" open={filterOpen || undefined}>
+                <summary>
+                  <Icon name="chevronDown" className="disclosure__chevron" />
+                  <span>Advanced</span>
+                </summary>
+                <DeviceFilter groups={groups} selected={selection.filter} onChange={setDevices} />
+              </details>
+            ) : null}
           </MapOptions>
           {transport !== null && level === "inferred" ? (
             <ModeLegend modes={transport.modes} review={transport.review} />
@@ -347,9 +379,13 @@ export function PeoplePage() {
             thresholds={thresholds}
             shown={meShown}
             onShowOnMap={showMe}
-          >
-            {view === "live" ? content.panel : null}
-          </MeCard>
+          />
+          {/* Live's is one's day so far: where one has been today, right under where one is. */}
+          {view !== "live" || content.panel === null ? null : (
+            <section className="map-page__details" aria-label={content.panelLabel}>
+              {content.panel}
+            </section>
+          )}
           <PeopleList
             people={people}
             shown={shownKeys}
@@ -359,7 +395,7 @@ export function PeoplePage() {
             liveMinutes={thresholds.liveMinutes}
             onShow={showPerson}
             onShowEveryone={showEveryone}
-            notice={content.peopleNotice}
+            whereOf={whereOf}
           />
         </div>
       </section>

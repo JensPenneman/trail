@@ -256,6 +256,8 @@ export function useHeatView({
         </section>
       </>
     ),
+    // Heatmaps are one's own: nobody else's track is asked for.
+    personTracks: inactiveView.personTracks,
     dialog: null,
   };
 }

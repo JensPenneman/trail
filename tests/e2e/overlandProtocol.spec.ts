@@ -57,7 +57,7 @@ test("uploads behave the way the Overland app relies on", async ({ page, account
     const response = await postOverland(request, device.token, batch);
     expect(await response.json()).toEqual({ result: "ok" });
   }
-  await page.goto("/");
+  await page.goto("/devices");
   const card = deviceCard(page, "Replayed phone");
   await expect(card.getByText("Live", { exact: true })).toBeVisible();
   await expect(card.getByText("Trip in progress")).toBeVisible();
@@ -95,7 +95,7 @@ test("uploads behave the way the Overland app relies on", async ({ page, account
   expect(await counts(3)).toEqual(["34", "30", "0", "1", "1", "2", "0"]);
 
   // The last upload carried no trip: the phone is no longer on one.
-  await page.goto("/");
+  await page.goto("/devices");
   await expect(card.getByText("Trip in progress")).toBeHidden();
   await expect(fact(card, "Last position")).toContainText("50.9851° N, 3.5309° E");
 });

@@ -13,6 +13,16 @@ export async function openMapOptions(page: Page): Promise<void> {
   }
 }
 
+/** The map's device filter: in Map options, folded under Advanced — opened here if need be. */
+export async function openDeviceFilter(page: Page): Promise<void> {
+  await openMapOptions(page);
+  const advanced = page.locator("details", { has: page.getByText("Advanced", { exact: true }) });
+  if ((await advanced.getAttribute("open")) === null) {
+    await advanced.getByText("Advanced", { exact: true }).click();
+  }
+  await expect(page.getByRole("group", { name: "Devices" })).toBeVisible();
+}
+
 /** One of Live · History · Heat. */
 export function mapView(page: Page, name: "Live" | "History" | "Heat") {
   return page.getByRole("group", { name: "Map view" }).getByRole("radio", { name });

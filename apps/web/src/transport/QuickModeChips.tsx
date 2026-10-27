@@ -1,5 +1,5 @@
 import type { ChosenMode } from "@trail/contracts/transport";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useDeviceMode } from "../queries/useDeviceMode";
 import { useSetDeviceMode } from "../queries/useSetDeviceMode";
 import { Dialog } from "../ui/Dialog";
@@ -8,14 +8,30 @@ import { ModePicker } from "./ModePicker";
 import { quickModes, transportModeInfo } from "./transportModes";
 import "./QuickModeChips.css";
 
+interface QuickModeChipsProps {
+  deviceId: string;
+  deviceName: string;
+  /** Which device the chips set, and for how long, under them (the Me card's). */
+  description?: string;
+  /** The title of Other's dialog; "How is <device> travelling?" by default. */
+  dialogTitle?: string;
+}
+
 /**
- * The quick toggle on a device card (docs/architecture.md §17.5): one tap
- * says how you travel from now on — until the next stop — and Auto hands it
- * back to the inference. "Other" opens every mode.
+ * The quick toggle (docs/architecture.md §17.5), on the Me card for the
+ * device that reported last and on each device's page: one tap says how you
+ * travel from now on — until the next stop — and Auto hands it back to the
+ * inference. "Other" opens every mode.
  */
-export function QuickModeChips({ deviceId, deviceName }: { deviceId: string; deviceName: string }) {
+export function QuickModeChips({
+  deviceId,
+  deviceName,
+  description,
+  dialogTitle,
+}: QuickModeChipsProps) {
   const mode = useDeviceMode(deviceId);
   const set = useSetDeviceMode(deviceId);
+  const descriptionId = useId();
   const [otherOpen, setOtherOpen] = useState(false);
   const chosen = mode.data?.override?.mode ?? null;
   const detected =
@@ -31,7 +47,10 @@ export function QuickModeChips({ deviceId, deviceName }: { deviceId: string; dev
 
   return (
     <div className="quick-modes">
-      <fieldset className="quick-modes__chips">
+      <fieldset
+        className="quick-modes__chips"
+        aria-describedby={description === undefined ? undefined : descriptionId}
+      >
         <legend className="quick-modes__label">Now:</legend>
         {quickModes.map((option) => (
           <button
@@ -66,6 +85,11 @@ export function QuickModeChips({ deviceId, deviceName }: { deviceId: string; dev
             : "Auto"}
         </button>
       </fieldset>
+      {description === undefined ? null : (
+        <p className="quick-modes__description" id={descriptionId}>
+          {description}
+        </p>
+      )}
       {set.isError ? (
         <p className="quick-modes__error" role="alert">
           {errorMessage(set.error)}
@@ -74,7 +98,7 @@ export function QuickModeChips({ deviceId, deviceName }: { deviceId: string; dev
       <Dialog
         open={otherOpen}
         onClose={() => setOtherOpen(false)}
-        title={`How is ${deviceName} travelling?`}
+        title={dialogTitle ?? `How is ${deviceName} travelling?`}
         description="From now until the next stop."
       >
         <ModePicker

@@ -55,6 +55,11 @@
   cursor: progress;
 }
 
+.quick-modes__description {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}
+
 .quick-modes__error {
   color: var(--color-danger);
   font-size: var(--text-s);

@@ -5,8 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../src/api/queryKeys";
 import { applyServerEvent } from "../src/live/applyServerEvent";
 import { createLiveStore } from "../src/live/createLiveStore";
+import { DevicePage } from "../src/pages/device/DevicePage";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
-import { automatic, ids, timeline, user } from "./support/fixtures";
+import { automatic, car, ids, timeline, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
@@ -99,8 +100,8 @@ describe("a link to one move", () => {
   });
 });
 
-describe("the quick toggle on Live", () => {
-  it("sets the mode from now on and hands it back to Auto", async () => {
+describe("the quick toggle on the Me card", () => {
+  it("sets the mode of the device that reported last from now on, and Auto again", async () => {
     let mode = automatic;
     const api = mockApi({
       ...standardRoutes(),
@@ -133,8 +134,8 @@ describe("the quick toggle on Live", () => {
     });
     const person = userEvent.setup();
     renderPage(<PeoplePage />, { user });
-    const card = await screen.findByRole("article", { name: "iPhone 16" });
-    const chips = within(card).getByRole("group", { name: "Now:" });
+    const me = screen.getByRole("region", { name: "Me" });
+    const chips = await within(me).findByRole("group", { name: "Now:" });
     expect(
       await within(chips).findByRole("button", { name: "Auto", pressed: true }),
     ).toBeInTheDocument();
@@ -145,7 +146,7 @@ describe("the quick toggle on Live", () => {
     ).toBeInTheDocument();
     await person.click(within(chips).getByRole("button", { name: "Other" }));
     expect(
-      await screen.findByRole("dialog", { name: "How is iPhone 16 travelling?" }),
+      await screen.findByRole("dialog", { name: "How are you travelling?" }),
     ).toBeInTheDocument();
     await person.click(screen.getByRole("button", { name: "Boat" }));
     expect(api.calls.filter((call) => call.method === "POST").at(-1)?.body).toEqual({
@@ -155,6 +156,41 @@ describe("the quick toggle on Live", () => {
     await person.keyboard("{Escape}");
     await person.click(within(chips).getByRole("button", { name: "Auto" }));
     expect(api.calls.filter((call) => call.method === "POST").at(-1)?.body).toEqual({ mode: null });
+    // Every press went to the phone, the device that reported last.
+    expect(api.calls.filter((call) => call.method === "POST").map((call) => call.path)).toEqual(
+      Array(3).fill(`/api/v1/devices/${ids.phone}/mode`),
+    );
+  });
+
+  it("says what Me is doing from the mode it sets", async () => {
+    const train = {
+      override: null,
+      current: { mode: "train", setByUser: true, since: new Date().toISOString(), segmentId: null },
+    };
+    mockApi({
+      ...standardRoutes(),
+      [`GET /api/v1/devices/${ids.phone}/mode`]: { status: 200, body: { mode: train } },
+    });
+    renderPage(<PeoplePage />, { user });
+    const me = screen.getByRole("region", { name: "Me" });
+    // The phone stands still at the station: a train, as the toggle says, without a speed.
+    expect(await within(me).findByText("By train")).toBeInTheDocument();
+  });
+
+  it("is on each device's page too, for that device", async () => {
+    const api = mockApi({
+      ...standardRoutes(),
+      [`GET /api/devices/${ids.car}`]: { status: 200, body: { device: car() } },
+      [`POST /api/v1/devices/${ids.car}/mode`]: { status: 200, body: { mode: automatic } },
+    });
+    const person = userEvent.setup();
+    renderPage(<DevicePage />, { path: "/devices/:deviceId", url: `/devices/${ids.car}`, user });
+    const section = await screen.findByRole("region", { name: "Travelling now" });
+    const chips = within(section).getByRole("group", { name: "Now:" });
+    await person.click(await within(chips).findByRole("button", { name: "Car" }));
+    expect(api.calls.find((call) => call.method === "POST")?.path).toBe(
+      `/api/v1/devices/${ids.car}/mode`,
+    );
   });
 });
 

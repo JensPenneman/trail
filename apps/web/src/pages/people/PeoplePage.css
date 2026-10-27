@@ -173,53 +173,43 @@
   }
 }
 
-/* The signed-in person: a tray that holds their device cards and uploads while the map shows them. */
+/*
+ * The signed-in person as a person: the two lines the people below have too,
+ * the quick toggle, Show on map and Details.
+ */
 .me-card {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-3);
   min-width: 0;
   padding: var(--space-4);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-l);
-  background: var(--color-surface-2);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1);
 }
 
 /* On the map: the accent edge, two pixels without moving the content (as on a person's card). */
 .me-card--shown {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px var(--color-accent);
+  box-shadow:
+    0 0 0 1px var(--color-accent),
+    var(--shadow-1);
 }
 
-.me-card__header {
+.me-card__setup {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}
+
+.me-card__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
-.me-card__who {
-  display: flex;
-  flex: 1 1 12rem;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.me-card__heading {
+.me-card__details:not([hidden]) {
   display: grid;
-  gap: 0.125rem;
-  min-width: 0;
-}
-
-.me-card__name {
-  font-size: var(--text-l);
-}
-
-.me-card__status {
-  color: var(--color-text-2);
-  font-size: var(--text-s);
-  font-variant-numeric: tabular-nums;
 }
 
 /* Everyone who shares with the signed-in person, a card each. */
@@ -297,6 +287,15 @@
 
 .people-list__sharing-chevron {
   color: var(--color-text-2);
+}
+
+/* The map's device filter, folded away among the options: it is seldom what one looks for. */
+.map-page__advanced > summary {
+  width: fit-content;
+}
+
+.map-page__advanced[open] > summary {
+  margin-bottom: var(--space-2);
 }
 
 @media (forced-colors: active) {

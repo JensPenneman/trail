@@ -92,6 +92,17 @@ export const car = (): DeviceSummary =>
     deviceKey: "car-old-iphone",
     createdAt: "2026-05-18T10:12:03.000Z",
     lastSeenAt: new Date(Date.now() - 5 * 3_600_000).toISOString(),
+    // Parked since its last upload: the phone reported last.
+    lastLocation: {
+      lat: 51.0362,
+      lon: 3.7104,
+      recordedAt: new Date(Date.now() - 5 * 3_600_000).toISOString(),
+      accuracy: 30,
+      speed: 0,
+      altitude: 9,
+      course: null,
+      motion: ["stationary"],
+    },
     battery: { level: 1, state: "full", recordedAt: new Date().toISOString() },
     counts: { today: 230, last24h: 230, total: 41_207 },
   });

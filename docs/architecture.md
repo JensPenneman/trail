@@ -1856,7 +1856,10 @@ count among them, since they lead to signed-in pages.
   the map — no new canvas, style or tiles. The camera frames what is drawn
   when that changes (another day, other people or devices; Live and History
   on today share it), never merely because the view did; Heat frames it only
-  when the page opened on it.
+  when the page opened on it. A camera move of a view (a visit, trip or
+  move shown) belongs to its view and period: another view or another day —
+  from the controls, a person's card or Back — drops it, so neither the view
+  shown again nor a return to its day makes it again.
 
   **Whose data**: the map shows the people chosen, Me alone by default (not
   remembered). **Show on map** on a card makes that person the choice — the
@@ -1869,13 +1872,14 @@ count among them, since they lead to signed-in pages.
   disabled), since the API has none of them for other people, and an address
   that asks for Heat shows Live until Me is chosen again (`shownView`; the
   address keeps its `view`). A card on the map says "On the map".
-  - **Live** — every shown device's latest position (accuracy circle,
-    pulsing when live) and today's tracks; in the Me card, device cards:
-    status badge (`deviceStatus()`), last upload ("2 min ago", ticking),
-    battery, speed / motion, current trip, points today, 48 h activity
-    sparkline, the quick toggle of the transport mode (§17.6); and the live
-    feed of uploads from SSE. This is the "data still comes in" proof
-    screen. The people chosen appear as their initials.
+  - **Live** — where everyone shown is now: every shown device's latest
+    position (accuracy circle, pulsing when live) and today's tracks, the
+    people chosen as their initials; the head says whom it shows ("Where you
+    and Ana are now · Tue 27 Oct"). While Me is on the map, one's day so far
+    sits right under the Me card (a region "Your day so far"): today's
+    timeline of stops and moves (`DayTimeline`, the one History has), whose
+    Details open the move's dialog and move the camera to it. That the phones
+    keep sending — status, uploads, activity — is the Devices page's.
   - **History** — pick a day (prev/next, calendar with days that have data
     from `/api/stats/days`) or a range ≤ 93 days; tracks per device at a
     level (Raw · Averaged · Mapped · Transport, §17.6), stops and moves in
@@ -1890,34 +1894,89 @@ count among them, since they lead to signed-in pages.
   The head holds the controls the views share, in this order: **people**
   (Me and everyone who shares with me, plus Everyone — a checkbox for all,
   "mixed" while some are chosen — once two or more share; somebody always
-  stays chosen), the **device filter** (grouped by person; someone else's
-  devices in their colour from `personPalette`), the **map style** (Auto,
-  which follows the system's light or dark setting, Light, Dark, and
-  Satellite when the server has imagery; remembered in localStorage
-  `trail.mapStyle`, else the account's preference, a dark or satellite map
-  drawing Trail's lines and dots in their dark-background steps whatever the
-  page's scheme), and the tracks' **level** with the mode legend (Live and
-  History, with Me). The style and the level resolve in the same order: the
-  address (`?style=`, `?level=`) › the choice last made on this browser › the
+  stays chosen), the **map style** (Auto, which follows the system's light
+  or dark setting, Light, Dark, and Satellite when the server has imagery;
+  remembered in localStorage `trail.mapStyle`, else the account's
+  preference, a dark or satellite map drawing Trail's lines and dots in their
+  dark-background steps whatever the page's scheme), the tracks' **level**
+  with the mode legend (Live and History, with Me), and last, folded under
+  **Advanced** (a disclosure, open when the address sets a filter), the
+  **device filter** (grouped by person; someone else's devices in their
+  colour from `personPalette`): which devices draw is seldom what one looks
+  for. The style and the level resolve in the same order: the address
+  (`?style=`, `?level=`) › the choice last made on this browser › the
   account's preference (Settings › Preferences) › Auto and Transport. On
   phones and small tablets they fold into one "Map options" button with a
-  one-line summary, so the map stays near the top; beside a full-height map
-  (≥ 64rem) the panel scrolls by itself under a sticky title and view switch.
+  one-line summary (whom, the level, the style; devices only while some are
+  left out, "1 of 2 devices"), so the map stays near the top; beside a
+  full-height map (≥ 64rem) the panel scrolls by itself under a sticky title
+  and view switch.
 
-  **The people list** — Find My for Trail (§8.5). The **Me** card: your
-  initials in the accent ring, and while Me is on the map what the view has
-  of one's own (Live's device cards and uploads), otherwise a line with how
-  many devices, how many are live and the last upload, and Show on map. Then
-  "Sharing with you": a card per person (`PersonCard`), each as their
-  initials in their colour (`personPalette`, a second ring beside the device
-  colours, assigned in the order they started sharing): the shared devices,
-  how fresh their position is, what they are doing (`describeActivity`,
-  which takes the inferred mode when there is one), battery, distance; Show
-  on map, Apple Maps and Google Maps links, Share back — or, when you share
-  with them, "You share with <name>" and Stop (`StopShareDialog`) — and Hide.
-  People you hid are listed under Hidden, to be shown again. A notice says
-  who started sharing while the page was open. Last, one's own side: **Share my
-  location** (`ShareDialog`): address (with the people who share with you as
+  **The people list** — Find My for Trail (§8.5): people, not their
+  devices. A card reads in two lines (`PersonSummary`): the avatar and the
+  name (an ellipsis rather than a line more), with a battery glyph where the
+  share includes it — the gauge, red when low, "Battery 58%" by name — and
+  the distance on the right; then how fresh — "Live" while the position is
+  within the live window (its time on hover and in Details), else "40 min
+  ago" — and what they are doing, broken only between its parts. A coarse
+  share always says how coarse ("Cycling · within about 5 km") and marks
+  its distance "≈" (read "about"): it is to the centre of a cell, as the map
+  draws a circle rather than a spot. Measured at 375–430 px wide, a card
+  takes two lines; a coarse share that moves, Me's longest lines and most
+  cards at 320 px take a third. "On the map" while the map shows them;
+  then **Show on map** and **Details**, a
+  disclosure closed at first (a button with `aria-expanded` and
+  `aria-controls`; its content follows it in the reading and tab order and is
+  only rendered while open, so a closed one asks for nothing), which holds
+  everything else. The **Me** card: your initials in the accent ring; what
+  you are doing now (`describeMe`) from the device that reported last
+  (`latestOwnDevice`: the newest position, else the latest upload) — the
+  stop or move of its current mode (§17.5: "At the same place since 08:12",
+  "Cycling · 18 km/h"), else its Overland trip or motion as for anyone
+  (`describeActivity`), without a speed once the position is older than the
+  live window, "No recent location" past the stale window (a share without
+  history shows no more); the quick toggle (§17.6) for that device, which
+  its description names ("Until your next stop, for iPhone 16: the device
+  that reported last. Your other devices are not changed." — another
+  device is set on its own page); with no device yet "Connect your first
+  phone", and while no device has uploaded "Waiting for the first upload"
+  with the way to its setup. Its Details: each device by name, linked to its
+  page, with when it last reported a position ("Waiting for the first
+  upload" before it did), battery, that position with its accuracy,
+  movement ("Last reported movement" once it is not live) and trip, and the
+  way to the Devices page. Then "Sharing with you": a card per person (`PersonCard`),
+  each as their initials in their colour (`personPalette`, a second ring
+  beside the device colours, assigned in the order they started sharing),
+  the line about them from the device that reported last (`primaryDevice`;
+  what they are doing as `describeActivity` has it, which takes the inferred
+  mode when the share includes one, or how coarse the position is when
+  nothing else is known: "Within about 500 m"). Their Details: each shared
+  device (updated, doing, battery, accuracy, trip, distance — "Not shared"
+  where the share leaves battery and activity out, "—" where it includes
+  them but nothing recent is known),
+  what they share (precision, where they've been, battery and activity,
+  until, since), Apple Maps and Google Maps links, Share back — or, when you
+  share with them, "You share with <name>" and Stop (`StopShareDialog`) —
+  and Hide. While someone is on the map in Live or History their card says
+  **where they've been** (`WhereTheyveBeen`, a part under its heading, not
+  a landmark: every card on the map has one): the day — Today in Live,
+  History's day, or History's period — with Previous and Next day (in Live
+  a day back is History's, one step of the history, `showHistoryDay`; the
+  day stepped to is announced, and History with it). Previous day goes no
+  further back than the first day of the history they share, since every
+  look counts in their access log; both stay focusable at their end
+  (`aria-disabled`, inert), so the keyboard's focus is never dropped. Their
+  track for it is a line from the answer of the track request the view
+  makes anyway, of the device that recorded the most — devices are never
+  added up (a phone and an iPad on one ride, or a car's tracker) — with how
+  many recorded when more did ("14.9 km · 06:30 – 07:15 · 2 devices
+  recorded", read "14.9 km, from 06:30 to 07:15"), "Nothing recorded on Mon
+  26 Oct", "Shares the last 7 days only" where the server moved the start
+  up, "Shares no device right now"; a share without history says "Shares
+  live location only" and is asked for nothing. People you hid are listed under
+  Hidden, to be shown again. A notice says who started sharing while the
+  page was open. Last, one's own side: **Share my location**
+  (`ShareDialog`): address (with the people who share with you as
   suggestions), devices, precision with plain-language explanations, history
   (precise only), details, duration; a pending address gets "They will see
   you once they sign up and you confirm", an administrator a one-click
@@ -1934,18 +1993,39 @@ count among them, since they lead to signed-in pages.
   (`positionExtent`) rather than its centre, which would pass for an exact
   spot. A track — Live's today, History's period — is asked for
   (`/api/v1/people/{id}/track`, one request per person) only when the share
-  is precise with history; everyone else gets a calm note in History instead
-  of a request, so no 404 ever reaches the console. Those queries are keyed
-  by the share's id and history, so a share that changes (a `share` event
-  refetches the people) is never asked for what it allowed before, and they
-  are not cached once off screen (`gcTime` 0); `person` events refetch them.
-- **Devices** — list; "Add device" flow: name → big QR of `setupUrl` ("scan
-  with the iPhone camera, Overland opens with everything filled in"), "Open in
-  Overland" button (on the phone itself), manual values with copy buttons,
-  recommended Overland settings, then "Waiting for the first upload…" that
-  turns into a success state via SSE. Device page: status, ingest log, raw
-  points (paginated), remote settings preset, rotate token (re-shows the QR),
-  rename, alerts toggle, delete (type the name to confirm).
+  is precise with history; everyone else's card says "Shares live location
+  only" instead of a request, so no 404 ever reaches the console. Those
+  queries are keyed by the share's id and history, so a share that changes
+  (a `share` event refetches the people) is never asked for what it allowed
+  before, and they are not cached once off screen (`gcTime` 0); `person`
+  events refetch them.
+- **Devices** — the proof that data still comes in, which People leaves out:
+  under the title how many devices are live and the latest upload of any ("1
+  of 2 devices live · last upload 2 min ago", ticking); a card per device
+  (`DeviceCard`, the name leading to its page): status badge
+  (`deviceStatus()`: Live, Idle, Silent, No data yet, with what each means),
+  its Device ID and points in total, last upload ("2 min ago", ticking;
+  "Waiting for the first upload" with the way to its setup), the Overland trip
+  in progress, battery, movement ("Last seen …" once it is not live), points
+  today, the distance today (from the day's sums, `/api/stats/days`, not
+  from its whole track; asked for every 10 s while uploads come in, until a
+  minute after the last, since the server sums a day up 10 s after the first
+  upload of a run and again for the ones after that pass), the last position
+  with its accuracy and time, and the 48 h activity sparkline (points per
+  hour and a tick per hour with uploads, its numbers in a table); then
+  **Uploads**, the feed of every upload of every device, newest first (the
+  ingest logs merged with those the event stream announces while the page is
+  open, marked New); "How it works". The "Add
+  device" flow: name → big QR of `setupUrl` ("scan with the iPhone camera,
+  Overland opens with everything filled in"), "Open in Overland" button (on
+  the phone itself), manual values with copy buttons, recommended Overland
+  settings, then "Waiting for the first upload…" that turns into a success
+  state via SSE. Device page: status, overview (last upload and position,
+  movement, altitude, battery, trip, points, Device ID, token, added),
+  **Activity** (the same sparkline), **Travelling now** (the quick toggle for
+  this device: the Me card's sets the device that reported last), remote
+  settings preset, alerts toggle, ingest log, raw points (paginated), rotate
+  token (re-shows the QR), rename, delete (type the name to confirm).
 - **Insights** (`pages/insights/`) — how the signed-in person travelled,
   from the operations of §8.7, on four pages that share a heading, a
   navigation of their own (Overview · When you travel · Roads; a mode's page
@@ -2352,7 +2432,19 @@ which are merged by hand; majors wait for a person, security ones too.
   stub that shows what it was handed; the People page's tests also check
   that switching views keeps that one map, that a view not shown asks for
   nothing, and that with someone else chosen alone nothing of one's own is
-  offered or asked for. The page's URL (`parseMapSearch`, the updates in
+  offered or asked for; the cards are people's (the Me card says what one is
+  doing and holds the quick toggle, no device counts, no uploads), each with
+  its Details disclosure (closed at first, `aria-expanded`, its content in
+  the tab order once open) and, on the map, where they have been (Today in
+  Live, a day back into History, a period, nothing recorded, the start of
+  the history they share as the furthest step, Next day keeping its focus,
+  each step announced, two devices said rather than added up); a coarse
+  share's card says how coarse with an "≈" distance (`PersonCard.test`);
+  a camera move of History is not made again after another view or day.
+  `describeMe`, `latestOwnDevice`,
+  `describeActivity` with and without a live position and
+  `summarizePersonTrack` have unit tests, and so does the disclosure on its
+  own. The page's URL (`parseMapSearch`, the updates in
   `mapSearchUpdates`, `resolveMapSelection`, `viewsFor` and `shownView`), the
   selection of a card (`selectionShowing`, `everyoneToggled`), the line about
   one's own sharing (`sharingSummary`), the old addresses (`legacyMapPath`,
@@ -2395,8 +2487,10 @@ which are merged by hand; majors wait for a person, security ones too.
   suite's server has satellite imagery from a host of its own, whose tiles
   the stub answers, so the CSP's map origins are checked too), other
   third-party requests refused. The Overland fixture is shifted to today.
-  Scenarios: sign-up and refusal, device setup and the live upload, ingest log
-  and raw points, remote settings, token rotation, History and its scrubber,
+  Scenarios: sign-up and refusal, device setup and the live upload (on the
+  Devices page: status, points, battery, trip, activity and the upload feed;
+  on People the Me card), ingest log and raw points, remote settings, token
+  rotation, History and its scrubber,
   the heatmap, sign-in by email, passkey button and autofill, invitations and
   isolation, passkeys and passkey links, sessions, export, deleting a period
   and the account, Overland's protocol, static files and headers, the API
@@ -2404,21 +2498,26 @@ which are merged by hand; majors wait for a person, security ones too.
   Settings, read the secret from the one-time screen, call
   `/api/v1/tokens/verify` with it, roll, revoke and see the old secrets
   refused; devices and an expiry date), the levels of the tracks and
-  correcting a move's mode, the quick toggle, sharing between two accounts
+  correcting a move's mode, the quick toggle (on the Me card, and the same
+  device's on its page), sharing between two accounts
   in two browsers (Share my location from the home page, live updates,
   hiding, stopping in Settings › Sharing) and public links (opened signed
   out, turned off, too short, unknown), the People page's map (its three
   views on one map, Back through them, the old addresses and deep links, the
-  device filter across views, the map style — Auto following the system, a
-  remembered choice, satellite imagery), the People page's people (three
-  accounts: Me first, a card per person; someone who shares roughly and live
+  device filter under Advanced across views, the map style — Auto following
+  the system, a remembered choice, satellite imagery), the People page's
+  people (three accounts: Me first as a person with one's day so far, a card
+  per person
+  with its devices and terms in Details; someone who shares roughly and live
   only, chosen alone, shows where they are and nothing of one's own — no
-  Heat, levels, timeline, visits or trips — and their history is never asked
-  for; someone who shares their history shows their track, until their share
+  Heat, levels, timeline, visits or trips — their card says "Shares live
+  location only" and their history is never asked for; someone who shares
+  their history shows their track and, on their card, where they have been
+  today, a day back in History and forward again, until their share
   changes; Me again brings everything back; Show everyone; a card kept live
-  by an upload; sharing back and stopping from a card; a deep link to
-  someone alone), Settings (the list with its values and search, on phones a
-  page of its own and beside the page on wide screens, every page and the
+  by an upload; sharing back and stopping from a card's Details; a deep link
+  to someone alone), Settings (the list with its values and search, on phones
+  a page of its own and beside the page on wide screens, every page and the
   page of each kind of item, going deeper and back by address and through
   the history, the old anchors and addresses, the preferences the map opens
   with, the administrators' page), the navigation (a tab bar on phones, the
@@ -2756,10 +2855,12 @@ colours, every mark ≥ 3:1) with a dashed outline for moves to review and a
 legend. A click on a segment — or "Details" in the day's timeline list next
 to the visits and trips — opens its dialog: the mode with its icon, "set by
 you", the confidence, average and top speed, distance and duration, "Was this
-…?" for moves to review, Change mode and Reset to detected. Live's device
-cards carry the quick toggle (Now: Walk · Bike · Car · Bus · Train · Tram ·
-Metro · Other · Auto). `segments` events refetch the tracks at their level,
-the timeline and the current mode.
+…?" for moves to review, Change mode and Reset to detected. The quick
+toggle (Now: Walk · Bike · Car · Bus · Train · Tram · Metro · Other · Auto)
+is on the Me card of People, for the device that reported last — one's
+other devices keep the mode the inference finds for them — and on each
+device's page for that device. `segments` events refetch the tracks at
+their level, the timeline and the current mode.
 
 ### 17.7 Configuration
 

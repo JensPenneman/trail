@@ -37,6 +37,13 @@
   text-decoration: underline;
 }
 
+.device-card__meta {
+  margin-top: calc(-1 * var(--space-2));
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+}
+
 .device-card__upload {
   font-size: var(--text-l);
   font-variant-numeric: tabular-nums;

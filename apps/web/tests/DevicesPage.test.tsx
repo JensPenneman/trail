@@ -1,8 +1,8 @@
-import { screen, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DevicesPage } from "../src/pages/devices/DevicesPage";
-import { device, user } from "./support/fixtures";
+import { device, ids, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
@@ -26,14 +26,99 @@ const created = {
   },
 };
 
+const fact = (scope: HTMLElement, label: string) =>
+  within(scope).getByText(label, { selector: "dt" }).nextElementSibling;
+
 describe("DevicesPage", () => {
-  it("lists the devices with their status", async () => {
-    mockApi(standardRoutes());
+  it("proves each device is sending: status, last upload, battery, movement and today", async () => {
+    const api = mockApi(standardRoutes());
     renderPage(<DevicesPage />, { path: "/devices", user });
-    const phone = await screen.findByRole("link", { name: /iPhone 16/ });
-    expect(phone).toHaveAttribute("href", "/devices/01926f3a-9c3d-7e5f-a021-3b4c5d6e7f80");
+    expect(await screen.findByText("1 of 2 devices live")).toBeInTheDocument();
+    const phone = await screen.findByRole("article", { name: "iPhone 16" });
+    expect(within(phone).getByRole("link", { name: "iPhone 16" })).toHaveAttribute(
+      "href",
+      `/devices/${ids.phone}`,
+    );
     expect(within(phone).getByText("Live")).toBeInTheDocument();
-    expect(within(screen.getByRole("link", { name: /Car/ })).getByText("Idle")).toBeInTheDocument();
+    expect(within(phone).getByText("1 min ago")).toBeInTheDocument();
+    expect(within(phone).getByText(/points in total$/)).toHaveTextContent(
+      "iphone-16-k3f9 · 184,322 points in total",
+    );
+    expect(fact(phone, "Battery")).toHaveTextContent("62%");
+    expect(fact(phone, "Movement")).toHaveTextContent("Standing still");
+    expect(fact(phone, "Points today")).toHaveTextContent("1,066");
+    // Today's distance from the day's sums, not from loading its whole track.
+    expect(await within(phone).findByText("32.9 km")).toBeInTheDocument();
+    expect(api.calls.map((call) => call.path)).not.toContain("/api/tracks");
+    expect(fact(phone, "Last position")).toHaveTextContent(/50\.9845° N, 3\.5268° E ±12 m/);
+    expect(
+      await within(phone).findByRole("img", { name: /iPhone 16, last 48 hours/ }),
+    ).toBeInTheDocument();
+
+    const car = screen.getByRole("article", { name: "Car" });
+    expect(within(car).getByText("Idle")).toBeInTheDocument();
+    expect(fact(car, "Movement")).toHaveTextContent("Last seen standing still");
+  });
+
+  it("lists the uploads as they arrive, newest first", async () => {
+    mockApi(standardRoutes());
+    const { liveStore } = renderPage(<DevicesPage />, { path: "/devices", user });
+    const uploads = await screen.findByRole("region", { name: "Uploads" });
+    expect(await within(uploads).findByText("+40 points")).toBeInTheDocument();
+    expect(within(uploads).getByText(/1 rejected/)).toBeInTheDocument();
+    act(() =>
+      liveStore.addUpload({
+        deviceId: ids.phone,
+        receivedAt: new Date().toISOString(),
+        inserted: 12,
+        duplicates: 0,
+        rejected: 0,
+      }),
+    );
+    const first = within(uploads).getAllByRole("listitem")[0];
+    expect(first).toHaveTextContent("+12 points");
+    expect(first).toHaveTextContent("New");
+  });
+
+  it("asks for today's sums again while uploads keep coming, however close together", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const api = mockApi(standardRoutes());
+      const { liveStore } = renderPage(<DevicesPage />, { path: "/devices", user });
+      await screen.findByRole("article", { name: "iPhone 16" });
+      const asked = () => api.calls.filter((call) => call.path === "/api/stats/days").length;
+      await waitFor(() => expect(asked()).toBe(1));
+      // Two phones, or Send Now: an upload every 5 s for half a minute.
+      for (let second = 0; second < 30; second += 5) {
+        act(() =>
+          liveStore.addUpload({
+            deviceId: ids.phone,
+            receivedAt: new Date().toISOString(),
+            inserted: 3,
+            duplicates: 0,
+            rejected: 0,
+          }),
+        );
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5_000);
+        });
+      }
+      // The server sums the day up 10 s after a run's first upload: the page keeps up.
+      expect(asked()).toBeGreaterThanOrEqual(3);
+      const during = asked();
+      // A minute and a bit after the last upload it stops asking.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(80_000);
+      });
+      const after = asked();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(40_000);
+      });
+      expect(asked()).toBe(after);
+      expect(after).toBeGreaterThan(during);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("adds a device and shows its one-time setup code while waiting for the first upload", async () => {

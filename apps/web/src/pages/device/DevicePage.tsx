@@ -18,6 +18,7 @@ import { PageHeader } from "../../ui/PageHeader";
 import { RelativeTime } from "../../ui/RelativeTime";
 import { Skeleton } from "../../ui/Skeleton";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { ActivitySection } from "./ActivitySection";
 import { AlertsSection } from "./AlertsSection";
 import { DeleteDeviceDialog } from "./DeleteDeviceDialog";
 import { DeviceOverview } from "./DeviceOverview";
@@ -26,13 +27,17 @@ import { RawPointsSection } from "./RawPointsSection";
 import { RemoteSettingsSection } from "./RemoteSettingsSection";
 import { RenameDeviceDialog } from "./RenameDeviceDialog";
 import { RotateTokenDialog } from "./RotateTokenDialog";
+import { TravelModeSection } from "./TravelModeSection";
 import "./DevicePage.css";
 
 const defaultThresholds = { liveMinutes: 15, staleHours: 12 };
 
 type OpenDialog = "rename" | "rotate" | "delete" | null;
 
-/** One device: its state, what it uploaded, and everything that can be changed about it. */
+/**
+ * One device: its state and activity, what it uploaded, how it travels now,
+ * and everything that can be changed about it.
+ */
 export function DevicePage() {
   const { deviceId = "" } = useParams();
   const device = useDevice(deviceId);
@@ -116,6 +121,12 @@ export function DevicePage() {
       />
 
       <DeviceOverview device={current} live={status === "live"} />
+      <ActivitySection
+        deviceId={current.id}
+        deviceName={current.name}
+        colorSlot={colors.slot(current.id)}
+      />
+      {current.lastSeenAt === null ? null : <TravelModeSection device={current} />}
       <RemoteSettingsSection key={current.pendingSettings ?? "none"} device={current} />
       <AlertsSection device={current} />
       <IngestLogSection deviceId={current.id} />

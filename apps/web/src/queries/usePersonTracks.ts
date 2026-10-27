@@ -11,6 +11,8 @@ export interface PersonTrackRequest extends PersonTrackParams {
 export interface PersonTracks {
   /** Per request, in its order: the answer once it is there. */
   data: readonly (PersonTrackResponse | undefined)[];
+  /** Per request, in its order: whether it waits for its first answer, and whether it failed. */
+  states: readonly { pending: boolean; failed: boolean }[];
   pending: boolean;
   fetching: boolean;
   /** The first failure, if any. */
@@ -21,6 +23,7 @@ export interface PersonTracks {
 function combine(results: UseQueryResult<PersonTrackResponse>[]): PersonTracks {
   return {
     data: results.map((result) => result.data),
+    states: results.map((result) => ({ pending: result.isPending, failed: result.isError })),
     pending: results.some((result) => result.isPending),
     fetching: results.some((result) => result.isFetching),
     error: results.find((result) => result.error !== null)?.error ?? null,

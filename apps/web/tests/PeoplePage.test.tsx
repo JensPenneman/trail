@@ -2,7 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
-import { ana, device, ids, outgoingShare, user } from "./support/fixtures";
+import { ana, device, ids, outgoingShare, sharedDevice, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
@@ -17,30 +17,101 @@ afterEach(() => {
 
 const meCard = () => screen.getByRole("region", { name: "Me" });
 const sharingWithYou = () => screen.getByRole("region", { name: "Sharing with you" });
+/** Opens a card's Details and gives back what it shows. */
+async function openDetails(person: ReturnType<typeof userEvent.setup>, card: HTMLElement) {
+  const button = within(card).getByRole("button", { name: "Details" });
+  await person.click(button);
+  const content = document.getElementById(button.getAttribute("aria-controls") ?? "");
+  if (content === null) throw new Error("Details controls nothing");
+  return content;
+}
 
 describe("the People page's list", () => {
-  it("starts with Me: their device cards and uploads while Me is on the map", async () => {
+  it("starts with Me as a person: what they do now and how fresh, none of their devices", async () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { user });
     expect(screen.getByRole("heading", { level: 1, name: "People" })).toBeInTheDocument();
     const me = meCard();
     expect(within(me).getByText("On the map")).toBeInTheDocument();
-    expect(await within(me).findByRole("article", { name: "iPhone 16" })).toBeInTheDocument();
-    expect(within(me).getByRole("article", { name: "Car" })).toBeInTheDocument();
-    expect(within(me).getByRole("region", { name: "Uploads" })).toBeInTheDocument();
+    // The phone reported last, 90 seconds ago, standing still.
+    expect(await within(me).findByText("Standing still")).toBeInTheDocument();
+    expect(within(me).getByText("Live")).toBeInTheDocument();
+    // Live: the time itself is on hover and in Details.
+    expect(within(me).getByText("Live")).toHaveAttribute("datetime");
+    expect(within(me).queryByText("1 min ago")).toBeNull();
+    expect(within(me).queryByText(/devices? ·|last upload/)).toBeNull();
+    expect(screen.queryByRole("article", { name: "iPhone 16" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Uploads" })).toBeNull();
     // Me first, then the people who share.
     expect(
       me.compareDocumentPosition(sharingWithYou()) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
-  it("sums one's devices up in a line where the view shows no cards of them", async () => {
+  it("puts the quick toggle on Me, for the device that reported last", async () => {
     mockApi(standardRoutes());
-    renderPage(<PeoplePage />, { url: "/?view=history", user });
+    renderPage(<PeoplePage />, { user });
+    const chips = await within(meCard()).findByRole("group", { name: "Now:" });
+    expect(chips).toHaveAccessibleDescription(
+      "Until your next stop, for iPhone 16: the device that reported last. Your other devices are not changed.",
+    );
+    expect(await within(chips).findByRole("button", { name: "Auto", pressed: true })).toBeEnabled();
+  });
+
+  it("keeps each device's facts in Me's Details, closed at first, with the way to Devices", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { user });
+    await within(meCard()).findByText("Standing still");
+    const button = within(meCard()).getByRole("button", { name: "Details" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button).toHaveAccessibleDescription("Me");
+    expect(within(meCard()).queryByRole("link", { name: "iPhone 16" })).toBeNull();
+
+    const details = await openDetails(person, meCard());
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(within(details).getByRole("heading", { name: "Your devices" })).toBeInTheDocument();
+    const devices = within(details).getAllByRole("listitem");
+    expect(devices).toHaveLength(2);
+    const [phone, car] = devices as [HTMLElement, HTMLElement];
+    expect(within(phone).getByRole("link", { name: "iPhone 16" })).toHaveAttribute(
+      "href",
+      `/devices/${ids.phone}`,
+    );
+    expect(within(phone).getByText("62%")).toBeInTheDocument();
+    expect(within(phone).getByText("50.9845° N, 3.5268° E ±12 m")).toBeInTheDocument();
+    expect(within(phone).getByText("Standing still")).toBeInTheDocument();
+    expect(within(phone).getByText("None in progress")).toBeInTheDocument();
+    expect(within(car).getByText("Last reported movement")).toBeInTheDocument();
+    expect(
+      within(details).getByRole("link", { name: /Uploads, activity and settings of your devices/ }),
+    ).toHaveAttribute("href", "/devices");
+
+    await person.click(button);
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(within(meCard()).queryByRole("link", { name: "iPhone 16" })).toBeNull();
+  });
+
+  it("points to a device's setup while none has uploaded yet", async () => {
+    const waiting = device({ lastSeenAt: null, lastLocation: null, battery: null });
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/devices": { status: 200, body: { devices: [waiting] } },
+    });
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { user });
     const me = meCard();
-    expect(await within(me).findByText(/^2 devices · 1 live · last upload/)).toBeInTheDocument();
-    expect(within(me).getByText("On the map")).toBeInTheDocument();
-    expect(within(me).queryByRole("article")).toBeNull();
+    expect(await within(me).findByText("Waiting for the first upload")).toBeInTheDocument();
+    expect(within(me).getByRole("link", { name: "Setup details" })).toHaveAttribute(
+      "href",
+      `/devices/${ids.phone}`,
+    );
+    // Nothing to toggle before a first upload.
+    expect(within(me).queryByRole("group", { name: "Now:" })).toBeNull();
+    const details = await openDetails(person, me);
+    expect(
+      within(details).getByText("Updated", { selector: "dt" }).nextElementSibling,
+    ).toHaveTextContent("Waiting for the first upload");
   });
 
   it("keeps Me in the list while someone else is on the map, a tap away", async () => {
@@ -48,46 +119,113 @@ describe("the People page's list", () => {
     const person = userEvent.setup();
     const { router } = renderPage(<PeoplePage />, { url: `/?people=${ids.ana}`, user });
     const me = meCard();
-    expect(await within(me).findByText(/^2 devices · 1 live/)).toBeInTheDocument();
+    expect(await within(me).findByText("Standing still")).toBeInTheDocument();
     expect(within(me).queryByText("On the map")).toBeNull();
-    expect(within(me).queryByRole("article")).toBeNull();
     await person.click(within(me).getByRole("button", { name: "Show on map" }));
     expect(router.state.location.search).toBe("");
-    expect(await within(me).findByRole("article", { name: "iPhone 16" })).toBeInTheDocument();
+    expect(await within(me).findByText("On the map")).toBeInTheDocument();
   });
 
-  it("shows each person like Find My: where, how fresh, doing what, battery and distance", async () => {
+  it("shows each person like Find My, in two lines: who and how far, doing what, how fresh", async () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { user });
     const card = await screen.findByRole("article", { name: "Ana Bell" });
-    expect(within(card).getAllByText("2 min ago")).toHaveLength(2);
+    expect(within(card).getByRole("heading", { level: 3, name: "Ana Bell" })).toBeInTheDocument();
+    expect(within(card).getByText("Cycling · 16 km/h")).toBeInTheDocument();
     expect(within(card).getByText("Live")).toBeInTheDocument();
-    expect(within(card).getByText("16 km/h · cycling")).toBeInTheDocument();
-    expect(within(card).getByText("58%")).toBeInTheDocument();
-    expect(within(card).getAllByText("1.8 km").length).toBeGreaterThan(0);
-    expect(within(card).getByRole("link", { name: /Apple Maps/ })).toHaveAttribute(
-      "href",
-      "https://maps.apple.com/?ll=51.0543%2C3.7174&q=Ana+Bell",
-    );
-    expect(within(card).getByRole("link", { name: /Google Maps/ })).toHaveAttribute(
-      "href",
-      "https://www.google.com/maps/search/?api=1&query=51.0543%2C3.7174",
-    );
-    // Every card has a Show on map: its description says whose.
+    expect(within(card).getByRole("img", { name: "Battery 58%" })).toBeInTheDocument();
+    expect(within(card).getByText("1.8 km")).toBeInTheDocument();
+    // Every card has a Show on map and Details: their description says whose.
     expect(within(card).getByRole("button", { name: "Show on map" })).toHaveAccessibleDescription(
       "Ana Bell",
     );
-    // The signed-in person already shares with Ana.
-    expect(within(card).getByText(/You share with Ana Bell/)).toBeInTheDocument();
-    expect(within(card).queryByRole("button", { name: "Share back" })).toBeNull();
-
-    const bob = screen.getByRole("article", { name: "bob" });
-    expect(within(bob).getByText("Approximate location, within about 500 m")).toBeInTheDocument();
-    expect(within(bob).getByText("Not shared")).toBeInTheDocument();
-    expect(within(bob).getByRole("button", { name: "Share back" })).toHaveAccessibleDescription(
-      "bob",
+    expect(within(card).getByRole("button", { name: "Details" })).toHaveAccessibleDescription(
+      "Ana Bell",
     );
-    expect(within(bob).getByText(/Live only · Until/)).toBeInTheDocument();
+    // Everything else is in Details, closed at first.
+    expect(within(card).queryByRole("link", { name: /Apple Maps/ })).toBeNull();
+    expect(within(card).queryByText("Ana’s iPhone")).toBeNull();
+
+    // bob shares roughly, without battery or activity: no battery glyph, the precision instead,
+    // and a distance to the centre of his cell that says it is about that.
+    const bob = screen.getByRole("article", { name: "bob" });
+    expect(within(bob).getByText("Within about 500 m")).toBeInTheDocument();
+    expect(within(bob).getByText("40 min ago")).toBeInTheDocument();
+    expect(within(bob).queryByText("Live")).toBeNull();
+    expect(within(bob).queryByRole("img", { name: /^Battery/ })).toBeNull();
+    expect(within(bob).getByText("48.2 km", { exact: false }).closest("span")).toHaveTextContent(
+      "Distance from you: ≈ about 48.2 km",
+    );
+  });
+
+  it("keeps each shared device, the share's terms and the other actions in Details", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { user });
+    const card = await screen.findByRole("article", { name: "Ana Bell" });
+    const details = await openDetails(person, card);
+    const fact = (scope: HTMLElement, label: string) =>
+      within(scope).getByText(label, { selector: "dt" }).nextElementSibling;
+    expect(within(details).getByText("Ana’s iPhone")).toBeInTheDocument();
+    expect(fact(details, "Updated")).toHaveTextContent("2 min ago");
+    expect(fact(details, "Doing")).toHaveTextContent("Cycling · 16 km/h");
+    expect(fact(details, "Battery")).toHaveTextContent("58%");
+    expect(fact(details, "Accuracy")).toHaveTextContent("±8 m");
+    expect(fact(details, "Trip")).toHaveTextContent("None in progress");
+    expect(fact(details, "Distance")).toHaveTextContent("1.8 km");
+    expect(fact(details, "Precision")).toHaveTextContent("Precise location");
+    expect(fact(details, "Where they’ve been")).toHaveTextContent("Live only");
+    expect(fact(details, "Battery and activity")).toHaveTextContent("Shared");
+    expect(fact(details, "Until")).toHaveTextContent("No end set");
+    expect(within(details).getByRole("link", { name: /Apple Maps/ })).toHaveAttribute(
+      "href",
+      "https://maps.apple.com/?ll=51.0543%2C3.7174&q=Ana+Bell",
+    );
+    expect(within(details).getByRole("link", { name: /Google Maps/ })).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=51.0543%2C3.7174",
+    );
+    // The signed-in person already shares with Ana.
+    expect(within(details).getByText(/You share with Ana Bell/)).toBeInTheDocument();
+    expect(within(details).queryByRole("button", { name: /^Share back/ })).toBeNull();
+    expect(within(details).getByRole("button", { name: "Hide Ana Bell" })).toBeInTheDocument();
+  });
+
+  it("tells a share without recent details from one that leaves them out", async () => {
+    const quiet = ana({
+      devices: [{ ...sharedDevice(), battery: null, activity: null }],
+    });
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/people": { status: 200, body: { people: [quiet] } },
+    });
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { user });
+    const details = await openDetails(
+      person,
+      await screen.findByRole("article", { name: "Ana Bell" }),
+    );
+    const fact = (label: string) =>
+      within(details).getByText(label, { selector: "dt" }).nextElementSibling;
+    // Ana shares battery and activity; there is just nothing recent of them.
+    expect(fact("Battery")).toHaveTextContent("—");
+    expect(fact("Trip")).toHaveTextContent("—");
+    expect(fact("Battery and activity")).toHaveTextContent("Shared");
+  });
+
+  it("says in Details what a share leaves out", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { user });
+    const fact = (scope: HTMLElement, label: string) =>
+      within(scope).getByText(label, { selector: "dt" }).nextElementSibling;
+    const bob = await screen.findByRole("article", { name: "bob" });
+    const hers = await openDetails(person, bob);
+    expect(fact(hers, "Battery")).toHaveTextContent("Not shared");
+    expect(fact(hers, "Trip")).toHaveTextContent("Not shared");
+    expect(fact(hers, "Precision")).toHaveTextContent("Approximate location, within about 500 m");
+    expect(fact(hers, "Until")).toHaveTextContent(/^Until /);
+    expect(within(hers).getByRole("button", { name: "Share back with bob" })).toBeInTheDocument();
   });
 
   it("says with how many people one shares, and leads to Settings › Sharing", async () => {
@@ -167,7 +305,8 @@ describe("the People page's list", () => {
     const person = userEvent.setup();
     renderPage(<PeoplePage />, { user });
     const bob = await screen.findByRole("article", { name: "bob" });
-    await person.click(within(bob).getByRole("button", { name: "Share back" }));
+    const details = await openDetails(person, bob);
+    await person.click(within(details).getByRole("button", { name: "Share back with bob" }));
     const dialog = await screen.findByRole("dialog", { name: "Share my location" });
     expect(within(dialog).getByLabelText("Email address")).toHaveValue("bob@example.com");
     const sevenDays = within(dialog).getByRole("radio", { name: "Last 7 days" });
@@ -198,8 +337,9 @@ describe("the People page's list", () => {
     const person = userEvent.setup();
     renderPage(<PeoplePage />, { user });
     const card = await screen.findByRole("article", { name: "Ana Bell" });
+    const details = await openDetails(person, card);
     await person.click(
-      within(card).getByRole("button", { name: "Stop sharing your location with Ana Bell" }),
+      within(details).getByRole("button", { name: "Stop sharing your location with Ana Bell" }),
     );
     const dialog = await screen.findByRole("dialog", { name: "Stop sharing with Ana Bell?" });
     await person.click(within(dialog).getByRole("button", { name: "Stop sharing" }));
@@ -297,7 +437,8 @@ describe("the People page's list", () => {
     const person = userEvent.setup();
     renderPage(<PeoplePage />, { user });
     const card = await screen.findByRole("article", { name: "Ana Bell" });
-    await person.click(within(card).getByRole("button", { name: "Hide Ana Bell" }));
+    const details = await openDetails(person, card);
+    await person.click(within(details).getByRole("button", { name: "Hide Ana Bell" }));
     expect(await screen.findByText("Hidden (1)")).toBeInTheDocument();
     expect(screen.queryByRole("article", { name: "Ana Bell" })).toBeNull();
     expect(api.calls.some((call) => call.path.endsWith("/hide"))).toBe(true);
@@ -314,7 +455,8 @@ describe("the People page's list", () => {
     });
     renderPage(<PeoplePage />, { user });
     expect(await screen.findByText("People could not be loaded")).toBeInTheDocument();
-    expect(await within(meCard()).findByRole("article", { name: "iPhone 16" })).toBeInTheDocument();
+    expect(await within(meCard()).findByText("Standing still")).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Timeline" })).toBeInTheDocument();
   });
 
   it("names a device filter that leaves out all of one's devices", async () => {
@@ -324,9 +466,9 @@ describe("the People page's list", () => {
     });
     renderPage(<PeoplePage />, { url: `/?people=me,${ids.ana}&devices=${ids.anaPhone}`, user });
     expect(
-      await within(meCard()).findByText(
-        "The device filter in Map options leaves out all of your devices.",
-      ),
+      await screen.findByText("The device filter in Map options leaves out all of your devices."),
     ).toBeInTheDocument();
+    // Opened, since the address sets a filter.
+    expect(screen.getByText("Advanced").closest("details")).toHaveAttribute("open");
   });
 });

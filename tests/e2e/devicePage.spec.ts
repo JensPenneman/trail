@@ -18,6 +18,12 @@ test.describe("a device's page", () => {
   test("lists every upload and the raw points as they were stored", async ({ page, account }) => {
     const batch = overlandBatch(account.timezone);
     const device = await uploadedDevice(page, "Logged phone", batch);
+    // The hours of the last two days: whether data keeps coming.
+    await expect(
+      page
+        .getByRole("region", { name: "Activity", exact: true })
+        .getByRole("img", { name: /^Logged phone, last 48 hours: \d+ points/ }),
+    ).toBeVisible();
     const uploads = page.getByRole("table", { name: "Uploads of this device" });
     const rows = uploads.getByRole("row");
     await expect(rows).toHaveCount(2);

@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { removeDeviceFromCache } from "../src/devices/removeDeviceFromCache";
@@ -24,6 +24,17 @@ describe("DevicePage", () => {
     expect(
       screen.getByRole("switch", { name: "Tell me when this device goes silent" }),
     ).toBeChecked();
+    // What the People page's Live view had of it: the hours of activity and the quick toggle.
+    expect(
+      await within(screen.getByRole("region", { name: "Activity" })).findByRole("img", {
+        name: /iPhone 16, last 48 hours: 40 points in 1 of 48 hours, 3 uploads\./,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "Travelling now" })).getByRole("group", {
+        name: "Now:",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("asks for the device's name before deleting it", async () => {

@@ -1,0 +1,100 @@
+/*
+ * Two lines beside the avatar: the name, with the battery and the distance on
+ * the right; then how fresh and what they are doing, across the whole width.
+ * A long name ends in an ellipsis; only a long activity on a narrow screen
+ * wraps, between its parts.
+ */
+.person-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "avatar name aside"
+    "avatar line line"
+    ". badge badge";
+  align-items: center;
+  gap: 0.125rem var(--space-3);
+  min-width: 0;
+}
+
+.person-summary > .person-avatar {
+  grid-area: avatar;
+}
+
+.person-summary__name {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-l);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* With nothing to its right (Me), the name takes the whole line. */
+.person-summary:not(:has(.person-summary__aside)) .person-summary__name {
+  grid-column: 2 / -1;
+}
+
+.person-summary__aside {
+  display: flex;
+  grid-area: aside;
+  align-items: baseline;
+  justify-self: end;
+  gap: var(--space-3);
+  white-space: nowrap;
+}
+
+.person-summary__battery {
+  align-self: center;
+  color: var(--color-text-2);
+}
+
+.person-summary__battery .battery__icon {
+  display: block;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.person-summary__distance {
+  font-size: var(--text-l);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.person-summary__line {
+  grid-area: line;
+  min-width: 0;
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+}
+
+.person-summary__fresh {
+  white-space: nowrap;
+}
+
+.person-summary__live {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-live-soft);
+  color: var(--color-live);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.person-summary__doing {
+  color: var(--color-text);
+  font-weight: 550;
+  /* A part longer than the line still fits. */
+  overflow-wrap: anywhere;
+}
+
+.person-summary__badge {
+  grid-area: badge;
+  margin-top: var(--space-1);
+}
+
+@media (forced-colors: active) {
+  .person-summary__live {
+    border: 1px solid CanvasText;
+  }
+}

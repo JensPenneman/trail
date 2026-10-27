@@ -12,6 +12,8 @@ export interface MapSearchControls {
   setPeople: (people: readonly string[], devicesOf: (person: string) => readonly string[]) => void;
   setDevices: (deviceIds: readonly string[] | null) => void;
   showDay: (date: string) => void;
+  /** History on a day, from another view: one step of the history for both. */
+  showHistoryDay: (date: string) => void;
   showRange: (from: string, to: string) => void;
 }
 
@@ -65,9 +67,17 @@ export function useMapSearch(): MapSearchControls {
     (date: string) => update((current) => withDay(current, date, today)),
     [update, today],
   );
+  const showHistoryDay = useCallback(
+    (date: string) =>
+      startTransition(() => {
+        showView("history");
+        update((current) => withView(withDay(current, date, today), "history"));
+      }),
+    [update, today, showView],
+  );
   const showRange = useCallback(
     (from: string, to: string) => update((current) => withRange(current, from, to)),
     [update],
   );
-  return { search, today, setView, setPeople, setDevices, showDay, showRange };
+  return { search, today, setView, setPeople, setDevices, showDay, showHistoryDay, showRange };
 }

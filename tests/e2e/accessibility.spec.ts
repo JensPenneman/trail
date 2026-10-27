@@ -41,8 +41,15 @@ test.describe("accessibility", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
 
     const device = await uploadedDevice(page, "Checked phone", overlandBatch(account.timezone));
-    await open(page, "/", "People", "Last upload");
+    await open(page, "/", "People", "Timeline");
     await expectAccessible(page, "People's Live");
+    // The Me card opened up: each device, the way to Devices.
+    await page
+      .getByRole("region", { name: "Me", exact: true })
+      .getByRole("button", { name: "Details" })
+      .click();
+    await expect(page.getByRole("heading", { name: "Your devices" })).toBeVisible();
+    await expectAccessible(page, "People's Live with Me's details");
     await open(page, "/?view=history", "People", "30 points");
     await expectAccessible(page, "People's History");
     await open(page, "/?view=heat", "People", "Busiest places in view");
