@@ -60,7 +60,7 @@ type RouteResponses = { readonly [S in SuccessStatus]?: z.ZodType | null };
 
 /**
  * How a scoped route counts in the data access log (docs/architecture.md
- * §8.7). Every answer it sends with a success status is recorded for the
+ * §8.8). Every answer it sends with a success status is recorded for the
  * caller's account — the action is the operationId, the resource what the
  * validated path, query and body name — unless the spec says `false`.
  */
@@ -391,7 +391,7 @@ function checkSpec(spec: RouteSpec): void {
  * document, and the handler only ever sees a principal that may call the route
  * and input that matches the spec. A handler returns `{ status, body }` with a
  * status the spec lists; the body goes out through that status's schema, and
- * then the access counts in the data access log (§8.7).
+ * then the access counts in the data access log (§8.8).
  */
 export function defineRoute<const Spec extends RouteSpec>(
   spec: Spec,

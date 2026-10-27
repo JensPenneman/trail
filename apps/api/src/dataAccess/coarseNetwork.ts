@@ -55,7 +55,7 @@ const ipv4Network = (a: number, b: number, c: number): string => `${a}.${b}.${c}
 
 /**
  * The network a client address belongs to, all the data access log keeps of
- * a link visitor's address (docs/architecture.md §8.7): IPv4 as its /24
+ * a link visitor's address (docs/architecture.md §8.8): IPv4 as its /24
  * (`81.82.83.0/24`), IPv6 as its /48 (`2001:db8:1234::/48`). An address that
  * carries an IPv4 address in its first 48 bits counts as that IPv4 address:
  * IPv4-mapped (`::ffff:81.82.83.84`), and 6to4 (`2002:5152:5354::/48`), whose

@@ -438,7 +438,7 @@ answer's status. The actors and channels:
 
 | Channel | Actor (`actorKind`) | What is recorded |
 |---|---|---|
-| `web` | you (`owner`), signed in, by browser | your reads in the dashboard (tracks, timeline, heatmap, visits, trips, raw points, statistics), exports, and your changes: modes, shares, links, tokens, deleted periods and devices |
+| `web` | you (`owner`), signed in, by browser | your reads in the dashboard (tracks, timeline, heatmap, visits, trips, raw points, statistics, Insights), exports, and your changes: modes, shares, links, tokens, deleted periods and devices |
 | `api` | one of your API tokens (`token`) | every `/api/v1` operation it calls, except `tokens/verify`, the OpenAPI document and the access log itself; a look at people only as that it happened (whom it showed counts in their logs) |
 | `mcp` | one of your API tokens (`token`) | every tool it calls and resource it reads on the [MCP server](https://github.com/JensPenneman/trail/blob/main/docs/mcp.md), as `mcp.<tool>` |
 | `people` | someone you share with (`person`) | when they look at you: People, `GET /api/v1/people…` with their session or token, and their agent's `get_people`, which shows as `listPeople` (whether someone asks an agent is theirs) |

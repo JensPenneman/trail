@@ -11,7 +11,7 @@ import { toSharedDevice } from "./toSharedDevice";
  * shows it, to every recipient with a live stream whose share is in force,
  * covers the device and is not hidden (docs/architecture.md §9). The owner's
  * shares come from the one-minute cache that every change clears. Each push
- * counts in the owner's data access log (§8.7): per recipient, device and
+ * counts in the owner's data access log (§8.8): per recipient, device and
  * hour, with how many there were.
  */
 export function publishPeopleLater(ctx: AppContext, ownerId: string, deviceId: string): void {

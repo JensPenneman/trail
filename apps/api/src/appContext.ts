@@ -28,6 +28,6 @@ export interface AppContext {
   processing: ProcessingService;
   /** The sharing grid key and every owner's shares for the live fan-out (docs/architecture.md §8.5). */
   sharing: SharingState;
-  /** Who read or changed whose data: the data access log (docs/architecture.md §8.7). */
+  /** Who read or changed whose data: the data access log (docs/architecture.md §8.8). */
   dataAccess: DataAccessRecorder;
 }

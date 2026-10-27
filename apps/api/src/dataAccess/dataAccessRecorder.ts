@@ -105,7 +105,7 @@ function toRow(pending: Pending, secret: Buffer | null): AccessRow {
 }
 
 /**
- * The data access log's writer (docs/architecture.md §8.7). `record` only
+ * The data access log's writer (docs/architecture.md §8.8). `record` only
  * touches memory: accesses are counted per owner, UTC hour and access (the
  * row's unique key), and a write two seconds after the first — or as soon as
  * 500 distinct rows wait — puts them into the table with one upsert, so a

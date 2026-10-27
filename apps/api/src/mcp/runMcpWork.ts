@@ -27,7 +27,7 @@ export type McpWork<Input, Answer> = (input: Input, context: WorkContext) => Pro
 
 /**
  * What a tool or resource read or changed, for the data access log
- * (docs/architecture.md §8.7): data of the token's own account — the devices
+ * (docs/architecture.md §8.8): data of the token's own account — the devices
  * it resolved (never the name an agent typed) and the range — or, for
  * `get_people`, of the people who share with it, one access each, under the
  * action they see (`ownersSee`: whether someone asked an agent is theirs).

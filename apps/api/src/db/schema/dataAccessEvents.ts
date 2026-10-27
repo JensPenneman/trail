@@ -24,7 +24,7 @@ const listed = (values: readonly string[]) =>
   sql.raw(values.map((value) => `'${value}'`).join(", "));
 
 /**
- * The data access log (docs/architecture.md §8.7): one row per owner, UTC
+ * The data access log (docs/architecture.md §8.8): one row per owner, UTC
  * hour and access — the same actor doing the same thing to the same data —
  * with how often it happened. Kept `DATA_ACCESS_RETENTION_DAYS` (365 by
  * default), removed with the owner's account. Actors are referenced without

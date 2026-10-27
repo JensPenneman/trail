@@ -98,7 +98,7 @@ const inList = (column: SQL, values: readonly string[] | undefined): SQL =>
   values === undefined ? sql`` : sql`AND ${column} = ANY(${sql.param([...values])}::text[])`;
 
 /**
- * One page of the owner's data access log (docs/architecture.md §8.7),
+ * One page of the owner's data access log (docs/architecture.md §8.8),
  * newest hour first: only ever the owner's rows — nobody else's account, no
  * administrator — filtered by period, kinds of actor, channels and action.
  * The keyset is the table's unique key — the hour and the dedupe key —

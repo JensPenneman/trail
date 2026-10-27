@@ -26,7 +26,7 @@ import { createTestContext, type TestContext } from "../support/testContext";
 import { testDatabaseUrl } from "../support/testEnvironment";
 
 /*
- * Reading the data access log (docs/architecture.md §8.7): the list and the
+ * Reading the data access log (docs/architecture.md §8.8): the list and the
  * summary, for the owner alone and with `audit:read` only, names as they are
  * now or as they were, pages that hold still, the retention, the account's
  * deletion and the shutdown's last write.

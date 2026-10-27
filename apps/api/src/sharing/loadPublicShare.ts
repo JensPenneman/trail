@@ -29,7 +29,7 @@ export interface LinkVisit {
  * address or device ids. A secret of the wrong shape or an unknown one is
  * `not_found`; an expired or turned-off link `share_expired`, both 404. A
  * look counts as a view at most once a minute, and in the owner's data
- * access log (§8.7) per visitor and hour — the visitor being their network
+ * access log (§8.8) per visitor and hour — the visitor being their network
  * (/24 or /48) and kind of browser, never the address itself.
  */
 export async function loadPublicShare(

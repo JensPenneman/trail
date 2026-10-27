@@ -6,7 +6,7 @@ import { principalActor } from "./principalActor";
 
 /**
  * Counts what a route of the dashboard's private API read or changed in the
- * owner's data access log (docs/architecture.md §8.7): their browser session,
+ * owner's data access log (docs/architecture.md §8.8): their browser session,
  * channel `web`, action `dashboard.<route>`. Each recorded handler calls it
  * once its answer is out (an export once it starts streaming); the device
  * list, configuration and health are not recorded. Never throws.

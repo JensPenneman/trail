@@ -58,7 +58,7 @@ function actionsBy(rows: readonly ActionRow[]): Map<string, { action: string; co
 
 /**
  * Who looked at the owner's data over the last `days` local days, today
- * included (docs/architecture.md §8.7): totals per kind of actor, channel and
+ * included (docs/architecture.md §8.8): totals per kind of actor, channel and
  * kind of access, a dense series per local day of the owner's time zone (an
  * hour counts on the day it starts in), the people, links (with their
  * distinct visitors) and tokens with how often and when last, and the owner's

@@ -96,7 +96,7 @@ export const envSchema = z
     SESSION_TTL_DAYS: env(intSchema(1, 365).default(30)),
     LIVE_WINDOW_MINUTES: env(intSchema(1, 1440).default(15)),
     STALE_AFTER_HOURS: env(intSchema(1, 720).default(12)),
-    // The data access log is a log, not location data: it is pruned (docs/architecture.md §8.7).
+    // The data access log is a log, not location data: it is pruned (docs/architecture.md §8.8).
     DATA_ACCESS_RETENTION_DAYS: env(intSchema(1, 3650).default(365)),
     ALERT_NTFY_URL: env(httpUrlSchema.optional()),
     ALERT_NTFY_TOKEN: env(z.string().optional()),

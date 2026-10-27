@@ -354,7 +354,7 @@ cleaned), must not slow or fail requests, and must not grow without bound
 
 ### 3.7 Settled in the pull request (feat/data-access-log)
 
-What the UI wave needs from §3.1–§3.5 as built (docs/architecture.md §8.7 has
+What the UI wave needs from §3.1–§3.5 as built (docs/architecture.md §8.8 has
 the whole of it; the shapes are `packages/contracts/src/dataAccess.ts`):
 
 - **Actors** are a union on `actor.kind`: `owner` (`sessionLabel`), `token`

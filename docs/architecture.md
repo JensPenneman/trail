@@ -139,7 +139,7 @@ All configuration is environment variables, validated at boot with zod
 | `SESSION_TTL_DAYS` | `30` | Sliding session lifetime |
 | `LIVE_WINDOW_MINUTES` | `15` | "live" status window |
 | `STALE_AFTER_HOURS` | `12` | "stale" status + silent-device alert threshold; also how old the position of a live-only share may be (§8.5) |
-| `DATA_ACCESS_RETENTION_DAYS` | `365` | How long the data access log keeps its hours (1–3650 days; §8.7, §10): a log, not location data, so it is pruned |
+| `DATA_ACCESS_RETENTION_DAYS` | `365` | How long the data access log keeps its hours (1–3650 days; §8.8, §10): a log, not location data, so it is pruned |
 | `ALERT_NTFY_URL` | empty | ntfy topic URL for silent/recovered device alerts; empty = off |
 | `ALERT_NTFY_TOKEN` | empty | Optional ntfy access token |
 | `DEFAULT_TIMEZONE` | `Europe/Brussels` | Time zone of new accounts |
@@ -316,9 +316,9 @@ keeps: `name` (PK), `secret` (bytea), `created_at`. `share-grid` (32 random
 bytes) keys the offset of each owner's sharing grid; it must never change, or
 a recipient who saw old and new cells could intersect them.
 `data-access-visitor` (32 random bytes) keys the visitor keys of the data
-access log (§8.7), which stay the same for a visitor as long as it does.
+access log (§8.8), which stay the same for a visitor as long as it does.
 
-**data_access_events** — the data access log (§8.7): who read or changed
+**data_access_events** — the data access log (§8.8): who read or changed
 whose data, one row per owner, UTC hour and access. `id` (bigint identity),
 `owner_user_id` → users (cascade), `bucket_start` (the hour, checked to be
 one), `first_at`, `last_at`, `count` (> 0), `actor_kind`
@@ -532,7 +532,7 @@ Passkeys only (no passwords), SimpleWebAuthn v14 on both ends.
   anything but `same-origin` or `none` (a client that is no browser sends
   none): a GET from another site's link or image would otherwise read with
   the visitor's session and write their look into someone's data access
-  log (§8.7).
+  log (§8.8).
 - **Principals.** Every request has at most one: a session (cookie) or, on
   `/api/v1` only, an API token. Routes ask for `requireAuth` (either),
   `requireSession` (sessions, passkeys, live events, device credentials,
@@ -750,7 +750,7 @@ token's `deviceIds`, which therefore answers 404 like a foreign one.
 **Scopes** (`packages/contracts/src/apiScope.ts`): `profile:read`,
 `devices:read`, `devices:write`, `locations:read`, `locations:write`,
 `history:read`, `people:read`, `shares:read`, `shares:write`, `audit:read`
-(the data access log, §8.7). A route lists the
+(the data access log, §8.8). A route lists the
 scopes that grant access; any one of them is enough, all of them with
 `all: true`. A failure answers 403 `insufficient_scope`, naming the missing
 scopes in the message and in `WWW-Authenticate: Bearer realm="trail",
@@ -792,7 +792,7 @@ The spec:
 | `request` | optional zod schemas: `params` (one key per path parameter; a value that fails it answers 404 — it names nothing), `query` (values are strings: coerce in the schema; failure 400 `validation_failed` with `fields`), `body` (JSON; not JSON 415, invalid 400) |
 | `responses` | the body schema of each success status (`200`, `201`, `202`, `204`); `null` for no body |
 | `errors` | error statuses beyond the implied ones (401, 403 and 503 for scoped routes; 400, 401 and 503 for token routes; 404 with path parameters, 400 with a query or body, 413 and 415 with a body, 429 and 500 always), e.g. `[409]` |
-| `access` | how a scoped route counts in the data access log (§8.7): left out, every success is recorded for the caller with the operationId and what the validated input names, `read` for GET and `write` otherwise; `{ kind }` names another kind (`export`); `{ people: true }` marks an answer with other people's data, whose handler names their owners; `false` records nothing (the log's own routes). Not allowed on public and token routes, which are never recorded |
+| `access` | how a scoped route counts in the data access log (§8.8): left out, every success is recorded for the caller with the operationId and what the validated input names, `read` for GET and `write` otherwise; `{ kind }` names another kind (`export`); `{ people: true }` marks an answer with other people's data, whose handler names their owners; `false` records nothing (the log's own routes). Not allowed on public and token routes, which are never recorded |
 
 The handler receives `{ ctx, auth, params, query, body, req }`, typed from the
 spec — `auth` is non-null on scoped routes and a `TokenPrincipal` on token
@@ -802,7 +802,7 @@ the data access log, `owners` (required with `access: { people: true }`)
 or `resource` (what else the answer names, such as a new share's id) — the
 type checker enforces all of it. The body goes out through that status's
 schema, so fields the schema does not name are dropped and a mismatch is a
-logged 500; after it, the access is recorded (§8.7).
+logged 500; after it, the access is recorded (§8.8).
 Errors are thrown as `HttpError`s. Streaming responses (SSE) are not supported
 yet: extend `defineRoute` rather than mounting around the registry. Mistakes in
 a spec (path parameters without params keys, a duplicate operationId or
@@ -956,7 +956,7 @@ The credentials of `/api/v1` for scripts, apps and agents: created in Settings
 - **Audit**: `API token created`, `changed`, `rolled` and `revoked` at info,
   with the token's and the user's id (and the scopes or the changed fields),
   never the secret; the same four count in the owner's data access log
-  (§8.7), and so does every call a token makes, by token.
+  (§8.8), and so does every call a token makes, by token.
 - **Retention**: revoked and expired tokens stay listed for 30 days, then the
   hourly prune removes them (§10); deleting the account removes all of them.
 ### 8.5 Sharing (People)
@@ -1079,7 +1079,7 @@ id (`deviceIds: null` is 400), and changes or confirms only shares that show
 nothing but its devices, before and after the change (403 `forbidden`);
 stopping is always allowed. Reading people stamps the shares'
 `last_viewed_at`, at most once a minute and after the response; the owner sees
-it, and every look counts in the owner's data access log (§8.7): the person,
+it, and every look counts in the owner's data access log (§8.8): the person,
 the share, the devices shown and the range of a track, never the
 recipient's session, token, browser or address. Accepted: starting a share tells the owner whether the address has an
 account, and its name — on a server whose accounts come from the allow-list
@@ -1105,7 +1105,7 @@ links the simplified track (≤ 2 000 points per device, built at most every
 30 s per link). It never names the owner's account, address or device ids. A
 request counts as a view at most once a minute per link, and in the owner's
 data access log per visitor and hour, a visitor being a network (/24 or /48)
-and a kind of browser (§8.7). `/s` and `/api/public/share` send
+and a kind of browser (§8.8). `/s` and `/api/public/share` send
 `Referrer-Policy: no-referrer` and `X-Robots-Tag: noindex, nofollow`.
 
 **Lifecycle.** Stopped and ended shares and links are pruned 30 days later
@@ -1199,7 +1199,7 @@ the answer through the output schema (whatever it does not name is
 dropped; a mismatch is logged with codes and paths only and answers a
 generic failure); a log line at info with the tool, outcome,
 duration, items, `resultBytes` and the token's id — never arguments, results
-or the secret; and the access, counted in the data access log (§8.7) as
+or the secret; and the access, counted in the data access log (§8.8) as
 `mcp.<tool>` (resources as `mcp.resource.<name>`; listings are not counted).
 Failures become tool results with `isError: true` and count nowhere: an
 `HttpError` below 500 passes its message (static texts written for the
@@ -1503,7 +1503,7 @@ Sharing (§8.5) adds two events. `person` (`{ userId, device }`, the device as
 the stream user's share shows it) follows every upload of a shared device, to
 each recipient with an open stream whose share is in force, covers the device
 and is not hidden; the owner's data access log counts them per recipient,
-device and hour (`live.position`, §8.7). An owner's shares come from a per-process cache
+device and hour (`live.position`, §8.8). An owner's shares come from a per-process cache
 (`SharingState`, one minute) that every change to them clears, and expiry is
 checked whenever it is used, so a stopped, hidden or ended share receives
 nothing from the next upload on. `share` (`{ shareId, userId, change }`) tells
@@ -1531,7 +1531,7 @@ events and refetches people and shares on `share` events.
   hours of the data access log older than `DATA_ACCESS_RETENTION_DAYS` (365 d;
   a log, not recorded data). Recorded data — locations, visits, trips,
   events, rejects — is never pruned.
-- every 2 s while accesses wait — the data access log's write (§8.7), in one
+- every 2 s while accesses wait — the data access log's write (§8.8), in one
   statement per 500 rows; a failed write is tried again with the next.
 - debounced (10 s) — daily-stats recomputation per touched (device, day), in
   the owner's time zone at run time; a failed pass is retried with the next.
@@ -1665,7 +1665,7 @@ invalid value).
   can yield coordinates (a share, a link, a confirmation) needs
   `locations:read`, and a stopped, ended or hidden share shows nothing from
   that moment on (§8.5, §9).
-- The data access log (§8.7) tells an owner who read their data — their
+- The data access log (§8.8) tells an owner who read their data — their
   browser, their tokens and agents, the people they share with, their links'
   visitors — and is theirs alone: owner-scoped queries, `audit:read` for
   tokens, no administrator path. It keeps no coordinates (resources are built

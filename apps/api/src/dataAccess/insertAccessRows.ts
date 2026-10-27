@@ -30,7 +30,7 @@ export interface AccessRow {
 /**
  * Writes the rows in one statement: an upsert that adds the counts to the
  * rows the hours already have and widens their first and last times
- * (docs/architecture.md §8.7). The rows travel as one array per column. Rows
+ * (docs/architecture.md §8.8). The rows travel as one array per column. Rows
  * of an account deleted meanwhile are left out instead of failing the rest:
  * the log goes with the account.
  */

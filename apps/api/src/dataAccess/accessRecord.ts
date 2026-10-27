@@ -60,7 +60,7 @@ interface AccessFacts {
 
 /**
  * One access to someone's data, as the code that served it reports it
- * (docs/architecture.md §8.7). The channel goes with the kind of actor, as
+ * (docs/architecture.md §8.8). The channel goes with the kind of actor, as
  * the table's check has it: the owner's browser is `web`, their tokens are
  * `api` or `mcp`, people they share with `people` or `live`, link visitors
  * `link`.

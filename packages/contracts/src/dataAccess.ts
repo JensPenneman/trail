@@ -4,7 +4,7 @@ import { sharePrecisionSchema } from "./share";
 import { processingLevelSchema, transportModeSchema } from "./transport";
 
 /*
- * The data access log (docs/architecture.md §8.7): every read of a person's
+ * The data access log (docs/architecture.md §8.8): every read of a person's
  * location data, and every change to it or to who may see it, recorded per
  * hour — who, through which channel, what — for that person alone to read.
  * Nothing in it is a coordinate, a secret or text that someone other than the
