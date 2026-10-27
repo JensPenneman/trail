@@ -254,7 +254,10 @@ function piecesOfSegments(
     let cursor = index;
     while (cursor < served.length && (served[cursor]?.t ?? 0) <= end) {
       const entry = served[cursor];
-      if (entry !== undefined && entry.t <= own) inside.push(entry);
+      // A segment's line starts at its first point: the way's shape before it is the one before's.
+      if (entry !== undefined && entry.t <= own) {
+        inside.push(inside.length === 0 ? { ...entry, vertices: [] } : entry);
+      }
       cursor += 1;
     }
     lastIncluded = Math.max(lastIncluded, end);

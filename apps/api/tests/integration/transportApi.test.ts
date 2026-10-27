@@ -128,9 +128,11 @@ describe("GET /api/v1/tracks", () => {
         expect(segment.centroid).toBeNull();
       }
     }
-    // Consecutive segments meet: the stop's last point is the move's first.
-    const [platform, ride] = inferred.segments;
+    // Consecutive segments meet: the stop's last point is the move's first, and the move's last
+    // the next stop's first — not the rails' shape before it.
+    const [platform, ride, arrival] = inferred.segments;
     expect(platform?.points.at(-1)).toEqual(ride?.points[0]);
+    expect(ride?.points.at(-1)).toEqual(arrival?.points[0]);
     // The other levels have no stops, so no places.
     const mapped = levelTracksResponseSchema.parse(
       (
