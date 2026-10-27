@@ -2,17 +2,16 @@ import type { DeviceSummary } from "@trail/contracts/device";
 import type { DeviceStatus } from "@trail/contracts/deviceStatus";
 import { useId } from "react";
 import { Link } from "react-router";
-import { describeMovement } from "../../../devices/describeMovement";
-import { tripModeLabel } from "../../../devices/tripModeLabel";
-import { useFormatter } from "../../../format/useFormatter";
-import { QuickModeChips } from "../../../transport/QuickModeChips";
-import { BatteryIndicator } from "../../../ui/BatteryIndicator";
-import { DeviceSwatch } from "../../../ui/DeviceSwatch";
-import { Icon } from "../../../ui/Icon";
-import { RelativeTime } from "../../../ui/RelativeTime";
-import { StatusBadge } from "../../../ui/StatusBadge";
-import { ActivitySparkline } from "./ActivitySparkline";
-import type { ActivitySlot } from "./activitySlots";
+import { ActivitySparkline } from "../../devices/ActivitySparkline";
+import type { ActivitySlot } from "../../devices/activitySlots";
+import { describeMovement } from "../../devices/describeMovement";
+import { tripModeLabel } from "../../devices/tripModeLabel";
+import { useFormatter } from "../../format/useFormatter";
+import { BatteryIndicator } from "../../ui/BatteryIndicator";
+import { DeviceSwatch } from "../../ui/DeviceSwatch";
+import { Icon } from "../../ui/Icon";
+import { RelativeTime } from "../../ui/RelativeTime";
+import { StatusBadge } from "../../ui/StatusBadge";
 import "./DeviceCard.css";
 
 interface DeviceCardProps {
@@ -26,7 +25,12 @@ interface DeviceCardProps {
   now: number;
 }
 
-/** Everything that proves a device is (or is not) sending data, in text — the map shows the same. */
+/**
+ * Everything that proves a device is (or is not) sending data: its status,
+ * last upload, trip, battery, movement, today's points and distance, its last
+ * position with the accuracy, and the last 48 hours of points and uploads.
+ * The name leads to the device's page.
+ */
 export function DeviceCard({
   device,
   status,
@@ -49,11 +53,17 @@ export function DeviceCard({
     <article className={`device-card device-card--${status}`} aria-labelledby={titleId}>
       <header className="device-card__header">
         <DeviceSwatch slot={colorSlot} />
-        <h3 className="device-card__name" id={titleId}>
+        <h2 className="device-card__name" id={titleId}>
           <Link to={`/devices/${device.id}`}>{device.name}</Link>
-        </h3>
+        </h2>
         <StatusBadge status={status} thresholds={thresholds} />
       </header>
+      <p className="device-card__meta">
+        <span className="mono">{device.deviceKey}</span>
+        <span aria-hidden="true"> · </span>
+        {format.count(device.counts.total)} {device.counts.total === 1 ? "point" : "points"} in
+        total
+      </p>
 
       {device.lastSeenAt === null ? (
         <p className="device-card__upload device-card__upload--never">
@@ -119,10 +129,6 @@ export function DeviceCard({
 
       {activity === null ? null : (
         <ActivitySparkline slots={activity} colorSlot={colorSlot} deviceName={device.name} />
-      )}
-
-      {device.lastSeenAt === null ? null : (
-        <QuickModeChips deviceId={device.id} deviceName={device.name} />
       )}
     </article>
   );

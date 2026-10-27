@@ -1,15 +1,21 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import { deviceModeResponseSchema } from "@trail/contracts/transport";
 import { apiFetch } from "../api/apiFetch";
 import { queryKeys } from "../api/queryKeys";
+import { goneDevices } from "../devices/goneDevices";
 
-/** How a device travels now: the quick toggle in force and the current mode. */
-export function useDeviceMode(deviceId: string) {
+/**
+ * How a device travels now: the quick toggle in force and the current mode.
+ * Null asks for nothing, and neither does a device this tab knows is gone.
+ */
+export function useDeviceMode(deviceId: string | null) {
+  const queryClient = useQueryClient();
   return useQuery({
-    queryKey: queryKeys.deviceMode(deviceId),
+    queryKey: queryKeys.deviceMode(deviceId ?? ""),
     queryFn: ({ signal }) =>
-      apiFetch(apiPaths.v1.devices.mode(deviceId), deviceModeResponseSchema, { signal }),
+      apiFetch(apiPaths.v1.devices.mode(deviceId ?? ""), deviceModeResponseSchema, { signal }),
+    enabled: () => deviceId !== null && !goneDevices.has(queryClient, deviceId),
     select: (response) => response.mode,
   });
 }

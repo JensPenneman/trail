@@ -1,0 +1,107 @@
+/*
+ * Two lines beside the avatar: the name and how fresh, with the distance on
+ * the right; then what they are doing, with the battery on the right. A long
+ * name ends in an ellipsis; a long activity wraps between its parts.
+ */
+.person-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "avatar top distance"
+    "avatar doing battery"
+    ". badge badge";
+  align-items: center;
+  gap: 0.125rem var(--space-3);
+  min-width: 0;
+}
+
+.person-summary > .person-avatar {
+  grid-area: avatar;
+}
+
+.person-summary__top {
+  display: flex;
+  grid-area: top;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  min-width: 0;
+}
+
+.person-summary__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--text-l);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-summary__fresh {
+  flex: none;
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.person-summary__live {
+  margin-inline-end: var(--space-1);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-live-soft);
+  color: var(--color-live);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.person-summary__distance {
+  grid-area: distance;
+  justify-self: end;
+  font-size: var(--text-l);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* With nothing to its right, the activity takes the whole line. */
+.person-summary__doing {
+  grid-area: doing;
+  min-width: 0;
+  font-size: var(--text-s);
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+.person-summary:not(:has(.person-summary__battery)) .person-summary__doing {
+  grid-column: 2 / -1;
+}
+
+.person-summary:not(:has(.person-summary__distance)) .person-summary__top {
+  grid-column: 2 / -1;
+}
+
+.person-summary__battery {
+  grid-area: battery;
+  justify-self: end;
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  white-space: nowrap;
+}
+
+.person-summary__battery .battery__icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.person-summary__badge {
+  grid-area: badge;
+  margin-top: var(--space-1);
+}
+
+@media (forced-colors: active) {
+  .person-summary__live {
+    border: 1px solid CanvasText;
+  }
+}

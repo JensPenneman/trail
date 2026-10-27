@@ -20,29 +20,36 @@ const view = (name: string) =>
   within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", { name });
 
 describe("the People page, Live", () => {
-  it("proves each device is sending: status, last upload, battery and today's numbers", async () => {
+  it("shows where you are now and, under Me, where you have been today", async () => {
     mockApi(standardRoutes());
+    const person = userEvent.setup();
     renderPage(<PeoplePage />, { user });
     expect(screen.getByRole("heading", { level: 1, name: "People" })).toBeInTheDocument();
     expect(view("Live")).toBeChecked();
-    const phone = await screen.findByRole("article", { name: "iPhone 16" });
-    expect(within(phone).getByText("Live")).toBeInTheDocument();
-    expect(within(phone).getByText(/1 min ago/)).toBeInTheDocument();
-    expect(within(phone).getByText("62%")).toBeInTheDocument();
-    expect(within(phone).getByText("1,066")).toBeInTheDocument();
-    expect(within(phone).getByText(/50\.9845° N/)).toBeInTheDocument();
-    expect(
-      await within(phone).findByRole("img", { name: /iPhone 16, last 48 hours/ }),
-    ).toBeInTheDocument();
-
-    const car = screen.getByRole("article", { name: "Car" });
-    expect(within(car).getByText("Idle")).toBeInTheDocument();
-
+    expect(screen.getByText(/^Where you are now · /)).toBeInTheDocument();
     expect(await screen.findByRole("img", { name: /Map of today’s tracks/ })).toHaveAttribute(
       "data-positions",
       "2",
     );
-    expect(await screen.findByText("+40 points")).toBeInTheDocument();
+    expect(map()).toHaveAccessibleName(/and your latest position\./);
+
+    // Today's stops and moves, right under the Me card.
+    const today = await screen.findByRole("region", { name: "Your day so far" });
+    const me = screen.getByRole("region", { name: "Me" });
+    expect(me.compareDocumentPosition(today) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const timeline = within(today).getByRole("region", { name: "Timeline" });
+    expect(await within(timeline).findByText(/^Train · 31\.2 km/)).toBeInTheDocument();
+    // With two devices, each stop and move says whose it is.
+    expect(within(timeline).getAllByText(/^iPhone 16 · /)).toHaveLength(2);
+    // A move opens its details and moves the camera to it.
+    await person.click(within(timeline).getByRole("button", { name: /^Details of the train/ }));
+    expect(await screen.findByRole("dialog", { name: "Train" })).toBeInTheDocument();
+    expect(map().getAttribute("data-focus")).toMatch(new RegExp(`^segment:${ids.train}#`));
+
+    // What the devices send is the Devices page's.
+    expect(screen.queryByRole("article", { name: "iPhone 16" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Uploads" })).toBeNull();
+    expect(screen.queryByText(/devices? live/)).toBeNull();
     expect(document.title).toBe("Live · People · Trail");
   });
 
@@ -65,18 +72,26 @@ describe("the People page, Live", () => {
       },
     });
     renderPage(<PeoplePage />, { user });
-    expect(await screen.findByText("Devices could not be loaded")).toBeInTheDocument();
-    expect(screen.getByText("Database down")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    const me = screen.getByRole("region", { name: "Me" });
+    expect(await within(me).findByText("Your devices could not be loaded")).toBeInTheDocument();
+    expect(within(me).getByText("Database down")).toBeInTheDocument();
+    expect(within(me).getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 
   it("asks for nothing another view needs", async () => {
     const api = mockApi(standardRoutes());
     renderPage(<PeoplePage />, { user });
-    await screen.findByRole("article", { name: "iPhone 16" });
-    expect(await screen.findByText("+40 points")).toBeInTheDocument();
+    await screen.findByText(/^Train · 31\.2 km/);
     const paths = api.calls.map((call) => call.path);
-    for (const path of ["/api/heatmap", "/api/visits", "/api/trips", "/api/stats/days"]) {
+    for (const path of [
+      "/api/heatmap",
+      "/api/visits",
+      "/api/trips",
+      "/api/stats/days",
+      // The Devices page's: the uploads and the hours of activity.
+      "/api/stats/activity",
+      `/api/devices/${ids.phone}/ingest-log`,
+    ]) {
       expect(paths, path).not.toContain(path);
     }
   });
@@ -141,9 +156,8 @@ describe("switching views", () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
     const { router } = renderPage(<PeoplePage />, { url: `/?devices=${ids.phone}`, user });
-    await screen.findByRole("article", { name: "iPhone 16" });
-    expect(screen.queryByRole("article", { name: "Car" })).not.toBeInTheDocument();
     const canvas = await screen.findByRole("img", { name: /Map of today’s tracks/ });
+    await waitFor(() => expect(canvas).toHaveAttribute("data-positions", "1"));
 
     await person.click(view("History"));
     expect(router.state.location.search).toBe(`?devices=${ids.phone}&view=history`);
@@ -160,8 +174,9 @@ describe("switching views", () => {
     expect(new URLSearchParams(router.state.location.search).get("view")).toBeNull();
     expect(new URLSearchParams(router.state.location.search).get("date")).not.toBeNull();
     expect(new URLSearchParams(router.state.location.search).get("devices")).toBe(ids.phone);
-    expect(await screen.findByRole("article", { name: "iPhone 16" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Your day so far" })).toBeInTheDocument();
     expect(map()).toBe(canvas);
+    expect(map()).toHaveAttribute("data-positions", "1");
   });
 
   it("frames the same day the same way in Live and History, another day anew", async () => {
@@ -186,14 +201,23 @@ describe("switching views", () => {
 });
 
 describe("the device filter", () => {
-  it("narrows every view to the devices chosen, and the last one stays", async () => {
+  it("is folded away among the options, and narrows every view to the devices chosen", async () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
     const { router } = renderPage(<PeoplePage />, { user });
-    const filter = await screen.findByRole("group", { name: "Devices" });
+    const advanced = (await screen.findByText("Advanced")).closest("details");
+    if (advanced === null) throw new Error("No Advanced in Map options");
+    expect(advanced).not.toHaveAttribute("open");
+    // Which devices draw is not worth a word of the summary while all of them do.
+    expect(screen.getByRole("button", { name: /^Map options/ })).not.toHaveTextContent(/devices/);
+    await person.click(screen.getByText("Advanced"));
+    const filter = await within(advanced).findByRole("group", { name: "Devices" });
     await person.click(within(filter).getByRole("checkbox", { name: "Car" }));
     expect(router.state.location.search).toBe(`?devices=${ids.phone}`);
-    expect(screen.queryByRole("article", { name: "Car" })).not.toBeInTheDocument();
+    await waitFor(() => expect(map()).toHaveAttribute("data-positions", "1"));
+    expect(screen.getByRole("button", { name: /^Map options/ })).toHaveTextContent(
+      "1 of 2 devices",
+    );
     expect(within(filter).getByRole("checkbox", { name: "iPhone 16" })).toBeDisabled();
     await person.click(within(filter).getByRole("checkbox", { name: "Car" }));
     expect(router.state.location.search).toBe("");

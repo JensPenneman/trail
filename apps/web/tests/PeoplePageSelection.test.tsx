@@ -23,6 +23,15 @@ const views = () =>
     .map((radio) => radio.closest("label")?.textContent);
 const meCard = () => screen.getByRole("region", { name: "Me" });
 const card = (name: string) => screen.getByRole("article", { name });
+/** What someone's card on the map says of where they have been: the part under its heading. */
+async function whereBeen(name: string): Promise<HTMLElement> {
+  const heading = await within(await screen.findByRole("article", { name })).findByRole("heading", {
+    name: "Where they’ve been",
+  });
+  const part = heading.parentElement;
+  if (part === null) throw new Error("A heading without its part");
+  return part;
+}
 /** Ana shares precisely with seven days of history; bob approximately, live only. */
 const anaWithHistory = () => ana({ share: { ...ana().share, historyDays: 7 } });
 const trackOfAna = ({ url }: { url: URL }) => {
@@ -75,10 +84,12 @@ describe("people on the map", () => {
     expect(within(card("Ana Bell")).getByText("On the map")).toBeInTheDocument();
     expect(within(card("bob")).queryByText("On the map")).toBeNull();
     await waitFor(() => expect(map()).toHaveAttribute("data-positions", "3"));
-    expect(screen.getByRole("article", { name: "iPhone 16" })).toBeInTheDocument();
-    // Live only: there is no track of Ana to ask for.
+    expect(map()).toHaveAccessibleName(/your latest position and that of Ana Bell/);
+    // Live only: there is no track of Ana to ask for, and her card says so.
     expect(api.calls.some((call) => call.path.endsWith("/track"))).toBe(false);
+    expect(within(card("Ana Bell")).getByText("Shares live location only")).toBeInTheDocument();
     // The device filter now lists her shared device under her name.
+    await person.click(screen.getByText("Advanced"));
     const devices = screen.getByRole("group", { name: "Devices" });
     expect(within(devices).getByRole("group", { name: "Ana Bell" })).toBeInTheDocument();
     expect(within(devices).getByRole("checkbox", { name: "Ana’s iPhone" })).toBeChecked();
@@ -132,7 +143,9 @@ describe("people on the map", () => {
     const api = mockApi(withHistoryOfAna());
     renderPage(<PeoplePage />, { url: `/?view=history&people=me,${ids.ana},${ids.bob}`, user });
     expect(
-      await screen.findByText("bob shares where they are now, not where they have been."),
+      await within(await screen.findByRole("article", { name: "bob" })).findByText(
+        "Shares live location only",
+      ),
     ).toBeInTheDocument();
     const summary = await screen.findByRole("region", { name: "Summary" });
     expect(await within(summary).findByText("Ana Bell · Ana’s iPhone")).toBeInTheDocument();
@@ -159,9 +172,8 @@ describe("people on the map", () => {
       url: `/?view=history&date=2026-09-01&people=me,${ids.ana}`,
       user,
     });
-    expect(
-      await screen.findByText("Ana Bell shares where they have been in the last 7 days only."),
-    ).toBeInTheDocument();
+    const where = await whereBeen("Ana Bell");
+    expect(await within(where).findByText("Shares the last 7 days only")).toBeInTheDocument();
   });
 
   it("keeps Heat to one's own devices", async () => {
@@ -171,6 +183,61 @@ describe("people on the map", () => {
     expect(screen.queryByRole("group", { name: "People" })).not.toBeInTheDocument();
     const devices = screen.getByRole("group", { name: "Devices" });
     expect(within(devices).queryByRole("checkbox", { name: "Ana’s iPhone" })).toBeNull();
+  });
+});
+
+describe("where someone on the map has been", () => {
+  const where = whereBeen;
+
+  it("is on their card in Live: today's track, and a day back is History's", async () => {
+    mockApi(withHistoryOfAna());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, { url: `/?people=${ids.ana}`, user });
+    const section = await where("Ana Bell");
+    expect(within(section).getByText("Today")).toBeInTheDocument();
+    // Her track today: 1.3 km, the first and last point at 07:00 and 07:02 (Brussels).
+    expect(
+      await within(section).findByText(/^1\.3 km · \d\d:\d\d – \d\d:\d\d$/),
+    ).toBeInTheDocument();
+    expect(within(section).getByRole("button", { name: "Next day" })).toBeDisabled();
+    expect(
+      within(section).getByRole("button", { name: "Previous day" }),
+    ).toHaveAccessibleDescription("Ana Bell");
+    await person.click(within(section).getByRole("button", { name: "Previous day" }));
+    const params = new URLSearchParams(router.state.location.search);
+    expect(params.get("view")).toBe("history");
+    expect(params.get("people")).toBe(ids.ana);
+    expect(params.get("date")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // History's day, stepped back and forth from the card.
+    const again = await where("Ana Bell");
+    expect(within(again).queryByText("Today")).toBeNull();
+    await person.click(within(again).getByRole("button", { name: "Next day" }));
+    expect(new URLSearchParams(router.state.location.search).get("date")).toBeNull();
+  });
+
+  it("says when nothing was recorded, and the period of History's range", async () => {
+    mockApi({
+      ...withHistoryOfAna(),
+      [`GET /api/v1/people/${ids.ana}/track`]: ({ url }) => ({
+        status: 200,
+        body: { from: url.searchParams.get("from"), to: url.searchParams.get("to"), tracks: [] },
+      }),
+    });
+    renderPage(<PeoplePage />, {
+      url: `/?view=history&from=2026-09-01&to=2026-09-07&people=${ids.ana}`,
+      user,
+    });
+    const section = await where("Ana Bell");
+    expect(within(section).getByText(/1 Sept – .*7 Sept/)).toBeInTheDocument();
+    expect(within(section).queryByRole("button", { name: "Previous day" })).toBeNull();
+    expect(await within(section).findByText("Nothing recorded in this period")).toBeInTheDocument();
+  });
+
+  it("is only there while they are on the map", async () => {
+    mockApi(withHistoryOfAna());
+    renderPage(<PeoplePage />, { user });
+    await screen.findByRole("article", { name: "Ana Bell" });
+    expect(screen.queryByRole("heading", { name: "Where they’ve been" })).toBeNull();
   });
 });
 
@@ -188,10 +255,9 @@ describe("a card's Show on map", () => {
     expect(within(card("bob")).getByText("On the map")).toBeInTheDocument();
     await waitFor(() => expect(map()).toHaveAttribute("data-positions", "1"));
     expect(map()).toHaveAccessibleName(/latest position of bob/);
-    // One's own: no device cards, no levels and no heatmap while Me is not chosen.
+    // One's own: no day so far, no levels and no heatmap while Me is not chosen.
     expect(within(meCard()).queryByText("On the map")).toBeNull();
-    expect(screen.queryByRole("article", { name: "iPhone 16" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Uploads" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Your day so far" })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Detail of the tracks" })).not.toBeInTheDocument();
     expect(views()).toEqual(["Live", "History"]);
     expect(await screen.findByText("The map shows bob.")).toBeInTheDocument();
@@ -202,9 +268,12 @@ describe("a card's Show on map", () => {
         name: "History",
       }),
     );
+    expect(within(card("bob")).getByText("Shares live location only")).toBeInTheDocument();
     expect(
-      await screen.findByText("bob shares where they are now, not where they have been."),
+      await screen.findByRole("img", { name: /^Map\. Nothing to show for/ }),
     ).toBeInTheDocument();
+    // Nothing above the people to show for someone who shares no history.
+    expect(screen.queryByRole("region", { name: "Totals, visits and trips" })).toBeNull();
     for (const name of ["Summary", "Timeline", "Visits", "Trips"]) {
       expect(screen.queryByRole("region", { name }), name).not.toBeInTheDocument();
     }
@@ -226,8 +295,9 @@ describe("a card's Show on map", () => {
         name: "History",
       }),
     );
+    expect(await within(card("bob")).findByText("Shares live location only")).toBeInTheDocument();
     expect(
-      await screen.findByText("bob shares where they are now, not where they have been."),
+      await screen.findByRole("img", { name: /^Map\. Nothing to show for/ }),
     ).toBeInTheDocument();
     const asked = new Set(api.calls.map((call) => call.path));
     for (const path of [
@@ -244,8 +314,9 @@ describe("a card's Show on map", () => {
     ]) {
       expect(asked.has(path), path).toBe(false);
     }
-    // The Me card still sums one's devices up.
+    // The Me card still says what one is doing, from the device that reported last.
     expect(asked.has("/api/devices")).toBe(true);
+    expect(asked.has(`/api/v1/devices/${ids.phone}/mode`)).toBe(true);
   });
 
   it("shows someone's history alone without one's own timeline, visits or trips", async () => {
@@ -288,7 +359,7 @@ describe("a card's Show on map", () => {
     );
     expect(router.state.location.search).toBe(`?people=me,${ids.ana}`);
     expect(map().getAttribute("data-focus")).toMatch(new RegExp(`^show:${ids.ana}#`));
-    expect(screen.getByRole("article", { name: "iPhone 16" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Your day so far" })).toBeInTheDocument();
   });
 
   it("lets a later camera move of a view win, and never makes an old one again", async () => {

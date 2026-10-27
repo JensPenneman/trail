@@ -56,7 +56,7 @@ describe("PublicSharePage", () => {
       screen.getByText(/approximate location, within about 500 m · updated every 15 seconds/),
     ).toBeInTheDocument();
     expect(screen.getByText("3 min ago")).toBeInTheDocument();
-    expect(screen.getByText("35 km/h · driving")).toBeInTheDocument();
+    expect(screen.getByText("Driving · 35 km/h")).toBeInTheDocument();
     expect(screen.getByText("44%")).toBeInTheDocument();
     expect(screen.getByText(/^This link expires (today at|on) .*\d\.$/)).toBeInTheDocument();
     expect(

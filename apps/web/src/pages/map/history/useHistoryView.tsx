@@ -27,7 +27,6 @@ import { Button } from "../../../ui/Button";
 import { EmptyState } from "../../../ui/EmptyState";
 import { ErrorState } from "../../../ui/ErrorState";
 import { LoadingBlock } from "../../../ui/LoadingBlock";
-import { Notice } from "../../../ui/Notice";
 import { Skeleton } from "../../../ui/Skeleton";
 import { Spinner } from "../../../ui/Spinner";
 import { fitKey } from "../fitKey";
@@ -35,6 +34,7 @@ import { inactiveView, type MapViewContent } from "../MapViewContent";
 import { me } from "../me";
 import type { MapSearch } from "../parseMapSearch";
 import { personTrackRequests } from "../personTrackRequests";
+import { personTrackStates } from "../personTrackStates";
 import type { MapSelection } from "../resolveMapSelection";
 import { HistoryControls } from "./HistoryControls";
 import { type CalendarDay, MonthCalendar } from "./MonthCalendar";
@@ -68,10 +68,10 @@ type Focus = { key: string; lon: number; lat: number; zoom: number };
  * History: where the devices have been, a day or a period of tracks at a level
  * of calculation, with a time slider, per-device totals, the timeline of stops
  * and moves, visits and trips — all driven by the URL. The people chosen show
- * their tracks where their shares include history, and a word why not where
- * they do not; levels, the timeline, visits and trips are one's own, so they
- * are there only while the signed-in person is chosen. Asks for nothing while
- * another view is shown.
+ * their tracks where their shares include history, and their cards say what
+ * they share of it (`personTracks`); levels, the timeline, visits and trips
+ * are one's own, so they are there only while the signed-in person is chosen.
+ * Asks for nothing while another view is shown.
  */
 export function useHistoryView({
   active,
@@ -133,6 +133,10 @@ export function useHistoryView({
     [active, people, selection, bounded],
   );
   const personTracks = usePersonTracks(requests);
+  const trackStates = useMemo(
+    () => personTrackStates(requests, personTracks),
+    [requests, personTracks],
+  );
   const periodKey = `${period.from}|${period.to}|${own?.deviceIds?.join(",") ?? "all"}`;
   const tracks = useTracks(range);
   const visits = useVisits(range);
@@ -309,33 +313,13 @@ export function useHistoryView({
       ? { slot: colors.slot(deviceId), palette: "device" as const }
       : { slot: personColors.slot(shared.person.userId), palette: "person" as const };
   };
-  // What the people chosen keep to themselves: no history at all, or not this far back.
-  const withheld = people.flatMap((person) => {
-    if (!sharesHistory(person)) {
-      return [
-        {
-          person,
-          text: `${person.displayName} shares where they are now, not where they have been.`,
-        },
-      ];
-    }
-    const index = requests.findIndex((request) => request.userId === person.userId);
-    const answered = index === -1 ? undefined : personTracks.data[index];
-    // The server moved the start up to where their history begins.
-    if (answered === undefined || Date.parse(answered.from) <= Date.parse(bounded.from)) return [];
-    const span = person.share.historyDays === 1 ? "24 hours" : `${person.share.historyDays} days`;
-    return [
-      {
-        person,
-        text: `${person.displayName} shares where they have been in the last ${span} only.`,
-      },
-    ];
-  });
   const deviceName = (deviceId: string) =>
     deviceList.length > 1
       ? (deviceList.find((device) => device.id === deviceId)?.name ?? "Removed device")
       : null;
   const day = period.mode === "day" ? period.from : null;
+  // Nobody with history and none of one's own: nothing to say here, their cards say why.
+  const quiet = !meShown && withHistory.length === 0 && personTracks.error === null;
   const showsCalendar = calendarOpen && period.mode === "day";
 
   return {
@@ -425,13 +409,8 @@ export function useHistoryView({
         />
       ),
     panelLabel: "Totals, visits and trips",
-    panel: (
+    panel: quiet ? null : (
       <>
-        {withheld.map(({ person, text }) => (
-          <Notice key={person.userId} tone="info">
-            <p>{text}</p>
-          </Notice>
-        ))}
         {personTracks.error === null ? null : (
           <ErrorState title="Tracks of people could not be loaded" error={personTracks.error} />
         )}
@@ -455,7 +434,7 @@ export function useHistoryView({
             withDate={withDate}
           />
         ) : !meShown ? (
-          // Someone else alone: their tracks, or the notices above say why there are none.
+          // Someone else alone: their tracks, or their cards say why there are none.
           withHistory.length === 0 ? null : personTracks.pending ? (
             <LoadingBlock label="Loading tracks">
               <Skeleton height="4.5rem" />
@@ -561,6 +540,7 @@ export function useHistoryView({
         ) : null}
       </>
     ),
+    personTracks: trackStates,
     dialog:
       shownSegment === null ? null : (
         <SegmentDialog

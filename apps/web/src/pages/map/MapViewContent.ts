@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { TrailMapProps } from "../../map/TrailMap";
+import type { PersonTrackState } from "../../people/PersonTrackState";
 import type { TransportMap } from "../../transport/useTransportMap";
 
 /** What the page's one map draws for a view; the style and gestures are the page's. */
@@ -27,10 +28,14 @@ export interface MapViewContent {
   /** Below the map on phones, over its foot on wide screens: History's time slider. */
   foot: ReactNode;
   panelLabel: string;
-  /** The view's details: Live's go into the Me card, the other views' above the people. */
+  /** The view's details: Live's (one's day so far) right under the Me card, the others' above it. */
   panel: ReactNode;
-  /** A word about the people shown, above their cards (a track that could not be loaded). */
-  peopleNotice?: ReactNode;
+  /**
+   * The tracks of the people shown whose share includes history, for the
+   * view's day or period, by user id: what their cards say of where they have
+   * been. Nobody else is in it.
+   */
+  personTracks: ReadonlyMap<string, PersonTrackState>;
   /** A dialog the view opened (a stop's or move's details). */
   dialog: ReactNode;
 }
@@ -45,5 +50,6 @@ export const inactiveView: MapViewContent = {
   foot: null,
   panelLabel: "",
   panel: null,
+  personTracks: new Map(),
   dialog: null,
 };

@@ -5,11 +5,14 @@ import { everyoneToggled, selectionShowing } from "../src/pages/people/peopleSel
 import { sharingSummary } from "../src/pages/people/sharingSummary";
 import { assignPersonColors } from "../src/people/assignPersonColors";
 import { describeActivity } from "../src/people/describeActivity";
+import { describeMe, type MeNow } from "../src/people/describeMe";
+import { latestOwnDevice } from "../src/people/latestOwnDevice";
 import { appleMapsUrl, googleMapsUrl } from "../src/people/mapLinks";
 import { personInitials } from "../src/people/personInitials";
 import { primaryDevice } from "../src/people/primaryDevice";
+import { summarizePersonTrack } from "../src/people/summarizePersonTrack";
 import { devicesText, expiryText, historyText } from "../src/sharing/shareText";
-import { outgoingShare, sharedDevice } from "./support/fixtures";
+import { car, device, outgoingShare, sharedDevice } from "./support/fixtures";
 
 const format = createFormatter("en-GB", "Europe/Brussels");
 const at = (speed: number | null) =>
@@ -53,10 +56,10 @@ describe("people helpers", () => {
       motion,
     });
     expect(describeActivity(at(12), activity("train", null, ["automotive"]), format)).toBe(
-      "43 km/h · by train",
+      "By train · 43 km/h",
     );
     expect(describeActivity(at(4), activity(null, "bicycle", ["cycling"]), format)).toBe(
-      "14 km/h · on a bike ride",
+      "On a bike ride · 14 km/h",
     );
     expect(describeActivity(at(0), activity(null, null, ["walking"]), format)).toBe("Walking");
     expect(describeActivity(at(0), activity("stationary", null, []), format)).toBe(
@@ -66,6 +69,23 @@ describe("people helpers", () => {
     expect(describeActivity(at(null), null, format)).toBeNull();
     expect(describeActivity(null, null, format)).toBeNull();
     expect(describeActivity(at(2), activity("unknown", null, []), format)).toBe("7 km/h");
+    // A moving speed beats a stop that is over.
+    expect(describeActivity(at(5), activity("stationary", null, []), format)).toBe("18 km/h");
+  });
+
+  it("say what an older position was doing, not how fast", () => {
+    const activity = (mode: TransportMode | null, motion: string[]) => ({
+      mode,
+      tripMode: null,
+      motion,
+    });
+    const old = { live: false };
+    expect(describeActivity(at(5), activity(null, ["cycling"]), format, old)).toBe("Cycling");
+    expect(describeActivity(at(12), activity("train", []), format, old)).toBe("By train");
+    expect(describeActivity(at(0), activity(null, []), format, old)).toBe("Standing still");
+    expect(describeActivity(at(5), activity("stationary", []), format, old)).toBe("Standing still");
+    // Moving then, how is unknown, and now is unknown too.
+    expect(describeActivity(at(5), null, format, old)).toBeNull();
   });
 
   it("take motions and trip modes named like every object's properties for unknown ones", () => {
@@ -81,6 +101,120 @@ describe("people helpers", () => {
       "Walking",
     );
     expect(describeActivity(at(0), activity("constructor", []), format)).toBe("On a constructor");
+  });
+
+  it("describe the signed-in person now, from the device that reported last", () => {
+    const now = Date.parse("2026-10-27T10:00:00Z");
+    const thresholds = { liveMinutes: 15, staleHours: 12 };
+    const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
+    const me = (overrides: Partial<MeNow> = {}): MeNow => ({
+      location: { recordedAt: ago(1), speed: 5, motion: ["cycling"] },
+      current: null,
+      tripMode: null,
+      ...overrides,
+    });
+    const moving = (mode: "cycling" | "train", setByUser: boolean) => ({
+      mode,
+      setByUser,
+      since: ago(20),
+      segmentId: null,
+    });
+    const describe = (state: MeNow) => describeMe(state, now, thresholds, format);
+
+    expect(describe(me())).toBe("Cycling · 18 km/h");
+    expect(describe(me({ current: moving("train", false) }))).toBe("By train · 18 km/h");
+    // The quick toggle in force is the current mode.
+    expect(describe(me({ current: moving("train", true) }))).toBe("By train · 18 km/h");
+    expect(describe(me({ current: undefined, tripMode: "bicycle" }))).toBe(
+      "On a bike ride · 18 km/h",
+    );
+    // A stop that started today, and one that started yesterday (Brussels).
+    expect(
+      describe(
+        me({
+          current: {
+            ...moving("cycling", false),
+            mode: "stationary",
+            since: "2026-10-27T07:12:00Z",
+          },
+        }),
+      ),
+    ).toBe("At the same place since 08:12");
+    expect(
+      describe(
+        me({
+          current: {
+            ...moving("cycling", false),
+            mode: "stationary",
+            since: "2026-10-26T17:03:00Z",
+          },
+        }),
+      ),
+    ).toMatch(/^At the same place since Mon 26 Oct, 18:03$/);
+    // Not live: what it was doing, without a speed of then.
+    expect(describe(me({ location: { recordedAt: ago(40), speed: 5, motion: ["cycling"] } }))).toBe(
+      "Cycling",
+    );
+    expect(
+      describe(me({ location: { recordedAt: ago(90), speed: 0, motion: ["stationary"] } })),
+    ).toBe("Standing still");
+    // Past the live window of a share: nothing about now.
+    expect(describe(me({ location: { recordedAt: ago(13 * 60), speed: 0, motion: [] } }))).toBe(
+      "No recent location",
+    );
+    expect(describe(me({ location: null }))).toBe("No recent location");
+    expect(describe(me({ location: { recordedAt: ago(1), speed: null, motion: [] } }))).toBeNull();
+  });
+
+  it("pick the signed-in person's device that reported last", () => {
+    const phone = device();
+    const parked = car();
+    expect(latestOwnDevice([parked, phone])?.id).toBe(phone.id);
+    // Without positions: the one that uploaded last.
+    const unplaced = [
+      { ...parked, lastLocation: null },
+      { ...phone, lastLocation: null },
+    ];
+    expect(latestOwnDevice(unplaced)?.id).toBe(phone.id);
+    const silent = { ...phone, lastLocation: null, lastSeenAt: null };
+    expect(latestOwnDevice([silent])?.id).toBe(phone.id);
+    expect(latestOwnDevice([])).toBeNull();
+  });
+
+  it("sum someone's track up, and tell when their history begins later", () => {
+    const track = (
+      deviceId: string,
+      distanceM: number,
+      total: number,
+      first: string,
+      last: string,
+    ) => ({
+      deviceId,
+      total,
+      returned: total,
+      simplified: false,
+      distanceM,
+      firstAt: first,
+      lastAt: last,
+      points: [],
+    });
+    const answer = {
+      from: "2026-10-26T23:00:00.000Z",
+      to: "2026-10-27T23:00:00.000Z",
+      tracks: [
+        track("a", 12_000, 300, "2026-10-27T06:58:00.000Z", "2026-10-27T09:42:00.000Z"),
+        track("b", 1_250, 20, "2026-10-27T05:30:00.000Z", "2026-10-27T08:00:00.000Z"),
+      ],
+    };
+    expect(summarizePersonTrack(answer, "2026-10-26T23:00:00.000Z")).toEqual({
+      distanceM: 13_250,
+      points: 320,
+      firstAt: "2026-10-27T05:30:00.000Z",
+      lastAt: "2026-10-27T09:42:00.000Z",
+      limited: false,
+    });
+    const moved = summarizePersonTrack({ ...answer, tracks: [] }, "2026-10-01T22:00:00.000Z");
+    expect(moved).toEqual({ distanceM: 0, points: 0, firstAt: null, lastAt: null, limited: true });
   });
 
   it("pick the device that reported last", () => {

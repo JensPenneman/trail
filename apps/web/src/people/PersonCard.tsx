@@ -1,17 +1,18 @@
 import type { Person, SharedDevice } from "@trail/contracts/person";
 import { useId } from "react";
 import { useFormatter } from "../format/useFormatter";
-import { expiryText, historyText, precisionInfo } from "../sharing/shareText";
+import { precisionInfo } from "../sharing/shareText";
 import { BatteryIndicator } from "../ui/BatteryIndicator";
 import { Button } from "../ui/Button";
-import { Icon } from "../ui/Icon";
-import { PlainList } from "../ui/PlainList";
-import { RelativeTime } from "../ui/RelativeTime";
+import { DisclosureButton } from "../ui/DisclosureButton";
+import { DisclosureContent } from "../ui/DisclosureContent";
+import { useDisclosure } from "../ui/useDisclosure";
 import { describeActivity } from "./describeActivity";
-import { appleMapsUrl, googleMapsUrl } from "./mapLinks";
-import { OnMapBadge } from "./OnMapBadge";
-import { PersonAvatar } from "./PersonAvatar";
+import { PersonDetails } from "./PersonDetails";
+import { PersonSummary } from "./PersonSummary";
+import type { PersonTrackState } from "./PersonTrackState";
 import { primaryDevice } from "./primaryDevice";
+import { WhereTheyveBeen, type WhereTheyveBeenPeriod } from "./WhereTheyveBeen";
 import "./PersonCard.css";
 
 interface PersonCardProps {
@@ -24,6 +25,8 @@ interface PersonCardProps {
   sharesBack: boolean;
   /** Whether the map shows them now (the People page's selection). */
   selected?: boolean;
+  /** Where they have been, while the map shows them in a view with tracks. */
+  where?: { period: WhereTheyveBeenPeriod; track: PersonTrackState | null } | undefined;
   onShowOnMap: (device: SharedDevice) => void;
   onShareBack: () => void;
   /** Stops sharing back with them (with a confirmation); offered while one does. */
@@ -33,10 +36,12 @@ interface PersonCardProps {
 }
 
 /**
- * Someone who shares their location, Find My style: who, where and how fresh,
- * what they are doing, battery and distance — everything the map shows, in
- * text — and what to do: show them on the map, open the spot in Apple or
- * Google Maps, share back (or stop sharing back), hide them.
+ * Someone who shares their location, Find My style: in two lines who they
+ * are and how far, what they are doing and how fresh that is, and a battery
+ * glyph when the share includes it; Show on map; and Details, closed at
+ * first, with everything else — each device, what the share includes, the
+ * links to Apple and Google Maps, sharing back (or stopping) and hiding.
+ * While they are on the map the card also says where they have been.
  */
 export function PersonCard({
   person,
@@ -45,6 +50,7 @@ export function PersonCard({
   liveMinutes,
   sharesBack,
   selected = false,
+  where,
   onShowOnMap,
   onShareBack,
   onStopSharing,
@@ -53,164 +59,91 @@ export function PersonCard({
 }: PersonCardProps) {
   const format = useFormatter();
   const titleId = useId();
+  const details = useDisclosure();
   const primary = primaryDevice(person.devices);
-  const where = primary?.location ?? null;
-  const live = where !== null && now - Date.parse(where.recordedAt) <= liveMinutes * 60_000;
-  const precision = person.share.precision;
+  const location = primary?.location ?? null;
+  const live = location !== null && now - Date.parse(location.recordedAt) <= liveMinutes * 60_000;
+  // A coarse position says how coarse when nothing else can be said of it.
+  const doing =
+    person.devices.length === 0
+      ? "Shares no device right now"
+      : location === null
+        ? "No recent location"
+        : (describeActivity(location, primary?.activity ?? null, format, { live }) ??
+          precisionInfo[person.share.precision].within);
 
   return (
     <article
       className={selected ? "person-card person-card--selected" : "person-card"}
       aria-labelledby={titleId}
     >
-      <header className="person-card__header">
-        <PersonAvatar name={person.displayName} slot={colorSlot} />
-        <div className="person-card__heading">
-          <h3 className="person-card__name" id={titleId}>
-            {person.displayName}
-          </h3>
-          <p className="person-card__freshness">
-            {where === null ? (
-              "No recent location"
-            ) : (
-              <>
-                {live ? <span className="person-card__live">Live</span> : null}
-                Updated <RelativeTime value={where.recordedAt} tickMs={15_000} />
-              </>
-            )}
-          </p>
-          {selected ? <OnMapBadge /> : null}
-        </div>
-        {primary?.distanceM === null || primary?.distanceM === undefined ? null : (
-          <p className="person-card__distance">
-            <span className="visually-hidden">Distance from you: </span>
-            {format.distance(primary.distanceM)}
-          </p>
-        )}
-      </header>
+      <PersonSummary
+        title={person.displayName}
+        titleId={titleId}
+        level={3}
+        avatar={{ name: person.displayName, slot: colorSlot }}
+        freshness={location === null ? null : { recordedAt: location.recordedAt, live }}
+        doing={doing}
+        {...(primary?.distanceM === null || primary?.distanceM === undefined
+          ? {}
+          : {
+              distance: (
+                <>
+                  <span className="visually-hidden">Distance from you: </span>
+                  {format.distance(primary.distanceM)}
+                </>
+              ),
+            })}
+        {...(person.share.includeDetails && primary?.battery != null
+          ? {
+              battery: (
+                <>
+                  <span className="visually-hidden">Battery: </span>
+                  <BatteryIndicator battery={primary.battery} />
+                </>
+              ),
+            }
+          : {})}
+        onMap={selected}
+      />
 
-      {precision === "precise" ? null : (
-        <p className="person-card__precision">
-          <Icon name="target" />
-          <span>{precisionInfo[precision].short}</span>
-        </p>
-      )}
-
-      {person.devices.length === 0 ? (
-        <p className="muted">{person.displayName} shares no device with you right now.</p>
-      ) : (
-        <PlainList className="person-card__devices">
-          {person.devices.map((device) => (
-            <li key={device.id} className="person-card__device">
-              <p className="person-card__device-name">{device.name}</p>
-              <dl className="person-card__facts">
-                <div>
-                  <dt>Doing</dt>
-                  <dd>{describeActivity(device.location, device.activity, format) ?? "—"}</dd>
-                </div>
-                <div>
-                  <dt>Battery</dt>
-                  <dd>
-                    {device.battery === null ? (
-                      "Not shared"
-                    ) : (
-                      <BatteryIndicator battery={device.battery} />
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Updated</dt>
-                  <dd>
-                    {device.location === null ? (
-                      "—"
-                    ) : (
-                      <RelativeTime value={device.location.recordedAt} tickMs={15_000} />
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Distance</dt>
-                  <dd>{device.distanceM === null ? "—" : format.distance(device.distanceM)}</dd>
-                </div>
-              </dl>
-            </li>
-          ))}
-        </PlainList>
-      )}
-
-      <p className="person-card__share">
-        {historyText(person.share.historyDays)} ·{" "}
-        {person.share.expiresAt === null
-          ? "No end set"
-          : expiryText(person.share.expiresAt, format, now)}
-      </p>
+      {selected && where !== undefined ? (
+        <WhereTheyveBeen
+          person={person}
+          period={where.period}
+          track={where.track}
+          titleId={titleId}
+        />
+      ) : null}
 
       <div className="person-card__actions">
         {/* Every card has these: the name, as a description, says whose. */}
         <Button
           icon="pin"
           aria-describedby={titleId}
-          disabled={primary === null || where === null}
+          disabled={primary === null || location === null}
           onClick={() => {
             if (primary !== null) onShowOnMap(primary);
           }}
         >
           Show on map
         </Button>
-        {where === null ? null : (
-          <>
-            <a
-              className="button button--ghost"
-              href={appleMapsUrl(where.lat, where.lon, person.displayName)}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`Open ${person.displayName}’s location in Apple Maps (new tab)`}
-            >
-              <Icon name="external" />
-              <span>Apple Maps</span>
-            </a>
-            <a
-              className="button button--ghost"
-              href={googleMapsUrl(where.lat, where.lon)}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`Open ${person.displayName}’s location in Google Maps (new tab)`}
-            >
-              <Icon name="external" />
-              <span>Google Maps</span>
-            </a>
-          </>
-        )}
-        {sharesBack ? (
-          <>
-            <p className="person-card__back">
-              <Icon name="check" /> You share with {person.displayName}
-            </p>
-            {onStopSharing === undefined ? null : (
-              <Button
-                variant="danger-outline"
-                onClick={onStopSharing}
-                aria-label={`Stop sharing your location with ${person.displayName}`}
-              >
-                Stop
-              </Button>
-            )}
-          </>
-        ) : (
-          <Button icon="users" aria-describedby={titleId} onClick={onShareBack}>
-            Share back
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          icon="close"
-          busy={hiding}
-          onClick={onHide}
-          aria-label={`Hide ${person.displayName}`}
-        >
-          Hide
-        </Button>
+        <DisclosureButton disclosure={details} describedBy={titleId}>
+          Details
+        </DisclosureButton>
       </div>
+      <DisclosureContent disclosure={details} className="person-card__details">
+        <PersonDetails
+          person={person}
+          now={now}
+          liveMinutes={liveMinutes}
+          sharesBack={sharesBack}
+          onShareBack={onShareBack}
+          {...(onStopSharing === undefined ? {} : { onStopSharing })}
+          onHide={onHide}
+          hiding={hiding}
+        />
+      </DisclosureContent>
     </article>
   );
 }

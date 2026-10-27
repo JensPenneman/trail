@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from "react";
-import { useFormatter } from "../../../format/useFormatter";
-import { Icon } from "../../../ui/Icon";
-import { useScrollableFocus } from "../../../ui/useScrollableFocus";
+import { useFormatter } from "../format/useFormatter";
+import { Icon } from "../ui/Icon";
+import { useScrollableFocus } from "../ui/useScrollableFocus";
 import type { ActivitySlot } from "./activitySlots";
 import "./ActivitySparkline.css";
 

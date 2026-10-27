@@ -4,22 +4,34 @@ import { localDateOf } from "../time/localDateOf";
 
 /** What each precision shows, in plain words (the dialogs and the cards use the same). */
 export const precisionInfo: Readonly<
-  Record<SharePrecision, { label: string; short: string; description: string }>
+  Record<
+    SharePrecision,
+    {
+      label: string;
+      short: string;
+      /** How far off a position may be, for a card's line; null when it is not cut. */
+      within: string | null;
+      description: string;
+    }
+  >
 > = {
   precise: {
     label: "Precise",
     short: "Precise location",
+    within: null,
     description: "Where you are, as your phone records it.",
   },
   approximate: {
     label: "Approximate",
     short: "Approximate location, within about 500 m",
+    within: "Within about 500 m",
     description:
       "Within about 500 m: the neighbourhood, not the street. The same spot is shown every time, so looking often reveals nothing more.",
   },
   area: {
     label: "Area",
     short: "Area only, within about 5 km",
+    within: "Within about 5 km",
     description:
       "Within about 5 km: the town or the part of the city, without your speed. The same area every time.",
   },

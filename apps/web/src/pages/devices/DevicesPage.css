@@ -1,6 +1,19 @@
-.devices-page__list {
-  gap: 0;
+.devices-page__live {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A card per device; two columns where the page is wide enough for them. */
+.devices-page__cards {
+  display: grid;
+  gap: var(--space-4);
   margin: 0;
+}
+
+@media (min-width: 48rem) {
+  .devices-page__cards {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  }
 }
 
 .devices-page__steps {

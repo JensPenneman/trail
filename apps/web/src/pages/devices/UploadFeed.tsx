@@ -1,16 +1,16 @@
 import { useQueries } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
 import { useId, useMemo } from "react";
-import { useFormatter } from "../../../format/useFormatter";
-import { mergeUploadFeed } from "../../../live/mergeUploadFeed";
-import { useLiveState } from "../../../live/useLiveState";
-import { ingestLogQuery } from "../../../queries/ingestLogQuery";
-import { DeviceSwatch } from "../../../ui/DeviceSwatch";
-import { EmptyState } from "../../../ui/EmptyState";
-import { LoadingBlock } from "../../../ui/LoadingBlock";
-import { PlainList } from "../../../ui/PlainList";
-import { RelativeTime } from "../../../ui/RelativeTime";
-import { Skeleton } from "../../../ui/Skeleton";
+import { useFormatter } from "../../format/useFormatter";
+import { mergeUploadFeed } from "../../live/mergeUploadFeed";
+import { useLiveState } from "../../live/useLiveState";
+import { ingestLogQuery } from "../../queries/ingestLogQuery";
+import { DeviceSwatch } from "../../ui/DeviceSwatch";
+import { EmptyState } from "../../ui/EmptyState";
+import { LoadingBlock } from "../../ui/LoadingBlock";
+import { PlainList } from "../../ui/PlainList";
+import { RelativeTime } from "../../ui/RelativeTime";
+import { Skeleton } from "../../ui/Skeleton";
 import "./UploadFeed.css";
 
 interface UploadFeedProps {
@@ -24,6 +24,7 @@ const shown = 12;
 /**
  * Every upload the phones made, newest first: the recent ingest log of each
  * device, plus uploads announced live while this page is open (highlighted).
+ * The Devices page's proof that data keeps arriving.
  */
 export function UploadFeed({ devices, slotOf }: UploadFeedProps) {
   const format = useFormatter();
@@ -50,10 +51,9 @@ export function UploadFeed({ devices, slotOf }: UploadFeedProps) {
   return (
     <section className="section upload-feed" aria-labelledby={headingId}>
       <div className="section__header">
-        {/* In the Me card, under its "Me". */}
-        <h3 className="section__title" id={headingId}>
+        <h2 className="section__title" id={headingId}>
           Uploads
-        </h3>
+        </h2>
         <p className="section__description">Each request from Overland, newest first.</p>
       </div>
       {pending && feed.length === 0 ? (
