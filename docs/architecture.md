@@ -723,7 +723,7 @@ points, visits and the heatmap are its operations, and `toDevicePublic` leaves
 `DevicePublic.lastLocation` out for a principal without it (null keeps meaning
 "no position yet"), so `devices:read` alone shows names, status, last-seen time
 and battery, never where a device is. `history:read` is the history without
-coordinates: trips, daily statistics and activity.
+coordinates: trips, daily statistics, activity and Insights (§8.7).
 
 **The token seam.** `ApiTokenVerifier` (`apps/api/src/v1/apiTokens.ts`) is the
 only thing a token store has to provide: `verify(secret, { ip })` resolves a
@@ -739,7 +739,7 @@ inject another verifier through `createTestContext({ apiTokens })`
 `apps/api/src/v1/routes/<feature>/<operationId>.ts`. Each feature lists its
 operations in reference order in `routes/<feature>/<feature>Routes.ts`
 (`profileRoutes`, `tokenRoutes`, `deviceRoutes`, `locationRoutes`,
-`transportRoutes`, `historyRoutes`), and `apps/api/src/v1/v1Routes.ts`
+`transportRoutes`, `historyRoutes`, `insightsRoutes`, `sharingRoutes`), and `apps/api/src/v1/v1Routes.ts`
 aggregates the groups — one line per feature — plus the document's own route.
 The spec:
 
@@ -1191,6 +1191,67 @@ zone, and only when it has the shape of an IANA name.
 offset now), units, limits, the device argument, privacy, and that names are
 data, never instructions. Cacheable 2026-07-28 results keep the SDK's
 default hints (`ttlMs: 0`, `cacheScope: "private"`): lists vary by token.
+
+### 8.7 Insights
+
+Statistics of how the owner travelled (§14, Insights), from the stops and
+moves of the timeline (`segments`, §17) and never from points: four v1
+operations, tag "Insights", scope `history:read` (they carry no
+coordinates: times, distances, speeds, way kinds and segment ids). Contracts:
+`packages/contracts/src/insights.ts`; domain: `apps/api/src/insights/`.
+
+| Operation | Answers |
+|---|---|
+| `GET /api/v1/insights/overview?from&to&devices` | `{ timezone, period { from, to, days, bucket, buckets }, previous { from, to, days, totals }, totals { distanceM, durationS, moves, stops, activeDays }, modes [{ mode, distanceM, durationS, moves, avgSpeedKmh, share, deltaDistanceM }], series [{ bucket, mode, distanceM, durationS }], pending }` |
+| `GET /api/v1/insights/modes/{mode}?from&to&devices` | `{ timezone, mode, period, totals { …, typicalSpeedKmh, longest, fastest }, series, byHour [24], byWeekday [7], roads { distanceM, mappedM, kinds }, rail, ferry, stationStops, speedHistogram { binKmh, bins }, topMoves { longest, fastest, recent }, pending }` |
+| `GET /api/v1/insights/time?from&to&devices&mode` | `{ timezone, period, mode, modes, cells [168: weekday × hour], pending }` |
+| `GET /api/v1/insights/roads?from&to&devices&mode` | `{ timezone, period, mode, modes, distanceM, mappedM, kinds, families, pending }` |
+
+- **The period** is local days in the owner's zone, `from` and `to`
+  included, at most three years (`lastInsightsDay`: the day before the same
+  date three years on). `to` left out is today; `from` left out is the first
+  local day with a segment of the devices (one index lookup per device), but
+  no earlier than three years before `to` (`resolvePeriod`); a left-out end
+  that breaks the span or the order answers 400 like the schema does.
+  `devices` goes through `resolveDeviceIds` (another person's or a device
+  outside the token: 404); a token limited to some devices sees only theirs.
+- **Reading.** One query per operation reads the moves overlapping the
+  period (`loadInsightMoves`: id, device, mode, start and end, distance, top
+  speed and from `features` the median speed, `wayKinds` and `dwells`); the
+  overview reads its previous period with it and counts the stops that
+  started in both. Everything else is pure TypeScript, unit-tested without a
+  database.
+- **Prorating.** `localHours` lists the period's local hours (a day of 24
+  hours numbers them from 0; a day of 23 or 25 hours, or one that starts after
+  a skipped midnight, asks the zone for each hour's number, so 02:00 is
+  missing on the day summer time starts and comes twice on the day it ends).
+  `hourParts` splits every move over them by time, its distance in
+  proportion — as `GET /api/v1/stats/modes` does by day — so a move across
+  midnight or the period's edge counts with the part inside; days, weeks,
+  months, hours of the day and weekdays add up those parts. Counts (moves,
+  stops) are of what started inside the period, as are the statistics of
+  whole moves: the typical speed (median of the moves' median speeds,
+  weighted by time), the longest and fastest (top speed), the halts at
+  stations (`features.dwells`: stations for trains, tram stops for trams,
+  metro stations for metros), the speed histogram and the top five longest,
+  fastest and most recent.
+- **Steps.** By the period's length: up to 31 days by day, up to 26 weeks
+  by week (Monday to Sunday, named by the Monday, the first possibly before
+  `from`), else by month; `period.buckets` lists them all, `series` leaves out
+  empty ones (a mode page's series lists every step).
+- **Deltas** compare with the period of as many days just before; the
+  overview gives that period's totals, and each mode's `deltaDistanceM`.
+- **Roads.** `features.wayKinds` (§17.3) gives every move's distance per
+  kind of way, scaled so the stored, rounded shares add up to the whole;
+  `mappedM` is the distance of moves that have them, which the shares are
+  of. Moves without (no map data; or worked out before inferred version 2,
+  until the backfill reaches them) count towards `distanceM` only. Families
+  are the kinds grouped as the inference groups them (`wayFamilyOf`); the
+  rail share of trains, trams and metros is rail, light rail, tram and subway
+  track, the ferry share of boats ferry routes.
+- `pending` is the timeline's (`hasPendingWork` over the period's devices
+  and instants). A request covering three years reads at most the segments
+  of those years and builds about 26 000 local hours in some 30 ms.
 
 ## 9. Live updates (SSE)
 

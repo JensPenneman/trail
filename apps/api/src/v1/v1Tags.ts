@@ -32,6 +32,11 @@ export const v1Tags = [
       "History without coordinates: trips, daily statistics and recent activity (`history:read`).",
   },
   {
+    name: "Insights",
+    description:
+      "How you travelled: distance, time and moves per transport mode, when you travel and on which roads — worked out from the stops and moves, without coordinates (`history:read`).",
+  },
+  {
     name: "People",
     description:
       "The people who share their location with you, with their devices at the precision they chose.",

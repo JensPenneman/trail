@@ -74,6 +74,12 @@ export const apiPaths = {
       mode: (segmentId: string) => `/api/v1/segments/${id(segmentId)}/mode`,
     },
     statsModes: "/api/v1/stats/modes",
+    insights: {
+      overview: "/api/v1/insights/overview",
+      mode: (mode: string) => `/api/v1/insights/modes/${id(mode)}`,
+      time: "/api/v1/insights/time",
+      roads: "/api/v1/insights/roads",
+    },
     people: {
       root: "/api/v1/people",
       one: (userId: string) => `/api/v1/people/${id(userId)}`,

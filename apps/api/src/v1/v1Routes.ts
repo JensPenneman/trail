@@ -2,6 +2,7 @@ import type { V1Route } from "./defineRoute";
 import type { ServedDocument } from "./openapi/servedDocument";
 import { deviceRoutes } from "./routes/devices/deviceRoutes";
 import { historyRoutes } from "./routes/history/historyRoutes";
+import { insightsRoutes } from "./routes/insights/insightsRoutes";
 import { locationRoutes } from "./routes/locations/locationRoutes";
 import { profileRoutes } from "./routes/profile/profileRoutes";
 import { getOpenApiDocument } from "./routes/reference/getOpenApiDocument";
@@ -21,6 +22,7 @@ const operations: readonly V1Route[] = [
   ...locationRoutes,
   ...transportRoutes,
   ...historyRoutes,
+  ...insightsRoutes,
   ...sharingRoutes,
 ];
 

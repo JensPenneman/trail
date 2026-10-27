@@ -40,6 +40,10 @@
       "description": "History without coordinates: trips, daily statistics and recent activity (`history:read`)."
     },
     {
+      "name": "Insights",
+      "description": "How you travelled: distance, time and moves per transport mode, when you travel and on which roads — worked out from the stops and moves, without coordinates (`history:read`)."
+    },
+    {
       "name": "People",
       "description": "The people who share their location with you, with their devices at the precision they chose."
     },
@@ -1657,6 +1661,375 @@
         }
       }
     },
+    "/api/v1/insights/overview": {
+      "get": {
+        "operationId": "getInsightsOverview",
+        "summary": "Get how you travelled",
+        "description": "Totals of a period of local days (the account's time zone; at most three years, the whole history up to today by default) — distance, time on the move, moves, stops and active days — with the same totals for the period of as many days just before, every transport mode's distance, time, moves, average speed and share with its change since that period, and a series per day, week or month (by the period's length: up to 31 days by day, up to 26 weeks by week, else by month) of distance and time per mode. A move across the period's edge counts with the part inside it, in proportion to its time, and so across midnight and the steps of the series; counts are of the moves and stops that started inside. `pending` is true while recorded points of the period still wait for processing.\n\n**Access:** an API token with the scope `history:read`, or a signed-in session.",
+        "tags": [
+          "Insights"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "history:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`.",
+              "example": "2026-09-28",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "Last local day, included. Left out: today. At most three years after `from`.",
+              "example": "2026-10-27",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "Last local day, included. Left out: today. At most three years after `from`."
+          },
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How you travelled in a period.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightsOverview"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/insights/modes/{mode}": {
+      "get": {
+        "operationId": "getInsightsMode",
+        "summary": "Get how you travelled in one mode",
+        "description": "One transport mode in a period of local days (as for the overview): distance, time, moves, average and typical speed, the longest and the fastest move; a series per day, week or month; distance and time per hour of the day and per day of the week; the distance by kind of way (from the map matching, where there was map data); for trains, trams and metros the part on railway track and the halts at stations, for boats the part on ferry routes; the moves by their median speed; and the five longest, fastest and most recent moves — segment ids and times, never where they went. An unknown mode is a 404.\n\n**Access:** an API token with the scope `history:read`, or a signed-in session.",
+        "tags": [
+          "Insights"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "history:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mode",
+            "schema": {
+              "$ref": "#/components/schemas/TransportMode"
+            },
+            "required": true,
+            "description": "How the device travelled. `stationary` is standing still; `unknown` means the evidence was too weak to decide."
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`.",
+              "example": "2026-09-28",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "Last local day, included. Left out: today. At most three years after `from`.",
+              "example": "2026-10-27",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "Last local day, included. Left out: today. At most three years after `from`."
+          },
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How you travelled in one mode.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightsMode"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/insights/time": {
+      "get": {
+        "operationId": "getInsightsTime",
+        "summary": "Get when you travel",
+        "description": "Time and distance on the move in every hour of every day of the week (168 cells, local time) over a period of local days, for one transport mode or all of them, with the modes moved in during the period. Moves count in each hour in proportion to their time there; an hour that a change of the clocks repeats counts twice, one it skips not at all.\n\n**Access:** an API token with the scope `history:read`, or a signed-in session.",
+        "tags": [
+          "Insights"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "history:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`.",
+              "example": "2026-09-28",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "Last local day, included. Left out: today. At most three years after `from`.",
+              "example": "2026-10-27",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "Last local day, included. Left out: today. At most three years after `from`."
+          },
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "schema": {
+              "description": "Only the moves in this mode; every move when left out.",
+              "example": "cycling",
+              "$ref": "#/components/schemas/TransportMode"
+            },
+            "description": "Only the moves in this mode; every move when left out."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "When you travel: time and distance per weekday and hour.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightsTime"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/insights/roads": {
+      "get": {
+        "operationId": "getInsightsRoads",
+        "summary": "Get the roads you travelled",
+        "description": "The distance by kind of way — motorway down to footpath, the railways, ferry routes, and off every mapped way — and by family over a period of local days, for one transport mode or all of them, from the map matching of the moves. Shares are of the distance with map data (`mappedM`); moves without it (no map data, or not worked out again yet after an upgrade) count towards `distanceM` only.\n\n**Access:** an API token with the scope `history:read`, or a signed-in session.",
+        "tags": [
+          "Insights"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "history:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`.",
+              "example": "2026-09-28",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "Last local day, included. Left out: today. At most three years after `from`.",
+              "example": "2026-10-27",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "Last local day, included. Left out: today. At most three years after `from`."
+          },
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "schema": {
+              "description": "Only the moves in this mode; every move when left out.",
+              "example": "cycling",
+              "$ref": "#/components/schemas/TransportMode"
+            },
+            "description": "Only the moves in this mode; every move when left out."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The roads and railways you travelled on.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightsRoads"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/people": {
       "get": {
         "operationId": "listPeople",
@@ -2927,6 +3300,25 @@
         ],
         "description": "Set the transport mode from now on."
       },
+      "TransportMode": {
+        "type": "string",
+        "enum": [
+          "stationary",
+          "walking",
+          "running",
+          "cycling",
+          "car",
+          "bus",
+          "tram",
+          "metro",
+          "train",
+          "boat",
+          "plane",
+          "unknown"
+        ],
+        "description": "How the device travelled. `stationary` is standing still; `unknown` means the evidence was too weak to decide.",
+        "example": "train"
+      },
       "CreateShareRequest": {
         "type": "object",
         "properties": {
@@ -4087,25 +4479,6 @@
         "additionalProperties": false,
         "description": "A drawable piece of a device's track."
       },
-      "TransportMode": {
-        "type": "string",
-        "enum": [
-          "stationary",
-          "walking",
-          "running",
-          "cycling",
-          "car",
-          "bus",
-          "tram",
-          "metro",
-          "train",
-          "boat",
-          "plane",
-          "unknown"
-        ],
-        "description": "How the device travelled. `stationary` is standing still; `unknown` means the evidence was too weak to decide.",
-        "example": "train"
-      },
       "LevelPoint": {
         "type": "array",
         "prefixItems": [
@@ -4739,6 +5112,1095 @@
         ],
         "additionalProperties": false,
         "description": "One hour of one device."
+      },
+      "InsightsOverview": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "The account's time zone, which the days follow.",
+            "example": "Europe/Brussels"
+          },
+          "period": {
+            "$ref": "#/components/schemas/InsightsSeriesPeriod"
+          },
+          "previous": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                "description": "First local day.",
+                "example": "2026-09-28"
+              },
+              "to": {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                "description": "Last local day, included.",
+                "example": "2026-10-27"
+              },
+              "days": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "description": "Days in the period.",
+                "example": 30
+              },
+              "totals": {
+                "$ref": "#/components/schemas/InsightsTotals"
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "days",
+              "totals"
+            ],
+            "additionalProperties": false,
+            "description": "The period of as many days just before, for comparison."
+          },
+          "totals": {
+            "$ref": "#/components/schemas/InsightsTotals"
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightsModeShare"
+            },
+            "description": "The modes moved in, most distance first."
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightsSeriesEntry"
+            },
+            "description": "Distance and time per step and mode, by step and then in the order of the modes; steps and modes without time are left out."
+          },
+          "pending": {
+            "type": "boolean",
+            "description": "Recorded points of the period still wait for processing: the numbers may still change.",
+            "example": false
+          }
+        },
+        "required": [
+          "timezone",
+          "period",
+          "previous",
+          "totals",
+          "modes",
+          "series",
+          "pending"
+        ],
+        "additionalProperties": false,
+        "description": "How you travelled in a period."
+      },
+      "InsightsSeriesPeriod": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "description": "First local day.",
+            "example": "2026-09-28"
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "description": "Last local day, included.",
+            "example": "2026-10-27"
+          },
+          "days": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Days in the period.",
+            "example": 30
+          },
+          "bucket": {
+            "$ref": "#/components/schemas/InsightsBucket"
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "Every step of the series in order, by its first day (a week by its Monday, which may lie before `from`).",
+            "example": [
+              "2026-09-28",
+              "2026-10-05",
+              "2026-10-12",
+              "2026-10-19",
+              "2026-10-26"
+            ]
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "days",
+          "bucket",
+          "buckets"
+        ],
+        "additionalProperties": false,
+        "description": "The local days covered, and their steps."
+      },
+      "InsightsBucket": {
+        "type": "string",
+        "enum": [
+          "day",
+          "week",
+          "month"
+        ],
+        "description": "The steps of a series: `day` for periods of up to 31 days, `week` (Monday to Sunday) up to 26 weeks, else `month`.",
+        "example": "week"
+      },
+      "InsightsTotals": {
+        "type": "object",
+        "properties": {
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Distance moved in metres.",
+            "example": 412380
+          },
+          "durationS": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Time on the move in seconds.",
+            "example": 61920
+          },
+          "moves": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Moves that started in the period.",
+            "example": 96
+          },
+          "stops": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Stops that started in the period.",
+            "example": 88
+          },
+          "activeDays": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Days with any time on the move.",
+            "example": 27
+          }
+        },
+        "required": [
+          "distanceM",
+          "durationS",
+          "moves",
+          "stops",
+          "activeDays"
+        ],
+        "additionalProperties": false,
+        "description": "Totals of a period. A move across the period's edge counts with the part inside it; counts are of what started inside."
+      },
+      "InsightsModeShare": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/TransportMode"
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Distance in this mode, metres.",
+            "example": 183400
+          },
+          "durationS": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Time in this mode, seconds.",
+            "example": 7260
+          },
+          "moves": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Moves in this mode that started in the period.",
+            "example": 12
+          },
+          "avgSpeedKmh": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Distance over time, km/h.",
+            "example": 90.9
+          },
+          "share": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "This mode's part of the distance moved, 0 to 1.",
+            "example": 0.445
+          },
+          "deltaDistanceM": {
+            "type": "number",
+            "description": "Distance compared with the previous period, metres (negative: less).",
+            "example": 21500
+          }
+        },
+        "required": [
+          "mode",
+          "distanceM",
+          "durationS",
+          "moves",
+          "avgSpeedKmh",
+          "share",
+          "deltaDistanceM"
+        ],
+        "additionalProperties": false,
+        "description": "One transport mode's part of a period."
+      },
+      "InsightsSeriesEntry": {
+        "type": "object",
+        "properties": {
+          "bucket": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "description": "The step's first day (see `period.buckets`).",
+            "example": "2026-10-19"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/TransportMode"
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Metres.",
+            "example": 61200
+          },
+          "durationS": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Seconds.",
+            "example": 2880
+          }
+        },
+        "required": [
+          "bucket",
+          "mode",
+          "distanceM",
+          "durationS"
+        ],
+        "additionalProperties": false,
+        "description": "Distance and time of one mode in one step."
+      },
+      "InsightsMode": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "The account's time zone, which the days follow.",
+            "example": "Europe/Brussels"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/TransportMode"
+          },
+          "period": {
+            "$ref": "#/components/schemas/InsightsSeriesPeriod"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/InsightsModeTotals"
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "bucket": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                  "description": "The step's first day.",
+                  "example": "2026-10-19"
+                },
+                "distanceM": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Metres.",
+                  "example": 61200
+                },
+                "durationS": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Seconds.",
+                  "example": 2880
+                }
+              },
+              "required": [
+                "bucket",
+                "distanceM",
+                "durationS"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Distance and time per step, every step of `period.buckets`."
+          },
+          "byHour": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightsHour"
+            },
+            "description": "The 24 hours of the day, from 0."
+          },
+          "byWeekday": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightsWeekday"
+            },
+            "description": "The 7 days of the week, from Monday."
+          },
+          "roads": {
+            "$ref": "#/components/schemas/InsightsModeRoads"
+          },
+          "rail": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "distanceM": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Metres.",
+                    "example": 29870
+                  },
+                  "share": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Part of the distance with map data, 0 to 1.",
+                    "example": 0.962
+                  }
+                },
+                "required": [
+                  "distanceM",
+                  "share"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Train, tram and metro: the distance on railway tracks (rail, light rail, tram and subway). Null for other modes."
+          },
+          "ferry": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "distanceM": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Metres.",
+                    "example": 29870
+                  },
+                  "share": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Part of the distance with map data, 0 to 1.",
+                    "example": 0.962
+                  }
+                },
+                "required": [
+                  "distanceM",
+                  "share"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Boat: the distance on ferry routes. Null for other modes."
+          },
+          "stationStops": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Train, tram and metro: how often the moves halted at a station (a tram stop, a metro station) along the way. Null for other modes.",
+            "example": 14
+          },
+          "speedHistogram": {
+            "$ref": "#/components/schemas/InsightsSpeedHistogram"
+          },
+          "topMoves": {
+            "$ref": "#/components/schemas/InsightsTopMoves"
+          },
+          "pending": {
+            "type": "boolean",
+            "description": "Recorded points of the period still wait for processing: the numbers may still change.",
+            "example": false
+          }
+        },
+        "required": [
+          "timezone",
+          "mode",
+          "period",
+          "totals",
+          "series",
+          "byHour",
+          "byWeekday",
+          "roads",
+          "rail",
+          "ferry",
+          "stationStops",
+          "speedHistogram",
+          "topMoves",
+          "pending"
+        ],
+        "additionalProperties": false,
+        "description": "How you travelled in one mode."
+      },
+      "InsightsModeTotals": {
+        "type": "object",
+        "properties": {
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Metres.",
+            "example": 183400
+          },
+          "durationS": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Seconds.",
+            "example": 7260
+          },
+          "moves": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Moves that started in the period.",
+            "example": 12
+          },
+          "avgSpeedKmh": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Distance over time, km/h.",
+            "example": 90.9
+          },
+          "typicalSpeedKmh": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The moves' median speeds, their median weighted by time: how fast you usually go. Null without moves.",
+            "example": 96.4
+          },
+          "longest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightsMove"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The longest move."
+          },
+          "fastest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightsMove"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The move with the highest top speed."
+          }
+        },
+        "required": [
+          "distanceM",
+          "durationS",
+          "moves",
+          "avgSpeedKmh",
+          "typicalSpeedKmh",
+          "longest",
+          "fastest"
+        ],
+        "additionalProperties": false,
+        "description": "Totals of one mode in the period."
+      },
+      "InsightsMove": {
+        "type": "object",
+        "properties": {
+          "segmentId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The move in the timeline (`GET /api/v1/segments`).",
+            "example": "019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d4e"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start.",
+            "example": "2026-10-21T06:42:10.000Z"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "End.",
+            "example": "2026-10-21T07:20:40.000Z"
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Metres.",
+            "example": 31240
+          },
+          "durationS": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Seconds.",
+            "example": 2310
+          },
+          "avgSpeedKmh": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Distance over time, km/h.",
+            "example": 48.7
+          },
+          "maxSpeedKmh": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Top speed, km/h (outliers left out).",
+            "example": 121.3
+          }
+        },
+        "required": [
+          "segmentId",
+          "deviceId",
+          "startedAt",
+          "endedAt",
+          "distanceM",
+          "durationS",
+          "avgSpeedKmh",
+          "maxSpeedKmh"
+        ],
+        "additionalProperties": false,
+        "description": "One move, without where it went."
+      },
+      "InsightsHour": {
+        "type": "object",
+        "properties": {
+          "hour": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 23,
+            "description": "Hour of the day, 0 to 23.",
+            "example": 8
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Metres.",
+            "example": 12400
+          },
+          "durationS": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Seconds.",
+            "example": 1500
+          }
+        },
+        "required": [
+          "hour",
+          "distanceM",
+          "durationS"
+        ],
+        "additionalProperties": false,
+        "description": "Distance and time in one hour of the day."
+      },
+      "InsightsWeekday": {
+        "type": "object",
+        "properties": {
+          "weekday": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 7,
+            "description": "Day of the week, 1 (Monday) to 7 (Sunday).",
+            "example": 1
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Metres.",
+            "example": 24300
+          },
+          "durationS": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Seconds.",
+            "example": 3120
+          }
+        },
+        "required": [
+          "weekday",
+          "distanceM",
+          "durationS"
+        ],
+        "additionalProperties": false,
+        "description": "Distance and time on one day of the week."
+      },
+      "InsightsModeRoads": {
+        "type": "object",
+        "properties": {
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Distance of the moves counted, metres.",
+            "example": 61700
+          },
+          "mappedM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "The part of it with map data (moves processed with map matching), metres.",
+            "example": 58640
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightsWayKind"
+            },
+            "description": "The kinds of way travelled on, in the order of `WayKind`; none without map data."
+          }
+        },
+        "required": [
+          "distanceM",
+          "mappedM",
+          "kinds"
+        ],
+        "additionalProperties": false,
+        "description": "Distance by kind of way."
+      },
+      "InsightsWayKind": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/WayKind"
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Metres on this kind of way.",
+            "example": 18250
+          },
+          "share": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Its part of the distance with map data, 0 to 1.",
+            "example": 0.311
+          }
+        },
+        "required": [
+          "kind",
+          "distanceM",
+          "share"
+        ],
+        "additionalProperties": false,
+        "description": "Distance on one kind of way."
+      },
+      "WayKind": {
+        "type": "string",
+        "enum": [
+          "motorway",
+          "trunk",
+          "primary",
+          "secondary",
+          "tertiary",
+          "residential",
+          "service",
+          "track",
+          "cycleway",
+          "footway",
+          "path",
+          "rail",
+          "light_rail",
+          "tram",
+          "subway",
+          "ferry",
+          "other"
+        ],
+        "description": "A class of road or railway from OpenStreetMap: the road classes `motorway` to `path`, the railways `rail`, `light_rail`, `tram` and `subway`, `ferry` routes, and `other` for travel off every mapped way.",
+        "example": "primary"
+      },
+      "InsightsSpeedHistogram": {
+        "type": "object",
+        "properties": {
+          "binKmh": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Width of every bin, km/h.",
+            "example": 10
+          },
+          "bins": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fromKmh": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "From, km/h.",
+                  "example": 40
+                },
+                "toKmh": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "Up to, km/h.",
+                  "example": 50
+                },
+                "moves": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Moves.",
+                  "example": 4
+                }
+              },
+              "required": [
+                "fromKmh",
+                "toKmh",
+                "moves"
+              ],
+              "additionalProperties": false
+            },
+            "description": "From 0 up to the fastest move's bin, empty bins included."
+          }
+        },
+        "required": [
+          "binKmh",
+          "bins"
+        ],
+        "additionalProperties": false,
+        "description": "The moves by their median speed (how fast they mostly went)."
+      },
+      "InsightsTopMoves": {
+        "type": "object",
+        "properties": {
+          "longest": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightsMove"
+            },
+            "description": "The five longest."
+          },
+          "fastest": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightsMove"
+            },
+            "description": "The five with the highest top speed."
+          },
+          "recent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightsMove"
+            },
+            "description": "The five most recent."
+          }
+        },
+        "required": [
+          "longest",
+          "fastest",
+          "recent"
+        ],
+        "additionalProperties": false,
+        "description": "Moves of the period worth a look."
+      },
+      "InsightsTime": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "The account's time zone, which the days follow.",
+            "example": "Europe/Brussels"
+          },
+          "period": {
+            "$ref": "#/components/schemas/InsightsPeriod"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The mode asked for; null: every mode."
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransportMode"
+            },
+            "description": "The modes moved in during the period (whatever `mode` asks for), in the order of `TransportMode`.",
+            "example": [
+              "walking",
+              "cycling",
+              "train"
+            ]
+          },
+          "cells": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "weekday": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 7,
+                  "description": "Day of the week, 1 (Monday) to 7 (Sunday).",
+                  "example": 1
+                },
+                "hour": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 23,
+                  "description": "Hour, 0 to 23.",
+                  "example": 8
+                },
+                "distanceM": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Metres.",
+                  "example": 9800
+                },
+                "durationS": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Seconds.",
+                  "example": 1260
+                }
+              },
+              "required": [
+                "weekday",
+                "hour",
+                "distanceM",
+                "durationS"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Every hour of every day of the week: 168 cells, Monday 0:00 first."
+          },
+          "pending": {
+            "type": "boolean",
+            "description": "Recorded points of the period still wait for processing: the numbers may still change.",
+            "example": false
+          }
+        },
+        "required": [
+          "timezone",
+          "period",
+          "mode",
+          "modes",
+          "cells",
+          "pending"
+        ],
+        "additionalProperties": false,
+        "description": "When you travel: time and distance per weekday and hour."
+      },
+      "InsightsPeriod": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "description": "First local day.",
+            "example": "2026-09-28"
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "description": "Last local day, included.",
+            "example": "2026-10-27"
+          },
+          "days": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Days in the period.",
+            "example": 30
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "days"
+        ],
+        "additionalProperties": false,
+        "description": "The local days the numbers cover."
+      },
+      "InsightsRoads": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "The account's time zone, which the days follow.",
+            "example": "Europe/Brussels"
+          },
+          "period": {
+            "$ref": "#/components/schemas/InsightsPeriod"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The mode asked for; null: every mode."
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransportMode"
+            },
+            "description": "The modes moved in during the period (whatever `mode` asks for), in the order of `TransportMode`.",
+            "example": [
+              "walking",
+              "cycling",
+              "train"
+            ]
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Distance of the moves counted, metres.",
+            "example": 412380
+          },
+          "mappedM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "The part of it with map data, metres.",
+            "example": 377910
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightsWayKind"
+            },
+            "description": "Distance by kind of way, in the order of `WayKind`."
+          },
+          "families": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightsWayFamily"
+            },
+            "description": "The same by family, in the order of `WayFamily`."
+          },
+          "pending": {
+            "type": "boolean",
+            "description": "Recorded points of the period still wait for processing: the numbers may still change.",
+            "example": false
+          }
+        },
+        "required": [
+          "timezone",
+          "period",
+          "mode",
+          "modes",
+          "distanceM",
+          "mappedM",
+          "kinds",
+          "families",
+          "pending"
+        ],
+        "additionalProperties": false,
+        "description": "The roads and railways you travelled on."
+      },
+      "InsightsWayFamily": {
+        "type": "object",
+        "properties": {
+          "family": {
+            "$ref": "#/components/schemas/WayFamily"
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Metres on this family of ways.",
+            "example": 26900
+          },
+          "share": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Its part of the distance with map data, 0 to 1.",
+            "example": 0.458
+          }
+        },
+        "required": [
+          "family",
+          "distanceM",
+          "share"
+        ],
+        "additionalProperties": false,
+        "description": "Distance on one family of ways."
+      },
+      "WayFamily": {
+        "type": "string",
+        "enum": [
+          "motorway",
+          "road",
+          "cycleway",
+          "foot",
+          "rail",
+          "tram",
+          "subway",
+          "ferry",
+          "none"
+        ],
+        "description": "Kinds of way grouped: `motorway` (motorways and trunk roads), `road` (primary to track), `cycleway`, `foot` (footways and paths), `rail`, `tram` (tram and light rail), `subway`, `ferry`, `none` (off every mapped way).",
+        "example": "road"
       },
       "Person": {
         "type": "object",
@@ -5843,7 +7305,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "trlk_…",
-        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read trips, daily statistics and activity: the history without coordinates. |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |"
+        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates. |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |"
       }
     }
   }
