@@ -4,8 +4,11 @@ import { afterEach, beforeEach, vi } from "vitest";
 
 // Pages load lazily, as in the build (Settings has a chunk per page): the first
 // one a test file opens is compiled then, which takes a while when the suite
-// runs in parallel. `findBy…` and `waitFor` wait for it this long.
-configure({ asyncUtilTimeout: 5000 });
+// runs in parallel, and several times that on a slow, CPU-limited machine (a
+// check on a Launchway node). `findBy…` and `waitFor` wait for it this long:
+// less than a test may take (vitest.shared.ts), so a page that never comes
+// fails with what is missing rather than with the test's timeout.
+configure({ asyncUtilTimeout: 15_000 });
 
 /* jsdom has no modal dialogs, media queries or event streams; these stand-ins
  * give components the browser behaviour they rely on. */

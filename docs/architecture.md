@@ -59,7 +59,9 @@ npm only — never pnpm/yarn).
   Biome `noBarrelFile`); import from the defining module. Contracts are imported
   by subpath: `import { deviceSummarySchema } from "@trail/contracts/device"`.
 - Relative imports are extensionless (`./createDevice`); module resolution is
-  `bundler` everywhere (the API is bundled by tsdown, the web by Vite).
+  `bundler` everywhere (the API is bundled by tsdown, the web by Vite). Vite
+  and Vitest config files import what they share with `.ts`
+  (`allowImportingTsExtensions`): Vite's native config loader, Node, needs it.
 - No `console.*` in app code (Biome `noConsole`): the API logs through pino;
   the CLI (`apps/api/src/cli/**`) and `scripts/**` may print.
 - No `any`, no non-null assertions, no `forEach` (use `for…of`).
@@ -2539,6 +2541,36 @@ which are merged by hand; majors wait for a person, security ones too.
   view and page, keyboard use and 320 px screens. The suite's server
   has no map data (`PROCESSING_OVERPASS_URL` empty), so the mapped level
   degrades to averaged there.
+
+The unit projects (the web app's, the API's `unit` and the contracts') hold
+on a slow, CPU-limited machine as on this one: Launchway runs the checks in
+containers limited to a few of a node's CPUs and 3 GiB, where the first
+`quality` run let 17 jsdom page tests run past Vitest's 5 s. Vitest gives
+`vitest run` a worker per CPU but one and counts the CPUs with
+`os.availableParallelism()`, which sees a cgroup v2 quota but never a v1 one
+(libuv looks for v1's files at a path that does not exist), so it started 11
+workers for the node's 12 threads. `unitTestOptions()` in `vitest.shared.ts`
+at the root reads the quota where a container sees its own cgroup —
+`/sys/fs/cgroup/cpu.max` (`400000 100000` is 4 CPUs, `max 100000` none),
+else `cpu.cfs_quota_us` over `cpu.cfs_period_us` of the v1 cpu controller, in
+whole CPUs, at least one — and, below Node's count, sizes the pool from it by
+the same rule (4 CPUs, 3 workers); without a quota Vitest's default stays.
+Vitest's own `VITEST_MAX_WORKERS` overrides either, the integration project's
+one file at a time included, so it is for unit runs only. A unit test may take
+20 s and a hook 30 s, and Testing Library's `findBy…` and `waitFor` wait 15 s
+(`apps/web/tests/setup.ts`), so a slow machine fails on a hang only; the
+integration project keeps 30 s and 60 s. The web project follows Vitest's hint
+for jsdom set up once per file (50 times, over a third of the tracked time):
+`pool: 'vmThreads'` still gives every file a JSDOM and a module graph of its
+own, in a VM context, but loads jsdom once per worker. On a busy M2 Pro
+`npm run test -w @trail/web` takes 4.7 s instead of 8.4 s, and 7.0 s instead of
+17.0 s with 3 workers as in such a check (medians of 5). `isolate: false` is
+slower than that with the default pool and 14–21 % faster with 3 workers, but
+it fails LoginPage and PeoplePageSelection tests in a shuffled file order, so
+isolation stays. A vm worker starts afresh past 512 MiB of heap
+(`vmMemoryLimit`; under 400 MB with this suite), which keeps three of them well
+inside 3 GiB (1.9 GiB at the peak, 1.3 GiB with forks). `vitestShared.test.ts`
+in the API's unit project covers reading the quota.
 
 ## 17. Processing and transport inference
 

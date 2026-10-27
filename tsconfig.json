@@ -9,6 +9,15 @@
     "allowJs": true,
     "checkJs": true
   },
-  "include": ["scripts/**/*.mjs", "tests/**/*.ts", "*.config.ts", "*.config.mjs"],
+  /* The contracts' Vitest config is checked here: the contracts' own program
+   * stays without Node's types, since their code runs in browsers too. */
+  "include": [
+    "scripts/**/*.mjs",
+    "tests/**/*.ts",
+    "*.config.ts",
+    "*.config.mjs",
+    "vitest.shared.ts",
+    "packages/contracts/vitest.config.ts"
+  ],
   "exclude": ["node_modules", "**/dist", "coverage", "playwright-report", "test-results"]
 }

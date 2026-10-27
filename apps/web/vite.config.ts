@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { unitTestOptions } from "../../vitest.shared.ts";
 
 const maplibreWorkerModule = "maplibre-gl/dist/maplibre-gl-worker.mjs";
 const workerUrlModule = "virtual:maplibre-worker-url";
@@ -68,11 +69,20 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // Every file still gets a JSDOM and a module graph of its own (the tests depend on
+    // it: with `isolate: false` some fail in another order), in a VM context, but jsdom
+    // is loaded once per worker instead of once per file: half the time here, and less
+    // than half with the three workers of a check limited to 4 CPUs.
+    pool: "vmThreads",
+    // A worker starts afresh once its heap passes this (with this suite they stay under
+    // 400 MB), so three of them stay well inside a check container's 3 GiB.
+    vmMemoryLimit: "512MiB",
     include: ["tests/**/*.test.{ts,tsx}"],
     setupFiles: ["tests/setup.ts"],
     restoreMocks: true,
     unstubGlobals: true,
     css: false,
+    ...unitTestOptions(),
   },
   server: {
     port: 5173,

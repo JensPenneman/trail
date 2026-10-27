@@ -92,7 +92,7 @@ describe("a link to one move", () => {
       url: `/?view=history&segment=${ids.train}`,
       user,
     });
-    const dialog = await screen.findByRole("dialog", { name: "Train" }, { timeout: 5000 });
+    const dialog = await screen.findByRole("dialog", { name: "Train" });
     expect(within(dialog).getByText("Was this a train ride?")).toBeInTheDocument();
     await person.click(within(dialog).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(router.state.location.search).toBe("?view=history"));

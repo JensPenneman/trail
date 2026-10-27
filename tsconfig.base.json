@@ -31,6 +31,9 @@
     /* tooling */
     "noErrorTruncation": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    /* Vite and Vitest config files import the files they share with a `.ts`
+     * extension: Vite's native config loader, Node itself, needs one. */
+    "allowImportingTsExtensions": true
   }
 }
