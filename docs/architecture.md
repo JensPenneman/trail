@@ -3039,8 +3039,9 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   start, end and centroid lat/lon, `features` (jsonb), `version` (the
   inferred level's), `computed_at`. Unique `(device_id, started_at)`, index
   `(device_id, ended_at)`. Stops and moves follow each other without overlap
-  and share their boundary point; a recording gap without travel lies outside
-  every segment.
+  and share their boundary point; a recording gap the phone lay still through
+  is a stop, one with travel lies outside every segment. A stop's `features`
+  hold `spreadM`, how far apart its points lie (§17.3).
 - **mode_overrides** — user data, part of the migration-upgrade fingerprint:
   `id`, `device_id` (cascade), `kind` `segment|toggle`, `from_at`, `to_at`
   (null: until the next stop), `mode`, `source` `ui|api|mcp`, `created_by`
@@ -3058,7 +3059,7 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   `kind` `station|halt|tram_stop|subway_station|bus_stop|ferry_terminal|aerodrome`,
   `lat`, `lon`, `name`, the tile it came with).
 - **processing_state** — key/value: `backfill` holds the versions the history
-  was backfilled for, `{ "versions": { "averaged": 1, "mapped": 1, "inferred": 2 } }`
+  was backfilled for, `{ "versions": { "averaged": 1, "mapped": 1, "inferred": 3 } }`
   (`{ "version": n }`, from before the levels had versions of their own, means
   n for every level).
 
@@ -3082,17 +3083,53 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
 4. `speed_avg` is the median of the reported speed and the derived speeds to
    both neighbours.
 
-**Stops and moves** (`detectStops`): a stop is at least
-`PROCESSING_STOP_MIN_S` (180 s) within 60 m of its running centroid (moving
-points at its edges trimmed), the points of an iOS visit within 150 m of its
-place (unless most of them disagree), or CoreMotion reporting stationary and
-nothing else throughout. Stops at one place on both sides of a recording
-pause, or within 80 m with at most five minutes of wandering between them,
-are one stop. After a pause of five minutes or more the stop lasts until the
-first point outside it when that point is within 300 m (iOS resumes outside
-its geofence). Moves fill the time between stops and share their end points
-with them. A gap of more than 30 minutes ends a move unless the device
-travelled at 10 m/s or more meanwhile (a flight, a train through tunnels).
+**Stops and moves** (`detectStops`). A stop ends when the phone leaves, and
+none holds travel. A stop is:
+
+- a **dwell**: at least `PROCESSING_STOP_MIN_S` (180 s) within 60 m of its
+  running centroid, moving points (over 0.5 m/s) at its edges trimmed. A real
+  walk in it — 30 s or more faster than 0.6 m/s by the phone's own speed
+  reading, averaged over 30 s (where the phone gave none, the averaged speed
+  with CoreMotion on foot) — makes it two dwells when both last 180 s without
+  it: the walk from the bike shed to the platform is a move.
+- an **iOS visit**. iOS reports a visit twice, on arrival (no departure yet)
+  and on departure (the same arrival); both rows are kept as recorded, and
+  `loadVisits` merges them per arrival before anything else — a report with a
+  departure supersedes the arrival alone, the latest report wins among
+  several — so a window after the departure never sees the arrival alone as
+  a visit still open. The stop is the points near the visit's place (within
+  max(150 m, accuracy), at most 300 m, so GPS drifting indoors stays one stay)
+  from the arrival on, for as long as the phone stays: an excursion back
+  within five minutes and never farther than 300 m does not end it, nor does a
+  recording pause the phone spent there. A visit whose departure is known
+  gives a stop for every time the phone was there before it (and lasts until
+  the departure when nothing was recorded after its last point: iOS pauses the
+  updates of a phone lying still); one whose departure is not known — still
+  open, or never reported — only the stay from its arrival on, which ends when
+  the phone leaves, never at the end of the window. Its moving ends are
+  trimmed, as a dwell's, and it must last 180 s with at least half of its
+  points near the place (iOS reports a visit now and then mid-journey).
+- **CoreMotion** reporting stationary and nothing else throughout, within
+  300 m of its centroid.
+- a **still gap**: a recording gap of more than 30 minutes whose two ends lie
+  within 300 m of each other — the phone lay there all along, so the gap is a
+  stop of those two points (their centroid) and the day stays covered.
+
+Overlapping stops are one, and so are adjacent ones unless the phone jumped
+more than 300 m between them. Stops at one place on both sides of a recording
+pause (300 m), or within 80 m with at most five minutes of wandering between
+them and no real walk (as above, or CoreMotion on foot throughout), are one
+stop — unless joined they would hold travel. No stop holds travel: where two
+minutes or more of its points lie farther than 300 m from its centroid, it is
+cut there, and the parts that still last 180 s stay stops. After a pause of
+five minutes or more the stop lasts until the first point outside it when
+that point is within 300 m (iOS resumes outside its geofence). Moves fill the
+time between stops and share their end points with them. A gap of more than
+30 minutes ends a move unless the device travelled at 10 m/s or more
+meanwhile (a flight, a train through tunnels); a gap with travel (its ends
+more than 300 m apart) belongs to no segment. A stop keeps how far apart its
+points lie, `features.spreadM` (the distance between the point farthest from
+its centroid and the point farthest from that one).
 
 **Mapped** (`matchToWays`), per move (stops are not matched): a hidden Markov
 model over the ways near each point, solved with Viterbi.
@@ -3213,8 +3250,12 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   retries and on a 15-minute pass. It takes the next ready window — new data
   oldest first, then the backfill newest day first — with every queued window
   of the device that overlaps it, grows it to whole segments at both edges (at
-  most two days out; a segment reaching further back is cut at the window's
-  start), and in one transaction under a per-device advisory lock reads the
+  most two days out: a segment reaching further back is cut at the window's
+  start, and the part of one reaching beyond its end stays as a segment from
+  the window's end, so no time drops out of the timeline; both keep their
+  other values until a window over them works them out again — a stale
+  multi-day stop is replaced piece by piece as the windows over it run), and
+  in one transaction under a per-device advisory lock reads the
   points, visits, trips and overrides, runs the pipeline with the cached map
   data of one piece at a time, replaces the window's processed points and
   segments and finishes the queue rows (only those that did not change
@@ -3236,7 +3277,12 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   and records the versions in the same transaction: the backfill runs once
   per change and resumes after a restart, because the queue is a table.
   After a change to the inference alone, the days are worked out again from
-  the stored mapped points and the cached map data, without map matching.
+  the stored mapped points and the cached map data, without map matching: a
+  move whose points all have a stored mapping keeps it, and a move with a
+  point that was part of a stop before (stops are not matched: no way kind)
+  is matched with the cached map data, or waits for its tiles. So a change
+  that turns points of stops into moves (inferred version 3: stops that end
+  when the phone leaves) needs the inferred level alone.
 - `trail reprocess [--device <id>] [--from <iso> --to <iso>] [--from-level
   averaged|mapped|inferred]` queues the range in day windows, then processes
   them itself with the map data already cached; tiles still missing are left
@@ -3278,16 +3324,20 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
 `GET /api/v1/tracks?devices&from&to&level&maxPoints` (`locations:read`, ≤ 93
 days) answers `{ level, availableLevel, from, to, simplified, segments }`;
 a segment is `{ id, deviceId, kind, level, mode, modeInferred, modeUser,
-confidence, needsReview, startedAt, endedAt, distanceM, points }` with points
-`[lon, lat, epochSeconds]` (the way's shape between mapped points carries
-interpolated times). `raw`, `averaged` and `mapped` give pieces of track
-(`kind: "track"`, split at gaps over ten minutes); `inferred` gives the
-timeline's stops and moves, and points outside every segment as track. Each
+confidence, needsReview, startedAt, endedAt, distanceM, centroid, points }`
+with points `[lon, lat, epochSeconds]` (the way's shape between mapped points
+carries interpolated times). `raw`, `averaged` and `mapped` give pieces of
+track (`kind: "track"`, split at gaps over ten minutes; `centroid` null);
+`inferred` gives the timeline's stops and moves — a stop with its place
+(`centroid`) and its points, where the device went within it, served and
+simplified like a move's — and points outside every segment as track.
+Consecutive segments share their boundary point. Each
 device is simplified to `maxPoints` with one RDP tolerance over its pieces
 (their ends always kept); over 200 000 points a device's points are thinned
 first. `GET /api/v1/segments?devices&from&to&cursor&limit` (`locations:read`,
-≤ 93 days, keyset pages of up to 1000) is the timeline, with `pending` while
-points of the range wait for processing. `GET /api/v1/stats/modes?devices&from&to`
+≤ 93 days, keyset pages of up to 1000) is the timeline (a stop with
+`spreadM`, how far apart its points lie — derived from positions, so behind
+the same scope), with `pending` while points of the range wait for processing. `GET /api/v1/stats/modes?devices&from&to`
 (`history:read`, local days, ≤ 400) gives distance, time and segments per day,
 device and mode. `/api/v1/locations` (owned by the token pull request) stays
 raw-only, and `/stats/days` is not extended.
@@ -3298,15 +3348,24 @@ Transport; `?level=` in the URL and remembered in `localStorage`, else the
 account's preference, Transport by default) with a word on what is missing; at Transport the map draws stops
 and moves in the mode colours (`--mode-*` tokens, apart from the device
 colours, every mark ≥ 3:1) with a dashed outline for moves to review and a
-legend. A click on a segment — or "Details" in the day's timeline list next
-to the visits and trips — opens its dialog: the mode with its icon, "set by
-you", the confidence, average and top speed, distance and duration, "Was this
-…?" for moves to review, Change mode and Reset to detected. The quick
-toggle (Now: Walk · Bike · Car · Bus · Train · Tram · Metro · Other · Auto)
-is on the Me card of People, for the device that reported last — one's
-other devices keep the mode the inference finds for them — and on each
-device's page for that device. `segments` events refetch the tracks at
-their level, the timeline and the current mode.
+legend. Nobody vanishes from the map: a stop is a dot at its place and, when
+its points spread more than 25 m (the walk within a station), its path dotted
+in the stop colour; a discontinuity between consecutive segments of a device
+(boundary points more than 25 m apart: a recording gap) is bridged with a thin
+dashed connector; the legend names both when they are drawn. The day's
+timeline shows a quiet "No data · 42 min" row between two segments of a
+device more than a minute apart. A click on a segment — or "Details" in the
+day's timeline list next to the visits and trips — opens its dialog: the mode
+with its icon, "set by you", the confidence, average and top speed, distance
+and duration, "Was this …?" for moves to review, Change mode and Reset to
+detected; a stop's says how long it lasted, where, and, when it spread
+(`spreadM` of the timeline's segment over 25 m), how far one moved within it.
+Nothing changes at the other levels. The quick toggle (Now: Walk · Bike ·
+Car · Bus · Train · Tram · Metro · Other · Auto) is on the Me card of People,
+for the device that reported last — one's other devices keep the mode the
+inference finds for them — and on each device's page for that device.
+`segments` events refetch the tracks at their level, the timeline and the
+current mode.
 
 ### 17.7 Configuration
 

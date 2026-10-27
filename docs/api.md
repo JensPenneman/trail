@@ -245,11 +245,15 @@ areas without map data averaged — and `availableLevel` names the level every
 point reached, each segment's `level` its own. Points are `[lon, lat, t]`:
 WGS84 degrees and epoch seconds (the way's shape between two mapped points
 carries interpolated times). At `inferred` the segments are the timeline's
-stops and moves with their modes; at the other levels they are pieces of
-track, split where the recording paused for more than ten minutes.
+stops and moves with their modes — a stop with its place (`centroid`) and its
+points, where the device went within it — and consecutive segments share
+their boundary point, except across a recording gap; at the other levels they
+are pieces of track, split where the recording paused for more than ten
+minutes.
 
 `GET /api/v1/segments?from=…&to=…` is the timeline itself: stops (with their
-place, `centroid`, and duration) and moves (with `mode`, `modeInferred`,
+place, `centroid`, their duration and `spreadM`, how far apart their points
+lie) and moves (with `mode`, `modeInferred`,
 `modeUser`, `confidence`, `needsReview`, distance, duration and speeds), a
 page of up to `limit` (500 by default, at most 1000) at a time. `pending` is
 true while points of the range still wait for processing — ask again a little

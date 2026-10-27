@@ -21,6 +21,11 @@ options on a phone):
   it.
 - **Transport**: your day as stops and moves, each move coloured by how you
   travelled, with a legend. A dashed outline marks a move Trail is unsure of.
+  A stop is a dot where you were; when you moved around within it — from the
+  bike shed to the platform — that walk is drawn as a dotted line. Where your
+  phone recorded nothing for a while and you were somewhere else afterwards,
+  a thin dashed line joins the two places, so you never vanish from the map.
+  The legend explains both when they are on the map.
 
 Trail remembers your choice on each browser, and the address of the page
 keeps it, so a link shows the same view. When part of a track is not worked
@@ -53,6 +58,24 @@ it is gives the confidence. Below 60 % the move is marked as unsure; below
 40 % it is "Unknown". A journey that changes from walking to a vehicle and
 back (walk to the station, take the train, walk to the office) is cut into
 its parts; a pause of three minutes or more is a stop.
+
+## Stops
+
+A stop is a place you stayed: three minutes or more in one spot, or a visit
+your iPhone reported. A stop ends when you leave. Your iPhone reports a visit
+when you arrive and again when you leave; Trail puts the two together, and
+when the second report never comes, the stop still ends as you set off — it
+never swallows the journey after it. A short step outside (to the car and
+back) stays part of the stop; going out for lunch makes the morning and the
+afternoon two stops, with the walk between them.
+
+A walk between two stops — from the bike shed to the platform — is a move of
+its own, so the Timeline reads stop, walk, stop. When your phone recorded
+nothing for half an hour or more but was back where it had been, Trail counts
+that time as a stop, so the day has no hole. When it was somewhere else
+afterwards, the Timeline shows a quiet "No data" row with how long the phone
+was silent. A stop's details say how long you stayed and, when you moved
+around within it, how far.
 
 Without map data — when it is switched off on your server, or not fetched yet
 for an area — Trail decides on speed, motion and pauses alone and is less
