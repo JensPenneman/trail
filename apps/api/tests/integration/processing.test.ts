@@ -3,6 +3,7 @@ import { levelTracksResponseSchema } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { enqueueBackfill } from "../../src/processing/backfill";
+import { persistWindow } from "../../src/processing/persistWindow";
 import {
   enqueueWindow,
   type FromLevel,
@@ -12,9 +13,9 @@ import {
 } from "../../src/processing/processingQueue";
 import { processingVersions } from "../../src/processing/processingVersion";
 import { processWindow } from "../../src/processing/processWindow";
-import { planWindow } from "../../src/processing/runPipeline";
+import { planWindow, type WindowResult } from "../../src/processing/runPipeline";
 import { parseTileKey } from "../../src/processing/tileCover";
-import { loadVisits } from "../../src/processing/windowData";
+import { extendWindow, loadVisits } from "../../src/processing/windowData";
 import { type Agent, signUpWithCookie } from "../support/authFlows";
 import { commuteDays, rides } from "../support/commuteDays";
 import { createDevice } from "../support/deviceFlows";
@@ -790,5 +791,240 @@ describe("stops that end when the phone leaves", () => {
     await makeStale();
     await reprocessOldestFirst(device.id, start, end + 1, "inferred");
     await expectEveryRideAMove();
+  });
+});
+
+describe("the edges of a window", () => {
+  /** A device's segments with their versions, counts and the kept points of their own. */
+  const partsOf = async (deviceId: string) =>
+    (
+      await t.ctx.db.execute<{
+        kind: string;
+        version: number;
+        point_count: number;
+        own: number;
+        from: number;
+        to: number;
+      }>(sql`
+        SELECT s.kind, s.version, s.point_count, extract(epoch FROM s.started_at)::float8 AS from,
+          extract(epoch FROM s.ended_at)::float8 AS to,
+          (SELECT count(*)::int FROM processed_points p
+            WHERE p.device_id = s.device_id AND p.kept AND p.recorded_at >= s.started_at
+              AND p.recorded_at <= least(s.ended_at,
+                to_timestamp(coalesce((s.features->>'lastPointT')::float8,
+                  extract(epoch FROM s.ended_at))))) AS own
+        FROM segments s WHERE s.device_id = ${deviceId} ORDER BY s.started_at
+      `)
+    ).rows;
+
+  const keptOutside = async (deviceId: string) =>
+    (
+      await t.ctx.db.execute<{ count: number }>(sql`
+        SELECT count(*)::int AS count FROM processed_points p
+        WHERE p.device_id = ${deviceId} AND p.kept
+          AND NOT EXISTS (
+            SELECT 1 FROM segments s WHERE s.device_id = p.device_id
+              AND s.started_at <= p.recorded_at AND s.ended_at >= p.recorded_at
+          )
+      `)
+    ).rows[0]?.count;
+
+  it("cuts a stay it cannot take into parts that count their own, and works an old part out again", {
+    timeout: 120_000,
+  }, async () => {
+    const device = await newDevice("Sofa of an older version");
+    const start = morning - 30 * 86_400;
+    const days = stay([-600, -400], { startT: start, durationS: 5 * 86_400, intervalS: 360 });
+    await upload(device.token, days);
+    await t.ctx.processing.flush();
+    // As an older inference left it: one stop over the five days, counting more than it holds.
+    await t.ctx.db.execute(sql`
+      UPDATE segments SET version = ${processingVersions.inferred - 1}, point_count = 99999
+      WHERE device_id = ${device.id}
+    `);
+    // `trail reprocess --to` early in it: the window grows two days out, and no further.
+    const early = {
+      from: new Date((start + 6 * 3600) * 1000),
+      to: new Date((start + 12 * 3600) * 1000),
+    };
+    await enqueueWindow(t.ctx.db, {
+      deviceId: device.id,
+      ...early,
+      reason: "reprocess",
+      fromLevel: "inferred",
+    });
+    const taken = await takeDeviceWindows(t.ctx.db, device.id, early.from, early.to);
+    await processWindow(t.ctx.db, taken, {
+      config: t.ctx.processing.config,
+      mapping: true,
+      now: new Date(),
+    });
+    const parts = await partsOf(device.id);
+    expect(parts.map((part) => part.version)).toEqual([
+      processingVersions.inferred,
+      processingVersions.inferred - 1,
+    ]);
+    // The part beyond the window counts its own points, not the whole stay's …
+    for (const part of parts) expect(part.point_count).toBe(part.own);
+    // … and, of the older version, waits to be worked out again.
+    const queued = await t.ctx.db.execute<{ from_level: string }>(sql`
+      SELECT from_level FROM processing_queue
+      WHERE device_id = ${device.id} AND from_at = to_timestamp(${parts[1]?.from ?? 0})
+    `);
+    expect(queued.rows).toEqual([{ from_level: "inferred" }]);
+    await t.ctx.processing.flush();
+    const after = await partsOf(device.id);
+    expect(new Set(after.map((part) => part.version))).toEqual(
+      new Set([processingVersions.inferred]),
+    );
+    for (const part of after) expect(part.point_count).toBe(part.own);
+    expect(after[0]?.from).toBe(start);
+    expect(after.at(-1)?.to).toBe(lastT(days));
+    expect(await keptOutside(device.id)).toBe(0);
+  });
+
+  it("works all of a long stop a deletion touched out again, not only around it", {
+    timeout: 120_000,
+  }, async () => {
+    const device = await newDevice("Sofa with an hour deleted");
+    const start = morning - 50 * 86_400;
+    const days = stay([-600, -400], { startT: start, durationS: 4 * 86_400, intervalS: 360 });
+    await upload(device.token, days);
+    await t.ctx.processing.flush();
+    expect((await partsOf(device.id)).map((part) => part.kind)).toEqual(["stop"]);
+    const middle = start + 2 * 86_400;
+    await owner
+      .post(apiPaths.deleteLocations)
+      .set("Origin", testOrigin)
+      .send({ deviceId: device.id, from: iso(middle), to: iso(middle + 3600) })
+      .expect(200);
+    expect(await partsOf(device.id)).toEqual([]);
+    await t.ctx.processing.flush();
+    // The four days are covered again from their first point to their last.
+    const after = await partsOf(device.id);
+    expect(after[0]?.from).toBe(start);
+    expect(after.at(-1)?.to).toBe(lastT(days));
+    expect(await keptOutside(device.id)).toBe(0);
+  });
+
+  it("reaches back over a recording gap of more than half an hour, and only over one", async () => {
+    const reachedFor = async (name: string, gapS: number) => {
+      const device = await newDevice(name);
+      const start = morning - 60 * 86_400;
+      const home = stay([-600, -400], { startT: start, durationS: 3600, intervalS: 30 });
+      await upload(device.token, home);
+      await t.ctx.processing.flush();
+      const resumed = lastT(home) + gapS;
+      await upload(
+        device.token,
+        stay([-600, -400], { startT: resumed, durationS: 600, intervalS: 30 }),
+      );
+      const window = { from: new Date(resumed * 1000), to: new Date((resumed + 600) * 1000) };
+      const grown = await extendWindow(t.ctx.db, device.id, window, 1800);
+      return { start, resumed, from: grown.from.getTime() / 1000 };
+    };
+    // Ten minutes without a point: no gap to work out with both its ends.
+    const pause = await reachedFor("Paused", 600);
+    expect(pause.from).toBe(pause.resumed);
+    // Two hours: the window takes in the stop before them.
+    const night = await reachedFor("Slept", 7200);
+    expect(night.from).toBe(night.start);
+  });
+
+  it("keeps the levels of the point a window shares with a segment that began before it", async () => {
+    const device = await newDevice("Seam");
+    const start = morning - 70 * 86_400;
+    const points = stay([0, -2000], { startT: start, durationS: 600, intervalS: 60 });
+    await upload(device.token, points);
+    await t.ctx.db.execute(sql`DELETE FROM processing_queue WHERE device_id = ${device.id}`);
+    const seam = points[5];
+    if (seam === undefined) throw new Error("no seam");
+    // As the window before left them: a move up to the seam, its points matched to a road.
+    const leftBefore = async (version: number) => {
+      await t.ctx.db.execute(sql`DELETE FROM segments WHERE device_id = ${device.id}`);
+      await t.ctx.db.execute(sql`
+        INSERT INTO processed_points (device_id, recorded_at, kept, lat_avg, lon_avg, speed_avg,
+          lat_map, lon_map, way_id, way_kind, snap_m, path_map, version, processed_at)
+        SELECT device_id, recorded_at, true, lat, lon, 10, lat, lon, 1, 'road', 0, NULL, ${version}, now()
+        FROM locations WHERE device_id = ${device.id}
+        ON CONFLICT (device_id, recorded_at) DO UPDATE SET way_kind = 'road', version = ${version}
+      `);
+      await t.ctx.db.execute(sql`
+        INSERT INTO segments (device_id, started_at, ended_at, kind, distance_m, duration_s,
+          point_count, start_lat, start_lon, end_lat, end_lon, centroid_lat, centroid_lon, features, version)
+        VALUES (${device.id}, to_timestamp(${start}), to_timestamp(${seam.t}), 'move', 300,
+          ${seam.t - start}, 6, 51, 3.7, 51, 3.7, 51, 3.7, '{}'::jsonb, ${processingVersions.inferred})
+      `);
+    };
+    // A window from the seam on, where the inference finds a stop: its points are not matched.
+    const raw = points.slice(5);
+    const last = raw.at(-1) ?? seam;
+    const place = { lat: seam.lat, lon: seam.lon };
+    const result: WindowResult = {
+      averaged: raw.map((point) => ({
+        t: point.t,
+        kept: true,
+        lat: point.lat,
+        lon: point.lon,
+        speed: 0,
+        stationary: true,
+        accuracy: 10,
+      })),
+      mapped: raw.map((point) => ({
+        lat: point.lat,
+        lon: point.lon,
+        wayId: null,
+        wayKind: null,
+        snapM: 0,
+        path: null,
+      })),
+      segments: [
+        {
+          kind: "stop",
+          startT: seam.t,
+          endT: last.t,
+          first: 0,
+          last: raw.length - 1,
+          distanceM: 0,
+          pointCount: raw.length,
+          start: place,
+          end: place,
+          centroid: place,
+          modeInferred: null,
+          modeUser: null,
+          confidence: null,
+          averageSpeedMs: null,
+          maxSpeedMs: null,
+          features: { spreadM: 0, lastPointT: last.t },
+        },
+      ],
+      missingTiles: [],
+    };
+    const persist = () =>
+      t.ctx.db.transaction((tx) =>
+        persistWindow(tx, {
+          deviceId: device.id,
+          from: new Date(seam.t * 1000),
+          to: new Date(last.t * 1000),
+          raw,
+          result,
+          versions: processingVersions,
+          config: t.ctx.processing.config,
+        }),
+      );
+    const wayKinds = async () =>
+      (
+        await t.ctx.db.execute<{ way_kind: string | null }>(sql`
+          SELECT way_kind FROM processed_points WHERE device_id = ${device.id} ORDER BY recorded_at
+        `)
+      ).rows.map((row) => row.way_kind);
+    // The move was worked out with the seam: it keeps its road, the stop's other points are the stop's.
+    await leftBefore(processingVersions.mapped);
+    await persist();
+    expect(await wayKinds()).toEqual([...Array(6).fill("road"), ...Array(5).fill(null)]);
+    // Stored by another version of the mapped level, the seam is the window's like any point.
+    await leftBefore(processingVersions.mapped - 1);
+    await persist();
+    expect(await wayKinds()).toEqual([...Array(5).fill("road"), ...Array(6).fill(null)]);
   });
 });

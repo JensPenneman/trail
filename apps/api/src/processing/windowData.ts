@@ -16,18 +16,20 @@ const epoch = (value: string): number => Math.round(Date.parse(toIso(value)) / 1
  * move under each edge — and one that just touches it — is processed again as
  * a whole, at most two days out (a segment reaching further back is cut at the
  * window's start when the results are stored). When no segment meets the
- * window's start — a recording gap lies before it, the night the phone slept
- * through — it reaches back to the segment before the gap (or, with none yet,
- * to the point before it), so that the gap is worked out with both its ends:
- * a gap the phone lay still through is a stop, a visit's stop lasts until its
- * departure.
+ * window's start and a recording gap longer than `gapSplitS` lies before its
+ * first point — the night the phone slept through — it reaches back to the
+ * segment before the gap (or, with none yet, to the point before it), so that
+ * the gap is worked out with both its ends: a gap the phone lay still through
+ * is a stop, a visit's stop lasts until its departure. A shorter hole is no
+ * such gap: the window starts where it did.
  */
 export async function extendWindow(
   db: Executor,
   deviceId: string,
-  from: Date,
-  to: Date,
+  window: { from: Date; to: Date },
+  gapSplitS: number,
 ): Promise<{ from: Date; to: Date }> {
+  const { from, to } = window;
   const result = await db.execute<{ first: string | null; last: string | null }>(sql`
     SELECT min(started_at)::text AS first, max(ended_at)::text AS last
     FROM segments
@@ -46,19 +48,32 @@ export async function extendWindow(
     LIMIT 1
   `);
   const previous = before.rows[0];
-  // A segment ending where the window starts meets it; one ending earlier leaves a gap.
-  if (previous !== undefined && Date.parse(toIso(previous.ended_at)) < start.getTime()) {
-    first = new Date(Math.min(first.getTime(), Date.parse(toIso(previous.started_at))));
-  } else if (previous === undefined) {
-    const point = await db.execute<{ recorded_at: string }>(sql`
-      SELECT recorded_at::text FROM locations
-      WHERE device_id = ${deviceId} AND recorded_at < ${start.toISOString()}::timestamptz
-      ORDER BY recorded_at DESC
-      LIMIT 1
+  // A segment ending where the window starts meets it; one ending earlier leaves a hole.
+  const meets = previous !== undefined && Date.parse(toIso(previous.ended_at)) >= start.getTime();
+  if (!meets) {
+    const edges = await db.execute<{ before: string | null; after: string | null }>(sql`
+      SELECT
+        (SELECT recorded_at::text FROM locations
+          WHERE device_id = ${deviceId} AND recorded_at < ${start.toISOString()}::timestamptz
+          ORDER BY recorded_at DESC LIMIT 1) AS before,
+        (SELECT recorded_at::text FROM locations
+          WHERE device_id = ${deviceId} AND recorded_at >= ${start.toISOString()}::timestamptz
+          ORDER BY recorded_at LIMIT 1) AS after
     `);
-    const last = point.rows[0];
-    if (last !== undefined)
-      first = new Date(Math.min(first.getTime(), Date.parse(toIso(last.recorded_at))));
+    const edge = edges.rows[0];
+    // Where the hole begins: the end of the segment before it, else the point before it.
+    const holeFrom =
+      previous !== undefined
+        ? Date.parse(toIso(previous.ended_at))
+        : edge?.before === null || edge?.before === undefined
+          ? null
+          : Date.parse(toIso(edge.before));
+    const holeTo =
+      edge?.after === null || edge?.after === undefined ? null : Date.parse(toIso(edge.after));
+    if (holeFrom !== null && holeTo !== null && holeTo - holeFrom > gapSplitS * 1000) {
+      const reach = previous !== undefined ? Date.parse(toIso(previous.started_at)) : holeFrom;
+      first = new Date(Math.min(first.getTime(), reach));
+    }
   }
   return {
     from: new Date(

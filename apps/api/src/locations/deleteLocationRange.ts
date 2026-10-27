@@ -3,6 +3,7 @@ import { allowLongStatements } from "../db/allowLongStatements";
 import type { Database } from "../db/database";
 import { devices } from "../db/schema/devices";
 import { locations } from "../db/schema/locations";
+import { toIso } from "../db/toIso";
 import { rebuildHeatCells } from "../heatmap/rebuildHeatCells";
 import { localDate } from "../lib/localDate";
 import { lockDeviceProcessing } from "../processing/deviceLock";
@@ -22,9 +23,10 @@ const reprocessMarginMs = 30 * 60_000;
  * the point counter, the cached position, the affected days' statistics, and
  * the processed levels — the points' rows go with them, the segments that
  * touched the range are removed at once and the range is queued for
- * processing (`queueProcessing`), under the device's processing lock so no
- * window in progress writes them back. Returns the number of deleted records
- * of all kinds.
+ * processing (`queueProcessing`) together with all of those segments' time,
+ * so that a long stop reaching far beyond it leaves no hole, under the
+ * device's processing lock so no window in progress writes them back. Returns
+ * the number of deleted records of all kinds.
  */
 export async function deleteLocationRange(
   db: Database,
@@ -52,16 +54,23 @@ export async function deleteLocationRange(
     // Visits and trips feed the inference too (stops, Overland's trip mode).
     const touched = deletedPoints + (visits.rowCount ?? 0) + (trips.rowCount ?? 0);
     if (touched > 0) {
-      await tx.execute(sql`
-        DELETE FROM segments
-        WHERE device_id = ${deviceId}
-          AND started_at < ${to}::timestamptz AND ended_at > ${from}::timestamptz
+      const removed = await tx.execute<{ first: string | null; last: string | null }>(sql`
+        WITH removed AS (
+          DELETE FROM segments
+          WHERE device_id = ${deviceId}
+            AND started_at < ${to}::timestamptz AND ended_at > ${from}::timestamptz
+          RETURNING started_at, ended_at
+        )
+        SELECT min(started_at)::text AS first, max(ended_at)::text AS last FROM removed
       `);
       if (input.queueProcessing) {
+        const extent = removed.rows[0];
+        const first = extent?.first == null ? Infinity : Date.parse(toIso(extent.first));
+        const last = extent?.last == null ? -Infinity : Date.parse(toIso(extent.last));
         await enqueueWindow(tx, {
           deviceId,
-          from: new Date(input.from.getTime() - reprocessMarginMs),
-          to: new Date(input.to.getTime() + reprocessMarginMs),
+          from: new Date(Math.min(input.from.getTime() - reprocessMarginMs, first)),
+          to: new Date(Math.max(input.to.getTime() + reprocessMarginMs, last)),
           reason: "delete",
         });
       }
