@@ -50,6 +50,9 @@ assumptions, branch dependencies). In addition:
 
 ## 1. Navigation and the People home page
 
+**Done** (`feat/people-home`): `docs/architecture.md` §14 is the
+specification now; §1.4 lists what the pull request settled.
+
 ### 1.1 Tabs
 
 **People · Devices · Insights · Settings**. `/` is People. `/people`
@@ -82,6 +85,34 @@ bar has four items; desktop shows the same four in the header.
 
 `/people` → `/`; `/history`, `/explore` as today; `/settings/...` as §2.6.
 `isSignedInPath` follows.
+
+### 1.4 Settled in the pull request
+
+1. **Choosing someone.** A card's **Show on map** makes that person the
+   map's choice, alone, or — for someone on the map already — only moves the
+   camera to them; **Show everyone** (two or more sharing) toggles between
+   everyone and Me alone; the person selector in Map options stays for any
+   mix. Me alone is the default and is not remembered.
+2. **Without Me** the page has no Heat in the view switch, no level control
+   or legend, no timeline, corrections, visits or trips (not disabled: not
+   there). An address with `view=heat` and no Me shows Live and keeps its
+   `view`, so choosing Me again brings Heat back.
+3. **The Me card** holds Live's device cards and the upload feed while Me is
+   on the map; otherwise it shows a line (devices, how many live, the last
+   upload) and Show on map. History's and Heat's details stay above the
+   people, as on the Map page.
+4. **One's own shares** live in Settings › Sharing (Change, Stop, Confirm);
+   People has the line "You share with N people" (and how many wait for a
+   confirmation) leading there. The stop-share dialog is on the card of
+   someone one shares back with, next to "You share with <name>".
+5. **Coarse positions**: the camera frames an approximate or area share's
+   whole circle, not its centre, which would pass for an exact spot.
+6. **Tabs**: Insights was not on `main` yet, so the tab bar has People ·
+   Devices · Settings; `feat/insights` adds its item between Devices and
+   Settings.
+7. **Code**: the page is `pages/people/PeoplePage.tsx` (the Map page moved
+   there); the views and the map's controls stay in `pages/map`. "The sheet"
+   on phones is the page below the map, as on the Map page.
 
 ---
 

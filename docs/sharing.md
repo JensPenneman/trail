@@ -27,8 +27,9 @@ account on your server there are **public links**.
 4. Choose **Share**.
 
 If the address has no account yet, the share waits. Trail does not check that
-an address belongs to whoever signs up with it, so when someone does,
-**You share with** asks "*name* (*address*) joined Trail — confirm?": choose
+an address belongs to whoever signs up with it, so when someone does, People
+says so under its people ("1 waits for you to confirm"), and **Settings ›
+Sharing** asks "*name* (*address*) joined Trail — confirm?": choose
 **Confirm** if it is the person you meant, **Cancel** if not. Until you
 confirm they see nothing of you. An invitation to that address skips the
 question — an administrator sent it to that person on purpose — and
@@ -40,24 +41,29 @@ with **Share back** on their card.
 
 ## Change or stop
 
-Under **You share with** on People (or in Settings › Sharing) every share shows
-what it shares and until when, and when they last looked. **Change** sets a new
-duration from now or other devices, precision, history or details; **Stop** ends
-the share at once — from that moment they see nothing of you.
+People says with how many people you share; the line leads to **Settings ›
+Sharing**, where every share shows what it shares and until when, and when
+they last looked. **Change** sets a new duration from now or other devices,
+precision, history or details; **Stop** ends the share at once — from that
+moment they see nothing of you. Someone who shares with you too has **Stop**
+on their card as well.
 
 ## People who share with you
 
-Each person has a card: their devices, when the position was updated, what
-they are doing, battery and the distance from you, with **Show on map**,
-**Apple Maps**, **Google Maps** and **Share back**. **Show on map** opens the
-Map page with them; there, under *People* (in *Map options* on a phone), you
-choose whose data the map shows — yourself, any of them or everyone — in
-every view. A history they share shows as their track in History; without
-one the map shows only where they are now. **Hide** removes someone
-from your People page without asking them to stop; they still share, are told
-that you hid them, and you can show them again under *Hidden*. Hiding holds
-for the person: when they share with you again later, the new share starts
-hidden too, without a notice.
+**People**, Trail's home page, has the map and, beside it (below it on a
+phone), a card for you, **Me**, then one for each person who shares with you:
+their devices, when the position was updated, what they are doing, battery and
+the distance from you, with **Show on map**, **Apple Maps**, **Google Maps**
+and **Share back**. **Show on map** shows them alone on the map (pressed
+again, it brings the map back to them); **Show on map** on **Me** brings your
+own devices back, **Show everyone** shows everyone at once, and under *People*
+in the map's options (*Map options* on a phone) you choose any mix. A history
+they share shows as their track in History; without one the map shows only
+where they are now. Your own levels, timeline, visits, trips and heatmap are
+there while you are on the map. **Hide** removes someone from your People page
+without asking them to stop; they still share, are told that you hid them, and
+you can show them again under *Hidden*. Hiding holds for the person: when they
+share with you again later, the new share starts hidden too, without a notice.
 
 Approximate and area positions are the centre of a fixed cell around the
 person: the same spot every time, never their exact position. Each person has
