@@ -21,7 +21,8 @@ answers with a summary line.
 In the dashboard, open **Settings › API tokens › Create token**:
 
 1. Give it a name you will recognise, such as "Calendar agent".
-2. Choose the **Agent** template: every `:read` scope and `locations:write`,
+2. Choose the **Agent** template: every `:read` scope but `audit:read` (the
+   data access log is none of an agent's business) and `locations:write`,
    which lets the agent tell Trail how you travel right now. Leave out what
    the agent does not need: without `locations:read` it sees no positions at
    all (see [Tools](#tools)).
@@ -178,8 +179,8 @@ it, so the server was built against these threats:
   hidden, each device at the precision its owner chose — for approximate and
   area shares the centre of a cell, never the position — and battery and mode
   only where they share details. Their addresses and account and device ids
-  are left out. Like the People page, looking stamps the shares' last view,
-  which their owners see.
+  are left out. Like the People page, looking stamps the shares' last view
+  and counts in each person's data access log, which their owners see.
 - **Prompt injection.** Device names and people's display names reach the
   agent's model. They are never put into the server's instructions or a
   tool's description; in answers they are data fields, stripped of control,
@@ -201,6 +202,11 @@ it, so the server was built against these threats:
 - **Logs.** A call is logged with the tool's name, the outcome, the
   duration, the number of items and the size of the answer, and the
   token's id — never the arguments, the answer or the secret.
+- **The owner sees what the agent did.** Every call that succeeds counts in
+  the owner's data access log (`GET /api/v1/access-log`, see
+  [api.md](api.md#access-log)) as `mcp.<tool>` with the token, the devices it
+  resolved — a device named in the call is kept as its id — and the range,
+  never the answer; reading a resource counts as `mcp.resource.<name>`.
 
 The agent itself sees what the token allows, and an agent's model can be
 persuaded to pass on what it sees. Give the token the scopes and devices the

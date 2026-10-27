@@ -75,7 +75,9 @@ Optional, as in [deploy/.env.example](../deploy/.env.example):
 `MCP_ALLOWED_ORIGINS` (web pages of browser-based MCP clients, see
 [docs/mcp.md](mcp.md)),
 `ALERT_NTFY_URL`, `ALERT_NTFY_TOKEN`, `LIVE_WINDOW_MINUTES`,
-`STALE_AFTER_HOURS`, `SESSION_TTL_DAYS`, `DEFAULT_TIMEZONE`, `LOG_LEVEL`,
+`STALE_AFTER_HOURS`, `DATA_ACCESS_RETENTION_DAYS` (how long the data access
+log keeps who looked, 365 days by default), `SESSION_TTL_DAYS`,
+`DEFAULT_TIMEZONE`, `LOG_LEVEL`,
 `RATE_LIMIT_*`, `MAP_STYLE_LIGHT`, `MAP_STYLE_DARK`, `MAP_CONNECT_SRC`,
 `MAP_STYLE_SATELLITE` and `MAP_STYLE_SATELLITE_ATTRIBUTION`
 ([Satellite imagery](#satellite-imagery)) and the `PROCESSING_*` settings

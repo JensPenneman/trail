@@ -48,6 +48,16 @@ now or other devices, precision, history or details; **Stop** ends the share at
 once — from that moment they see nothing of you. Someone who shares with you
 too has **Stop** on their card as well.
 
+Trail also keeps a **data access log** for you: every time someone you share
+with looked at you — your position on their People page or map, your history,
+through their own app or agent — and how many of your new positions reached
+their open page, by the hour, with what they saw (which devices, how
+precisely, which days). It shows the person and the share, never their
+devices, browser or address. Your public links appear there too, with how
+often each was opened and by how many visitors, and so do your API tokens and
+your own sessions. The API has it now (`GET /api/v1/access-log`,
+[api.md](api.md#access-log)); the pages in Settings follow.
+
 ## People who share with you
 
 **People**, Trail's home page, has the map and, beside it (below it on a
@@ -65,6 +75,12 @@ without asking them to stop; they still share, are told that you hid them, and
 you can show them again under *Hidden*. Hiding holds for the person: when they
 share with you again later, the new share starts hidden too, without a notice.
 
+The people who share with you can see when and what you looked at: each look
+at their position or their history — in People, on the map, with your own API
+token or through your agent — and each of their new positions your open page
+received, by the hour, counts in their data access log, with your name. It
+never shows which device, browser, token or address you used.
+
 Approximate and area positions are the centre of a fixed cell around the
 person: the same spot every time, never their exact position. Each person has
 one grid for all their devices, shares and links, so putting several of them
@@ -80,7 +96,10 @@ link stops working (one hour to 30 days). The link's page then shows its
 address and code: copy it or let someone scan it, as it is shown only this
 once. Anyone with the address sees the page, which refreshes every 15 seconds
 and says when it expires. The list and each link's page show how often it was
-opened; **Turn off link** on its page ends it at once.
+opened; **Turn off link** on its page ends it at once. Your data access log
+counts the views per visitor and hour; a visitor is anonymous and only known
+by their network (the first three parts of an IPv4 address, or the first 48
+bits of an IPv6 one) and the kind of browser — never their address.
 
 The secret is the part of the address after `#`. Browsers keep that part to
 themselves: it never reaches your server's or any proxy's logs, and no other

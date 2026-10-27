@@ -352,6 +352,54 @@ cleaned), must not slow or fail requests, and must not grow without bound
   what that person looked at.
 - A card on Insights ("Who viewed you this month") links here.
 
+### 3.7 Settled in the pull request (feat/data-access-log)
+
+What the UI wave needs from §3.1–§3.5 as built (docs/architecture.md §8.7 has
+the whole of it; the shapes are `packages/contracts/src/dataAccess.ts`):
+
+- **Actors** are a union on `actor.kind`: `owner` (`sessionLabel`), `token`
+  (`tokenId`, `tokenName`), `person` (`userId`, `displayName`, `shareId`,
+  null when unknown) and `link` (`linkId`, `linkLabel`, `visitor` —
+  `{ key, ipCoarse, uaFamily }`, null for the visitors counted together).
+  Names are the current ones while the actor exists, else the ones they had.
+- **A person's own credentials are not recorded**: a recipient's session,
+  token, browser and address stay out of the owner's log (they are the
+  recipient's); `actor = the principal` means the person, whichever
+  credential they used. Their reads through the MCP server are `people`
+  rows too, with the action `mcp.get_people`.
+- **Live** rows are per recipient, device and hour (`resource.deviceIds`),
+  not per recipient and owner only.
+- **Bounded growth** needs more than hour rows: beyond 50 distinct rows of
+  one action by one actor in an hour, the rest folds into one row with
+  `resource: { folded: true }`; beyond 50 visitors of a link in an hour, the
+  rest are counted on one row with `visitor: null`. Show them as "… and N
+  more".
+- **Order and paging**: newest hour first, within an hour by id; the cursor
+  is keyed on `(bucket_start, id)`, which never change once a row exists. The
+  UI may sort an hour's rows by `lastAt` itself.
+- **Indexes**: the unique key `(owner_user_id, bucket_start, dedupe_key)`
+  serves the list, the summary and the retention (PostgreSQL 18 skips through
+  it per owner), so there is no `(owner_user_id, last_at)` index; the actor
+  indexes are on `bucket_start` too. Nothing indexed changes when a row is
+  counted again, and `fillfactor = 70` keeps those updates heap-only.
+- **Instrumentation**: `defineRoute`'s spec takes `access: false |
+  { kind?, people? }`; what only the handler knows comes with its result:
+  `owners` (the people routes; a person's track names the share it was read
+  through) or `resource` (a new share's or link's id). MCP tools return
+  `access` with their answer (the devices they resolved — an agent may name a
+  device — or `get_people`'s owners) instead of a `describeAccess(args)`.
+- **Actions** outside v1 and MCP: `dashboard.tracks`, `dashboard.heatmap`,
+  `dashboard.statsDays`, `dashboard.statsActivity`, `dashboard.visits`,
+  `dashboard.trips`, `dashboard.locations`, `dashboard.export`,
+  `dashboard.deleteLocations`, `dashboard.deleteDevice`,
+  `dashboard.createApiToken`, `dashboard.updateApiToken`,
+  `dashboard.rollApiToken`, `dashboard.revokeApiToken`; `mcp.resource.devices`,
+  `mcp.resource.device_location`; `link.view`; `live.position`.
+- **Summary**: `people[].actions`, `tokens[].actions` (with `api` and `mcp`
+  counts) and `links[].visitors` carry what the sentences of §3.6 need;
+  `own` holds the owner's sessions by browser. `audit:read` is not limited
+  by a token's devices.
+
 ---
 
 ## 4. Insights

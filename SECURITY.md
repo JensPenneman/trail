@@ -94,6 +94,17 @@ yourself: location data is personal data.
   default log level; every query is scoped to the signed-in person's devices,
   or to the devices an API token is limited to, and to what other people share
   with them (below).
+- **Data access log** ([docs/api.md](docs/api.md#access-log)): every read of
+  a person's data and every change to it or to who may see it — by their own
+  browser, their API tokens and agents, the people they share with and the
+  visitors of their links — is counted for that person per hour, with what
+  was read, and only they can read it (`audit:read`; no administrator). It
+  never holds a coordinate, a secret, or anything of a recipient's sessions,
+  tokens, browser or address; of a link visitor only the network (/24 or
+  /48) and the kind of browser, which database checks enforce as well. It is
+  written in the background, so it never slows or fails a request, folds
+  floods of distinct reads into one row an hour, and is kept a year by
+  default (`DATA_ACCESS_RETENTION_DAYS`).
 - **Container**: runs as an unprivileged user on a read-only root file system
   with all Linux capabilities dropped and `no-new-privileges`; the database
   sits on an internal network without a published port; the app receives only
@@ -117,13 +128,17 @@ is opt-in, one way and limited to what its owner picks.
   centre of a cell about 560 m or 5.6 km across instead of the position, with
   no altitude or course (and no speed for `area`); history is only ever shared
   precisely. They see your name and address, and you see when they last
-  looked. They never see your device tokens or keys, settings, alerts, upload
+  looked — and, in your data access log, every look by the hour with what
+  they saw, without their devices, browser or address (the sharing guide
+  tells them so). They never see your device tokens or keys, settings, alerts, upload
   logs, older points, exports, other devices or anything of other people.
 - **A holder of a public link** sees the label (“Shared location” unless you
   write one), the names of the devices it names, their positions at its
   precision, optionally their route of up to 7 days (precise links only) and
   battery and activity — never your name, address, account or device ids. A
-  link runs at least an hour and at most 30 days. The link secret lives in the fragment of
+  link runs at least an hour and at most 30 days. Your data access log
+  counts its views per visitor and hour, a visitor being a network (/24 or
+  /48) and a kind of browser: never their address. The link secret lives in the fragment of
   the address (`/s#trls_…`), which browsers never send to a server, a proxy
   or as a referrer; the page sends it in a request header that Trail never
   logs. It is stored as a hash and shown once, and the page is not indexed.

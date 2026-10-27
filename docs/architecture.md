@@ -139,6 +139,7 @@ All configuration is environment variables, validated at boot with zod
 | `SESSION_TTL_DAYS` | `30` | Sliding session lifetime |
 | `LIVE_WINDOW_MINUTES` | `15` | "live" status window |
 | `STALE_AFTER_HOURS` | `12` | "stale" status + silent-device alert threshold; also how old the position of a live-only share may be (§8.5) |
+| `DATA_ACCESS_RETENTION_DAYS` | `365` | How long the data access log keeps its hours (1–3650 days; §8.7, §10): a log, not location data, so it is pruned |
 | `ALERT_NTFY_URL` | empty | ntfy topic URL for silent/recovered device alerts; empty = off |
 | `ALERT_NTFY_TOKEN` | empty | Optional ntfy access token |
 | `DEFAULT_TIMEZONE` | `Europe/Brussels` | Time zone of new accounts |
@@ -314,6 +315,31 @@ PK `(user_id, hidden_user_id)`. A share bound to that person starts hidden.
 keeps: `name` (PK), `secret` (bytea), `created_at`. `share-grid` (32 random
 bytes) keys the offset of each owner's sharing grid; it must never change, or
 a recipient who saw old and new cells could intersect them.
+`data-access-visitor` (32 random bytes) keys the visitor keys of the data
+access log (§8.7), which stay the same for a visitor as long as it does.
+
+**data_access_events** — the data access log (§8.7): who read or changed
+whose data, one row per owner, UTC hour and access. `id` (bigint identity),
+`owner_user_id` → users (cascade), `bucket_start` (the hour, checked to be
+one), `first_at`, `last_at`, `count` (> 0), `actor_kind`
+(`owner|person|link|token`), `channel` (`web|api|mcp|people|live|link`),
+`actor_user_id`, `actor_session_id`, `actor_token_id`, `actor_share_id`,
+`actor_link_id` (no foreign keys: the row outlives them), `actor_label` (the
+name at the time, ≤ 120 characters), `visitor_key`, `ip_coarse` (text, an
+IPv4 /24 or IPv6 /48), `ua_family` (link visitors only), `action`, `access`
+(`read|write|export`), `resource` (jsonb object, no coordinates), `status`
+(smallint), `dedupe_key` (43 characters). Unique `(owner_user_id,
+bucket_start, dedupe_key)` — the upsert's key and the index of the owner's
+log, by hour, for the list, the summary and the retention (PostgreSQL 18's
+skip scan goes through it owner by owner) — and partial indexes
+`(actor_token_id, bucket_start DESC)`, `(actor_link_id, …)` and
+`(actor_share_id, …)` for one actor's rows. Checks tie each kind of actor to
+its channels and its one reference, keep the network fields to link
+visitors and to /24 and /48 networks, and keep a person's row free of
+session and token ids. `fillfactor = 70` (set by the migration by hand):
+counting a row again stays a heap-only update. Kept
+`DATA_ACCESS_RETENTION_DAYS` (365) days; it is a log, not recorded location
+data.
 
 ## 6. Overland ingest
 
@@ -712,7 +738,8 @@ token's `deviceIds`, which therefore answers 404 like a foreign one.
 
 **Scopes** (`packages/contracts/src/apiScope.ts`): `profile:read`,
 `devices:read`, `devices:write`, `locations:read`, `locations:write`,
-`history:read`, `people:read`, `shares:read`, `shares:write`. A route lists the
+`history:read`, `people:read`, `shares:read`, `shares:write`, `audit:read`
+(the data access log, §8.7). A route lists the
 scopes that grant access; any one of them is enough, all of them with
 `all: true`. A failure answers 403 `insufficient_scope`, naming the missing
 scopes in the message and in `WWW-Authenticate: Bearer realm="trail",
@@ -739,7 +766,8 @@ inject another verifier through `createTestContext({ apiTokens })`
 `apps/api/src/v1/routes/<feature>/<operationId>.ts`. Each feature lists its
 operations in reference order in `routes/<feature>/<feature>Routes.ts`
 (`profileRoutes`, `tokenRoutes`, `deviceRoutes`, `locationRoutes`,
-`transportRoutes`, `historyRoutes`, `insightsRoutes`, `sharingRoutes`), and `apps/api/src/v1/v1Routes.ts`
+`transportRoutes`, `historyRoutes`, `insightsRoutes`, `sharingRoutes`,
+`accessLogRoutes`), and `apps/api/src/v1/v1Routes.ts`
 aggregates the groups — one line per feature — plus the document's own route.
 The spec:
 
@@ -753,13 +781,17 @@ The spec:
 | `request` | optional zod schemas: `params` (one key per path parameter; a value that fails it answers 404 — it names nothing), `query` (values are strings: coerce in the schema; failure 400 `validation_failed` with `fields`), `body` (JSON; not JSON 415, invalid 400) |
 | `responses` | the body schema of each success status (`200`, `201`, `202`, `204`); `null` for no body |
 | `errors` | error statuses beyond the implied ones (401, 403 and 503 for scoped routes; 400, 401 and 503 for token routes; 404 with path parameters, 400 with a query or body, 413 and 415 with a body, 429 and 500 always), e.g. `[409]` |
+| `access` | how a scoped route counts in the data access log (§8.7): left out, every success is recorded for the caller with the operationId and what the validated input names, `read` for GET and `write` otherwise; `{ kind }` names another kind (`export`); `{ people: true }` marks an answer with other people's data, whose handler names their owners; `false` records nothing (the log's own routes). Not allowed on public and token routes, which are never recorded |
 
 The handler receives `{ ctx, auth, params, query, body, req }`, typed from the
 spec — `auth` is non-null on scoped routes and a `TokenPrincipal` on token
 routes, absent parts are `undefined` — and
-returns `{ status, body, headers? }` with a status the spec lists; the type
-checker enforces both. The body goes out through that status's schema, so
-fields the schema does not name are dropped and a mismatch is a logged 500.
+returns `{ status, body, headers? }` with a status the spec lists — and, for
+the data access log, `owners` (required with `access: { people: true }`)
+or `resource` (what else the answer names, such as a new share's id) — the
+type checker enforces all of it. The body goes out through that status's
+schema, so fields the schema does not name are dropped and a mismatch is a
+logged 500; after it, the access is recorded (§8.7).
 Errors are thrown as `HttpError`s. Streaming responses (SSE) are not supported
 yet: extend `defineRoute` rather than mounting around the registry. Mistakes in
 a spec (path parameters without params keys, a duplicate operationId or
@@ -907,11 +939,13 @@ The credentials of `/api/v1` for scripts, apps and agents: created in Settings
   through `DeviceAccess`. `devices:write` renames a device, switches its alerts
   and queues presets, never its credentials or its deletion, which stay with
   the session. The dialog's templates (`apiTokenTemplates`): Read-only = every
-  `:read` scope, Agent = those and `locations:write`, Full access = all.
+  `:read` scope, Agent = those but `audit:read` (an agent has no business
+  with who looked at the account) and `locations:write`, Full access = all.
   `GET /api/v1/tokens/verify` (`auth: "token"`) lets a token describe itself.
 - **Audit**: `API token created`, `changed`, `rolled` and `revoked` at info,
   with the token's and the user's id (and the scopes or the changed fields),
-  never the secret.
+  never the secret; the same four count in the owner's data access log
+  (§8.7), and so does every call a token makes, by token.
 - **Retention**: revoked and expired tokens stay listed for 30 days, then the
   hourly prune removes them (§10); deleting the account removes all of them.
 ### 8.5 Sharing (People)
@@ -1034,7 +1068,9 @@ id (`deviceIds: null` is 400), and changes or confirms only shares that show
 nothing but its devices, before and after the change (403 `forbidden`);
 stopping is always allowed. Reading people stamps the shares'
 `last_viewed_at`, at most once a minute and after the response; the owner sees
-it. Accepted: starting a share tells the owner whether the address has an
+it, and every look counts in the owner's data access log (§8.7): the person,
+the share, the devices shown and the range of a track, never the
+recipient's session, token, browser or address. Accepted: starting a share tells the owner whether the address has an
 account, and its name — on a server whose accounts come from the allow-list
 and invitations, there is little to learn from it.
 
@@ -1056,9 +1092,10 @@ expiry, precision, history and the devices it names: name, a per-link key (an
 HMAC, never the device id), the projected position, details, and for history
 links the simplified track (≤ 2 000 points per device, built at most every
 30 s per link). It never names the owner's account, address or device ids. A
-request counts as a view at most once a minute per link. `/s` and
-`/api/public/share` send `Referrer-Policy: no-referrer` and `X-Robots-Tag:
-noindex, nofollow`.
+request counts as a view at most once a minute per link, and in the owner's
+data access log per visitor and hour, a visitor being a network (/24 or /48)
+and a kind of browser (§8.7). `/s` and `/api/public/share` send
+`Referrer-Policy: no-referrer` and `X-Robots-Tag: noindex, nofollow`.
 
 **Lifecycle.** Stopped and ended shares and links are pruned 30 days later
 (§10); `hidden_people` rows stay until the person is shown again or one of the
@@ -1137,7 +1174,10 @@ typed), the `scopes` it needs (all of them), zod input and output schemas
 (`packages/contracts/src/mcp.ts`: no component ids, so no `$ref`s; instants,
 dates and ids described by `format` rather than their long patterns),
 `access` (`read` or `write`) and `run(input, context)`, which returns
-`{ result, text, items?, truncated? }`. `createTrailMcpServer` registers only
+`{ result, text, items?, truncated?, access }` — `access` says what the call
+read or changed, for the data access log: the devices it resolved and the
+range or day, or for `get_people` the owners shown. `createTrailMcpServer`
+registers only
 the tools whose scopes the token holds, in the order of `mcpTools` (stable,
 so clients can cache the list); a tool it may not use answers like an
 unknown one (JSON-RPC `-32602`). A call goes through `runMcpWork`: the scopes
@@ -1148,7 +1188,9 @@ the answer through the output schema (whatever it does not name is
 dropped; a mismatch is logged with codes and paths only and answers a
 generic failure); a log line at info with the tool, outcome,
 duration, items, `resultBytes` and the token's id — never arguments, results
-or the secret. Failures become tool results with `isError: true`: an
+or the secret; and the access, counted in the data access log (§8.7) as
+`mcp.<tool>` (resources as `mcp.resource.<name>`; listings are not counted).
+Failures become tool results with `isError: true` and count nowhere: an
 `HttpError` below 500 passes its message (static texts written for the
 agent), a statement timeout says to ask for less, anything else is logged
 and answers a generic message.
@@ -1253,6 +1295,162 @@ coordinates: times, distances, speeds, way kinds and segment ids). Contracts:
   and instants). A request covering three years reads at most the segments
   of those years and builds about 26 000 local hours in some 30 ms.
 
+### 8.8 Data access log
+
+Every read of a person's data, and every change to it or to who may see it,
+is recorded for that person: who, when, through which channel and which
+data. Only they can read it (`audit:read`, below). Code in
+`apps/api/src/dataAccess/`; the guide for API users is
+[docs/api.md](api.md#access-log). It is not the request log of §12, which
+pino-http writes for the operator.
+
+**Rows** (`data_access_events`, §5). A row counts one access — the same
+actor doing the same thing to the same data — within one UTC hour:
+`count`, `first_at`, `last_at`. Actors and their channels, as the table's
+check has them:
+
+| `actor_kind` | `channel` | Actor | Reference kept |
+|---|---|---|---|
+| `owner` | `web` | the owner's own browser session | `actor_session_id`, label = the browser ("Safari on iPhone") |
+| `token` | `api`, `mcp` | one of the owner's API tokens, directly or through the MCP server | `actor_token_id`, label = its name |
+| `person` | `people`, `live` | someone the owner shares with: looking (People, their token, their agent), or their open page receiving a position | `actor_user_id`, `actor_share_id`, label = their display name |
+| `link` | `link` | a visitor of a public link | `actor_link_id`, label = the link's label; `visitor_key`, `ip_coarse`, `ua_family` |
+
+References have no foreign keys: sessions, tokens, shares, links and
+accounts end long before their rows do, and `actor_label` keeps the name
+they had (cleaned like the MCP server's names, at most 80 characters).
+`action` is the server's name for the access — a v1 `operationId`,
+`dashboard.<route>`, `mcp.<tool>` or `mcp.resource.<name>`, `link.view`,
+`live.position` — `access` is `read`, `write` or `export`, `status` the
+answer's, and `resource` says which data in the server's words
+(`dataAccessResourceSchema`: devices, a range, an instant, a day, hours, a
+level, precision, mode, export format, days of history, a segment, share,
+link or token, and `folded`), canonical — keys and devices sorted — and
+checked against the contract before it is kept. `dedupe_key` is the SHA-256
+(base64url) of the actor's identity, the channel, action, kind and
+resource; `(owner_user_id, bucket_start, dedupe_key)` is unique.
+
+**Recording.** `ctx.dataAccess.record(access)` (`DataAccessRecorder`) only
+touches memory: accesses are counted per owner, hour and dedupe key, and two
+seconds after the first — at once when 500 distinct rows wait — they go into
+the table in one statement per 500 rows: `INSERT … SELECT … FROM unnest(…)
+ON CONFLICT … DO UPDATE SET count = count + excluded.count, first_at =
+least(…), last_at = greatest(…)`, the newest label and status. Rows of an
+account deleted meanwhile are left out (`WHERE EXISTS`). When the database
+refuses a statement's data, its rows go in one by one and only the refused
+one is dropped and logged; any other failure leaves the rows for the next
+write, a row at most three times; at most 10 000 rows wait in memory, more
+are dropped and logged. The shutdown writes what is waiting (§12). `record`
+never throws and never waits, so the log cannot slow or fail a request.
+A link visitor's key needs the `data-access-visitor` key of
+`server_secrets`, which the write loads (once) rather than the request.
+
+**Bounded.** Hour rows bound repetition but not variety: a caller could ask
+for a new range every second. So per owner, hour, actor and action at most
+50 distinct rows are kept; further accesses of that action are counted on
+one row whose resource is `{ "folded": true }`. Per link and hour at most 50
+distinct visitors are kept; further ones are counted together on a row
+without a visitor (no key, network or browser). Nobody — a recipient, a
+script, a botnet opening a link — can grow somebody's log faster than that,
+and the retention ends every row (`DATA_ACCESS_RETENTION_DAYS`, 365 days by
+default; §10). The table has `fillfactor = 70`, so counting a row again is a
+heap-only update.
+
+**What is recorded, and where.**
+
+- **v1** (`defineRoute`, §8.3): after `send`, every answer of a scoped route
+  with a success status, for the caller's own account — a session on `web`,
+  a token on `api` — with the operationId as the action, `read` for GET and
+  `write` otherwise (or the spec's `access.kind`), and the resource from the
+  validated path, query and body (`inputResource`: `device`, `devices`,
+  `deviceId`, `deviceIds`, `from` and `to` (instants in UTC, local days as
+  they are), `at`, `date`, `hours`, `level`,
+  `precision`, `mode`, `format`, `historyDays`, and the path's `{id}` as a
+  device, segment, share or link, `accessPathId`) plus what the handler's
+  result names (`resource`: a new share's or link's id). The people routes
+  (`access: { people: true }`) return `owners` instead: one access for each
+  person shown, on `people`, the caller recorded as that person and the
+  share they looked through — never which session or token they used, their
+  browser or their address. `access: false` leaves a route out (the access
+  log's own); token routes (`tokens/verify`) and public ones (the OpenAPI
+  document) record nothing; nor does a refusal, an invalid request or a
+  failure, which throw before.
+- **The dashboard's private API** (`recordDashboardAccess`, after the
+  answer): tracks (level `raw`), the heatmap (its devices; the viewport is a
+  place and is never kept), daily statistics, activity, visits, trips, raw
+  points (the device; the page cursor stays out), the export (`export`, as
+  the download starts), deleting a period or a device, and creating,
+  changing, rolling and revoking an API token. Not the device list, the
+  configuration, health, the session or the other settings.
+- **MCP** (`runMcpWork`, §8.6): every tool call and resource read that
+  succeeds, as `mcp.<tool>` or `mcp.resource.devices` /
+  `mcp.resource.device_location`, on `mcp` with the token. A tool's answer
+  says what it read (`ToolAnswer.access`): the devices it resolved — an id,
+  also when the agent named the device — and the range or day, or for
+  `get_people` the owners (on `people`, like the people routes). Resource
+  listings name only devices and are not recorded.
+- **Live** (`publishPeopleLater`, §9): each `person` event, per recipient,
+  device and hour, `count` = the positions pushed.
+- **Public links** (`loadPublicShare`, §8.5): each view of a working link,
+  per visitor and hour: `ip_coarse` = `coarseNetwork(req.ip)` — the IPv4
+  /24 (`81.82.83.0/24`) or IPv6 /48 (`2001:db8:1234::/48`), an IPv4-mapped
+  address read as IPv4, null for anything else — `ua_family` =
+  `userAgentFamily` ("iPhone · Safari", from the session labels' tables),
+  and `visitor_key` = HMAC-SHA256 under the `data-access-visitor` key of the
+  owner, the network and the family, cut to 16 hex digits. The full address
+  never leaves `loadPublicShare`. Ended links record nothing.
+
+**Reading** (`apps/api/src/v1/routes/accessLog/`, group `accessLogRoutes`,
+tag Access log; both `audit:read`, which every session holds and the
+Read-only template includes, the Agent template not):
+
+| Operation | Notes |
+|---|---|
+| `GET /api/v1/access-log` | the owner's rows, newest hour first (within an hour by id), `limit` 1–200 (50), keyset `cursor` on `(bucket_start, id)`, which never change once a row exists, so a row counted again while someone pages stays where it was; filters `from`, `to` (the hours they touch), `actor` and `channel` (comma-separated kinds), `action` |
+| `GET /api/v1/access-log/summary` | `days` 7, 30 (default) or 90 local days, today included, in the account's time zone: totals per actor kind, channel and kind of access; a dense series per day (an hour counts on the local day it starts in); the people (with their actions), links (with distinct visitor keys) and tokens (api and mcp apart, with their actions), each with events and last seen, at most 20 each; the owner's own sessions apart |
+
+Every query filters by the principal's user: no route reads another
+account's log, an administrator's neither, and the log is not limited by a
+token's devices (it is the account's, like shares). Actor names are the
+current ones while the actor exists — the token's name, the person's
+display name, the link's label, the session's user agent — and the
+snapshot otherwise. Reading the log is not recorded (`access: false`). The
+pages (Settings › Privacy, a later change) hide the owner's own sessions
+unless the `showOwnActivity` preference says otherwise; the API returns
+them unless the `actor` filter leaves them out.
+
+**Threat model.**
+
+- *Who learns what.* The owner learns which person looked, when (to the
+  hour, with the first and last time), through which share, at what
+  (devices, a range, a precision) and how often — what the sharing guide
+  tells recipients (docs/sharing.md). They never learn a recipient's
+  sessions, tokens, browser or address: `personActor` keeps none of it, and
+  the table's check refuses a person row with a session or token id. Of a
+  link visitor, who is anonymous anyway, the owner learns the network (/24,
+  /48) and the kind of browser, never the address: the check refuses any
+  network address but a /24 or /48, and refuses one on any row but a link
+  visitor's. Two visitors of one network and browser are one visitor.
+- *Readable by the owner alone.* Owner-scoped queries, no administrator
+  path, `audit:read` for tokens (not in the Agent template); a recipient's
+  own log holds nothing of what they read of others.
+- *No coordinates, no secrets.* Resources are built from validated input
+  by whitelist and checked against a contract without a place in it (no
+  bounding box, no position); token and link secrets, device tokens and
+  cookies never reach a row (`actor_session_id` is the session's id, the
+  SHA-256 of its cookie, as in `sessions`). The visitor key is made of the
+  coarse values only, so even the server's key turns it into nothing the row
+  does not show.
+- *Not forgeable.* Actions are the server's constants, resources come from
+  validated input and the server's own results, actors from the principal;
+  the only text from people is a name (a token's, a display name, a link's
+  label), cleaned and cut. A caller cannot write a row for another account:
+  the owner is the principal, the owner of what was shown, or the link's.
+- *Not slowing or failing requests.* `record` is a few hashes and a map
+  entry; the write is batched, in the background, and its errors are logged.
+- *Bounded growth.* Hour rows, the fold limits per actor and per link, the
+  in-memory limit, the retention, and the cascade with the account.
+
 ## 9. Live updates (SSE)
 
 `GET /api/events` — `text/event-stream`, `Cache-Control: no-store`,
@@ -1276,7 +1474,8 @@ mode.
 Sharing (§8.5) adds two events. `person` (`{ userId, device }`, the device as
 the stream user's share shows it) follows every upload of a shared device, to
 each recipient with an open stream whose share is in force, covers the device
-and is not hidden. An owner's shares come from a per-process cache
+and is not hidden; the owner's data access log counts them per recipient,
+device and hour (`live.position`, §8.7). An owner's shares come from a per-process cache
 (`SharingState`, one minute) that every change to them clears, and expiry is
 checked whenever it is used, so a stopped, hidden or ended share receives
 nothing from the next upload on. `share` (`{ shareId, userId, change }`) tells
@@ -1300,8 +1499,12 @@ events and refetches people and shares on `share` events.
   stamp.
 - hourly — delete expired sessions, ceremonies, links, invites (used/expired
   > 30 days), API tokens (revoked/expired > 30 days) and stopped or ended
-  shares and share links (> 30 days); prune `ingest_log` (> 90 d). Recorded
-  data — locations, visits, trips, events, rejects — is never pruned.
+  shares and share links (> 30 days); prune `ingest_log` (> 90 d) and the
+  hours of the data access log older than `DATA_ACCESS_RETENTION_DAYS` (365 d;
+  a log, not recorded data). Recorded data — locations, visits, trips,
+  events, rejects — is never pruned.
+- every 2 s while accesses wait — the data access log's write (§8.7), in one
+  statement per 500 rows; a failed write is tried again with the next.
 - debounced (10 s) — daily-stats recomputation per touched (device, day), in
   the owner's time zone at run time; a failed pass is retried with the next.
   Changing the time zone (`PATCH /api/me`) rebuilds every day of the user's
@@ -1413,7 +1616,8 @@ invalid value).
   table, column), because its message can quote the refused value.
 - Graceful shutdown (SIGTERM/SIGINT): stop accepting, end SSE streams, stop
   jobs, let in-flight requests finish for up to 10 s (then cut them), flush
-  pending daily statistics and background work (≤ 2 s each), close the pool.
+  pending daily statistics and data access rows, then background work, and
+  the data access rows it recorded (≤ 2 s each), close the pool.
   A hung shutdown exits after 13 s, so the container's stop grace period
   should be at least 15 s.
 - Tokens (device, session, invite, link, API, share link) are stored hashed
@@ -1432,6 +1636,16 @@ invalid value).
   can yield coordinates (a share, a link, a confirmation) needs
   `locations:read`, and a stopped, ended or hidden share shows nothing from
   that moment on (§8.5, §9).
+- The data access log (§8.7) tells an owner who read their data — their
+  browser, their tokens and agents, the people they share with, their links'
+  visitors — and is theirs alone: owner-scoped queries, `audit:read` for
+  tokens, no administrator path. It keeps no coordinates (resources are built
+  by whitelist and checked against a contract without places), no secrets, no
+  recipient's session, token, browser or address, and of a link visitor only
+  the /24 or /48 network and the kind of browser, which the table's checks
+  enforce too. Recording is in memory and written in the background, so it
+  can neither slow nor fail a request, and hour rows, fold limits and the
+  retention bound it.
 - The container runs as the unprivileged `node` user on a read-only root
   filesystem (`tmpfs /tmp`), `no-new-privileges`, all capabilities dropped.
 - Postgres is not published outside the Docker network in production.
@@ -1894,6 +2108,19 @@ which are merged by hand; majors wait for a person, security ones too.
   offset, the nearest point, ranges and caps, the Origin rule, the
   instructions, the tool runner's refusals, failures, schema check and log
   line) and `tools/list` for every scope over the SDK's in-memory transport.
+  `dataAccess.test.ts` holds the data access log's pure parts: the recorder
+  on an in-memory store (one row per hour and access, canonical resources,
+  the write after two seconds or at 500 rows, statements of 500, retries and
+  their limit, a refused row left out alone, malformed ids, the memory
+  limit, folding per actor and action and per link's visitors, the hour
+  resetting the limits, no recipient credentials, cleaned names), the dedupe
+  key, networks of IPv4, IPv6, mapped and zoned addresses (and a property
+  test that the network always holds its address and nothing finer), the
+  kinds of browser, visitor keys (stable, per owner, made of the coarse
+  values only, useless without the server's key), resources from validated
+  input (never a viewport or a name), and that every v1 path with an `{id}`
+  names what it stands for; `defineRoute.test.ts` and `mcpServer.test.ts`
+  what the route registry and the tool runner record, and when not.
 - `apps/api/tests/integration` — supertest against the real app and the
   `trail_test` database (`TEST_DATABASE_URL`), including passkey ceremonies
   with a software authenticator (ES256, `none` attestation, CBOR via
@@ -1938,8 +2165,9 @@ which are merged by hand; majors wait for a person, security ones too.
   and their own data, and segments written at exact times across local
   midnight and the night summer time ends.
   The migration-upgrade test also records rows in the user-data tables that
-  later migrations add (`api_tokens`, `mode_overrides`, and `shares`,
-  `share_links`, `hidden_people` and the grid key of sharing), each with the
+  later migrations add (`api_tokens`, `mode_overrides`, `shares`,
+  `share_links`, `hidden_people` and the grid key of sharing, and
+  `data_access_events` with its visitor key), each with the
   migration that adds it, and requires every column unchanged after every
   migration that follows. The sharing tests play owner, recipient and
   stranger on every people, shares and links route: stopped, ended and hidden
@@ -1951,7 +2179,23 @@ which are merged by hand; majors wait for a person, security ones too.
   hiding a person holds for their later shares, limits, scopes
   (`locations:read` for anything that can show positions) and device-limited
   tokens, the public endpoint's 404s, headers, view counting and rate limit,
-  and the access log.
+  and the access log. The data access log is driven through the real app:
+  `dataAccessRecording.test.ts` channel by channel — the owner's dashboard
+  reads and v1 calls with the session, a token's v1 calls, MCP tools and a
+  resource by an agent's token (a device asked for by name kept as its id),
+  a recipient looking with their session, their token and their agent (one
+  person, no credentials of theirs), live positions over SSE, two visitors of
+  a public link from IPv4 and IPv6 (and one with an unreadable address), the
+  writes (modes, a deleted period and device, tokens, shares, links), what
+  is never recorded (the device list, configuration, health, `tokens/verify`,
+  the OpenAPI document, refusals and failures), and a scan of every row for
+  coordinates, secrets and addresses; `dataAccessLog.test.ts` the list and
+  the summary — order, filters, keyset pages that hold still while a row is
+  counted again, `audit:read` (Read-only yes, Agent no), not limited by a
+  token's devices, nothing for another account or an administrator, current
+  and remembered names, the retention, the account's deletion and the
+  shutdown's last write. The migration-upgrade test fingerprints its rows and
+  the visitor key.
 - `apps/web/tests` — Vitest + Testing Library (jsdom). Pages render through
   `renderPage` with the API answered by `mockApi` and the map replaced by a
   stub that shows what it was handed; the People page's tests also check
