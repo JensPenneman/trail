@@ -337,6 +337,10 @@ cleaned), must not slow or fail requests, and must not grow without bound
 
 ### 3.6 UI (second wave, inside the new Settings)
 
+**Done** (`feat/access-log-ui`): `docs/architecture.md` §14 (the pages) and
+§8.8 (`actorId`, the series by channel, the distinct people and visitors) are
+the specification now.
+
 - **Who viewed you** (`/settings/privacy/viewers`): period 7 · 30 · 90 days;
   headline tiles (people, link visitors, token calls, MCP calls, your own
   sessions); a list of actors with counts and last seen; tapping one opens

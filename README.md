@@ -66,7 +66,11 @@ every pull request gets a preview deployment of its own.
 - **Data access log**: who read your data and when — the people you share
   with, the visitors of your links, your tokens and agents, your own
   sessions — and what they saw, by the hour, without coordinates and for
-  your eyes only (`GET /api/v1/access-log`, a summary per 7, 30 or 90 days).
+  your eyes only: **Who viewed you** in Settings ("Ana looked at your live
+  position 14 times and your history twice, last on Tuesday at 18:03", per
+  day, a page per person, link and token), the filterable **Access log**,
+  the use of each token, link and share on its page, and a card on Insights
+  (`GET /api/v1/access-log`, a summary per 7, 30 or 90 days).
 - **MCP server**: agents connect to `/mcp` with an API token and ask where
   the devices are, where they were at a time, the timeline of stops and
   moves, a day in figures, visits and trips, and the people who share with

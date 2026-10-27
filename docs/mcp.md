@@ -203,7 +203,8 @@ it, so the server was built against these threats:
   duration, the number of items and the size of the answer, and the
   token's id — never the arguments, the answer or the secret.
 - **The owner sees what the agent did.** Every call that succeeds counts in
-  the owner's data access log (`GET /api/v1/access-log`, see
+  the owner's data access log (Settings › Access log, and the token's own
+  page in Settings › API tokens; `GET /api/v1/access-log`, see
   [api.md](api.md#access-log)) as `mcp.<tool>` with the token, the devices it
   resolved — a device named in the call is kept as its id — and the range
   (`get_people` without whom it showed: each person shown sees a look at
