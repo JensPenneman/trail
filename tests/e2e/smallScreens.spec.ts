@@ -20,10 +20,10 @@ test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account 
   );
   // Each page with its data loaded: tables and lists are what could get too wide.
   for (const [path, heading, loaded] of [
-    ["/", "People", "Last upload"],
+    ["/", "People", "Timeline"],
     ["/?view=history", "People", "30 points"],
     ["/?view=heat", "People", /^\d+ points$/],
-    ["/devices", "Devices", "30 points"],
+    ["/devices", "Devices", "30 points in total"],
     [`/devices/${device.id}`, "A phone with a rather long name", "25 shown"],
     ["/settings", "Settings", "Privacy & data"],
     ["/settings/profile", "Profile", "Time zone"],
@@ -58,6 +58,8 @@ test("the People page with someone who shares fits a 320 px wide screen", async 
   account,
   openBrowser,
 }) => {
+  // Two people with a phone each, six pages and the cards opened up: a long walk.
+  test.slow();
   await uploadedDevice(page, "A phone with a rather long name", overlandBatch(account.timezone));
   const friend = await sharingFriend(openBrowser, account, "someone-with-a-long-name", {
     precision: "precise",
@@ -65,8 +67,8 @@ test("the People page with someone who shares fits a 320 px wide screen", async 
   });
   const name = friend.account.displayName;
   for (const [path, loaded] of [
-    ["/", "Last 7 days"],
-    [`/?people=${friend.account.id}`, "On the map"],
+    ["/", "Timeline"],
+    [`/?people=${friend.account.id}`, "Where they’ve been"],
     [`/?view=history&people=me,${friend.account.id}`, `${name} · ${friend.device.name}`],
     [`/?view=history&people=${friend.account.id}`, `${name} · ${friend.device.name}`],
     [`/?view=heat&people=me,${friend.account.id}`, "Your own devices only"],
@@ -77,6 +79,16 @@ test("the People page with someone who shares fits a 320 px wide screen", async 
     await expect(page.getByText(loaded).first()).toBeVisible();
     expect(await overflow(page), path).toBe(0);
   }
+  // Their card and Me opened up: each device and the terms of the share fit too.
+  await page.goto(`/?view=history&people=me,${friend.account.id}`);
+  await page.getByRole("article", { name }).getByRole("button", { name: "Details" }).click();
+  await page
+    .getByRole("region", { name: "Me", exact: true })
+    .getByRole("button", { name: "Details" })
+    .click();
+  await expect(page.getByText("Last 7 days")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your devices" })).toBeVisible();
+  expect(await overflow(page), "the cards opened up").toBe(0);
 });
 
 test("the sign-in page fits a 320 px wide screen", { tag: "@signed-out" }, async ({ page }) => {

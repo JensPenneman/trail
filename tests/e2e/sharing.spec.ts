@@ -1,5 +1,4 @@
 import { expect, type Page } from "@playwright/test";
-import { fact } from "./support/deviceCard";
 import { expectAccessible } from "./support/expectAccessible";
 import { overlandBatch, withBattery } from "./support/overlandBatch";
 import { postOverland } from "./support/postOverland";
@@ -17,6 +16,8 @@ test("someone you share with sees you live, may hide you, and loses you when you
   openBrowser,
   request,
 }) => {
+  // Two people with a browser each, through sharing, hiding and stopping: a long walk.
+  test.slow();
   const phone = await uploadedDevice(page, "Sharer’s phone", overlandBatch(account.timezone));
   const friend = await openBrowser();
   const friendEmail = uniqueEmail("friend");
@@ -43,8 +44,10 @@ test("someone you share with sees you live, may hide you, and loses you when you
 
   await friend.page.goto("/");
   const card = friend.page.getByRole("article", { name: account.displayName });
+  // Who and how fresh at a glance, with the battery; the phone itself in Details.
+  await expect(card.getByText("77%")).toBeVisible();
+  await card.getByRole("button", { name: "Details" }).click();
   await expect(card.getByText("Sharer’s phone")).toBeVisible();
-  await expect(fact(card, "Battery")).toContainText("77%");
   await expectAccessible(friend.page, "People with someone who shares");
   await expect(friend.page.getByText("Live updates on")).toBeAttached();
   // Survives only if the page is not reloaded.
@@ -56,7 +59,7 @@ test("someone you share with sees you live, may hide you, and loses you when you
     withBattery(overlandBatch(account.timezone), 0.42),
   );
   expect(later.status()).toBe(200);
-  await expect(fact(card, "Battery")).toContainText("42%");
+  await expect(card.getByText("42%").first()).toBeVisible();
   expect(await friend.page.evaluate(() => Reflect.get(window, "trailE2eSamePage"))).toBe(true);
 
   await card.getByRole("button", { name: `Hide ${account.displayName}` }).click();

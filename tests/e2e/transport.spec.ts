@@ -4,7 +4,6 @@ import {
   type ProcessingLevel,
   timelineResponseSchema,
 } from "@trail/contracts/transport";
-import { deviceCard } from "./support/deviceCard";
 import { expectAccessible } from "./support/expectAccessible";
 import { openMapOptions } from "./support/mapControls";
 import { type OverlandBatch, overlandBatch } from "./support/overlandBatch";
@@ -143,22 +142,36 @@ test("levels change the tracks, and a move's mode can be put right", async ({ pa
   );
 });
 
-test("the quick toggle on Live says how you travel from now on", async ({ page, account }) => {
-  await uploadedDevice(page, "Commuter", overlandBatch(account.timezone));
+test("the quick toggle on the Me card says how you travel from now on", async ({
+  page,
+  account,
+}) => {
+  const commuter = await uploadedDevice(page, "Commuter", overlandBatch(account.timezone));
   await page.goto("/");
-  const chips = deviceCard(page, "Commuter").getByRole("group", { name: "Now:" });
+  const me = page.getByRole("region", { name: "Me", exact: true });
+  const chips = me.getByRole("group", { name: "Now:" });
+  await expect(chips).toHaveAccessibleDescription("Until your next stop, for Commuter.");
   await expect(chips.getByRole("button", { name: /^Auto/, pressed: true })).toBeVisible();
   await chips.getByRole("button", { name: "Train" }).click();
   await expect(chips.getByRole("button", { name: "Train", pressed: true })).toBeVisible();
-  await expectAccessible(page, "Live with the quick toggle");
+  // What Me is doing follows: by train now.
+  await expect(me.getByText(/^By train/)).toBeVisible();
+  await expectAccessible(page, "People with the quick toggle");
 
   await page.reload();
-  const again = deviceCard(page, "Commuter").getByRole("group", { name: "Now:" });
+  const again = me.getByRole("group", { name: "Now:" });
   await expect(again.getByRole("button", { name: "Train", pressed: true })).toBeVisible();
   await again.getByRole("button", { name: "Other" }).click();
-  const other = page.getByRole("dialog", { name: "How is Commuter travelling?" });
+  const other = page.getByRole("dialog", { name: "How are you travelling?" });
   await other.getByRole("button", { name: "Boat" }).click();
   await expect(again.getByRole("button", { name: "Other: Boat", pressed: true })).toBeVisible();
-  await again.getByRole("button", { name: /^Auto/ }).click();
-  await expect(again.getByRole("button", { name: /^Auto/, pressed: true })).toBeVisible();
+
+  // The same device's page has the same toggle, set to the same.
+  await page.goto(`/devices/${commuter.id}`);
+  const onItsPage = page
+    .getByRole("region", { name: "Travelling now" })
+    .getByRole("group", { name: "Now:" });
+  await expect(onItsPage.getByRole("button", { name: "Other: Boat", pressed: true })).toBeVisible();
+  await onItsPage.getByRole("button", { name: /^Auto/ }).click();
+  await expect(onItsPage.getByRole("button", { name: /^Auto/, pressed: true })).toBeVisible();
 });

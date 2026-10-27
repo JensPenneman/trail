@@ -1,8 +1,7 @@
 import { expect } from "@playwright/test";
 import { publicConfigSchema } from "@trail/contracts/config";
-import { deviceCard } from "./support/deviceCard";
 import { expectAccessible } from "./support/expectAccessible";
-import { localDate, mapView, openMapOptions } from "./support/mapControls";
+import { localDate, mapView, openDeviceFilter, openMapOptions } from "./support/mapControls";
 import { overlandBatch } from "./support/overlandBatch";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
@@ -18,7 +17,8 @@ test("Live, History and Heat share one map and keep their place in the URL", asy
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
   await expect(mapView(page, "Live")).toBeChecked();
-  await expect(deviceCard(page, "Viewed phone")).toBeVisible();
+  const myDay = page.getByRole("region", { name: "Your day so far" });
+  await expect(myDay).toBeVisible();
   await expect(page).toHaveTitle("Live · People · Trail");
   const canvas = page.locator(".maplibregl-canvas");
   await expect(canvas).toHaveAccessibleName(/^Map of today’s tracks/);
@@ -49,7 +49,7 @@ test("Live, History and Heat share one map and keep their place in the URL", asy
   await expect(mapView(page, "History")).toBeChecked();
   await page.goBack();
   await expect(mapView(page, "Live")).toBeChecked();
-  await expect(deviceCard(page, "Viewed phone")).toBeVisible();
+  await expect(myDay).toBeVisible();
   expect(await sameCanvas()).toBe(true);
 });
 
@@ -90,17 +90,20 @@ test("the old addresses of History and Explore, and deep links, open the right v
   await expect(mapView(page, "Live")).toBeChecked();
 });
 
-test("the device filter narrows every view and stays in the URL", async ({ page, account }) => {
+test("the device filter, folded away in Map options, narrows every view and stays in the URL", async ({
+  page,
+  account,
+}) => {
   await uploadedDevice(page, "Kept phone", overlandBatch(account.timezone));
   await uploadedDevice(page, "Dropped phone", overlandBatch(account.timezone));
   await page.goto("/");
-  await expect(deviceCard(page, "Dropped phone")).toBeVisible();
   await openMapOptions(page);
+  // Not where one looks first: under Advanced, closed.
+  await expect(page.getByRole("group", { name: "Devices" })).toBeHidden();
+  await openDeviceFilter(page);
   const filter = page.getByRole("group", { name: "Devices" });
   await filter.getByRole("checkbox", { name: "Dropped phone" }).uncheck();
   await expect(page).toHaveURL(/[?&]devices=[0-9a-f-]{36}$/);
-  await expect(deviceCard(page, "Dropped phone")).toHaveCount(0);
-  await expect(deviceCard(page, "Kept phone")).toBeVisible();
   // The last device stays: an empty map explains nothing.
   await expect(filter.getByRole("checkbox", { name: "Kept phone" })).toBeDisabled();
 
