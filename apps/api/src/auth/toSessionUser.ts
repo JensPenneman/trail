@@ -1,4 +1,5 @@
 import type { SessionUser } from "@trail/contracts/user";
+import { readPreferences } from "../me/readPreferences";
 import type { UserRow } from "./requestAuth";
 
 export function toSessionUser(user: UserRow): SessionUser {
@@ -9,5 +10,6 @@ export function toSessionUser(user: UserRow): SessionUser {
     isAdmin: user.isAdmin,
     timezone: user.timezone,
     createdAt: user.createdAt.toISOString(),
+    preferences: readPreferences(user.preferences),
   };
 }

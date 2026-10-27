@@ -1,5 +1,6 @@
 import { createBrowserRouter, type RouteObject, replace } from "react-router";
 import { NotFoundPage } from "../pages/notFound/NotFoundPage";
+import { settingsRoute } from "../settings/settingsRoutes";
 import { AppLoading } from "./AppLoading";
 import { AppShell } from "./AppShell";
 import { legacyMapPath, legacyPeoplePath } from "./legacyMapPath";
@@ -7,7 +8,6 @@ import { PublicLayout } from "./PublicLayout";
 import { RequireSession } from "./RequireSession";
 import { RootLayout } from "./RootLayout";
 import { RouteError } from "./RouteError";
-import { settingsSections } from "./settingsSections";
 
 /**
  * Every page is its own chunk, fetched on first visit (the map library is
@@ -84,29 +84,7 @@ export function appRoutes(): RouteObject[] {
                   lazy: () =>
                     import("../pages/device/DevicePage").then((m) => ({ Component: m.DevicePage })),
                 },
-                {
-                  path: "settings",
-                  lazy: () =>
-                    import("../pages/settings/SettingsLayout").then((m) => ({
-                      Component: m.SettingsLayout,
-                    })),
-                  children: [
-                    {
-                      index: true,
-                      lazy: () =>
-                        import("../pages/settings/SettingsIndex").then((m) => ({
-                          Component: m.SettingsIndex,
-                        })),
-                    },
-                    ...settingsSections.map((section) => ({
-                      path: section.id,
-                      lazy: () =>
-                        import("../pages/settings/SettingsSection").then((m) => ({
-                          element: <m.SettingsSection id={section.id} />,
-                        })),
-                    })),
-                  ],
-                },
+                settingsRoute,
               ],
             },
           ],

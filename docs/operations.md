@@ -257,10 +257,11 @@ the dump made before the update ([Backups](#backups)).
 ## Your data
 
 Every point, visit, trip and event is kept forever; Trail itself only ever
-deletes recorded data when you ask it to (Settings > Data: delete a range,
-delete a device, delete the account). What processing works out from it —
-averaged and mapped points, stops and moves, the map cache — can always be
-worked out again; the transport modes people set are kept like recorded data.
+deletes recorded data when you ask it to (Settings > Your data: delete a
+period, delete the account; a device's page: delete the device). What
+processing works out from it — averaged and mapped points, stops and moves,
+the map cache — can always be worked out again; the transport modes people set
+are kept like recorded data.
 
 | Event | The data |
 |---|---|
@@ -362,7 +363,7 @@ setup QR code. After a new `PUBLIC_URL`:
    stops working at once). Points queued on the phone are kept.
 3. **Public links** carry the address they were made on. Links sent before the
    change still work as long as the old address reaches the server; otherwise
-   make new ones in Settings › Sharing.
+   make new ones in Settings › Public links.
 
 ## Processing
 

@@ -46,6 +46,11 @@ every pull request gets a preview deployment of its own.
 - **Alerts** through [ntfy](https://ntfy.sh) when a device goes silent and
   when it recovers.
 - **Your data**: export as GeoJSON, GPX or CSV; delete a range or the account.
+- **Settings** in the style of the iPhone's: groups of rows with search, a
+  page for every part (and for each passkey, share, public link and API
+  token), the list beside the page on wide screens, and preferences the
+  account takes to every browser — the map's style and the level of its
+  tracks.
 - **Public API**: a versioned JSON API under `/api/v1` for scripts, apps and
   agents — devices, positions, every recorded point, visits, trips, daily
   statistics, activity and the heatmap — described in OpenAPI 3.1 and

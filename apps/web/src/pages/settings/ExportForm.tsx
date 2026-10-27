@@ -10,6 +10,7 @@ import { useToday } from "../../time/useToday";
 import { Icon } from "../../ui/Icon";
 import { SelectField } from "../../ui/SelectField";
 import { TextField } from "../../ui/TextField";
+import "./settings.css";
 
 const formatLabels: Record<(typeof exportFormats)[number], string> = {
   geojson: "GeoJSON — points, visits and trips, for GIS tools and scripts",

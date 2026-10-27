@@ -1,6 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
+
+// Pages load lazily, as in the build (Settings has a chunk per page): the first
+// one a test file opens is compiled then, which takes a while when the suite
+// runs in parallel. `findBy…` and `waitFor` wait for it this long.
+configure({ asyncUtilTimeout: 5000 });
 
 /* jsdom has no modal dialogs, media queries or event streams; these stand-ins
  * give components the browser behaviour they rely on. */

@@ -3,8 +3,10 @@ import { deviceStatus } from "../src/deviceStatus";
 import { emailSchema } from "../src/email";
 import { heatmapQuerySchema } from "../src/heatmap";
 import { overlandSetupUrl } from "../src/overlandSetupUrl";
+import { defaultPreferences, preferencesSchema } from "../src/preferences";
 import { type TrackPoint, tracksQuerySchema } from "../src/track";
 import { trackSegments } from "../src/trackSegments";
+import { updateMeRequestSchema } from "../src/user";
 
 describe("deviceStatus", () => {
   const thresholds = { liveMinutes: 15, staleHours: 12 };
@@ -68,5 +70,29 @@ describe("trackSegments", () => {
       [2000, 2060],
     ]);
     expect(trackSegments([])).toEqual([]);
+  });
+});
+
+describe("preferences", () => {
+  it("fill in every preference that is not there with its default", () => {
+    expect(defaultPreferences).toEqual({
+      mapStyle: "auto",
+      level: "inferred",
+      showOwnActivity: false,
+    });
+    expect(preferencesSchema.parse({ level: "raw" })).toEqual({
+      ...defaultPreferences,
+      level: "raw",
+    });
+  });
+
+  it("change only the ones named, and no name they do not know", () => {
+    expect(updateMeRequestSchema.parse({ preferences: { mapStyle: "dark" } })).toEqual({
+      preferences: { mapStyle: "dark" },
+    });
+    expect(updateMeRequestSchema.safeParse({ preferences: { theme: "pink" } }).success).toBe(false);
+    expect(updateMeRequestSchema.safeParse({ preferences: { level: "smoothed" } }).success).toBe(
+      false,
+    );
   });
 });

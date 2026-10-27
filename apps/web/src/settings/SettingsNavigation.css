@@ -1,0 +1,17 @@
+.settings-navigation {
+  display: grid;
+  align-content: start;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.settings-navigation__groups {
+  display: grid;
+  gap: var(--space-6);
+}
+
+/* Beside the page: denser, the groups closer together. */
+.settings-navigation--sidebar,
+.settings-navigation--sidebar .settings-navigation__groups {
+  gap: var(--space-4);
+}

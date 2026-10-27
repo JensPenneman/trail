@@ -32,6 +32,8 @@ In the dashboard, open **Settings › API tokens › Create token**:
 
 The secret (`trlk_…`) is shown once: copy it straight into the client's
 configuration. [docs/api.md](api.md#tokens) explains rolling and revoking.
+**Settings › MCP** has these steps too, the server's address to copy, and a
+button that opens the form with the Agent template chosen.
 
 ## Connect
 

@@ -42,11 +42,11 @@ with **Share back** on their card.
 ## Change or stop
 
 People says with how many people you share; the line leads to **Settings ›
-Sharing**, where every share shows what it shares and until when, and when
-they last looked. **Change** sets a new duration from now or other devices,
-precision, history or details; **Stop** ends the share at once — from that
-moment they see nothing of you. Someone who shares with you too has **Stop**
-on their card as well.
+Sharing**, which lists every share, each with a page of its own: what it shares
+and until when, and when they last looked. **Change** sets a new duration from
+now or other devices, precision, history or details; **Stop** ends the share at
+once — from that moment they see nothing of you. Someone who shares with you
+too has **Stop** on their card as well.
 
 ## People who share with you
 
@@ -72,14 +72,15 @@ together tells no more than one.
 
 ## Public links
 
-In **Settings › Sharing**, **Make a public link**: a label for the page
+In **Settings › Public links**, **Make a public link**: a label for the page
 (“Shared location” unless you write one — the page never shows your name),
 the devices, precision, optionally your route of up to
 seven days (precise only), battery and activity (off by default), and when the
-link stops working (one hour to 30 days). Copy the address or let someone scan
-its code: it is shown only once. Anyone with the address sees the page, which
-refreshes every 15 seconds and says when it expires. The list shows how often
-each link was opened; **Turn off** ends a link at once.
+link stops working (one hour to 30 days). The link's page then shows its
+address and code: copy it or let someone scan it, as it is shown only this
+once. Anyone with the address sees the page, which refreshes every 15 seconds
+and says when it expires. The list and each link's page show how often it was
+opened; **Turn off link** on its page ends it at once.
 
 The secret is the part of the address after `#`. Browsers keep that part to
 themselves: it never reaches your server's or any proxy's logs, and no other

@@ -25,7 +25,7 @@ describe("the main navigation", () => {
     expect(within(nav()).getByRole("link", { name: "People" })).toHaveAttribute("href", "/");
     expect(within(nav()).getByRole("link", { name: "Settings" })).toHaveAttribute(
       "href",
-      "/settings/profile",
+      "/settings",
     );
   });
 
@@ -34,8 +34,8 @@ describe("the main navigation", () => {
     expect(current()).toEqual(["Devices"]);
   });
 
-  it("marks Settings on each of its sections", () => {
-    renderPage(<PrimaryNav />, { path: "/settings/tokens" });
+  it("marks Settings on each of its pages", () => {
+    renderPage(<PrimaryNav />, { path: "/settings/tokens/:tokenId", url: "/settings/tokens/abc" });
     expect(current()).toEqual(["Settings"]);
   });
 });

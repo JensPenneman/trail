@@ -15,9 +15,9 @@ interface NavItem {
 const items: readonly NavItem[] = [
   { to: "/", match: { path: "/", end: true }, label: "People", icon: "users" },
   { to: "/devices", match: { path: "/devices", end: false }, label: "Devices", icon: "devices" },
-  // Straight to the first section: `/settings` itself only redirects there.
+  // The list of Settings on phones; beside it, wide screens open its first page.
   {
-    to: "/settings/profile",
+    to: "/settings",
     match: { path: "/settings", end: false },
     label: "Settings",
     icon: "settings",

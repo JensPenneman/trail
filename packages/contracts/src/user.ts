@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { timeZoneSchema } from "./datetime";
 import { emailSchema } from "./email";
+import { preferencesSchema, preferencesUpdateSchema } from "./preferences";
 
 /** The signed-in person (`GET /api/auth/session`, `GET /api/me`). */
 export const sessionUserSchema = z.object({
@@ -11,17 +12,20 @@ export const sessionUserSchema = z.object({
   /** IANA zone used for "today", day boundaries and all displayed times. */
   timezone: z.string(),
   createdAt: z.iso.datetime(),
+  /** Defaults the account takes to every browser, each one filled in (preferences.ts). */
+  preferences: preferencesSchema,
 });
 export type SessionUser = z.infer<typeof sessionUserSchema>;
 
 export const sessionResponseSchema = z.object({ user: sessionUserSchema });
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 
-/** `PATCH /api/me` */
+/** `PATCH /api/me`: the fields to change; `preferences` merges into the stored ones. */
 export const updateMeRequestSchema = z
   .object({
     displayName: z.string().trim().min(1).max(80).optional(),
     timezone: timeZoneSchema.optional(),
+    preferences: preferencesUpdateSchema.optional(),
   })
   .refine((body) => Object.keys(body).length > 0, "Nothing to update");
 export type UpdateMeRequest = z.input<typeof updateMeRequestSchema>;

@@ -3,7 +3,7 @@ import { isSignedInPath } from "../src/app/isSignedInPath";
 import { legacyMapPath, legacyPeoplePath } from "../src/app/legacyMapPath";
 import { loginPath } from "../src/app/loginPath";
 import { safeNextPath } from "../src/app/safeNextPath";
-import { settingsPathFor } from "../src/app/settingsSections";
+import { settingsPathFor } from "../src/settings/settingsTree";
 
 describe("sign-in redirects", () => {
   it("remembers where the person was", () => {
@@ -21,7 +21,7 @@ describe("sign-in redirects", () => {
     expect(safeNextPath(null)).toBe("/");
   });
 
-  it("knows which paths need a session", () => {
+  it("knows which paths need a session, every page of Settings among them", () => {
     for (const path of [
       "/",
       "/history",
@@ -30,9 +30,25 @@ describe("sign-in redirects", () => {
       "/devices",
       "/devices/abc",
       "/settings",
+      "/settings/",
       "/settings/profile",
+      "/settings/passkeys",
+      "/settings/passkeys/abc",
+      "/settings/browsers",
       "/settings/tokens",
+      "/settings/tokens/abc",
+      "/settings/mcp",
       "/settings/sharing",
+      "/settings/sharing/abc",
+      "/settings/links",
+      "/settings/links/abc/",
+      "/settings/privacy/viewers",
+      "/settings/privacy/access-log",
+      "/settings/data",
+      "/settings/preferences",
+      "/settings/notifications",
+      "/settings/about",
+      "/settings/accounts",
       "/settings/people",
     ]) {
       expect(isSignedInPath(path), path).toBe(true);
@@ -45,6 +61,11 @@ describe("sign-in redirects", () => {
       "/s",
       "/people/x",
       "/settings/nope",
+      "/settings/privacy",
+      "/settings/profile/x",
+      "/settings/passkeys/a/b",
+      "/settingsx",
+      "/xsettings/profile",
     ]) {
       expect(isSignedInPath(path), path).toBe(false);
     }
@@ -82,26 +103,35 @@ describe("addresses of the pages the People page replaced", () => {
 });
 
 describe("anchors of the single Settings page of old", () => {
-  it("open their section, and Profile otherwise", () => {
-    expect(settingsPathFor("", false)).toBe("/settings/profile");
+  it("open their page, and nothing otherwise (then /settings itself shows)", () => {
+    expect(settingsPathFor("", false)).toBeNull();
+    expect(settingsPathFor("#", false)).toBeNull();
+    expect(settingsPathFor("#profile", false)).toBe("/settings/profile");
     expect(settingsPathFor("#tokens", false)).toBe("/settings/tokens");
     expect(settingsPathFor("#api-tokens", false)).toBe("/settings/tokens");
-    expect(settingsPathFor("#browsers", false)).toBe("/settings/passkeys#browsers");
-    expect(settingsPathFor("#sessions", false)).toBe("/settings/passkeys#browsers");
+    expect(settingsPathFor("#browsers", false)).toBe("/settings/browsers");
+    expect(settingsPathFor("#sessions", false)).toBe("/settings/browsers");
     expect(settingsPathFor("#link", false)).toBe("/settings/passkeys#passkey-link");
+    expect(settingsPathFor("#passkey-link", false)).toBe("/settings/passkeys#passkey-link");
+    expect(settingsPathFor("#sharing", false)).toBe("/settings/sharing");
+    expect(settingsPathFor("#links", false)).toBe("/settings/links");
     expect(settingsPathFor("#Data", false)).toBe("/settings/data");
+    expect(settingsPathFor("#export", false)).toBe("/settings/data#export");
     expect(settingsPathFor("#about", false)).toBe("/settings/about");
-    expect(settingsPathFor("#%E0%A4%A", false)).toBe("/settings/profile");
-    expect(settingsPathFor("#_r_5_", false)).toBe("/settings/profile");
+    expect(settingsPathFor("#%E0%A4%A", false)).toBeNull();
+    expect(settingsPathFor("#_r_5_", false)).toBeNull();
   });
 
   it("keep the accounts of the server to administrators", () => {
-    expect(settingsPathFor("#people", true)).toBe("/settings/people");
-    expect(settingsPathFor("#people", false)).toBe("/settings/profile");
+    for (const anchor of ["#people", "#accounts", "#invites"]) {
+      expect(settingsPathFor(anchor, true), anchor).toBe("/settings/accounts");
+      expect(settingsPathFor(anchor, false), anchor).toBeNull();
+    }
   });
 
-  it("open Profile for the names every object has", () => {
-    expect(settingsPathFor("#__proto__", false)).toBe("/settings/profile");
-    expect(settingsPathFor("#constructor", false)).toBe("/settings/profile");
+  it("open nothing for the names every object has", () => {
+    for (const anchor of ["#__proto__", "#constructor", "#toString", "#hasOwnProperty"]) {
+      expect(settingsPathFor(anchor, true), anchor).toBeNull();
+    }
   });
 });

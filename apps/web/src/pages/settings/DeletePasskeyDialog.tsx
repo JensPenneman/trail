@@ -10,9 +10,11 @@ import { useAnnounce } from "../../ui/useAnnounce";
 interface DeletePasskeyDialogProps {
   passkey: Passkey | null;
   onClose: () => void;
+  /** After it is deleted, when the dialog has closed. */
+  onDeleted?: () => void;
 }
 
-export function DeletePasskeyDialog({ passkey, onClose }: DeletePasskeyDialogProps) {
+export function DeletePasskeyDialog({ passkey, onClose, onDeleted }: DeletePasskeyDialogProps) {
   const remove = useDeletePasskey();
   const announce = useAnnounce();
   const last = remove.error instanceof ApiError && remove.error.code === "last_passkey";
@@ -54,6 +56,7 @@ export function DeletePasskeyDialog({ passkey, onClose }: DeletePasskeyDialogPro
               onSuccess: () => {
                 announce("Passkey deleted.");
                 close();
+                onDeleted?.();
               },
             });
           }}

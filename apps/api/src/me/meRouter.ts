@@ -4,7 +4,7 @@ import {
   type SessionResponse,
   updateMeRequestSchema,
 } from "@trail/contracts/user";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
 import { requireAuth, requireSession } from "../auth/requestAuth";
@@ -18,7 +18,7 @@ import { announceAccountGone } from "../sharing/announceAccountGone";
 import { sharesOfAccount } from "../sharing/sharesOfAccount";
 import { rebuildUserDailyStats } from "../stats/rebuildUserDailyStats";
 
-/** `GET/PATCH/DELETE /api/me` — profile and account deletion. */
+/** `GET/PATCH/DELETE /api/me` — profile, preferences and account deletion. */
 export function meRouter(ctx: AppContext): Router {
   const router = express.Router();
 
@@ -35,6 +35,12 @@ export function meRouter(ctx: AppContext): Router {
       .set({
         ...(changes.displayName === undefined ? {} : { displayName: changes.displayName }),
         ...(changes.timezone === undefined ? {} : { timezone: changes.timezone }),
+        // Merged in the statement itself: two changes at once each keep the other's.
+        ...(changes.preferences === undefined
+          ? {}
+          : {
+              preferences: sql`${users.preferences} || ${JSON.stringify(changes.preferences)}::jsonb`,
+            }),
         updatedAt: new Date(),
       })
       .where(eq(users.id, auth.user.id))

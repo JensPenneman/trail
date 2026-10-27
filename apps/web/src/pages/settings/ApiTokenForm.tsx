@@ -92,6 +92,8 @@ function GroupProblem({ id, problem }: { id: string; problem: string | undefined
 }
 
 interface ApiTokenFormProps {
+  /** The template whose scopes the form starts with. */
+  template?: ApiTokenTemplate;
   onCreated: (created: ApiTokenWithSecretResponse) => void;
   onCancel: () => void;
 }
@@ -101,7 +103,11 @@ interface ApiTokenFormProps {
  * the scopes, which can then be adjusted), its devices, when it expires and,
  * optionally, the addresses it may be used from.
  */
-export function ApiTokenForm({ onCreated, onCancel }: ApiTokenFormProps) {
+export function ApiTokenForm({
+  template: initial = "read-only",
+  onCreated,
+  onCancel,
+}: ApiTokenFormProps) {
   const ids = {
     template: useId(),
     devices: useId(),
@@ -115,7 +121,7 @@ export function ApiTokenForm({ onCreated, onCancel }: ApiTokenFormProps) {
   const devices = useDevices();
   const create = useCreateApiToken();
   const [name, setName] = useState("");
-  const [scopes, setScopes] = useState<readonly ApiScope[]>(apiTokenTemplates["read-only"]);
+  const [scopes, setScopes] = useState<readonly ApiScope[]>(apiTokenTemplates[initial]);
   const [deviceMode, setDeviceMode] = useState<"all" | "some">("all");
   const [picked, setPicked] = useState<readonly string[]>([]);
   const [expiry, setExpiry] = useState<ExpiryChoice>("30-days");

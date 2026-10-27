@@ -23,7 +23,7 @@ test("an invited person gets an account of their own and sees nothing of anyone 
 
   // Bound to an address the allow-list does not cover: only the invite lets it in.
   const email = uniqueEmail("invited", "invited.trail.test");
-  await admin.page.goto("/settings/people");
+  await admin.page.goto("/settings/accounts");
   const people = admin.page.getByRole("region", { name: "Accounts", exact: true });
   await people.getByLabel("Email address (optional)").fill(email);
   await people.getByRole("button", { name: "Create invite" }).click();

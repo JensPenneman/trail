@@ -68,9 +68,11 @@ test("someone you share with sees you live, may hide you, and loses you when you
   await friend.page.getByRole("button", { name: `Show ${account.displayName} again` }).click();
   await expect(card).toBeVisible();
 
-  await youShareWith(page)
-    .getByRole("button", { name: `Stop sharing with ${friendAccount.displayName}` })
-    .click();
+  // Each person has a page of their own in Settings › Sharing; stopping is there.
+  await youShareWith(page).getByRole("link", { name: friendAccount.displayName }).click();
+  const sharePage = page.getByRole("region", { name: friendAccount.displayName, exact: true });
+  await expect(sharePage.getByText("Sees you")).toBeVisible();
+  await sharePage.getByRole("button", { name: "Stop sharing" }).click();
   await page
     .getByRole("dialog", { name: `Stop sharing with ${friendAccount.displayName}?` })
     .getByRole("button", { name: "Stop sharing" })
@@ -92,17 +94,22 @@ test("a public link shows your location without an account until it is turned of
   consoleGuard,
 }) => {
   await uploadedDevice(page, "Linked phone", overlandBatch(account.timezone));
-  await page.goto("/settings/sharing");
-  const sharing = page.getByRole("region", { name: "Sharing", exact: true });
-  await sharing.getByLabel("Label (optional)").fill("On my way");
-  await sharing.getByRole("button", { name: "Make link" }).click();
-  const link = await sharing.getByRole("textbox", { name: "Public link" }).inputValue();
+  await page.goto("/settings/links");
+  await page.getByRole("button", { name: "Make a public link" }).click();
+  const form = page.getByRole("dialog", { name: "Make a public link" });
+  await form.getByLabel("Label (optional)").fill("On my way");
+  await form.getByRole("button", { name: "Make link" }).click();
+  // The link's page shows its address and code, this once.
+  const linkPage = page.getByRole("region", { name: "On my way", exact: true });
+  await expect(page).toHaveURL(/\/settings\/links\/[0-9a-f-]{36}$/);
+  const link = await linkPage.getByRole("textbox", { name: "Public link" }).inputValue();
   // The secret is the fragment: browsers never send it to a server, a proxy or as a referrer.
   expect(link).toMatch(/\/s#trls_[A-Za-z0-9_-]{43}$/);
   const secret = new URL(link).hash.slice(1);
   await expect(
-    sharing.getByRole("img", { name: "Code with the public link to your location" }),
+    linkPage.getByRole("img", { name: "Code with the public link to your location" }),
   ).toBeVisible();
+  await expectAccessible(page, "a new public link's page");
 
   const visitor = await openBrowser();
   const asked: string[] = [];
@@ -119,8 +126,14 @@ test("a public link shows your location without an account until it is turned of
   expect(asked.some((url) => url.includes(secret))).toBe(false);
 
   consoleGuard.expectFailedResponse(404, /\/api\/public\/share$/);
-  await sharing.getByRole("button", { name: "Turn off the link “On my way”" }).click();
-  await expect(sharing.getByText("On my way")).toBeHidden();
+  await linkPage.getByRole("button", { name: "Turn off link" }).click();
+  await page
+    .getByRole("dialog", { name: "Turn off “On my way”?" })
+    .getByRole("button", { name: "Turn off" })
+    .click();
+  // Back on the list, which no longer has it.
+  await expect(page).toHaveURL(/\/settings\/links$/);
+  await expect(page.getByText("No links yet.")).toBeVisible();
   await visitor.page.reload();
   await expect(
     visitor.page.getByRole("heading", { level: 2, name: "This link has ended" }),

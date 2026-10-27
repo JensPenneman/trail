@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../src/api/queryKeys";
 import { RequireSession } from "../src/app/RequireSession";
 import { useCompleteSignIn } from "../src/auth/useCompleteSignIn";
-import { AboutSection } from "../src/pages/settings/AboutSection";
+import { AboutPage } from "../src/pages/settings/AboutPage";
 import { DeleteAccountDialog } from "../src/pages/settings/DeleteAccountDialog";
 import { AnnouncerProvider } from "../src/ui/AnnouncerProvider";
 import { config, user } from "./support/fixtures";
@@ -15,7 +15,7 @@ import { mockApi } from "./support/mockApi";
 
 /** Settings behind the real route guard, signed in, next to a sign-in page. */
 function renderSignedIn({
-  settings = <AboutSection headingId="about" />,
+  settings = <AboutPage />,
   signIn = <p>Sign-in page</p>,
 }: {
   settings?: ReactNode;
