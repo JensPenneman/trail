@@ -31,7 +31,7 @@ test.describe("MCP server", () => {
   }) => {
     await uploadedDevice(page, "Agent's phone", overlandBatch(account.timezone));
 
-    await page.goto("/settings");
+    await page.goto("/settings/tokens");
     const section = page.getByRole("region", { name: "API tokens" });
     await expect(section.getByRole("link", { name: "MCP guide" })).toHaveAttribute(
       "href",
