@@ -18,10 +18,14 @@ every pull request gets a preview deployment of its own.
   to the phone.
 - **Passkeys only**: no passwords. Several people per server, invites,
   one-time links to add a passkey on another device or address.
-- **Live**: every device's position, battery, motion and last upload, updated
-  over server-sent events, plus a feed of uploads as they arrive.
-- **History**: tracks per day or date range with distance, visits and trips,
-  and a time scrubber.
+- **Map**: one map with three views — **Live** (every device's position,
+  battery, motion and last upload, updated over server-sent events, plus a
+  feed of uploads as they arrive), **History** (tracks per day or date range
+  with distance, visits and trips, and a time scrubber) and **Heat** (an
+  all-time heatmap) — showing you and whoever shares with you, the devices
+  you pick, on a light, dark or (where the server has imagery) satellite map.
+  Everything it shows is in its address, so a view can be bookmarked or
+  shared.
 - **How you travelled**: tracks in four levels — raw, averaged (noise
   smoothed), mapped onto OpenStreetMap roads and railways, and transport:
   stops and moves, each move with its mode (walking, cycling, car, bus, tram,
@@ -29,12 +33,12 @@ every pull request gets a preview deployment of its own.
   pauses at stops and the phone's motion sensor. A timeline per day, one-click
   corrections that survive every recomputation, and a quick "now I'm on the
   train" toggle ([docs/transport.md](docs/transport.md)).
-- **Explore**: an all-time heatmap.
 - **People**: share your location with family and friends in the spirit of
   Find My — one way, for an hour, until the end of the day, a week or until
   you stop, precisely or only roughly (about 500 m or 5 km), with or without
   history — and see who shares with you on a map, with their battery, what
-  they are doing and how far away they are. Public links show your location
+  they are doing and how far away they are, and on the Map page beside your
+  own devices, as far as their shares allow. Public links show your location
   to someone without an account until the link expires. How it works:
   [docs/sharing.md](docs/sharing.md).
 - **Devices**: set up a phone by scanning a QR code; per-device ingest log,

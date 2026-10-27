@@ -33,7 +33,7 @@ test("History shows today's distance, points, visits and trips, and the time scr
   }).format(track.distanceM / 1000);
   expect(track.distanceM).toBeGreaterThan(10_000);
 
-  await page.goto("/history");
+  await page.goto("/?view=history");
   const summary = page.getByRole("region", { name: "Summary", exact: true });
   await expect(summary.getByRole("listitem")).toHaveCount(1);
   await expect(summary).toContainText("Commuter");

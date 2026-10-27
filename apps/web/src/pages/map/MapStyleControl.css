@@ -1,0 +1,15 @@
+.map-style-control {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+.map-style-control .segmented {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.map-style-control__note {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}

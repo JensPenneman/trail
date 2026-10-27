@@ -4,13 +4,13 @@ import { type SessionUser, sessionResponseSchema } from "@trail/contracts/user";
 /**
  * Creates an account the way a person does: the email address on the sign-in
  * page, Continue, and a new passkey from the page's authenticator. Ends on the
- * Live page, signed in.
+ * Map page, signed in.
  */
 export async function signUp(page: Page, email: string): Promise<SessionUser> {
   await page.goto("/login");
   await page.getByLabel("Email address").fill(email);
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Live" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Map" })).toBeVisible();
   return currentUser(page);
 }
 

@@ -39,6 +39,7 @@ describe("loadConfig", () => {
       mapStyles: {
         light: "https://tiles.openfreemap.org/styles/liberty",
         dark: "https://tiles.openfreemap.org/styles/dark",
+        satellite: null,
       },
       mapOrigins: ["https://tiles.openfreemap.org"],
       webDistDir: "/srv/web/dist",
@@ -131,6 +132,66 @@ describe("loadConfig", () => {
     ]);
     expect(config.alerts).toEqual({ url: "https://ntfy.sh/trail-alerts", token: null });
     expect(config.build.builtAt).toBe("2026-09-30T19:41:07.000Z");
+  });
+
+  it("offers satellite imagery as a style or as raster tiles, and lets the CSP reach it", () => {
+    const style = loadConfig(
+      {
+        ...minimal,
+        MAP_STYLE_SATELLITE: "https://api.maptiler.com/maps/satellite/style.json?key=k3y",
+        // A style credits its own sources.
+        MAP_STYLE_SATELLITE_ATTRIBUTION: "ignored",
+      },
+      defaults,
+    );
+    expect(style.mapStyles.satellite).toEqual({
+      kind: "style",
+      url: "https://api.maptiler.com/maps/satellite/style.json?key=k3y",
+    });
+    expect(style.mapOrigins).toEqual(["https://tiles.openfreemap.org", "https://api.maptiler.com"]);
+
+    const tiles = loadConfig(
+      {
+        ...minimal,
+        MAP_STYLE_SATELLITE: "https://imagery.example.net/tiles/{z}/{y}/{x}.jpg",
+        MAP_STYLE_SATELLITE_ATTRIBUTION: "  Imagery © Example  ",
+      },
+      defaults,
+    );
+    expect(tiles.mapStyles.satellite).toEqual({
+      kind: "raster",
+      tiles: "https://imagery.example.net/tiles/{z}/{y}/{x}.jpg",
+      attribution: "Imagery © Example",
+    });
+    expect(tiles.mapOrigins).toContain("https://imagery.example.net");
+  });
+
+  it("refuses tile templates it cannot fill in, or without the provider's credit", () => {
+    expect(
+      issuesOf({ ...minimal, MAP_STYLE_SATELLITE: "https://imagery.example.net/{z}/{x}/{y}" }),
+    ).toEqual([
+      "MAP_STYLE_SATELLITE_ATTRIBUTION: is required with a tile URL template: the credit the imagery provider asks for",
+    ]);
+    expect(
+      issuesOf({
+        ...minimal,
+        MAP_STYLE_SATELLITE: "https://{s}.imagery.example.net/{z}/{x}/{y}.png",
+        MAP_STYLE_SATELLITE_ATTRIBUTION: "Example",
+      }),
+    ).toEqual([
+      "MAP_STYLE_SATELLITE: {s} is not filled in; a tile URL template takes {z}, {x} and {y} only",
+    ]);
+    expect(
+      issuesOf({
+        ...minimal,
+        MAP_STYLE_SATELLITE: "https://imagery.example.net/{z}/{x}.png",
+        MAP_STYLE_SATELLITE_ATTRIBUTION: "Example",
+      }),
+    ).toEqual(["MAP_STYLE_SATELLITE: a tile URL template needs {y}"]);
+    expect(issuesOf({ ...minimal, MAP_STYLE_SATELLITE: "file:///tiles/{z}/{x}/{y}" })).toEqual([
+      expect.stringMatching(/^MAP_STYLE_SATELLITE: /),
+    ]);
+    expect(issuesOf({ ...minimal, MAP_STYLE_SATELLITE: "" })).toEqual([]);
   });
 
   it("uses INGEST_BASE_URL for the endpoint shown to phones", () => {

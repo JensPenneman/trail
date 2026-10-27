@@ -24,7 +24,7 @@ export function SessionsSection({ headingId }: { headingId: string }) {
   return (
     <section className="section" aria-labelledby={headingId}>
       <div className="section__header">
-        <h2 className="section__title" id={headingId}>
+        <h2 className="section__title" id={headingId} tabIndex={-1} data-section-title>
           Signed-in browsers
         </h2>
         {others > 0 ? (

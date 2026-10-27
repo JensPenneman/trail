@@ -5,13 +5,13 @@ import { overlandBatch } from "./support/overlandBatch";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
 
-test("Explore draws the heatmap of every point and lists the busiest places", async ({
+test("Heat draws the heatmap of every point and lists the busiest places", async ({
   page,
   account,
 }) => {
   await uploadedDevice(page, "Explorer", overlandBatch(account.timezone));
   const heatmap = page.waitForResponse((response) => response.url().includes("/api/heatmap?"));
-  await page.goto("/explore");
+  await page.goto("/?view=heat");
   // The cells in view: the camera starts around the phone's latest position.
   const { cells } = heatmapResponseSchema.parse(await (await heatmap).json());
   const counted = cells.reduce((sum, [, , count]) => sum + count, 0);

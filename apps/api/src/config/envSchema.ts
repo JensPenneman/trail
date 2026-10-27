@@ -3,6 +3,7 @@ import { emailSchema } from "@trail/contracts/email";
 import { z } from "zod";
 import { databaseName } from "./databaseName";
 import { normaliseOrigin } from "./normaliseOrigin";
+import { readSatelliteStyle } from "./satelliteStyle";
 
 /* Environment variables arrive as strings; an empty value (`FOO=` in an env
  * file) means "not set" so the default applies. */
@@ -100,6 +101,9 @@ export const envSchema = z
     DEFAULT_TIMEZONE: env(timeZoneSchema.default("Europe/Brussels")),
     MAP_STYLE_LIGHT: env(httpUrlSchema.default("https://tiles.openfreemap.org/styles/liberty")),
     MAP_STYLE_DARK: env(httpUrlSchema.default("https://tiles.openfreemap.org/styles/dark")),
+    // Off unless set: imagery has terms and usually a key (docs/operations.md).
+    MAP_STYLE_SATELLITE: env(httpUrlSchema.optional()),
+    MAP_STYLE_SATELLITE_ATTRIBUTION: env(z.string().trim().max(300).optional()),
     MAP_CONNECT_SRC: env(
       z
         .string()
@@ -129,6 +133,14 @@ export const envSchema = z
     PROCESSING_STOP_MIN_S: env(intSchema(30, 7200).default(180)),
   })
   .superRefine((values, context) => {
+    // Refinements see invalid fields too; an invalid URL has its own issue already.
+    const problem = httpUrlSchema.safeParse(values.MAP_STYLE_SATELLITE).success
+      ? readSatelliteStyle(values.MAP_STYLE_SATELLITE, values.MAP_STYLE_SATELLITE_ATTRIBUTION)
+          .problem
+      : null;
+    if (problem !== null) {
+      context.addIssue({ code: "custom", path: [problem.variable], message: problem.message });
+    }
     // A development shell may export DATABASE_URL for an unrelated project:
     // outside production only databases named trail* are ever touched.
     if (values.NODE_ENV === "production") return;

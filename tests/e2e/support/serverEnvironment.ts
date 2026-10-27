@@ -4,6 +4,9 @@ export const e2eServerUrl = "http://localhost:4190";
 /** The development Postgres (compose.yaml) holds a database just for this suite. */
 export const defaultE2eDatabaseUrl = "postgres://trail:trail@127.0.0.1:54329/trail_e2e";
 
+/** The suite's satellite imagery (MAP_STYLE_SATELLITE), a raster tile template. */
+export const satelliteTiles = "https://imagery.e2e.trail.test/{z}/{x}/{y}.png";
+
 /** Addresses at this domain may sign up without an invite (SIGNUP_ALLOWLIST). */
 export const allowlistedDomain = "e2e.trail.test";
 
@@ -35,6 +38,9 @@ export function e2eServerEnvironment(databaseUrl: string): Record<string, string
     DEFAULT_TIMEZONE: "",
     MAP_STYLE_LIGHT: "",
     MAP_STYLE_DARK: "",
+    // Satellite imagery from a host nobody serves: mapStyleStub answers its tiles.
+    MAP_STYLE_SATELLITE: satelliteTiles,
+    MAP_STYLE_SATELLITE_ATTRIBUTION: "Imagery for the end-to-end tests",
     MAP_CONNECT_SRC: "",
     WEB_DIST_DIR: "",
     LOG_LEVEL: "warn",

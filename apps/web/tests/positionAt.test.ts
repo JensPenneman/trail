@@ -1,6 +1,6 @@
 import type { TrackPoint } from "@trail/contracts/track";
 import { describe, expect, it } from "vitest";
-import { positionAt } from "../src/pages/history/positionAt";
+import { positionAt } from "../src/pages/map/history/positionAt";
 
 const points: TrackPoint[] = [
   [3.5, 51.0, 1000, 2, 10, 5],

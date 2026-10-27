@@ -20,7 +20,7 @@ account on your server there are **public links**.
      position over time would give away more than you chose.
    - **Battery and activity**: your phone's battery, and whether you are
      walking, cycling, driving or on a train — as Trail works it out, or as
-     you set it with *Now* on the Live page
+     you set it with *Now* in the map's Live view
      ([transport.md](transport.md)).
    - **For how long**: one hour, until the end of the day (midnight in your
      time zone), a week, or until you stop it.
@@ -49,7 +49,11 @@ the share at once — from that moment they see nothing of you.
 
 Each person has a card: their devices, when the position was updated, what
 they are doing, battery and the distance from you, with **Show on map**,
-**Apple Maps**, **Google Maps** and **Share back**. **Hide** removes someone
+**Apple Maps**, **Google Maps** and **Share back**. **Show on map** opens the
+Map page with them; there, under *People* (in *Map options* on a phone), you
+choose whose data the map shows — yourself, any of them or everyone — in
+every view. A history they share shows as their track in History; without
+one the map shows only where they are now. **Hide** removes someone
 from your People page without asking them to stop; they still share, are told
 that you hid them, and you can show them again under *Hidden*. Hiding holds
 for the person: when they share with you again later, the new share starts

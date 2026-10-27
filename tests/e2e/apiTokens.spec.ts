@@ -20,7 +20,7 @@ test.describe("API tokens", () => {
     request,
   }) => {
     expect(account.id).toBeTruthy();
-    await page.goto("/settings");
+    await page.goto("/settings/tokens");
     const section = page.getByRole("region", { name: "API tokens" });
     await expect(section.getByText("No active tokens.")).toBeVisible();
 
@@ -102,7 +102,7 @@ test.describe("API tokens", () => {
       .getByRole("button", { name: "Done" })
       .click();
 
-    await page.goto("/settings");
+    await page.goto("/settings/tokens");
     const section = page.getByRole("region", { name: "API tokens" });
     await section.getByRole("button", { name: "Create token" }).click();
     const form = page.getByRole("dialog", { name: "Create an API token" });

@@ -12,12 +12,12 @@ test.describe("signing in again", () => {
       await expect(page).toHaveURL(/\/login$/);
       await page.getByLabel("Email address").fill(account.email);
       await page.getByRole("button", { name: "Continue" }).click();
-      await expect(page.getByRole("heading", { level: 1, name: "Live" })).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: "Map" })).toBeVisible();
       expect((await currentUser(page)).email).toBe(account.email);
 
       await signOut(page);
       await page.getByRole("button", { name: "Use a passkey" }).click();
-      await expect(page.getByRole("heading", { level: 1, name: "Live" })).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: "Map" })).toBeVisible();
       expect((await currentUser(page)).id).toBe(account.id);
     });
   });
@@ -25,7 +25,7 @@ test.describe("signing in again", () => {
   test("offers the saved passkey in the email field's autofill", async ({ page, account }) => {
     // The virtual authenticator answers the autofill request at once, as if the person
     // picked their passkey from the list under the email field.
-    await openSettingsConnected(page);
+    await openSettingsConnected(page, "about");
     const shownSignIn = page.waitForURL(/\/login$/);
     await page
       .getByRole("region", { name: "About" })
@@ -33,7 +33,7 @@ test.describe("signing in again", () => {
       .click();
     await shownSignIn;
     await page.waitForURL((url) => url.pathname === "/");
-    await expect(page.getByRole("heading", { level: 1, name: "Live" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Map" })).toBeVisible();
     expect((await currentUser(page)).id).toBe(account.id);
   });
 });

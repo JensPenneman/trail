@@ -700,6 +700,9 @@ own client in both eras.
 
 ## 6. Navigation and the Map page
 
+**Done** (`feat/map-navigation`): `docs/architecture.md` §14 is the
+specification now; §6.3 lists what the pull request settled.
+
 ### 6.1 Routes
 
 Signed-in: `/` **Map**, `/people`, `/devices`, `/devices/:id`, `/settings`
@@ -731,6 +734,43 @@ working). Public: `/login`, `/invite/:t`, `/link/:t`, `/s` (`#<secret>`). Redire
 - Accessibility and tests as today (axe, console guard, keyboard); end-to-end
   covers view switching, person and device selection, deep links and the
   redirects.
+
+### 6.3 Settled in the pull request
+
+1. **One map for three views.** Each view is a hook (`useLiveView`,
+   `useHistoryView`, `useHeatView`) built from the old page's parts; the page
+   always calls all three, a view not shown asks for nothing, and the page
+   draws the shown one on its single `TrailMap`. The camera frames what is
+   drawn when that changes (another day, other people or devices), not when
+   only the view does; Heat frames it only when the page opened on it.
+2. **People:** Me alone by default (not remembered); "Everyone" — a
+   checkbox for all, mixed while some are chosen — once two or more people
+   share, so with one it would only repeat their checkbox. A person's devices
+   take the person's colour. Heat stays one's own (heatmaps of others have no
+   endpoint): it offers no people and says so when some are chosen. Tracks of
+   others are asked for only for precise shares with history (Live: today;
+   History: the period); timeline, visits and trips stay one's own. The
+   People page's **Show on map** opens `/?view=live&people=<userId>`; People
+   keeps its overview map.
+3. **The sheet** is a "Map options" button that folds people, devices, style
+   and level away on screens narrower than 64rem (phones and small tablets),
+   with the current choices in one line; the legend stays visible. Beside a
+   full-height map the panel scrolls by itself under a sticky title and view
+   switch. Two-finger panning only where the map sits in a scrolling page.
+4. **Map style:** `?style=` (written for every choice), else localStorage
+   `trail.mapStyle`, else Auto; Satellite falls back to Auto on a server
+   without imagery. `MAP_STYLE_SATELLITE` takes a style URL or a raster tile
+   template (`{z}`, `{x}`, `{y}`, 256 px tiles up to zoom 19) with
+   `MAP_STYLE_SATELLITE_ATTRIBUTION` (required for a template, shown as plain
+   text); its origin joins the CSP's map origins. A dark or satellite map
+   draws Trail's lines, heat ramp and legend in their dark-background steps,
+   whatever the page's colour scheme.
+5. **Settings:** the sections are Profile, Passkeys (with the passkey link
+   and the signed-in browsers), API tokens, Sharing, Accounts (`/settings/
+   people`, administrators; renamed because People in the navigation is
+   sharing now), Data and About (with Sign out). Headings have fixed ids, so
+   old anchors map to `/settings/<section>#<part>`; a section nobody has opens
+   Profile, an unknown one is the 404 page.
 
 ---
 

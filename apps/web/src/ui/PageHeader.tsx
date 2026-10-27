@@ -3,6 +3,8 @@ import "./PageHeader.css";
 
 interface PageHeaderProps {
   title: string;
+  /** The heading's id, for a region it names. */
+  titleId?: string;
   /** Short line under the title. */
   description?: ReactNode;
   actions?: ReactNode;
@@ -14,12 +16,12 @@ interface PageHeaderProps {
  * The page's h1. It is the focus target after every navigation, so screen
  * reader users land on the new page's name (see useRouteFocus).
  */
-export function PageHeader({ title, description, actions, eyebrow }: PageHeaderProps) {
+export function PageHeader({ title, titleId, description, actions, eyebrow }: PageHeaderProps) {
   return (
     <header className="page-header">
       <div className="page-header__text">
         {eyebrow === undefined ? null : <div className="page-header__eyebrow">{eyebrow}</div>}
-        <h1 className="page-header__title" tabIndex={-1} data-page-title>
+        <h1 className="page-header__title" id={titleId} tabIndex={-1} data-page-title>
           {title}
         </h1>
         {description === undefined ? null : (

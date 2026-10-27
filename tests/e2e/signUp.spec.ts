@@ -3,7 +3,7 @@ import { test } from "./support/test";
 import { uniqueEmail } from "./support/uniqueEmail";
 
 test.describe("signing up", () => {
-  test("an address on the allow-list gets an account and an empty Live page", async ({
+  test("an address on the allow-list gets an account and an empty map", async ({
     page,
     account,
   }) => {

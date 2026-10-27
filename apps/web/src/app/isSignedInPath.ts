@@ -1,4 +1,12 @@
+import { settingsSections } from "./settingsSections";
+
+const sections = settingsSections.map((section) => section.id).join("|");
+// `history` and `explore` only redirect to the Map page, which needs a session.
+const signedIn = new RegExp(
+  `^/(?:history|explore|people|devices(?:/[^/]+)?|settings(?:/(?:${sections}))?)?/?$`,
+);
+
 /** Paths that only exist for signed-in people (see createAppRouter); public links (`/s#…`) are not. */
 export function isSignedInPath(pathname: string): boolean {
-  return /^\/(?:history|explore|people|devices(?:\/[^/]+)?|settings)?\/?$/.test(pathname);
+  return signedIn.test(pathname);
 }

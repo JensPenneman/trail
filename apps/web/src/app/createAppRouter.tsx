@@ -1,19 +1,21 @@
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter, type RouteObject, replace } from "react-router";
 import { NotFoundPage } from "../pages/notFound/NotFoundPage";
 import { AppLoading } from "./AppLoading";
 import { AppShell } from "./AppShell";
+import { legacyMapPath } from "./legacyMapPath";
 import { PublicLayout } from "./PublicLayout";
 import { RequireSession } from "./RequireSession";
 import { RootLayout } from "./RootLayout";
 import { RouteError } from "./RouteError";
+import { settingsSections } from "./settingsSections";
 
 /**
  * Every page is its own chunk, fetched on first visit (the map library is
- * split further, inside the map pages). The previous page stays on screen
+ * split further, inside the Map page). The previous page stays on screen
  * while the next one loads, with a progress bar in the shell.
  */
-export function createAppRouter() {
-  return createBrowserRouter([
+export function appRoutes(): RouteObject[] {
+  return [
     {
       Component: RootLayout,
       HydrateFallback: AppLoading,
@@ -38,6 +40,15 @@ export function createAppRouter() {
             },
           ],
         },
+        // The pages the Map page replaced: bookmarks and old links land on its views.
+        {
+          path: "history",
+          loader: ({ request }) => replace(legacyMapPath(new URL(request.url), "history")),
+        },
+        {
+          path: "explore",
+          loader: ({ request }) => replace(legacyMapPath(new URL(request.url), "heat")),
+        },
         {
           // A public link (`/s#<secret>`): no session, no navigation, a layout of its own.
           path: "s",
@@ -55,21 +66,7 @@ export function createAppRouter() {
                 {
                   index: true,
                   lazy: () =>
-                    import("../pages/live/LivePage").then((m) => ({ Component: m.LivePage })),
-                },
-                {
-                  path: "history",
-                  lazy: () =>
-                    import("../pages/history/HistoryPage").then((m) => ({
-                      Component: m.HistoryPage,
-                    })),
-                },
-                {
-                  path: "explore",
-                  lazy: () =>
-                    import("../pages/explore/ExplorePage").then((m) => ({
-                      Component: m.ExplorePage,
-                    })),
+                    import("../pages/map/MapPage").then((m) => ({ Component: m.MapPage })),
                 },
                 {
                   path: "people",
@@ -91,9 +88,25 @@ export function createAppRouter() {
                 {
                   path: "settings",
                   lazy: () =>
-                    import("../pages/settings/SettingsPage").then((m) => ({
-                      Component: m.SettingsPage,
+                    import("../pages/settings/SettingsLayout").then((m) => ({
+                      Component: m.SettingsLayout,
                     })),
+                  children: [
+                    {
+                      index: true,
+                      lazy: () =>
+                        import("../pages/settings/SettingsIndex").then((m) => ({
+                          Component: m.SettingsIndex,
+                        })),
+                    },
+                    ...settingsSections.map((section) => ({
+                      path: section.id,
+                      lazy: () =>
+                        import("../pages/settings/SettingsSection").then((m) => ({
+                          element: <m.SettingsSection id={section.id} />,
+                        })),
+                    })),
+                  ],
                 },
               ],
             },
@@ -102,5 +115,9 @@ export function createAppRouter() {
         { path: "*", Component: NotFoundPage },
       ],
     },
-  ]);
+  ];
+}
+
+export function createAppRouter() {
+  return createBrowserRouter(appRoutes());
 }

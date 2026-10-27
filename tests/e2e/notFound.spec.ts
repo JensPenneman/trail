@@ -11,5 +11,5 @@ test("an unknown address shows the app's own 404 page", { tag: "@signed-out" }, 
     page.getByRole("heading", { level: 1, name: "This trail goes nowhere" }),
   ).toBeVisible();
   await expect(page).toHaveTitle("Page not found · Trail");
-  await expect(page.getByRole("link", { name: "Go to Live" })).toHaveAttribute("href", "/");
+  await expect(page.getByRole("link", { name: "Go to the map" })).toHaveAttribute("href", "/");
 });

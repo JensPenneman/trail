@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import type { SessionUser } from "@trail/contracts/user";
 import type { ReactElement } from "react";
-import { createMemoryRouter, RouterProvider } from "react-router";
+import { createMemoryRouter, type RouteObject, RouterProvider } from "react-router";
 import { SessionUserContext } from "../../src/app/SessionUserContext";
 import { createLiveStore } from "../../src/live/createLiveStore";
 import { LiveStoreContext } from "../../src/live/LiveStoreContext";
@@ -14,8 +14,14 @@ import { AnnouncerProvider } from "../../src/ui/AnnouncerProvider";
  * route guard or the event stream.
  */
 export function renderPage(
-  element: ReactElement,
-  options: { path?: string; url?: string; user?: SessionUser | null } = {},
+  element: ReactElement | null,
+  options: {
+    path?: string;
+    url?: string;
+    user?: SessionUser | null;
+    /** Routes of their own instead of `element` at `path` (nested pages, redirects). */
+    routes?: RouteObject[];
+  } = {},
 ) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -25,7 +31,7 @@ export function renderPage(
   });
   const liveStore = createLiveStore();
   const router = createMemoryRouter(
-    [
+    options.routes ?? [
       { path: options.path ?? "/", element },
       { path: "*", element: <p>Elsewhere</p> },
     ],

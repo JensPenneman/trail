@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { accuracyFeatures } from "../src/map/accuracyFeatures";
 import { boundsOf } from "../src/map/boundsOf";
 import { circleRing } from "../src/map/circleRing";
 import { heatFeatures } from "../src/map/heatFeatures";
 import { heatmapParamsFor } from "../src/map/heatmapParamsFor";
+import { rasterStyle } from "../src/map/rasterStyle";
 import { trackFeatures } from "../src/map/trackFeatures";
+import { personPositions } from "../src/people/personPositions";
 import { levelTracksToMap } from "../src/transport/levelTracksToMap";
-import { levelTracks } from "./support/fixtures";
+import { ana, bob, ids, levelTracks } from "./support/fixtures";
 
 describe("map helpers", () => {
   it("rounds heatmap requests outward and clamps world copies", () => {
@@ -36,6 +39,68 @@ describe("map helpers", () => {
     expect(ring).toHaveLength(5);
     // North of the centre by one kilometre ≈ 0.009 degrees of latitude.
     expect((ring[0]?.[1] ?? 0) - 51).toBeCloseTo(0.009, 3);
+  });
+
+  it("caps a GPS guess's circle, never a share's precision", () => {
+    const radiusOf = (feature: { geometry: { coordinates: number[][][] } } | undefined) =>
+      ((feature?.geometry.coordinates[0]?.[0]?.[1] ?? 51) - 51) * 111_320;
+    const [guess, area] = accuracyFeatures([
+      { id: "a", color: "#000", slot: 0, lon: 3.5, lat: 51, accuracy: 9000, live: false },
+      {
+        id: "b",
+        color: "#000",
+        slot: 0,
+        lon: 3.5,
+        lat: 51,
+        accuracy: 9000,
+        live: false,
+        coarse: true,
+      },
+    ]).features;
+    expect(radiusOf(guess)).toBeCloseTo(5000, -2);
+    expect(radiusOf(area)).toBeCloseTo(9000, -2);
+  });
+
+  it("places people by their initials, coarse where their share is", () => {
+    const colors = { slot: () => 2, hex: () => "#123456" };
+    const positions = personPositions(
+      [ana(), bob()],
+      (userId) => (userId === ids.ana ? [ids.anaPhone] : [ids.bobPhone]),
+      colors,
+      () => true,
+    );
+    expect(positions).toEqual([
+      expect.objectContaining({ id: `${ids.ana}:${ids.anaPhone}`, initials: "AB", coarse: false }),
+      expect.objectContaining({
+        id: `${ids.bob}:${ids.bobPhone}`,
+        initials: "B",
+        coarse: true,
+        accuracy: 556,
+      }),
+    ]);
+    expect(
+      personPositions(
+        [ana()],
+        () => [],
+        colors,
+        () => true,
+      ),
+    ).toEqual([]);
+  });
+
+  it("turns a raster tile template into a style, with its credit as text", () => {
+    const style = rasterStyle(
+      "https://imagery.example.com/{z}/{x}/{y}.jpg",
+      'Imagery <b>"X"</b> & Co',
+    );
+    expect(style.sources["imagery"]).toEqual({
+      type: "raster",
+      tiles: ["https://imagery.example.com/{z}/{x}/{y}.jpg"],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: "Imagery &lt;b&gt;&quot;X&quot;&lt;/b&gt; &amp; Co",
+    });
+    expect(style.layers).toEqual([{ id: "imagery", type: "raster", source: "imagery" }]);
   });
 
   it("skips one-point segments and computes bounds", () => {

@@ -54,6 +54,6 @@ describe("public pages", () => {
   it("has a way back from an unknown address", () => {
     renderPage(<NotFoundPage />, { path: "/nope" });
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("This trail goes nowhere");
-    expect(screen.getByRole("link", { name: "Go to Live" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Go to the map" })).toHaveAttribute("href", "/");
   });
 });

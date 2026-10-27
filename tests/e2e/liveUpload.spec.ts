@@ -31,7 +31,7 @@ test("a new phone's first upload turns up on Live by itself", async ({
 
   await page
     .getByRole("navigation", { name: "Main" })
-    .getByRole("link", { name: "Live", exact: true })
+    .getByRole("link", { name: "Map", exact: true })
     .click();
   const card = deviceCard(page, "Test iPhone");
   await expect(card.getByText("No data yet")).toBeVisible();

@@ -31,7 +31,7 @@ export function RouteError() {
         <Button variant="primary" icon="refresh" onClick={() => window.location.reload()}>
           Reload
         </Button>
-        <Link to="/">Go to Live</Link>
+        <Link to="/">Go to the map</Link>
       </div>
     </main>
   );

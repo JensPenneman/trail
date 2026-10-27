@@ -18,6 +18,11 @@ export interface MapPosition {
   lat: number;
   /** Horizontal accuracy radius in metres, drawn as a circle. */
   accuracy: number | null;
+  /**
+   * The radius is a share's precision (approximate, area), not a GPS guess:
+   * drawn whole, however wide, since that is all the position says.
+   */
+  coarse?: boolean;
   /** Pulses while the device is live. */
   live: boolean;
   /** Someone else's device: drawn as their initials in their colour instead of a dot. */

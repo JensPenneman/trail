@@ -8,6 +8,7 @@ import {
   Marker,
   NavigationControl,
   ScaleControl,
+  type StyleSpecification,
   setWorkerUrl,
 } from "maplibre-gl";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
@@ -33,7 +34,9 @@ setWorkerUrl(workerUrl);
 export interface TrailMapProps {
   /** Accessible name of the map canvas; the same information is always listed as text too. */
   label: string;
-  styleUrl: string;
+  /** A style URL or document (useMapStyle); a new one swaps the basemap under Trail's layers. */
+  mapStyle: string | StyleSpecification;
+  /** Whether the basemap is dark: Trail's lines and dots are drawn to stand out on it. */
   dark: boolean;
   tracks?: readonly MapTrack[];
   /** Stops and moves in the colours of their modes (the Transport level). */
@@ -48,11 +51,11 @@ export interface TrailMapProps {
   heat?: readonly (readonly [number, number, number])[];
   /** The camera fits `bounds` whenever `key` changes — never merely because data grew. */
   fit?: { key: string; bounds: Bounds | null; maxZoom?: number };
-  /** The camera moves to this point whenever `key` changes. */
+  /** The camera moves to this point once per `key` (a key shown again does not move it again). */
   focus?: { key: string; lon: number; lat: number; zoom: number } | null;
   initialView?: { center: readonly [number, number]; zoom: number };
   onViewChange?: (view: MapViewState) => void;
-  /** Two-finger pan on touch screens, for maps embedded in a scrolling page. */
+  /** Two-finger pan on touch screens, for maps embedded in a scrolling page (may change). */
   cooperativeGestures?: boolean;
 }
 
@@ -126,11 +129,11 @@ function markerElement(person: boolean): Omit<PlacedMarker, "marker"> {
  * The MapLibre map behind every map screen (this module and MapLibre load
  * lazily). Props describe what to show; the component keeps the GeoJSON
  * sources, DOM markers and camera in sync with them, and re-adds its layers
- * whenever the light/dark style is swapped.
+ * whenever the style is swapped (light, dark, satellite).
  */
 export function TrailMap({
   label,
-  styleUrl,
+  mapStyle,
   dark,
   tracks,
   transport,
@@ -150,13 +153,14 @@ export function TrailMap({
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const [styleVersion, setStyleVersion] = useState(0);
   const [problem, setProblem] = useState<"webgl" | "style" | null>(null);
-  const construction = useRef({ styleUrl, label, initialView, cooperativeGestures });
-  const loadedStyle = useRef(styleUrl);
+  const construction = useRef({ mapStyle, label, initialView, cooperativeGestures });
+  const loadedStyle = useRef(mapStyle);
   // False from the moment a style swap starts until its `style.load`: sources and layers can
   // only be touched in between. A ref, because effects of the same commit must see the change.
   const styleReady = useRef(false);
   const markers = useRef(new Map<string, PlacedMarker>());
   const fittedKey = useRef<string | null>(null);
+  const focusedKey = useRef<string | null>(null);
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 
   const reportView = useEffectEvent((instance: MapLibreMap) => {
@@ -194,7 +198,7 @@ export function TrailMap({
     try {
       instance = new MapLibreMap({
         container,
-        style: initial.styleUrl,
+        style: initial.mapStyle,
         center: [...(initial.initialView?.center ?? fallbackView.center)],
         zoom: initial.initialView?.zoom ?? fallbackView.zoom,
         maxZoom: 19,
@@ -243,11 +247,17 @@ export function TrailMap({
   }, []);
 
   useEffect(() => {
-    if (map === null || loadedStyle.current === styleUrl) return;
-    loadedStyle.current = styleUrl;
+    if (map === null || loadedStyle.current === mapStyle) return;
+    loadedStyle.current = mapStyle;
     styleReady.current = false;
-    map.setStyle(styleUrl, { diff: false });
-  }, [map, styleUrl]);
+    map.setStyle(mapStyle, { diff: false });
+  }, [map, mapStyle]);
+
+  useEffect(() => {
+    if (map === null || map.cooperativeGestures.isEnabled() === cooperativeGestures) return;
+    if (cooperativeGestures) map.cooperativeGestures.enable();
+    else map.cooperativeGestures.disable();
+  }, [map, cooperativeGestures]);
 
   useEffect(() => {
     map?.getCanvas().setAttribute("aria-label", label);
@@ -396,7 +406,10 @@ export function TrailMap({
     });
   });
   useEffect(() => {
-    if (map !== null && focusKey !== undefined) focusTarget(map);
+    // Views of one page share the map: coming back to a view must not move the camera again.
+    if (map === null || focusKey === undefined || focusedKey.current === focusKey) return;
+    focusedKey.current = focusKey;
+    focusTarget(map);
   }, [map, focusKey]);
 
   return (

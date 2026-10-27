@@ -1,7 +1,7 @@
 import { circleRing } from "./circleRing";
 import type { MapPosition } from "./mapTypes";
 
-/** Past this the "position" is a guess across a city; the circle would only hide the map. */
+/** Past this a GPS "position" is a guess across a city; the circle would only hide the map. */
 const maxDrawnAccuracyM = 5000;
 
 /** Accuracy circles around the latest positions. */
@@ -21,7 +21,9 @@ export function accuracyFeatures(
             circleRing(
               position.lon,
               position.lat,
-              Math.min(position.accuracy ?? 0, maxDrawnAccuracyM),
+              position.coarse === true
+                ? (position.accuracy ?? 0)
+                : Math.min(position.accuracy ?? 0, maxDrawnAccuracyM),
             ),
           ],
         },

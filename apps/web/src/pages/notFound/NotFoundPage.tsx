@@ -16,8 +16,8 @@ export function NotFoundPage() {
       <p className="muted">
         There is no page at this address. It may have moved, or the link is incomplete.
       </p>
-      <LinkButton to="/" variant="primary" icon="live">
-        Go to Live
+      <LinkButton to="/" variant="primary" icon="map">
+        Go to the map
       </LinkButton>
     </main>
   );

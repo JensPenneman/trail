@@ -11,7 +11,7 @@ export function AboutSection({ headingId }: { headingId: string }) {
   const signOut = useSignOut();
   return (
     <section className="section" aria-labelledby={headingId}>
-      <h2 className="section__title" id={headingId}>
+      <h2 className="section__title" id={headingId} tabIndex={-1} data-section-title>
         About
       </h2>
       <div className="card">

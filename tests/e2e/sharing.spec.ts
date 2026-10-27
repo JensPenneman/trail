@@ -105,7 +105,7 @@ test("a public link shows your location without an account until it is turned of
   consoleGuard,
 }) => {
   await uploadedDevice(page, "Linked phone", overlandBatch(account.timezone));
-  await page.goto("/settings");
+  await page.goto("/settings/sharing");
   const sharing = page.getByRole("region", { name: "Sharing", exact: true });
   await sharing.getByLabel("Label (optional)").fill("On my way");
   await sharing.getByRole("button", { name: "Make link" }).click();

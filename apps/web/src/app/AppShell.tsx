@@ -27,7 +27,7 @@ export function AppShell() {
           Skip to content
         </a>
         <header className="app-header">
-          <Link to="/" className="app-header__brand" aria-label="Trail, go to Live">
+          <Link to="/" className="app-header__brand" aria-label="Trail, go to the map">
             <Wordmark />
           </Link>
           <PrimaryNav />

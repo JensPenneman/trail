@@ -17,10 +17,10 @@ test.describe("signed-in browsers", () => {
     await other.authenticator.importPasskey(passkey);
     await other.page.goto("/login");
     await other.page.getByRole("button", { name: "Use a passkey" }).click();
-    await expect(other.page.getByRole("heading", { level: 1, name: "Live" })).toBeVisible();
+    await expect(other.page.getByRole("heading", { level: 1, name: "Map" })).toBeVisible();
     await expect(other.page.getByText("Live updates on")).toBeAttached();
 
-    await page.goto("/settings");
+    await page.goto("/settings/passkeys");
     const browsers = page.getByRole("region", { name: "Signed-in browsers", exact: true });
     await expect(browsers.getByRole("listitem")).toHaveCount(2);
     await expect(browsers.getByText("This browser")).toHaveCount(1);

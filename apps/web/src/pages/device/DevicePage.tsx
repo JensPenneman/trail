@@ -105,7 +105,7 @@ export function DevicePage() {
         }
         actions={
           <>
-            <LinkButton to={`/history?devices=${current.id}`} icon="history">
+            <LinkButton to={`/?view=history&devices=${current.id}`} icon="history">
               History
             </LinkButton>
             <Button icon="pencil" onClick={() => setDialog("rename")}>

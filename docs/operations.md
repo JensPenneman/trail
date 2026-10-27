@@ -76,8 +76,10 @@ Optional, as in [deploy/.env.example](../deploy/.env.example):
 [docs/mcp.md](mcp.md)),
 `ALERT_NTFY_URL`, `ALERT_NTFY_TOKEN`, `LIVE_WINDOW_MINUTES`,
 `STALE_AFTER_HOURS`, `SESSION_TTL_DAYS`, `DEFAULT_TIMEZONE`, `LOG_LEVEL`,
-`RATE_LIMIT_*`, `MAP_STYLE_LIGHT`, `MAP_STYLE_DARK`, `MAP_CONNECT_SRC` and
-the `PROCESSING_*` settings ([Processing](#processing)).
+`RATE_LIMIT_*`, `MAP_STYLE_LIGHT`, `MAP_STYLE_DARK`, `MAP_CONNECT_SRC`,
+`MAP_STYLE_SATELLITE` and `MAP_STYLE_SATELLITE_ATTRIBUTION`
+([Satellite imagery](#satellite-imagery)) and the `PROCESSING_*` settings
+([Processing](#processing)).
 
 `BACKUP_DIR` must be absolute and must exist: a relative path would land in
 the deployment's checkout, which Launchway deletes after later deployments,
@@ -122,7 +124,7 @@ On a server without Trail:
    latest one by hand).
 5. Open `https://trail.jenspenneman.com`, enter the address from
    `SIGNUP_ALLOWLIST` and create a passkey. The first account is the admin;
-   others join through the allowlist or an invite (Settings > People).
+   others join through the allowlist or an invite (Settings > Accounts).
 6. Add a phone: Devices > Add device, scan the QR code with the iPhone's
    Camera app; Overland opens with endpoint, token and device ID filled in
    ([overland.md](overland.md)).
@@ -350,8 +352,8 @@ Passkeys are bound to a host name, and every phone posts to the address in its
 setup QR code. After a new `PUBLIC_URL`:
 
 1. **Add a passkey for the new address.** While the old address still works,
-   Settings > "Add a passkey on another device or address", pick the new
-   address and open the link (or its QR code) on the device that should hold
+   Settings > Passkeys > "Add a passkey on another device or address", pick
+   the new address and open the link (or its QR code) on the device that should hold
    the passkey. The link is valid for 15 minutes and works once. Without a
    working sign-in, create the link with the CLI:
    `docker exec launchway-trail-app-1 trail passkey-link you@example.com --origin https://<new address>`.
@@ -425,6 +427,49 @@ when a tile fails (with the kind of failure; it is tried again later) or the
 daily budget is spent. Which tile — a place someone has been — is logged at
 `LOG_LEVEL=debug` only, like coordinates.
 
+## Satellite imagery
+
+The map's style control offers Auto (light or dark with the system), Light,
+Dark and — once the server has imagery — Satellite. Light and dark come from
+OpenFreeMap (`MAP_STYLE_LIGHT`, `MAP_STYLE_DARK`). Trail ships no imagery:
+`MAP_STYLE_SATELLITE` names it, in one of two forms.
+
+- **A MapLibre style URL**, for a provider that publishes whole styles. For
+  example [MapTiler](https://www.maptiler.com/maps/)'s satellite map, with an
+  API key from a MapTiler account:
+
+  ```sh
+  MAP_STYLE_SATELLITE=https://api.maptiler.com/maps/satellite/style.json?key=<your key>
+  ```
+
+  The style credits its own sources on the map.
+- **A raster tile URL template** with `{z}`, `{x}` and `{y}` (in the order the
+  provider uses; MapLibre fills in nothing else, so `{s}` and other
+  placeholders are refused at boot). Tiles are 256 px squares, used up to
+  zoom 19. The provider's credit is then required and shown on the map as
+  plain text:
+
+  ```sh
+  MAP_STYLE_SATELLITE=https://imagery.example.com/tiles/{z}/{x}/{y}.jpg
+  MAP_STYLE_SATELLITE_ATTRIBUTION=Imagery © Example
+  ```
+
+The origin of the URL is added to the Content Security Policy (`img-src`,
+`connect-src`), so its tiles load. A style that loads from more hosts (tiles,
+fonts or sprites elsewhere) needs those in `MAP_CONNECT_SRC`; the browser
+console names any it refuses. Unset or empty, the control has no Satellite.
+
+**Terms of use.** Imagery is licensed, not open data: read the provider's
+terms before you configure it. Most allow a limited number of requests a
+month on a free plan, some only for personal or non-commercial use, and
+nearly all require their credit on the map (which is why a template needs
+`MAP_STYLE_SATELLITE_ATTRIBUTION`). A key in the URL reaches every browser
+that opens Trail, and `/api/config` shows it without a sign-in: restrict the
+key to Trail's addresses in the provider's dashboard (MapTiler: *Allowed HTTP
+origins*), and rotate it there if it leaks. Like the OpenFreeMap tiles, the
+imagery tiles a browser loads tell the provider which areas it shows, from the
+browser's address: not the tracks, and not who is looking.
+
 ## Logs
 
 Launchway shows each service's logs; on the server:
@@ -473,6 +518,8 @@ Day-to-day development uses `npm run dev` instead (README).
 | `backup` restarts with "pg_dump failed" | The database is not reachable; the log line before it shows why. |
 | Backups happen at the wrong hour | `TZ`. |
 | The mapped level shows averaged lines | No map data for that area yet: the tiles wait for the daily budget (log: "daily map download budget spent") or failed (log: "map tile could not be fetched"; tried again later). `PROCESSING_OVERPASS_URL` empty switches map data off altogether. |
+| The map's style control has no Satellite | `MAP_STYLE_SATELLITE` is unset, or the app refused it at boot (the log names the variable). |
+| Satellite stays blank or shows only some tiles | The browser console names the refused host: add it to `MAP_CONNECT_SRC`. Otherwise the provider refuses the key (usage limit, or the key is restricted to other origins). |
 | Stops, moves or modes are missing for new points | The worker runs a few seconds after an upload; `PROCESSING_ENABLED=false` switches it off. A failed window is retried with backoff (log: "processing window failed"). |
 
 ## Appendix: standalone (legacy)

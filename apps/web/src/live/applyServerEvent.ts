@@ -30,6 +30,11 @@ export function applyServerEvent(
       return;
     case "person":
       updatePersonInCache(queryClient, event.userId, event.device);
+      // Their track on the map grows with the upload (shown only where their share has history).
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.personTracksOf(event.userId),
+        refetchType: "active",
+      });
       return;
     case "share":
       if (event.change === "revoked") {

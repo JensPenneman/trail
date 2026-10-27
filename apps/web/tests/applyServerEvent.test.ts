@@ -122,6 +122,22 @@ describe("applyServerEvent for people", () => {
     expect(people?.[1]).toBe(others);
   });
 
+  it("refetches that person's track, nobody else's", () => {
+    const { queryClient, store } = withPeople();
+    const params = { from: "a", to: "b", deviceIds: [ids.anaPhone], share: "s:7" };
+    const hers = queryKeys.personTracks(ids.ana, params);
+    const his = queryKeys.personTracks(ids.bob, { ...params, deviceIds: [ids.bobPhone] });
+    queryClient.setQueryData(hers, { cached: true });
+    queryClient.setQueryData(his, { cached: true });
+    applyServerEvent(queryClient, store, {
+      type: "person",
+      userId: ids.ana,
+      device: sharedDevice(),
+    });
+    expect(queryClient.getQueryState(hers)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(his)?.isInvalidated).toBe(false);
+  });
+
   it("adds a device the person did not share before", () => {
     const { queryClient, store } = withPeople();
     const watch = sharedDevice({ id: "01926f3c-2e5f-7a71-8243-5d6e7f8091a9", name: "Watch" });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseHistorySelection } from "../src/pages/history/parseHistorySelection";
+import { parseHistorySelection } from "../src/pages/map/history/parseHistorySelection";
 
 const today = "2026-09-30";
 const parse = (query: string) => parseHistorySelection(new URLSearchParams(query), today);

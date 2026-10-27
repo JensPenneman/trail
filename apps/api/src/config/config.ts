@@ -1,3 +1,5 @@
+import type { SatelliteStyle } from "@trail/contracts/config";
+
 /** Express `trust proxy` value: hop count, boolean, or a list of addresses/subnet names. */
 export type TrustProxySetting = boolean | number | string;
 
@@ -73,8 +75,9 @@ export interface Config {
   /** Silent/recovered device alerts, or null when not configured. */
   alerts: AlertConfig | null;
   defaultTimezone: string;
-  mapStyles: { light: string; dark: string };
-  /** Extra CSP `connect-src`/`img-src` sources for the map (includes the style URLs' origins). */
+  /** MapLibre styles; satellite imagery only when `MAP_STYLE_SATELLITE` is set. */
+  mapStyles: { light: string; dark: string; satellite: SatelliteStyle | null };
+  /** Extra CSP `connect-src`/`img-src` sources for the map (includes the styles' and tiles' origins). */
   mapOrigins: readonly string[];
   /** Built SPA directory (absolute). */
   webDistDir: string;

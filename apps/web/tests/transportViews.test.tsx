@@ -5,8 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../src/api/queryKeys";
 import { applyServerEvent } from "../src/live/applyServerEvent";
 import { createLiveStore } from "../src/live/createLiveStore";
-import { HistoryPage } from "../src/pages/history/HistoryPage";
-import { LivePage } from "../src/pages/live/LivePage";
+import { MapPage } from "../src/pages/map/MapPage";
 import { automatic, ids, timeline, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
@@ -23,7 +22,7 @@ afterEach(() => {
 describe("the Transport level on History", () => {
   it("draws stops and moves by mode, with a legend and the day's timeline", async () => {
     mockApi(standardRoutes());
-    renderPage(<HistoryPage />, { path: "/history", user });
+    renderPage(<MapPage />, { url: "/?view=history", user });
     const level = screen.getByRole("group", { name: "Detail of the tracks" });
     expect(within(level).getByRole("radio", { name: "Transport" })).toBeChecked();
     await waitFor(() =>
@@ -44,12 +43,13 @@ describe("the Transport level on History", () => {
   it("keeps the level in the URL and remembers it", async () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
-    const { router } = renderPage(<HistoryPage />, { path: "/history", user });
+    const { router } = renderPage(<MapPage />, { url: "/?view=history", user });
     await person.click(screen.getByRole("radio", { name: "Raw" }));
-    expect(router.state.location.search).toBe("?level=raw");
+    expect(router.state.location.search).toBe("?view=history&level=raw");
     expect(window.localStorage.getItem("trail.level")).toBe("raw");
-    await waitFor(() => expect(screen.getByRole("img")).toHaveAttribute("data-transport", "0"));
-    expect(screen.getByRole("img")).toHaveAttribute("data-tracks", "1");
+    const map = () => screen.getByRole("img", { name: /^Map/ });
+    await waitFor(() => expect(map()).toHaveAttribute("data-transport", "0"));
+    expect(map()).toHaveAttribute("data-tracks", "1");
   });
 
   it("opens a move, confirms or changes its mode, and resets it", async () => {
@@ -68,7 +68,7 @@ describe("the Transport level on History", () => {
       },
     });
     const person = userEvent.setup();
-    renderPage(<HistoryPage />, { path: "/history", user });
+    renderPage(<MapPage />, { url: "/?view=history", user });
     await person.click(await screen.findByRole("button", { name: /Details of the train/ }));
     const dialog = await screen.findByRole("dialog", { name: "Train" });
     expect(within(dialog).getByText("Was this a train ride?")).toBeInTheDocument();
@@ -116,7 +116,7 @@ describe("the quick toggle on Live", () => {
       },
     });
     const person = userEvent.setup();
-    renderPage(<LivePage />, { path: "/", user });
+    renderPage(<MapPage />, { user });
     const card = await screen.findByRole("article", { name: "iPhone 16" });
     const chips = within(card).getByRole("group", { name: "Now:" });
     expect(

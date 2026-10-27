@@ -46,7 +46,7 @@ export function ProfileSection({ headingId }: { headingId: string }) {
 
   return (
     <section className="section" aria-labelledby={headingId}>
-      <h2 className="section__title" id={headingId}>
+      <h2 className="section__title" id={headingId} tabIndex={-1} data-section-title>
         Profile
       </h2>
       <form className="card" onSubmit={onSubmit} noValidate>

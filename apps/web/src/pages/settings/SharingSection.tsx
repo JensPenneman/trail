@@ -25,7 +25,7 @@ export function SharingSection({ headingId }: { headingId: string }) {
   const [stopping, setStopping] = useState<OutgoingShare | null>(null);
   return (
     <section className="section" aria-labelledby={headingId}>
-      <h2 className="section__title" id={headingId}>
+      <h2 className="section__title" id={headingId} tabIndex={-1} data-section-title>
         Sharing
       </h2>
       <div className="card">

@@ -19,7 +19,10 @@ function inviteState(invite: Invite, now: number): "used" | "expired" | "open" {
   return Date.parse(invite.expiresAt) <= now ? "expired" : "open";
 }
 
-/** Admins only: who has an account on this server, and invitations for new people. */
+/**
+ * Admins only: who has an account on this server, and invitations for new
+ * people (Settings › Accounts; People in the navigation is about sharing).
+ */
 export function PeopleSection({ headingId }: { headingId: string }) {
   const format = useFormatter();
   const accountsId = useId();
@@ -32,8 +35,8 @@ export function PeopleSection({ headingId }: { headingId: string }) {
 
   return (
     <section className="section" aria-labelledby={headingId}>
-      <h2 className="section__title" id={headingId}>
-        People
+      <h2 className="section__title" id={headingId} tabIndex={-1} data-section-title>
+        Accounts
       </h2>
       <div className="card">
         <h3 className="settings__subtitle">Invite someone</h3>
@@ -99,7 +102,7 @@ export function PeopleSection({ headingId }: { headingId: string }) {
 
       <div className="card card--flush">
         <h3 className="settings__subtitle settings__subtitle--padded" id={accountsId}>
-          Accounts
+          Accounts on this server
         </h3>
         {users.isPending ? (
           <LoadingBlock label="Loading accounts">

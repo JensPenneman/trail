@@ -7,13 +7,18 @@ import { devicePalette } from "./devicePalette";
 export interface DeviceColors {
   /** Palette slot for the CSS class `device-color-<slot>`. */
   slot(deviceId: string): number;
-  /** The colour as hex for the current colour scheme (for the map). */
+  /** The colour as hex (for the map), in the step for a dark or a light background. */
   hex(deviceId: string): string;
 }
 
-export function useDeviceColors(): DeviceColors {
+/**
+ * The signed-in person's device colours. `hex` follows the colour scheme,
+ * unless `dark` says what the map is drawn on (a dark map on a light page).
+ */
+export function useDeviceColors(options: { dark?: boolean } = {}): DeviceColors {
   const { data: devices } = useDevices();
-  const dark = usePrefersDark();
+  const prefersDark = usePrefersDark();
+  const dark = options.dark ?? prefersDark;
   return useMemo(() => {
     const slots = assignDeviceColors(devices ?? []);
     const palette = dark ? devicePalette.dark : devicePalette.light;

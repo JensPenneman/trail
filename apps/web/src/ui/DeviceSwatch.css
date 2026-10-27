@@ -4,6 +4,10 @@
   background: var(--device-color);
 }
 
+.device-swatch--person {
+  background: var(--person-color);
+}
+
 .device-swatch--dot {
   width: 0.75rem;
   height: 0.75rem;
