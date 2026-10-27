@@ -109,9 +109,16 @@ describe("heatFeatures", () => {
     expect(closing).toEqual(northWest);
   });
 
-  it("keeps the gap thin on cells wider on screen, and the squares visible on small ones", () => {
-    // Four zooms on, the tile is 256 px wide.
-    expect(ring(11)[0]?.[0]).toBeCloseTo(lonOf(2090 + 1.5 / 256 / 2), 9);
+  it("draws the square at most 20 px wide, centred, on cells wider on screen", () => {
+    // Three zooms on the tile is 128 px wide: a 20 px square in its middle.
+    const [northWest, northEast] = ring(10);
+    expect(northWest?.[0]).toBeCloseTo(lonOf(2090 + (1 - 20 / 128) / 2), 9);
+    expect(northEast?.[0]).toBeCloseTo(lonOf(2091 - (1 - 20 / 128) / 2), 9);
+    // Just under 20 px wide, the gap is still the thin one.
+    expect(ring(7.25)[0]?.[0]).toBeCloseTo(lonOf(2090 + 1.5 / (16 * 2 ** 0.25) / 2), 9);
+  });
+
+  it("keeps the squares visible on cells far smaller than meant", () => {
     // Far zoomed out the gap stays a fifth of the cell at most.
     expect(ring(2)[0]?.[0]).toBeCloseTo(lonOf(2090 + 0.1), 9);
   });
