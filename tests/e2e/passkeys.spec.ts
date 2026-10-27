@@ -78,7 +78,7 @@ test.describe("passkeys", () => {
     ).toBeVisible();
     await expect(phone.page.getByText(`For the account ${account.email}.`)).toBeVisible();
     await phone.page.getByRole("button", { name: "Create passkey and sign in" }).click();
-    await expect(phone.page.getByRole("heading", { level: 1, name: "Map" })).toBeVisible();
+    await expect(phone.page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
     expect(await phone.authenticator.passkeys()).toHaveLength(1);
 
     await page.reload();

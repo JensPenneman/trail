@@ -1,32 +1,15 @@
 import { expect, type Page } from "@playwright/test";
 import { fact } from "./support/deviceCard";
 import { expectAccessible } from "./support/expectAccessible";
-import { laterBatch, type OverlandBatch, overlandBatch } from "./support/overlandBatch";
+import { overlandBatch, withBattery } from "./support/overlandBatch";
 import { postOverland } from "./support/postOverland";
 import { signUp } from "./support/signUp";
 import { test } from "./support/test";
 import { uniqueEmail } from "./support/uniqueEmail";
 import { uploadedDevice } from "./support/uploadedDevice";
 
-/**
- * The same upload a minute later with every battery reading changed: what the
- * phone sends next. Later, as a device keeps only a newer reading than the one
- * it has.
- */
-function withBattery(batch: OverlandBatch, level: number): OverlandBatch {
-  const charged = (feature: OverlandBatch["locations"][number]) => ({
-    ...feature,
-    properties: { ...feature.properties, battery_level: level },
-  });
-  const later = laterBatch(batch, 60_000);
-  return {
-    ...later,
-    locations: later.locations.map(charged),
-    ...(later.current === undefined ? {} : { current: charged(later.current) }),
-  };
-}
-
-const youShareWith = (page: Page) => page.getByRole("region", { name: "You share with" });
+/** Whom one shares with, with what they see: Settings › Sharing (People links there). */
+const youShareWith = (page: Page) => page.getByRole("region", { name: "Sharing", exact: true });
 
 test("someone you share with sees you live, may hide you, and loses you when you stop", async ({
   page,
@@ -39,9 +22,10 @@ test("someone you share with sees you live, may hide you, and loses you when you
   const friendEmail = uniqueEmail("friend");
   const friendAccount = await signUp(friend.page, friendEmail);
 
-  await page.goto("/people");
+  // Share my location, from the home page.
+  await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
-  await page.getByRole("button", { name: "Share my location" }).first().click();
+  await page.getByRole("button", { name: "Share my location" }).click();
   const dialog = page.getByRole("dialog", { name: "Share my location" });
   await dialog.getByLabel("Email address").fill(friendEmail);
   await expect(dialog.getByRole("radio", { name: /^Precise/ })).toBeChecked();
@@ -52,9 +36,12 @@ test("someone you share with sees you live, may hide you, and loses you when you
     shared.getByText(`${friendAccount.displayName} can see your location now`),
   ).toBeVisible();
   await shared.getByRole("button", { name: "Done" }).click();
+  // The line under the people says so, and leads to the list in Settings.
+  await page.getByRole("link", { name: /^You share with 1 person/ }).click();
+  await expect(page).toHaveURL(/\/settings\/sharing$/);
   await expect(youShareWith(page).getByText("Sees you")).toBeVisible();
 
-  await friend.page.goto("/people");
+  await friend.page.goto("/");
   const card = friend.page.getByRole("article", { name: account.displayName });
   await expect(card.getByText("Sharer’s phone")).toBeVisible();
   await expect(fact(card, "Battery")).toContainText("77%");
