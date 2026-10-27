@@ -29,9 +29,12 @@ export type McpWork<Input, Answer> = (input: Input, context: WorkContext) => Pro
  * What a tool or resource read or changed, for the data access log
  * (docs/architecture.md §8.7): data of the token's own account — the devices
  * it resolved (never the name an agent typed) and the range — or, for
- * `get_people`, of the people who share with it, one access each.
+ * `get_people`, of the people who share with it, one access each, under the
+ * action they see (`ownersSee`: whether someone asked an agent is theirs).
  */
-export type WorkAccess = { resource: DataAccessResource } | { owners: readonly AccessOwner[] };
+export type WorkAccess =
+  | { resource: DataAccessResource }
+  | { owners: readonly AccessOwner[]; ownersSee: string };
 
 /**
  * How long one statement of an MCP read may take. An agent's question is
@@ -97,8 +100,9 @@ function messageFor(error: unknown): { message: string; expected: boolean } {
 
 /**
  * Counts a call that succeeded in the data access log: for the token's own
- * account (channel `mcp`), or for every person `get_people` showed (channel
- * `people`, the token's owner as the person who looked). Never throws.
+ * account (channel `mcp`), and for every person `get_people` showed (channel
+ * `people`, the token's owner as the person who looked, under the action the
+ * People page has). Never throws.
  */
 function recordWork(
   session: McpSession,
@@ -108,24 +112,30 @@ function recordWork(
   const { ctx, principal } = session;
   try {
     const facts = { action: record.action, access: record.kind, status: 200 };
+    const token = {
+      kind: "token" as const,
+      tokenId: principal.tokenId,
+      label: principal.tokenName,
+    };
     if ("owners" in access) {
       for (const owner of access.owners) {
         ctx.dataAccess.record({
           ...facts,
+          action: access.ownersSee,
           ownerUserId: owner.ownerUserId,
           channel: "people",
           actor: personActor(principal, owner.shareId),
           resource: owner.resource,
         });
       }
-      return;
     }
+    // The token's own account counts every call; of the people it showed, nothing.
     ctx.dataAccess.record({
       ...facts,
       ownerUserId: principal.user.id,
       channel: "mcp",
-      actor: { kind: "token", tokenId: principal.tokenId, label: principal.tokenName },
-      resource: access.resource,
+      actor: token,
+      resource: "owners" in access ? {} : access.resource,
     });
   } catch (error) {
     session.log.error({ err: error, action: record.action }, "data access not recorded");

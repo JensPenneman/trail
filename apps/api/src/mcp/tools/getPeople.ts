@@ -64,7 +64,8 @@ export const getPeople = defineTool({
           ? "Nobody shares their location with the owner."
           : `${people.length} ${people.length === 1 ? "person shares" : "people share"} with the owner: ${names.join(", ")}.`,
       items: people.length,
-      access: { owners: shown.map(personAccess) },
+      // To the people shown it is a look at People: that someone asked an agent is theirs.
+      access: { owners: shown.map(personAccess), ownersSee: "listPeople" },
     };
   },
 });

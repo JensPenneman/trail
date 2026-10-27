@@ -1371,8 +1371,8 @@ visitor (no key, network or browser). What tells rows apart for these
 limits is itself bounded: 50 000 entries an hour, past which every new
 access folds. Nobody — a recipient, a script, a botnet opening a link — can
 grow somebody's log faster than that, and the retention ends every row
-(`DATA_ACCESS_RETENTION_DAYS`, 365 days by default; §10). The table has `fillfactor = 70`, so counting a row again is a
-heap-only update.
+(`DATA_ACCESS_RETENTION_DAYS`, 365 days by default; §10). The table has
+`fillfactor = 70`, so counting a row again is a heap-only update.
 
 **What is recorded, and where.**
 
@@ -1389,10 +1389,12 @@ heap-only update.
   (`access: { people: true }`) return `owners` instead: one access for each
   person shown, on `people`, the caller recorded as that person and the
   share they looked through — never which session or token they used, their
-  browser or their address. `access: false` leaves a route out (the access
-  log's own); token routes (`tokens/verify`) and public ones (the OpenAPI
-  document) record nothing; nor does a refusal, an invalid request or a
-  failure, which throw before.
+  browser or their address. A token's call of a people route also counts in
+  the token's own account, like every token call, with an empty resource:
+  that it happened, not whom it showed. `access: false` leaves a route out
+  (the access log's own); token routes (`tokens/verify`) and public ones (the
+  OpenAPI document) record nothing; nor does a refusal, an invalid request or
+  a failure, which throw before.
 - **The dashboard's private API** (`recordDashboardAccess`, after the
   answer): tracks (level `raw`), the heatmap (its devices; the viewport is a
   place and is never kept), daily statistics, activity, visits, trips, raw
@@ -1405,8 +1407,10 @@ heap-only update.
   `mcp.resource.device_location`, on `mcp` with the token. A tool's answer
   says what it read (`ToolAnswer.access`): the devices it resolved — an id,
   also when the agent named the device — and the range or day, or for
-  `get_people` the owners (on `people`, like the people routes). Resource
-  listings name only devices and are not recorded.
+  `get_people` the owners: on `people`, like the people routes, and as
+  `listPeople` — that someone asked an agent is their own business — while
+  the token's account counts `mcp.get_people` with an empty resource.
+  Resource listings name only devices and are not recorded.
 - **Live** (`publishPeopleLater`, §9): each `person` event, per recipient,
   device and hour, `count` = the positions pushed.
 - **Public links** (`loadPublicShare`, §8.5): each view of a working link,

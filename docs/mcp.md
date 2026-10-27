@@ -205,7 +205,9 @@ it, so the server was built against these threats:
 - **The owner sees what the agent did.** Every call that succeeds counts in
   the owner's data access log (`GET /api/v1/access-log`, see
   [api.md](api.md#access-log)) as `mcp.<tool>` with the token, the devices it
-  resolved — a device named in the call is kept as its id — and the range,
+  resolved — a device named in the call is kept as its id — and the range
+  (`get_people` without whom it showed: each person shown sees a look at
+  People in their own log, not that an agent asked),
   never the answer; reading a resource counts as `mcp.resource.<name>`.
 
 The agent itself sees what the token allows, and an agent's model can be

@@ -301,6 +301,7 @@ describe("running a tool", () => {
           owners: [
             { ownerUserId: device, shareId: null, resource: { precision: "area" as const } },
           ],
+          ownersSee: "listPeople",
         },
       }),
     });
@@ -314,14 +315,24 @@ describe("running a tool", () => {
         actor: { kind: "token", tokenId: principal([]).tokenId, label: "Calendar agent" },
         resource: { deviceIds: [device] },
       },
+      // The people shown see a look at People; the token's account sees the tool, and no one.
       {
-        action: "mcp.get_people",
+        action: "listPeople",
         access: "read",
         status: 200,
         ownerUserId: device,
         channel: "people",
         actor: { kind: "person", userId: user.id, shareId: null, label: "Jens" },
         resource: { precision: "area" },
+      },
+      {
+        action: "mcp.get_people",
+        access: "read",
+        status: 200,
+        ownerUserId: user.id,
+        channel: "mcp",
+        actor: { kind: "token", tokenId: principal([]).tokenId, label: "Calendar agent" },
+        resource: {},
       },
     ]);
   });

@@ -476,8 +476,13 @@ describe("people the owner shares with", () => {
     const all = JSON.stringify(rows);
     expect(all).not.toContain("203.0.113");
     expect(all).not.toContain("Firefox");
-    // Her own log holds nothing: she read nothing of her own.
-    expect(await rowsOf(ana.id)).toEqual([]);
+    // Her own log has her token's call — every v1 call of a token counts there — but only
+    // that it happened: not whom it showed. Her browser's look at others is not hers to count.
+    const own = await rowsOf(ana.id);
+    expect(
+      own.map((row) => [row.action, row.channel, row.actor_kind, row.count, row.resource]),
+    ).toEqual([["listPeople", "api", "token", 1, {}]]);
+    expect(JSON.stringify(own)).not.toMatch(new RegExp(`${owner.id}|${shareId}|${phone.id}`));
   });
 
   it("cannot be forged by a page of another site that sends her browser to the track", async () => {
@@ -512,17 +517,24 @@ describe("people the owner shares with", () => {
     const { client } = await connectMcp(t.app, agentToken.secret);
     clients.push(client);
     await client.callTool({ name: "get_people", arguments: {} });
+    await ana.agent.get(apiPaths.v1.people.root).expect(200);
     const rows = await rowsOf(owner.id);
+    // That she asked an agent is hers: the owner sees her look at People, like the other one.
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      action: "mcp.get_people",
+      action: "listPeople",
       actor_kind: "person",
       channel: "people",
       actor_user_id: ana.id,
       actor_share_id: shareId,
       actor_token_id: null,
+      count: 2,
     });
-    expect(await rowsOf(ana.id)).toEqual([]);
+    expect(JSON.stringify(rows)).not.toMatch(/mcp|agent/i);
+    const own = await rowsOf(ana.id);
+    expect(own.map((row) => [row.action, row.channel, row.actor_label, row.resource])).toEqual([
+      ["mcp.get_people", "mcp", "Ana's agent", {}],
+    ]);
   });
 
   it("count the live positions a person's open page receives, per hour", async () => {

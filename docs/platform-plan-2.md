@@ -366,7 +366,10 @@ the whole of it; the shapes are `packages/contracts/src/dataAccess.ts`):
   token, browser and address stay out of the owner's log (they are the
   recipient's); `actor = the principal` means the person, whichever
   credential they used. Their reads through the MCP server are `people`
-  rows too, with the action `mcp.get_people`.
+  rows too, with the action `listPeople`: whether someone asks an agent is
+  theirs. A token's own people reads (`listPeople`, `getPerson`,
+  `getPersonTrack`, `mcp.get_people`) count in the token owner's log with an
+  empty resource — that the call happened, not whom it showed.
 - **Live** rows are per recipient, device and hour (`resource.deviceIds`),
   not per recipient and owner only.
 - **Bounded growth** needs more than hour rows: beyond 50 distinct rows of

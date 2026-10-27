@@ -305,7 +305,8 @@ function send(
 /**
  * Counts an answer that went out in the data access log: for the caller's
  * own account (their session on channel `web`, their token on `api`), or for
- * the owners a people route names. Public and token routes record nothing.
+ * the owners a people route names — and then a token's call for its own
+ * account too, without whom it showed. Public and token routes record nothing.
  * Never throws: the answer is out already, and the log must not fail it.
  */
 function recordAccess(
@@ -327,6 +328,16 @@ function recordAccess(
           channel: "people",
           actor: personActor(auth, owner.shareId),
           resource: owner.resource,
+        });
+      }
+      // A token's call counts in its owner's log like every other: that it happened, not whom
+      // it showed — that is the people's own business, in their logs.
+      if (auth.kind === "token") {
+        ctx.dataAccess.record({
+          ...facts,
+          ...principalActor(auth, null),
+          ownerUserId: auth.user.id,
+          resource: {},
         });
       }
       return;

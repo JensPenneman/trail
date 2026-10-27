@@ -685,6 +685,10 @@ describe("the data access log", () => {
         ],
       }),
     );
+    // A session's look at others is not counted for the one who looked…
+    await request(appFor(people, session)).get("/api/v1/people").expect(200);
+    expect(recorded.filter((access) => access.ownerUserId === ownerId)).toEqual([]);
+    recorded.length = 0;
     await request(appFor(people, token(["people:read"])))
       .get("/api/v1/people")
       .expect(200);
@@ -706,6 +710,16 @@ describe("the data access log", () => {
         ownerUserId: bob,
         channel: "people",
         actor: { kind: "person", userId: ownerId, shareId: null, label: "Jens" },
+        resource: {},
+      },
+      // … but a token's call is, like all of them: that it happened, nothing of whom it showed.
+      {
+        action: "peopleProbe",
+        access: "read",
+        status: 200,
+        ownerUserId: ownerId,
+        channel: "api",
+        actor: { kind: "token", tokenId: "t1", label: "Script" },
         resource: {},
       },
     ]);
