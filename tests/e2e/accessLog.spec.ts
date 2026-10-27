@@ -372,7 +372,10 @@ test("the access log filters by who, channel, period and action, and loads more"
   await expect(lines).toHaveCount(50);
   await expect(lines.first()).toContainText("Busy token");
   await expect(lines.first()).toContainText("Day statistics");
-  await page.getByRole("button", { name: "Load more" }).click();
+  // The rest comes by itself as the end of the list nears the view, which is what a browser does
+  // here; the button that also asks for it (for keyboards, screen readers and failures) is the
+  // unit tests'. Clicking it raced that load: the last page replaces the button with its line.
+  await lines.last().scrollIntoViewIfNeeded();
   await expect(page.getByText("That is all: lines are kept for a year.")).toBeVisible();
   expect(await lines.count()).toBeGreaterThan(50);
   if (oneHour) {
