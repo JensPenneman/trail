@@ -145,7 +145,7 @@ text only.
 |---|---|
 | Range per call | 31 days (local days: the night the clocks go back has 25 hours) |
 | Items per answer | 500; an answer that hit it says `truncated: true` — ask again with a narrower range |
-| Request body | 1 MB, one JSON-RPC message (no batches) |
+| Request body | 1 MB, one JSON-RPC message (no batches), not compressed (`415` otherwise) |
 | Database time per statement | 10 s, in a read-only transaction (`get_people` reads through the sharing code on the server's general limit); a call that needs more answers "This took too long" |
 | Requests | the API's: 600 a minute per client address and 600 a minute per token, shared with `/api/v1`, and 30 refused tokens in 10 minutes per address |
 

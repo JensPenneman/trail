@@ -49,49 +49,55 @@ page lists every upload; Live shows each one within seconds.
 
 [OwnTracks](https://owntracks.org) for iPhone (App Store) and Android (Google
 Play, F-Droid), in its **HTTP mode**: every point is one request to
-`<Trail>/api/owntracks`, authenticated with HTTP Basic — any user name, the
-device's access token as password.
+`<Trail>/api/owntracks` with the device's access token — as the password of
+HTTP Basic on Android (any user name), in an `Authorization: Bearer` header on
+an iPhone.
 
 1. In Trail: Devices › Add device, choose **OwnTracks**.
 2. On the phone, let OwnTracks take a configuration link:
    - iPhone: OwnTracks › Settings › **Allow external configuration** on.
    - Android: OwnTracks 2.6 and later ask for it too: Preferences › Remote
      Control › **Allow external configuration** on (2.5 takes links without it).
-3. Choose *iPhone* or *Android* above the setup code and scan it with the
-   camera, or tap **Open in OwnTracks** on the phone itself. (If an Android
-   camera does not offer to open the code, open the setup page on the phone.)
-   The link sets HTTP mode, the URL, user name, password, device ID and
-   tracker ID, and Trail's tracking settings.
+3. Choose *iPhone* or *Android* above the setup code — on an iPhone also how
+   it tracks, below — and scan the code with the camera, or tap **Open in
+   OwnTracks** on the phone itself. (If an Android camera does not offer to
+   open the code, open the setup page on the phone.) The link sets HTTP mode,
+   the URL, the access token (Android: user name and password; iPhone: the
+   *HTTP Headers*, with *Authentication* off), the device ID, the tracker ID
+   and Trail's tracking settings.
 4. Allow location access *Always* (Android: *Allow all the time*), and on
    Android let OwnTracks run without battery restrictions.
 
-By hand: in OwnTracks' connection settings choose the mode **HTTP**, enter the
-URL, turn authentication on (iPhone), and enter the user name (any; Trail
-suggests the device's key), the password (the access token), the device ID and
-the tracker ID (two letters or digits, shown in OwnTracks).
+By hand: in OwnTracks' connection settings choose the mode **HTTP** and enter
+the URL, the user name (any; Trail suggests the device's key), the device ID
+and the tracker ID (two letters or digits, shown in OwnTracks); then the token:
+on an iPhone leave *Authentication* off and set *HTTP Headers* to
+`Authorization: Bearer trl_…`; on Android enter the access token as password.
 
-**HTTPS only.** Basic authentication sends the token with every request, so
-Trail takes it over HTTPS only and answers anything else with 403 *Basic
-authentication needs HTTPS*. On an iPhone, OwnTracks' *HTTP Headers* setting
-can send `Authorization: Bearer trl_…` instead.
+**Tracking on an iPhone.** *Move*, the setup's default, keeps GPS on and
+records the detail transport modes need, at a high battery cost: expect the
+battery to run down noticeably faster. *Significant changes* leaves the fixes
+to iOS — a point every few hundred metres or minutes, for very little battery —
+enough for where you were, not for how you travelled. Trail offers a setup code
+for each; OwnTracks' own mode button switches between them later.
 
 Recommended settings (the setup link sets them):
 
 | Setting | iPhone | Android |
 |---|---|---|
 | Mode | HTTP | HTTP |
-| Monitoring | Move | Significant changes |
+| Token | HTTP Headers `Authorization: Bearer …`, Authentication off | user name and password |
+| Monitoring | Move (or Significant changes, see above) | Significant changes |
 | locatorDisplacement / Minimal location displacement | 30 m | 25 m |
 | locatorInterval / Location interval | 60 s | 15 s |
 | Location interval (Move mode) | — | 15 s |
 | Limit max locator frequency | — | on |
-| Locator priority | — | High accuracy (only through the link) |
+| Locator priority | — | High accuracy (only through the link, which names it: Android reads a number as a place in its own list) |
 | extendedData / Extended data | on | on |
 
 The two apps read the same settings differently. On an iPhone, *Move* keeps
-GPS on and reports a point after every 30 m, and at least once a minute;
-*Significant changes* reports every few hundred metres — enough to know where
-you were, too little for transport modes. On Android, *Move* reports every
+GPS on and reports a point after every 30 m, and at least once a minute. On
+Android, *Move* reports every
 interval whether the phone moves or not, so *Significant changes* with a
 high-accuracy locator, a 15 s interval and a 25 m displacement reports every 15
 to 30 seconds while you move and nothing while you stand still.
@@ -113,7 +119,8 @@ Good to know:
 
 - OwnTracks for iPhone **drops a message** that Trail answers with an error
   4xx — a wrong or replaced token, say — and shows an alert. After *Issue new
-  token* put the new password into OwnTracks right away. When a phone sends a
+  token* scan the new setup code (or put the new token into *HTTP Headers*)
+  right away. When a phone sends a
   long backlog faster than Trail takes it, Trail answers 503 instead, which
   OwnTracks retries.
 - An empty request (OwnTracks sends one when a friend is removed) is
@@ -125,7 +132,7 @@ acknowledged and listed among the device's uploads, but adds no point:
 ```sh
 curl -u phone:trl_... -H 'Content-Type: application/json' -d '{"_type":"status"}' \
   https://trail.example.com/api/owntracks
-# []        (a wrong token: 401; an http:// address: 403)
+# []        (a wrong token: 401; plain http:// to a Trail with an https:// address: 403)
 ```
 
 ## Traccar Client
@@ -226,9 +233,10 @@ keep Trail's address reachable from the phone.
 in the query or a form — `lat`, `lon` (or `location=lat,lon`), `timestamp`
 (UNIX seconds, milliseconds or ISO 8601 with a zone), `speed`, `bearing` or
 `heading`, `altitude`, `accuracy`, `batt`, `charge`, `valid`, `alarm`; the rest
-is kept as it came — and Traccar Client 9's JSON. The token goes in
-`Authorization: Bearer`, as `?token=`, as the device identifier `id`, or as the
-password of HTTP Basic over HTTPS.
+is kept as it came — and Traccar Client 9's JSON, one location per request.
+The token goes in `Authorization: Bearer`, as `?token=`, as the device
+identifier `id`, or as the password of HTTP Basic. A request is at most 64 kB
+and never compressed.
 
 The speed's unit comes with the app chosen for the device, never with the
 request: Traccar Client sends knots, OsmAnd and GPSLogger m/s. For another
@@ -250,8 +258,12 @@ seconds.
 - **403 This device is set up for … in Trail**: the token belongs to a device of
   another app. Each token works at its app's endpoint only; Issue new token can
   move the device to the app on the phone.
-- **403 Basic authentication needs HTTPS**: OwnTracks (or another client with
-  a user name and password) uses `http://`. Use Trail's `https://` address.
+- **403 Uploads need HTTPS**: the phone posts to `http://`, but Trail gives
+  phones an `https://` address, and then takes no token over plain HTTP — no
+  bearer token, password, `?token=` or identifier. Use the address the setup
+  shows.
+- **415 Unsupported request body encoding**: the client compresses its
+  uploads. None of these apps does; turn compression off.
 - **429 / 503 Too many requests**: a phone sends a long backlog; it tries again
   and gets through.
 - **Points arrive, but no transport modes**: too few points — OwnTracks in

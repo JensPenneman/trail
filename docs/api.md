@@ -182,7 +182,8 @@ like its token, is changed in the dashboard only.
 
 ## Requests and responses
 
-- JSON in UTF-8. Request bodies are `application/json`, at most 100 kB.
+- JSON in UTF-8. Request bodies are `application/json`, at most 100 kB, and
+  not compressed: a `Content-Encoding` other than `identity` is `415`.
 - Times are ISO 8601. Responses give UTC (`2026-10-26T08:41:07.000Z`);
   requests may use any offset. A range `from`–`to` includes `from` and
   excludes `to`. Local days, like statistics per day, follow the account's
@@ -336,7 +337,7 @@ change. `fields` appears with `validation_failed` and maps each request field
 | 404 | `not_found` | No such resource or route |
 | 409 | `conflict` | The change conflicts with the current state |
 | 413 | `payload_too_large` | The body is over 100 kB |
-| 415 | `bad_request` | The body is not JSON |
+| 415 | `bad_request` | The body is not JSON, or it is compressed |
 | 429 | `rate_limited` | A rate limit was reached (see below) |
 | 500 | `internal` | A server error; it has been logged |
 | 503 | `unavailable` | The database is down for a moment; retry |

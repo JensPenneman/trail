@@ -186,7 +186,7 @@ All configuration is environment variables, validated at boot with zod
 | `PUBLIC_URL` | — (required) | Canonical origin, e.g. `https://trail.jenspenneman.com`; used in links, CSRF/WebAuthn origin checks |
 | `ADDITIONAL_ORIGINS` | empty | More allowed origins, comma-separated (e.g. `http://localhost:8080`) |
 | `MCP_ALLOWED_ORIGINS` | empty | Origins of browser-based MCP clients that may call `/mcp` besides `PUBLIC_URL` and `ADDITIONAL_ORIGINS` (§8.6), comma-separated |
-| `INGEST_BASE_URL` | `PUBLIC_URL` | Base URL shown to phones; endpoints `<base>/api/overland`, `<base>/api/owntracks`, `<base>/api/osmand` (§6) |
+| `INGEST_BASE_URL` | `PUBLIC_URL` | Base URL shown to phones; endpoints `<base>/api/overland`, `<base>/api/owntracks`, `<base>/api/osmand` (§6). An `https:` base makes the endpoints refuse uploads over plain HTTP |
 | `SIGNUP_ALLOWLIST` | empty | Emails (or `*@domain`) that may create an account without an invite |
 | `TRUST_PROXY` | `false` (nobody) | Express `trust proxy`: the proxies whose `X-Forwarded-For`/`-Proto` decide client address and HTTPS; `deploy/compose.yaml` defaults to Launchway's edge, `10.210.0.2` (§12) |
 | `SESSION_TTL_DAYS` | `30` | Sliding session lifetime |
@@ -422,8 +422,8 @@ set the phones up is [docs/trackers.md](trackers.md) (Overland's own:
 | Endpoint | Apps | Token | Body | Answer to an accepted upload |
 |---|---|---|---|---|
 | `POST /api/overland` (§6.4), `GET` the account probe | Overland (iOS) | `Authorization: Bearer`, `?token=`, `?access_token=` | Overland's JSON batch, ≤ 5 MB | `{"result":"ok"}`, with `set` once a preset waits (§6.3) |
-| `POST /api/owntracks` (§6.5) | OwnTracks (iOS, Android) in HTTP mode | HTTP Basic password (any user name; HTTPS only), `Authorization: Bearer` | one JSON message, ≤ 1 MB | `200 []` |
-| `GET`/`POST /api/osmand` (§6.6) | Traccar Client, OsmAnd, GPSLogger (and other clients of the format) | `Authorization: Bearer`, HTTP Basic password (HTTPS only), `?token=`/`?access_token=`, the device identifier `id`/`deviceid`, JSON `device_id` | query or form, ≤ 64 kB; Traccar Client 9's JSON, ≤ 1 MB | `200`, empty |
+| `POST /api/owntracks` (§6.5) | OwnTracks (iOS, Android) in HTTP mode | HTTP Basic password (any user name; Android), `Authorization: Bearer` (the iPhone's *HTTP Headers*) | one JSON message, ≤ 256 kB | `200 []` |
+| `GET`/`POST /api/osmand` (§6.6) | Traccar Client, OsmAnd, GPSLogger (and other clients of the format) | `Authorization: Bearer`, HTTP Basic password, `?token=`/`?access_token=`, the device identifier `id`/`deviceid`, JSON `device_id` | query or form (≤ 100 parameters), or Traccar Client 9's JSON; ≤ 64 kB | `200`, empty |
 
 **Tokens.** One per device: `trl_` + 32 random bytes base64url, stored as
 SHA-256 in `devices.token_hash`. Whatever carries it, a value without that
@@ -431,16 +431,23 @@ shape is no token and costs no lookup. A token at another app's endpoint is
 refused with `403 {"error":"This device is set up for <App> in Trail. …"}`
 (`requireApp`): the app decides how an upload reads — the OsmAnd format's
 speed unit is the app's — so it is never guessed per request, and the holder
-learns nothing they could not try. HTTP Basic carries the token as a password
-in every request, so it is taken over HTTPS only — `req.secure`: TLS to Trail
-itself, or a trusted proxy's `X-Forwarded-Proto: https` (`TRUST_PROXY`, §12),
-the rule of the `__Host-` session cookie — and refused with `403` before any
-lookup otherwise. Bearer tokens and query tokens are taken over plain HTTP too
-(a home network during setup), as they always were. Unknown token → `401
-{"error":"Invalid access token"}` with a `WWW-Authenticate` challenge per
-scheme the endpoint takes (`Bearer realm="trail"`, OwnTracks' `Basic
-realm="trail"` too). Tokens never reach a log, a stored record or an answer
-(§12).
+learns nothing they could not try. Unknown token → `401 {"error":"Invalid
+access token"}` with a `WWW-Authenticate` challenge per scheme the endpoint
+takes (`Bearer realm="trail"`; `Basic realm="trail"` too where Basic is read).
+Tokens never reach a log, a stored record or an answer (§12).
+
+**HTTPS, one rule for every credential** (`refuseCredentialsOverHttp`), set by
+the address the phones were given — `INGEST_BASE_URL`, else `PUBLIC_URL`
+(`ingestHttpsOnly`). An `https:` address: an upload over plain HTTP is refused
+with `403 {"error":"Uploads need HTTPS: use https://…"}` before anything is read
+or looked up, whatever would carry its token — a bearer token, a Basic
+password, `?token=`, a form's `id`, a JSON `device_id`. HTTPS is `req.secure`:
+TLS to Trail itself, or a trusted proxy's `X-Forwarded-Proto: https`
+(`TRUST_PROXY`, §12), the rule of the `__Host-` session cookie. An `http:`
+address — a home network while Trail is set up (README, docs/overland.md) —
+takes every credential over HTTP, Basic included: the phones were told to use
+it, and refusing one scheme there would protect nothing while breaking the
+phones that use it (OwnTracks for iOS drops a message it gets a 4xx for).
 
 **Rate limits** (§12): uploads with an unknown token count per IP in one
 budget for all three endpoints (`RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES`,
@@ -461,9 +468,12 @@ it — Overland its batch until `{"result":"ok"}`, OwnTracks for Android a
 message for weeks ahead of everything queued after it, Traccar Client its
 queue in order — so an upload with a valid token is acknowledged whatever its
 content: what cannot be stored goes to `ingest_rejects` (§6.1). The only other
-answers are the refusals above, `413` for a body over the limit, `405` for
-another method, `503` while the database is down (`{"error":"Server
-temporarily unavailable"}`: the phone keeps its data) and `500`. Errors use
+answers are the refusals above, `413` for a body over the limit, `415` for a
+compressed body (no app compresses an upload, and none is decompressed: a
+body of a few bytes could otherwise cost the server a megabyte of work before
+any token is checked), `405` for another method, `503` while the database is
+down (`{"error":"Server temporarily unavailable"}`: the phone keeps its data)
+and `500`. Errors use
 `{"error":"…"}` on every endpoint (`sendIngestError`); Overland shows it on the
 phone, the other apps only look at the status.
 
@@ -480,9 +490,17 @@ newest battery reading); `ingest/` stores it the same way for every app
   action over 100 characters, a time without a zone) → stored in
   `ingest_rejects` with a reason; the upload is still acknowledged so the
   phone's queue never gets stuck on one bad record. A rejected record larger
-  than 16 kB is kept as a 2 000-character preview, and never with a
-  credential: keys that hold one (`password`, `token`, the OsmAnd format's
-  `id` …) are left out and token-shaped text is replaced (`withoutSecrets`).
+  than 16 kB is kept as a 2 000-character preview.
+- Nothing a phone sent keeps a credential where Trail stores it — a column
+  (a Wi-Fi name, a motion activity, an event's action), `extra` or the dead
+  letter (`withoutSecrets`): keys that hold one (`password`, `token`,
+  `accessToken` and the like, however spelled) are left out, and token-shaped
+  text is replaced, NULs dropped first so that none hides a token. OwnTracks'
+  message and Overland's upload pass it as a whole before anything reads them;
+  the OsmAnd format's parameters, whose text Trail keeps in `extra` only, lose
+  `id`, `deviceid`, `token` and `access_token` too. A preview of a body that is
+  no JSON is redacted whole, after JSON's `\uXXXX` escapes are decoded (as
+  `JSON.parse` would have), and only then cut.
 - A body the endpoint cannot read at all — OwnTracks text that is no JSON, a
   message without `_type`, the OsmAnd format with more than 100 parameters —
   is one rejected record, acknowledged likewise.
@@ -621,9 +639,10 @@ message per request with `_type`, `Content-Type: application/json`, the token
 as HTTP Basic password (Android sends Basic only when user name and password
 are both set; iOS when *Authentication* is on) or, from iOS's custom *HTTP
 Headers*, as a bearer token. The header is checked before the body is read
-(raw, ≤ 1 MB: a message is a few hundred bytes, a point of interest's 192 px
-photo some kilobytes). `X-Limit-U`/`X-Limit-D` and the query are ignored.
-Other methods → `405` (`Allow: POST`).
+(raw, never decompressed, ≤ 256 kB: a message is a few hundred bytes, a point
+of interest's photo, which the apps scale to 192 px, under 150 kB in base64).
+`X-Limit-U`/`X-Limit-D` and the query are ignored. Other methods → `405`
+(`Allow: POST`).
 
 Every accepted request is answered `200 []` (`Content-Type:
 application/json`): the apps parse the answer as a list of messages
@@ -647,18 +666,26 @@ sent again is stored once. OwnTracks for Android retries a message that got no
 queued after it; OwnTracks for iOS drops a message that gets a 4xx (with an
 alert) and keeps one that gets a 5xx — hence `503` over the rate limit (§6).
 
-The setup link (contracts `owntracksSetup.ts`) is `owntracks:///config?inline=`
+The setup links (contracts `owntracksSetup.ts`) are `owntracks:///config?inline=`
 and a configuration message in base64, percent-encoded (Android decodes the
 query with `URLDecoder`, which reads `+` as a space): `mode` 3 (HTTP), `url`,
-`auth`, `username` (the device key), `password` (the token), `deviceId`,
-`tid` (the name's initials), `extendedData` and the tracking per platform,
-because the apps read the same keys differently — iOS `monitoring` 2 (move:
-GPS on, a point every `locatorDisplacement` 30 m and at least every
-`locatorInterval` 60 s), Android `monitoring` 1 with `locatorPriority` 0
-(high accuracy), `locatorInterval` 15 s, `locatorDisplacement` 25 m,
-`moveModeLocatorInterval` 15 s and `pegLocatorFastestIntervalToInterval`.
-Both apps import a link only once *Allow external configuration* is on (iOS;
-Android from 2.6).
+`username` (the device key), `deviceId`, `tid` (the name's initials),
+`extendedData`, the token as each app sends it — Android `auth` on with the
+token as `password` (it sends Basic only, and only with both set), iOS `auth`
+off and `httpHeaders` `Authorization: Bearer <token>` (the lines of its *HTTP
+Headers* setting go with every request) — and the tracking per profile,
+because the apps read the same keys differently:
+
+| Profile | Tracking |
+|---|---|
+| `ios` (the default) | `monitoring` 2, move: GPS on, a point every `locatorDisplacement` 30 m and at least every `locatorInterval` 60 s — what transport modes need, at a high battery cost, which the setup screen states |
+| `iosSignificant` | `monitoring` 1, significant changes: iOS's own fixes every few hundred metres or minutes, little battery; the move values stay set for the app's mode button |
+| `android` | `monitoring` 1 with `locatorPriority` `"HighAccuracy"`, `locatorInterval` 15 s, `locatorDisplacement` 25 m, `moveModeLocatorInterval` 15 s and `pegLocatorFastestIntervalToInterval`: a point every 15 to 30 s while moving |
+
+The locator priority goes by name: Android reads a number as a position in its
+own list (0 would be High Accuracy, 3 No Power), which its documentation
+numbers the other way round. Both apps import a link only once *Allow external
+configuration* is on (iOS; Android from 2.6).
 
 ### 6.6 The OsmAnd format
 
@@ -672,16 +699,20 @@ the URL templates Trail gives them; Traccar Client 9 posted the JSON of
 Transistorsoft's background-geolocation plugin. `HEAD` and other methods →
 `405` (`Allow: GET, POST`): a `GET` of this format stores what it carries.
 
-The body (raw: ≤ 64 kB, or ≤ 1 MB for a JSON type, as Traccar Client 9 sends
-up to 1000 locations of about 500 bytes in one body) is read before the token
-is looked up, since Traccar Client sends its device identifier — the token —
-in the form; the
-parameters are the query's and then the form's, the first value of each name,
-at most 100 (`readOsmandRequest`). The token is the first token-shaped value
-of: `Authorization: Bearer`, the HTTP Basic password (HTTPS only), `token`,
-`access_token`, `id`, `deviceid`, and a JSON body's `device_id`. Every
-accepted request is answered `200` with an empty body, all these clients look
-at. One request is one record (a JSON body: one per location).
+Traccar Client sends its device identifier — the token — in the form, so the
+body is read before the token is looked up: raw, ≤ 64 kB, never decompressed
+(`415`). Before the lookup it is parsed only as far as the token needs
+(`readOsmandRequest`): the parameters, the query's and then the form's, the
+first value of each name, at most 100 parts in all — read part by part, so
+whatever follows the hundredth is never looked at, however long the body; a
+JSON body is only searched for a token-shaped `"device_id"` in one pass, and
+parsed once the device is known (`osmandRequestOf`). The token is the first
+token-shaped value of: `Authorization: Bearer`, the HTTP Basic password,
+`token`, `access_token`, `id`, `deviceid`, and a JSON body's `device_id`. A
+request without a known token thus costs a bounded read, never a parse of
+everything a body can hold. Every accepted request is answered `200` with an
+empty body, all these clients look at. One request is one record (a JSON
+body: one per location).
 
 | Parameter | Stored as |
 |---|---|
@@ -699,7 +730,10 @@ at. One request is one record (a JSON body: one per location).
 | anything else (`hdop` of other apps, `sat`, `cell`, `wifi` — an access point, not a network's name —, `driverUniqueId`, `mock` …) | `extra`, as text |
 
 Traccar Client 9's JSON (`Content-Type: application/json`):
-`{ device_id, location: {…} | [{…}] }` (at most 1000), each location with
+`{ device_id, location: {…} }`, one location per request — Traccar Client 9
+leaves the plugin's `batchSync` off (checked in 9.0.0, 9.3.0, 9.5.0 and
+9.7.20); an array, which the plugin sends with it on, is read too, up to 1000
+entries. Each location has
 `timestamp` (ISO 8601), `coords` (`latitude`, `longitude`, `accuracy`, `speed`
 in m/s, `heading`, `altitude`, optional `altitude_accuracy`,
 `speed_accuracy`, `heading_accuracy`; negative values unknown), `battery`
@@ -725,7 +759,12 @@ before — a Google Timeline export (Takeout's `Records.json` or the newer
 on-device `Timeline.json`), a GPX or GeoJSON file of another tracker, another
 Trail's export — is a planned follow-up: an upload in the dashboard that
 reads such a file into a device's `locations` (and visits) through the same
-normalisers, dead letter and deduplication, with the source in `extra`.
+normalisers, dead letter and deduplication, with the source in `extra`. It
+will be a signed-in request with the dashboard's CSRF checks, read by a
+streaming parser under size caps (the file's bytes, its records, the time it
+may take), never through the ingest endpoints: those are made for phones —
+a device token, small bodies read before the lookup — not for a file of years
+that someone chose on a computer.
 
 ## 7. Authentication
 
@@ -1026,7 +1065,8 @@ rest:
    refused, whatever the method (`sameOriginSessions`, §7).
 8. The CSRF guard of §7 for every request without a token (a token is no
    ambient credential).
-9. `express.json` (100 kB; `application/json` and `application/*+json`).
+9. `express.json` (100 kB; `application/json` and `application/*+json`; a
+   compressed body 415).
 10. The other routes of the registry, then a JSON 404 `not_found` for
     anything else under `/api/v1`. Errors go through the shared error handler.
 
@@ -1468,11 +1508,11 @@ rest:
    token for both.
 7. `postJsonOnly`: other methods 405 `method_not_allowed` with `Allow:
    POST`; a POST without a body 400, with another media type 415.
-8. `express.json` (1 MB, `application/json`) and `singleMessage` (a JSON
-   array is 400: the SDK's 2025 transport would take a batch of 100 calls
-   for one count of the rate limits), then the SDK, which gets the parsed
-   body and the principal (in `AuthInfo.extra` as an `McpCall`, with
-   the token's id as `token`, never the secret).
+8. `express.json` (1 MB, `application/json`, a compressed body 415) and
+   `singleMessage` (a JSON array is 400: the SDK's 2025 transport would take
+   a batch of 100 calls for one count of the rate limits), then the SDK, which
+   gets the parsed body and the principal (in `AuthInfo.extra` as an
+   `McpCall`, with the token's id as `token`, never the secret).
 9. A JSON 404 for other paths under `/mcp` and an error handler with the
    API's error body. Before the SDK every refusal uses `{ error: { code,
    message } }`; from the SDK on, JSON-RPC.
@@ -1923,23 +1963,30 @@ invalid value).
 - Database statements time out after 120 s (10 s for the MCP server's reads);
   deleting a device or an account and rebuilding derived data lift that limit
   for their own transaction.
-- Body limits: 100 kB default, 1 MB on `/mcp`, 5 MB on `/api/overland`, 1 MB
-  on `/api/owntracks`, 64 kB (and 100 parameters) on `/api/osmand`, 1 MB there
-  for Traccar Client 9's JSON.
+- Body limits: 100 kB default, 1 MB on `/mcp`, 5 MB on `/api/overland`,
+  256 kB on `/api/owntracks`, 64 kB (and 100 parameters) on `/api/osmand`. No
+  request body is decompressed anywhere — the dashboard, `/api/v1`, `/mcp` and
+  the ingest endpoints answer a compressed one with `415` before reading it:
+  no client of Trail compresses a request, and a body of a few bytes would
+  otherwise cost up to its limit in work, before authentication where the
+  parser runs first. A request to `/api/osmand` is parsed only as far as its
+  token needs before the lookup (§6.6).
 - Device tokens (§6): the ingest endpoints read them from the
-  `Authorization` header (Bearer; HTTP Basic's password over HTTPS only —
-  `req.secure`, so plain HTTP behind no trusted proxy is refused with 403
-  before any lookup), and where a client can send nothing else from the query
-  (`token`, `access_token`; Traccar Client's device identifier `id`/`deviceid`)
-  or the body (Traccar Client 10's form, Traccar Client 9's `device_id`). Every
+  `Authorization` header (Bearer, HTTP Basic's password), and where a client
+  can send nothing else from the query (`token`, `access_token`; Traccar
+  Client's device identifier `id`/`deviceid`) or the body (Traccar Client 10's
+  form, Traccar Client 9's `device_id`). One rule decides plain HTTP for all of
+  them (`refuseCredentialsOverHttp`): once the phones are given an `https:`
+  address, an upload over plain HTTP — `req.secure` false, so also behind a
+  proxy Trail does not trust — is refused with 403 before anything is read or
+  looked up; with an `http:` address every credential is taken. Every
   candidate is shape-checked before the lookup. A token in a URL is the price
   of clients that cannot send headers (OsmAnd, the old Traccar Client for
   Android): Trail's own logs redact it (below), a proxy in front of Trail may
   log it, and docs/trackers.md says so; Traccar Client shows its identifier —
   the token — on its main screen. What a phone sends is stored without
-  credentials (`withoutSecrets`: keys such as `password` and `token`, and
-  token-shaped text anywhere, redacted before any cut; the OsmAnd format's
-  `id` and `deviceid` as well), OwnTracks' configuration dumps (which hold the
+  credentials, in columns, `extra` and the dead letter alike (§6.1,
+  `withoutSecrets`), OwnTracks' configuration dumps (which hold the
   password) are never stored, and no ingest answer carries data: Overland's
   `ok` (and `set`), OwnTracks' `[]`, the OsmAnd format's empty `200`. A token
   works at its own app's endpoint only (403 elsewhere).
