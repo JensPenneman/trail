@@ -67,14 +67,15 @@ web_url() {
 # change the lockfile under a running stack. `up` and every command check it
 # first. The lock, outside the volume `npm ci` empties, keeps commands that
 # start together from installing at the same time: the others wait and find
-# the modules current. Its output goes to stderr, so a command's own output
-# stays as it is.
+# the modules current. It reads /dev/null, since `compose exec` passes its
+# standard input on and would take the command's, and writes to stderr, so a
+# command's own input and output stay as they are.
 install_modules() {
   compose exec --no-TTY dev flock /tmp/devc-modules.lock sh -c '
     cmp -s package-lock.json node_modules/.devc-package-lock.json && exit 0
     echo "devc: npm ci (new volumes or a changed package-lock.json)"
     npm ci --no-audit --no-fund && cp package-lock.json node_modules/.devc-package-lock.json
-  ' >&2
+  ' </dev/null >&2
 }
 
 up() {
@@ -97,7 +98,9 @@ up() {
 }
 
 run() {
-  if running; then install_modules; else up; fi
+  # Nothing before the command reads its input: a start would answer Compose's
+  # questions (whether to recreate a volume) with a line of it.
+  if running; then install_modules; else up </dev/null; fi
   # Called from inside the worktree, the command runs in the same directory.
   here=$(pwd -P)
   case $here/ in
@@ -141,8 +144,9 @@ run() {
 }
 
 forward() {
+  # No input for the kill: the command may still be reading its own.
   # shellcheck disable=SC2016 # expanded by the container's shell
-  compose exec --no-TTY dev sh -c 'kill -s "$1" -- "-$(cat "$0")" 2>/dev/null; rm -f "$0"' "$group" "$1" || true
+  compose exec --no-TTY dev sh -c 'kill -s "$1" -- "-$(cat "$0")" 2>/dev/null; rm -f "$0"' "$group" "$1" </dev/null || true
   interrupted=$2
 }
 
