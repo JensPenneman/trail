@@ -342,10 +342,12 @@ function visitStay(
  * phone stays. An excursion away from the place does not end the stay when
  * it is short — away for at most `mergeMoveMaxS` from its first point to its
  * last, never `travelMinS` on end farther than `pauseRadiusM` (a fix 350 m
- * off now and then is no departure), and without a recording gap longer than
- * `mergeMoveMaxS` that could hide where the phone went — and neither does a
- * recording pause the phone spent there. With a point every five minutes, one
- * fix off between two at the place is such an excursion too.
+ * off now and then is no departure), and, while the departure is not known,
+ * without a recording gap longer than `mergeMoveMaxS` that could hide where
+ * the phone went — and neither does a recording pause the phone spent there.
+ * With a point every five minutes one fix off between two at the place is
+ * such an excursion, and under a visit whose departure is known also with a
+ * point every ten.
  * A visit whose departure is known gives a stay for every time the phone was
  * there before it, the last one lasting until the departure when nothing was
  * recorded in between; one whose departure is not known (still open, or never
@@ -413,8 +415,9 @@ function visitStops(
         }
         continue;
       }
-      // Nothing recorded for longer than an excursion may last: where the phone went is unknown.
-      const unseen = point.t - (points[index - 1]?.t ?? point.t) > config.mergeMoveMaxS;
+      // Nothing recorded for longer than an excursion may last: where the phone went is unknown —
+      // unless iOS knows when it left, which vouches for the stay until then.
+      const unseen = open && point.t - (points[index - 1]?.t ?? point.t) > config.mergeMoveMaxS;
       if (near) {
         // Back from an excursion that a recording gap hid: the stay ended before it.
         if (away >= 0 && unseen) {
@@ -592,8 +595,9 @@ function walkedBetween(
 ): boolean {
   if (to - from < 2) return false;
   if (walksIn(points, paces, from + 1, to - 1, config).length > 0) return true;
-  // Too short for a walk, whatever CoreMotion said (one "walking" reading as the fix jumps).
-  if ((points[to]?.t ?? 0) - (points[from]?.t ?? 0) < config.walkMinS) return false;
+  // The readings on foot must last a walk themselves: one "walking" reading as the fix jumps,
+  // with a point every minute, is none.
+  if ((points[to - 1]?.t ?? 0) - (points[from + 1]?.t ?? 0) < config.walkMinS) return false;
   for (let index = from + 1; index < to; index += 1) {
     const point = points[index];
     if (point !== undefined && !onFoot(point)) return false;
@@ -628,8 +632,9 @@ function oneStay(
   const rightStart = points[stop.first];
   const between = leftEnd !== undefined && rightStart !== undefined ? rightStart.t - leftEnd.t : 0;
   const pause = stop.first === previous.last + 1 && between >= config.pauseGapS;
-  // How far and how long the phone was seen away between them — with a point every three
-  // minutes, one fix off is no excursion of six — and whether a recording gap could hide more.
+  // How long the phone was seen away between them — with a point every three minutes, one fix
+  // off is no excursion of six — how far, and whether a recording gap could hide more: one fix
+  // within `pauseRadiusM` between two at the place hides nothing (GPS jumping about indoors).
   let wander = 0;
   let unseen = false;
   for (let index = previous.last + 1; index <= stop.first; index += 1) {
@@ -645,11 +650,12 @@ function oneStay(
     stop.first > previous.last + 1 && firstAway !== undefined && lastAway !== undefined
       ? lastAway.t - firstAway.t
       : 0;
+  const single = stop.first === previous.last + 2;
+  const hidden = unseen && !(single && wander <= config.pauseRadiusM);
   const shortWander =
     apart <= config.mergeRadiusM &&
     awayS <= config.mergeMoveMaxS &&
-    !unseen &&
-    wander <= 2 * config.radiusM &&
+    !hidden &&
     !walkedBetween(points, paces, previous.last, stop.first, config);
   if (!((pause && apart <= config.pauseRadiusM) || shortWander)) return false;
   const centre = centroidIn(sums, previous.first, stop.last);

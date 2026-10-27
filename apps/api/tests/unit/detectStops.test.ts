@@ -544,28 +544,38 @@ describe("detectStops", () => {
     expect(spansOf(concat(first, wander, second)).map((span) => span.kind)).toEqual(["stop"]);
   });
 
-  it("does not split a stay at one CoreMotion walking reading as the fix jumps", () => {
-    const first = stay([0, -2000], { startT: morning, durationS: 600, intervalS: 2, noiseM: 3 });
-    const [lon, lat] = toLonLat(70, -2000);
-    const jump: RawPoint = {
-      t: lastT(first) + 2,
-      lat,
-      lon,
-      accuracy: 30,
-      speed: null,
-      altitude: null,
-      verticalAccuracy: null,
-      motion: ["walking"],
-    };
-    const second = stay([0, -2000], {
-      startT: lastT(first) + 4,
-      durationS: 600,
-      intervalS: 2,
-      noiseM: 3,
-      seed: 9,
+  for (const intervalS of [2, 20, 60]) {
+    it(`does not split a stay at one CoreMotion walking reading as the fix jumps, a point every ${intervalS} s`, () => {
+      // Half an hour, one fix 70 m off read as walking, half an hour more.
+      const first = stay([0, -2000], {
+        startT: morning,
+        durationS: 1800,
+        intervalS,
+        noiseM: 3,
+        motion: [],
+      });
+      const [lon, lat] = toLonLat(70, -2000);
+      const jump: RawPoint = {
+        t: lastT(first) + intervalS,
+        lat,
+        lon,
+        accuracy: 30,
+        speed: null,
+        altitude: null,
+        verticalAccuracy: null,
+        motion: ["walking"],
+      };
+      const second = stay([0, -2000], {
+        startT: jump.t + intervalS,
+        durationS: 1800,
+        intervalS,
+        noiseM: 3,
+        motion: [],
+        seed: 9,
+      });
+      expect(spansOf(concat(first, [jump], second)).map((span) => span.kind)).toEqual(["stop"]);
     });
-    expect(spansOf(concat(first, [jump], second)).map((span) => span.kind)).toEqual(["stop"]);
-  });
+  }
 
   it("joins two stays one fix apart with a point every three minutes", () => {
     // One fix 100 m off between two at home: no excursion of six minutes.
@@ -583,6 +593,38 @@ describe("detectStops", () => {
     };
     const after = stay([0, -2000], { startT: off.t + 180, durationS: 3600, intervalS: 180 });
     expect(spansOf(concat(before, [off], after)).map((span) => span.kind)).toEqual(["stop"]);
+  });
+
+  it("joins two stays without a visit across one fix far off, unless sparse and far", () => {
+    // An hour at home, one fix `offM` east, an hour more: no visit to vouch for the stay.
+    const across = (intervalS: number, offM: number) => {
+      const before = stay([0, -2000], { startT: morning, durationS: 3600, intervalS, motion: [] });
+      const [lon, lat] = toLonLat(offM, -2000);
+      const off: RawPoint = {
+        t: lastT(before) + intervalS,
+        lat,
+        lon,
+        accuracy: 65,
+        speed: null,
+        altitude: null,
+        verticalAccuracy: null,
+        motion: [],
+      };
+      const after = stay([0, -2000], {
+        startT: off.t + intervalS,
+        durationS: 3600,
+        intervalS,
+        motion: [],
+        seed: 6,
+      });
+      return spansOf(concat(before, [off], after)).map((span) => span.kind);
+    };
+    expect(across(10, 350)).toEqual(["stop"]);
+    expect(across(60, 450)).toEqual(["stop"]);
+    // A point every ten minutes: one fix 200 m off is GPS jumping about, one 400 m off may be a
+    // walk there and back.
+    expect(across(600, 200)).toEqual(["stop"]);
+    expect(across(600, 400)).toEqual(["stop", "move", "stop"]);
   });
 
   it("does not merge stays across a jump of more than 300 m", () => {
@@ -603,8 +645,8 @@ describe("detectStops", () => {
 });
 
 describe("a visit's stay and a fix far off", () => {
-  // Four hours at home, one fix 350 m off, four hours more: a point every 10 s, minute or 5 min.
-  const night = (intervalS: number) => {
+  // Four hours at home, one fix `offM` east, four hours more.
+  const night = (intervalS: number, offM = 350) => {
     const before = stay([-600, -400], {
       startT: morning,
       durationS: 4 * 3600,
@@ -612,7 +654,7 @@ describe("a visit's stay and a fix far off", () => {
       noiseM: 10,
       accuracy: 30,
     });
-    const [lon, lat] = toLonLat(-250, -400);
+    const [lon, lat] = toLonLat(-600 + offM, -400);
     const outlier: RawPoint = {
       t: lastT(before) + intervalS,
       lat,
@@ -643,6 +685,19 @@ describe("a visit's stay and a fix far off", () => {
         expect(stops).toHaveLength(1);
         expect(stops[0]?.from).toBeLessThan(outlierT - morning - 3600);
         expect(stops[0]?.to).toBeGreaterThan(outlierT - morning + 3600);
+      });
+    }
+  }
+
+  // iOS vouches for a visit with a known departure until then: with a point every six or ten
+  // minutes, a fix off is no departure either.
+  for (const intervalS of [360, 600]) {
+    for (const offM of [170, 350]) {
+      it(`keeps the night under a visit that ended one stop, a point every ${intervalS} s, one fix ${offM} m off`, () => {
+        const { points, outlierT } = night(intervalS, offM);
+        const spans = spansOf(points, [visitAt(-600, -400, morning - 60, morning + 9 * 3600)]);
+        expect(spans.map((span) => span.kind)).toEqual(["stop"]);
+        expect(spans[0]?.from).toBeLessThan(outlierT - morning - 3600);
       });
     }
   }

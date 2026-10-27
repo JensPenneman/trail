@@ -223,19 +223,33 @@ function disturb(points: RawPoint[], at: Vertex, next: () => number): void {
   }
 }
 
+/** A stay of a random history: when it began and ended, how often and how well it was recorded. */
+interface RandomStay {
+  startT: number;
+  endT: number;
+  intervalS: number;
+  noiseM: number;
+}
+
 /** A random history: stays (some under visits) and travel, with recording gaps now and then. */
-function randomHistory(seed: number): { points: RawPoint[]; visits: VisitSpan[]; legs: Leg[] } {
+function randomHistory(seed: number): {
+  points: RawPoint[];
+  visits: VisitSpan[];
+  legs: Leg[];
+  stays: RandomStay[];
+} {
   const next = random(seed);
   const pick = <T>(values: readonly T[]): T => values[Math.floor(next() * values.length)] as T;
   const parts: RawPoint[][] = [];
   const visits: VisitSpan[] = [];
   const legs: Leg[] = [];
+  const stays: RandomStay[] = [];
   let t = day14;
   let at: Vertex = [0, 0];
   const legsCount = 3 + Math.floor(next() * 6);
   for (let leg = 0; leg < legsCount; leg += 1) {
     // A stay, perhaps under a visit (closed, open, or reported twice).
-    const intervalS = pick([1, 1, 5, 20, 60, 180]);
+    const intervalS = pick([1, 1, 5, 20, 60, 180, 360, 600]);
     const noiseM = pick([2, 4, 10, 30]);
     const durationS = Math.max(4 * intervalS, Math.round(120 + next() * 4 * 3600));
     const here = stay(at, {
@@ -250,6 +264,7 @@ function randomHistory(seed: number): { points: RawPoint[]; visits: VisitSpan[];
     disturb(here, at, next);
     parts.push(here);
     legs.push({ kind: "home", startT: t, endT: lastT(here) });
+    stays.push({ startT: t, endT: lastT(here), intervalS, noiseM });
     const [lon, lat] = toLonLat(at[0] + (next() - 0.5) * 40, at[1] + (next() - 0.5) * 40);
     const visit = pick(["none", "closed", "open", "twice", "spurious"]);
     const leaves = lastT(here) + Math.round(next() * 300);
@@ -315,7 +330,7 @@ function randomHistory(seed: number): { points: RawPoint[]; visits: VisitSpan[];
     t = lastT(sampled) + 1;
   }
   visits.sort((a, b) => a.arrivedAt - b.arrivedAt);
-  return { points: concat(...parts), visits, legs };
+  return { points: concat(...parts), visits, legs, stays };
 }
 
 describe("random walks and stays", () => {
@@ -339,14 +354,23 @@ describe("random walks and stays", () => {
             `leg from ${leg.startT}`,
           ).toBeGreaterThan(0.8);
         }
-        // A stay under a visit of its own is one stop, whatever the fix and CoreMotion did.
-        for (const leg of history.legs.filter((part) => part.kind === "home")) {
-          if (!history.visits.some((visit) => visit.arrivedAt === leg.startT + 30)) continue;
+        // A stay is one stop, whatever the fix and CoreMotion did: under a visit of its own that
+        // ended — iOS vouches for it until the departure — however sparse; under an open visit or
+        // none while a point comes at least every five minutes (sparser, one fix 300 m off may
+        // be a walk there) and the fix stays within metres (one wandering 30 m at a point every
+        // few seconds or minutes still breaks a dwell).
+        for (const stayed of history.stays) {
+          const own = history.visits.filter((visit) => visit.arrivedAt === stayed.startT + 30);
+          const vouched = own.some((visit) => visit.departedAt !== null);
+          const plain = stayed.intervalS <= config.stops.mergeMoveMaxS && stayed.noiseM <= 10;
+          if (!vouched && !plain) continue;
           const inside = spans.filter(
             (span) =>
-              span.kind === "move" && span.startT > leg.startT + 30 && span.endT < leg.endT - 30,
+              span.kind === "move" &&
+              span.startT > stayed.startT + 30 &&
+              span.endT < stayed.endT - 30,
           );
-          expect(inside, `stay from ${leg.startT}`).toEqual([]);
+          expect(inside, `stay from ${stayed.startT}`).toEqual([]);
         }
       },
     );
