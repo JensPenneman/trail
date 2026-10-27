@@ -8,6 +8,7 @@ import {
   deskJitter,
   ferryCrossing,
   flight,
+  morning,
   motorwayDrive,
   sparseTrain,
   tramRide,
@@ -16,11 +17,15 @@ import {
 } from "../support/journeys";
 import { moves, processWorld, stops } from "../support/processWorld";
 import {
+  concat,
   distanceToLine,
+  lastT,
   pathLength,
   railLine,
+  stay,
   subPath,
   toXY,
+  travel,
   worldMap,
 } from "../support/syntheticWorld";
 
@@ -149,6 +154,31 @@ describe("splitting a move where the mode changes", () => {
     // The parts share their boundary points: no gap in the timeline.
     expect(walk?.endT).toBe(train?.startT);
     expect(train?.endT).toBe(walkAgain?.startT);
+  });
+});
+
+describe("a stop's spread", () => {
+  it("keeps how far apart a stop's points lie: a walk within it, or none", () => {
+    // Five minutes on the platform, a slow minute and a half 60 m along it, five more minutes.
+    const first = stay([0, 12], { startT: morning, durationS: 300, intervalS: 2, noiseM: 2 });
+    const along = travel(
+      [
+        [0, 12],
+        [60, 12],
+      ],
+      { startT: lastT(first) + 2, speedMs: 0.45, intervalS: 2 },
+    );
+    const second = stay([60, 12], {
+      startT: lastT(along) + 2,
+      durationS: 300,
+      intervalS: 2,
+      noiseM: 2,
+    });
+    const [platform] = stops(processWorld(concat(first, along, second)));
+    expect(platform?.features["spreadM"]).toBeGreaterThan(45);
+    expect(platform?.features["spreadM"]).toBeLessThan(75);
+    const [desk] = stops(processWorld(deskJitter()));
+    expect(desk?.features).toEqual({ spreadM: 0 });
   });
 });
 

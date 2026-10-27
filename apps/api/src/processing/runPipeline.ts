@@ -1,6 +1,6 @@
 import { applyOverrides, type Draft, type DraftMove } from "./applyOverrides";
 import { averagePoints } from "./averagePoints";
-import { centroidOf, detectStops } from "./detectStops";
+import { centroidOf, detectStops, spreadOf } from "./detectStops";
 import { type KeptPoint, keptPoints } from "./keptPoint";
 import { LocalProjection } from "./localProjection";
 import type { MapData, WayClass } from "./mapData";
@@ -398,7 +398,8 @@ function toSegment(
       confidence: null,
       averageSpeedMs: null,
       maxSpeedMs: null,
-      features: {},
+      // How far apart its points lie: the walk within a station (the segment dialog says so).
+      features: { spreadM: Math.round(spreadOf(kept, draft.first, draft.last)) },
     };
   }
   return moveSegment(draft, kept, pointCount, config);

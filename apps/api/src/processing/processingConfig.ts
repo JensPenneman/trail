@@ -45,10 +45,19 @@ export interface ProcessingConfig {
     readonly mergeMoveMaxS: number;
     /** Points of an iOS visit within this radius are part of its stop. */
     readonly visitRadiusM: number;
-    /** A recording gap longer than this ends a move unless the device clearly travelled meanwhile … */
+    /**
+     * A recording gap longer than this ends a move unless the device clearly travelled meanwhile …
+     * (and one whose two ends lie within `pauseRadiusM` of each other is a stop: the phone lay still)
+     */
     readonly gapSplitS: number;
     /** … at this speed or faster (a flight, a train through tunnels). */
     readonly gapKeepSpeedMs: number;
+    /** Two stays with a real walk between them are not one stay: this long … */
+    readonly walkMinS: number;
+    /** … faster than this (or CoreMotion on foot throughout): the walk from the bike shed to the platform. */
+    readonly walkSpeedMs: number;
+    /** A stop never holds travel: this long or longer farther than `pauseRadiusM` from its centroid. */
+    readonly travelMinS: number;
   };
   readonly mapping: {
     readonly tileZoom: number;
@@ -197,6 +206,9 @@ export const defaultProcessingConfig: ProcessingConfig = {
     visitRadiusM: 150,
     gapSplitS: 1800,
     gapKeepSpeedMs: 10,
+    walkMinS: 30,
+    walkSpeedMs: 0.6,
+    travelMinS: 120,
   },
   mapping: {
     tileZoom: 14,

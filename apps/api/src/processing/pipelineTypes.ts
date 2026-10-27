@@ -176,6 +176,9 @@ export interface InferredSegment {
   confidence: number | null;
   averageSpeedMs: number | null;
   maxSpeedMs: number | null;
-  /** `segments.features`: what the mode was judged on, the scores, the override that applies. */
+  /**
+   * `segments.features`: of a move what the mode was judged on, the scores and
+   * the override that applies; of a stop how far apart its points lie (`spreadM`).
+   */
   features: Record<string, unknown>;
 }
