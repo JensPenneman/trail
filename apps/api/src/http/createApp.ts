@@ -20,7 +20,9 @@ import { meRouter } from "../me/meRouter";
 import { passkeyLinksRouter } from "../me/passkeyLinksRouter";
 import { passkeysRouter } from "../me/passkeysRouter";
 import { sessionsRouter } from "../me/sessionsRouter";
+import { osmandRouter } from "../osmand/osmandRouter";
 import { overlandRouter } from "../overland/overlandRouter";
+import { owntracksRouter } from "../owntracks/owntracksRouter";
 import { apiReferenceScriptPath } from "../packagedFiles";
 import { configRouter } from "../publicConfig/configRouter";
 import { linkPageHeaders } from "../sharing/linkPageHeaders";
@@ -44,7 +46,8 @@ import { spaRouter } from "./spaRouter";
 /**
  * The Express application. Order matters: the MCP server (`/mcp`) is mounted
  * before compression and everything else, as it sets its own order; the
- * Overland ingest before cookies, CSRF checks and the 100 kB JSON parser;
+ * ingest endpoints (Overland, OwnTracks, the OsmAnd format) before cookies,
+ * CSRF checks and the 100 kB JSON parser;
  * health and config before the rate limiter; the public API (`/api/v1`)
  * before the dashboard's `/api` chain, as it sets its own order; unknown
  * `/api` paths never fall through to the SPA, and neither does `/docs`.
@@ -76,6 +79,8 @@ export function createApp(ctx: AppContext): Express {
   app.use("/api", noStore);
 
   app.use(apiPaths.overland, overlandRouter(ctx));
+  app.use(apiPaths.owntracks, owntracksRouter(ctx));
+  app.use(apiPaths.osmand, osmandRouter(ctx));
   app.use(healthRouter(ctx));
   app.use(configRouter(config));
 

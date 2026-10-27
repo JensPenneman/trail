@@ -1,5 +1,5 @@
 import type { Point } from "@trail/contracts/locationPublic";
-import { batteryStateOf } from "../overland/overlandValues";
+import { batteryStateOf } from "../ingest/ingestValues";
 import type { LocationRecord } from "./readPoints";
 
 /**

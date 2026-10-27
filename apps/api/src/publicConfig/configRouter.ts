@@ -13,6 +13,7 @@ export function configRouter(config: Config): Router {
     builtAt: config.build.builtAt,
     publicUrl: config.publicUrl,
     ingestUrl: config.ingestUrl,
+    ingestUrls: { ...config.ingestUrls },
     mapStyles: {
       light: config.mapStyles.light,
       dark: config.mapStyles.dark,

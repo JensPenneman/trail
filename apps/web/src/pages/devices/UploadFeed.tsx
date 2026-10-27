@@ -54,7 +54,7 @@ export function UploadFeed({ devices, slotOf }: UploadFeedProps) {
         <h2 className="section__title" id={headingId}>
           Uploads
         </h2>
-        <p className="section__description">Each request from Overland, newest first.</p>
+        <p className="section__description">Each request from the phones, newest first.</p>
       </div>
       {pending && feed.length === 0 ? (
         <LoadingBlock label="Loading recent uploads">

@@ -2,7 +2,7 @@
   "name": "@trail/api",
   "version": "0.0.0",
   "private": true,
-  "description": "Trail backend: Overland ingest endpoint, passkey auth and the dashboard API (Express 5 + PostgreSQL).",
+  "description": "Trail backend: the ingest endpoints (Overland, OwnTracks, the OsmAnd format), passkey auth and the dashboard API (Express 5 + PostgreSQL).",
   "type": "module",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/main.ts",

@@ -18,7 +18,7 @@ export function mcpInstructions(timeZone: string, now: Date): string {
     ? `${timeZone} (UTC${utcOffsetAt(now, timeZone)} now)`
     : "the account's time zone";
   return [
-    "Trail is the account owner's location history, recorded by the Overland app on their phones. Use it to see where the owner's devices are, where they have been and how they travelled — for example to plan appointments around real travel times.",
+    "Trail is the account owner's location history, recorded by tracking apps on their phones (Overland, OwnTracks, Traccar Client, OsmAnd, GPSLogger). Use it to see where the owner's devices are, where they have been and how they travelled — for example to plan appointments around real travel times.",
     `Times: ISO 8601. Answers give every time in ${zone}, with its offset. Send times with a UTC offset or Z, e.g. 2026-10-26T09:00:00+01:00. A date is a calendar day in that time zone; a range runs from \`from\` (included) to \`to\` (excluded).`,
     "Units: distances in metres, durations in seconds, speeds in km/h, accuracy in metres (a radius around the position); coordinates are WGS84 latitude and longitude in degrees.",
     `Limits: at most ${mcpLimits.maxRangeDays} days per call and ${mcpLimits.maxItems} items per answer. An answer that hit the limit says \`truncated\`: narrow the range and ask again for the rest.`,

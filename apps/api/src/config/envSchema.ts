@@ -123,6 +123,8 @@ export const envSchema = z
     RATE_LIMIT_AUTH_PER_MINUTE: env(intSchema(1, 1_000_000).default(20)),
     RATE_LIMIT_API_PER_MINUTE: env(intSchema(1, 1_000_000).default(600)),
     RATE_LIMIT_INGEST_PER_MINUTE: env(intSchema(1, 1_000_000).default(300)),
+    // One point per request, and a phone back online sends its backlog at once (docs/architecture.md §6).
+    RATE_LIMIT_INGEST_SINGLE_PER_MINUTE: env(intSchema(1, 1_000_000).default(1200)),
     RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES: env(intSchema(1, 1_000_000).default(30)),
     RATE_LIMIT_TOKEN_PER_MINUTE: env(intSchema(1, 1_000_000).default(600)),
     RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES: env(intSchema(1, 1_000_000).default(30)),

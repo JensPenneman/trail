@@ -2,7 +2,7 @@ import { bigint, index, jsonb, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { timestamptz } from "../columns/timestamptz";
 import { devices } from "./devices";
 
-/** Dead letter for invalid Overland records — never silently drop data (kept forever, like every recorded row). */
+/** Dead letter for invalid records of any app — never silently drop data (kept forever, like every recorded row). */
 export const ingestRejects = pgTable(
   "ingest_rejects",
   {

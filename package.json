@@ -2,7 +2,7 @@
   "name": "trail",
   "version": "0.4.0",
   "private": true,
-  "description": "Self-hosted location history for the Overland GPS tracker: passkey sign-in, multiple people and devices, live dashboard and map history.",
+  "description": "Self-hosted location history for phone trackers (Overland, OwnTracks, Traccar Client, OsmAnd, GPSLogger): passkey sign-in, multiple people and devices, live dashboard and map history.",
   "license": "UNLICENSED",
   "type": "module",
   "workspaces": [

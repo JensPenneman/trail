@@ -1,3 +1,4 @@
+import { deviceApps } from "@trail/contracts/deviceApp";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -21,7 +22,11 @@ export interface StoredLiveTrip {
   distanceM: number;
 }
 
-/** Trackers (Overland installs). Caches the latest position and battery so the dashboard never scans points. */
+/**
+ * Trackers: one tracking app on a phone (`source`: Overland, OwnTracks, Traccar
+ * Client, OsmAnd or GPSLogger). Caches the latest position and battery so the
+ * dashboard never scans points.
+ */
 export const devices = pgTable(
   "devices",
   {
@@ -30,10 +35,9 @@ export const devices = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    source: text("source", { enum: ["overland"] })
-      .notNull()
-      .default("overland"),
-    /** The Overland "Device ID". */
+    /** The app: which endpoint takes the token and how the OsmAnd format's values read. */
+    source: text("source", { enum: deviceApps }).notNull().default("overland"),
+    /** Overland's "Device ID", OwnTracks' user name and device ID; unique per user. */
     deviceKey: text("device_key").notNull(),
     tokenHash: text("token_hash").notNull().unique("devices_token_hash_key"),
     tokenHint: text("token_hint").notNull(),
@@ -55,7 +59,7 @@ export const devices = pgTable(
     batteryRecordedAt: timestamptz("battery_recorded_at"),
     liveTrip: jsonb("live_trip").$type<StoredLiveTrip>(),
     pointsTotal: bigint("points_total", { mode: "number" }).notNull().default(0),
-    /** Remote-settings preset sent once with the next ingest response. */
+    /** Remote-settings preset sent once with the next ingest response (Overland only). */
     pendingSettings: text("pending_settings", {
       enum: ["balanced", "balanced-plus", "high-resolution", "battery-saver"],
     }),
@@ -64,7 +68,10 @@ export const devices = pgTable(
   },
   (table) => [
     unique("devices_user_id_device_key_key").on(table.userId, table.deviceKey),
-    check("devices_source_check", sql`${table.source} IN ('overland')`),
+    check(
+      "devices_source_check",
+      sql`${table.source} IN ('overland', 'owntracks', 'traccar', 'osmand', 'gpslogger')`,
+    ),
     check(
       "devices_pending_settings_check",
       sql`${table.pendingSettings} IN ('balanced', 'balanced-plus', 'high-resolution', 'battery-saver')`,

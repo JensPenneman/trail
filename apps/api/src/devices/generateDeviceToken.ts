@@ -9,7 +9,7 @@ export interface DeviceToken {
   hint: string;
 }
 
-/** A new Overland access token: `trl_` + 32 random bytes base64url; only its SHA-256 is stored. */
+/** A new device access token: `trl_` + 32 random bytes base64url; only its SHA-256 is stored. */
 export function generateDeviceToken(): DeviceToken {
   const token = `trl_${randomToken(32)}`;
   return { token, hash: hashToken(token), hint: token.slice(-4) };

@@ -1,23 +1,16 @@
-import { type BatteryReading, batteryReading } from "./batteryReading";
-import { type Normalised, rejected } from "./normalised";
-import { asRecord, countOrNull, extraOf, nonNegativeOrNull, textOrNull } from "./overlandValues";
-import { parseOverlandTimestamp } from "./parseOverlandTimestamp";
-import { recordTime } from "./recordTime";
-import { storableJson } from "./storableJson";
-
-export interface NormalisedTrip {
-  startedAt: Date;
-  endedAt: Date;
-  mode: string;
-  distanceM: number | null;
-  durationS: number | null;
-  steps: number | null;
-  stoppedAutomatically: boolean;
-  startLocation: unknown;
-  endLocation: unknown;
-  extra: Record<string, unknown> | null;
-  battery: BatteryReading | null;
-}
+import { batteryReading } from "../ingest/batteryReading";
+import {
+  asRecord,
+  countOrNull,
+  extraOf,
+  nonNegativeOrNull,
+  textOrNull,
+} from "../ingest/ingestValues";
+import { type Normalised, rejected } from "../ingest/normalised";
+import type { NormalisedTrip } from "../ingest/normalisedRecords";
+import { parseIsoTimestamp } from "../ingest/parseIsoTimestamp";
+import { recordTime } from "../ingest/recordTime";
+import { storableJson } from "../ingest/storableJson";
 
 const mapped = new Set([
   "type",
@@ -41,8 +34,7 @@ export function normaliseTrip(record: unknown, receivedAt: Date): Normalised<Nor
 
   const start = recordTime(properties["start"], receivedAt);
   if (!start.ok) return rejected(`trip start: ${start.reason}`);
-  const end =
-    parseOverlandTimestamp(properties["end"]) ?? parseOverlandTimestamp(properties["timestamp"]);
+  const end = parseIsoTimestamp(properties["end"]) ?? parseIsoTimestamp(properties["timestamp"]);
   if (end === null) return rejected("trip end: missing or invalid timestamp");
   if (end.getTime() < start.value.getTime()) return rejected("trip ends before it starts");
 

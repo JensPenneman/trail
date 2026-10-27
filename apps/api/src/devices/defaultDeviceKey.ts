@@ -17,8 +17,9 @@ export function slugify(name: string, maxLength: number): string {
 }
 
 /**
- * The default Overland "Device ID": slug of the name plus four random
- * characters, so two phones called "iPhone" still get distinct keys.
+ * The default device key (Overland's "Device ID", OwnTracks' user name): a
+ * slug of the name plus four random characters, so two phones called
+ * "iPhone" still get distinct keys.
  */
 export function defaultDeviceKey(name: string): string {
   let suffix = "";

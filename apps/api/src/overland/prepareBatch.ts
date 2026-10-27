@@ -1,38 +1,20 @@
-import type { StoredLiveTrip } from "../db/schema/devices";
-import type { BatteryReading } from "./batteryReading";
+import { deadLetterRecord } from "../ingest/deadLetterRecord";
+import type {
+  NormalisedEvent,
+  NormalisedLocation,
+  NormalisedTrip,
+  NormalisedVisit,
+} from "../ingest/normalisedRecords";
+import { newerBattery, type PreparedBatch, type RejectedRecord } from "../ingest/preparedBatch";
 import { classifyRecord } from "./classifyRecord";
-import { deadLetterRecord } from "./deadLetterRecord";
-import { type NormalisedEvent, normaliseEvent } from "./normaliseEvent";
+import { normaliseEvent } from "./normaliseEvent";
 import { normaliseLiveTrip } from "./normaliseLiveTrip";
-import { type NormalisedLocation, normaliseLocation } from "./normaliseLocation";
-import { type NormalisedTrip, normaliseTrip } from "./normaliseTrip";
-import { type NormalisedVisit, normaliseVisit } from "./normaliseVisit";
+import { normaliseLocation } from "./normaliseLocation";
+import { normaliseTrip } from "./normaliseTrip";
+import { normaliseVisit } from "./normaliseVisit";
 import type { OverlandPayload } from "./overlandPayload";
 
-export interface RejectedRecord {
-  reason: string;
-  record: unknown;
-}
-
-/** An upload split into what will be stored, before touching the database. */
-export interface PreparedBatch {
-  /** Entries in the payload's `locations` array. */
-  records: number;
-  /** Valid location records, including repeats within this batch (for the duplicate count). */
-  locationRecords: number;
-  /** Unique by timestamp, oldest first. */
-  locations: NormalisedLocation[];
-  visits: NormalisedVisit[];
-  trips: NormalisedTrip[];
-  events: NormalisedEvent[];
-  rejects: RejectedRecord[];
-  /** The payload's `current` position (cached on the device, not stored as a point). */
-  current: NormalisedLocation | null;
-  liveTrip: StoredLiveTrip | null;
-  /** Newest battery reading of any record. */
-  battery: BatteryReading | null;
-}
-
+/** An Overland upload split into what will be stored (docs/architecture.md §6.4). */
 export function prepareBatch(payload: OverlandPayload, receivedAt: Date): PreparedBatch {
   const locations = new Map<number, NormalisedLocation>();
   const visits = new Map<number, NormalisedVisit>();
@@ -40,12 +22,10 @@ export function prepareBatch(payload: OverlandPayload, receivedAt: Date): Prepar
   const events = new Map<string, NormalisedEvent>();
   const rejects: RejectedRecord[] = [];
   let locationRecords = 0;
-  let battery: BatteryReading | null = null;
+  let battery: PreparedBatch["battery"] = null;
 
-  const noteBattery = (reading: BatteryReading | null) => {
-    if (reading !== null && (battery === null || reading.recordedAt > battery.recordedAt)) {
-      battery = reading;
-    }
+  const noteBattery = (reading: PreparedBatch["battery"]) => {
+    battery = newerBattery(battery, reading);
   };
   const reject = (reason: string, record: unknown) => {
     rejects.push({ reason, record: deadLetterRecord(record) });

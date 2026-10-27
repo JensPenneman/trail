@@ -281,6 +281,12 @@ describe("migrations on an existing database", () => {
        VALUES ($1, 'unparseable timestamp', '{"timestamp": "yesterday"}')`,
       [deviceId],
     );
+    await pool.query(
+      `INSERT INTO ingest_log (device_id, records, locations, duplicates, visits, trips, events,
+         rejected, duration_ms, user_agent)
+       VALUES ($1, 500, 500, 0, 1, 1, 1, 1, 42, 'Overland/2025.1')`,
+      [deviceId],
+    );
     // Someone to share with, of the first release: their account is part of its data.
     await pool.query(
       `INSERT INTO users (email, display_name, webauthn_user_id, timezone)
@@ -336,5 +342,14 @@ describe("migrations on an existing database", () => {
       "SELECT pending_settings FROM devices WHERE device_key = 'iphone-upgrade'",
     );
     expect(device.rows[0]?.pending_settings).toBe("battery-saver");
+  });
+
+  it("keeps the first release's devices and uploads Overland's", async () => {
+    const device = await pool.query(
+      "SELECT source FROM devices WHERE device_key = 'iphone-upgrade'",
+    );
+    expect(device.rows[0]?.source).toBe("overland");
+    const log = await pool.query("SELECT source, records, user_agent FROM ingest_log");
+    expect(log.rows).toEqual([{ source: "overland", records: 500, user_agent: "Overland/2025.1" }]);
   });
 });

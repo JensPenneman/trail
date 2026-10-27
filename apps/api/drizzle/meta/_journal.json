@@ -50,6 +50,13 @@
       "when": 1793095167931,
       "tag": "0006_data_access_log",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793119602154,
+      "tag": "0007_device_apps",
+      "breakpoints": true
     }
   ]
 }

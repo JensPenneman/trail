@@ -1,3 +1,4 @@
+import type { DeviceApp } from "@trail/contracts/deviceApp";
 import type { Database } from "../db/database";
 import { isUniqueViolation } from "../db/isUniqueViolation";
 import { devices } from "../db/schema/devices";
@@ -8,12 +9,13 @@ import { generateDeviceToken } from "./generateDeviceToken";
 const deviceKeyConstraint = "devices_user_id_device_key_key";
 
 /**
- * Registers a device. A chosen Device ID must be free among the user's devices
- * (409 otherwise); a generated one is retried on the rare collision.
+ * Registers a device for one app. A chosen Device ID must be free among the
+ * user's devices (409 otherwise); a generated one is retried on the rare
+ * collision.
  */
 export async function createDevice(
   db: Database,
-  input: { userId: string; name: string; deviceKey?: string | undefined },
+  input: { userId: string; name: string; source: DeviceApp; deviceKey?: string | undefined },
 ): Promise<{ id: string; deviceKey: string; token: string }> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const deviceKey = input.deviceKey ?? defaultDeviceKey(input.name);
@@ -24,6 +26,7 @@ export async function createDevice(
         .values({
           userId: input.userId,
           name: input.name,
+          source: input.source,
           deviceKey,
           tokenHash: token.hash,
           tokenHint: token.hint,

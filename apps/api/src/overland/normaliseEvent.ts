@@ -1,18 +1,10 @@
-import { type BatteryReading, batteryReading } from "./batteryReading";
-import { type Normalised, rejected } from "./normalised";
-import { asRecord, extraOf, textOrNull } from "./overlandValues";
+import { batteryReading } from "../ingest/batteryReading";
+import { asRecord, extraOf, textOrNull } from "../ingest/ingestValues";
+import { type Normalised, rejected } from "../ingest/normalised";
+import type { NormalisedEvent } from "../ingest/normalisedRecords";
+import { recordTime } from "../ingest/recordTime";
+import { storableJson } from "../ingest/storableJson";
 import { parsePointGeometry } from "./parsePointGeometry";
-import { recordTime } from "./recordTime";
-import { storableJson } from "./storableJson";
-
-export interface NormalisedEvent {
-  recordedAt: Date;
-  action: string;
-  lat: number | null;
-  lon: number | null;
-  extra: Record<string, unknown> | null;
-  battery: BatteryReading | null;
-}
 
 const mapped = new Set(["action", "timestamp"]);
 

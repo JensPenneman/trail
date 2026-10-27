@@ -1,5 +1,6 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
+import { deviceAppInfo } from "@trail/contracts/deviceApp";
 import { useId } from "react";
 import { Link } from "react-router";
 import { useFormatter } from "../../format/useFormatter";
@@ -96,15 +97,15 @@ export function MeCard({ name, devices, now, thresholds, shown, onShowOnMap }: M
           }
         >
           <p>
-            Trail shows where you are as soon as Overland on your phone sends its first points.
-            Adding one takes a minute: give it a name, scan the code with the iPhone camera, done.
+            Trail shows where you are as soon as the tracking app on your phone sends its first
+            points. Adding one takes a minute: give it a name, choose the app, scan the code, done.
           </p>
         </EmptyState>
       ) : null}
 
       {waiting && latest !== null ? (
         <p className="me-card__setup">
-          Open Overland on the phone and check that tracking is on.{" "}
+          Open {deviceAppInfo[latest.source].name} on the phone and check that tracking is on.{" "}
           <Link to={`/devices/${latest.id}`}>Setup details</Link>
         </p>
       ) : null}

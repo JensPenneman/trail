@@ -41,6 +41,7 @@ describe("devices", () => {
   it("creates a device and shows its Overland credentials once", async () => {
     const created = await createDevice(owner, { name: "Jens’s iPhone" });
     const { device, credentials } = created;
+    if (credentials.app !== "overland") throw new Error(`credentials for ${credentials.app}`);
     expect(credentials.accessToken).toMatch(/^trl_[A-Za-z0-9_-]{43}$/);
     expect(credentials.deviceKey).toMatch(/^jenss-iphone-[a-z0-9]{4}$/);
     expect(credentials.endpoint).toBe(`${testOrigin}/api/overland`);
@@ -145,6 +146,85 @@ describe("devices", () => {
       .expect(200);
     expect(probe.body).toEqual({ name: "iPhone 15" });
     token = credentials.accessToken;
+  });
+
+  it("creates a device for each app with what that app needs", async () => {
+    const owntracks = await createDevice(owner, { name: "Jens’s Pixel", source: "owntracks" });
+    expect(owntracks.device.source).toBe("owntracks");
+    expect(owntracks.credentials).toMatchObject({
+      app: "owntracks",
+      endpoint: `${testOrigin}/api/owntracks`,
+      username: owntracks.device.deviceKey,
+      deviceId: owntracks.device.deviceKey,
+      trackerId: "JP",
+    });
+    for (const source of ["traccar", "osmand", "gpslogger"] as const) {
+      const created = await createDevice(owner, { name: `Phone ${source}`, source });
+      expect(created.device.source).toBe(source);
+      expect(created.credentials).toMatchObject({
+        app: source,
+        endpoint: `${testOrigin}/api/osmand`,
+      });
+    }
+    const unknown = await owner
+      .post(apiPaths.devices.root)
+      .set("Origin", testOrigin)
+      .send({ name: "Garmin", source: "garmin" })
+      .expect(400);
+    expect(apiErrorSchema.parse(unknown.body).error.fields).toHaveProperty("source");
+  });
+
+  it("moves a device to another app with a new token, its history kept", async () => {
+    const phone = await createDevice(owner, { name: "Moving phone" });
+    const moved = await owner
+      .post(apiPaths.devices.token(phone.device.id))
+      .set("Origin", testOrigin)
+      .send({ source: "owntracks" })
+      .expect(200);
+    const { device, credentials } = deviceWithCredentialsResponseSchema.parse(moved.body);
+    expect(device).toMatchObject({
+      id: phone.device.id,
+      source: "owntracks",
+      pendingSettings: null,
+    });
+    expect(credentials.app).toBe("owntracks");
+    // The old token is gone, the new one works at OwnTracks' endpoint only.
+    await request(t.app)
+      .get("/api/overland")
+      .set("Authorization", `Bearer ${phone.credentials.accessToken}`)
+      .expect(401);
+    await request(t.app)
+      .get("/api/overland")
+      .set("Authorization", `Bearer ${credentials.accessToken}`)
+      .expect(403);
+    const invalid = await owner
+      .post(apiPaths.devices.token(phone.device.id))
+      .set("Origin", testOrigin)
+      .send({ source: "garmin" })
+      .expect(400);
+    expect(errorCode(invalid.body)).toBe("validation_failed");
+  });
+
+  it("refuses an Overland preset for another app, in the dashboard and in v1", async () => {
+    const pixel = await createDevice(owner, { name: "Preset-less", source: "traccar" });
+    const dashboard = await owner
+      .patch(apiPaths.devices.one(pixel.device.id))
+      .set("Origin", testOrigin)
+      .send({ pendingSettings: "balanced" })
+      .expect(409);
+    expect(errorCode(dashboard.body)).toBe("conflict");
+    const v1 = await owner
+      .patch(apiPaths.v1.devices.one(pixel.device.id))
+      .set("Origin", testOrigin)
+      .send({ pendingSettings: "balanced" })
+      .expect(409);
+    expect(errorCode(v1.body)).toBe("conflict");
+    // Withdrawing one, which no device of another app can have, is no conflict.
+    await owner
+      .patch(apiPaths.devices.one(pixel.device.id))
+      .set("Origin", testOrigin)
+      .send({ pendingSettings: null, name: "Renamed" })
+      .expect(200);
   });
 
   it("answers 404 for other people's and unknown devices", async () => {

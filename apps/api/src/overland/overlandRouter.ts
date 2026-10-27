@@ -1,69 +1,69 @@
 import { remoteSettingsPresetSchema } from "@trail/contracts/remoteSettings";
 import express, { type Router } from "express";
-import { rateLimit } from "express-rate-limit";
 import type { AppContext } from "../appContext";
-import { rateLimitLogger } from "../http/rateLimitLogger";
-import { afterIngest } from "./afterIngest";
-import { identifyDevice } from "./identifyDevice";
-import { hasIngestDevice, ingestDeviceOf } from "./ingestDevice";
-import { ingestUpload } from "./ingestUpload";
-import { overlandErrorHandler } from "./overlandErrorHandler";
+import { afterIngest } from "../ingest/afterIngest";
+import { failedTokenLimit } from "../ingest/failedTokenLimit";
+import { identifyDevice } from "../ingest/identifyDevice";
+import { ingestDeviceOf } from "../ingest/ingestDevice";
+import { ingestErrorHandler } from "../ingest/ingestErrorHandler";
+import { ingestUpload } from "../ingest/ingestUpload";
+import { perDeviceLimit } from "../ingest/perDeviceLimit";
+import { requireApp } from "../ingest/requireApp";
+import { requireIngestDevice } from "../ingest/requireIngestDevice";
+import { invalidTokenMessage, sendIngestError } from "../ingest/sendIngestError";
+import { extractDeviceToken } from "./extractDeviceToken";
 import { isOverlandPayload, payloadShapeError } from "./overlandPayload";
 import { presetSettings } from "./overlandPresets";
-import { requireIngestDevice } from "./requireIngestDevice";
-import { invalidTokenMessage, sendOverlandError } from "./sendOverlandError";
+import { prepareBatch } from "./prepareBatch";
 
 /**
  * `GET/POST /api/overland` — the Overland receiver endpoint (docs/architecture.md
- * §6). Mounted before cookies, CSRF checks and the dashboard body parser: it is
+ * §6.4). Mounted before cookies, CSRF checks and the dashboard body parser: it is
  * authenticated by a bearer token and speaks Overland's JSON dialect.
  */
 export function overlandRouter(ctx: AppContext): Router {
   const router = express.Router();
-  const limits = ctx.config.rateLimits;
-  const tooMany = (_req: express.Request, res: express.Response) => {
-    sendOverlandError(res, 429, "Too many requests — try again in a minute");
-  };
-
-  // Counts, and refuses, only requests without a valid token, per IP: guessing tokens gets
-  // slow, while a phone with its valid token is never locked out by a scanner that shares
-  // its address (behind NAT or a proxy every client can have the same one).
-  const failedTokens = rateLimit({
-    windowMs: 10 * 60_000,
-    limit: limits.ingestFailedPer10Minutes,
-    skip: hasIngestDevice,
-    standardHeaders: "draft-8",
-    legacyHeaders: false,
-    logger: rateLimitLogger(ctx.logger),
-    handler: tooMany,
-  });
-  const perDevice = rateLimit({
-    windowMs: 60_000,
-    limit: limits.ingestPerMinute,
-    keyGenerator: (req) => `device:${ingestDeviceOf(req).id}`,
-    standardHeaders: "draft-8",
-    legacyHeaders: false,
-    logger: rateLimitLogger(ctx.logger),
-    handler: tooMany,
+  const perDevice = perDeviceLimit(ctx, {
+    limit: ctx.config.rateLimits.ingestPerMinute,
+    status: 429,
+    identifier: "ingest-overland",
   });
   // Batches of 1000 points are ~600 kB; 5 MB leaves room without inviting abuse.
   const json = express.json({ limit: "5mb" });
-  const authenticated = [identifyDevice(ctx.db), failedTokens, requireIngestDevice];
+  const authenticated = [
+    identifyDevice(ctx.db, extractDeviceToken),
+    failedTokenLimit(ctx),
+    requireIngestDevice(),
+  ];
 
   // Overland's account probe, and a handy connectivity test.
-  router.get("/", ...authenticated, (req, res) => {
+  router.get("/", ...authenticated, requireApp("overland"), (req, res) => {
     res.json({ name: ingestDeviceOf(req).name });
   });
 
-  router.post("/", ...authenticated, perDevice, json, async (req, res) => {
+  router.post("/", ...authenticated, perDevice, requireApp("overland"), json, async (req, res) => {
+    const started = performance.now();
     const device = ingestDeviceOf(req);
-    if (!isOverlandPayload(req.body)) {
-      sendOverlandError(res, 400, payloadShapeError);
+    const payload: unknown = req.body;
+    if (!isOverlandPayload(payload)) {
+      sendIngestError(res, 400, payloadShapeError);
       return;
     }
-    const outcome = await ingestUpload(ctx.db, device, req.body, req.get("user-agent") ?? null);
+    const receivedAt = new Date();
+    const outcome = await ingestUpload(ctx.db, device, {
+      batch: prepareBatch(payload, receivedAt),
+      singles: () =>
+        payload.locations.map((record) => ({
+          record,
+          batch: prepareBatch({ locations: [record] }, receivedAt),
+        })),
+      receivedAt,
+      started,
+      userAgent: req.get("user-agent") ?? null,
+      deliversSettings: true,
+    });
     if (outcome === null) {
-      sendOverlandError(res, 401, invalidTokenMessage);
+      sendIngestError(res, 401, invalidTokenMessage);
       return;
     }
     const preset = remoteSettingsPresetSchema.safeParse(outcome.pendingSettings);
@@ -77,9 +77,9 @@ export function overlandRouter(ctx: AppContext): Router {
 
   router.all("/", (_req, res) => {
     res.setHeader("Allow", "GET, POST");
-    sendOverlandError(res, 405, "Method not allowed");
+    sendIngestError(res, 405, "Method not allowed");
   });
 
-  router.use(overlandErrorHandler(ctx.logger));
+  router.use(ingestErrorHandler(ctx.logger));
   return router;
 }

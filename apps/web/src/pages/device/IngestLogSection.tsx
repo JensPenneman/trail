@@ -1,3 +1,4 @@
+import { type DeviceApp, deviceAppInfo } from "@trail/contracts/deviceApp";
 import { useId, useState } from "react";
 import { useFormatter } from "../../format/useFormatter";
 import { useIngestLog } from "../../queries/useIngestLog";
@@ -10,12 +11,13 @@ import { useScrollableFocus } from "../../ui/useScrollableFocus";
 
 interface IngestLogSectionProps {
   deviceId: string;
+  app: DeviceApp;
 }
 
 const collapsedRows = 10;
 
 /** Every accepted upload with what it contained — the audit trail that data arrives. */
-export function IngestLogSection({ deviceId }: IngestLogSectionProps) {
+export function IngestLogSection({ deviceId, app }: IngestLogSectionProps) {
   const format = useFormatter();
   const headingId = useId();
   const captionId = useId();
@@ -45,7 +47,9 @@ export function IngestLogSection({ deviceId }: IngestLogSectionProps) {
       ) : log.data.length === 0 ? (
         <div className="card">
           <EmptyState icon="upload" title="No uploads yet" level={3}>
-            <p>Once Overland sends its first batch, every request is listed here.</p>
+            <p>
+              Once {deviceAppInfo[app].name} sends its first upload, every request is listed here.
+            </p>
           </EmptyState>
         </div>
       ) : (

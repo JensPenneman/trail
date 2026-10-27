@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { batteryStates } from "./device";
+import { deviceAppSchema } from "./deviceApp";
 import { remoteSettingsPresetSchema } from "./remoteSettings";
 
 /*
  * Devices as the public API (v1) shows them. The shapes are spelled out here
  * instead of derived from the dashboard's `DeviceSummary`, so a change to the
  * dashboard never changes v1, and nothing secret or administrative (token
- * hint, Overland Device ID, alerts, settings presets) can slip in.
+ * hint, device key, alerts, settings presets) can slip in.
  */
 
 const deviceId = z.uuid().meta({
@@ -56,7 +57,8 @@ export const positionSchema = z
       .nullable()
       .meta({ description: "Altitude in metres; null when unknown.", example: 12 }),
     motion: z.array(z.string()).meta({
-      description: "Motion activity iOS reported with the position (`walking`, `automotive` …).",
+      description:
+        "Motion activity the phone reported with the position (`walking`, `automotive` …): Overland, OwnTracks on iPhones and Traccar Client 9 send it; empty otherwise.",
       example: ["cycling"],
     }),
   })
@@ -67,7 +69,11 @@ export const devicePublicSchema = z
   .object({
     id: deviceId,
     name: z.string().meta({ description: "Its name in Trail.", example: "Jens’s iPhone" }),
-    source: z.enum(["overland"]).meta({ description: "The app that records it." }),
+    source: deviceAppSchema.meta({
+      description:
+        "The app that records it: `overland`, `owntracks`, `traccar` (Traccar Client), `osmand` or `gpslogger`.",
+      example: "overland",
+    }),
     createdAt: instant("When the device was added."),
     lastSeenAt: z.iso.datetime().nullable().meta({
       description: "Time of the last accepted upload of any kind; null before the first one.",
@@ -85,7 +91,9 @@ export const devicePublicSchema = z
         distanceM: z.number().meta({ description: "Distance so far in metres.", example: 3120 }),
       })
       .nullable()
-      .meta({ description: "A trip running in Overland right now, or null." }),
+      .meta({
+        description: "A trip running in Overland right now, or null (always for other apps).",
+      }),
     counts: z
       .object({
         today: z.number().int().nonnegative().meta({
@@ -108,7 +116,7 @@ export const devicePublicSchema = z
   .meta({
     id: "Device",
     description:
-      "A tracker: one install of Overland on a phone. Credentials and settings stay out.",
+      "A tracker: one tracking app on a phone (Overland, OwnTracks, Traccar Client, OsmAnd or GPSLogger). Credentials and settings stay out.",
   });
 export type DevicePublic = z.infer<typeof devicePublicSchema>;
 
@@ -160,7 +168,7 @@ export const deviceUpdateSchema = z
     }),
     pendingSettings: presetSchema.nullable().optional().meta({
       description:
-        "A preset for Overland, sent once with the answer to the phone's next upload; null withdraws one that has not been sent yet.",
+        "A preset for Overland, sent once with the answer to the phone's next upload; null withdraws one that has not been sent yet. Only devices that record with Overland take one (409 otherwise).",
     }),
   })
   .refine((body) => Object.keys(body).length > 0, "Nothing to update")

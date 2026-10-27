@@ -128,6 +128,35 @@ describe("logging safety", () => {
     expect(serialized).not.toContain("51.0543");
   });
 
+  it("drops every value of an upload in the OsmAnd format from the URL, and device tokens anywhere", () => {
+    const token = `trl_${"A".repeat(43)}`;
+    expect(redactUrl(`/api/osmand?id=${token}&lat=51.0543&lon=3.7174&timestamp=1730000000`)).toBe(
+      "/api/osmand?id=[redacted]&lat=[redacted]&lon=[redacted]&timestamp=[redacted]",
+    );
+    expect(redactUrl("/API/OsmAnd/?lat=51.05")).toBe("/API/OsmAnd/?lat=[redacted]");
+    expect(redactUrl("/api/%6Fsmand?lat=51.05")).toBe("/api/%6Fsmand?lat=[redacted]");
+    // A deeper path is no upload: its own rules apply.
+    expect(redactUrl("/api/osmand/more?lat=51.05")).toBe("/api/osmand/more?lat=51.05");
+    // A device token is found by its shape wherever a client puts it.
+    expect(redactUrl(`/api/owntracks?u=jens&id=${token}`)).toBe(
+      "/api/owntracks?u=jens&id=[redacted]",
+    );
+    expect(redactUrl(`/api/whatever/${token}`)).toBe("/api/whatever/[redacted]");
+    expect(redactUrl(`/api/overland?next=Bearer%20${token}`)).toBe("/api/overland?next=[redacted]");
+  });
+
+  it("never logs a request body a body parser kept in its error", () => {
+    const parseError = Object.assign(new SyntaxError("Unexpected token"), {
+      status: 400,
+      type: "entity.parse.failed",
+      body: "id=trl_secret&lat=51.0543",
+    });
+    const serialized = JSON.stringify(serializeError(parseError));
+    expect(serialized).toContain("entity.parse.failed");
+    expect(serialized).not.toContain("51.0543");
+    expect(serialized).not.toContain("trl_secret");
+  });
+
   it("never logs query parameters or failing rows of database errors", () => {
     const cause = Object.assign(new Error("null value violates not-null constraint"), {
       code: "23502",

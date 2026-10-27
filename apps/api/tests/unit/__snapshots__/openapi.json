@@ -285,7 +285,7 @@
       "patch": {
         "operationId": "updateDevice",
         "summary": "Change a device",
-        "description": "Renames the device, switches its silence alerts or queues a settings preset for Overland. Its credentials are out of reach: no token can replace a device's access token or delete a device, which takes a signed-in session. The answer has the device and its settings after the change; the device's position only for a credential with `locations:read`.\n\n**Access:** an API token with the scope `devices:write`, or a signed-in session.",
+        "description": "Renames the device, switches its silence alerts or queues a settings preset for Overland. A preset is for a device that records with Overland only: for another app the answer is 409. Its credentials and its app are out of reach: no token can replace a device's access token, move it to another app or delete it, which takes a signed-in session. The answer has the device and its settings after the change; the device's position only for a credential with `locations:read`.\n\n**Access:** an API token with the scope `devices:write`, or a signed-in session.",
         "tags": [
           "Devices"
         ],
@@ -355,6 +355,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "413": {
             "$ref": "#/components/responses/PayloadTooLarge"
@@ -3425,7 +3428,7 @@
             "type": "boolean"
           },
           "pendingSettings": {
-            "description": "A preset for Overland, sent once with the answer to the phone's next upload; null withdraws one that has not been sent yet.",
+            "description": "A preset for Overland, sent once with the answer to the phone's next upload; null withdraws one that has not been sent yet. Only devices that record with Overland take one (409 otherwise).",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SettingsPreset"
@@ -3854,9 +3857,14 @@
           "source": {
             "type": "string",
             "enum": [
-              "overland"
+              "overland",
+              "owntracks",
+              "traccar",
+              "osmand",
+              "gpslogger"
             ],
-            "description": "The app that records it."
+            "description": "The app that records it: `overland`, `owntracks`, `traccar` (Traccar Client), `osmand` or `gpslogger`.",
+            "example": "overland"
           },
           "createdAt": {
             "type": "string",
@@ -3931,7 +3939,7 @@
                 "type": "null"
               }
             ],
-            "description": "A trip running in Overland right now, or null."
+            "description": "A trip running in Overland right now, or null (always for other apps)."
           },
           "counts": {
             "type": "object",
@@ -3978,7 +3986,7 @@
           "counts"
         ],
         "additionalProperties": false,
-        "description": "A tracker: one install of Overland on a phone. Credentials and settings stay out."
+        "description": "A tracker: one tracking app on a phone (Overland, OwnTracks, Traccar Client, OsmAnd or GPSLogger). Credentials and settings stay out."
       },
       "Position": {
         "type": "object",
@@ -4036,7 +4044,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Motion activity iOS reported with the position (`walking`, `automotive` …).",
+            "description": "Motion activity the phone reported with the position (`walking`, `automotive` …): Overland, OwnTracks on iPhones and Traccar Client 9 send it; empty otherwise.",
             "example": [
               "cycling"
             ]
@@ -4202,7 +4210,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Motion activity iOS reported with the position (`walking`, `automotive` …).",
+            "description": "Motion activity the phone reported with the position (`walking`, `automotive` …): Overland, OwnTracks on iPhones and Traccar Client 9 send it; empty otherwise.",
             "example": [
               "cycling"
             ]
@@ -4321,7 +4329,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Motion activity iOS reported with the position (`walking`, `automotive` …).",
+            "description": "Motion activity the phone reported with the position (`walking`, `automotive` …): Overland, OwnTracks on iPhones and Traccar Client 9 send it; empty otherwise.",
             "example": [
               "cycling"
             ]

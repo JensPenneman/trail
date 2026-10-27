@@ -18,6 +18,7 @@ const created = {
     counts: { today: 0, last24h: 0, total: 0 },
   }),
   credentials: {
+    app: "overland",
     endpoint: "https://trail.example.com/api/overland",
     accessToken: "trl_Xq8vM2kPz7LtR4nW9cYb3hJd6fGs1aEe0uTiKoNpQrS",
     deviceKey: "lottes-iphone-x2k8",
@@ -140,7 +141,69 @@ describe("DevicesPage", () => {
     expect(screen.getByRole("img", { name: /Setup code for Lotte’s iPhone/ })).toBeInTheDocument();
     expect(screen.getByLabelText("Access token")).toHaveValue(created.credentials.accessToken);
     expect(screen.getByText("Waiting for the first upload…")).toBeInTheDocument();
-    expect(calls.find((call) => call.method === "POST")?.body).toEqual({ name: "Lotte’s iPhone" });
+    expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+      name: "Lotte’s iPhone",
+      source: "overland",
+    });
+  });
+
+  it("adds a device for another app and shows that app's setup", async () => {
+    const pixel = device({
+      id: "01926f40-4a71-7c93-a465-7f8091a2b3c5",
+      name: "Lotte’s Pixel",
+      source: "traccar",
+      lastSeenAt: null,
+      lastLocation: null,
+      battery: null,
+      counts: { today: 0, last24h: 0, total: 0 },
+    });
+    const token = "trl_Xq8vM2kPz7LtR4nW9cYb3hJd6fGs1aEe0uTiKoNpQrS";
+    const { calls } = mockApi({
+      ...standardRoutes(),
+      "POST /api/devices": {
+        status: 201,
+        body: {
+          device: pixel,
+          credentials: {
+            app: "traccar",
+            endpoint: "https://trail.example.com/api/osmand",
+            accessToken: token,
+            setupUrl: `org.traccar.client://setup?url=https%3A%2F%2Ftrail.example.com%2Fapi%2Fosmand&id=${token}`,
+          },
+        },
+      },
+      [`GET /api/devices/${pixel.id}`]: { status: 200, body: { device: pixel } },
+    });
+    const person = userEvent.setup();
+    renderPage(<DevicesPage />, { path: "/devices", url: "/devices?add=1", user });
+    const dialog = await screen.findByRole("dialog", { name: "Add a device" });
+    await person.type(within(dialog).getByLabelText("Name"), "Lotte’s Pixel");
+    const apps = within(dialog).getByRole("group", { name: "App on the phone" });
+    expect(
+      within(apps)
+        .getAllByRole("radio")
+        .map((radio) => radio.getAttribute("value")),
+    ).toEqual(["overland", "owntracks", "traccar", "osmand", "gpslogger"]);
+    expect(
+      within(apps).getByText(/^iOS and Android · One point per request, buffered/),
+    ).toBeInTheDocument();
+    await person.click(within(apps).getByRole("radio", { name: /Traccar Client/ }));
+    // Only Overland and OwnTracks have a use for the device key.
+    expect(within(dialog).queryByText("Device ID (optional)")).toBeNull();
+    await person.click(within(dialog).getByRole("button", { name: "Add device" }));
+
+    const setup = await screen.findByRole("dialog", { name: "Set up Lotte’s Pixel" });
+    expect(
+      within(setup).getByText("Connect Traccar Client on the phone to Trail."),
+    ).toBeInTheDocument();
+    expect(within(setup).getByLabelText("Device identifier (access token)")).toHaveValue(token);
+    expect(
+      within(setup).getByText(/In Traccar Client, turn Continuous tracking on/),
+    ).toBeInTheDocument();
+    expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+      name: "Lotte’s Pixel",
+      source: "traccar",
+    });
   });
 
   it("says which name is missing instead of sending an empty device", async () => {

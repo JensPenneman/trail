@@ -1,4 +1,5 @@
 import type { SatelliteStyle } from "@trail/contracts/config";
+import type { IngestProtocol } from "@trail/contracts/deviceApp";
 
 /** Express `trust proxy` value: hop count, boolean, or a list of addresses/subnet names. */
 export type TrustProxySetting = boolean | number | string;
@@ -12,6 +13,8 @@ interface RateLimitConfig {
   apiPerMinute: number;
   /** Accepted Overland uploads, per device token. */
   ingestPerMinute: number;
+  /** Accepted uploads of the one-point-per-request endpoints (OwnTracks, the OsmAnd format), per device token. */
+  ingestSinglePerMinute: number;
   /** Uploads with an unknown token, per IP. */
   ingestFailedPer10Minutes: number;
   /** v1 requests with a valid API token, per token. */
@@ -66,6 +69,8 @@ export interface Config {
   mcpAllowedOrigins: readonly string[];
   /** Full Overland receiver endpoint shown to phones. */
   ingestUrl: string;
+  /** Every ingest endpoint shown to phones (`INGEST_BASE_URL` + the protocol's path). */
+  ingestUrls: Readonly<Record<IngestProtocol, string>>;
   /** Lower-cased addresses or `*@domain` entries. */
   signupAllowlist: readonly string[];
   trustProxy: TrustProxySetting;

@@ -1,4 +1,4 @@
-import { asRecord } from "./overlandValues";
+import { asRecord } from "../ingest/ingestValues";
 
 export type RecordKind = "location" | "visit" | "trip" | "event";
 

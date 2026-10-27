@@ -36,6 +36,7 @@ describe("AddDeviceDialog", () => {
         body: {
           device: created,
           credentials: {
+            app: "overland",
             endpoint: "https://trail.example.com/api/overland",
             accessToken: "trl_Xq8vM2kPz7LtR4nW9cYb3hJd6fGs1aEe0uTiKoNpQrS",
             deviceKey: "lottes-iphone-x2k8",

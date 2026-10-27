@@ -1,4 +1,5 @@
 import type { DeviceSummary } from "@trail/contracts/device";
+import { deviceAppInfo } from "@trail/contracts/deviceApp";
 import type { DeviceStatus } from "@trail/contracts/deviceStatus";
 import { useId } from "react";
 import { Link } from "react-router";
@@ -59,6 +60,8 @@ export function DeviceCard({
         <StatusBadge status={status} thresholds={thresholds} />
       </header>
       <p className="device-card__meta">
+        {deviceAppInfo[device.source].name}
+        <span aria-hidden="true"> · </span>
         <span className="mono">{device.deviceKey}</span>
         <span aria-hidden="true"> · </span>
         {format.count(device.counts.total)} {device.counts.total === 1 ? "point" : "points"} in
@@ -67,8 +70,8 @@ export function DeviceCard({
 
       {device.lastSeenAt === null ? (
         <p className="device-card__upload device-card__upload--never">
-          Waiting for the first upload. Open Overland on the phone and check that tracking is on.{" "}
-          <Link to={`/devices/${device.id}`}>Setup details</Link>
+          Waiting for the first upload. Open {deviceAppInfo[device.source].name} on the phone and
+          check that tracking is on. <Link to={`/devices/${device.id}`}>Setup details</Link>
         </p>
       ) : (
         <p className="device-card__upload">

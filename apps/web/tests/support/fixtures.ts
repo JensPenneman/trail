@@ -41,6 +41,11 @@ export const config: PublicConfig = {
   builtAt: "2026-09-30T18:04:12.000Z",
   publicUrl: "https://trail.example.com",
   ingestUrl: "https://trail.example.com/api/overland",
+  ingestUrls: {
+    overland: "https://trail.example.com/api/overland",
+    owntracks: "https://trail.example.com/api/owntracks",
+    osmand: "https://trail.example.com/api/osmand",
+  },
   mapStyles: { light: "https://tiles.example.com/light", dark: "https://tiles.example.com/dark" },
   thresholds: { liveMinutes: 15, staleHours: 12 },
   features: { alerts: true },
