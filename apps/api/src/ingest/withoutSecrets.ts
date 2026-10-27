@@ -4,7 +4,9 @@ const secretPattern = /trl[ks]?_[A-Za-z0-9_-]{43}/g;
 /*
  * Keys that hold a credential in what the apps send: OwnTracks' configuration
  * dump has the password (Trail's device token) and the encryption key, the
- * OsmAnd format's `id` and `token` are the device token.
+ * OsmAnd format's `token` is the device token. Not `id`: OwnTracks' `_id` and
+ * others are no credential; the OsmAnd format's `id` and `deviceid` are left
+ * out of its parameters (`storableParameters`).
  */
 const secretKeys = new Set([
   "password",

@@ -1937,8 +1937,9 @@ invalid value).
   Android): Trail's own logs redact it (below), a proxy in front of Trail may
   log it, and docs/trackers.md says so; Traccar Client shows its identifier —
   the token — on its main screen. What a phone sends is stored without
-  credentials (`withoutSecrets`: keys such as `password`, `token`, `id`, and
-  token-shaped text anywhere), OwnTracks' configuration dumps (which hold the
+  credentials (`withoutSecrets`: keys such as `password` and `token`, and
+  token-shaped text anywhere, redacted before any cut; the OsmAnd format's
+  `id` and `deviceid` as well), OwnTracks' configuration dumps (which hold the
   password) are never stored, and no ingest answer carries data: Overland's
   `ok` (and `set`), OwnTracks' `[]`, the OsmAnd format's empty `200`. A token
   works at its own app's endpoint only (403 elsewhere).
