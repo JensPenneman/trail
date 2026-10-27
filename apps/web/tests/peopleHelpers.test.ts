@@ -66,6 +66,21 @@ describe("people helpers", () => {
     expect(describeActivity(at(2), activity("unknown", null, []), format)).toBe("7 km/h");
   });
 
+  it("take motions and trip modes named like every object's properties for unknown ones", () => {
+    const activity = (tripMode: string | null, motion: string[]) => ({
+      mode: null,
+      tripMode,
+      motion,
+    });
+    expect(describeActivity(at(0), activity(null, ["constructor", "__proto__"]), format)).toBe(
+      "Standing still",
+    );
+    expect(describeActivity(at(0), activity(null, ["__proto__", "walking"]), format)).toBe(
+      "Walking",
+    );
+    expect(describeActivity(at(0), activity("constructor", []), format)).toBe("On a constructor");
+  });
+
   it("pick the device that reported last", () => {
     const old = sharedDevice({ id: "old" });
     const location = sharedDevice().location;

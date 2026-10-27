@@ -48,7 +48,9 @@ function anchorOf(hash: string): string {
 
 /** The address for `/settings` with `hash`: an old anchor's section, else Profile. */
 export function settingsPathFor(hash: string, isAdmin: boolean): string {
-  const target = anchors[anchorOf(hash)];
+  const anchor = anchorOf(hash);
+  // Own keys only: the prototype would answer `#__proto__` and `#constructor`.
+  const target = Object.hasOwn(anchors, anchor) ? anchors[anchor] : undefined;
   if (target === undefined || (target.section === "people" && !isAdmin)) {
     return "/settings/profile";
   }

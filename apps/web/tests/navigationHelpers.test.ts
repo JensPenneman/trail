@@ -90,4 +90,9 @@ describe("anchors of the single Settings page of old", () => {
     expect(settingsPathFor("#people", true)).toBe("/settings/people");
     expect(settingsPathFor("#people", false)).toBe("/settings/profile");
   });
+
+  it("open Profile for the names every object has", () => {
+    expect(settingsPathFor("#__proto__", false)).toBe("/settings/profile");
+    expect(settingsPathFor("#constructor", false)).toBe("/settings/profile");
+  });
 });

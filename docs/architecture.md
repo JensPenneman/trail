@@ -51,7 +51,7 @@ npm only — never pnpm/yarn).
 - **Biome** for lint + format (`npm run lint`), **knip** for dead code,
   **lefthook** hooks (pre-commit: biome + typecheck; commit-msg: commitlint;
   pre-push: unit tests), **Conventional Commits**. Biome is pinned exactly
-  (`"@biomejs/biome": "2.5.15"`, no caret): it treats minor releases as rule
+  (`"@biomejs/biome": "2.6.2"`, no caret): it treats minor releases as rule
   changes (new lint rules, new formatting), so it is updated deliberately, in
   a pull request of its own with the fixes it asks for.
 - **One file = one purpose.** One component / one function / one router per
@@ -1918,8 +1918,8 @@ from ramps over the named thresholds, for example train = 3.2 × rail evidence
 (matched share or corridor ratio from 0.4 to 0.7) × speed (p85 from 40 to
 70 km/h) × max(0.35, station stops, no road overlap); bus = speed band (12–18
 … 55–70 km/h) × (2.6 × bus-stop evidence (pauses at bus stops, and at most of
-the stops passed) + 0.3 × road share); car = (speed + CoreMotion automotive
-+ road and motorway shares), damped off roads, by bus or tram stop pauses, by
+the stops passed) + 0.3 × road share); car = (speed + CoreMotion automotive +
+road and motorway shares), damped off roads, by bus or tram stop pauses, by
 rails and above 170 km/h; tram = tram share × (1.2 + 1.6 × tram-stop
 evidence); cycling = CoreMotion cycling, or 11–30 km/h, more on cycleways;
 walking = up to 7 km/h or CoreMotion walking; running = 8.5–16 km/h, or
@@ -1946,8 +1946,8 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
 
 ### 17.4 Scheduling
 
-- After an upload's commit its window (earliest new point − 30 min, latest
-  + 30 min) is queued (a window with the same start widens the queued one);
+- After an upload's commit its window (earliest new point − 30 min, latest +
+  30 min) is queued (a window with the same start widens the queued one);
   `POST /api/locations/delete` deletes the segments touching the range at
   once and queues the range ± 30 min in its transaction, under the device's
   processing lock; deleting a device cascades. A time-zone change needs

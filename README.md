@@ -188,7 +188,9 @@ four with two others beside it; when it runs alone,
 `E2E_WORKERS=4 scripts/devc.sh npm run test:e2e` finishes in under one.
 
 `scripts/devc.sh shell` opens a shell, `scripts/devc.sh ps` lists the
-containers.
+containers. A command has devc.sh's standard input and output to itself
+(`scripts/devc.sh node < script.mjs > out.json`): starting the stack and
+`npm ci` write to stderr.
 
 Each worktree is a Compose project of its own, named after its branch:
 `trail-<branch>` with `/` as `-`, for example `trail-chore-devcontainer`. It
