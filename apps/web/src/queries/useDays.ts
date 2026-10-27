@@ -6,9 +6,13 @@ import { type DaysParams, queryKeys } from "../api/queryKeys";
 
 /**
  * Per-day totals (calendar dots, yearly totals) for local dates `from..to`
- * inclusive. Null params ask for nothing.
+ * inclusive. Null params ask for nothing; `refetchInterval` asks again while
+ * a page expects the sums to change (the Devices page while uploads come in).
  */
-export function useDays(params: DaysParams | null) {
+export function useDays(
+  params: DaysParams | null,
+  { refetchInterval = false }: { refetchInterval?: number | false } = {},
+) {
   return useQuery({
     queryKey: params === null ? queryKeys.all.days : queryKeys.days(params),
     queryFn: ({ signal }) =>
@@ -18,5 +22,6 @@ export function useDays(params: DaysParams | null) {
       }),
     enabled: params !== null,
     placeholderData: keepPreviousData,
+    refetchInterval,
   });
 }

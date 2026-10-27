@@ -1,5 +1,5 @@
 import { type DeviceStatus, deviceStatus } from "@trail/contracts/deviceStatus";
-import { useEffect, useId, useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { DocumentTitle } from "../../app/DocumentTitle";
 import { activitySlots } from "../../devices/activitySlots";
@@ -27,8 +27,13 @@ import "./DevicesPage.css";
 const defaultThresholds = { liveMinutes: 15, staleHours: 12 };
 const activityHours = 48;
 const activity48h = { hours: activityHours, deviceIds: null };
-/** The server sums a day up 10 s after an upload (`DailyStatsScheduler`); a little after that. */
-const dayStatsDelayMs = 12_000;
+/**
+ * The server sums a day up 10 s after the first upload of a run, and again for
+ * the uploads that came after that pass (`DailyStatsScheduler`): while uploads
+ * come in, the sums are asked for every 10 s, until a minute after the last.
+ */
+const dayStatsEveryMs = 10_000;
+const uploadsRecentMs = 60_000;
 
 /**
  * Every phone of the signed-in person and the proof that each keeps sending:
@@ -50,16 +55,21 @@ export function DevicesPage() {
   const some = list.length > 0;
   // Today's sums per device (its distance) and the hours of the last two days, of every device.
   const day = useMemo(() => ({ from: today, to: today, deviceIds: null }), [today]);
-  const days = useDays(some ? day : null);
-  const activity = useActivity(some ? activity48h : null);
-  // An upload changes today's distance once the server has summed the day up again.
+  // An upload changes today's distance once the server has summed the day up again. When the
+  // latest one reached this page counts by this browser's clock: the server's may run apart.
   const latestUpload = useLiveState().uploads[0]?.receivedAt;
-  const refetchDays = days.refetch;
-  useEffect(() => {
-    if (latestUpload === undefined) return;
-    const timer = setTimeout(() => void refetchDays(), dayStatsDelayMs);
-    return () => clearTimeout(timer);
-  }, [latestUpload, refetchDays]);
+  // One that came before this page opened is in the sums it loads first.
+  const [arrived, setArrived] = useState<{ upload: string; at: number } | null>(() =>
+    latestUpload === undefined ? null : { upload: latestUpload, at: Number.NEGATIVE_INFINITY },
+  );
+  if (latestUpload !== undefined && arrived?.upload !== latestUpload) {
+    setArrived({ upload: latestUpload, at: Date.now() });
+  }
+  const uploading = arrived !== null && now - arrived.at < uploadsRecentMs;
+  const days = useDays(some ? day : null, {
+    refetchInterval: uploading ? dayStatsEveryMs : false,
+  });
+  const activity = useActivity(some ? activity48h : null);
   const statuses = useMemo(() => {
     const map = new Map<string, DeviceStatus>();
     for (const device of list) {

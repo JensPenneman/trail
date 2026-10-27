@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
@@ -317,6 +317,38 @@ describe("where someone on the map has been", () => {
     );
     await waitFor(() => expect(map()).toHaveAttribute("data-focus", ""));
   });
+
+  for (const way of ["the card's Next day", "Back"] as const) {
+    it(`does not make an old camera move again back on its day (${way})`, async () => {
+      mockApi(withHistoryOfAna());
+      const person = userEvent.setup();
+      const { router } = renderPage(<PeoplePage />, {
+        url: `/?view=history&people=me,${ids.ana}`,
+        user,
+      });
+      await person.click(await screen.findByRole("button", { name: /Show this visit on the map/ }));
+      expect(map().getAttribute("data-focus")).toMatch(/^visit:/);
+      await person.click(
+        within(await where("Ana Bell")).getByRole("button", { name: "Previous day" }),
+      );
+      await waitFor(() => expect(map()).toHaveAttribute("data-focus", ""));
+      // A camera move of the page's own on the other day.
+      await person.click(within(card("Ana Bell")).getByRole("button", { name: "Show on map" }));
+      expect(map().getAttribute("data-focus")).toMatch(new RegExp(`^show:${ids.ana}#`));
+      if (way === "Back") {
+        await act(async () => {
+          await router.navigate(-1);
+        });
+      } else {
+        await person.click(
+          within(await where("Ana Bell")).getByRole("button", { name: "Next day" }),
+        );
+      }
+      await waitFor(() => expect(router.state.location.search).not.toMatch(/date=/));
+      expect(await screen.findByText("Today")).toBeInTheDocument();
+      expect(map().getAttribute("data-focus")).not.toMatch(/^visit:/);
+    });
+  }
 
   it("is only there while they are on the map", async () => {
     mockApi(withHistoryOfAna());

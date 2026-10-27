@@ -111,7 +111,7 @@ export function useHistoryView({
   const [browsing, setBrowsing] = useState<{ anchor: string; month: string } | null>(null);
   const [scrub, setScrub] = useState<{ key: string; value: number } | null>(null);
   // A camera move belongs to its period: another day — from the controls, a person's card or
-  // the history's Back — never makes it again.
+  // the history's Back — drops it, and it is never made again.
   const [focus, setFocus] = useState<(Focus & { period: string }) | null>(null);
   // Every "show" is a camera move of its own, even to a place shown before.
   const focusCount = useRef(0);
@@ -286,8 +286,9 @@ export function useHistoryView({
     [readouts, colors, personColors, owners],
   );
 
-  // Nor is it made again when History is shown again after another view.
-  if (!active && focus !== null) setFocus(null);
+  // Another day drops it, so that coming back to its day does not make it again either, and
+  // so does another view, so that History shown again does not.
+  if (focus !== null && (!active || focus.period !== periodKey)) setFocus(null);
   if (!active) return inactiveView;
 
   // Levels, the timeline, visits and trips exist for one's own devices only.

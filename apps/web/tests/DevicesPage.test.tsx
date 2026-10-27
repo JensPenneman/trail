@@ -1,6 +1,6 @@
-import { act, screen, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DevicesPage } from "../src/pages/devices/DevicesPage";
 import { device, ids, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
@@ -78,6 +78,47 @@ describe("DevicesPage", () => {
     const first = within(uploads).getAllByRole("listitem")[0];
     expect(first).toHaveTextContent("+12 points");
     expect(first).toHaveTextContent("New");
+  });
+
+  it("asks for today's sums again while uploads keep coming, however close together", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const api = mockApi(standardRoutes());
+      const { liveStore } = renderPage(<DevicesPage />, { path: "/devices", user });
+      await screen.findByRole("article", { name: "iPhone 16" });
+      const asked = () => api.calls.filter((call) => call.path === "/api/stats/days").length;
+      await waitFor(() => expect(asked()).toBe(1));
+      // Two phones, or Send Now: an upload every 5 s for half a minute.
+      for (let second = 0; second < 30; second += 5) {
+        act(() =>
+          liveStore.addUpload({
+            deviceId: ids.phone,
+            receivedAt: new Date().toISOString(),
+            inserted: 3,
+            duplicates: 0,
+            rejected: 0,
+          }),
+        );
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5_000);
+        });
+      }
+      // The server sums the day up 10 s after a run's first upload: the page keeps up.
+      expect(asked()).toBeGreaterThanOrEqual(3);
+      const during = asked();
+      // A minute and a bit after the last upload it stops asking.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(80_000);
+      });
+      const after = asked();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(40_000);
+      });
+      expect(asked()).toBe(after);
+      expect(after).toBeGreaterThan(during);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("adds a device and shows its one-time setup code while waiting for the first upload", async () => {

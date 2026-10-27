@@ -1857,9 +1857,9 @@ count among them, since they lead to signed-in pages.
   when that changes (another day, other people or devices; Live and History
   on today share it), never merely because the view did; Heat frames it only
   when the page opened on it. A camera move of a view (a visit, trip or
-  move shown) belongs to its view and period: shown again later, or on
-  another day — from the controls, a person's card or Back — the view does
-  not make it again.
+  move shown) belongs to its view and period: another view or another day —
+  from the controls, a person's card or Back — drops it, so neither the view
+  shown again nor a return to its day makes it again.
 
   **Whose data**: the map shows the people chosen, Me alone by default (not
   remembered). **Show on map** on a card makes that person the choice — the
@@ -2008,13 +2008,14 @@ count among them, since they lead to signed-in pages.
   "Waiting for the first upload" with the way to its setup), the Overland trip
   in progress, battery, movement ("Last seen …" once it is not live), points
   today, the distance today (from the day's sums, `/api/stats/days`, not
-  from its whole track; asked again a little after each upload, since the
-  server sums a day up 10 s after one), the last position with its accuracy
-  and time, and the 48
-  h activity sparkline (points per hour and a tick per hour with uploads, its
-  numbers in a table); then **Uploads**, the feed of every upload of every
-  device, newest first (the ingest logs merged with those the event stream
-  announces while the page is open, marked New); "How it works". The "Add
+  from its whole track; asked for every 10 s while uploads come in, until a
+  minute after the last, since the server sums a day up 10 s after the first
+  upload of a run and again for the ones after that pass), the last position
+  with its accuracy and time, and the 48 h activity sparkline (points per
+  hour and a tick per hour with uploads, its numbers in a table); then
+  **Uploads**, the feed of every upload of every device, newest first (the
+  ingest logs merged with those the event stream announces while the page is
+  open, marked New); "How it works". The "Add
   device" flow: name → big QR of `setupUrl` ("scan with the iPhone camera,
   Overland opens with everything filled in"), "Open in Overland" button (on
   the phone itself), manual values with copy buttons, recommended Overland
