@@ -27,6 +27,7 @@ describe("loadConfig", () => {
       host: "0.0.0.0",
       publicUrl: "https://trail.example.com",
       allowedOrigins: ["https://trail.example.com"],
+      mcpAllowedOrigins: ["https://trail.example.com"],
       ingestUrl: "https://trail.example.com/api/overland",
       signupAllowlist: [],
       trustProxy: false,
@@ -108,6 +109,7 @@ describe("loadConfig", () => {
         NODE_ENV: "production",
         INGEST_BASE_URL: "",
         ADDITIONAL_ORIGINS: "http://localhost:8080, https://trail.example.com",
+        MCP_ALLOWED_ORIGINS: "https://agent.example/, http://localhost:8080",
         SIGNUP_ALLOWLIST: " Jens@Example.com ,*@family.example ",
         MAP_STYLE_DARK: "https://maps.example.net/dark.json",
         ALERT_NTFY_URL: "https://ntfy.sh/trail-alerts",
@@ -116,6 +118,11 @@ describe("loadConfig", () => {
       defaults,
     );
     expect(config.allowedOrigins).toEqual(["https://trail.example.com", "http://localhost:8080"]);
+    expect(config.mcpAllowedOrigins).toEqual([
+      "https://trail.example.com",
+      "http://localhost:8080",
+      "https://agent.example",
+    ]);
     expect(config.ingestUrl).toBe("https://trail.example.com/api/overland");
     expect(config.signupAllowlist).toEqual(["jens@example.com", "*@family.example"]);
     expect(config.mapOrigins).toEqual([
@@ -142,12 +149,14 @@ describe("loadConfig", () => {
       PORT: "99999",
       SIGNUP_ALLOWLIST: "not-an-email",
       DEFAULT_TIMEZONE: "Mars/Olympus",
+      MCP_ALLOWED_ORIGINS: "https://agent.example/app, chrome-extension://abc",
     });
     expect(issues.some((issue) => issue.startsWith("DATABASE_URL"))).toBe(true);
     expect(issues.some((issue) => issue.startsWith("PUBLIC_URL"))).toBe(true);
     expect(issues.some((issue) => issue.startsWith("PORT"))).toBe(true);
     expect(issues.some((issue) => issue.startsWith("SIGNUP_ALLOWLIST"))).toBe(true);
     expect(issues.some((issue) => issue.startsWith("DEFAULT_TIMEZONE"))).toBe(true);
+    expect(issues.filter((issue) => issue.startsWith("MCP_ALLOWED_ORIGINS"))).toHaveLength(2);
   });
 
   it("refuses non-trail databases outside production", () => {

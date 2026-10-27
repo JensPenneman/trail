@@ -17,6 +17,10 @@ const refusals = new WeakMap<Request, Refusal>();
 /** `Authorization` in the Bearer scheme, whose name is case-insensitive (RFC 9110 §11.1). */
 const bearerScheme = /^Bearer(?:[ \t]|$)/i;
 
+/* One chain per app, so `/api/v1` and `/mcp` share the failed-token limiter's
+ * budget: a scanner gets its refusals per address once, not once per door. */
+const chains = new WeakMap<AppContext, RequestHandler[]>();
+
 /** The secret of `Bearer <secret>` if it has the shape of an API token; null for anything else. */
 function bearerSecret(header: string): string | null {
   const secret = /^Bearer[ \t]+(\S+)[ \t]*$/i.exec(header)?.[1] ?? null;
@@ -33,9 +37,12 @@ function bearerSecret(header: string): string | null {
  * ingest's) skips valid tokens, so a scanner sharing an address with a client
  * never locks the client out. Requests without the header, or with another
  * scheme (`Basic` from a proxy in front, say), carry no API token: they pass
- * through to the session.
+ * through to the session. Every caller gets the same chain for an app:
+ * `/api/v1` and `/mcp` count refused tokens together.
  */
 export function authenticateBearer(ctx: AppContext): RequestHandler[] {
+  const existing = chains.get(ctx);
+  if (existing !== undefined) return existing;
   const identify: RequestHandler = async (req, _res, next) => {
     const header = req.get("authorization");
     if (header === undefined || !bearerScheme.test(header)) {
@@ -86,5 +93,7 @@ export function authenticateBearer(ctx: AppContext): RequestHandler[] {
     );
   };
 
-  return [identify, failedTokens, refuse];
+  const chain = [identify, failedTokens, refuse];
+  chains.set(ctx, chain);
+  return chain;
 }

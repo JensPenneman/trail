@@ -616,48 +616,85 @@ specification.
 
 ### 5.1 Transport and auth
 
-- `POST`, `GET` and `DELETE /mcp`: MCP Streamable HTTP, **stateless** (a new
-  transport per request, JSON responses enabled), built with the official
-  TypeScript SDK v2 (`@modelcontextprotocol/server` with its Express adapter;
-  fall back to v1 `@modelcontextprotocol/sdk` only if the adapter does not work
-  with Express 5, and say why in the pull request). Mounted before `compress`
-  and the generic `/api` chain, body limit 1 MB, per-token limiter.
-- Auth: `Authorization: Bearer trlk_…` (§2); scopes gate tools. 401 carries
-  `WWW-Authenticate: Bearer realm="trail", error="invalid_token"`. No OAuth
-  yet; documented as the follow-up (protected-resource metadata plus an
+- `POST /mcp`: MCP Streamable HTTP, **stateless** (one server per request,
+  answers as single JSON bodies), built with the official TypeScript SDK v2
+  (`@modelcontextprotocol/server`; `toNodeHandler` of `@modelcontextprotocol/node`
+  adapts it to Express 5). `GET`, `DELETE` and other methods answer 405.
+  Mounted before `compress` and the generic `/api` chain: CORS headers →
+  per-IP limiter → Origin check → preflight → bearer → per-token limiter →
+  POST with JSON → body limit 1 MB → SDK.
+- Both protocol eras: 2026-07-28 (per-request envelope) through the SDK's
+  `createMcpHandler`, 2025-era clients (`initialize`) through a stateless
+  leg with JSON responses, routed by the SDK's `isLegacyRequest`.
+- Auth: `Authorization: Bearer trlk_…` (§2) only — the session cookie is never
+  read on `/mcp`; scopes gate tools. 401 carries
+  `WWW-Authenticate: Bearer realm="trail"`, with `error="invalid_token"` for a
+  refused token (code `token_expired` for an expired one). No OAuth yet;
+  documented as the follow-up (protected-resource metadata plus an
   authorization server on top of the token system).
+- Origin (the transport's DNS-rebinding rule): no `Origin` passes; an `Origin`
+  must be one of the instance's origins or listed in `MCP_ALLOWED_ORIGINS`,
+  else 403, before the token lookup.
+- The per-token limiter is shared with `/api/v1`: one budget per token.
 - Server info: name `trail`, the build version, and an `instructions` string
-  about units, time zones and privacy.
+  about units, time zones (the account's, with its offset), limits and
+  privacy, which never holds anything a user typed.
 
 ### 5.2 Tools
 
 Every tool returns `structuredContent` and a short text; coordinates are WGS84;
-times are ISO with the owner's offset.
+times are ISO with the owner's offset. A token sees only the tools whose
+scopes it holds (all of them); calling another answers like an unknown tool.
 
-| Tool | Scope | Purpose |
+| Tool | Scopes | Purpose |
 |---|---|---|
-| `list_devices` | `devices:read` | devices with status, last seen, battery, current mode |
-| `get_current_location({ device? })` | `locations:read` | latest position, accuracy, age, speed, mode, battery; `device` by id or exact name; default = the most recently seen device |
-| `get_location_at({ at, device?, toleranceMinutes? })` | `locations:read` | the nearest point around a time (default tolerance 30 min) |
+| `list_devices` | `devices:read` | devices with status, last seen, battery (no positions); the current mode only with `locations:read` too |
+| `get_current_location({ device? })` | `locations:read` | latest position, accuracy, age, speed, mode, battery; `device` by id or exact name; default = the device with the newest position |
+| `get_location_at({ at, device?, toleranceMinutes? })` | `locations:read` | the nearest point around a time (default tolerance 30 min, at most 24 h) |
 | `get_timeline({ from, to, device? })` | `locations:read` | stops and moves with mode, distance, duration, speed — the appointment agent's main tool |
-| `get_day_summary({ date, device? })` | `locations:read`, `history:read` | distance and time per mode, first and last movement, stops |
-| `get_visits({ from, to })` | `locations:read` | as the API (visits are places) |
-| `get_trips({ from, to })` | `history:read` | as the API |
-| `set_transport_mode({ mode, device?, until? })` | `locations:write` | the quick override (§3.5) |
-| `get_people` | `people:read` | people sharing with the owner and their projected location |
+| `get_day_summary({ date, device? })` | `history:read` | distance and time per mode, first and last movement, stops — no coordinates |
+| `get_visits({ from, to, device? })` | `locations:read` | as the API (visits are places) |
+| `get_trips({ from, to, device? })` | `history:read` | as the API |
+| `set_transport_mode({ mode, device?, until? })` | `locations:read`, `locations:write` | the quick override (§3.5), source `mcp`; its answer is the mode now (location data) |
+| `get_people` | `people:read` | people sharing with the owner and their projected location, through `loadPeople` only; no addresses or ids |
 
-Resources: `trail://devices` and `trail://devices/{id}/location`. No prompts.
-Limits: at most 31 days per call and 500 items per result; a capped result
-tells the caller how to narrow the request.
+Resources: `trail://devices` (`devices:read`) and
+`trail://devices/{id}/location` (`locations:read`). No prompts.
+Limits: at most 31 days per call (local days, so a month across the night the
+clocks go back fits) and 500 items per result; a capped result tells the
+caller how to narrow the request. Reads run in a read-only transaction with a
+10 s statement timeout.
 
 ### 5.3 Docs
 
 `docs/mcp.md`: what it is, create a token with the Agent template, connect from
 Claude Code (`claude mcp add --transport http trail https://trail.jenspenneman.com/mcp
 --header "Authorization: Bearer …"`) and from other clients (Streamable HTTP
-with a bearer header), the tool reference, privacy notes. Linked from README
-and Settings › API tokens. An MCP smoke test in the integration suite uses the
-SDK's client to call `tools/list` and one tool against the test server.
+with a bearer header), the tool reference, privacy notes and the threat
+model, limits, troubleshooting. Linked from README, `docs/api.md` and
+Settings › API tokens. The integration suite drives the server with the SDK's
+own client in both eras.
+
+### 5.4 Decisions (feat/mcp)
+
+- **SDK v2, without `@modelcontextprotocol/express`.** The v2 server works
+  with Express 5 through `toNodeHandler`; the Express package only adds an
+  app factory and middleware (an Origin check by hostname, an OAuth bearer
+  verifier) that Trail replaces with stricter ones of its own (exact origins,
+  `authenticateBearer` with the failed-token limiter).
+- **JSON for both eras.** The SDK's default 2025 fallback answers over SSE;
+  Trail routes those requests to its own stateless leg with
+  `enableJsonResponse`.
+- **`get_day_summary` needs `history:read` only**: it carries no coordinates
+  (only times, counts and distances), like the trips. **`set_transport_mode`
+  needs `locations:read` too**, as `POST /api/v1/devices/{id}/mode` does: its
+  answer is the device's mode now.
+- **`list_devices` shows the current mode only with `locations:read`**, as
+  `GET /api/v1/devices/{id}/mode` does: the mode tells when a device moves.
+  Without the scope the field is left out, as `DevicePublic.lastLocation` is.
+- **CORS** also allows `Mcp-Method` and `Mcp-Name` (required by 2026-07-28)
+  and lets GET and DELETE through the preflight, so a browser-based client
+  sees the 405 rather than a network error.
 
 ---
 

@@ -72,6 +72,8 @@ BACKUP_ON_START=false
 
 Optional, as in [deploy/.env.example](../deploy/.env.example):
 `INGEST_BASE_URL` (empty: phones post to `PUBLIC_URL`), `ADDITIONAL_ORIGINS`,
+`MCP_ALLOWED_ORIGINS` (web pages of browser-based MCP clients, see
+[docs/mcp.md](mcp.md)),
 `ALERT_NTFY_URL`, `ALERT_NTFY_TOKEN`, `LIVE_WINDOW_MINUTES`,
 `STALE_AFTER_HOURS`, `SESSION_TTL_DAYS`, `DEFAULT_TIMEZONE`, `LOG_LEVEL`,
 `RATE_LIMIT_*`, `MAP_STYLE_LIGHT`, `MAP_STYLE_DARK`, `MAP_CONNECT_SRC` and

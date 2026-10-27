@@ -132,6 +132,7 @@ All configuration is environment variables, validated at boot with zod
 | `HOST` | `0.0.0.0` | Bind address |
 | `PUBLIC_URL` | — (required) | Canonical origin, e.g. `https://trail.jenspenneman.com`; used in links, CSRF/WebAuthn origin checks |
 | `ADDITIONAL_ORIGINS` | empty | More allowed origins, comma-separated (e.g. `http://localhost:8080`) |
+| `MCP_ALLOWED_ORIGINS` | empty | Origins of browser-based MCP clients that may call `/mcp` besides `PUBLIC_URL` and `ADDITIONAL_ORIGINS` (§8.6), comma-separated |
 | `INGEST_BASE_URL` | `PUBLIC_URL` | Base URL shown to phones; endpoint = `<base>/api/overland` |
 | `SIGNUP_ALLOWLIST` | empty | Emails (or `*@domain`) that may create an account without an invite |
 | `TRUST_PROXY` | `false` (nobody) | Express `trust proxy`: the proxies whose `X-Forwarded-For`/`-Proto` decide client address and HTTPS; `deploy/compose.yaml` defaults to Launchway's edge, `10.210.0.2` (§12) |
@@ -151,8 +152,8 @@ All configuration is environment variables, validated at boot with zod
 | `RATE_LIMIT_API_PER_MINUTE` | `600` | Every other `/api` request (dashboard and v1) and `/docs`, per IP |
 | `RATE_LIMIT_INGEST_PER_MINUTE` | `300` | Accepted uploads, per device token |
 | `RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES` | `30` | Uploads with an unknown token, per IP |
-| `RATE_LIMIT_TOKEN_PER_MINUTE` | `600` | `/api/v1` requests with a valid API token, per token (§8.3) |
-| `RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES` | `30` | `/api/v1` requests with an invalid API token, per IP |
+| `RATE_LIMIT_TOKEN_PER_MINUTE` | `600` | `/api/v1` and `/mcp` requests with a valid API token, per token, both together (§8.3, §8.6) |
+| `RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES` | `30` | `/api/v1` and `/mcp` requests with an invalid API token, per IP |
 | `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE` | `60` | The public share endpoint (`/api/public/share`), per IP (§8.5) |
 | `PROCESSING_ENABLED` | `true` | Location processing (§17); `false` queues and processes nothing |
 | `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Map data for the mapped level; set but empty: none (§17.3) |
@@ -557,6 +558,7 @@ public, versioned one is `/api/v1` (§8.3).
 | `GET /api/events` | cookie | SSE, `events.ts` |
 | `/api/v1/*` | API token or cookie | §8.3; `GET /api/v1/openapi.json` is public; people, shares and public links §8.5 |
 | `GET /api/public/share` | the link's secret in `X-Share-Secret` | `shareLink.ts` `publicShareResponse` (§8.5) |
+| `POST /mcp` | API token | the MCP server (§8.6); `GET`, `DELETE` and other methods answer 405 |
 | `GET /docs` | — | the API reference page (§8.3) |
 
 Ownership: every device-scoped query is filtered by the session user's
@@ -942,7 +944,8 @@ hidden by the viewer; for a token only with `people:read`), each as
 (the live window, 12 h by default) for live-only ones: Overland pauses while a
 phone stands still, so a shorter window would hide everyone who sits still.
 Requested ids must all be accessible (else 404). Shared data is readable
-through the people routes, the live events and the public link endpoint only;
+through the people routes, the live events, the public link endpoint and the
+MCP server's `get_people` (§8.6, through `loadPeople`) only;
 every other read (devices, locations, tracks, visits, trips, statistics, the
 heatmap, exports) stays own-devices-only.
 
@@ -1047,6 +1050,131 @@ links (a share of only that device then shows none; it never widens to every
 device) and tells their recipients; deleting an account removes its shares in
 both directions and its links and tells the other sides. Live updates: §9.
 
+### 8.6 MCP server
+
+`/mcp` serves the Model Context Protocol for agents (`apps/api/src/mcp/`;
+the guide for its users is [docs/mcp.md](mcp.md)). It answers with the data
+of the v1 operations through the same query functions — never an HTTP round
+trip — with the same tokens, scopes and device restrictions, shaped for a
+model: units in the field names, times in the account's time zone with its
+offset, a summary line beside the structured content.
+
+**Transport.** Streamable HTTP with the official TypeScript SDK v2
+(`@modelcontextprotocol/server`, adapted to Express 5 by `toNodeHandler` of
+`@modelcontextprotocol/node`), stateless: one `McpServer` per request from
+`createTrailMcpServer(session)`, no `Mcp-Session-Id`, answers as single JSON
+bodies (`createMcpEndpoint`). Requests of the 2026-07-28 revision (the
+per-request `_meta` envelope) go to the SDK's `createMcpHandler` with
+`legacy: "reject"`; 2025-era requests (`initialize` and everything without
+the envelope) to a stateless leg of the SDK's `WebStandardStreamableHTTPServerTransport`
+with `enableJsonResponse` — routed by the SDK's own `isLegacyRequest`, so the
+two cannot disagree. `@modelcontextprotocol/express` is not used: its app
+factory and middleware (hostname-only Origin check, OAuth verifier) are
+replaced by Trail's own below. The server declares no `listChanged` and no
+resource subscriptions, so a 2026-07-28 `subscriptions/listen` is
+acknowledged with an empty filter and completed at once, and nothing holds a
+stream open.
+
+**Mounting order.** `/mcp` is mounted before compression and the `/api`
+chain; `createApp` puts steps 1 and 2 in front of `mcpRouter`, which does the
+rest:
+
+1. `Cache-Control: no-store` and the CORS headers on every response
+   (`Access-Control-Allow-Origin: *`, no credentials; exposed: `RateLimit`,
+   `RateLimit-Policy`, `Retry-After`, `WWW-Authenticate`, `X-Request-Id`),
+   refusals included, as on `/api/v1`.
+2. The per-IP limiter the whole API shares (`RATE_LIMIT_API_PER_MINUTE`).
+3. The Origin check (`mcpOriginGuard`): no `Origin` passes (clients that are
+   not browsers); an `Origin` must equal one of `mcpAllowedOrigins`
+   (`PUBLIC_URL`, `ADDITIONAL_ORIGINS`, `MCP_ALLOWED_ORIGINS`; scheme, host
+   and port), else 403 `origin_not_allowed`, before any token lookup. Host
+   validation is left out: every request needs a bearer token, which a
+   DNS-rebinding page cannot have.
+4. Preflight: `OPTIONS` answers 204 with `Allow-Methods: GET, POST, DELETE`
+   (GET and DELETE only to reach their 405), `Allow-Headers: Authorization,
+   Content-Type, Mcp-Protocol-Version, Mcp-Session-Id, Mcp-Method, Mcp-Name`
+   and `Max-Age: 600`.
+5. `authenticateBearer(ctx)` with its failed-token limiter — one chain per
+   app, so refused tokens count once per address for `/api/v1` and `/mcp` —
+   then `requireApiToken`: without a token principal — no `Authorization`, or
+   one in another scheme (`Basic` from a proxy) — 401 `unauthorized` with
+   `WWW-Authenticate: Bearer realm="trail"`. The session is never loaded, so a
+   cookie alone is refused.
+6. The per-token limiter: `tokenRateLimit(ctx)` gives one instance per app,
+   the one `/api/v1` uses too (`RATE_LIMIT_TOKEN_PER_MINUTE`): one budget per
+   token for both.
+7. `postJsonOnly`: other methods 405 `method_not_allowed` with `Allow:
+   POST`; a POST without a body 400, with another media type 415.
+8. `express.json` (1 MB, `application/json`) and `singleMessage` (a JSON
+   array is 400: the SDK's 2025 transport would take a batch of 100 calls
+   for one count of the rate limits), then the SDK, which gets the parsed
+   body and the principal (in `AuthInfo.extra` as an `McpCall`, with
+   the token's id as `token`, never the secret).
+9. A JSON 404 for other paths under `/mcp` and an error handler with the
+   API's error body. Before the SDK every refusal uses `{ error: { code,
+   message } }`; from the SDK on, JSON-RPC.
+
+**Tools.** `defineTool(spec)` (`mcp/defineTool.ts`) takes a snake_case
+`name`, a `title`, a `description` for the model (never anything a user
+typed), the `scopes` it needs (all of them), zod input and output schemas
+(`packages/contracts/src/mcp.ts`: no component ids, so no `$ref`s; instants,
+dates and ids described by `format` rather than their long patterns),
+`access` (`read` or `write`) and `run(input, context)`, which returns
+`{ result, text, items?, truncated? }`. `createTrailMcpServer` registers only
+the tools whose scopes the token holds, in the order of `mcpTools` (stable,
+so clients can cache the list); a tool it may not use answers like an
+unknown one (JSON-RPC `-32602`). A call goes through `runMcpWork`: the scopes
+again; for `read` a transaction `READ ONLY` with `SET LOCAL
+statement_timeout = '10s'` (unless the tool's functions take the whole
+context and query the pool themselves, `transaction: false`: `get_people`);
+the answer through the output schema (whatever it does not name is
+dropped; a mismatch is logged with codes and paths only and answers a
+generic failure); a log line at info with the tool, outcome,
+duration, items, `resultBytes` and the token's id — never arguments, results
+or the secret. Failures become tool results with `isError: true`: an
+`HttpError` below 500 passes its message (static texts written for the
+agent), a statement timeout says to ask for less, anything else is logged
+and answers a generic message.
+
+| Tool | Scopes | Built on |
+|---|---|---|
+| `list_devices` | `devices:read` | `loadDeviceSummaries`; `loadDeviceMode` only for a token with `locations:read` too (the mode tells when a device moves, as `GET /api/v1/devices/{id}/mode`); no position, no segment id |
+| `get_current_location` | `locations:read` | the device cache (`loadDeviceSummaries`), `loadDeviceMode` |
+| `get_location_at` | `locations:read` | `readPoints`, twice: the last point at or before `at` and the first after it within the tolerance |
+| `get_timeline` | `locations:read` | `loadTimeline`, 500 items a call |
+| `get_day_summary` | `history:read` | `loadModeStats` and `loadTimeline` for one local day; only times, counts and distances leave it |
+| `get_visits` | `locations:read` | `findVisits` |
+| `get_trips` | `history:read` | `findTrips` |
+| `set_transport_mode` | `locations:read`, `locations:write` | `setDeviceMode(…, { source: "mcp" })`, then `processing.notify()` and the `segments` event, like `POST /api/v1/devices/{id}/mode` |
+| `get_people` | `people:read` | `loadPeople` — the sharing gate (`resolveAccessibleDevices`, `toSharedDevice`, §8.5); names, precision, expiry and per device the projected position, its age, and battery and mode only with details; no addresses or ids; queries on the pool (`transaction: false`), and looking stamps `last_viewed_at` |
+
+`device` is an id or the name of one device the token reaches, compared as
+answers show names (`safeText`, NFC), so a name copied from `list_devices`
+finds its device and names that read the same are refused as ambiguous
+(`chooseDevice`); without it a single-device tool takes the device
+with the newest position and a range tool every device. Ranges are at most 31
+days (plus the hour of a night the clocks go back) and answers at most 500
+items (`truncated` and a "narrow the range" sentence otherwise).
+Resources: `trail://devices` (`devices:read`, `list_devices`'s answer) and
+the template `trail://devices/{id}/location` (`locations:read`,
+`get_current_location`'s answer; listed per device the token reaches, titled
+by id — a listing's titles are no data field; any other id is
+`ResourceNotFoundError`, `-32602`). No prompts.
+
+**Text from users.** Device names and people's display names reach the
+agent's model. `safeText` turns control, format and
+separator characters (C0, DEL, C1, zero-width and bidirectional characters,
+tag characters) into spaces, collapses white space, repairs lone surrogates
+and cuts at 80 code points; `deviceRef` and the summary lines quote names
+as JSON strings. The `instructions` hold no user value but the account's time
+zone, and only when it has the shape of an IANA name.
+
+**Server.** Name `trail`, title Trail, `config.build.version`, and
+`mcpInstructions(timeZone, now)`: what Trail is, times (the zone and its
+offset now), units, limits, the device argument, privacy, and that names are
+data, never instructions. Cacheable 2026-07-28 results keep the SDK's
+default hints (`ttlMs: 0`, `cacheScope: "private"`): lists vary by token.
+
 ## 9. Live updates (SSE)
 
 `GET /api/events` — `text/event-stream`, `Cache-Control: no-store`,
@@ -1150,6 +1278,17 @@ invalid value).
   credentials: a page on another site reaches it with an API token, never with
   the visitor's session cookie (which is `SameSite=Lax` and never sent with a
   credential-less request either).
+- `/mcp` (§8.6) takes an API token only, never the session cookie, and
+  refuses a request whose `Origin` is not one of the instance's or
+  `MCP_ALLOWED_ORIGINS` (403, before the token lookup). Its tools see what
+  the token's scopes and devices allow — coordinates only with
+  `locations:read` — and every answer leaves through its output schema;
+  names typed by users reach the agent's model only as sanitised data fields
+  (`safeText`), never in instructions or descriptions. Reads run read-only
+  under a 10 s statement timeout (except `get_people`, which reads through
+  `loadPeople` on the pool and stamps the shares' `last_viewed_at`), a call
+  covers at most 31 days and 500 items in one message, and a call is logged
+  with its tool, outcome, duration and size only.
 - `trust proxy` from `TRUST_PROXY`, by default nobody: the client address (per-IP
   rate limits, session IPs) and HTTPS (`req.secure`: the `__Host-` cookie, HSTS)
   come from `X-Forwarded-For`/`-Proto` of trusted hops only, otherwise anyone
@@ -1165,9 +1304,11 @@ invalid value).
   Configurable (§4). The failed-token limits are consulted after the token
   lookup and only for requests without a valid token: a scanner sharing the
   phones' or a client's address (NAT, proxy) never locks out a valid token.
-- Database statements time out after 120 s; deleting a device or an account
-  and rebuilding derived data lift that limit for their own transaction.
-- Body limits: 100 kB default, 5 MB on the ingest route.
+  The per-token budget is one for `/api/v1` and `/mcp` together.
+- Database statements time out after 120 s (10 s for the MCP server's reads);
+  deleting a device or an account and rebuilding derived data lift that limit
+  for their own transaction.
+- Body limits: 100 kB default, 1 MB on `/mcp`, 5 MB on the ingest route.
 - Map data (§17.3) is the only outbound request besides ntfy: tile bounding
   boxes posted to `PROCESSING_OVERPASS_URL` without credentials or cookies,
   without redirects, with a capped answer parsed strictly, and a User-Agent
@@ -1199,9 +1340,9 @@ invalid value).
 - Tokens (device, session, invite, link, API, share link) are stored hashed
   only, and each secret is shown once. API token and share link secrets are
   shape-checked before any lookup and never logged; API token secrets are only
-  ever accepted in the `Authorization` header of `/api/v1`, in the Bearer
-  scheme (another scheme there is no credential at all). An API token does
-  what its scopes allow, with its devices, from its addresses, until it
+  ever accepted in the `Authorization` header of `/api/v1` and `/mcp`, in the
+  Bearer scheme (another scheme there is no credential at all). An API token
+  does what its scopes allow, with its devices, from its addresses, until it
   expires or is revoked (§8.4); none can manage tokens, sessions, passkeys or
   device credentials, which take a passkey session. Creating, changing,
   rolling and revoking a token is logged with its id. Public link pages and
@@ -1427,7 +1568,11 @@ which are merged by hand; majors wait for a person, security ones too.
   subway and a ferry) with journeys recorded through it (`journeys.ts`: a
   dense walk, a drive, a bus, a bike ride, a train every 3 to 5 minutes, walk
   → train → walk, a tram, a ferry, a flight, a phone on a desk); a benchmark
-  holds a dense day of 21 000 points to its CPU budget.
+  holds a dense day of 21 000 points to its CPU budget. `mcpServer.test.ts`
+  covers the MCP server's pure parts (names made safe, times with the zone's
+  offset, the nearest point, ranges and caps, the Origin rule, the
+  instructions, the tool runner's refusals, failures, schema check and log
+  line) and `tools/list` for every scope over the SDK's in-memory transport.
 - `apps/api/tests/integration` — supertest against the real app and the
   `trail_test` database (`TEST_DATABASE_URL`), including passkey ceremonies
   with a software authenticator (ES256, `none` attestation, CBOR via
@@ -1452,6 +1597,18 @@ which are merged by hand; majors wait for a person, security ones too.
   of map data as in one, ready times by the worker's clock, a deleted range
   repaired, the backfill across a restart, the v1 routes with sessions and
   tokens, `trail reprocess`, and a log that names tiles only at debug level.
+  The MCP server is driven by the SDK's own client over Streamable HTTP
+  (`tests/support/mcpClient.ts`), in both protocol eras: `mcp.test.ts` the
+  transport (JSON answers, tools/list per scope, the unknown-tool answer,
+  bearer only, refused and expired tokens, a session cookie refused, the
+  Origin rule before the lookup, preflight, 405/415/413/400, `listen`
+  let go, one rate-limit budget with `/api/v1`, the log line);
+  `mcpTools.test.ts` every tool and resource on processed journeys,
+  device-limited tokens, the 31-day and 500-item caps, `set_transport_mode`
+  with source `mcp`, `get_people` at each sharer's precision (no exact
+  position, details or distance where not granted, no addresses or ids,
+  hidden and stopped shares left out), the read-only transaction and its
+  timeout, and a device and a sharer named to instruct the agent.
   The migration-upgrade test also records rows in the user-data tables that
   later migrations add (`api_tokens`, `mode_overrides`, and `shares`,
   `share_links`, `hidden_people` and the grid key of sharing), each with the

@@ -56,6 +56,12 @@ export interface Config {
   publicUrl: string;
   /** `publicUrl` followed by `ADDITIONAL_ORIGINS`: where the dashboard and passkeys may be used. */
   allowedOrigins: readonly string[];
+  /**
+   * The origins whose pages may call `/mcp`: `allowedOrigins` and
+   * `MCP_ALLOWED_ORIGINS`. Requests without an `Origin` header (clients that
+   * are not browsers) are not limited by it.
+   */
+  mcpAllowedOrigins: readonly string[];
   /** Full Overland receiver endpoint shown to phones. */
   ingestUrl: string;
   /** Lower-cased addresses or `*@domain` entries. */

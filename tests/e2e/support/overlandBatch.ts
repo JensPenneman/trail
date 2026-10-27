@@ -72,3 +72,12 @@ export function overlandBatch(timeZone: string, now = Date.now()): OverlandBatch
   const delta = earliest + endingNow >= dayStart ? endingNow : dayStart - earliest;
   return shifted(recorded, delta) as OverlandBatch;
 }
+
+/**
+ * `batch` with every time in it `deltaMs` later: the phone's next upload. Two
+ * calls of `overlandBatch` do not make one: until today has room for the whole
+ * fixture, both start it at the same time after midnight.
+ */
+export function laterBatch(batch: OverlandBatch, deltaMs: number): OverlandBatch {
+  return shifted(batch, deltaMs) as OverlandBatch;
+}

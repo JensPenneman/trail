@@ -16,6 +16,8 @@ export const errorCodes = [
   "not_found",
   /** A public link that expired or was turned off (404); it will not work again. */
   "share_expired",
+  /** An HTTP method the endpoint does not serve (405); `Allow` names the ones it does. */
+  "method_not_allowed",
   "conflict",
   "payload_too_large",
   "rate_limited",

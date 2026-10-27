@@ -16,6 +16,7 @@ import { PlainList } from "../../ui/PlainList";
 import { Skeleton } from "../../ui/Skeleton";
 import { ApiTokenItem } from "./ApiTokenItem";
 import { CreateApiTokenDialog } from "./CreateApiTokenDialog";
+import { mcpGuideUrl } from "./mcpGuide";
 import { RevokeApiTokenDialog } from "./RevokeApiTokenDialog";
 import { RollApiTokenDialog } from "./RollApiTokenDialog";
 import "./ApiTokens.css";
@@ -67,7 +68,11 @@ export function ApiTokensSection({ headingId }: { headingId: string }) {
       <p className="section__description">
         A token lets a script, an app or an agent use the Trail API for you, with only the
         permissions and devices you give it. How to use one: the{" "}
-        <a href={apiPaths.docs}>API reference</a>.
+        <a href={apiPaths.docs}>API reference</a>, and for an agent the{" "}
+        <a href={mcpGuideUrl} target="_blank" rel="noreferrer">
+          MCP guide
+        </a>
+        .
       </p>
       {full ? (
         <Notice tone="info" title={`${maxActiveApiTokens} active tokens`}>

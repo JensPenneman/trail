@@ -68,10 +68,21 @@ yourself: location data is personal data.
   addresses or networks, and expires unless
   its owner chooses otherwise; rolling replaces its secret at once, revoking
   ends it at once. Tokens are accepted only in the `Authorization` header of
-  `/api/v1`, are shape-checked before any lookup, and are never logged; only
-  a person signed in with a passkey can create, change, roll or revoke them,
-  and no token reaches sign-in, passkeys, device credentials or other tokens.
-  Creating, changing, rolling and revoking are logged with the token's id.
+  `/api/v1` and `/mcp`, are shape-checked before any lookup, and are never
+  logged; only a person signed in with a passkey can create, change, roll or
+  revoke them, and no token reaches sign-in, passkeys, device credentials or
+  other tokens. Creating, changing, rolling and revoking are logged with the
+  token's id.
+- **MCP server** (`/mcp`, [docs/mcp.md](docs/mcp.md)): API tokens only,
+  never the session cookie; pages on other origins refused before any token
+  lookup; a token's scopes decide which tools it sees and its devices which
+  data, with positions only for `locations:read` and other people's only
+  through the sharing rules, at their precision; names typed by users reach
+  an agent's model only as sanitised data, never as instructions; reads run
+  read-only under a 10 s statement timeout (except `get_people`, which reads
+  through the sharing code and stamps the shares' last view) and are bounded
+  (31 days, 500 items, one message per request); calls are logged without
+  their arguments or results.
 - **Requests**: origin checks against cross-site requests, input validation of
   every request with zod, body size limits, rate limits per IP, per device
   token and per API token (and for refused tokens per IP); client addresses
@@ -148,4 +159,6 @@ is opt-in, one way and limited to what its owner picks.
   it cannot share your positions with an address it controls or make a
   precise link and read it back. A token limited to some devices shares only
   those, and changes or confirms only shares that show nothing but its
-  devices, before and after the change.
+  devices, before and after the change. An agent using the MCP server's
+  `get_people` sees exactly what the People page shows, at the same
+  precision, without the addresses.

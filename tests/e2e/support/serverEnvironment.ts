@@ -23,6 +23,7 @@ export function e2eServerEnvironment(databaseUrl: string): Record<string, string
     HOST: "127.0.0.1",
     PUBLIC_URL: e2eServerUrl,
     ADDITIONAL_ORIGINS: "",
+    MCP_ALLOWED_ORIGINS: "",
     INGEST_BASE_URL: "",
     SIGNUP_ALLOWLIST: `*@${allowlistedDomain}`,
     TRUST_PROXY: "",

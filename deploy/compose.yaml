@@ -52,6 +52,7 @@ services:
       # deployment's address from Launchway.
       PUBLIC_URL: ${PUBLIC_URL:-${LAUNCHWAY_PUBLIC_URL:?set PUBLIC_URL (Launchway sets LAUNCHWAY_PUBLIC_URL)}}
       ADDITIONAL_ORIGINS:
+      MCP_ALLOWED_ORIGINS:
       INGEST_BASE_URL:
       SIGNUP_ALLOWLIST:
       # Only Launchway's edge may set X-Forwarded-* (client address, HTTPS):
