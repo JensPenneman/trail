@@ -9,6 +9,7 @@ import { tripsResponseSchema } from "@trail/contracts/trip";
 import { visitsResponseSchema } from "@trail/contracts/visit";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { latToTileY, lonToTileX } from "../../src/heatmap/tileMath";
 import { type Agent, agentFor, signUp } from "../support/authFlows";
 import { createDevice, postOverland } from "../support/deviceFlows";
 import { overlandFixture } from "../support/overlandFixture";
@@ -152,20 +153,80 @@ describe("tracks", () => {
 });
 
 describe("heatmap", () => {
+  const viewport = { bbox: "3.4,50.9,3.8,51.1" };
+  const heatmapOf = async (values: Record<string, string | number>) =>
+    heatmapResponseSchema.parse(
+      (await owner.get(`${apiPaths.heatmap}?${query(values)}`).expect(200)).body,
+    );
+  /** The cells of a level as `x,y` → count, from what the API answers or from the finest stored level. */
+  const byTile = (cells: readonly (readonly [number, number, number])[], z: number) =>
+    new Map(
+      cells.map(([lon, lat, count]) => [`${lonToTileX(lon, z)},${latToTileY(lat, z)}`, count]),
+    );
+  const finestSummed = async (deviceId: string, z: number) => {
+    const shift = 18 - z;
+    const rows = await t.ctx.db.execute<{ x: number; y: number; total: number }>(sql`
+      SELECT x >> ${shift}::int AS x, y >> ${shift}::int AS y, sum(count)::int AS total
+      FROM heat_cells WHERE device_id = ${deviceId} AND z = 18 GROUP BY 1, 2
+    `);
+    return new Map(rows.rows.map((row) => [`${row.x},${row.y}`, row.total]));
+  };
+
   it("returns cell centres in the viewport with all-time counts", async () => {
-    const response = await owner
-      .get(
-        `${apiPaths.heatmap}?${query({ bbox: "3.4,50.9,3.8,51.1", zoom: 11, deviceIds: rideId })}`,
-      )
-      .expect(200);
-    const heatmap = heatmapResponseSchema.parse(response.body);
-    expect(heatmap.cellZoom).toBe(15);
+    const heatmap = await heatmapOf({ ...viewport, zoom: 11, deviceIds: rideId });
+    // Five levels finer than the map: 16 px cells.
+    expect(heatmap.cellZoom).toBe(16);
     expect(heatmap.truncated).toBe(false);
     expect(heatmap.cells.reduce((sum, cell) => sum + cell[2], 0)).toBe(31);
     for (const [lon, lat] of heatmap.cells) {
       expect(lon).toBeGreaterThan(3.4);
       expect(lat).toBeLessThan(51.1);
     }
+    const counts = heatmap.cells.map(([, , count]) => count);
+    expect(counts).toEqual([...counts].sort((a, b) => b - a));
+  });
+
+  it("answers at every level from 6 to 18, summing the next finer stored one", async () => {
+    for (let zoom = 0; zoom <= 15; zoom += 1) {
+      const heatmap = await heatmapOf({ ...viewport, zoom, deviceIds: rideId });
+      const level = Math.min(18, Math.max(6, zoom + 5));
+      expect(heatmap.cellZoom, `zoom ${zoom}`).toBe(level);
+      // The levels between the stored ones hold exactly what the finest one does, summed.
+      expect(byTile(heatmap.cells, level), `zoom ${zoom}`).toEqual(
+        await finestSummed(rideId, level),
+      );
+    }
+  });
+
+  it("sums the devices asked for", async () => {
+    // The bike computer's zigzag runs east to 3.9°.
+    const both = await heatmapOf({
+      bbox: "3.4,50.9,4,51.1",
+      zoom: 8,
+      deviceIds: `${rideId},${denseId}`,
+    });
+    expect(both.cellZoom).toBe(13);
+    expect(both.cells.reduce((sum, cell) => sum + cell[2], 0)).toBe(31 + 3000);
+    const summed = await finestSummed(rideId, 13);
+    for (const [tile, count] of await finestSummed(denseId, 13)) {
+      summed.set(tile, (summed.get(tile) ?? 0) + count);
+    }
+    expect(byTile(both.cells, 13)).toEqual(summed);
+  });
+
+  it("counts a whole cell at the edge of the view", async () => {
+    // At zoom 8 the cells (level 13) are sums of 4 × 4 stored level-15 cells.
+    const all = await heatmapOf({ ...viewport, zoom: 8, deviceIds: rideId });
+    const [busiest] = all.cells;
+    if (busiest === undefined) throw new Error("the ride has no cells");
+    const [lon, lat, count] = busiest;
+    // A view that only grazes the cell's middle still gets every point of it.
+    const grazing = await heatmapOf({
+      bbox: [lon - 0.0001, lat - 0.0001, lon + 0.0001, lat + 0.0001].join(","),
+      zoom: 8,
+      deviceIds: rideId,
+    });
+    expect(grazing.cells).toEqual([[lon, lat, count]]);
   });
 
   it("is empty elsewhere and handles the antimeridian", async () => {
@@ -177,10 +238,34 @@ describe("heatmap", () => {
       .get(`${apiPaths.heatmap}?${query({ bbox: "170,-10,-170,10", zoom: 3 })}`)
       .expect(200);
     expect(heatmapResponseSchema.parse(pacific.body)).toEqual({
-      cellZoom: 6,
+      cellZoom: 8,
       cells: [],
       truncated: false,
     });
+  });
+
+  it("keeps to the 20 000 busiest cells and says so", async () => {
+    const many = await createDevice(owner, { name: "Many places" });
+    const manyId = many.device.id;
+    // 20 001 finest cells, four apart: each one alone in its cell of level 16 too.
+    await t.ctx.db.execute(sql`
+      INSERT INTO heat_cells (device_id, z, x, y, count, first_at, last_at)
+      SELECT ${manyId}::uuid, 18, 134000 + (n % 200) * 4, 87500 + (n / 200) * 4, 1 + n % 997, now(), now()
+      FROM generate_series(0, 20000) AS n
+    `);
+    try {
+      for (const zoom of [13, 11]) {
+        const heatmap = await heatmapOf({ bbox: "4,50.8,5.2,51.3", zoom, deviceIds: manyId });
+        expect(heatmap.cellZoom, `zoom ${zoom}`).toBe(zoom + 5);
+        expect(heatmap.truncated, `zoom ${zoom}`).toBe(true);
+        expect(heatmap.cells, `zoom ${zoom}`).toHaveLength(20_000);
+        const counts = heatmap.cells.map(([, , count]) => count);
+        expect(counts[0]).toBe(997);
+        expect(counts).toEqual([...counts].sort((a, b) => b - a));
+      }
+    } finally {
+      await owner.delete(apiPaths.devices.one(manyId)).set("Origin", testOrigin).expect(204);
+    }
   });
 });
 
