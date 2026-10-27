@@ -45,7 +45,7 @@ test("someone you share with sees you live, may hide you, and loses you when you
   await friend.page.goto("/");
   const card = friend.page.getByRole("article", { name: account.displayName });
   // Who and how fresh at a glance, with the battery; the phone itself in Details.
-  await expect(card.getByText("77%")).toBeVisible();
+  await expect(card.getByRole("img", { name: "Battery 77%" })).toBeVisible();
   await card.getByRole("button", { name: "Details" }).click();
   await expect(card.getByText("Sharer’s phone")).toBeVisible();
   await expectAccessible(friend.page, "People with someone who shares");
@@ -59,7 +59,7 @@ test("someone you share with sees you live, may hide you, and loses you when you
     withBattery(overlandBatch(account.timezone), 0.42),
   );
   expect(later.status()).toBe(200);
-  await expect(card.getByText("42%").first()).toBeVisible();
+  await expect(card.getByRole("img", { name: "Battery 42%" })).toBeVisible();
   expect(await friend.page.evaluate(() => Reflect.get(window, "trailE2eSamePage"))).toBe(true);
 
   await card.getByRole("button", { name: `Hide ${account.displayName}` }).click();

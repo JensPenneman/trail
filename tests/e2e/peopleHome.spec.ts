@@ -126,7 +126,10 @@ test("a person's card shows them alone, with only what their share allows", asyn
   const theirDay = whereBeen(historianCard);
   await expect(theirDay.getByText("Today", { exact: true })).toBeVisible();
   await expect(theirDay).toContainText(/\d+(\.\d)? km · \d\d:\d\d – \d\d:\d\d/);
-  await expect(theirDay.getByRole("button", { name: "Next day" })).toBeDisabled();
+  await expect(theirDay.getByRole("button", { name: "Next day" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   for (const name of ownOnly) {
     await expect(page.getByRole("region", { name, exact: true }), name).toHaveCount(0);
   }
@@ -200,9 +203,13 @@ test("everyone at once, a card kept live, and sharing back and stopping from it"
   const nearCard = personCard(page, nearName);
   const farCard = personCard(page, far.account.displayName);
   // A battery glyph where the share includes it.
-  await expect(nearCard.getByText("77%")).toBeVisible();
+  await expect(nearCard.getByRole("img", { name: "Battery 77%" })).toBeVisible();
   // An area share: no speed is shared, only roughly where.
-  await expect(farCard.getByText(/^(On a bike ride|Cycling)$/)).toBeVisible();
+  // Always how roughly, and a distance that says it is about that much.
+  await expect(
+    farCard.getByText(/^(On\sa\sbike\sride|Cycling)\s·\swithin\sabout\s5\skm$/),
+  ).toBeVisible();
+  await expect(farCard.getByText(/km$/).first()).toContainText("≈");
   await details(farCard);
   await expect(farCard.getByText("Area only, within about 5 km")).toBeVisible();
   await expect(page.getByText("Live updates on")).toBeAttached();
@@ -228,7 +235,7 @@ test("everyone at once, a card kept live, and sharing back and stopping from it"
     withBattery(overlandBatch(near.account.timezone), 0.42),
   );
   expect(next.status()).toBe(200);
-  await expect(nearCard.getByText("42%")).toBeVisible();
+  await expect(nearCard.getByRole("img", { name: "Battery 42%" })).toBeVisible();
   expect(await page.evaluate(() => Reflect.get(window, "trailE2eSamePage"))).toBe(true);
   await everyone.click();
   await expect(page).toHaveURL((url) => url.pathname === "/" && url.search === "");

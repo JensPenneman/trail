@@ -154,8 +154,8 @@ test("the quick toggle on the Me card says how you travel from now on", async ({
   await expect(chips.getByRole("button", { name: /^Auto/, pressed: true })).toBeVisible();
   await chips.getByRole("button", { name: "Train" }).click();
   await expect(chips.getByRole("button", { name: "Train", pressed: true })).toBeVisible();
-  // What Me is doing follows: by train now.
-  await expect(me.getByText(/^By train/)).toBeVisible();
+  // What Me is doing follows: by train now (no-break spaces keep its words together).
+  await expect(me.getByText(/^By\strain/)).toBeVisible();
   await expectAccessible(page, "People with the quick toggle");
 
   await page.reload();
