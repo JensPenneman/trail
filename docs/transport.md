@@ -70,6 +70,29 @@ sure, especially between a car and a train.
 What you set always wins: Trail keeps it when it works your history out
 again, and the statistics count it.
 
+## Insights
+
+The **Insights** tab adds it all up: how far you went, how long you were on
+the move, how many moves and stops, and on how many days — for the last 7,
+30 or 90 days, this year, all your history or days you choose, and for all
+your devices or some. Each number says how it compares with as many days
+before. Below them: your distance by mode, the distance (or time) per day,
+week or month stacked by mode, and a table of modes. A mode opens its own
+page: its speeds, your longest and fastest moves (each with **Show on the
+map**, which opens that day with the move's details), when you use it by hour
+and weekday, the kinds of road it took you on — or for trains, trams and
+metros how much was on the rails and how often they halted at a station —
+and its moves by speed. **When you travel** shows the hours of the week you
+spend on the move, **Roads** the kinds of road and railway you travelled on.
+
+Every chart can be read with the keyboard — Tab to it, then the arrow keys —
+and has its numbers as a table under **Show the numbers**. A move counts in
+each day and hour with the part of it that falls there, in your time zone.
+The kinds of road come from the map data: moves without it (switched off, or
+not fetched yet) count towards the distance only, and the pages say how much
+of it the map covers. While new points are still being worked out, a note
+says the numbers may still change.
+
 ## Privacy
 
 The map data comes from OpenStreetMap through an Overpass server — by default

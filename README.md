@@ -34,6 +34,11 @@ every pull request gets a preview deployment of its own.
   pauses at stops and the phone's motion sensor. A timeline per day, one-click
   corrections that survive every recomputation, and a quick "now I'm on the
   train" toggle ([docs/transport.md](docs/transport.md)).
+- **Insights**: how you travelled in a period — distance, time on the move,
+  moves, stops and active days against the period before, the mix of modes
+  and its days, weeks or months, each mode's speeds, longest and fastest
+  moves and the kinds of road it took, and the hours of the week you travel —
+  with accessible charts drawn without a chart library.
 - **Sharing**: share your location with family and friends in the spirit of
   Find My — one way, for an hour, until the end of the day, a week or until
   you stop, precisely or only roughly (about 500 m or 5 km), with or without
