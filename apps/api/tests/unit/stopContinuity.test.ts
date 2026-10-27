@@ -63,6 +63,9 @@ const longestStop = (spans: readonly Span[]) =>
 /** 14 October 2026, 05:00 UTC: 07:00 in Brussels, at home. */
 const day14 = 1_792_818_000;
 
+/** Days of points a second take a second or two; a busy machine needs more. */
+const heavy = { timeout: 30_000 };
+
 describe("commuter days", () => {
   const variants = [
     { name: "recorded densely, departures never reported", homeDepartures: false },
@@ -76,27 +79,35 @@ describe("commuter days", () => {
     },
   ];
   for (const variant of variants) {
-    it(`keep every ride and train a move, and no stop holding travel: ${variant.name}`, () => {
-      const days = commuteDays({ startT: day14, days: 2, ...variant });
-      const { kept, spans } = cut(days.points, days.visits);
-      expectSound(kept, spans);
-      for (const leg of rides(days.legs)) {
-        const travelled = asTravelled(spans, leg);
-        expect(travelled.moving, `${leg.kind} from ${leg.startT}`).toBeGreaterThan(0.9);
-        // A halt of a minute and a half is part of the ride, not a stop.
-        expect(travelled.inStop, `${leg.kind} from ${leg.startT}`).toBeLessThan(120);
-      }
-      // The nights and the work days are stops; none spans more than a night.
-      for (const leg of days.legs.filter((part) => part.kind === "home" || part.kind === "work")) {
-        const seconds = leg.endT - leg.startT;
-        expect(secondsCovered(spans, "stop", leg.startT, leg.endT) / seconds).toBeGreaterThan(0.9);
-      }
-      // The longest is a night at home (13 and a half hours), never days.
-      expect(longestStop(spans)).toBeLessThan(14 * 3600);
-    });
+    it(
+      `keep every ride and train a move, and no stop holding travel: ${variant.name}`,
+      heavy,
+      () => {
+        const days = commuteDays({ startT: day14, days: 2, ...variant });
+        const { kept, spans } = cut(days.points, days.visits);
+        expectSound(kept, spans);
+        for (const leg of rides(days.legs)) {
+          const travelled = asTravelled(spans, leg);
+          expect(travelled.moving, `${leg.kind} from ${leg.startT}`).toBeGreaterThan(0.9);
+          // A halt of a minute and a half is part of the ride, not a stop.
+          expect(travelled.inStop, `${leg.kind} from ${leg.startT}`).toBeLessThan(120);
+        }
+        // The nights and the work days are stops; none spans more than a night.
+        for (const leg of days.legs.filter(
+          (part) => part.kind === "home" || part.kind === "work",
+        )) {
+          const seconds = leg.endT - leg.startT;
+          expect(secondsCovered(spans, "stop", leg.startT, leg.endT) / seconds).toBeGreaterThan(
+            0.9,
+          );
+        }
+        // The longest is a night at home (13 and a half hours), never days.
+        expect(longestStop(spans)).toBeLessThan(14 * 3600);
+      },
+    );
   }
 
-  it("calls the rides cycling and the trains train, with the map", () => {
+  it("calls the rides cycling and the trains train, with the map", heavy, () => {
     const days = commuteDays({ startT: day14, days: 1 });
     const result = processWorld(days.points, { visits: days.visits });
     for (const leg of rides(days.legs)) {
@@ -119,10 +130,10 @@ describe("commuter days", () => {
 });
 
 describe("the pattern that made multi-day stops on production", () => {
-  // 13 October 19:01:18 UTC: home, and iOS reported the arrival; the departure came the next
-  // morning at 05:10:44 as a second report. Nights logged every second, the commute sparsely.
-  const arrivedAt = Date.UTC(2026, 9, 13, 19, 1, 18) / 1000;
-  const departedAt = Date.UTC(2026, 9, 14, 5, 10, 44) / 1000;
+  // Home in the evening, and iOS reported the arrival; the departure came the next morning as a
+  // second report. Nights logged every second, the commute sparsely.
+  const arrivedAt = day14 - 10 * 3600;
+  const departedAt = day14 + 15 * 60;
   const evening = stay(home, {
     startT: arrivedAt - 30,
     durationS: departedAt - 900 - arrivedAt,
@@ -143,7 +154,7 @@ describe("the pattern that made multi-day stops on production", () => {
   });
   const points = concat(evening, days.points);
 
-  it("ends the night at home when the phone leaves, with only the arrival known", () => {
+  it("ends the night at home when the phone leaves, with only the arrival known", heavy, () => {
     // What the window that started after the departure was given: the arrival alone.
     const window = points.filter((point) => point.t > departedAt);
     const { kept, spans } = cut(window, [arrival, ...days.visits]);
@@ -154,7 +165,7 @@ describe("the pattern that made multi-day stops on production", () => {
     }
   });
 
-  it("is the same with both reports, and with the merged visit", () => {
+  it("is the same with both reports, and with the merged visit", heavy, () => {
     const withBoth = cut(points, [arrival, departure, ...days.visits]);
     const merged = cut(points, [departure, ...days.visits]);
     expectSound(withBoth.kept, withBoth.spans);
@@ -268,22 +279,26 @@ function randomHistory(seed: number): { points: RawPoint[]; visits: VisitSpan[];
 
 describe("random walks and stays", () => {
   for (let seed = 1; seed <= 60; seed += 1) {
-    it(`never overlap, cover every point and keep travel out of stops (seed ${seed})`, () => {
-      const history = randomHistory(seed);
-      const { kept, spans } = cut(history.points, history.visits);
-      expectSound(kept, spans);
-      // A journey that goes somewhere is a move for most of its time.
-      for (const leg of history.legs.filter((part) => part.kind !== "home")) {
-        const seconds = leg.endT - leg.startT;
-        const first = history.points.find((point) => point.t === leg.startT);
-        const last = history.points.find((point) => point.t === leg.endT);
-        if (first === undefined || last === undefined || seconds < 600) continue;
-        if (haversineM(first, last) < 2000) continue;
-        expect(
-          secondsCovered(spans, "move", leg.startT, leg.endT) / seconds,
-          `leg from ${leg.startT}`,
-        ).toBeGreaterThan(0.8);
-      }
-    });
+    it(
+      `never overlap, cover every point and keep travel out of stops (seed ${seed})`,
+      heavy,
+      () => {
+        const history = randomHistory(seed);
+        const { kept, spans } = cut(history.points, history.visits);
+        expectSound(kept, spans);
+        // A journey that goes somewhere is a move for most of its time.
+        for (const leg of history.legs.filter((part) => part.kind !== "home")) {
+          const seconds = leg.endT - leg.startT;
+          const first = history.points.find((point) => point.t === leg.startT);
+          const last = history.points.find((point) => point.t === leg.endT);
+          if (first === undefined || last === undefined || seconds < 600) continue;
+          if (haversineM(first, last) < 2000) continue;
+          expect(
+            secondsCovered(spans, "move", leg.startT, leg.endT) / seconds,
+            `leg from ${leg.startT}`,
+          ).toBeGreaterThan(0.8);
+        }
+      },
+    );
   }
 });

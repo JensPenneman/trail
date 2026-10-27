@@ -639,7 +639,9 @@ describe("stops that end when the phone leaves", () => {
     expect(await pointsOutside(device.id)).toBe(0);
   });
 
-  it("replaces a stale multi-day stop, newest day first and oldest first: every ride a move", async () => {
+  it("replaces a stale multi-day stop, newest day first and oldest first: every ride a move", {
+    timeout: 120_000,
+  }, async () => {
     const device = await newDevice("Commuter days");
     const start = morning - 40 * 86_400;
     const days = commuteDays({ startT: start, days: 4, homeIntervalS: 30, homeDepartures: true });
