@@ -9,7 +9,7 @@ import { type SQL, sql } from "drizzle-orm";
 import { userAgentLabel } from "../auth/userAgentLabel";
 import type { Executor } from "../db/database";
 import { toIso } from "../db/toIso";
-import { decodeAccessLogCursor, encodeAccessLogCursor } from "./accessLogCursor";
+import { accessLineId, decodeAccessLogCursor, encodeAccessLogCursor } from "./accessLogCursor";
 
 export interface AccessLogFilter {
   from?: string | undefined;
@@ -22,8 +22,8 @@ export interface AccessLogFilter {
 }
 
 interface LogRow extends Record<string, unknown> {
-  id: string;
   bucket_start: string;
+  dedupe_key: string;
   first_at: string;
   last_at: string;
   count: number;
@@ -94,8 +94,10 @@ const inList = (column: SQL, values: readonly string[] | undefined): SQL =>
  * One page of the owner's data access log (docs/architecture.md §8.7),
  * newest hour first: only ever the owner's rows — nobody else's account, no
  * administrator — filtered by period, kinds of actor, channels and action.
- * The keyset is the hour and the id, which never change once a row exists,
- * so a row counted again while someone pages never moves between pages.
+ * The keyset is the table's unique key — the hour and the dedupe key —
+ * which never changes once a row exists, so a row counted again while
+ * someone pages never moves between pages; ids and cursors are made of it,
+ * never of the identity column, which counts the rows of every account.
  */
 export async function loadAccessLog(
   db: Executor,
@@ -105,6 +107,7 @@ export async function loadAccessLog(
   const after = filter.cursor === undefined ? null : decodeAccessLogCursor(filter.cursor);
   const instant = (value: string) => sql`${new Date(value).toISOString()}::timestamptz`;
   const afterBucket = after === null ? null : instant(after.bucketStart.toISOString());
+  const afterKey = after?.dedupeKey ?? null;
   const conditions = [
     // `from` takes in the hour it falls in.
     filter.from === undefined
@@ -114,10 +117,12 @@ export async function loadAccessLog(
     inList(sql`e.actor_kind`, filter.actor),
     inList(sql`e.channel`, filter.channel),
     filter.action === undefined ? sql`` : sql`AND e.action = ${filter.action}`,
-    after === null ? sql`` : sql`AND (e.bucket_start, e.id) < (${afterBucket}, ${after.id})`,
+    after === null
+      ? sql``
+      : sql`AND (e.bucket_start, e.dedupe_key) < (${afterBucket}, ${afterKey})`,
   ];
   const { rows } = await db.execute<LogRow>(sql`
-    SELECT e.id::text AS id, e.bucket_start, e.first_at, e.last_at, e.count, e.actor_kind,
+    SELECT e.bucket_start, e.dedupe_key, e.first_at, e.last_at, e.count, e.actor_kind,
       e.channel, e.actor_user_id, e.actor_share_id, e.actor_token_id, e.actor_link_id,
       e.actor_label, e.visitor_key, e.ip_coarse, e.ua_family, e.action, e.access, e.resource,
       e.status, u.display_name AS person_name, t.name AS token_name, l.label AS link_label,
@@ -131,13 +136,13 @@ export async function loadAccessLog(
     LEFT JOIN sessions s ON e.actor_kind = 'owner' AND s.id = e.actor_session_id
       AND s.user_id = e.owner_user_id
     WHERE e.owner_user_id = ${ownerUserId} ${sql.join(conditions, sql` `)}
-    ORDER BY e.bucket_start DESC, e.id DESC
+    ORDER BY e.bucket_start DESC, e.dedupe_key DESC
     LIMIT ${filter.limit + 1}
   `);
   const page = rows.slice(0, filter.limit);
   const items = page.map(
     (row): DataAccessEvent => ({
-      id: row.id,
+      id: accessLineId(new Date(toIso(row.bucket_start)), row.dedupe_key),
       bucketStart: toIso(row.bucket_start),
       firstAt: toIso(row.first_at),
       lastAt: toIso(row.last_at),
@@ -158,7 +163,7 @@ export async function loadAccessLog(
       rows.length > filter.limit && last !== undefined
         ? encodeAccessLogCursor({
             bucketStart: new Date(toIso(last.bucket_start)),
-            id: Number(last.id),
+            dedupeKey: last.dedupe_key,
           })
         : null,
   };

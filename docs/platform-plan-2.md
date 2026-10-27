@@ -374,9 +374,12 @@ the whole of it; the shapes are `packages/contracts/src/dataAccess.ts`):
   `resource: { folded: true }`; beyond 50 visitors of a link in an hour, the
   rest are counted on one row with `visitor: null`. Show them as "… and N
   more".
-- **Order and paging**: newest hour first, within an hour by id; the cursor
-  is keyed on `(bucket_start, id)`, which never change once a row exists. The
-  UI may sort an hour's rows by `lastAt` itself.
+- **Order and paging**: newest hour first, within an hour by dedupe key; the
+  cursor is keyed on `(bucket_start, dedupe_key)`, the unique key, which never
+  changes once a row exists. A line's `id` is `<hour>.<dedupe key>`, opaque
+  and stable (never the table's identity column, whose gaps would tell how
+  much other accounts are read). The UI may sort an hour's rows by `lastAt`
+  itself.
 - **Indexes**: the unique key `(owner_user_id, bucket_start, dedupe_key)`
   serves the list, the summary and the retention (PostgreSQL 18 skips through
   it per owner), so there is no `(owner_user_id, last_at)` index; the actor

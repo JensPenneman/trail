@@ -7595,9 +7595,9 @@
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^\\d+$",
-            "description": "The line's id.",
-            "example": "4711"
+            "pattern": "^\\d+\\.[A-Za-z0-9_-]{43}$",
+            "description": "Stands for the line, in this account's log only; pass it on as it is.",
+            "example": "498630.Hk3n0vQwz6Xh9cT0w1Y2bqk3o8G5mJr7y5dWl9sZeUA"
           },
           "bucketStart": {
             "type": "string",

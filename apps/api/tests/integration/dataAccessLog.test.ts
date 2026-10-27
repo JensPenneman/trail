@@ -277,7 +277,7 @@ describe("the list", () => {
       ["dashboard.visits"],
     ]);
     expect(items.find((item) => item.action === "live.position")).toEqual({
-      id: expect.stringMatching(/^\d+$/),
+      id: expect.stringMatching(/^\d+\.[A-Za-z0-9_-]{43}$/),
       bucketStart: ago(24).toISOString(),
       firstAt: ago(24, 0).toISOString(),
       lastAt: ago(24, 4).toISOString(),
@@ -392,6 +392,28 @@ describe("the list", () => {
       count: 2,
       lastAt: ago(0, 50).toISOString(),
     });
+  });
+
+  it("gives away nothing of the table's sequence in its ids and cursors", async () => {
+    // The table's identity counts the rows of every account: its gaps would tell an owner how
+    // much everyone else is read. An id is the line's hour and dedupe key, a cursor the same.
+    const page = await listWith(owner.agent, { limit: "2" });
+    const keys = await t.ctx.db.execute<{ bucket: string; key: string }>(sql`
+      SELECT bucket_start::text AS bucket, dedupe_key AS key FROM data_access_events
+      WHERE owner_user_id = ${owner.id}
+    `);
+    const known = new Set(
+      keys.rows.map((row) => `${new Date(row.bucket).toISOString()}|${row.key}`),
+    );
+    for (const item of page.items) {
+      const [hours = "", key = ""] = item.id.split(".");
+      expect(Number(hours) * 3_600_000).toBe(Date.parse(item.bucketStart));
+      expect(known.has(`${item.bucketStart}|${key}`)).toBe(true);
+    }
+    const last = page.items.at(-1);
+    expect(Buffer.from(page.nextCursor ?? "", "base64url").toString("utf8")).toBe(
+      `${last?.bucketStart}|${last?.id.split(".")[1]}`,
+    );
   });
 
   it("does not record itself", async () => {

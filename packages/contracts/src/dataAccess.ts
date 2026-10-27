@@ -203,7 +203,13 @@ const count = (description: string) =>
 /** One line of the log: the same access by the same actor within one UTC hour. */
 export const dataAccessEventSchema = z
   .object({
-    id: z.string().regex(/^\d+$/).meta({ description: "The line's id.", example: "4711" }),
+    id: z
+      .string()
+      .regex(/^\d+\.[A-Za-z0-9_-]{43}$/)
+      .meta({
+        description: "Stands for the line, in this account's log only; pass it on as it is.",
+        example: "498630.Hk3n0vQwz6Xh9cT0w1Y2bqk3o8G5mJr7y5dWl9sZeUA",
+      }),
     bucketStart: instant("The UTC hour the line counts."),
     firstAt: instant("The first access in that hour."),
     lastAt: instant("The last access in that hour."),
