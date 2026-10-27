@@ -45,7 +45,9 @@ async function rebuildUnlessStopped(
       };
       signal?.addEventListener("abort", cancel, { once: true });
       try {
-        await rebuildHeatCells(tx, deviceId, levels);
+        // A stop just before the listener was there, or between two statements, counts too.
+        signal?.throwIfAborted();
+        await rebuildHeatCells(tx, deviceId, levels, signal);
       } finally {
         signal?.removeEventListener("abort", cancel);
       }
@@ -61,13 +63,14 @@ async function rebuildUnlessStopped(
  * Brings every device's stored heat levels in line with its points, at every
  * start (docs/architecture.md §8.2, §10): the totals of every device's levels
  * (one read of the cells, milliseconds for 1.2 M points) show which levels
- * miss points (`levelsToRebuild`) — a level a release added, or one an older
- * release left behind after a rollback — and those are rebuilt from the
- * device's points, a device at a time, each in a transaction under the
- * device's lock, so an upload of that device waits rather than being counted
- * twice. Stopped (`signal`), it cancels what it is doing and the next start
- * finds the rest. Returns how many devices were rebuilt and whether every
- * device is done.
+ * miss points (`levelsToRebuild`: those below the device's highest total) —
+ * a level a release added, one an older release left behind after a
+ * rollback, one short of cells — and those are rebuilt from the device's
+ * points, a device at a time, each in a transaction under the device's lock,
+ * so an upload of that device waits rather than being counted twice. Stopped
+ * (`signal`), it cancels what it is doing — also a wait for the device's
+ * lock — and the next start finds the rest. Returns how many devices were
+ * rebuilt and whether every device is done.
  */
 export async function fillHeatLevels(
   db: Database,

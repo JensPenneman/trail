@@ -181,6 +181,37 @@ describe("filling in heat levels", () => {
     expect(await storedLevel20()).toEqual(await expectedLevel20());
   });
 
+  it("stops while it waits for a device's lock, at once and keeping nothing", async () => {
+    await withoutLevel20();
+    // Another transaction holds the first device's row, as an upload in progress does.
+    const holder = await t.ctx.pool.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT 1 FROM devices WHERE id = $1 FOR UPDATE", [device(0).id]);
+      const abort = new AbortController();
+      const filling = fillHeatLevels(t.ctx.db, t.ctx.logger, abort.signal);
+      // The fill is in its statement now, waiting for the lock.
+      await sleep(500);
+      const stopped = Date.now();
+      abort.abort();
+      expect(await filling).toEqual({ devices: 0, complete: false });
+      expect(Date.now() - stopped).toBeLessThan(1_500);
+      // Still held: the fill gave up rather than waited.
+      const held = await t.ctx.db.execute<{ waiting: number }>(sql`
+        SELECT count(*)::int AS waiting FROM pg_locks l
+        JOIN pg_stat_activity a ON a.pid = l.pid
+        WHERE l.locktype = 'transactionid' AND NOT l.granted AND a.query LIKE '%FOR UPDATE%'
+      `);
+      expect(held.rows[0]?.waiting).toBe(0);
+    } finally {
+      await holder.query("ROLLBACK");
+      holder.release();
+    }
+    // Nothing was half-built: the next start does it all.
+    expect(await fillHeatLevels(t.ctx.db, t.ctx.logger)).toEqual({ devices: 2, complete: true });
+    expect(await storedLevel20()).toEqual(await expectedLevel20());
+  });
+
   it("makes an upload of a device wait while its cells are rebuilt, and counts it once", async () => {
     await withoutLevel20();
     const { id, token } = device(0);
