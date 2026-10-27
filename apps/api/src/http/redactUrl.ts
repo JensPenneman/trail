@@ -9,11 +9,13 @@ const secretPrefixes: readonly (readonly string[])[] = [
 const tokenParameters = new Set(["token", "access_token"]);
 
 /*
- * Paths whose query is a phone's upload: the OsmAnd format sends the position
- * (coordinates, which the logs never hold above debug) and Traccar Client's
- * device identifier, the token, as parameters. Every value goes; the names stay.
+ * The endpoint whose query is a phone's upload: the OsmAnd format sends the
+ * position (coordinates, which the logs never hold above debug) and Traccar
+ * Client's device identifier, the token, as parameters. Every value goes, the
+ * names stay — also below the endpoint and with doubled slashes, where a
+ * mistyped template ends in a 404 at warn level.
  */
-const payloadPaths: readonly (readonly string[])[] = [["api", "osmand"]];
+const payloadEndpoint = ["api", "osmand"];
 
 /* A device token, an API token or a share link secret: API tokens belong in the
  * Authorization header and share link secrets in the X-Share-Secret header only;
@@ -31,12 +33,11 @@ const decoded = (text: string): string => {
   }
 };
 
-const isPayloadPath = (names: readonly string[]): boolean =>
-  payloadPaths.some(
-    (path) =>
-      path.every((part, index) => names[index + 1] === part) &&
-      names.slice(path.length + 1).every((rest) => rest === ""),
-  );
+/* `/api/osmand`, `/API/OSMAND/`, `/api//osmand/x`: the decoded, lower-cased path's first two names. */
+const isPayloadPath = (names: readonly string[]): boolean => {
+  const parts = names.filter((name) => name !== "");
+  return payloadEndpoint.every((part, index) => parts[index] === part);
+};
 
 /**
  * A request URL fit for the logs: one-time link and invite tokens in the path,
@@ -47,7 +48,10 @@ const isPayloadPath = (names: readonly string[]): boolean =>
  * carries a secret into the log.
  */
 export function redactUrl(url: string): string {
-  const parsed = URL.parse(url, "http://trail.invalid");
+  // A path (`//api/osmand?…` too) is a path, never a host: the request line has no host in it.
+  const parsed = url.startsWith("/")
+    ? URL.parse(`http://trail.invalid${url}`)
+    : URL.parse(url, "http://trail.invalid");
   if (parsed === null) return redacted;
   const segments = parsed.pathname.split("/");
   const names = segments.map((segment) => decoded(segment).toLowerCase());

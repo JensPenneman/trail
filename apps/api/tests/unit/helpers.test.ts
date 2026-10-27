@@ -135,8 +135,13 @@ describe("logging safety", () => {
     );
     expect(redactUrl("/API/OsmAnd/?lat=51.05")).toBe("/API/OsmAnd/?lat=[redacted]");
     expect(redactUrl("/api/%6Fsmand?lat=51.05")).toBe("/api/%6Fsmand?lat=[redacted]");
-    // A deeper path is no upload: its own rules apply.
-    expect(redactUrl("/api/osmand/more?lat=51.05")).toBe("/api/osmand/more?lat=51.05");
+    // A mistyped template's path, below the endpoint or with doubled slashes, ends in a 404 at warn.
+    expect(redactUrl("/api/osmand/more?lat=51.05")).toBe("/api/osmand/more?lat=[redacted]");
+    expect(redactUrl("/api//osmand?lat=51.05&lon=3.71")).toBe(
+      "/api//osmand?lat=[redacted]&lon=[redacted]",
+    );
+    expect(redactUrl("//api/OSMAND//x/?timestamp=1")).toBe("//api/OSMAND//x/?timestamp=[redacted]");
+    expect(redactUrl("/api/osmandx?lat=51.05")).toBe("/api/osmandx?lat=51.05");
     // A device token is found by its shape wherever a client puts it.
     expect(redactUrl(`/api/owntracks?u=jens&id=${token}`)).toBe(
       "/api/owntracks?u=jens&id=[redacted]",
