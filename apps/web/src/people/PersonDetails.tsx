@@ -42,7 +42,8 @@ export function PersonDetails({
   const format = useFormatter();
   const { share } = person;
   const where = primaryDevice(person.devices)?.location ?? null;
-  const notShared = "Not shared";
+  // Missing battery or activity: left out by the share, or nothing recent to tell.
+  const withheld = share.includeDetails ? "—" : "Not shared";
 
   return (
     <div className="person-details">
@@ -82,7 +83,7 @@ export function PersonDetails({
                       <dt>Battery</dt>
                       <dd>
                         {device.battery === null ? (
-                          notShared
+                          withheld
                         ) : (
                           <BatteryIndicator battery={device.battery} />
                         )}
@@ -98,7 +99,7 @@ export function PersonDetails({
                       <dt>Trip</dt>
                       <dd>
                         {device.activity === null
-                          ? notShared
+                          ? withheld
                           : device.activity.tripMode === null
                             ? "None in progress"
                             : capitalise(tripModeLabel(device.activity.tripMode))}
@@ -129,7 +130,7 @@ export function PersonDetails({
           </div>
           <div>
             <dt>Battery and activity</dt>
-            <dd>{share.includeDetails ? "Shared" : notShared}</dd>
+            <dd>{share.includeDetails ? "Shared" : "Not shared"}</dd>
           </div>
           <div>
             <dt>Until</dt>

@@ -49,14 +49,14 @@ interface Doing {
  * mode wins when the share includes it (and processing provides one); then a
  * trip running in Overland, then the phone's motion activity. Every part is
  * optional, so the card works with whatever the share includes. A speed is
- * now's only while the position is (`live`, the default): an older position
- * says what they were doing, not how fast.
+ * now's only while the position is (`live`: recorded within the live window);
+ * an older position says what they were doing, not how fast.
  */
 export function describeActivity(
   location: Moving | null,
   activity: Doing | null,
   format: Formatter,
-  { live = true }: { live?: boolean } = {},
+  { live }: { live: boolean },
 ): string | null {
   if (location === null) return null;
   const mode =

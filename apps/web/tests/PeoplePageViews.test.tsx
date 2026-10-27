@@ -193,6 +193,26 @@ describe("switching views", () => {
     await waitFor(() => expect(map().getAttribute("data-fit")).not.toBe(today));
   });
 
+  it("never makes History's camera move again after another view moved the camera", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: "/?view=history", user });
+    await person.click(await screen.findByRole("button", { name: /Show this visit on the map/ }));
+    expect(map().getAttribute("data-focus")).toMatch(/^visit:/);
+    await person.click(view("Live"));
+    const day = await screen.findByRole("region", { name: "Your day so far" });
+    await person.click(await within(day).findByRole("button", { name: /^Details of the train/ }));
+    await person.keyboard("{Escape}");
+    expect(map().getAttribute("data-focus")).toMatch(/^segment:/);
+    await person.click(view("History"));
+    expect(map()).toHaveAttribute("data-focus", "");
+    // Nor after another day from History's own controls.
+    await person.click(await screen.findByRole("button", { name: /Show this visit on the map/ }));
+    expect(map().getAttribute("data-focus")).toMatch(/^visit:/);
+    await person.click(screen.getByRole("button", { name: "Previous day" }));
+    await waitFor(() => expect(map()).toHaveAttribute("data-focus", ""));
+  });
+
   it("falls back to Live for a view it does not know", () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { url: "/?view=explore", user });

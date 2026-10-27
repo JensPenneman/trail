@@ -196,6 +196,11 @@
     var(--shadow-1);
 }
 
+.me-card__setup {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}
+
 .me-card__actions {
   display: flex;
   flex-wrap: wrap;

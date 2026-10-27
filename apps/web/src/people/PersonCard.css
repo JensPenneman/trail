@@ -93,6 +93,10 @@
   font-weight: 600;
 }
 
+.person-details__facts > .person-details__wide {
+  grid-column: 1 / -1;
+}
+
 .person-details__facts dd {
   margin: 0;
   font-size: var(--text-s);

@@ -43,6 +43,34 @@ const open = (hash = `#${secret}`) =>
   renderPage(<PublicSharePage />, { path: "/s", url: `/s${hash}`, user: null });
 
 describe("PublicSharePage", () => {
+  it("gives an older position what it was doing, not a speed of then", async () => {
+    const old = page();
+    const [phone] = old.devices;
+    if (phone === undefined) throw new Error("fixture without a device");
+    mockApi({
+      "GET /api/config": { status: 200, body: config },
+      [`GET ${path}`]: {
+        status: 200,
+        body: {
+          ...old,
+          devices: [
+            {
+              ...phone,
+              location: {
+                ...phone.location,
+                recordedAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+              },
+            },
+          ],
+        },
+      },
+    });
+    open();
+    expect(await screen.findByText("3 hr ago")).toBeInTheDocument();
+    expect(screen.getByText("Driving")).toBeInTheDocument();
+    expect(screen.queryByText(/km\/h/)).toBeNull();
+  });
+
   it("shows the label, the position's freshness and the expiry, without a session", async () => {
     const api = mockApi({
       "GET /api/config": { status: 200, body: config },

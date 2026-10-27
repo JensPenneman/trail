@@ -1,6 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
 import { useId } from "react";
+import { Link } from "react-router";
 import { useFormatter } from "../../format/useFormatter";
 import { describeMe } from "../../people/describeMe";
 import { latestOwnDevice } from "../../people/latestOwnDevice";
@@ -40,6 +41,8 @@ export function MeCard({ name, devices, now, thresholds, shown, onShowOnMap }: M
   const details = useDisclosure();
   const list = devices.data ?? [];
   const latest = latestOwnDevice(list);
+  // Devices added, nothing uploaded yet: the way to their setup rather than "no location".
+  const waiting = list.length > 0 && list.every((device) => device.lastSeenAt === null);
   const mode = useDeviceMode(latest?.lastSeenAt == null ? null : latest.id);
   const location = latest?.lastLocation ?? null;
   const live =
@@ -49,16 +52,18 @@ export function MeCard({ name, devices, now, thresholds, shown, onShowOnMap }: M
       ? null
       : list.length === 0
         ? "No devices yet"
-        : describeMe(
-            {
-              location,
-              current: mode.data === undefined ? undefined : mode.data.current,
-              tripMode: latest?.liveTrip?.mode ?? null,
-            },
-            now,
-            thresholds,
-            format,
-          );
+        : waiting
+          ? "Waiting for the first upload"
+          : describeMe(
+              {
+                location,
+                current: mode.data === undefined ? undefined : mode.data.current,
+                tripMode: latest?.liveTrip?.mode ?? null,
+              },
+              now,
+              thresholds,
+              format,
+            );
 
   return (
     <section className={shown ? "me-card me-card--shown" : "me-card"} aria-labelledby={titleId}>
@@ -97,6 +102,13 @@ export function MeCard({ name, devices, now, thresholds, shown, onShowOnMap }: M
         </EmptyState>
       ) : null}
 
+      {waiting && latest !== null ? (
+        <p className="me-card__setup">
+          Open Overland on the phone and check that tracking is on.{" "}
+          <Link to={`/devices/${latest.id}`}>Setup details</Link>
+        </p>
+      ) : null}
+
       {latest === null || latest.lastSeenAt === null ? null : (
         <QuickModeChips
           key={latest.id}
@@ -104,7 +116,7 @@ export function MeCard({ name, devices, now, thresholds, shown, onShowOnMap }: M
           deviceName={latest.name}
           description={
             list.length > 1
-              ? `Until your next stop, for ${latest.name}: the device that reported last. Your other devices keep the mode Trail detects.`
+              ? `Until your next stop, for ${latest.name}: the device that reported last. Your other devices are not changed.`
               : `Until your next stop, for ${latest.name}.`
           }
           dialogTitle="How are you travelling?"

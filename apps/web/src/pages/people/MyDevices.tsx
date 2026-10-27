@@ -18,8 +18,9 @@ interface MyDevicesProps {
 
 /**
  * The Me card, opened up: each of one's devices with when it last reported
- * a position, its battery, accuracy, movement and trip — each linking to its
- * page — and the way to the Devices page, where the uploads are.
+ * a position, its battery, that position with its accuracy, its movement and
+ * trip — each linking to its page — and the way to the Devices page, where
+ * the uploads are.
  */
 export function MyDevices({ devices, now, thresholds }: MyDevicesProps) {
   const format = useFormatter();
@@ -42,10 +43,12 @@ export function MyDevices({ devices, now, thresholds }: MyDevicesProps) {
                   <div>
                     <dt>Updated</dt>
                     <dd>
-                      {location === null ? (
-                        "No position yet"
-                      ) : (
+                      {location !== null ? (
                         <RelativeTime value={location.recordedAt} tickMs={15_000} />
+                      ) : device.lastSeenAt === null ? (
+                        "Waiting for the first upload"
+                      ) : (
+                        "No position yet"
                       )}
                     </dd>
                   </div>
@@ -55,9 +58,13 @@ export function MyDevices({ devices, now, thresholds }: MyDevicesProps) {
                       <BatteryIndicator battery={device.battery} />
                     </dd>
                   </div>
-                  <div>
-                    <dt>Accuracy</dt>
-                    <dd>{location?.accuracy == null ? "—" : format.accuracy(location.accuracy)}</dd>
+                  <div className="person-details__wide">
+                    <dt>Last position</dt>
+                    <dd>
+                      {location === null
+                        ? "—"
+                        : `${format.coordinates(location.lat, location.lon)}${location.accuracy === null ? "" : ` ${format.accuracy(location.accuracy)}`}`}
+                    </dd>
                   </div>
                   <div>
                     <dt>{live ? "Movement" : "Last reported movement"}</dt>

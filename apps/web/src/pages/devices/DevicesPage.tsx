@@ -1,15 +1,14 @@
 import { type DeviceStatus, deviceStatus } from "@trail/contracts/deviceStatus";
-import { useId, useMemo } from "react";
+import { useEffect, useId, useMemo } from "react";
 import { useSearchParams } from "react-router";
 import { DocumentTitle } from "../../app/DocumentTitle";
-import { useSessionUser } from "../../app/useSessionUser";
 import { activitySlots } from "../../devices/activitySlots";
 import { useDeviceColors } from "../../devices/useDeviceColors";
+import { useLiveState } from "../../live/useLiveState";
 import { useActivity } from "../../queries/useActivity";
 import { useConfig } from "../../queries/useConfig";
+import { useDays } from "../../queries/useDays";
 import { useDevices } from "../../queries/useDevices";
-import { useTracks } from "../../queries/useTracks";
-import { localDayRange } from "../../time/localDayRange";
 import { useNow } from "../../time/useNow";
 import { useToday } from "../../time/useToday";
 import { Button } from "../../ui/Button";
@@ -28,6 +27,8 @@ import "./DevicesPage.css";
 const defaultThresholds = { liveMinutes: 15, staleHours: 12 };
 const activityHours = 48;
 const activity48h = { hours: activityHours, deviceIds: null };
+/** The server sums a day up 10 s after an upload (`DailyStatsScheduler`); a little after that. */
+const dayStatsDelayMs = 12_000;
 
 /**
  * Every phone of the signed-in person and the proof that each keeps sending:
@@ -37,7 +38,6 @@ const activity48h = { hours: activityHours, deviceIds: null };
  * add one (`?add=1` opens the dialog).
  */
 export function DevicesPage() {
-  const user = useSessionUser();
   const [params, setParams] = useSearchParams();
   const howId = useId();
   const devices = useDevices();
@@ -48,13 +48,18 @@ export function DevicesPage() {
   const thresholds = config.data?.thresholds ?? defaultThresholds;
   const list = devices.data ?? [];
   const some = list.length > 0;
-  // Today's tracks (for the distance of each) and the hours of the last two days, of every device.
-  const day = useMemo(
-    () => ({ ...localDayRange(today, today, user.timezone), deviceIds: null }),
-    [today, user.timezone],
-  );
-  const tracks = useTracks(some ? day : null);
+  // Today's sums per device (its distance) and the hours of the last two days, of every device.
+  const day = useMemo(() => ({ from: today, to: today, deviceIds: null }), [today]);
+  const days = useDays(some ? day : null);
   const activity = useActivity(some ? activity48h : null);
+  // An upload changes today's distance once the server has summed the day up again.
+  const latestUpload = useLiveState().uploads[0]?.receivedAt;
+  const refetchDays = days.refetch;
+  useEffect(() => {
+    if (latestUpload === undefined) return;
+    const timer = setTimeout(() => void refetchDays(), dayStatsDelayMs);
+    return () => clearTimeout(timer);
+  }, [latestUpload, refetchDays]);
   const statuses = useMemo(() => {
     const map = new Map<string, DeviceStatus>();
     for (const device of list) {
@@ -63,7 +68,9 @@ export function DevicesPage() {
     return map;
   }, [list, now, thresholds]);
   const distanceByDevice = new Map(
-    (tracks.data?.tracks ?? []).map((track) => [track.deviceId, track.distanceM]),
+    (days.data?.days ?? [])
+      .filter((entry) => entry.date === today)
+      .map((entry) => [entry.deviceId, entry.distanceM]),
   );
   const adding = params.get("add") === "1";
   const setAdding = (open: boolean) =>
@@ -131,7 +138,7 @@ export function DevicesPage() {
                   status={statuses.get(device.id) ?? "never"}
                   thresholds={thresholds}
                   colorSlot={colors.slot(device.id)}
-                  distanceTodayM={tracks.isPending ? null : (distanceByDevice.get(device.id) ?? 0)}
+                  distanceTodayM={days.isPending ? null : (distanceByDevice.get(device.id) ?? 0)}
                   activity={
                     activity.data === undefined
                       ? null
@@ -147,12 +154,12 @@ export function DevicesPage() {
               </li>
             ))}
           </PlainList>
-          {tracks.isError ? (
+          {days.isError ? (
             <ErrorState
               title="Today’s distances could not be loaded"
-              error={tracks.error}
-              onRetry={() => void tracks.refetch()}
-              retrying={tracks.isFetching}
+              error={days.error}
+              onRetry={() => void days.refetch()}
+              retrying={days.isFetching}
             />
           ) : null}
           <UploadFeed devices={devices.data} slotOf={colors.slot} />

@@ -193,7 +193,12 @@ function SharedLocation({ share, now }: { share: PublicShareResponse; now: numbe
                     {device.activity === null ? null : (
                       <div>
                         <dt>Doing</dt>
-                        <dd>{describeActivity(device.location, device.activity, format) ?? "—"}</dd>
+                        <dd>
+                          {describeActivity(device.location, device.activity, format, {
+                            live:
+                              now - Date.parse(device.location.recordedAt) <= liveMinutes * 60_000,
+                          }) ?? "—"}
+                        </dd>
                       </div>
                     )}
                     {device.battery === null ? null : (

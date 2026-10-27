@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useFormatter } from "../format/useFormatter";
 import { RelativeTime } from "../ui/RelativeTime";
 import { OnMapBadge } from "./OnMapBadge";
 import { PersonAvatar } from "./PersonAvatar";
@@ -18,16 +19,18 @@ interface PersonSummaryProps {
   doing: string | null;
   /** Right of the name: the distance from you. */
   distance?: ReactNode;
-  /** Right of what they do: the battery, when their share includes it. */
+  /** Right of the name, before the distance: the battery, when their share includes it. */
   battery?: ReactNode;
   /** Whether the map shows them now. */
   onMap: boolean;
 }
 
 /**
- * A person at a glance, in two lines as Find My has them: who, how fresh and
- * how far — "Ana Bell · Live, 2 min ago … 1.8 km" — then what they are doing,
- * with the battery beside it when it is shared — "Cycling · 16 km/h … 58%".
+ * A person at a glance, in two lines as Find My has them: who, with a
+ * battery glyph and how far on the right — "Ana Bell … ▮ 1.8 km" — then how
+ * fresh and what they are doing: "Live · Cycling · 16 km/h" while the
+ * position is live (its time on hover and in Details), "40 min ago · Walking"
+ * after. A long name ends in an ellipsis rather than taking a line more.
  */
 export function PersonSummary({
   title,
@@ -40,29 +43,47 @@ export function PersonSummary({
   battery,
   onMap,
 }: PersonSummaryProps) {
+  const format = useFormatter();
   const Heading = level === 2 ? "h2" : "h3";
   return (
     <div className="person-summary">
       <PersonAvatar name={avatar.name} slot={avatar.slot} />
-      <div className="person-summary__top">
-        <Heading className="person-summary__name" id={titleId}>
-          {title}
-        </Heading>
-        {freshness === null ? null : (
-          <p className="person-summary__fresh">
-            {freshness.live ? (
-              <>
-                <span className="person-summary__live">Live</span>
-                <span className="visually-hidden">, </span>
-              </>
-            ) : null}
+      <Heading className="person-summary__name" id={titleId}>
+        {title}
+      </Heading>
+      {battery === undefined && distance === undefined ? null : (
+        <div className="person-summary__aside">
+          {battery === undefined ? null : (
+            <span className="person-summary__battery">{battery}</span>
+          )}
+          {distance === undefined ? null : (
+            <span className="person-summary__distance">{distance}</span>
+          )}
+        </div>
+      )}
+      <p className="person-summary__line">
+        {freshness === null ? null : freshness.live ? (
+          <time
+            className="person-summary__live"
+            dateTime={freshness.recordedAt}
+            title={format.dateTime(freshness.recordedAt)}
+          >
+            Live
+          </time>
+        ) : (
+          <span className="person-summary__fresh">
+            {doing === null ? "Updated " : null}
             <RelativeTime value={freshness.recordedAt} tickMs={15_000} />
-          </p>
+          </span>
         )}
-      </div>
-      {distance === undefined ? null : <div className="person-summary__distance">{distance}</div>}
-      {doing === null ? null : <p className="person-summary__doing">{unbroken(doing)}</p>}
-      {battery === undefined ? null : <div className="person-summary__battery">{battery}</div>}
+        {freshness === null || doing === null ? null : (
+          <>
+            <span aria-hidden="true"> · </span>
+            <span className="visually-hidden">, </span>
+          </>
+        )}
+        {doing === null ? null : <span className="person-summary__doing">{unbroken(doing)}</span>}
+      </p>
       {onMap ? (
         <div className="person-summary__badge">
           <OnMapBadge />
@@ -72,6 +93,12 @@ export function PersonSummary({
   );
 }
 
-/** Breaks a line after a " · " only, never inside "18 km/h" nor before the dot. */
+/**
+ * Breaks a line only after a " · ", never inside one of its parts ("18 km/h",
+ * "within about 500 m") nor before the dot.
+ */
 const unbroken = (text: string): string =>
-  text.replaceAll(/(\d) /g, "$1\u00a0").replaceAll(" · ", "\u00a0· ");
+  text
+    .split(" · ")
+    .map((part) => part.replaceAll(" ", "\u00a0"))
+    .join("\u00a0· ");

@@ -110,12 +110,14 @@ export function useHistoryView({
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [browsing, setBrowsing] = useState<{ anchor: string; month: string } | null>(null);
   const [scrub, setScrub] = useState<{ key: string; value: number } | null>(null);
-  const [focus, setFocus] = useState<Focus | null>(null);
+  // A camera move belongs to its period: another day — from the controls, a person's card or
+  // the history's Back — never makes it again.
+  const [focus, setFocus] = useState<(Focus & { period: string }) | null>(null);
   // Every "show" is a camera move of its own, even to a place shown before.
   const focusCount = useRef(0);
   const focusOn = (target: Omit<Focus, "key">, what: string) => {
     focusCount.current += 1;
-    setFocus({ ...target, key: `${what}#${focusCount.current}` });
+    setFocus({ ...target, key: `${what}#${focusCount.current}`, period: periodKey });
   };
 
   const own = selection.own;
@@ -284,6 +286,8 @@ export function useHistoryView({
     [readouts, colors, personColors, owners],
   );
 
+  // Nor is it made again when History is shown again after another view.
+  if (!active && focus !== null) setFocus(null);
   if (!active) return inactiveView;
 
   // Levels, the timeline, visits and trips exist for one's own devices only.
@@ -351,7 +355,7 @@ export function useHistoryView({
             : bounds,
         maxZoom: 16,
       },
-      focus,
+      focus: focus !== null && focus.period === periodKey ? focus : null,
     },
     controls: (
       <>

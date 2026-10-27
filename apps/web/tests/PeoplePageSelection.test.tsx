@@ -199,7 +199,11 @@ describe("where someone on the map has been", () => {
     expect(
       await within(section).findByText(/^1\.3 km · \d\d:\d\d – \d\d:\d\d$/),
     ).toBeInTheDocument();
-    expect(within(section).getByRole("button", { name: "Next day" })).toBeDisabled();
+    // At today Next day is inert, not disabled: a disabled button would drop the keyboard's focus.
+    expect(within(section).getByRole("button", { name: "Next day" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(
       within(section).getByRole("button", { name: "Previous day" }),
     ).toHaveAccessibleDescription("Ana Bell");
@@ -231,6 +235,87 @@ describe("where someone on the map has been", () => {
     expect(within(section).getByText(/1 Sept – .*7 Sept/)).toBeInTheDocument();
     expect(within(section).queryByRole("button", { name: "Previous day" })).toBeNull();
     expect(await within(section).findByText("Nothing recorded in this period")).toBeInTheDocument();
+  });
+
+  it("steps no further back than their history, keeps Next day's focus, and says each day", async () => {
+    // Ana shares her last 24 hours: yesterday is as far back as it goes.
+    mockApi({
+      ...withHistoryOfAna(),
+      "GET /api/v1/people": {
+        status: 200,
+        body: { people: [ana({ share: { ...ana().share, historyDays: 1 } })] },
+      },
+    });
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, { url: `/?people=${ids.ana}`, user });
+    const dateNow = () => new URLSearchParams(router.state.location.search).get("date");
+    await person.click(
+      within(await where("Ana Bell")).getByRole("button", { name: "Previous day" }),
+    );
+    expect(await screen.findByText(/^History, \w+, \d+ \w+ \d{4}\.$/)).toBeInTheDocument();
+    const yesterday = dateNow();
+    expect(yesterday).not.toBeNull();
+    const back = within(await where("Ana Bell")).getByRole("button", { name: "Previous day" });
+    expect(back).toHaveAttribute("aria-disabled", "true");
+    await person.click(back);
+    expect(dateNow()).toBe(yesterday);
+
+    const next = within(await where("Ana Bell")).getByRole("button", { name: "Next day" });
+    next.focus();
+    await person.keyboard("{Enter}");
+    expect(dateNow()).toBeNull();
+    expect(await screen.findByText("Today.")).toBeInTheDocument();
+    // Today: inert, and still where the keyboard is.
+    expect(next).toHaveAttribute("aria-disabled", "true");
+    expect(next).toHaveFocus();
+  });
+
+  it("says when two devices recorded, the times in words, and a share without devices", async () => {
+    mockApi({
+      ...withHistoryOfAna(),
+      "GET /api/v1/people": {
+        status: 200,
+        body: {
+          people: [
+            anaWithHistory(),
+            {
+              ...bob(),
+              share: { ...bob().share, precision: "precise", historyDays: 7 },
+              devices: [],
+            },
+          ],
+        },
+      },
+      [`GET /api/v1/people/${ids.ana}/track`]: ({ url }) => {
+        const answer = trackOfAna({ url });
+        const [phone] = answer.body.tracks;
+        if (phone === undefined) throw new Error("no track");
+        // Her iPad rode along: one ride, two devices.
+        const tablet = { ...phone, deviceId: "01926f3c-2e5f-7a71-8243-5d6e7f8091ff" };
+        return { ...answer, body: { ...answer.body, tracks: [phone, tablet] } };
+      },
+    });
+    renderPage(<PeoplePage />, { url: `/?people=${ids.ana},${ids.bob}`, user });
+    const section = await where("Ana Bell");
+    expect(
+      await within(section).findByText(/^1\.3 km · \d\d:\d\d – \d\d:\d\d · 2 devices recorded$/),
+    ).toBeInTheDocument();
+    expect(
+      within(section).getByText(/^1\.3 km, from \d\d:\d\d to \d\d:\d\d, 2 devices recorded$/),
+    ).toHaveClass("visually-hidden");
+    expect(within(await where("bob")).getByText("Shares no device right now")).toBeInTheDocument();
+  });
+
+  it("does not make a visit's camera move again once a card stepped to another day", async () => {
+    mockApi(withHistoryOfAna());
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: `/?view=history&people=me,${ids.ana}`, user });
+    await person.click(await screen.findByRole("button", { name: /Show this visit on the map/ }));
+    expect(map().getAttribute("data-focus")).toMatch(/^visit:/);
+    await person.click(
+      within(await where("Ana Bell")).getByRole("button", { name: "Previous day" }),
+    );
+    await waitFor(() => expect(map()).toHaveAttribute("data-focus", ""));
   });
 
   it("is only there while they are on the map", async () => {

@@ -31,7 +31,7 @@ const fact = (scope: HTMLElement, label: string) =>
 
 describe("DevicesPage", () => {
   it("proves each device is sending: status, last upload, battery, movement and today", async () => {
-    mockApi(standardRoutes());
+    const api = mockApi(standardRoutes());
     renderPage(<DevicesPage />, { path: "/devices", user });
     expect(await screen.findByText("1 of 2 devices live")).toBeInTheDocument();
     const phone = await screen.findByRole("article", { name: "iPhone 16" });
@@ -47,7 +47,9 @@ describe("DevicesPage", () => {
     expect(fact(phone, "Battery")).toHaveTextContent("62%");
     expect(fact(phone, "Movement")).toHaveTextContent("Standing still");
     expect(fact(phone, "Points today")).toHaveTextContent("1,066");
-    expect(await within(phone).findByText("1.3 km")).toBeInTheDocument();
+    // Today's distance from the day's sums, not from loading its whole track.
+    expect(await within(phone).findByText("32.9 km")).toBeInTheDocument();
+    expect(api.calls.map((call) => call.path)).not.toContain("/api/tracks");
     expect(fact(phone, "Last position")).toHaveTextContent(/50\.9845° N, 3\.5268° E ±12 m/);
     expect(
       await within(phone).findByRole("img", { name: /iPhone 16, last 48 hours/ }),

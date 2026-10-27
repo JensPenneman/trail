@@ -43,3 +43,13 @@
 .where-been__line--error {
   color: var(--color-danger);
 }
+
+/* At the first or last day the buttons stay focusable, only inert: see the component. */
+.where-been__day .button[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.where-been__day .button[aria-disabled="true"]:hover {
+  background: none;
+}

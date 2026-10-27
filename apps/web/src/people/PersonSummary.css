@@ -1,14 +1,15 @@
 /*
- * Two lines beside the avatar: the name and how fresh, with the distance on
- * the right; then what they are doing, with the battery on the right. A long
- * name ends in an ellipsis; a long activity wraps between its parts.
+ * Two lines beside the avatar: the name, with the battery and the distance on
+ * the right; then how fresh and what they are doing, across the whole width.
+ * A long name ends in an ellipsis; only a long activity on a narrow screen
+ * wraps, between its parts.
  */
 .person-summary {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
-    "avatar top distance"
-    "avatar doing battery"
+    "avatar name aside"
+    "avatar line line"
     ". badge badge";
   align-items: center;
   gap: 0.125rem var(--space-3);
@@ -19,35 +20,59 @@
   grid-area: avatar;
 }
 
-.person-summary__top {
-  display: flex;
-  grid-area: top;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 var(--space-2);
-  min-width: 0;
-}
-
 .person-summary__name {
-  flex: 0 1 auto;
+  grid-area: name;
   min-width: 0;
-  max-width: 100%;
   overflow: hidden;
   font-size: var(--text-l);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.person-summary__fresh {
-  flex: none;
+/* With nothing to its right (Me), the name takes the whole line. */
+.person-summary:not(:has(.person-summary__aside)) .person-summary__name {
+  grid-column: 2 / -1;
+}
+
+.person-summary__aside {
+  display: flex;
+  grid-area: aside;
+  align-items: baseline;
+  justify-self: end;
+  gap: var(--space-3);
+  white-space: nowrap;
+}
+
+.person-summary__battery {
+  align-self: center;
+  color: var(--color-text-2);
+}
+
+.person-summary__battery .battery__icon {
+  display: block;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.person-summary__distance {
+  font-size: var(--text-l);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.person-summary__line {
+  grid-area: line;
+  min-width: 0;
   color: var(--color-text-2);
   font-size: var(--text-s);
   font-variant-numeric: tabular-nums;
+}
+
+.person-summary__fresh {
   white-space: nowrap;
 }
 
 .person-summary__live {
-  margin-inline-end: var(--space-1);
   padding: 0 var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--color-live-soft);
@@ -56,43 +81,11 @@
   font-weight: 700;
 }
 
-.person-summary__distance {
-  grid-area: distance;
-  justify-self: end;
-  font-size: var(--text-l);
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-/* With nothing to its right, the activity takes the whole line. */
 .person-summary__doing {
-  grid-area: doing;
-  min-width: 0;
-  font-size: var(--text-s);
+  color: var(--color-text);
   font-weight: 550;
-  font-variant-numeric: tabular-nums;
-}
-
-.person-summary:not(:has(.person-summary__battery)) .person-summary__doing {
-  grid-column: 2 / -1;
-}
-
-.person-summary:not(:has(.person-summary__distance)) .person-summary__top {
-  grid-column: 2 / -1;
-}
-
-.person-summary__battery {
-  grid-area: battery;
-  justify-self: end;
-  color: var(--color-text-2);
-  font-size: var(--text-s);
-  white-space: nowrap;
-}
-
-.person-summary__battery .battery__icon {
-  width: 1rem;
-  height: 1rem;
+  /* A part longer than the line still fits. */
+  overflow-wrap: anywhere;
 }
 
 .person-summary__badge {

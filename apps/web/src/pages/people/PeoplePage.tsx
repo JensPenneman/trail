@@ -226,11 +226,16 @@ export function PeoplePage() {
   const period = search.period;
   const wherePeriod: WhereTheyveBeenPeriod | null =
     view === "live"
-      ? { day: today, from: today, to: today, today, onDay: showHistoryDay }
+      ? { day: today, from: today, to: today, today, onDay: showHistoryDay, opensHistory: true }
       : view === "history"
-        ? period.mode === "day"
-          ? { day: period.from, from: period.from, to: period.to, today, onDay: showDay }
-          : { day: null, from: period.from, to: period.to, today, onDay: null }
+        ? {
+            day: period.mode === "day" ? period.from : null,
+            from: period.from,
+            to: period.to,
+            today,
+            onDay: period.mode === "day" ? showDay : null,
+            opensHistory: false,
+          }
         : null;
   const whereOf = (person: Person) =>
     wherePeriod === null || !shownKeys.includes(person.userId)

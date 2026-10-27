@@ -50,27 +50,28 @@ describe("people helpers", () => {
   });
 
   it("describe what someone is doing with whatever the share includes", () => {
+    const now = { live: true };
     const activity = (mode: TransportMode | null, tripMode: string | null, motion: string[]) => ({
       mode,
       tripMode,
       motion,
     });
-    expect(describeActivity(at(12), activity("train", null, ["automotive"]), format)).toBe(
+    expect(describeActivity(at(12), activity("train", null, ["automotive"]), format, now)).toBe(
       "By train · 43 km/h",
     );
-    expect(describeActivity(at(4), activity(null, "bicycle", ["cycling"]), format)).toBe(
+    expect(describeActivity(at(4), activity(null, "bicycle", ["cycling"]), format, now)).toBe(
       "On a bike ride · 14 km/h",
     );
-    expect(describeActivity(at(0), activity(null, null, ["walking"]), format)).toBe("Walking");
-    expect(describeActivity(at(0), activity("stationary", null, []), format)).toBe(
+    expect(describeActivity(at(0), activity(null, null, ["walking"]), format, now)).toBe("Walking");
+    expect(describeActivity(at(0), activity("stationary", null, []), format, now)).toBe(
       "Standing still",
     );
-    expect(describeActivity(at(3), null, format)).toBe("11 km/h");
-    expect(describeActivity(at(null), null, format)).toBeNull();
-    expect(describeActivity(null, null, format)).toBeNull();
-    expect(describeActivity(at(2), activity("unknown", null, []), format)).toBe("7 km/h");
+    expect(describeActivity(at(3), null, format, now)).toBe("11 km/h");
+    expect(describeActivity(at(null), null, format, now)).toBeNull();
+    expect(describeActivity(null, null, format, now)).toBeNull();
+    expect(describeActivity(at(2), activity("unknown", null, []), format, now)).toBe("7 km/h");
     // A moving speed beats a stop that is over.
-    expect(describeActivity(at(5), activity("stationary", null, []), format)).toBe("18 km/h");
+    expect(describeActivity(at(5), activity("stationary", null, []), format, now)).toBe("18 km/h");
   });
 
   it("say what an older position was doing, not how fast", () => {
@@ -89,18 +90,21 @@ describe("people helpers", () => {
   });
 
   it("take motions and trip modes named like every object's properties for unknown ones", () => {
+    const now = { live: true };
     const activity = (tripMode: string | null, motion: string[]) => ({
       mode: null,
       tripMode,
       motion,
     });
-    expect(describeActivity(at(0), activity(null, ["constructor", "__proto__"]), format)).toBe(
+    expect(describeActivity(at(0), activity(null, ["constructor", "__proto__"]), format, now)).toBe(
       "Standing still",
     );
-    expect(describeActivity(at(0), activity(null, ["__proto__", "walking"]), format)).toBe(
+    expect(describeActivity(at(0), activity(null, ["__proto__", "walking"]), format, now)).toBe(
       "Walking",
     );
-    expect(describeActivity(at(0), activity("constructor", []), format)).toBe("On a constructor");
+    expect(describeActivity(at(0), activity("constructor", []), format, now)).toBe(
+      "On a constructor",
+    );
   });
 
   it("describe the signed-in person now, from the device that reported last", () => {
@@ -181,7 +185,7 @@ describe("people helpers", () => {
     expect(latestOwnDevice([])).toBeNull();
   });
 
-  it("sum someone's track up, and tell when their history begins later", () => {
+  it("sum someone's track up as the device that recorded most, never adding devices", () => {
     const track = (
       deviceId: string,
       distanceM: number,
@@ -206,15 +210,30 @@ describe("people helpers", () => {
         track("b", 1_250, 20, "2026-10-27T05:30:00.000Z", "2026-10-27T08:00:00.000Z"),
       ],
     };
+    // A phone and a tablet on one ride: the busier one, and that two recorded.
     expect(summarizePersonTrack(answer, "2026-10-26T23:00:00.000Z")).toEqual({
-      distanceM: 13_250,
-      points: 320,
-      firstAt: "2026-10-27T05:30:00.000Z",
+      distanceM: 12_000,
+      points: 300,
+      firstAt: "2026-10-27T06:58:00.000Z",
       lastAt: "2026-10-27T09:42:00.000Z",
+      devices: 2,
       limited: false,
     });
+    // A device that recorded nothing does not count; on a tie the longer track wins.
+    const quiet = track("c", 0, 0, "2026-10-27T06:00:00.000Z", "2026-10-27T06:00:00.000Z");
+    const twin = track("d", 12_500, 300, "2026-10-27T07:00:00.000Z", "2026-10-27T09:00:00.000Z");
+    expect(
+      summarizePersonTrack({ ...answer, tracks: [...answer.tracks, quiet, twin] }, answer.from),
+    ).toMatchObject({ distanceM: 12_500, devices: 3 });
     const moved = summarizePersonTrack({ ...answer, tracks: [] }, "2026-10-01T22:00:00.000Z");
-    expect(moved).toEqual({ distanceM: 0, points: 0, firstAt: null, lastAt: null, limited: true });
+    expect(moved).toEqual({
+      distanceM: 0,
+      points: 0,
+      firstAt: null,
+      lastAt: null,
+      devices: 0,
+      limited: true,
+    });
   });
 
   it("pick the device that reported last", () => {

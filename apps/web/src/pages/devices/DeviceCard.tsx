@@ -19,7 +19,7 @@ interface DeviceCardProps {
   status: DeviceStatus;
   thresholds: { liveMinutes: number; staleHours: number };
   colorSlot: number;
-  /** Jitter-filtered distance today, from today's track (null while it loads). */
+  /** Distance today, from the day's sums (`/api/stats/days`; null while they load). */
   distanceTodayM: number | null;
   activity: readonly ActivitySlot[] | null;
   now: number;
