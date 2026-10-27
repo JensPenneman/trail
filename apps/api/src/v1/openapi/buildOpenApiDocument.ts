@@ -61,7 +61,8 @@ function accessNote(auth: RouteAuth): string {
       : auth.all === true
         ? `the scopes ${scopes.join(" and ")}`
         : `one of the scopes ${scopes.join(", ")}`;
-  return `**Access:** an API token with ${needed}, or a signed-in session.`;
+  const devices = auth.allDevices === true ? " for every device (not limited to some)" : "";
+  return `**Access:** an API token with ${needed}${devices}, or a signed-in session.`;
 }
 
 /** Any listed scope grants access: one security requirement per scope; `all` needs them together. */

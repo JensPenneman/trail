@@ -279,6 +279,34 @@ describe("authorization", () => {
     ]);
   });
 
+  it("serves a route for the whole account to sessions and tokens for every device only", async () => {
+    const route = defineRoute(
+      {
+        method: "get",
+        path: "/api/v1/whole",
+        operationId: "wholeAccount",
+        summary: "Whole account",
+        description: "",
+        tags: ["Profile"],
+        auth: { scopes: ["audit:read"], allDevices: true },
+        responses: { 200: z.object({}) },
+        access: false,
+      },
+      () => ({ status: 200, body: {} }),
+    );
+    await request(appFor(route, session)).get("/api/v1/whole").expect(200);
+    await request(appFor(route, token(["audit:read"])))
+      .get("/api/v1/whole")
+      .expect(200);
+    const limited = { ...token(["audit:read"]), deviceIds: [itemId] } as RequestAuth;
+    const refused = await request(appFor(route, limited)).get("/api/v1/whole").expect(403);
+    expect(refused.body.error.code).toBe("insufficient_scope");
+    expect(refused.body.error.message).toContain("every device");
+    expect(refused.headers["www-authenticate"]).toBe(
+      'Bearer realm="trail", error="insufficient_scope", scope="audit:read"',
+    );
+  });
+
   it("serves token routes to any API token, refuses sessions with a 400", async () => {
     const route = defineRoute(
       {

@@ -3141,7 +3141,7 @@
       "get": {
         "operationId": "getAccessLogSummary",
         "summary": "Summarise the data access log",
-        "description": "Who looked at your data over the last 7, 30 or 90 days, today included: totals per kind of actor, channel and kind of access, a series per day of your time zone, the people who looked (with what), your public links (with their distinct visitors) and your API tokens, each with how often and when last — and your own activity in the browser apart from everyone else's.\n\n**Access:** an API token with the scope `audit:read`, or a signed-in session.",
+        "description": "Who looked at your data over the last 7, 30 or 90 days, today included: totals per kind of actor, channel and kind of access, a series per day of your time zone, the people who looked (with what), your public links (with their distinct visitors) and your API tokens, each with how often and when last — and your own activity in the browser apart from everyone else's.\n\n**Access:** an API token with the scope `audit:read` for every device (not limited to some), or a signed-in session.",
         "tags": [
           "Access log"
         ],
@@ -3206,7 +3206,7 @@
       "get": {
         "operationId": "listAccessLog",
         "summary": "List the data access log",
-        "description": "Who read or changed your data, a line per hour and kind of access, newest first: you in your browser, your API tokens (directly or through the MCP server), the people you share with — when they looked at you, through which share, and what — and the visitors of your public links, as their network and kind of browser. Each line says what was read or changed (devices, a range, a level, a share …), never where. Filter by period, kinds of actor, channels and action; follow `nextCursor` for older lines. The log is yours alone: nobody else, an administrator neither, can read it. Reading it is not recorded.\n\n**Access:** an API token with the scope `audit:read`, or a signed-in session.",
+        "description": "Who read or changed your data, a line per hour and kind of access, newest first: you in your browser, your API tokens (directly or through the MCP server), the people you share with — when they looked at you, through which share, and what — and the visitors of your public links, as their network and kind of browser. Each line says what was read or changed (devices, a range, a level, a share …), never where. Filter by period, kinds of actor, channels and action; follow `nextCursor` for older lines. The log is yours alone: nobody else, an administrator neither, can read it. Reading it is not recorded.\n\n**Access:** an API token with the scope `audit:read` for every device (not limited to some), or a signed-in session.",
         "tags": [
           "Access log"
         ],

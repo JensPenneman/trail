@@ -443,8 +443,20 @@ describe("who may read it", () => {
     }
   });
 
-  it("is not limited by a token's devices: the log is the account's", async () => {
-    expect((await listWith(tokens.limited)).items).toHaveLength(9);
+  it("refuses a token limited to some devices: the log is the whole account's", async () => {
+    for (const path of [apiPaths.v1.accessLog.root, apiPaths.v1.accessLog.summary]) {
+      const refused = await request(t.app)
+        .get(path)
+        .set("Authorization", bearer(tokens.limited))
+        .expect(403);
+      expect(errorOf(refused.body)).toMatchObject({
+        code: "insufficient_scope",
+        message: expect.stringContaining("every device"),
+      });
+      expect(refused.headers["www-authenticate"]).toBe(
+        'Bearer realm="trail", error="insufficient_scope", scope="audit:read"',
+      );
+    }
   });
 
   it("shows nobody else anything of it, an administrator neither", async () => {

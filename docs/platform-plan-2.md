@@ -400,8 +400,9 @@ the whole of it; the shapes are `packages/contracts/src/dataAccess.ts`):
   `mcp.resource.device_location`; `link.view`; `live.position`.
 - **Summary**: `people[].actions`, `tokens[].actions` (with `api` and `mcp`
   counts) and `links[].visitors` carry what the sentences of §3.6 need;
-  `own` holds the owner's sessions by browser. `audit:read` is not limited
-  by a token's devices.
+  `own` holds the owner's sessions by browser. `audit:read` needs a token
+  for every device (a token limited to some is refused with 403
+  `insufficient_scope`; the token dialog does not offer it then).
 
 ---
 

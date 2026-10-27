@@ -57,6 +57,13 @@ export const apiTokenTemplates = {
 } as const satisfies Record<string, readonly ApiScope[]>;
 export type ApiTokenTemplate = keyof typeof apiTokenTemplates;
 
+/**
+ * Scopes whose operations answer for the whole account (the data access
+ * log): a token limited to some devices is refused there, so the token
+ * dialog does not offer them with a device list.
+ */
+export const everyDeviceScopes: readonly ApiScope[] = ["audit:read"];
+
 /** Scopes in the vocabulary's order, each once. */
 export const normaliseScopes = (scopes: readonly ApiScope[]): ApiScope[] =>
   apiScopes.filter((scope) => scopes.includes(scope));

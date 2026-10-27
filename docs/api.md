@@ -473,9 +473,11 @@ fifty visitors in an hour, the rest is counted on one line marked `folded`.
   on its own.
 
 The log is yours alone: no other account, an administrator neither, can
-read it, and reading it is not recorded. `audit:read` is not limited by a
-token's devices. The Read-only template includes it, the Agent template does
-not. Lines are kept for a year (the server's `DATA_ACCESS_RETENTION_DAYS`)
+read it, and reading it is not recorded. It covers the whole account, so
+`audit:read` needs a token for every device: a token limited to some devices
+gets `403 insufficient_scope` there, and Settings does not offer the scope
+with a device list. The Read-only template includes it, the Agent template
+does not. Lines are kept for a year (the server's `DATA_ACCESS_RETENTION_DAYS`)
 and go with the account.
 
 ```sh

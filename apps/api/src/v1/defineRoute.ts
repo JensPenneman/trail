@@ -34,8 +34,16 @@ export type SuccessStatus = 200 | 201 | 202 | 204;
  */
 export type RouteAuth = "public" | "token" | ScopeRule;
 
-/** A scoped route: any one of `scopes` grants access, all of them with `all: true`. */
-type ScopeRule = { readonly scopes: readonly [ApiScope, ...ApiScope[]]; readonly all?: boolean };
+/**
+ * A scoped route: any one of `scopes` grants access, all of them with `all: true`.
+ * `allDevices`: what the route answers is the whole account's (the data access
+ * log), so a token limited to some devices may not call it.
+ */
+type ScopeRule = {
+  readonly scopes: readonly [ApiScope, ...ApiScope[]];
+  readonly all?: boolean;
+  readonly allDevices?: true;
+};
 
 /** The validated parts of a request: zod objects for the path and the query string. */
 interface RouteRequest {
@@ -221,6 +229,17 @@ function authorize(rule: RouteAuth, req: Request, res: Response): RequestAuth | 
       `${realm}, error="insufficient_scope", scope="${missing.join(" ")}"`,
     );
     throw new HttpError(403, "insufficient_scope", scopeMessage(rule, missing));
+  }
+  if (rule.allDevices === true && auth.kind === "token" && auth.deviceIds !== null) {
+    res.setHeader(
+      "WWW-Authenticate",
+      `${realm}, error="insufficient_scope", scope="${rule.scopes.join(" ")}"`,
+    );
+    throw new HttpError(
+      403,
+      "insufficient_scope",
+      "This API token is limited to some devices, and this answer covers the whole account: it needs a token for every device.",
+    );
   }
   return auth;
 }

@@ -788,7 +788,7 @@ The spec:
 | `operationId` | unique, lowerCamelCase (`getDevice`) |
 | `summary`, `description` | a few words for the sidebar; Markdown, to which the document appends who may call the route |
 | `tags` | names from `v1Tags.ts` |
-| `auth` | `"public"` (no session is loaded, no body accepted: the handler sees a token's principal or none); `"token"`, any API token whatever its scopes, for operations about the calling token itself (a session gets 400 `bad_request`); or `{ scopes: [...] }` (any one grants access) / `{ scopes: [...], all: true }` |
+| `auth` | `"public"` (no session is loaded, no body accepted: the handler sees a token's principal or none); `"token"`, any API token whatever its scopes, for operations about the calling token itself (a session gets 400 `bad_request`); or `{ scopes: [...] }` (any one grants access) / `{ scopes: [...], all: true }`, with `allDevices: true` for an answer that covers the whole account (a token limited to some devices gets 403 `insufficient_scope`) |
 | `request` | optional zod schemas: `params` (one key per path parameter; a value that fails it answers 404 — it names nothing), `query` (values are strings: coerce in the schema; failure 400 `validation_failed` with `fields`), `body` (JSON; not JSON 415, invalid 400) |
 | `responses` | the body schema of each success status (`200`, `201`, `202`, `204`); `null` for no body |
 | `errors` | error statuses beyond the implied ones (401, 403 and 503 for scoped routes; 400, 401 and 503 for token routes; 404 with path parameters, 400 with a query or body, 413 and 415 with a body, 429 and 500 always), e.g. `[409]` |
@@ -1421,8 +1421,10 @@ Read-only template includes, the Agent template not):
 | `GET /api/v1/access-log/summary` | `days` 7, 30 (default) or 90 local days, today included, in the account's time zone: totals per actor kind, channel and kind of access; a dense series per day (an hour counts on the local day it starts in); the people (with their actions), links (with distinct visitor keys) and tokens (api and mcp apart, with their actions), each with events and last seen, at most 20 each; the owner's own sessions apart |
 
 Every query filters by the principal's user: no route reads another
-account's log, an administrator's neither, and the log is not limited by a
-token's devices (it is the account's, like shares). Actor names are the
+account's log, an administrator's neither. The log covers the whole
+account, so a token limited to some devices is refused (`allDevices` in the
+route's `auth`: 403 `insufficient_scope`, explaining why), and Settings does
+not offer `audit:read` with a device list (`everyDeviceScopes`). Actor names are the
 current ones while the actor exists — the token's name, the person's
 display name, the link's label, the session's user agent — and the
 snapshot otherwise. Reading the log is not recorded (`access: false`). The
@@ -2203,8 +2205,8 @@ which are merged by hand; majors wait for a person, security ones too.
   the OpenAPI document, refusals and failures), and a scan of every row for
   coordinates, secrets and addresses; `dataAccessLog.test.ts` the list and
   the summary — order, filters, keyset pages that hold still while a row is
-  counted again, `audit:read` (Read-only yes, Agent no), not limited by a
-  token's devices, nothing for another account or an administrator, current
+  counted again, `audit:read` (Read-only yes, Agent no), refused to a token
+  limited to some devices, nothing for another account or an administrator, current
   and remembered names, the retention, the account's deletion and the
   shutdown's last write. The migration-upgrade test fingerprints its rows and
   the visitor key.

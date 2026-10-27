@@ -12,7 +12,8 @@ export const getAccessLogSummary = defineRoute(
     description:
       "Who looked at your data over the last 7, 30 or 90 days, today included: totals per kind of actor, channel and kind of access, a series per day of your time zone, the people who looked (with what), your public links (with their distinct visitors) and your API tokens, each with how often and when last — and your own activity in the browser apart from everyone else's.",
     tags: ["Access log"],
-    auth: { scopes: ["audit:read"] },
+    // The log is the whole account's: a token limited to some devices may not read it.
+    auth: { scopes: ["audit:read"], allDevices: true },
     request: { query: dataAccessSummaryQuerySchema },
     responses: { 200: dataAccessSummarySchema },
     access: false,
