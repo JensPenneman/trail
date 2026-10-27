@@ -22,13 +22,14 @@ There is no bug bounty.
 
 ## Scope
 
-- the application: the API, the Overland ingest endpoint, authentication and
-  the web app;
+- the application: the API, the ingest endpoints (Overland, OwnTracks, the
+  OsmAnd format), authentication and the web app;
 - the container image `ghcr.io/jenspenneman/trail`;
 - the deployment configuration in `deploy/` and the CI/CD workflows in
   `.github/`.
 
-Third-party software and services (Overland, Cloudflare, GitHub, Docker,
+Third-party software and services (the tracking apps — Overland, OwnTracks,
+Traccar Client, OsmAnd, GPSLogger —, Cloudflare, GitHub, Docker,
 PostgreSQL, the map tile provider) are out of scope; report issues there to
 the respective vendor. A self-hosted server's own configuration (router, DNS,
 the host and its deployment platform) is the operator's responsibility.

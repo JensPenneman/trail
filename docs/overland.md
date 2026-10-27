@@ -6,13 +6,17 @@ Overland records in the background, stores every point on the phone and sends
 them in batches; it deletes a batch only after Trail confirms it, so points
 recorded without a connection are sent later instead of being lost.
 
+Trail also takes OwnTracks, Traccar Client, OsmAnd and GPSLogger, on iPhones
+and Android phones: [trackers.md](trackers.md) compares them and sets each one
+up. This guide is Overland's.
+
 Each phone is a *device* in Trail with its own access token. A person can have
 several devices, and every device belongs to one person.
 
 ## 1. Add the device in Trail
 
-1. In the dashboard: Devices > Add device, and give it a name ("Jens's
-   iPhone").
+1. In the dashboard: Devices > Add device, give it a name ("Jens's
+   iPhone") and choose Overland.
 2. Trail shows a QR code. Scan it with the iPhone's **Camera** app and tap the
    Overland banner: Overland opens and stores the receiver endpoint, the
    access token and the device ID. On the phone itself, use "Open in Overland"

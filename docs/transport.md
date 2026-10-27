@@ -40,7 +40,10 @@ For every move Trail looks at:
 - **Where you paused**: at stations, tram stops, bus stops, ferry terminals;
   a bus pauses at most of the bus stops it passes, a car only at a few.
 - **Your phone's motion sensor**: iOS tells walking, running, cycling and
-  being in a vehicle apart.
+  being in a vehicle apart. Overland and OwnTracks on iPhones (with extended
+  data) send it, and Traccar Client 9; the other apps do not, so for them
+  Trail decides on speed, the ways and the pauses
+  ([trackers.md](trackers.md#which-app)).
 - **Overland's trip button**: when you started a trip with a mode, that mode
   counts heavily.
 - **Altitude**, for flights.
