@@ -16,9 +16,9 @@ export interface DataAccessOptions {
   flushIntervalMs?: number;
   /** … or at once when this many distinct rows wait, and this many go in one statement (500). */
   batchSize?: number;
-  /** While the database is away, at most this many rows wait in memory; more are dropped (10 000). */
+  /** While the database is away, at most this many rows wait; more are dropped (10 000). */
   maxPending?: number;
-  /** An actor's distinct rows of one action in one hour, before the rest is folded into one (50). */
+  /** An actor's distinct rows of one action in an hour before the rest folds into one (50). */
   foldAfter?: number;
   /** A link's distinct visitors in one hour, before the rest are counted together (50). */
   visitorsPerLink?: number;
@@ -38,7 +38,7 @@ interface Pending {
 
 const hourMs = 3_600_000;
 const sessionIdPattern = /^[0-9a-f]{64}$/;
-/** Names typed by people (tokens, display names, link labels) are cut and cleaned like the MCP server's. */
+/** Names people typed (tokens, display names, link labels): cleaned like the MCP server's. */
 const labelLength = 80;
 
 /** The ids an actor stands on are well-formed, or the row would fail the whole statement. */
@@ -188,9 +188,8 @@ export class DataAccessRecorder {
     let record = { ...access, actor: cleaned(access.actor), resource } as AccessRecord;
     record = this.#foldVisitor(record, hour);
     let key = dedupeKey(record);
-    const rows = this.#seen(
-      `${record.ownerUserId}|${hour}|${JSON.stringify(actorIdentity(record.actor))}|${record.action}`,
-    );
+    const actor = JSON.stringify(actorIdentity(record.actor));
+    const rows = this.#seen(`${record.ownerUserId}|${hour}|${actor}|${record.action}`);
     if (!rows.has(key)) {
       if (rows.size >= this.#options.foldAfter) {
         record = { ...record, resource: { folded: true } };

@@ -3,7 +3,7 @@ import { clientAddress } from "../apiTokens/clientAddress";
 
 const dottedQuad = /(\d{1,3}(?:\.\d{1,3}){3})$/;
 
-/** The eight 16-bit groups of an IPv6 address that `isIPv6` accepted (`::` and a dotted tail included). */
+/** The eight 16-bit groups of an address `isIPv6` accepted, `::` and a dotted tail included. */
 function ipv6Groups(address: string): number[] | null {
   let text = address.toLowerCase();
   const tail: number[] = [];
@@ -34,7 +34,7 @@ function ipv6Groups(address: string): number[] | null {
     : null;
 }
 
-/** RFC 5952 text: lower-case groups without leading zeros, the longest run of zero groups as `::`. */
+/** RFC 5952 text: lower-case groups without leading zeros, the longest zero run as `::`. */
 function ipv6Text(groups: readonly number[]): string {
   let bestStart = -1;
   let bestLength = 1;

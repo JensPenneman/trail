@@ -34,7 +34,10 @@ interface JsonResource<Output extends z.ZodType> {
   work: (context: WorkContext) => Promise<ToolAnswer<z.input<Output>>>;
 }
 
-/** Reads a resource like a tool call — scopes, read-only transaction, schema, log, data access log — as JSON. */
+/**
+ * Reads a resource like a tool call — scopes, read-only transaction, schema,
+ * log, data access log — as JSON.
+ */
 async function readAsJson<Output extends z.ZodType>(
   session: McpSession,
   resource: JsonResource<Output>,

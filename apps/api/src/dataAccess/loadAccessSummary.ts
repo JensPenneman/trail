@@ -157,13 +157,15 @@ export async function loadAccessSummary(
   const personActions = await db.execute<ActionRow>(sql`
     SELECT e.actor_user_id::text AS actor, e.action, sum(e.count)::int AS events
     FROM data_access_events e
-    WHERE ${period} AND e.actor_kind = 'person' AND e.actor_user_id = ANY(${actorIds(people.rows)}::uuid[])
+    WHERE ${period} AND e.actor_kind = 'person'
+      AND e.actor_user_id = ANY(${actorIds(people.rows)}::uuid[])
     GROUP BY 1, 2
   `);
   const tokenActions = await db.execute<ActionRow>(sql`
     SELECT e.actor_token_id::text AS actor, e.action, sum(e.count)::int AS events
     FROM data_access_events e
-    WHERE ${period} AND e.actor_kind = 'token' AND e.actor_token_id = ANY(${actorIds(tokens.rows)}::uuid[])
+    WHERE ${period} AND e.actor_kind = 'token'
+      AND e.actor_token_id = ANY(${actorIds(tokens.rows)}::uuid[])
     GROUP BY 1, 2
   `);
   const sessions = await db.execute<{ label: string | null; events: number; last_at: string }>(sql`

@@ -148,7 +148,7 @@ export const dataAccessVisitorSchema = z
   .meta({ id: "DataAccessVisitor", description: "An anonymous visitor of a public link." });
 export type DataAccessVisitor = z.infer<typeof dataAccessVisitorSchema>;
 
-/** Who it was: names resolve to the current ones while the actor exists, else to the name at the time. */
+/** Who it was: the current names while the actor exists, else the ones it had at the time. */
 export const dataAccessActorSchema = z
   .discriminatedUnion("kind", [
     z

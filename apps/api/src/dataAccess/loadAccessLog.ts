@@ -103,6 +103,19 @@ export async function loadAccessLog(
   filter: AccessLogFilter,
 ): Promise<DataAccessLogResponse> {
   const after = filter.cursor === undefined ? null : decodeAccessLogCursor(filter.cursor);
+  const instant = (value: string) => sql`${new Date(value).toISOString()}::timestamptz`;
+  const afterBucket = after === null ? null : instant(after.bucketStart.toISOString());
+  const conditions = [
+    // `from` takes in the hour it falls in.
+    filter.from === undefined
+      ? sql``
+      : sql`AND e.bucket_start > ${instant(filter.from)} - interval '1 hour'`,
+    filter.to === undefined ? sql`` : sql`AND e.bucket_start < ${instant(filter.to)}`,
+    inList(sql`e.actor_kind`, filter.actor),
+    inList(sql`e.channel`, filter.channel),
+    filter.action === undefined ? sql`` : sql`AND e.action = ${filter.action}`,
+    after === null ? sql`` : sql`AND (e.bucket_start, e.id) < (${afterBucket}, ${after.id})`,
+  ];
   const { rows } = await db.execute<LogRow>(sql`
     SELECT e.id::text AS id, e.bucket_start, e.first_at, e.last_at, e.count, e.actor_kind,
       e.channel, e.actor_user_id, e.actor_share_id, e.actor_token_id, e.actor_link_id,
@@ -117,17 +130,7 @@ export async function loadAccessLog(
       AND l.owner_user_id = e.owner_user_id
     LEFT JOIN sessions s ON e.actor_kind = 'owner' AND s.id = e.actor_session_id
       AND s.user_id = e.owner_user_id
-    WHERE e.owner_user_id = ${ownerUserId}
-      ${filter.from === undefined ? sql`` : sql`AND e.bucket_start > ${new Date(filter.from).toISOString()}::timestamptz - interval '1 hour'`}
-      ${filter.to === undefined ? sql`` : sql`AND e.bucket_start < ${new Date(filter.to).toISOString()}::timestamptz`}
-      ${inList(sql`e.actor_kind`, filter.actor)}
-      ${inList(sql`e.channel`, filter.channel)}
-      ${filter.action === undefined ? sql`` : sql`AND e.action = ${filter.action}`}
-      ${
-        after === null
-          ? sql``
-          : sql`AND (e.bucket_start, e.id) < (${after.bucketStart.toISOString()}::timestamptz, ${after.id})`
-      }
+    WHERE e.owner_user_id = ${ownerUserId} ${sql.join(conditions, sql` `)}
     ORDER BY e.bucket_start DESC, e.id DESC
     LIMIT ${filter.limit + 1}
   `);
