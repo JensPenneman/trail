@@ -25,7 +25,8 @@ import type { FromLevel } from "./processingQueue";
  *   woke up (windows reach back over a gap to see both its ends), no stop
  *   holds travel, a stop keeps how far apart its points lie and when the
  *   last of its own was (`features.spreadM`, `features.lastPointT`), and a
- *   quick toggle runs until the first stop of ten minutes or more.
+ *   quick toggle runs until the first stop of ten minutes or more, or the
+ *   first move of another kind of travel (on foot, by bike, by vehicle).
  */
 export const processingVersions = { averaged: 1, mapped: 1, inferred: 3 } as const;
 

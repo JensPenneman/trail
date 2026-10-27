@@ -117,8 +117,8 @@ export function MeCard({ name, devices, now, thresholds, shown, onShowOnMap }: M
           deviceName={latest.name}
           description={
             list.length > 1
-              ? `Until you stop for ${toggleMinutes} minutes or more, for ${latest.name}: the device that reported last. Your other devices are not changed.`
-              : `Until you stop for ${toggleMinutes} minutes or more, for ${latest.name}.`
+              ? `Until you stop for ${toggleMinutes} minutes or more or travel another way, for ${latest.name}: the device that reported last. Your other devices are not changed.`
+              : `Until you stop for ${toggleMinutes} minutes or more or travel another way, for ${latest.name}.`
           }
           dialogTitle="How are you travelling?"
         />

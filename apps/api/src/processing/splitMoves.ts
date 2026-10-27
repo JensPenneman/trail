@@ -1,9 +1,9 @@
-import type { TransportMode } from "@trail/contracts/transport";
 import { extractFeatures } from "./extractFeatures";
 import type { MoveSeries } from "./moveSeries";
 import type { ManualTrip, ModeVerdict, MoveFeatures } from "./pipelineTypes";
 import type { ProcessingConfig } from "./processingConfig";
 import { scoreModes } from "./scoreModes";
+import { familyOf, type TravelFamily } from "./travelFamily";
 
 /** A part of a move with one mode: positions in the move (inclusive), shared with its neighbours. */
 export interface ScoredPart {
@@ -13,28 +13,14 @@ export interface ScoredPart {
   verdict: ModeVerdict;
 }
 
-/**
- * What a window's winner says for cutting: on foot, on a bike, or in a vehicle.
- * Changing between vehicles needs a transfer — on foot or at a stop — so a
- * change of vehicle alone (a bus that looks like a car between its stops) never
- * cuts a move; the part as a whole decides which vehicle it was.
+/*
+ * What a window's winner says for cutting is its kind of travel (`familyOf`):
+ * on foot, on a bike, or in a vehicle. Changing between vehicles needs a
+ * transfer — on foot or at a stop — so a change of vehicle alone (a bus that
+ * looks like a car between its stops) never cuts a move; the part as a whole
+ * decides which vehicle it was.
  */
-type Family = "foot" | "cycle" | "vehicle";
-
-const familyOf = (mode: TransportMode): Family | null => {
-  switch (mode) {
-    case "walking":
-    case "running":
-      return "foot";
-    case "cycling":
-      return "cycle";
-    case "stationary":
-    case "unknown":
-      return null;
-    default:
-      return "vehicle";
-  }
-};
+type Family = TravelFamily;
 
 interface Run {
   label: Family;

@@ -2,7 +2,16 @@ import { describe, expect, it } from "vitest";
 import type { OverrideSpan } from "../../src/processing/pipelineTypes";
 import { morning, motorwayDrive } from "../support/journeys";
 import { moves, processWorld } from "../support/processWorld";
-import { concat, lastT, motorwayLine, stay, subPath, travel } from "../support/syntheticWorld";
+import {
+  concat,
+  lastT,
+  motorwayLine,
+  pointAlong,
+  stay,
+  subPath,
+  travel,
+  type Vertex,
+} from "../support/syntheticWorld";
 
 const override = (
   fields: Partial<OverrideSpan> & Pick<OverrideSpan, "from" | "mode">,
@@ -118,6 +127,70 @@ describe("applyOverrides", () => {
     // A change of trains, five minutes on the platform, does not end it.
     const changed = moves(processWorld(twoDrives(300), { overrides: [toggle] }));
     expect(changed.map((move) => move.modeUser)).toEqual(["train", "train"]);
+  });
+
+  it("ends the quick toggle at a move of another kind of travel, after a short stop too", () => {
+    // Off the train (driven here on the motorway), five minutes on the platform, then 3 km by bike.
+    const ride = travel(subPath(motorwayLine, 500, 12_500), {
+      startT: morning,
+      speedMs: 30,
+      intervalS: 1,
+      motion: ["driving"],
+      seed: 3,
+    });
+    const station = pointAlong(motorwayLine, 12_500);
+    const platform = stay(station, {
+      startT: lastT(ride) + 1,
+      durationS: 300,
+      intervalS: 5,
+      seed: 4,
+    });
+    const home = travel([station, [station[0], station[1] + 3000]], {
+      startT: lastT(platform) + 1,
+      speedMs: 5,
+      intervalS: 2,
+      motion: ["cycling"],
+      seed: 8,
+    });
+    const train = override({ kind: "toggle", from: morning + 60, mode: "train" });
+    const off = moves(processWorld(concat(ride, platform, home), { overrides: [train] }));
+    expect(off.map((move) => [move.modeUser, move.modeInferred])).toEqual([
+      ["train", "car"],
+      [null, "cycling"],
+    ]);
+
+    // A bike set at home: the ride to the station, eight minutes there, then 13 km at 30 m/s.
+    const start = pointAlong(motorwayLine, 500);
+    const house: Vertex = [start[0], start[1] - 2000];
+    const atHome = stay(house, { startT: morning, durationS: 600, intervalS: 10, seed: 2 });
+    const toStation = travel([house, start], {
+      startT: lastT(atHome) + 1,
+      speedMs: 5,
+      intervalS: 2,
+      motion: ["cycling"],
+      seed: 9,
+    });
+    const waiting = stay(start, {
+      startT: lastT(toStation) + 1,
+      durationS: 480,
+      intervalS: 5,
+      seed: 4,
+    });
+    const onward = travel(subPath(motorwayLine, 500, 13_500), {
+      startT: lastT(waiting) + 1,
+      speedMs: 30,
+      intervalS: 1,
+      motion: ["driving"],
+      seed: 5,
+    });
+    const bike = override({ kind: "toggle", from: morning + 300, mode: "cycling" });
+    const on = moves(
+      processWorld(concat(atHome, toStation, waiting, onward), { overrides: [bike] }),
+    );
+    expect(on.map((move) => [move.modeUser, move.modeInferred])).toEqual([
+      ["cycling", "cycling"],
+      [null, "car"],
+    ]);
   });
 
   it("ends the quick toggle at its until, or at a stop seen before this window", () => {

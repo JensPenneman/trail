@@ -454,7 +454,7 @@ export const setTransportModeInputSchema = z.object({
     ),
   device: deviceInput,
   until: instantInput(
-    "End it at this time at the latest, with a UTC offset; it always ends at the first stop of 10 minutes or more Trail detects.",
+    "End it at this time at the latest, with a UTC offset; it always ends at the first stop of 10 minutes or more Trail detects, or at a move Trail reads as another kind of travel (on foot, by bike, by vehicle).",
   ).optional(),
 });
 
@@ -465,7 +465,7 @@ export const setTransportModeOutputSchema = z.object({
       mode: chosenMode.describe("The mode set."),
       from: instant("From when it counts."),
       until: instant(
-        "Until when at the latest; null: until the first stop of 10 minutes or more.",
+        "Until when at the latest; null: until the first stop of 10 minutes or more, or a move of another kind of travel.",
       ).nullable(),
     })
     .nullable()

@@ -2,6 +2,7 @@ import { type ChosenMode, toggleEndingStopS } from "@trail/contracts/transport";
 import type { OverrideSpan } from "./pipelineTypes";
 import type { ProcessingConfig } from "./processingConfig";
 import type { ScoredPart } from "./splitMoves";
+import { familyOf } from "./travelFamily";
 
 /** A stop of the window, by kept-point indices. */
 interface DraftStop {
@@ -40,8 +41,10 @@ export interface OverrideContext {
 }
 
 /**
- * Where an override applies: a segment override its span, a toggle until the
- * first stop of `toggleEndingStopS` or more (a change of trains does not end it).
+ * Where an override applies: a segment override its span; a toggle until the
+ * first stop of `toggleEndingStopS` or more, or the first part of a move the
+ * inference reads as another kind of travel (`familyOf`), that starts after
+ * it — a change of trains does not end it, cycling home from the station does.
  */
 function effectiveSpan(
   override: OverrideSpan,
@@ -50,12 +53,15 @@ function effectiveSpan(
   let to = override.to ?? Number.POSITIVE_INFINITY;
   if (override.kind === "toggle") {
     if (override.endsBy !== null) to = Math.min(to, override.endsBy);
+    const family = familyOf(override.mode);
     for (const segment of segments) {
-      if (
-        segment.kind === "stop" &&
-        segment.startT > override.from &&
-        segment.endT - segment.startT >= toggleEndingStopS
-      ) {
+      if (segment.startT <= override.from) continue;
+      const inferred = segment.kind === "move" ? familyOf(segment.part.verdict.mode) : null;
+      const ends =
+        segment.kind === "stop"
+          ? segment.endT - segment.startT >= toggleEndingStopS
+          : family !== null && inferred !== null && inferred !== family;
+      if (ends) {
         to = Math.min(to, segment.startT);
         break;
       }

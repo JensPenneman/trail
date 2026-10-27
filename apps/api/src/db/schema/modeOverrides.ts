@@ -7,9 +7,9 @@ import { users } from "./users";
 /**
  * Transport modes people set (docs/architecture.md §17.5): user data, kept
  * when segments are rebuilt and applied to them again. A `segment` override
- * covers its span; a `toggle` runs from `from_at` until `to_at` or the first
- * stop of ten minutes or more, whichever comes first. Revoked rows stay for
- * the record.
+ * covers its span; a `toggle` runs from `from_at` until `to_at`, the first
+ * stop of ten minutes or more, or the first move of another kind of travel,
+ * whichever comes first. Revoked rows stay for the record.
  */
 export const modeOverrides = pgTable(
   "mode_overrides",

@@ -1192,7 +1192,7 @@
       "post": {
         "operationId": "setDeviceMode",
         "summary": "Set the mode from now on",
-        "description": "The quick toggle: from now on the device travels by `mode`, until `until` or the first detected stop of 10 minutes or more, whichever comes first — changing trains does not end it. It is idempotent — the same mode again changes nothing — another mode ends the running one and starts anew, and `mode: null` ends it, so inference takes over again.\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
+        "description": "The quick toggle: from now on the device travels by `mode`, until `until`, the first detected stop of 10 minutes or more, or the first move Trail reads as another kind of travel (on foot, by bike, by vehicle), whichever comes first — changing trains does not end it, cycling home from the station does. It is idempotent — the same mode again changes nothing — another mode ends the running one and starts anew, and `mode: null` ends it, so inference takes over again.\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
         "tags": [
           "Timeline"
         ],
@@ -3508,7 +3508,7 @@
             "description": "The mode from now on; null ends the mode set before and inference takes over."
           },
           "until": {
-            "description": "End it at this time at the latest (it always ends at the first stop of 10 minutes or more).",
+            "description": "End it at this time at the latest (it always ends at the first stop of 10 minutes or more, or the first move Trail reads as another kind of travel (on foot, by bike, by vehicle)).",
             "example": "2026-10-26T10:30:00Z",
             "type": "string",
             "format": "date-time"
@@ -5077,7 +5077,7 @@
               "segment",
               "toggle"
             ],
-            "description": "`segment`: set for one segment's time. `toggle`: set from a moment on, until `until` or the first stop of 10 minutes or more.",
+            "description": "`segment`: set for one segment's time. `toggle`: set from a moment on, until `until`, the first stop of 10 minutes or more, or the first move Trail reads as another kind of travel (on foot, by bike, by vehicle).",
             "example": "toggle"
           },
           "mode": {
@@ -5099,7 +5099,7 @@
                 "type": "null"
               }
             ],
-            "description": "Where it ends at the latest; null: at the first stop of 10 minutes or more.",
+            "description": "Where it ends at the latest; null: at the first stop of 10 minutes or more, or the first move Trail reads as another kind of travel (on foot, by bike, by vehicle).",
             "example": null
           },
           "source": {

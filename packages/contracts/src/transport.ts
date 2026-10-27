@@ -314,14 +314,16 @@ export const levelTracksResponseSchema = z
 export type LevelTracksResponse = z.infer<typeof levelTracksResponseSchema>;
 
 /**
- * A quick toggle runs until its `until` or the first stop at least this long
- * (seconds), whichever comes first: a change of trains or a wait at the
- * lights does not end it (docs/architecture.md §17.5).
+ * A quick toggle runs until its `until`, the first stop at least this long
+ * (seconds), or the first move Trail reads as another kind of travel (on
+ * foot, by bike, by vehicle), whichever comes first: a change of trains or a
+ * wait at the lights does not end it, cycling home from the station does
+ * (docs/architecture.md §17.5).
  */
 export const toggleEndingStopS = 600;
 
-/** "the first stop of 10 minutes or more", as the API's descriptions say it. */
-const endingStop = `the first stop of ${toggleEndingStopS / 60} minutes or more`;
+/** What ends a toggle besides its `until`, as the API's descriptions say it. */
+const endingStop = `the first stop of ${toggleEndingStopS / 60} minutes or more, or the first move Trail reads as another kind of travel (on foot, by bike, by vehicle)`;
 
 /** A person's correction of the transport mode. */
 export const modeOverrideSchema = z
@@ -329,7 +331,7 @@ export const modeOverrideSchema = z
     id: z.uuid().meta({ description: "The override's id." }),
     deviceId,
     kind: z.enum(["segment", "toggle"]).meta({
-      description: `\`segment\`: set for one segment's time. \`toggle\`: set from a moment on, until \`until\` or ${endingStop}.`,
+      description: `\`segment\`: set for one segment's time. \`toggle\`: set from a moment on, until \`until\`, ${endingStop}.`,
       example: "toggle",
     }),
     mode: chosenModeSchema,

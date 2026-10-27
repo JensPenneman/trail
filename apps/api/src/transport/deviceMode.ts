@@ -1,10 +1,9 @@
-import {
-  type ChosenMode,
-  type DeviceMode,
-  type ModeOverride,
-  type ModeOverrideSource,
-  type TransportMode,
-  toggleEndingStopS,
+import type {
+  ChosenMode,
+  DeviceMode,
+  ModeOverride,
+  ModeOverrideSource,
+  TransportMode,
 } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import type { Database, Executor } from "../db/database";
@@ -14,6 +13,7 @@ import { findOwnedDevice } from "../devices/findOwnedDevice";
 import { HttpError } from "../http/httpError";
 import { lockDeviceProcessing } from "../processing/deviceLock";
 import { enqueueWindow } from "../processing/processingQueue";
+import { endsToggleSql } from "../processing/travelFamily";
 import { type SegmentRow, segmentColumns } from "./segmentRow";
 
 interface ToggleRow extends Record<string, unknown> {
@@ -38,8 +38,10 @@ const toOverride = (row: ToggleRow): ModeOverride => ({
 });
 
 /**
- * The quick toggle in force at `now`: not revoked, not past its until, and no
- * stop of `toggleEndingStopS` or more detected since it began.
+ * The quick toggle in force at `now`: not revoked, not past its until, and
+ * nothing that ends it detected since it began — a stop of
+ * `toggleEndingStopS` or more, or a move of another kind of travel
+ * (`endsToggleSql`).
  */
 async function openToggle(
   db: Executor,
@@ -55,8 +57,7 @@ async function openToggle(
       AND (o.to_at IS NULL OR o.to_at > ${now.toISOString()}::timestamptz)
       AND NOT EXISTS (
         SELECT 1 FROM segments s
-        WHERE s.device_id = o.device_id AND s.kind = 'stop' AND s.started_at > o.from_at
-          AND s.ended_at - s.started_at >= make_interval(secs => ${toggleEndingStopS})
+        WHERE s.device_id = o.device_id AND s.started_at > o.from_at AND ${endsToggleSql("s", "o")}
       )
     ORDER BY o.created_at DESC
     LIMIT 1
@@ -120,9 +121,10 @@ export async function loadDeviceMode(
 
 /**
  * The quick toggle (docs/architecture.md §17.5): from now on the device
- * travels by `mode`, until `until` or the first detected stop of
- * `toggleEndingStopS` or more, whichever comes first. Idempotent — the same
- * mode again changes nothing (but a new until);
+ * travels by `mode`, until `until`, the first detected stop of
+ * `toggleEndingStopS` or more, or the first move the inference reads as
+ * another kind of travel, whichever comes first. Idempotent — the same mode
+ * again changes nothing (but a new until);
  * another mode ends the running toggle and starts a new one; `null` ends it.
  * Spans that lose a toggle are queued for the inference again (`queue`).
  */

@@ -21,6 +21,7 @@ import pg from "pg";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { signupLockKey } from "../../src/auth/signupLock";
+import { loadOverrides } from "../../src/processing/windowData";
 import { resolveAccessibleDevices } from "../../src/sharing/accessibleDevices";
 import { loadCurrentModes } from "../../src/sharing/currentModes";
 import { haversineM } from "../../src/tracks/haversine";
@@ -683,6 +684,7 @@ describe("what a shared device is doing", () => {
         "toggle",
         "toggle ended",
         "toggle through a short stop",
+        "toggle ended by a bike",
       ].map(async (name) => (await createDevice(owner.agent, { name: `Mode ${name}` })).device.id),
     );
     const [
@@ -694,6 +696,7 @@ describe("what a shared device is doing", () => {
       toggled = "",
       ended = "",
       through = "",
+      cycled = "",
     ] = ids;
     const segment = (
       deviceId: string,
@@ -732,6 +735,11 @@ describe("what a shared device is doing", () => {
     await segment(through, "move", [40, 20], "train");
     await segment(through, "stop", [20, 15], null);
     await segment(through, "move", [15, 2], "train");
+    // Off the train, five minutes there, then home by bike: another kind of travel ends it.
+    await toggle(cycled, 40, "train");
+    await segment(cycled, "move", [40, 20], "train");
+    await segment(cycled, "stop", [20, 15], null);
+    await segment(cycled, "move", [15, 2], "cycling");
 
     const now = new Date();
     const options = { now, recentMs: t.ctx.config.liveWindowMinutes * 60_000 };
@@ -743,7 +751,16 @@ describe("what a shared device is doing", () => {
       [toggled]: "cycling",
       [ended]: "stationary",
       [through]: "train",
+      [cycled]: "cycling",
     });
+    // A window after them sees where each toggle ended: at the bike ride, at none.
+    const later = { from: new Date(now.getTime() + 60_000), to: new Date(now.getTime() + 120_000) };
+    const [endedByRide] = await loadOverrides(t.ctx.db, cycled, later.from, later.to);
+    const [runningOn] = await loadOverrides(t.ctx.db, through, later.from, later.to);
+    expect(Math.abs((endedByRide?.endsBy ?? 0) - (now.getTime() / 1000 - 15 * 60))).toBeLessThan(
+      30,
+    );
+    expect(runningOn?.endsBy).toBeNull();
     expect(modes.has(nothing)).toBe(false);
     expect(modes.has(old)).toBe(false);
     const owners = await tokenPrincipal(t.ctx.db, owner.email, { scopes: ["locations:read"] });
