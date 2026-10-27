@@ -1436,10 +1436,13 @@ Every query filters by the principal's user: no route reads another
 account's log, an administrator's neither. The log covers the whole
 account, so a token limited to some devices is refused (`allDevices` in the
 route's `auth`: 403 `insufficient_scope`, explaining why), and Settings does
-not offer `audit:read` with a device list (`everyDeviceScopes`). Actor names are the
-current ones while the actor exists — the token's name, the person's
-display name, the link's label, the session's user agent — and the
-snapshot otherwise. Reading the log is not recorded (`access: false`). The
+not offer `audit:read` with a device list (`everyDeviceScopes`). Actor
+names are the current ones while the actor exists — the token's name, the
+link's label, the session's user agent, and a person's display name while
+the share they looked through is in force (in the summary: while a share
+with them is), so the owner learns no new name of someone they no longer
+share with — and the snapshot otherwise; current names are cleaned like
+the stored ones. Reading the log is not recorded (`access: false`). The
 pages (Settings › Privacy, a later change) hide the owner's own sessions
 unless the `showOwnActivity` preference says otherwise; the API returns
 them unless the `actor` filter leaves them out.

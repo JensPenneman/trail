@@ -9,6 +9,7 @@ import { type SQL, sql } from "drizzle-orm";
 import { userAgentLabel } from "../auth/userAgentLabel";
 import type { Executor } from "../db/database";
 import { toIso } from "../db/toIso";
+import { safeText } from "../mcp/safeText";
 import { accessLineId, decodeAccessLogCursor, encodeAccessLogCursor } from "./accessLogCursor";
 
 export interface AccessLogFilter {
@@ -48,10 +49,16 @@ interface LogRow extends Record<string, unknown> {
   session_found: boolean;
 }
 
+/** Names people typed, cleaned like the ones the log keeps (`DataAccessRecorder`). */
+const clean = (name: string | null, fallback: string): string =>
+  name === null ? fallback : safeText(name, 80);
+
 /**
  * Who the row's actor is, with the name they have now while they still
- * exist — a renamed token, a person's new name — and the name they had at the
- * time otherwise (a revoked token pruned, a session that ended).
+ * exist — a renamed token, a link's label — and the name they had at the
+ * time otherwise (a revoked token pruned, a session that ended). A person's
+ * current name only while the share they looked through is in force: once
+ * it has ended, the owner learns nothing new of them, not even a new name.
  */
 function actorOf(row: LogRow): DataAccessActor {
   const label = row.actor_label ?? "";
@@ -60,20 +67,20 @@ function actorOf(row: LogRow): DataAccessActor {
       return {
         kind: "token",
         tokenId: row.actor_token_id ?? "",
-        tokenName: row.token_name ?? label,
+        tokenName: clean(row.token_name, label),
       };
     case "person":
       return {
         kind: "person",
         userId: row.actor_user_id ?? "",
-        displayName: row.person_name ?? label,
+        displayName: clean(row.person_name, label),
         shareId: row.actor_share_id,
       };
     case "link":
       return {
         kind: "link",
         linkId: row.actor_link_id ?? "",
-        linkLabel: row.link_label ?? label,
+        linkLabel: clean(row.link_label, label),
         visitor:
           row.visitor_key === null
             ? null
@@ -128,7 +135,10 @@ export async function loadAccessLog(
       e.status, u.display_name AS person_name, t.name AS token_name, l.label AS link_label,
       s.user_agent AS session_agent, s.id IS NOT NULL AS session_found
     FROM data_access_events e
-    LEFT JOIN users u ON e.actor_kind = 'person' AND u.id = e.actor_user_id
+    LEFT JOIN shares sh ON e.actor_kind = 'person' AND sh.id = e.actor_share_id
+      AND sh.owner_user_id = e.owner_user_id AND sh.recipient_user_id = e.actor_user_id
+      AND sh.revoked_at IS NULL AND (sh.expires_at IS NULL OR sh.expires_at > now())
+    LEFT JOIN users u ON sh.id IS NOT NULL AND u.id = e.actor_user_id
     LEFT JOIN api_tokens t ON e.actor_kind = 'token' AND t.id = e.actor_token_id
       AND t.user_id = e.owner_user_id
     LEFT JOIN share_links l ON e.actor_kind = 'link' AND l.id = e.actor_link_id

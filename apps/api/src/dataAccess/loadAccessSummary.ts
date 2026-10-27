@@ -3,6 +3,7 @@ import { type SQL, sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
 import { toIso } from "../db/toIso";
 import { localDate } from "../lib/localDate";
+import { safeText } from "../mcp/safeText";
 
 /** The lists of the summary are this long at most. */
 const topLength = 20;
@@ -98,6 +99,7 @@ export async function loadAccessSummary(
     FROM data_access_events e WHERE ${period}
     GROUP BY 1, 2
   `);
+  // A person's current name only while one of the owner's shares with them is in force.
   const people = await db.execute<{
     actor: string;
     name: string | null;
@@ -108,7 +110,11 @@ export async function loadAccessSummary(
       coalesce(u.display_name, (array_agg(e.actor_label ORDER BY e.last_at DESC))[1]) AS name,
       sum(e.count)::int AS events, max(e.last_at) AS last_at
     FROM data_access_events e
-    LEFT JOIN users u ON u.id = e.actor_user_id
+    LEFT JOIN users u ON u.id = e.actor_user_id AND EXISTS (
+      SELECT 1 FROM shares sh
+      WHERE sh.owner_user_id = ${owner.id} AND sh.recipient_user_id = u.id
+        AND sh.revoked_at IS NULL AND (sh.expires_at IS NULL OR sh.expires_at > now())
+    )
     WHERE ${period} AND e.actor_kind = 'person'
     GROUP BY e.actor_user_id, u.display_name
     ORDER BY events DESC, last_at DESC, actor
@@ -221,21 +227,21 @@ export async function loadAccessSummary(
     series: [...perDay].map(([date, entry]) => ({ date, ...entry })),
     people: people.rows.map((row) => ({
       userId: row.actor,
-      displayName: row.name ?? "",
+      displayName: safeText(row.name ?? "", 80),
       events: row.events,
       lastAt: toIso(row.last_at),
       actions: ofPeople.get(row.actor) ?? [],
     })),
     links: links.rows.map((row) => ({
       linkId: row.actor,
-      label: row.label ?? "",
+      label: safeText(row.label ?? "", 80),
       events: row.events,
       visitors: row.visitors,
       lastAt: toIso(row.last_at),
     })),
     tokens: tokens.rows.map((row) => ({
       tokenId: row.actor,
-      name: row.name ?? "",
+      name: safeText(row.name ?? "", 80),
       events: row.events,
       api: row.api,
       mcp: row.mcp,

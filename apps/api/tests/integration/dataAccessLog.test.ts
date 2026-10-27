@@ -544,10 +544,12 @@ describe("the summary", () => {
 
 describe("names", () => {
   it("are the actors' current ones while they exist, and the ones they had once they are gone", async () => {
+    // Current names are cleaned like the stored ones: no bidirectional override or zero-width
+    // character reaches the page that shows them.
     await from(owner.agent, "patch", apiPaths.me.token(tokens.reader.id), {
-      name: "Reader renamed",
+      name: "Reader\u200brenamed",
     }).expect(200);
-    await from(ana.agent, "patch", apiPaths.me.root, { displayName: "Ana Lopez" }).expect(200);
+    await from(ana.agent, "patch", apiPaths.me.root, { displayName: "Ana\u202eLopez" }).expect(200);
     const now = await everything();
     expect(now.find((item) => item.action === "getTracks")?.actor).toMatchObject({
       tokenName: "Reader renamed",
@@ -559,6 +561,16 @@ describe("names", () => {
       kind: "owner",
       sessionLabel: "Unknown browser",
     });
+
+    // Once the share has ended, the owner learns nothing new of her: not even a new name.
+    await from(owner.agent, "delete", apiPaths.v1.shares.one(shareId)).expect(204);
+    await from(ana.agent, "patch", apiPaths.me.root, { displayName: "Ana Later" }).expect(200);
+    expect(
+      (await everything()).find((item) => item.action === "live.position")?.actor,
+    ).toMatchObject({
+      displayName: "ana",
+    });
+    expect((await summaryWith(owner.agent, "90")).people[0]?.displayName).toBe("ana");
 
     // Gone: the token pruned, Ana's account deleted, the link pruned, the laptop signed out.
     await t.ctx.db.execute(sql`DELETE FROM api_tokens WHERE id = ${tokens.reader.id}`);

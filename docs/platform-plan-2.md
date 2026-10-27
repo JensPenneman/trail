@@ -361,7 +361,9 @@ the whole of it; the shapes are `packages/contracts/src/dataAccess.ts`):
   (`tokenId`, `tokenName`), `person` (`userId`, `displayName`, `shareId`,
   null when unknown) and `link` (`linkId`, `linkLabel`, `visitor` —
   `{ key, ipCoarse, uaFamily }`, null for the visitors counted together).
-  Names are the current ones while the actor exists, else the ones they had.
+  Names are the current ones while the actor exists (a person's while the
+  share they looked through is in force), else the ones they had; current
+  names are cleaned like the stored ones.
 - **A person's own credentials are not recorded**: a recipient's session,
   token, browser and address stay out of the owner's log (they are the
   recipient's); `actor = the principal` means the person, whichever

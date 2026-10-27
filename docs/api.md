@@ -454,8 +454,9 @@ link visitor is anonymous: the log keeps their network (the first three parts
 of an IPv4 address, `81.82.83.0/24`, or the first 48 bits of an IPv6 one) and
 the kind of browser (`iPhone · Safari`), and a `key` that stands for one
 network and kind of browser on your links and cannot be turned back into an
-address. Names show as they are now while the token, link or person still
-exists, and as they were otherwise. When one actor does one thing with more
+address. Names show as they are now while the token or link exists, and a
+person's while the share they looked through is in force; as they were
+otherwise. When one actor does one thing with more
 different data in an hour than fifty lines hold (or anything with more than
 two hundred), or a link has visitors from more than fifty networks in an
 hour, the rest is counted on one line marked `folded`, which keeps only the
