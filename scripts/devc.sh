@@ -98,9 +98,10 @@ up() {
 }
 
 run() {
-  # Nothing before the command reads its input: a start would answer Compose's
-  # questions (whether to recreate a volume) with a line of it.
-  if running; then install_modules; else up </dev/null; fi
+  # Nothing before the command reads its input or writes to its output: a
+  # start would answer Compose's questions (whether to recreate a volume) with
+  # a line of the input, and its build log and "is up" go to stderr.
+  if running; then install_modules; else up </dev/null >&2; fi
   # Called from inside the worktree, the command runs in the same directory.
   here=$(pwd -P)
   case $here/ in
