@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dataAccessActorIdSchema } from "./dataAccessActorId";
 import { exportFormats } from "./exportQuery";
 import { sharePrecisionSchema } from "./share";
 import { processingLevelSchema, transportModeSchema } from "./transport";
@@ -254,6 +255,10 @@ export const dataAccessLogQuerySchema = z
     actor: listOf(dataAccessActorKinds, "Only these kinds of actor, comma-separated.").optional(),
     channel: listOf(dataAccessChannels, "Only these channels, comma-separated.").optional(),
     action: dataAccessActionSchema.optional().meta({ description: "Only this action." }),
+    actorId: dataAccessActorIdSchema.optional().meta({
+      description:
+        "Only this actor: `person:<userId>` (someone you share with), `token:<tokenId>` (one of your API tokens), `link:<linkId>` (the visitors of one of your public links) or `session:<browser>` (your own browser by the name the log gives it, such as `session:Safari on iPhone`).",
+    }),
     cursor: z.string().min(1).max(200).optional().meta({
       description: "`nextCursor` of the previous page.",
     }),
@@ -304,6 +309,10 @@ export const dataAccessSummaryQuerySchema = z.object({
       description: "The period: the last 7, 30 or 90 local days, today included.",
       example: "30",
     }),
+  actorId: dataAccessActorIdSchema.optional().meta({
+    description:
+      "Only this actor's accesses: `person:<userId>`, `token:<tokenId>`, `link:<linkId>` or `session:<browser>` — what one person looked at, one token did or one link showed.",
+  }),
 });
 export type DataAccessSummaryQueryInput = z.input<typeof dataAccessSummaryQuerySchema>;
 
@@ -341,6 +350,10 @@ export const dataAccessSummarySchema = z
     totals: z
       .object({
         events: count("Every access in the period."),
+        people: count("Distinct people who looked at you."),
+        visitors: count(
+          "Distinct visitors of your links (one network and one kind of browser each); the ones counted together beyond fifty networks of a link in an hour are not among them.",
+        ),
         byActorKind,
         byChannel,
         reads: count("Reads."),
@@ -354,6 +367,7 @@ export const dataAccessSummarySchema = z
           date: z.iso.date().meta({ description: "A local day.", example: "2026-10-26" }),
           events: count("Every access that day."),
           byActorKind,
+          byChannel,
         }),
       )
       .meta({ description: "Every day of the period, oldest first, days without any included." }),

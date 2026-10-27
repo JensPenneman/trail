@@ -467,13 +467,20 @@ devices.
   `nextCursor`. `from` and `to` narrow the period, `actor` and `channel` take
   comma-separated kinds (`actor=person,link,token` leaves your own sessions
   out), `action` one action (`getPersonTrack`, `mcp.get_timeline`,
-  `link.view`, `live.position`, `dashboard.export` …).
+  `link.view`, `live.position`, `dashboard.export` …), and `actorId` one
+  actor: `person:<userId>` (someone you share with, through whichever
+  share), `token:<tokenId>`, `link:<linkId>` (all of its visitors) or
+  `session:<browser>` (one of your browsers by the name the lines give it,
+  `session:Safari on iPhone` — the log keeps no session ids to show).
 - `GET /api/v1/access-log/summary?days=7|30|90` (`audit:read`) sums up a
   period of local days, today included: totals per kind of actor, channel
-  and kind of access, a series per day of your time zone, the people who
+  and kind of access, with the distinct people and link visitors; a series
+  per day of your time zone, by kind of actor and by channel; the people who
   looked (and at what), your links (with their distinct visitors) and your
   tokens with how often and when last, and your own activity in the browser
-  on its own.
+  on its own. With `actorId` it sums up one actor alone: what one person
+  looked at, one token's calls per day through the API and the MCP server,
+  one link's views per day.
 
 The log is yours alone: no other account, an administrator neither, can
 read it, and reading it is not recorded. It covers the whole account, so
@@ -489,7 +496,16 @@ curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/access-log/summa
 
 # Every look by people you share with and by visitors of your links, newest first
 curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/access-log?actor=person,link&limit=100"
+
+# What one token did this week, per day, through the API and through MCP
+curl -sS -G -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/access-log/summary" \
+  --data-urlencode "days=7" --data-urlencode "actorId=token:$TOKEN_ID"
 ```
+
+The pages are in Settings: **Who viewed you** sums the log up per period
+and per actor, with a page for each person, link, token and browser;
+**Access log** lists the lines with the same filters. The pages of a token,
+a link and a share show its own use.
 
 ## Examples
 

@@ -5,12 +5,14 @@ import type {
   DataAccessEvent,
   DataAccessLogResponse,
 } from "@trail/contracts/dataAccess";
+import type { DataAccessActorRef } from "@trail/contracts/dataAccessActorId";
 import { type SQL, sql } from "drizzle-orm";
 import { userAgentLabel } from "../auth/userAgentLabel";
 import type { Executor } from "../db/database";
 import { toIso } from "../db/toIso";
 import { safeText } from "../mcp/safeText";
 import { accessLineId, decodeAccessLogCursor, encodeAccessLogCursor } from "./accessLogCursor";
+import { actorCondition } from "./actorCondition";
 
 export interface AccessLogFilter {
   from?: string | undefined;
@@ -18,6 +20,8 @@ export interface AccessLogFilter {
   actor?: readonly DataAccessActorKind[] | undefined;
   channel?: readonly DataAccessChannel[] | undefined;
   action?: string | undefined;
+  /** One actor only (`actorId`). */
+  only?: DataAccessActorRef | undefined;
   cursor?: string | undefined;
   limit: number;
 }
@@ -100,7 +104,8 @@ const inList = (column: SQL, values: readonly string[] | undefined): SQL =>
 /**
  * One page of the owner's data access log (docs/architecture.md §8.8),
  * newest hour first: only ever the owner's rows — nobody else's account, no
- * administrator — filtered by period, kinds of actor, channels and action.
+ * administrator — filtered by period, kinds of actor, channels, action and
+ * one actor.
  * The keyset is the table's unique key — the hour and the dedupe key —
  * which never changes once a row exists, so a row counted again while
  * someone pages never moves between pages; ids and cursors are made of it,
@@ -124,6 +129,7 @@ export async function loadAccessLog(
     inList(sql`e.actor_kind`, filter.actor),
     inList(sql`e.channel`, filter.channel),
     filter.action === undefined ? sql`` : sql`AND e.action = ${filter.action}`,
+    actorCondition(filter.only),
     after === null
       ? sql``
       : sql`AND (e.bucket_start, e.dedupe_key) < (${afterBucket}, ${afterKey})`,

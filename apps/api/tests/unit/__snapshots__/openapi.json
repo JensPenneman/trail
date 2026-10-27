@@ -3141,7 +3141,7 @@
       "get": {
         "operationId": "getAccessLogSummary",
         "summary": "Summarise the data access log",
-        "description": "Who looked at your data over the last 7, 30 or 90 days, today included: totals per kind of actor, channel and kind of access, a series per day of your time zone, the people who looked (with what), your public links (with their distinct visitors) and your API tokens, each with how often and when last — and your own activity in the browser apart from everyone else's.\n\n**Access:** an API token with the scope `audit:read` for every device (not limited to some), or a signed-in session.",
+        "description": "Who looked at your data over the last 7, 30 or 90 days, today included: totals per kind of actor, channel and kind of access, a series per day of your time zone, the people who looked (with what), your public links (with their distinct visitors) and your API tokens, each with how often and when last — and your own activity in the browser apart from everyone else's. With `actorId`, all of it for one actor: what one person looked at, what one token did, how often one link was opened.\n\n**Access:** an API token with the scope `audit:read` for every device (not limited to some), or a signed-in session.",
         "tags": [
           "Access log"
         ],
@@ -3168,6 +3168,17 @@
               ]
             },
             "description": "The period: the last 7, 30 or 90 local days, today included."
+          },
+          {
+            "in": "query",
+            "name": "actorId",
+            "schema": {
+              "description": "Only this actor's accesses: `person:<userId>`, `token:<tokenId>`, `link:<linkId>` or `session:<browser>` — what one person looked at, one token did or one link showed.",
+              "type": "string",
+              "maxLength": 128,
+              "example": "person:019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a23"
+            },
+            "description": "Only this actor's accesses: `person:<userId>`, `token:<tokenId>`, `link:<linkId>` or `session:<browser>` — what one person looked at, one token did or one link showed."
           }
         ],
         "responses": {
@@ -3206,7 +3217,7 @@
       "get": {
         "operationId": "listAccessLog",
         "summary": "List the data access log",
-        "description": "Who read or changed your data, a line per hour and kind of access, newest first: you in your browser, your API tokens (directly or through the MCP server), the people you share with — when they looked at you, through which share, and what — and the visitors of your public links, as their network and kind of browser. Each line says what was read or changed (devices, a range, a level, a share …), never where. Filter by period, kinds of actor, channels and action; follow `nextCursor` for older lines. The log is yours alone: nobody else, an administrator neither, can read it. Reading it is not recorded.\n\n**Access:** an API token with the scope `audit:read` for every device (not limited to some), or a signed-in session.",
+        "description": "Who read or changed your data, a line per hour and kind of access, newest first: you in your browser, your API tokens (directly or through the MCP server), the people you share with — when they looked at you, through which share, and what — and the visitors of your public links, as their network and kind of browser. Each line says what was read or changed (devices, a range, a level, a share …), never where. Filter by period, kinds of actor, channels, action or one actor (`actorId`: a person, a token, a link or one of your browsers); follow `nextCursor` for older lines. The log is yours alone: nobody else, an administrator neither, can read it. Reading it is not recorded.\n\n**Access:** an API token with the scope `audit:read` for every device (not limited to some), or a signed-in session.",
         "tags": [
           "Access log"
         ],
@@ -3269,6 +3280,17 @@
               "example": "getPersonTrack"
             },
             "description": "Only this action."
+          },
+          {
+            "in": "query",
+            "name": "actorId",
+            "schema": {
+              "description": "Only this actor: `person:<userId>` (someone you share with), `token:<tokenId>` (one of your API tokens), `link:<linkId>` (the visitors of one of your public links) or `session:<browser>` (your own browser by the name the log gives it, such as `session:Safari on iPhone`).",
+              "type": "string",
+              "maxLength": 128,
+              "example": "person:019a2b4c-7d10-7e3a-9b21-5c8d0e6f1a23"
+            },
+            "description": "Only this actor: `person:<userId>` (someone you share with), `token:<tokenId>` (one of your API tokens), `link:<linkId>` (the visitors of one of your public links) or `session:<browser>` (your own browser by the name the log gives it, such as `session:Safari on iPhone`)."
           },
           {
             "in": "query",
@@ -7081,6 +7103,20 @@
                 "description": "Every access in the period.",
                 "example": 14
               },
+              "people": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "description": "Distinct people who looked at you.",
+                "example": 14
+              },
+              "visitors": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "description": "Distinct visitors of your links (one network and one kind of browser each); the ones counted together beyond fifty networks of a link in an hour are not among them.",
+                "example": 14
+              },
               "byActorKind": {
                 "type": "object",
                 "properties": {
@@ -7203,6 +7239,8 @@
             },
             "required": [
               "events",
+              "people",
+              "visitors",
               "byActorKind",
               "byChannel",
               "reads",
@@ -7271,12 +7309,70 @@
                   ],
                   "additionalProperties": false,
                   "description": "Accesses per kind of actor."
+                },
+                "byChannel": {
+                  "type": "object",
+                  "properties": {
+                    "web": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "Your browser.",
+                      "example": 14
+                    },
+                    "api": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "Your tokens.",
+                      "example": 14
+                    },
+                    "mcp": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "Your tokens, through the MCP server.",
+                      "example": 14
+                    },
+                    "people": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "People looking at you.",
+                      "example": 14
+                    },
+                    "live": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "Live positions people received.",
+                      "example": 14
+                    },
+                    "link": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "Public link views.",
+                      "example": 14
+                    }
+                  },
+                  "required": [
+                    "web",
+                    "api",
+                    "mcp",
+                    "people",
+                    "live",
+                    "link"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Accesses per channel."
                 }
               },
               "required": [
                 "date",
                 "events",
-                "byActorKind"
+                "byActorKind",
+                "byChannel"
               ],
               "additionalProperties": false
             },

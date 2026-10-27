@@ -1,9 +1,11 @@
 import type { DataAccessSummary } from "@trail/contracts/dataAccess";
+import type { DataAccessActorRef } from "@trail/contracts/dataAccessActorId";
 import { type SQL, sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
 import { toIso } from "../db/toIso";
 import { localDate } from "../lib/localDate";
 import { safeText } from "../mcp/safeText";
+import { actorCondition } from "./actorCondition";
 
 /** The lists of the summary are this long at most. */
 const topLength = 20;
@@ -62,12 +64,13 @@ function actionsBy(rows: readonly ActionRow[]): Map<string, { action: string; co
  * kind of access, a dense series per local day of the owner's time zone (an
  * hour counts on the day it starts in), the people, links (with their
  * distinct visitors) and tokens with how often and when last, and the owner's
- * own sessions apart from everyone else. Only ever the owner's rows.
+ * own sessions apart from everyone else — or all of it for `only` one actor.
+ * Only ever the owner's rows.
  */
 export async function loadAccessSummary(
   db: Executor,
   owner: { id: string; timezone: string },
-  days: number,
+  { days, only }: { days: number; only?: DataAccessActorRef | undefined },
   now = new Date(),
 ): Promise<DataAccessSummary> {
   const timeZone = owner.timezone;
@@ -85,7 +88,8 @@ export async function loadAccessSummary(
   const period: SQL = sql`e.owner_user_id = ${owner.id}
     AND e.bucket_start >= ${from.toISOString()}::timestamptz - interval '1 hour'
     AND e.bucket_start < ${now.toISOString()}::timestamptz
-    AND (e.bucket_start AT TIME ZONE ${timeZone})::date >= ${firstDay}::date`;
+    AND (e.bucket_start AT TIME ZONE ${timeZone})::date >= ${firstDay}::date
+    ${actorCondition(only)}`;
 
   const totals = await db.execute<{
     actor_kind: string;
@@ -97,11 +101,22 @@ export async function loadAccessSummary(
     FROM data_access_events e WHERE ${period}
     GROUP BY e.actor_kind, e.channel, e.access
   `);
-  const series = await db.execute<{ day: string; actor_kind: string; events: number }>(sql`
-    SELECT to_char(e.bucket_start AT TIME ZONE ${timeZone}, 'YYYY-MM-DD') AS day, e.actor_kind,
-      sum(e.count)::int AS events
+  // Distinct actors that are not one row each in the lists below, which stop at 20.
+  const distinct = await db.execute<{ people: number; visitors: number }>(sql`
+    SELECT count(DISTINCT e.actor_user_id) FILTER (WHERE e.actor_kind = 'person')::int AS people,
+      count(DISTINCT e.visitor_key) FILTER (WHERE e.actor_kind = 'link')::int AS visitors
     FROM data_access_events e WHERE ${period}
-    GROUP BY 1, 2
+  `);
+  const series = await db.execute<{
+    day: string;
+    actor_kind: string;
+    channel: string;
+    events: number;
+  }>(sql`
+    SELECT to_char(e.bucket_start AT TIME ZONE ${timeZone}, 'YYYY-MM-DD') AS day, e.actor_kind,
+      e.channel, sum(e.count)::int AS events
+    FROM data_access_events e WHERE ${period}
+    GROUP BY 1, 2, 3
   `);
   // A person's current name only while one of the owner's shares with them is in force.
   const people = await db.execute<{
@@ -192,8 +207,11 @@ export async function loadAccessSummary(
     WHERE ${period} AND e.actor_kind = 'owner'
   `);
 
+  const [counted] = distinct.rows;
   const total = {
     events: 0,
+    people: counted?.people ?? 0,
+    visitors: counted?.visitors ?? 0,
     byActorKind: actorKinds(),
     byChannel: channels(),
     reads: 0,
@@ -208,15 +226,23 @@ export async function loadAccessSummary(
     else if (row.access === "write") total.writes += row.events;
     else total.exports += row.events;
   }
-  const perDay = new Map<string, { events: number; byActorKind: ReturnType<typeof actorKinds> }>();
+  const perDay = new Map<
+    string,
+    {
+      events: number;
+      byActorKind: ReturnType<typeof actorKinds>;
+      byChannel: ReturnType<typeof channels>;
+    }
+  >();
   for (let day = firstDay; day <= today; day = addDays(day, 1)) {
-    perDay.set(day, { events: 0, byActorKind: actorKinds() });
+    perDay.set(day, { events: 0, byActorKind: actorKinds(), byChannel: channels() });
   }
   for (const row of series.rows) {
     const entry = perDay.get(row.day);
     if (entry === undefined) continue;
     entry.events += row.events;
     add(entry.byActorKind, row.actor_kind, row.events);
+    add(entry.byChannel, row.channel, row.events);
   }
   const ofPeople = actionsBy(personActions.rows);
   const ofTokens = actionsBy(tokenActions.rows);

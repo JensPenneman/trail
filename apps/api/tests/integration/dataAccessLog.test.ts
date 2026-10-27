@@ -480,6 +480,8 @@ describe("the summary", () => {
     // Two own reads now (one of them twice) and an export; the forty-day-old read is outside.
     expect(summary.totals).toEqual({
       events: 14,
+      people: 1,
+      visitors: 2,
       byActorKind: { owner: 3, person: 6, link: 3, token: 2 },
       byChannel: { web: 3, api: 1, mcp: 1, people: 1, live: 5, link: 3 },
       reads: 13,
@@ -489,6 +491,17 @@ describe("the summary", () => {
     expect(summary.series).toHaveLength(30);
     expect(summary.series.at(-1)?.date).toBe(localDate(new Date(), "Europe/Brussels"));
     expect(summary.series.reduce((sum, entry) => sum + entry.events, 0)).toBe(14);
+    // The days add up to the totals, by kind of actor and by channel alike.
+    const byChannel = { web: 0, api: 0, mcp: 0, people: 0, live: 0, link: 0 };
+    for (const entry of summary.series) {
+      for (const channel of Object.keys(byChannel) as (keyof typeof byChannel)[]) {
+        byChannel[channel] += entry.byChannel[channel];
+      }
+      expect(Object.values(entry.byChannel).reduce((sum, value) => sum + value, 0)).toBe(
+        entry.events,
+      );
+    }
+    expect(byChannel).toEqual(summary.totals.byChannel);
     expect(summary.series.filter((entry) => entry.events > 0).length).toBeGreaterThanOrEqual(2);
     expect(summary.people).toEqual([
       {
@@ -539,6 +552,100 @@ describe("the summary", () => {
     expect(seven.days).toBe(7);
     expect((await summaryWith(owner.agent)).days).toBe(30);
     await owner.agent.get(apiPaths.v1.accessLog.summary).query({ days: "5" }).expect(400);
+  });
+});
+
+describe("one actor", () => {
+  const person = () => `person:${ana.id}`;
+  const token = () => `token:${tokens.reader.id}`;
+  const link = () => `link:${linkId}`;
+
+  it("lists only that actor's lines: a person, a token, a link or one of your browsers", async () => {
+    const actions = async (actorId: string, query: Record<string, string> = {}) =>
+      (await everything({ ...query, actorId })).map((item) => item.action).sort();
+    expect(await actions(person())).toEqual(["listPeople", "live.position"]);
+    expect(await actions(token())).toEqual(["getTracks", "mcp.get_timeline"]);
+    expect(await actions(link())).toEqual(["link.view", "link.view"]);
+    // The owner's own browsers by the name the log gives them, as the summary lists them.
+    expect(await actions("session:Safari on iPhone")).toEqual([
+      "dashboard.export",
+      "dashboard.tracks",
+    ]);
+    expect(await actions("session:Firefox on Mac")).toEqual(["dashboard.visits"]);
+    // Upper case is the same id.
+    expect(await actions(`token:${tokens.reader.id.toUpperCase()}`)).toHaveLength(2);
+    // With the other filters, and never anyone else's lines.
+    expect(await actions(token(), { channel: "mcp" })).toEqual(["mcp.get_timeline"]);
+    expect(await actions(person(), { actor: "link" })).toEqual([]);
+    expect(await actions(`person:${eve.id}`)).toEqual([]);
+    expect(await actions("session:Firefox on Mac", { from: ago(24).toISOString() })).toEqual([]);
+    const page = await listWith(owner.agent, { actorId: link(), limit: "1" });
+    expect(page.items).toHaveLength(1);
+    const next = await listWith(owner.agent, { actorId: link(), cursor: page.nextCursor ?? "" });
+    expect(next.items.map((item) => item.id)).not.toContain(page.items[0]?.id);
+    expect(next.nextCursor).toBeNull();
+  });
+
+  it("sums up that actor's period alone", async () => {
+    const of = async (actorId: string) =>
+      dataAccessSummarySchema.parse(
+        (
+          await owner.agent
+            .get(apiPaths.v1.accessLog.summary)
+            .query({ days: "30", actorId })
+            .expect(200)
+        ).body,
+      );
+    const reader = await of(token());
+    expect(reader.totals).toMatchObject({
+      events: 2,
+      people: 0,
+      visitors: 0,
+      byChannel: { web: 0, api: 1, mcp: 1, people: 0, live: 0, link: 0 },
+    });
+    expect(reader.series.reduce((sum, day) => sum + day.byChannel.api + day.byChannel.mcp, 0)).toBe(
+      2,
+    );
+    expect(reader.tokens.map((entry) => entry.tokenId)).toEqual([tokens.reader.id]);
+    expect([reader.people, reader.links, reader.own.sessions]).toEqual([[], [], []]);
+    expect(reader.own).toMatchObject({ events: 0, lastAt: null });
+
+    const someone = await of(person());
+    expect(someone.totals).toMatchObject({ events: 6, people: 1 });
+    expect(someone.people).toEqual([
+      expect.objectContaining({ userId: ana.id, events: 6, lastAt: ago(1).toISOString() }),
+    ]);
+    const weekend = await of(link());
+    expect(weekend.totals).toMatchObject({ events: 3, visitors: 2 });
+    expect(weekend.links).toEqual([expect.objectContaining({ linkId, events: 3, visitors: 2 })]);
+    const phone = await of("session:Safari on iPhone");
+    expect(phone.own).toMatchObject({
+      events: 3,
+      sessions: [{ label: "Safari on iPhone", events: 3 }],
+    });
+    expect(phone.totals.byActorKind).toEqual({ owner: 3, person: 0, link: 0, token: 0 });
+    // A token reads it the same way.
+    const asToken = await request(t.app)
+      .get(apiPaths.v1.accessLog.summary)
+      .set("Authorization", bearer(tokens.reader.secret))
+      .query({ actorId: token() })
+      .expect(200);
+    expect(dataAccessSummarySchema.parse(asToken.body).totals.events).toBe(2);
+  });
+
+  it("refuses what is not an actor", async () => {
+    for (const actorId of [
+      "admin:root",
+      "person:42",
+      `${ana.id}`,
+      "session:",
+      `session:${"x".repeat(121)}`,
+    ]) {
+      for (const path of [apiPaths.v1.accessLog.root, apiPaths.v1.accessLog.summary]) {
+        const answer = await owner.agent.get(path).query({ actorId }).expect(400);
+        expect(errorOf(answer.body).fields, `${path} ${actorId}`).toHaveProperty("actorId");
+      }
+    }
   });
 });
 
