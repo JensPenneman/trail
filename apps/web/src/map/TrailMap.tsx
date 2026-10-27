@@ -18,6 +18,7 @@ import { ensureTrailLayers, trailSources, transportLayers } from "./ensureTrailL
 import { heatFeatures } from "./heatFeatures";
 import type {
   Bounds,
+  MapHeat,
   MapPoint,
   MapPosition,
   MapTrack,
@@ -48,7 +49,8 @@ export interface TrailMapProps {
   positions?: readonly MapPosition[];
   visits?: readonly MapPoint[];
   cursors?: readonly MapPoint[];
-  heat?: readonly (readonly [number, number, number])[];
+  /** The heatmap's cells and the scale that colours them, the same the legend shows. */
+  heat?: MapHeat | null;
   /** The camera fits `bounds` whenever `key` changes — never merely because data grew. */
   fit?: { key: string; bounds: Bounds | null; maxZoom?: number };
   /** The camera moves to this point once per `key` (a key shown again does not move it again). */
@@ -339,7 +341,7 @@ export function TrailMap({
 
   useEffect(() => {
     if (map !== null && styleVersion > 0 && styleReady.current) {
-      setSourceData(map, trailSources.heat, heatFeatures(heat ?? []));
+      setSourceData(map, trailSources.heat, heatFeatures(heat ?? null, map.getZoom()));
     }
   }, [map, styleVersion, heat]);
 

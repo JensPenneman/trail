@@ -1,4 +1,10 @@
-import type { GeoJSONSourceSpecification, Map as MapLibreMap } from "maplibre-gl";
+import type {
+  ExpressionSpecification,
+  GeoJSONSourceSpecification,
+  LayerSpecification,
+  Map as MapLibreMap,
+} from "maplibre-gl";
+import { heatRamp } from "./heatRamp";
 
 export const trailSources = {
   heat: "trail-heat",
@@ -18,37 +24,43 @@ const empty: GeoJSONSourceSpecification = {
   data: { type: "FeatureCollection", features: [] },
 };
 
-/** One hue from transparent to strong, flipped for the dark map so dense means bright. */
-const heatRamp = {
-  light: [
-    0,
-    "rgba(61, 61, 178, 0)",
-    0.12,
-    "rgba(129, 125, 235, 0.35)",
-    0.35,
-    "rgba(96, 90, 222, 0.58)",
-    0.6,
-    "rgba(66, 58, 196, 0.76)",
-    0.85,
-    "rgba(45, 38, 150, 0.88)",
-    1,
-    "rgba(28, 22, 104, 0.95)",
-  ],
-  dark: [
-    0,
-    "rgba(181, 174, 254, 0)",
-    0.12,
-    "rgba(84, 78, 170, 0.42)",
-    0.35,
-    "rgba(122, 115, 222, 0.6)",
-    0.6,
-    "rgba(166, 158, 250, 0.78)",
-    0.85,
-    "rgba(208, 203, 255, 0.9)",
-    1,
-    "rgba(246, 244, 255, 0.96)",
-  ],
-} as const;
+/** A square's colour: the step of the ramp its `shade` (1–6) names, for a dark or a light map. */
+function heatColor(dark: boolean): ExpressionSpecification {
+  const ramp = dark ? heatRamp.dark : heatRamp.light;
+  return [
+    "step",
+    ["get", "shade"],
+    ramp[0],
+    2,
+    ramp[1],
+    3,
+    ramp[2],
+    4,
+    ramp[3],
+    5,
+    ramp[4],
+    6,
+    ramp[5],
+  ];
+}
+
+/**
+ * Where the heatmap goes: over the basemap's areas, roads and buildings, which
+ * would otherwise cut its squares apart (the dark style draws its roads and
+ * buildings above its first label), and under its names — below the first
+ * text after the basemap's last area.
+ */
+function heatBeforeId(layers: readonly LayerSpecification[]): string | undefined {
+  let lastArea = -1;
+  for (const [index, layer] of layers.entries()) {
+    if (layer.id.startsWith("trail-")) continue;
+    if (layer.type === "fill" || layer.type === "fill-extrusion") lastArea = index;
+  }
+  return layers.find(
+    (layer, index) =>
+      index > lastArea && layer.type === "symbol" && layer.layout?.["text-field"] !== undefined,
+  )?.id;
+}
 
 /**
  * Adds Trail's sources and layers to the current style (again after every
@@ -67,36 +79,15 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
     map.addLayer(
       {
         id: "trail-heat",
-        type: "heatmap",
+        type: "fill",
         source: trailSources.heat,
-        paint: {
-          "heatmap-weight": ["get", "weight"],
-          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 2, 0.5, 10, 0.8, 16, 1.3],
-          "heatmap-radius": [
-            "interpolate",
-            ["exponential", 1.5],
-            ["zoom"],
-            2,
-            6,
-            8,
-            12,
-            13,
-            20,
-            18,
-            34,
-          ],
-          "heatmap-opacity": 0.78,
-        },
+        // A little of the map shows through, so the streets under a square still read.
+        paint: { "fill-opacity": 0.8 },
       },
-      firstLabel,
+      heatBeforeId(map.getStyle().layers),
     );
   }
-  map.setPaintProperty("trail-heat", "heatmap-color", [
-    "interpolate",
-    ["linear"],
-    ["heatmap-density"],
-    ...(dark ? heatRamp.dark : heatRamp.light),
-  ]);
+  map.setPaintProperty("trail-heat", "fill-color", heatColor(dark));
 
   if (map.getLayer("trail-accuracy-fill") === undefined) {
     map.addLayer(

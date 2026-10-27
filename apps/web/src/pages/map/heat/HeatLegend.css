@@ -1,44 +1,51 @@
-.heat-legend {
+.map-heat-legend {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
-.heat-legend__ramp {
-  display: block;
-  height: 0.5rem;
-  border-radius: var(--radius-pill);
-  background: linear-gradient(
-    90deg,
-    rgb(129 125 235 / 35%),
-    rgb(96 90 222 / 58%),
-    rgb(66 58 196 / 76%),
-    rgb(45 38 150 / 88%),
-    rgb(28 22 104 / 95%)
-  );
-  box-shadow: inset 0 0 0 1px var(--color-border);
+.map-heat-legend__title {
+  margin: 0;
+  color: var(--color-text-2);
+  font-size: var(--text-s);
 }
 
-.heat-legend__labels {
+.map-heat-legend__scale {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+}
+
+.map-heat-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The squares as the map draws them, square; a hairline of the text colour
+ * keeps the palest step of the dark map visible on a light panel and the
+ * darkest of the light map on a dark one.
+ */
+.map-heat-legend__swatch {
+  flex-shrink: 0;
+  width: 0.875rem;
+  height: 0.875rem;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text) 30%, transparent);
+}
+
+.map-heat-legend__end {
   color: var(--color-text-2);
   font-size: var(--text-xs);
 }
 
-/* A dark or satellite map draws the ramp flipped, dense as bright (ensureTrailLayers). */
-.heat-legend--dark .heat-legend__ramp {
-  background: linear-gradient(
-    90deg,
-    rgb(84 78 170 / 42%),
-    rgb(122 115 222 / 60%),
-    rgb(166 158 250 / 78%),
-    rgb(208 203 255 / 90%),
-    rgb(246 244 255 / 96%)
-  );
-}
-
 @media (forced-colors: active) {
-  .heat-legend__ramp {
+  .map-heat-legend__swatch {
     forced-color-adjust: none;
   }
 }

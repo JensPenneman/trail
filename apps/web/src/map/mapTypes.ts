@@ -1,3 +1,5 @@
+import type { HeatScale } from "./heatScale";
+
 /** `[west, south, east, north]` in degrees. */
 export type Bounds = readonly [number, number, number, number];
 
@@ -53,4 +55,13 @@ export interface MapTransportSegment {
   review: boolean;
   /** `[lon, lat]`; a stop is drawn as a dot at its first point. */
   line: readonly (readonly [number, number])[];
+}
+
+/** The heatmap's cells as the API sends them and the scale that colours them. */
+export interface MapHeat {
+  /** `[lon, lat, count]` of each cell's centre. */
+  cells: readonly (readonly [number, number, number])[];
+  /** The slippy-map level of the cells: a cell is that level's tile. */
+  cellZoom: number;
+  scale: HeatScale;
 }

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { accuracyFeatures } from "../src/map/accuracyFeatures";
 import { boundsOf } from "../src/map/boundsOf";
 import { circleRing } from "../src/map/circleRing";
-import { heatFeatures } from "../src/map/heatFeatures";
 import { heatmapParamsFor } from "../src/map/heatmapParamsFor";
 import { positionExtent } from "../src/map/positionExtent";
 import { rasterStyle } from "../src/map/rasterStyle";
@@ -23,16 +22,6 @@ describe("map helpers", () => {
     expect(heatmapParamsFor({ bounds: [-200, -95, 200, 95], zoom: 0.4 }, ["a"]).bbox).toBe(
       "-180,-90,180,90",
     );
-  });
-
-  it("weights heat cells logarithmically against the busiest one", () => {
-    const features = heatFeatures([
-      [3.5, 51, 1],
-      [3.6, 51, 1000],
-    ]).features;
-    expect(features[1]?.properties.weight).toBeCloseTo(1);
-    expect(features[0]?.properties.weight).toBeGreaterThan(0);
-    expect(features[0]?.properties.weight).toBeLessThan(0.2);
   });
 
   it("draws accuracy circles at their true size", () => {
