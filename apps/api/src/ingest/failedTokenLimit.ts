@@ -8,11 +8,12 @@ import { sendIngestError } from "./sendIngestError";
 const limiters = new WeakMap<AppContext, RequestHandler>();
 
 /**
- * Counts, and refuses, only uploads without a valid device token, per IP — one
- * budget for every ingest endpoint, so a scanner gets no more guesses by trying
- * each of them. Guessing gets slow, while a phone with its valid token is never
- * locked out by a scanner that shares its address (behind NAT or a proxy every
- * client can have the same one). One instance per app.
+ * Counts uploads without a valid device token per IP — one budget for every
+ * ingest endpoint, so trying each of them earns no more — and answers 429 once
+ * an address has used it up. It is consulted after the lookup, so a phone with
+ * its valid token is never locked out by a scanner that shares its address
+ * (behind NAT or a proxy every client can have the same one); with 256-bit
+ * tokens the lookups themselves need no cap. One instance per app.
  */
 export function failedTokenLimit(ctx: AppContext): RequestHandler {
   const existing = limiters.get(ctx);
