@@ -127,6 +127,25 @@ describe("continuity at the Transport level", () => {
     expect(rows[2]).toMatch(/07:38 – 08:20$/);
   });
 
+  it("says so on Live too, in the day under the Me card", async () => {
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/segments": ({ url }: { url: URL }) => ({
+        status: 200,
+        body: {
+          items: withGap(url.searchParams.get("from") ?? new Date().toISOString()),
+          nextCursor: null,
+          pending: false,
+        },
+      }),
+    });
+    renderPage(<PeoplePage />, { user });
+    const list = await screen.findByRole("region", { name: "Timeline" });
+    expect(await within(list).findByText(/^No data · 42 min/)).toBeInTheDocument();
+    const rows = [...list.querySelectorAll("li")].map((row) => row.textContent ?? "");
+    expect(rows.filter((row) => row.startsWith("No data"))).toHaveLength(1);
+  });
+
   it("tells in a stop's details how far one moved within it", async () => {
     mockApi({
       ...standardRoutes(),
@@ -166,6 +185,7 @@ describe("continuity at the Transport level", () => {
         const [lon = 0, lat = 0, t = 0] = stop.points[0] ?? [];
         const spread = {
           ...stop,
+          spreadM: 120,
           points: [
             [lon + 0.0017, lat, t - 60],
             [lon, lat, t],

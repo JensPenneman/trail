@@ -1,4 +1,4 @@
-import { lineSpreadM, visibleGapM } from "./lineGeometry";
+import { visibleGapM } from "./lineGeometry";
 import type { MapTransportSegment } from "./mapTypes";
 
 interface TransportProperties {
@@ -10,7 +10,7 @@ interface TransportProperties {
 
 /** Whether a stop is drawn with its path: its points spread farther than a jump that shows. */
 export const showsPath = (segment: MapTransportSegment): boolean =>
-  segment.kind === "stop" && segment.line.length > 1 && lineSpreadM(segment.line) > visibleGapM;
+  segment.kind === "stop" && segment.line.length > 1 && (segment.spreadM ?? 0) > visibleGapM;
 
 const lineOf = (segment: MapTransportSegment): GeoJSON.LineString => ({
   type: "LineString",

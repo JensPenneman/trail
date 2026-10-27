@@ -26,6 +26,8 @@ export interface SegmentRow extends Record<string, unknown> {
   centroid_lon: number;
   /** A stop's `features.spreadM`; null for moves and stops from before it was kept. */
   spread_m: number | null;
+  /** A stop's `features.lastPointT` (epoch seconds): its own points end there; null for moves. */
+  last_point_t: number | null;
 }
 
 /** The columns of `SegmentRow`, for `SELECT ${segmentColumns} FROM segments s`. */
@@ -33,7 +35,7 @@ export const segmentColumns = sql.raw(`
   s.id, s.device_id, s.kind, s.started_at::text, s.ended_at::text, s.duration_s, s.distance_m,
   s.mode, s.mode_inferred, s.mode_user, s.confidence, s.review, s.max_speed, s.point_count,
   s.start_lat, s.start_lon, s.end_lat, s.end_lon, s.centroid_lat, s.centroid_lon,
-  (s.features->>'spreadM')::float8 AS spread_m
+  (s.features->>'spreadM')::float8 AS spread_m, (s.features->>'lastPointT')::float8 AS last_point_t
 `);
 
 const round = (value: number, digits: number): number => {

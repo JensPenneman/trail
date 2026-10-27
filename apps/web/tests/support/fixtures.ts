@@ -229,6 +229,7 @@ export function levelTracks(from: string, to: string, level: ProcessingLevel): L
           endedAt: segment.endedAt,
           distanceM: segment.distanceM,
           centroid: segment.kind === "stop" ? segment.centroid : null,
+          spreadM: segment.kind === "stop" ? segment.spreadM : null,
           points: segment.kind === "stop" ? [points[0] ?? [0, 0, 0]] : points,
         }))
       : [
@@ -246,6 +247,7 @@ export function levelTracks(from: string, to: string, level: ProcessingLevel): L
             endedAt: new Date((start + 2280) * 1000).toISOString(),
             distanceM: 31_240,
             centroid: null,
+            spreadM: null,
             points,
           },
         ];

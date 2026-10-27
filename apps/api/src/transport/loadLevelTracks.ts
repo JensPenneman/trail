@@ -73,12 +73,17 @@ function withTimes(
   });
 }
 
-/** The device's points in range at `level` (or the best below it), oldest first. */
+/**
+ * The device's points in range at `level` (or the best below it), oldest
+ * first. Too many to hold, every k-th is kept — and the points at `ends`
+ * (epoch seconds: the segments' ends, so their lines still meet).
+ */
 async function servedPoints(
   db: Executor,
   deviceId: string,
   range: { from: Date; to: Date },
   level: ProcessingLevel,
+  ends: ReadonlySet<number>,
 ): Promise<Served[]> {
   const count = await db.execute<{ count: number }>(sql`
     SELECT count(*)::int AS count FROM locations
@@ -150,8 +155,10 @@ async function servedPoints(
       }
       if (entry === null) continue;
       previous = { lon: entry.point[0], lat: entry.point[1], t };
-      // Every k-th point when there are too many to hold; the way's shape always stays.
-      if (stride > 1 && seen % stride !== 0 && entry.vertices.length === 0) continue;
+      // Every k-th point when there are too many to hold; the way's shape and the ends always stay.
+      if (stride > 1 && seen % stride !== 0 && entry.vertices.length === 0 && !ends.has(t)) {
+        continue;
+      }
       served.push(entry);
     }
     const last = page.rows.at(-1);
@@ -180,6 +187,7 @@ const trackPiece = (deviceId: string, served: Served[]): Piece => ({
     endedAt: new Date((served.at(-1)?.t ?? 0) * 1000).toISOString(),
     distanceM: null,
     centroid: null,
+    spreadM: null,
   },
   served,
 });
@@ -200,10 +208,18 @@ function splitAtGaps(deviceId: string, served: Served[]): Piece[] {
   return pieces;
 }
 
+/** A segment's own points end here (epoch seconds): a stop's can end before the stop does. */
+const ownEndOf = (row: SegmentRow): number => {
+  const end = Date.parse(toIso(row.ended_at)) / 1000;
+  return row.kind === "stop" && row.last_point_t !== null ? Math.min(end, row.last_point_t) : end;
+};
+
 /**
  * Stops and moves with their points — a stop's too, so the map can draw where
  * the device went within it — and points outside every segment as pieces of
- * track. Consecutive segments share their boundary point.
+ * track. Consecutive segments share their boundary point, unless a stop
+ * lasted beyond its last point (until the phone left): its points are its
+ * own, and the point the phone resumed at is the next move's.
  */
 function piecesOfSegments(
   deviceId: string,
@@ -212,7 +228,8 @@ function piecesOfSegments(
 ): Piece[] {
   const pieces: Piece[] = [];
   let loose: Served[] = [];
-  // The point at a boundary belongs to both segments (no gap in the line), but never to loose track.
+  // The point at a boundary belongs to both segments (no gap in the line), but never to loose
+  // track, and neither does any other point in a segment's time.
   let lastIncluded = Number.NEGATIVE_INFINITY;
   const takeLoose = (entry: Served) => {
     if (entry.t > lastIncluded) loose.push(entry);
@@ -232,16 +249,17 @@ function piecesOfSegments(
       index += 1;
     }
     flushLoose();
+    const own = ownEndOf(row);
     const inside: Served[] = [];
     let cursor = index;
     while (cursor < served.length && (served[cursor]?.t ?? 0) <= end) {
       const entry = served[cursor];
-      if (entry !== undefined) inside.push(entry);
+      if (entry !== undefined && entry.t <= own) inside.push(entry);
       cursor += 1;
     }
-    const last = inside.at(-1);
-    if (last !== undefined) lastIncluded = Math.max(lastIncluded, last.t);
-    index = last !== undefined && last.t === end ? cursor - 1 : cursor;
+    lastIncluded = Math.max(lastIncluded, end);
+    // The point at the end starts the next segment too.
+    index = cursor > index && served[cursor - 1]?.t === end ? cursor - 1 : cursor;
     pieces.push({
       segment: {
         id: segment.id,
@@ -256,6 +274,7 @@ function piecesOfSegments(
         endedAt: segment.endedAt,
         distanceM: segment.distanceM,
         centroid: segment.kind === "stop" ? segment.centroid : null,
+        spreadM: segment.spreadM,
       },
       served: inside,
     });
@@ -322,7 +341,6 @@ export async function loadLevelTracks(
   let available: ProcessingLevel = query.level;
   let simplified = false;
   for (const device of owned) {
-    const served = await servedPoints(db, device.id, query, query.level);
     let pieces: Piece[];
     if (query.level === "inferred") {
       const rows = await db.execute<SegmentRow>(sql`
@@ -332,9 +350,19 @@ export async function loadLevelTracks(
           AND s.ended_at > ${query.from.toISOString()}::timestamptz
         ORDER BY s.started_at
       `);
+      const ends = new Set<number>();
+      for (const row of rows.rows) {
+        ends.add(Math.round(Date.parse(toIso(row.started_at)) / 1000));
+        ends.add(Math.round(Date.parse(toIso(row.ended_at)) / 1000));
+        ends.add(Math.round(ownEndOf(row)));
+      }
+      const served = await servedPoints(db, device.id, query, query.level, ends);
       pieces = piecesOfSegments(device.id, served, rows.rows);
     } else {
-      pieces = splitAtGaps(device.id, served);
+      pieces = splitAtGaps(
+        device.id,
+        await servedPoints(db, device.id, query, query.level, new Set()),
+      );
     }
     const lines = pieces.map((piece) =>
       piece.served.flatMap((entry) => [...entry.vertices, entry.point]),

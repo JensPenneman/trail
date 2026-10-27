@@ -3,7 +3,7 @@ import { accuracyFeatures } from "../src/map/accuracyFeatures";
 import { boundsOf } from "../src/map/boundsOf";
 import { circleRing } from "../src/map/circleRing";
 import { heatmapParamsFor } from "../src/map/heatmapParamsFor";
-import { lineSpreadM, metresBetween } from "../src/map/lineGeometry";
+import { metresBetween } from "../src/map/lineGeometry";
 import { positionExtent } from "../src/map/positionExtent";
 import { rasterStyle } from "../src/map/rasterStyle";
 import { trackFeatures } from "../src/map/trackFeatures";
@@ -162,8 +162,7 @@ describe("levelTracksToMap", () => {
     ).toEqual([
       ["stop", "#stationary", true, false],
       ["move", "#train", true, true],
-      // The unprocessed points start back where the move began: a connector joins them.
-      ["gap", "#unknown", false, false],
+      // Points not processed yet are no part of the timeline: no connector, wherever they start.
       ["track", "#device", false, false],
     ]);
   });
@@ -200,6 +199,34 @@ describe("levelTracksToMap", () => {
     expect(transport[1]?.place).toBeNull();
   });
 
+  it("bridges the way a stop's phone went before it resumed, and keeps the stop's spread", () => {
+    const response = levelTracks(
+      "2026-09-29T22:00:00.000Z",
+      "2026-09-30T22:00:00.000Z",
+      "inferred",
+    );
+    const [stop, move] = response.segments;
+    if (stop === undefined || move === undefined) throw new Error("no segments in the fixture");
+    const [lon = 0, lat = 0, t = 0] = stop.points[0] ?? [];
+    // Still until a ten-minute pause; the phone resumed 150 m north, riding.
+    const paused = { ...stop, spreadM: 4, endedAt: new Date((t + 600) * 1000).toISOString() };
+    const ride = {
+      ...move,
+      startedAt: paused.endedAt,
+      points: [
+        [lon, lat + 0.00135, t + 600],
+        [lon, lat + 0.01, t + 1200],
+      ] as [number, number, number][],
+    };
+    const { transport } = levelTracksToMap({ ...response, segments: [paused, ride] }, colors);
+    expect(transport.map((segment) => segment.kind)).toEqual(["stop", "gap", "move"]);
+    expect(transport[1]?.line).toEqual([
+      [lon, lat],
+      [lon, lat + 0.00135],
+    ]);
+    expect(transport.map((segment) => segment.spreadM)).toEqual([4, null, null]);
+  });
+
   it("connects a device's segments only to its own, and only where they do not meet", () => {
     const response = levelTracks(
       "2026-09-29T22:00:00.000Z",
@@ -227,7 +254,13 @@ describe("levelTracksToMap", () => {
 });
 
 describe("transportFeatures", () => {
-  const base = { selectable: true, color: "#stationary", review: false, place: null };
+  const base = {
+    selectable: true,
+    color: "#stationary",
+    review: false,
+    place: null,
+    spreadM: null,
+  };
   const station: [number, number] = [3.71, 51.0356];
 
   it("draws a stop that spread with its path dotted, its dot at its place", () => {
@@ -238,16 +271,27 @@ describe("transportFeatures", () => {
       kind: "stop" as const,
       line: [station, [3.71, 51.0351], [3.7098, 51.03452]] as const,
       place: [3.71, 51.0349] as const,
+      spreadM: 120,
     };
     const still = {
       ...base,
       id: "still",
       kind: "stop" as const,
       line: [station, [3.71005, 51.03565]] as const,
+      spreadM: 5,
     };
-    const { stops, stopPaths, lines, gaps } = transportFeatures([walked, still]);
+    // Its points lie 120 m apart, but the phone was still at all but one fix far off.
+    const glitch = {
+      ...base,
+      id: "glitch",
+      kind: "stop" as const,
+      line: [station, [3.71, 51.0345], station] as const,
+      spreadM: 3,
+    };
+    const { stops, stopPaths, lines, gaps } = transportFeatures([walked, still, glitch]);
     expect(stops.features.map((feature) => feature.geometry.coordinates)).toEqual([
       [3.71, 51.0349],
+      station,
       station,
     ]);
     expect(stopPaths.features.map((feature) => feature.properties.id)).toEqual(["walked"]);
@@ -278,15 +322,7 @@ describe("transportFeatures", () => {
     ]);
   });
 
-  it("measures how far a line's points lie apart", () => {
+  it("measures how far apart two points lie", () => {
     expect(metresBetween([3.71, 51.0356], [3.71, 51.0347])).toBeCloseTo(100, 0);
-    expect(lineSpreadM([[3.71, 51.0356]])).toBe(0);
-    expect(
-      lineSpreadM([
-        [3.71, 51.0352],
-        [3.71, 51.0356],
-        [3.71, 51.0347],
-      ]),
-    ).toBeCloseTo(100, 0);
   });
 });

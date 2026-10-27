@@ -63,6 +63,8 @@ export interface MapTransportSegment {
   line: readonly (readonly [number, number])[];
   /** A stop's place, where its dot goes (else its first point); null for the others. */
   place: readonly [number, number] | null;
+  /** How far apart a stop's points lie, metres (the API's `spreadM`); null for the others. */
+  spreadM: number | null;
 }
 
 /** The heatmap's cells as the API sends them and the scale that colours them. */

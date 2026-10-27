@@ -19,6 +19,7 @@ import { uploadJourney } from "../support/overlandPoints";
 import { resetDatabase } from "../support/resetDatabase";
 import { SoftwareAuthenticator } from "../support/softwareAuthenticator";
 import { SseClient } from "../support/sseClient";
+import { concat, lastT, stay, travel } from "../support/syntheticWorld";
 import { createTestContext, type TestContext } from "../support/testContext";
 import { testOrigin } from "../support/testEnvironment";
 
@@ -151,6 +152,47 @@ describe("GET /api/v1/tracks", () => {
     );
     expect(small.segments.flatMap((segment) => segment.points).length).toBeLessThanOrEqual(100);
     expect(small.segments.map((segment) => segment.kind)).toEqual(["stop", "move", "stop"]);
+  });
+
+  it("serves a stop its own points and spread: the point the phone resumed at is the move's", async () => {
+    // Half an hour at the desk, ten minutes without a point, then riding from 150 m on.
+    const device = await createDevice(owner, { name: "Resumer" });
+    const start = morning + 9 * 3600;
+    const desk = stay([-600, -400], { startT: start, durationS: 1800, intervalS: 10 });
+    const ride = travel(
+      [
+        [-600, -250],
+        [-600, 2000],
+      ],
+      { startT: lastT(desk) + 600, speedMs: 5, intervalS: 2, motion: ["cycling"] },
+    );
+    await uploadJourney(t.app, device.credentials.accessToken, concat(desk, ride));
+    await t.ctx.background.drain(5000);
+    await t.ctx.processing.flush();
+    const tracks = levelTracksResponseSchema.parse(
+      (
+        await owner
+          .get(apiPaths.v1.tracks)
+          .query({ ...day, devices: device.device.id, level: "inferred" })
+          .expect(200)
+      ).body,
+    );
+    const [stop, move] = tracks.segments;
+    expect(tracks.segments.map((segment) => segment.kind)).toEqual(["stop", "move"]);
+    // The stop lasted until the phone resumed; its points end at its own last one …
+    expect(stop?.points.at(-1)?.[2]).toBe(lastT(desk));
+    expect(Date.parse(stop?.endedAt ?? "") / 1000).toBe(lastT(desk) + 600);
+    // … and the point it resumed at, 150 m on, starts the ride.
+    expect(move?.points[0]?.[2]).toBe(lastT(desk) + 600);
+    // Its spread is the timeline's: the desk, not the way to where the ride began.
+    const { items } = await timeline(owner, { devices: device.device.id });
+    expect(stop?.spreadM).toBe(items[0]?.spreadM);
+    expect(stop?.spreadM).toBeLessThan(25);
+    expect(move?.spreadM).toBeNull();
+    await owner
+      .delete(apiPaths.devices.one(device.device.id))
+      .set("Origin", testOrigin)
+      .expect(204);
   });
 
   it("defaults to raw, simplifies to maxPoints and refuses ranges over 93 days", async () => {
