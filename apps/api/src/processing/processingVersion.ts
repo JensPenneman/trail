@@ -19,11 +19,13 @@ import type { FromLevel } from "./processingQueue";
  *
  * - inferred 2: `features.wayKinds`, the distance shares by way kind.
  * - inferred 3: a visit's stop ends when the phone leaves (its arrival and
- *   departure reports merged, an open one over by the next arrival), a real
- *   walk between two stays is a move, a recording gap the phone lay still
- *   through is a stop (windows reach back over a gap to see both its ends),
- *   no stop holds travel, and a stop keeps how far apart its points lie
- *   (`features.spreadM`).
+ *   departure reports merged, an open one over by the next arrival; a fix far
+ *   off now and then is no departure), a real walk between two stays is a
+ *   move, a recording gap the phone lay still through is a stop until it
+ *   woke up (windows reach back over a gap to see both its ends), no stop
+ *   holds travel, a stop keeps how far apart its points lie and when the
+ *   last of its own was (`features.spreadM`, `features.lastPointT`), and a
+ *   quick toggle runs until the first stop of ten minutes or more.
  */
 export const processingVersions = { averaged: 1, mapped: 1, inferred: 3 } as const;
 

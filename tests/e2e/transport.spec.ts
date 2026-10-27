@@ -231,7 +231,9 @@ test("the quick toggle on the Me card says how you travel from now on", async ({
   await page.goto("/");
   const me = page.getByRole("region", { name: "Me", exact: true });
   const chips = me.getByRole("group", { name: "Now:" });
-  await expect(chips).toHaveAccessibleDescription("Until your next stop, for Commuter.");
+  await expect(chips).toHaveAccessibleDescription(
+    "Until you stop for 10 minutes or more, for Commuter.",
+  );
   await expect(chips.getByRole("button", { name: /^Auto/, pressed: true })).toBeVisible();
   await chips.getByRole("button", { name: "Train" }).click();
   await expect(chips.getByRole("button", { name: "Train", pressed: true })).toBeVisible();

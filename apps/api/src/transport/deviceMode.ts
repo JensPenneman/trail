@@ -1,9 +1,10 @@
-import type {
-  ChosenMode,
-  DeviceMode,
-  ModeOverride,
-  ModeOverrideSource,
-  TransportMode,
+import {
+  type ChosenMode,
+  type DeviceMode,
+  type ModeOverride,
+  type ModeOverrideSource,
+  type TransportMode,
+  toggleEndingStopS,
 } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import type { Database, Executor } from "../db/database";
@@ -36,7 +37,10 @@ const toOverride = (row: ToggleRow): ModeOverride => ({
   createdAt: toIso(row.created_at),
 });
 
-/** The quick toggle in force at `now`: not revoked, not past its until, no stop detected since. */
+/**
+ * The quick toggle in force at `now`: not revoked, not past its until, and no
+ * stop of `toggleEndingStopS` or more detected since it began.
+ */
 async function openToggle(
   db: Executor,
   deviceId: string,
@@ -52,6 +56,7 @@ async function openToggle(
       AND NOT EXISTS (
         SELECT 1 FROM segments s
         WHERE s.device_id = o.device_id AND s.kind = 'stop' AND s.started_at > o.from_at
+          AND s.ended_at - s.started_at >= make_interval(secs => ${toggleEndingStopS})
       )
     ORDER BY o.created_at DESC
     LIMIT 1
@@ -115,8 +120,9 @@ export async function loadDeviceMode(
 
 /**
  * The quick toggle (docs/architecture.md §17.5): from now on the device
- * travels by `mode`, until `until` or the next detected stop, whichever comes
- * first. Idempotent — the same mode again changes nothing (but a new until);
+ * travels by `mode`, until `until` or the first detected stop of
+ * `toggleEndingStopS` or more, whichever comes first. Idempotent — the same
+ * mode again changes nothing (but a new until);
  * another mode ends the running toggle and starts a new one; `null` ends it.
  * Spans that lose a toggle are queued for the inference again (`queue`).
  */

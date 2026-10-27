@@ -17,7 +17,7 @@ export const setTransportMode = defineTool({
   name: "set_transport_mode",
   title: "Set the transport mode",
   description:
-    "Tells Trail how a device travels from now on — for example that the owner just boarded a train — until `until` or the next stop Trail detects, whichever comes first. The same mode again changes nothing; another mode replaces it; `mode: null` ends it and Trail works the mode out again. Only for what the owner said or clearly confirmed. Without `device`, the device that reported a position most recently.",
+    "Tells Trail how a device travels from now on — for example that the owner just boarded a train — until `until` or the first stop of 10 minutes or more Trail detects, whichever comes first (changing trains does not end it). The same mode again changes nothing; another mode replaces it; `mode: null` ends it and Trail works the mode out again. Only for what the owner said or clearly confirmed. Without `device`, the device that reported a position most recently.",
   scopes: ["locations:read", "locations:write"],
   input: setTransportModeInputSchema,
   output: setTransportModeOutputSchema,
@@ -59,8 +59,8 @@ export const setTransportMode = defineTool({
           };
     const until =
       override?.until === null || override === null
-        ? "until the next stop"
-        : `until ${override.until} or the next stop, whichever comes first`;
+        ? "until a stop of 10 minutes or more"
+        : `until ${override.until} or a stop of 10 minutes or more, whichever comes first`;
     return {
       result: { device, override, currentMode: presentCurrentMode(mode, timeZone) },
       text:

@@ -1,4 +1,4 @@
-import type { ChosenMode, TransportMode } from "@trail/contracts/transport";
+import { type ChosenMode, type TransportMode, toggleEndingStopS } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import type { Config } from "../config/config";
 import type { Executor } from "../db/database";
@@ -44,6 +44,7 @@ export async function loadCurrentModes(
         AND NOT EXISTS (
           SELECT 1 FROM segments x
           WHERE x.device_id = o.device_id AND x.kind = 'stop' AND x.started_at > o.from_at
+            AND x.ended_at - x.started_at >= make_interval(secs => ${toggleEndingStopS})
         )
       ORDER BY o.created_at DESC
       LIMIT 1

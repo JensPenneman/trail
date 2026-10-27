@@ -1,4 +1,4 @@
-import type { ChosenMode } from "@trail/contracts/transport";
+import { type ChosenMode, toggleEndingStopS } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
 import { toIso } from "../db/toIso";
@@ -217,8 +217,8 @@ interface OverrideRow extends Record<string, unknown> {
 
 /**
  * The corrections in force for the window. A toggle that began before it gets
- * the start of the first stop after it among the stored segments before the
- * window, which ends it.
+ * the start of the first stop of `toggleEndingStopS` or more after it among
+ * the stored segments before the window, which ends it.
  */
 export async function loadOverrides(
   db: Executor,
@@ -230,7 +230,8 @@ export async function loadOverrides(
     SELECT o.id, o.kind, o.mode, o.from_at::text, o.to_at::text, o.created_at::text, o.source,
       (SELECT min(s.started_at)::text FROM segments s
         WHERE o.kind = 'toggle' AND s.device_id = o.device_id AND s.kind = 'stop'
-          AND s.started_at > o.from_at AND s.started_at < ${from.toISOString()}::timestamptz) AS ends_by
+          AND s.started_at > o.from_at AND s.started_at < ${from.toISOString()}::timestamptz
+          AND s.ended_at - s.started_at >= make_interval(secs => ${toggleEndingStopS})) AS ends_by
     FROM mode_overrides o
     WHERE o.device_id = ${deviceId} AND o.revoked_at IS NULL
       AND o.from_at <= ${to.toISOString()}::timestamptz

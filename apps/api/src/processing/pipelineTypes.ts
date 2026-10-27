@@ -71,9 +71,9 @@ export interface OverrideSpan {
   kind: "segment" | "toggle";
   mode: ChosenMode;
   from: number;
-  /** Null: open, until the next stop. */
+  /** Null: open, until the first stop of `toggleEndingStopS` or more. */
   to: number | null;
-  /** A toggle's next stop when it lies before the window (from stored segments); else null. */
+  /** That stop when it lies before the window (from stored segments); else null. */
   endsBy: number | null;
   createdAt: number;
   source: "ui" | "api" | "mcp";

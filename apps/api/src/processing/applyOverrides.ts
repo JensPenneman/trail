@@ -1,4 +1,4 @@
-import type { ChosenMode } from "@trail/contracts/transport";
+import { type ChosenMode, toggleEndingStopS } from "@trail/contracts/transport";
 import type { OverrideSpan } from "./pipelineTypes";
 import type { ProcessingConfig } from "./processingConfig";
 import type { ScoredPart } from "./splitMoves";
@@ -39,7 +39,10 @@ export interface OverrideContext {
   overrides: ProcessingConfig["overrides"];
 }
 
-/** Where an override applies: a segment override its span, a toggle until the next stop. */
+/**
+ * Where an override applies: a segment override its span, a toggle until the
+ * first stop of `toggleEndingStopS` or more (a change of trains does not end it).
+ */
 function effectiveSpan(
   override: OverrideSpan,
   segments: readonly Draft[],
@@ -48,7 +51,11 @@ function effectiveSpan(
   if (override.kind === "toggle") {
     if (override.endsBy !== null) to = Math.min(to, override.endsBy);
     for (const segment of segments) {
-      if (segment.kind === "stop" && segment.startT > override.from) {
+      if (
+        segment.kind === "stop" &&
+        segment.startT > override.from &&
+        segment.endT - segment.startT >= toggleEndingStopS
+      ) {
         to = Math.min(to, segment.startT);
         break;
       }

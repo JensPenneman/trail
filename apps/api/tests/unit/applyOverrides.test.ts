@@ -16,8 +16,8 @@ const override = (
   ...fields,
 });
 
-/** Two drives on the motorway with a ten-minute stop between them. */
-function twoDrives() {
+/** Two drives on the motorway with a stop between them, ten minutes long unless asked. */
+function twoDrives(stopS = 600) {
   const first = travel(subPath(motorwayLine, 500, 12_500), {
     startT: morning,
     speedMs: 30,
@@ -27,7 +27,7 @@ function twoDrives() {
   });
   const pause = stay(motorwayLine[26] ?? [12_500, -3000], {
     startT: lastT(first) + 1,
-    durationS: 600,
+    durationS: stopS,
     intervalS: 5,
     seed: 4,
   });
@@ -109,14 +109,15 @@ describe("applyOverrides", () => {
     expect(moves(processWorld(points, { overrides: [newer, older] }))[0]?.modeUser).toBe("train");
   });
 
-  it("ends the quick toggle at the next stop", () => {
-    const points = twoDrives();
+  it("ends the quick toggle at the first stop of ten minutes or more", () => {
     const toggle = override({ kind: "toggle", from: morning + 60, mode: "train" });
-    const result = processWorld(points, { overrides: [toggle] });
-    const [first, second] = moves(result);
+    const [first, second] = moves(processWorld(twoDrives(900), { overrides: [toggle] }));
     expect(first?.modeUser).toBe("train");
     expect(second?.modeUser).toBeNull();
     expect(second?.modeInferred).toBe("car");
+    // A change of trains, five minutes on the platform, does not end it.
+    const changed = moves(processWorld(twoDrives(300), { overrides: [toggle] }));
+    expect(changed.map((move) => move.modeUser)).toEqual(["train", "train"]);
   });
 
   it("ends the quick toggle at its until, or at a stop seen before this window", () => {

@@ -674,9 +674,16 @@ describe("what a shared device is doing", () => {
 
   it("is what location processing tells the owner, for many devices in one query", async () => {
     const ids = await Promise.all(
-      ["nothing", "bus", "corrected", "stop", "old", "toggle", "toggle ended"].map(
-        async (name) => (await createDevice(owner.agent, { name: `Mode ${name}` })).device.id,
-      ),
+      [
+        "nothing",
+        "bus",
+        "corrected",
+        "stop",
+        "old",
+        "toggle",
+        "toggle ended",
+        "toggle through a short stop",
+      ].map(async (name) => (await createDevice(owner.agent, { name: `Mode ${name}` })).device.id),
     );
     const [
       nothing = "",
@@ -686,6 +693,7 @@ describe("what a shared device is doing", () => {
       old = "",
       toggled = "",
       ended = "",
+      through = "",
     ] = ids;
     const segment = (
       deviceId: string,
@@ -719,6 +727,11 @@ describe("what a shared device is doing", () => {
     await toggle(ended, 40, "train");
     await segment(ended, "move", [40, 20], "train");
     await segment(ended, "stop", [20, 5], null);
+    // Five minutes on a platform, changing trains: the toggle runs on.
+    await toggle(through, 40, "train");
+    await segment(through, "move", [40, 20], "train");
+    await segment(through, "stop", [20, 15], null);
+    await segment(through, "move", [15, 2], "train");
 
     const now = new Date();
     const options = { now, recentMs: t.ctx.config.liveWindowMinutes * 60_000 };
@@ -729,6 +742,7 @@ describe("what a shared device is doing", () => {
       [standing]: "stationary",
       [toggled]: "cycling",
       [ended]: "stationary",
+      [through]: "train",
     });
     expect(modes.has(nothing)).toBe(false);
     expect(modes.has(old)).toBe(false);
