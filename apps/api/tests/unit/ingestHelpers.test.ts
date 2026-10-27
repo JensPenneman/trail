@@ -102,6 +102,10 @@ describe("shared ingest checks", () => {
       '{"password":"[redacted]", ',
     );
     expect(previewText(`${"a".repeat(1990)}${token}`)).toBe(`${"a".repeat(1990)}[redacted]`);
+    // Without a token the body is kept as it came, escapes and all.
+    for (const body of ['{"note":"\\u0022quoted\\u0022"', '{"path":"C:\\\\u0041"', "{oops"]) {
+      expect(previewText(body), body).toBe(body);
+    }
     expect(previewText("x".repeat(3000))).toHaveLength(2000);
     // A cut through an emoji leaves no lone surrogate behind.
     expect(previewText(`${"a".repeat(1999)}😀`).isWellFormed()).toBe(true);
