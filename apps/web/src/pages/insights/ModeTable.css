@@ -1,0 +1,19 @@
+/* The row's header is the mode: a row like the others, not a header band. */
+.mode-table tbody th[scope="row"] {
+  position: static;
+  background: none;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.mode-table tbody tr:last-child th {
+  border-bottom: 0;
+}
+
+.mode-table__mode {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target);
+  white-space: nowrap;
+}

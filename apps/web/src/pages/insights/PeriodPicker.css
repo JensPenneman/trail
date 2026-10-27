@@ -1,0 +1,54 @@
+.period-picker {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* The radio covers its chip, unseen: the pill itself says which period is on. */
+.period-picker__chip input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.period-picker__chip {
+  position: relative;
+}
+
+.period-picker__chip.is-on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.period-picker__range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-3);
+  max-width: 34rem;
+}
+
+.period-picker__apply {
+  margin-top: calc(var(--text-s) * 1.5 + var(--space-1));
+}
+
+@media (max-width: 26rem) {
+  .period-picker__range {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .period-picker__apply {
+    grid-column: 1 / -1;
+    margin-top: 0;
+  }
+}
+
+@media (forced-colors: active) {
+  .period-picker__chip.is-on {
+    outline: 2px solid Highlight;
+  }
+}

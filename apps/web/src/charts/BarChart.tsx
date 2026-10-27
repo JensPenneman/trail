@@ -472,6 +472,13 @@ export function BarChart({
     [rows, series, data, layout, showTotal, formatValue],
   );
   const marks = useChartMarks(model === null ? 0 : rows.length);
+  const rowTones = useMemo(
+    () =>
+      new Map(
+        rows.flatMap((row) => (row.tone === undefined ? [] : [[row.key, row.tone] as const])),
+      ),
+    [rows],
+  );
 
   if (model === null) {
     return (
@@ -557,9 +564,16 @@ export function BarChart({
               className={toneClass(item.tone)}
               style={textureStyle(index, `${id}t${index}`)}
             >
-              {(model.bars[index] ?? []).map((bar) => (
-                <path key={bar.key} className="chart__mark" d={bar.path} />
-              ))}
+              {(model.bars[index] ?? []).map((bar) => {
+                const own = series.length === 1 ? rowTones.get(bar.key) : undefined;
+                return (
+                  <path
+                    key={bar.key}
+                    className={own === undefined ? "chart__mark" : `chart__mark ${toneClass(own)}`}
+                    d={bar.path}
+                  />
+                );
+              })}
             </g>
           ))}
           {model.labels.map((label) => (

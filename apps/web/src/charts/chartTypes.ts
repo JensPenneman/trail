@@ -21,6 +21,11 @@ export interface ChartRow {
   tick?: string;
   /** One value per series, in the order of `series`. */
   values: readonly number[];
+  /**
+   * The row's own tone, for one series whose rows are different things (a bar
+   * per transport mode); with two or more series the series' tones apply.
+   */
+  tone?: ChartTone;
 }
 
 /** A box in the plot, in the SVG's user units (which are CSS pixels). */

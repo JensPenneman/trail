@@ -1,0 +1,7 @@
+.insights-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--target);
+  font-weight: 600;
+}

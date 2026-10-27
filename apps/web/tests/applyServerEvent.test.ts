@@ -87,6 +87,21 @@ describe("applyServerEvent", () => {
     expect(store.getSnapshot().uploads[0]).toMatchObject({ deviceId: ids.phone, inserted: 2 });
   });
 
+  it("marks Insights for refetching when processing finished a window", () => {
+    const { queryClient, store } = setup();
+    const params = { from: "2026-10-20", to: "2026-10-26", deviceIds: null, mode: null };
+    queryClient.setQueryData(queryKeys.insightsOverview(params), { pending: true });
+    queryClient.setQueryData(queryKeys.insightsTime(params), { pending: true });
+    applyServerEvent(queryClient, store, {
+      type: "segments",
+      deviceId: ids.phone,
+      from: "2026-10-26T06:00:00.000Z",
+      to: "2026-10-26T09:00:00.000Z",
+    });
+    expect(queryClient.getQueryState(queryKeys.insightsOverview(params))?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(queryKeys.insightsTime(params))?.isInvalidated).toBe(true);
+  });
+
   it("marks the activity chart for refetching after an upload", () => {
     const { queryClient, store } = setup();
     const key = queryKeys.activity({ hours: 48, deviceIds: null });

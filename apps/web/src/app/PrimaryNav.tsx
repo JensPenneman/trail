@@ -15,6 +15,12 @@ interface NavItem {
 const items: readonly NavItem[] = [
   { to: "/", match: { path: "/", end: true }, label: "People", icon: "users" },
   { to: "/devices", match: { path: "/devices", end: false }, label: "Devices", icon: "devices" },
+  {
+    to: "/insights",
+    match: { path: "/insights", end: false },
+    label: "Insights",
+    icon: "insights",
+  },
   // The list of Settings on phones; beside it, wide screens open its first page.
   {
     to: "/settings",

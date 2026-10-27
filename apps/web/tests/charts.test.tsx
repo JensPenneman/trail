@@ -56,6 +56,30 @@ function laidOutAt(width: number) {
 }
 
 describe("BarChart", () => {
+  it("gives the rows of one series their own tones: a bar per transport mode", () => {
+    const { container } = render(
+      <BarChart
+        title="Distance by mode"
+        summary="Most: Train, 30 km."
+        series={[{ key: "distance", label: "Distance", tone: "accent" }]}
+        rows={[
+          { key: "train", label: "Train", values: [30_000], tone: "train" },
+          { key: "car", label: "Car", values: [12_300], tone: "car" },
+        ]}
+        orientation="horizontal"
+        valueLabels
+        formatValue={km}
+      />,
+    );
+    const bars = [...container.querySelectorAll("path.chart__mark")];
+    expect(bars.map((bar) => bar.getAttribute("class"))).toEqual([
+      "chart__mark mode-color-train",
+      "chart__mark mode-color-car",
+    ]);
+    // A single series needs no legend: the rows are named.
+    expect(screen.queryByRole("list", { name: "Legend" })).toBeNull();
+  });
+
   it("is a figure named by its title and described by its summary", () => {
     render(
       <BarChart

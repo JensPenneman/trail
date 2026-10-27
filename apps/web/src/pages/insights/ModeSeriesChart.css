@@ -1,0 +1,10 @@
+.mode-series {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.mode-series > .chart {
+  justify-self: stretch;
+}
