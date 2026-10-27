@@ -24,7 +24,15 @@ import { uploadJourney, uploadVisits } from "../support/overlandPoints";
 import { withPieceBudget } from "../support/processWorld";
 import { resetDatabase } from "../support/resetDatabase";
 import { SseClient } from "../support/sseClient";
-import { distanceToLine, lastT, railLine, stay, toXY } from "../support/syntheticWorld";
+import {
+  concat,
+  distanceToLine,
+  lastT,
+  railLine,
+  stay,
+  toXY,
+  travel,
+} from "../support/syntheticWorld";
 import { createTestContext, type TestContext } from "../support/testContext";
 import { testOrigin } from "../support/testEnvironment";
 
@@ -610,7 +618,73 @@ describe("stops that end when the phone leaves", () => {
       new Date((arrivedAt - 600) * 1000),
       new Date((arrivedAt + 3600) * 1000),
     );
-    expect(over).toEqual([{ arrivedAt, departedAt: departedAt + 40, lat, lon, accuracy: 8 }]);
+    expect(over).toEqual([
+      { arrivedAt, departedAt: departedAt + 40, endsBy: null, lat, lon, accuracy: 8 },
+    ]);
+  });
+
+  it("ends a visit whose departure never came at the next visit, and forgets it after", async () => {
+    const device = await newDevice("Forgetful visitor");
+    const first = morning - 30 * 86_400;
+    const [lon, lat] = [3.7, 51.0];
+    await sendVisits(device.token, [
+      { arrivedAt: first, departedAt: null, lat, lon, accuracy: 20 },
+      { arrivedAt: first + 7200, departedAt: null, lat: lat + 0.01, lon, accuracy: 20 },
+    ]);
+    const window = (from: number, to: number) =>
+      loadVisits(t.ctx.db, device.id, new Date(from * 1000), new Date(to * 1000));
+    // Before the next arrival the first is open, over by then at the latest.
+    expect(await window(first + 600, first + 3600)).toEqual([
+      { arrivedAt: first, departedAt: null, endsBy: first + 7200, lat, lon, accuracy: 20 },
+    ]);
+    // A day later only the last one can still be open; the first is no longer read at all.
+    const later = await window(first + 86_400, first + 90_000);
+    expect(later.map((visit) => visit.arrivedAt)).toEqual([first + 7200]);
+    expect(later[0]?.endsBy).toBeNull();
+  });
+
+  it("covers a night the phone recorded nothing at home, uploaded the next morning", async () => {
+    // 20:00 to 23:00 at home, then the phone sleeps until 06:00 and leaves at a quarter past.
+    const device = await newDevice("Night sleeper");
+    const evening = Date.UTC(2026, 8, 10, 18) / 1000;
+    const home: [number, number] = [-600, -400];
+    const night = stay(home, { startT: evening, durationS: 3 * 3600, intervalS: 30 });
+    const dawn = evening + 10 * 3600;
+    const leaving = concat(
+      stay(home, { startT: dawn, durationS: 900, intervalS: 10 }),
+      travel([home, [-600, 600]], {
+        startT: dawn + 905,
+        speedMs: 1.4,
+        intervalS: 2,
+        motion: ["walking"],
+      }),
+    );
+    await upload(device.token, night);
+    await t.ctx.processing.flush();
+    // The morning's points come in an upload of their own, its window hours after the evening's.
+    await upload(device.token, leaving);
+    await t.ctx.processing.flush();
+    const covered = async () => {
+      const segments = await timesOf(device.id);
+      expect(segments.map((segment) => segment.kind)).toEqual(["stop", "move"]);
+      // One stop from the evening through the night, until the walk; no hole between them.
+      expect(segments[0]?.from).toBe(evening);
+      expect(segments[0]?.to).toBe(segments[1]?.from);
+      expect(segments[1]?.from).toBeGreaterThanOrEqual(dawn + 895);
+    };
+    await covered();
+
+    // The backfill works it out a local day at a time: the night spans midnight.
+    await t.ctx.dailyStats.flush();
+    await t.ctx.db.execute(sql`DELETE FROM segments WHERE device_id = ${device.id}`);
+    await t.ctx.db.execute(sql`
+      INSERT INTO processing_state (key, value)
+      VALUES ('backfill', ${JSON.stringify({ versions: { ...processingVersions, inferred: processingVersions.inferred - 1 } })}::jsonb)
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value
+    `);
+    expect((await enqueueBackfill(t.ctx.db, processingVersions)).fromLevel).toBe("inferred");
+    await t.ctx.processing.flush();
+    await covered();
   });
 
   it("keeps the part of a long stay beyond a window that cannot take all of it", async () => {

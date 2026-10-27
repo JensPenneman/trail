@@ -15,7 +15,12 @@ const epoch = (value: string): number => Math.round(Date.parse(toIso(value)) / 1
  * The window grown to whole segments (docs/architecture.md §17.4): the stop or
  * move under each edge — and one that just touches it — is processed again as
  * a whole, at most two days out (a segment reaching further back is cut at the
- * window's start when the results are stored).
+ * window's start when the results are stored). When no segment meets the
+ * window's start — a recording gap lies before it, the night the phone slept
+ * through — it reaches back to the segment before the gap (or, with none yet,
+ * to the point before it), so that the gap is worked out with both its ends:
+ * a gap the phone lay still through is a stop, a visit's stop lasts until its
+ * departure.
  */
 export async function extendWindow(
   db: Executor,
@@ -31,8 +36,30 @@ export async function extendWindow(
       AND ended_at >= ${from.toISOString()}::timestamptz
   `);
   const row = result.rows[0];
-  const first = row?.first === null || row?.first === undefined ? from : new Date(toIso(row.first));
+  let first = row?.first === null || row?.first === undefined ? from : new Date(toIso(row.first));
   const last = row?.last === null || row?.last === undefined ? to : new Date(toIso(row.last));
+  const start = new Date(Math.min(first.getTime(), from.getTime()));
+  const before = await db.execute<{ started_at: string; ended_at: string }>(sql`
+    SELECT started_at::text, ended_at::text FROM segments
+    WHERE device_id = ${deviceId} AND ended_at <= ${start.toISOString()}::timestamptz
+    ORDER BY ended_at DESC
+    LIMIT 1
+  `);
+  const previous = before.rows[0];
+  // A segment ending where the window starts meets it; one ending earlier leaves a gap.
+  if (previous !== undefined && Date.parse(toIso(previous.ended_at)) < start.getTime()) {
+    first = new Date(Math.min(first.getTime(), Date.parse(toIso(previous.started_at))));
+  } else if (previous === undefined) {
+    const point = await db.execute<{ recorded_at: string }>(sql`
+      SELECT recorded_at::text FROM locations
+      WHERE device_id = ${deviceId} AND recorded_at < ${start.toISOString()}::timestamptz
+      ORDER BY recorded_at DESC
+      LIMIT 1
+    `);
+    const last = point.rows[0];
+    if (last !== undefined)
+      first = new Date(Math.min(first.getTime(), Date.parse(toIso(last.recorded_at))));
+  }
   return {
     from: new Date(
       Math.max(Math.min(first.getTime(), from.getTime()), from.getTime() - maxExtensionMs),
@@ -96,7 +123,9 @@ export async function loadRawPoints(
  * and both rows are kept as recorded, so they are merged first, per arrival:
  * a report with a departure supersedes the arrival alone, the latest report
  * wins among several. Only then is a visit that departed before the window
- * left out: the arrival alone must not pass for a visit still open.
+ * left out: the arrival alone must not pass for a visit still open. A visit
+ * whose departure never came was over by the next visit's arrival
+ * (`endsBy`): one over before the window is left out too.
  */
 export async function loadVisits(
   db: Executor,
@@ -107,24 +136,29 @@ export async function loadVisits(
   const result = await db.execute<{
     arrived_at: string;
     departed_at: string | null;
+    next_arrival: string | null;
     lat: number;
     lon: number;
     horizontal_accuracy: number | null;
   }>(sql`
-    SELECT arrived_at::text, departed_at::text, lat, lon, horizontal_accuracy
+    SELECT arrived_at::text, departed_at::text, next_arrival::text, lat, lon, horizontal_accuracy
     FROM (
-      SELECT DISTINCT ON (arrived_at) arrived_at, departed_at, lat, lon, horizontal_accuracy
-      FROM visits
-      WHERE device_id = ${deviceId} AND arrived_at IS NOT NULL
-        AND arrived_at <= ${to.toISOString()}::timestamptz
-      ORDER BY arrived_at, (departed_at IS NULL), recorded_at DESC
-    ) merged
-    WHERE departed_at IS NULL OR departed_at >= ${from.toISOString()}::timestamptz
+      SELECT merged.*, lead(arrived_at) OVER (ORDER BY arrived_at) AS next_arrival
+      FROM (
+        SELECT DISTINCT ON (arrived_at) arrived_at, departed_at, lat, lon, horizontal_accuracy
+        FROM visits
+        WHERE device_id = ${deviceId} AND arrived_at IS NOT NULL
+        ORDER BY arrived_at, (departed_at IS NULL), recorded_at DESC
+      ) merged
+    ) visit
+    WHERE arrived_at <= ${to.toISOString()}::timestamptz
+      AND coalesce(departed_at, next_arrival, 'infinity') >= ${from.toISOString()}::timestamptz
     ORDER BY arrived_at
   `);
   return result.rows.map((row) => ({
     arrivedAt: epoch(row.arrived_at),
     departedAt: row.departed_at === null ? null : epoch(row.departed_at),
+    endsBy: row.departed_at !== null || row.next_arrival === null ? null : epoch(row.next_arrival),
     lat: row.lat,
     lon: row.lon,
     accuracy: row.horizontal_accuracy,

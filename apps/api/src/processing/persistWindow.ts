@@ -17,8 +17,11 @@ const iso = (epochSeconds: number): string => new Date(epochSeconds * 1000).toIS
  * out (§17.4): a segment that began before it ends at its start, and the part
  * of one that reaches beyond its end stays, starting at the end, so no time
  * is lost from the timeline; both keep their other values until a window over
- * them works them out again. A point records the mapped level's version (it
- * holds the averaged and mapped levels), a segment the inferred level's.
+ * them works them out again. The point the window shares with a segment that
+ * began before it keeps its stored levels: that segment was worked out with it
+ * (a move's mapping is not overwritten by a stop's, nor taken for a stop's
+ * later). A point records the mapped level's version (it holds the averaged
+ * and mapped levels), a segment the inferred level's.
  */
 export async function persistWindow(
   tx: Executor,
@@ -32,6 +35,8 @@ export async function persistWindow(
   },
 ): Promise<void> {
   const { deviceId, raw, result, versions } = input;
+  // The point the window shares with a segment that began before it is that segment's too.
+  const firstAt = iso(raw[0]?.t ?? 0);
   const rows = raw.map((point, index) => {
     const averaged = result.averaged[index];
     const mapped = result.mapped[index] ?? null;
@@ -70,6 +75,15 @@ export async function persistWindow(
         speed_avg = excluded.speed_avg, lat_map = excluded.lat_map, lon_map = excluded.lon_map,
         way_id = excluded.way_id, way_kind = excluded.way_kind, snap_m = excluded.snap_m,
         path_map = excluded.path_map, version = excluded.version, processed_at = excluded.processed_at
+      WHERE NOT (
+        processed_points.recorded_at = ${firstAt}::timestamptz
+        AND processed_points.version = ${versions.mapped}
+        AND EXISTS (
+          SELECT 1 FROM segments s
+          WHERE s.device_id = ${deviceId}::uuid AND s.started_at < ${input.from.toISOString()}::timestamptz
+            AND s.ended_at = processed_points.recorded_at
+        )
+      )
     `);
   }
 
