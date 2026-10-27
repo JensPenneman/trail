@@ -66,9 +66,9 @@ sure, especially between a car and a train.
   *Now: Walk · Bike · Car · Bus · Train · Tram · Metro · Other · Auto*. Tap
   the mode you are switching to — getting on a train, say — and it holds
   until your next stop. Auto hands it back to Trail; Other has every mode.
-  It sets the phone that reported last, which the row names; with a second
-  device (a tracker in the car, say) that one keeps the mode Trail works
-  out for it, and its own page under **Devices** has the same row, for it.
+  It sets the phone that reported last, which the row names; a second
+  device (a tracker in the car, say) is not changed, and its own page under
+  **Devices** has the same row, for it.
 
 What you set always wins: Trail keeps it when it works your history out
 again, and the statistics count it.

@@ -68,10 +68,12 @@ switch it on (on those pages or in Preferences). The API has the same
 
 **People**, Trail's home page, has the map and, beside it (below it on a
 phone), a card for you, **Me**, then one for each person who shares with you —
-people, not their phones. Each card reads in two lines, as in Find My: the
-name, how fresh the position is ("Live, 2 min ago") and the distance from you,
-then what they are doing ("Cycling · 16 km/h", or "Within about 500 m" when
-that is all their share says) with their battery when they share it. **Show on
+people, not their phones. Each card reads in two lines on most phones, as in
+Find My: the name, with a small battery when they share it and the distance
+from you; then how fresh the position is ("Live", or "40 min ago") and what
+they are doing ("Cycling · 16 km/h"). Someone who shares only roughly always
+says how roughly ("Cycling · within about 5 km"), and their distance is marked
+"≈": it is to the middle of the area, as the map shows a circle. **Show on
 map** shows them alone on the map (pressed again, it brings the map back to
 them); **Details** opens the rest: each device they share, with when it was
 updated, what it is doing, its battery, accuracy, trip and distance; what they
@@ -84,7 +86,9 @@ options (*Map options* on a phone) you choose any mix.
 While someone is on the map, their card says **where they've been**: in Live
 their track today ("14.9 km · 06:30 – 07:15"), with the day before a tap
 away — it opens History on that day, where the card steps through the days
-too. The card of someone who shares no history says "Shares live location
+too, back to the first day of the history they share. With two of their
+devices on the same trip it shows one of them and says that two recorded,
+rather than adding them up. The card of someone who shares no history says "Shares live location
 only", and the map shows only where they are now. Your own card says what you are doing now
 ("At the same place since 08:12"), from the phone that reported last, with
 *Now* to set how you travel; its **Details** list your devices, and the

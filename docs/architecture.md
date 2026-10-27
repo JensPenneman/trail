@@ -1856,7 +1856,10 @@ count among them, since they lead to signed-in pages.
   the map — no new canvas, style or tiles. The camera frames what is drawn
   when that changes (another day, other people or devices; Live and History
   on today share it), never merely because the view did; Heat frames it only
-  when the page opened on it.
+  when the page opened on it. A camera move of a view (a visit, trip or
+  move shown) belongs to its view and period: shown again later, or on
+  another day — from the controls, a person's card or Back — the view does
+  not make it again.
 
   **Whose data**: the map shows the people chosen, Me alone by default (not
   remembered). **Show on map** on a card makes that person the choice — the
@@ -1910,11 +1913,18 @@ count among them, since they lead to signed-in pages.
   and view switch.
 
   **The people list** — Find My for Trail (§8.5): people, not their
-  devices. Every card reads in two lines (`PersonSummary`): the avatar, the
-  name and how fresh the position is ("Live, 2 min ago"; "No recent
-  location" without one) with the distance on the right, then what they are
-  doing with a battery glyph on the right where it is shared; "On the map"
-  while the map shows them; then **Show on map** and **Details**, a
+  devices. A card reads in two lines (`PersonSummary`): the avatar and the
+  name (an ellipsis rather than a line more), with a battery glyph where the
+  share includes it — the gauge, red when low, "Battery 58%" by name — and
+  the distance on the right; then how fresh — "Live" while the position is
+  within the live window (its time on hover and in Details), else "40 min
+  ago" — and what they are doing, broken only between its parts. A coarse
+  share always says how coarse ("Cycling · within about 5 km") and marks
+  its distance "≈" (read "about"): it is to the centre of a cell, as the map
+  draws a circle rather than a spot. Measured at 375–430 px wide, a card
+  takes two lines; a coarse share that moves, Me's longest lines and most
+  cards at 320 px take a third. "On the map" while the map shows them;
+  then **Show on map** and **Details**, a
   disclosure closed at first (a button with `aria-expanded` and
   `aria-controls`; its content follows it in the reading and tab order and is
   only rendered while open, so a closed one asks for nothing), which holds
@@ -1927,19 +1937,23 @@ count among them, since they lead to signed-in pages.
   live window, "No recent location" past the stale window (a share without
   history shows no more); the quick toggle (§17.6) for that device, which
   its description names ("Until your next stop, for iPhone 16: the device
-  that reported last. Your other devices keep the mode Trail detects." —
-  another device is set on its own page); with no device yet "Connect your
-  first phone". Its Details: each device by name, linked to its page, with
-  when it last reported a position, battery, accuracy, movement ("Last
-  reported movement" once it is not live) and trip, and the way to the
-  Devices page. Then "Sharing with you": a card per person (`PersonCard`),
+  that reported last. Your other devices are not changed." — another
+  device is set on its own page); with no device yet "Connect your first
+  phone", and while no device has uploaded "Waiting for the first upload"
+  with the way to its setup. Its Details: each device by name, linked to its
+  page, with when it last reported a position ("Waiting for the first
+  upload" before it did), battery, that position with its accuracy,
+  movement ("Last reported movement" once it is not live) and trip, and the
+  way to the Devices page. Then "Sharing with you": a card per person (`PersonCard`),
   each as their initials in their colour (`personPalette`, a second ring
   beside the device colours, assigned in the order they started sharing),
   the line about them from the device that reported last (`primaryDevice`;
   what they are doing as `describeActivity` has it, which takes the inferred
   mode when the share includes one, or how coarse the position is when
   nothing else is known: "Within about 500 m"). Their Details: each shared
-  device (updated, doing, battery or "Not shared", accuracy, trip, distance),
+  device (updated, doing, battery, accuracy, trip, distance — "Not shared"
+  where the share leaves battery and activity out, "—" where it includes
+  them but nothing recent is known),
   what they share (precision, where they've been, battery and activity,
   until, since), Apple Maps and Google Maps links, Share back — or, when you
   share with them, "You share with <name>" and Stop (`StopShareDialog`) —
@@ -1947,12 +1961,19 @@ count among them, since they lead to signed-in pages.
   **where they've been** (`WhereTheyveBeen`, a part under its heading, not
   a landmark: every card on the map has one): the day — Today in Live,
   History's day, or History's period — with Previous and Next day (in Live
-  a day back is History's, one step of the history, `showHistoryDay`), and
-  their track for it in a line from the answer of the track request the
-  view makes anyway ("14.9 km · 06:30 – 07:15",
-  "Nothing recorded on Mon 26 Oct", "Shares the last 7 days only" where the
-  server moved the start up); a share without history says "Shares live
-  location only" and is asked for nothing. People you hid are listed under
+  a day back is History's, one step of the history, `showHistoryDay`; the
+  day stepped to is announced, and History with it). Previous day goes no
+  further back than the first day of the history they share, since every
+  look counts in their access log; both stay focusable at their end
+  (`aria-disabled`, inert), so the keyboard's focus is never dropped. Their
+  track for it is a line from the answer of the track request the view
+  makes anyway, of the device that recorded the most — devices are never
+  added up (a phone and an iPad on one ride, or a car's tracker) — with how
+  many recorded when more did ("14.9 km · 06:30 – 07:15 · 2 devices
+  recorded", read "14.9 km, from 06:30 to 07:15"), "Nothing recorded on Mon
+  26 Oct", "Shares the last 7 days only" where the server moved the start
+  up, "Shares no device right now"; a share without history says "Shares
+  live location only" and is asked for nothing. People you hid are listed under
   Hidden, to be shown again. A notice says who started sharing while the
   page was open. Last, one's own side: **Share my location**
   (`ShareDialog`): address (with the people who share with you as
@@ -1986,7 +2007,10 @@ count among them, since they lead to signed-in pages.
   its Device ID and points in total, last upload ("2 min ago", ticking;
   "Waiting for the first upload" with the way to its setup), the Overland trip
   in progress, battery, movement ("Last seen …" once it is not live), points
-  and distance today, the last position with its accuracy and time, and the 48
+  today, the distance today (from the day's sums, `/api/stats/days`, not
+  from its whole track; asked again a little after each upload, since the
+  server sums a day up 10 s after one), the last position with its accuracy
+  and time, and the 48
   h activity sparkline (points per hour and a tick per hour with uploads, its
   numbers in a table); then **Uploads**, the feed of every upload of every
   device, newest first (the ingest logs merged with those the event stream
@@ -2412,7 +2436,11 @@ which are merged by hand; majors wait for a person, security ones too.
   its Details disclosure (closed at first, `aria-expanded`, its content in
   the tab order once open) and, on the map, where they have been (Today in
   Live, a day back into History, a period, nothing recorded, the start of
-  the history they share). `describeMe`, `latestOwnDevice`,
+  the history they share as the furthest step, Next day keeping its focus,
+  each step announced, two devices said rather than added up); a coarse
+  share's card says how coarse with an "≈" distance (`PersonCard.test`);
+  a camera move of History is not made again after another view or day.
+  `describeMe`, `latestOwnDevice`,
   `describeActivity` with and without a live position and
   `summarizePersonTrack` have unit tests, and so does the disclosure on its
   own. The page's URL (`parseMapSearch`, the updates in
