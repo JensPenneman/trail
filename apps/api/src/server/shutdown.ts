@@ -11,7 +11,8 @@ const cleanupTimeoutMs = 2_000;
 /**
  * Graceful stop: no new connections, live streams ended, jobs and processing
  * stopped, in-flight requests finished (at most 10 s, then connections are
- * cut), pending statistics flushed, background work drained, pool closed.
+ * cut), pending statistics and data access rows flushed, background work
+ * drained — and what it recorded flushed too — pool closed.
  */
 export async function shutdown(input: {
   server: Server;
@@ -38,8 +39,14 @@ export async function shutdown(input: {
   }
 
   await Promise.race([processing, sleep(cleanupTimeoutMs)]);
-  await Promise.race([ctx.dailyStats.flush(), sleep(cleanupTimeoutMs)]);
+  await Promise.race([
+    Promise.all([ctx.dailyStats.flush(), ctx.dataAccess.flush()]),
+    sleep(cleanupTimeoutMs),
+  ]);
   ctx.dailyStats.stop();
   await ctx.background.drain(cleanupTimeoutMs);
+  // Background work records too (the live positions people received); usually nothing is left.
+  await Promise.race([ctx.dataAccess.flush(), sleep(cleanupTimeoutMs)]);
+  ctx.dataAccess.stop();
   await ctx.pool.end();
 }

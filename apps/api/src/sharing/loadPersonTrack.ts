@@ -41,14 +41,15 @@ const emptyTrack = (deviceId: string): Track => ({
  * points of their shared devices in `[from, to)`, with `from` moved up to the
  * start of the shared history, so nothing older ever leaves the server. Split
  * at recording gaps and simplified like the private tracks. A person who does
- * not share with the viewer, or shares no history, is 404.
+ * not share with the viewer, or shares no history, is 404. `shareId` is the
+ * share the track was read through, for the person's data access log.
  */
 export async function loadPersonTrack(
   ctx: AppContext,
   viewer: Viewer,
   userId: string,
   query: PersonTrackQuery,
-): Promise<PersonTrackResponse> {
+): Promise<{ track: PersonTrackResponse; shareId: string }> {
   const now = new Date();
   if (!mayReadPeople(viewer)) throw notFound("No such person.");
   const { rows } = await ctx.db.execute<GrantRow>(sql`
@@ -93,5 +94,5 @@ export async function loadPersonTrack(
     );
   }
   touchShareViews(ctx, [grant.id]);
-  return { from: from.toISOString(), to: to.toISOString(), tracks };
+  return { track: { from: from.toISOString(), to: to.toISOString(), tracks }, shareId: grant.id };
 }

@@ -34,6 +34,7 @@ describe("loadConfig", () => {
       sessionTtlDays: 30,
       liveWindowMinutes: 15,
       staleAfterHours: 12,
+      dataAccessRetentionDays: 365,
       alerts: null,
       defaultTimezone: "Europe/Brussels",
       mapStyles: {
@@ -211,6 +212,7 @@ describe("loadConfig", () => {
       SIGNUP_ALLOWLIST: "not-an-email",
       DEFAULT_TIMEZONE: "Mars/Olympus",
       MCP_ALLOWED_ORIGINS: "https://agent.example/app, chrome-extension://abc",
+      DATA_ACCESS_RETENTION_DAYS: "0",
     });
     expect(issues.some((issue) => issue.startsWith("DATABASE_URL"))).toBe(true);
     expect(issues.some((issue) => issue.startsWith("PUBLIC_URL"))).toBe(true);
@@ -218,6 +220,11 @@ describe("loadConfig", () => {
     expect(issues.some((issue) => issue.startsWith("SIGNUP_ALLOWLIST"))).toBe(true);
     expect(issues.some((issue) => issue.startsWith("DEFAULT_TIMEZONE"))).toBe(true);
     expect(issues.filter((issue) => issue.startsWith("MCP_ALLOWED_ORIGINS"))).toHaveLength(2);
+    expect(issues.some((issue) => issue.startsWith("DATA_ACCESS_RETENTION_DAYS"))).toBe(true);
+    expect(
+      loadConfig({ ...minimal, DATA_ACCESS_RETENTION_DAYS: "30" }, defaults)
+        .dataAccessRetentionDays,
+    ).toBe(30);
   });
 
   it("refuses non-trail databases outside production", () => {

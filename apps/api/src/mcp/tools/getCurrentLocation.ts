@@ -10,6 +10,7 @@ import { deviceRef, quoted } from "../deviceRef";
 import { presentBattery } from "../presentBattery";
 import { presentMotion } from "../presentMotion";
 import type { WorkContext } from "../runMcpWork";
+import { ownAccess } from "../toolAccess";
 import { kmh, oneDecimal, secondsBetween } from "../units";
 import { formatInZone } from "../zonedTime";
 
@@ -45,13 +46,15 @@ export async function currentLocationAnswer(
     battery: presentBattery(summary.battery, timeZone),
     currentMode: await currentModeOf(context, summary.id),
   };
+  const access = ownAccess([summary]);
   if (location === null) {
-    return { result, text: `${quoted(device.name)} has not sent a position yet.` };
+    return { result, text: `${quoted(device.name)} has not sent a position yet.`, access };
   }
   const accuracy = location.accuracyM === null ? "" : ` (±${location.accuracyM} m)`;
   return {
     result,
     text: `${quoted(device.name)} was at ${location.lat}, ${location.lon}${accuracy} at ${location.recordedAt}, ${location.ageS} s ago.`,
+    access,
   };
 }
 

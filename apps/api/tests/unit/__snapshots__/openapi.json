@@ -2034,7 +2034,7 @@
       "get": {
         "operationId": "listPeople",
         "summary": "List people",
-        "description": "The people who share their location with you, by name, each with the devices they share and where those are, at the precision of the share: approximate and area shares give the centre of a cell around the position, never the position itself. A device's `location` is the newest position inside the share's window (its history, or the last 12 hours for live-only shares); battery and activity appear only when the share includes details. People you hid are left out. `distanceM` starts from your own most recently located device and needs `locations:read` too.\n\n**Access:** an API token with the scope `people:read`, or a signed-in session.",
+        "description": "The people who share their location with you, by name, each with the devices they share and where those are, at the precision of the share: approximate and area shares give the centre of a cell around the position, never the position itself. A device's `location` is the newest position inside the share's window (its history, or the last 12 hours for live-only shares); battery and activity appear only when the share includes details. People you hid are left out. `distanceM` starts from your own most recently located device and needs `locations:read` too. Each person listed can see in their data access log that, and when, you looked.\n\n**Access:** an API token with the scope `people:read`, or a signed-in session.",
         "tags": [
           "People"
         ],
@@ -2091,7 +2091,7 @@
       "get": {
         "operationId": "getPerson",
         "summary": "Get a person",
-        "description": "One person who shares with you, as in the list. Someone who does not share with you (any more), or whom you hid, is 404.\n\n**Access:** an API token with the scope `people:read`, or a signed-in session.",
+        "description": "One person who shares with you, as in the list. Someone who does not share with you (any more), or whom you hid, is 404. They can see in their data access log that you looked.\n\n**Access:** an API token with the scope `people:read`, or a signed-in session.",
         "tags": [
           "People"
         ],
@@ -2161,7 +2161,7 @@
       "get": {
         "operationId": "getPersonTrack",
         "summary": "Get a person's track",
-        "description": "Where a person has been, when their share includes history (history is only ever shared precisely): the recorded points of their shared devices in `[from, to)`, at most 93 days per call, split where recording paused and simplified to `maxPoints`, like your own tracks. A `from` before the shared history starts is moved up to it, so no older point is returned. A person without a share with history for you is 404.\n\n**Access:** an API token with the scope `people:read`, or a signed-in session.",
+        "description": "Where a person has been, when their share includes history (history is only ever shared precisely): the recorded points of their shared devices in `[from, to)`, at most 93 days per call, split where recording paused and simplified to `maxPoints`, like your own tracks. A `from` before the shared history starts is moved up to it, so no older point is returned. A person without a share with history for you is 404. They can see in their data access log which range you looked at, and when.\n\n**Access:** an API token with the scope `people:read`, or a signed-in session.",
         "tags": [
           "People"
         ],
@@ -6861,7 +6861,8 @@
           "history:read",
           "people:read",
           "shares:read",
-          "shares:write"
+          "shares:write",
+          "audit:read"
         ],
         "description": "A permission of an API token.",
         "example": "devices:read"
@@ -7305,7 +7306,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "trlk_…",
-        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates. |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |"
+        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates. |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |\n| `audit:read` | Read the data access log: who looked at or changed your data, when, how and which data — without positions. |"
       }
     }
   }

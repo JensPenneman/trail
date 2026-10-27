@@ -3,6 +3,8 @@ import type { Logger } from "pino";
 import { DatabaseTokenVerifier } from "./apiTokens/databaseTokenVerifier";
 import type { AppContext } from "./appContext";
 import type { Config } from "./config/config";
+import { tableAccessStore } from "./dataAccess/accessStore";
+import { type DataAccessOptions, DataAccessRecorder } from "./dataAccess/dataAccessRecorder";
 import { createDatabase } from "./db/database";
 import { EventBus } from "./events/eventBus";
 import type { AlertSender } from "./jobs/alert";
@@ -29,7 +31,8 @@ function configuredWaySource(config: Config, logger: Logger): WaySource | null {
 
 /**
  * Wires the shared services; tests may inject an alert sender, a token
- * verifier, a map data source and the stats and processing debounces.
+ * verifier, a map data source, the stats and processing debounces and the
+ * data access log's limits.
  */
 export function createAppContext(input: {
   config: Config;
@@ -40,6 +43,7 @@ export function createAppContext(input: {
   dailyStatsDelayMs?: number;
   waySource?: WaySource | null;
   processingDelayMs?: number;
+  dataAccess?: DataAccessOptions;
 }): AppContext {
   const { config, logger, pool } = input;
   const db = createDatabase(pool);
@@ -73,5 +77,10 @@ export function createAppContext(input: {
       ...(input.processingDelayMs === undefined ? {} : { delayMs: input.processingDelayMs }),
     }),
     sharing: new SharingState(db),
+    dataAccess: new DataAccessRecorder(
+      tableAccessStore(db),
+      logger.child({ component: "data-access" }),
+      input.dataAccess,
+    ),
   };
 }

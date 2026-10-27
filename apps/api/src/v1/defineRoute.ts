@@ -1,4 +1,5 @@
 import type { ApiScope } from "@trail/contracts/apiScope";
+import type { DataAccessKind, DataAccessResource } from "@trail/contracts/dataAccess";
 import type { Request, Response } from "express";
 import type { z } from "zod";
 import type { AppContext } from "../appContext";
@@ -8,9 +9,13 @@ import {
   type RequestAuth,
   type TokenPrincipal,
 } from "../auth/requestAuth";
+import type { AccessOwner } from "../dataAccess/accessRecord";
+import { inputResource } from "../dataAccess/inputResource";
+import { personActor, principalActor } from "../dataAccess/principalActor";
 import { hasBody } from "../http/hasBody";
 import { HttpError, notFound } from "../http/httpError";
 import { validationError } from "../http/validationError";
+import { accessPathId } from "./accessPathId";
 import type { ErrorStatus } from "./openapi/errorResponses";
 import { pathParameters, toExpressPath } from "./toExpressPath";
 import type { V1TagName } from "./v1Tags";
@@ -45,6 +50,25 @@ interface RouteRequest {
 /** The body schema of each success status; null for a status without a body (204). */
 type RouteResponses = { readonly [S in SuccessStatus]?: z.ZodType | null };
 
+/**
+ * How a scoped route counts in the data access log (docs/architecture.md
+ * §8.7). Every answer it sends with a success status is recorded for the
+ * caller's account — the action is the operationId, the resource what the
+ * validated path, query and body name — unless the spec says `false`.
+ */
+type RouteAccess =
+  | false
+  | {
+      /** `read` for GET, `write` for the other methods, unless it says otherwise. */
+      readonly kind?: DataAccessKind;
+      /**
+       * The answer holds other people's data (the people routes): the
+       * handler names their owners in `owners`, and each of them gets an
+       * access in their own log (channel `people`); the caller gets none.
+       */
+      readonly people?: true;
+    };
+
 export interface RouteSpec {
   readonly method: HttpMethod;
   /** OpenAPI path template, parameters in braces: `/api/v1/devices/{id}`. */
@@ -65,6 +89,8 @@ export interface RouteSpec {
    * 429 and 500 (always), 503 (any non-public route). For example `[409]`.
    */
   readonly errors?: readonly ErrorStatus[];
+  /** The data access log: recorded automatically on scoped routes (see `RouteAccess`). */
+  readonly access?: RouteAccess;
 }
 
 type Parsed<S> = S extends z.ZodType ? z.output<S> : undefined;
@@ -97,16 +123,28 @@ interface RouteInput<Spec extends RouteSpec> {
 
 type ResponseHeaders = Readonly<Record<string, string>>;
 
+/**
+ * What the data access log learns from the handler besides the input: the
+ * owners whose data a people route's answer holds (required there), or what
+ * else the answer names for the caller's own log, such as a new share's id.
+ */
+type ResultAccess<A> = A extends { readonly people: true }
+  ? { owners: readonly AccessOwner[] }
+  : { resource?: DataAccessResource };
+
 /** One of the spec's success statuses with a body of its schema's input type (no body for null). */
-type RouteResult<R extends RouteResponses> = {
-  [S in keyof R & SuccessStatus]: R[S] extends z.ZodType
+type RouteResult<R extends RouteResponses, A> = {
+  [S in keyof R & SuccessStatus]: (R[S] extends z.ZodType
     ? { status: S; body: z.input<R[S]>; headers?: ResponseHeaders }
-    : { status: S; headers?: ResponseHeaders };
+    : { status: S; headers?: ResponseHeaders }) &
+    ResultAccess<A>;
 }[keyof R & SuccessStatus];
 
 export type RouteHandler<Spec extends RouteSpec> = (
   input: RouteInput<Spec>,
-) => RouteResult<Spec["responses"]> | Promise<RouteResult<Spec["responses"]>>;
+) =>
+  | RouteResult<Spec["responses"], Spec["access"]>
+  | Promise<RouteResult<Spec["responses"], Spec["access"]>>;
 
 /** A defined route: its spec (for the OpenAPI document) and its Express handler (for the router). */
 export interface V1Route {
@@ -130,6 +168,8 @@ interface UntypedResult {
   status: SuccessStatus;
   body?: unknown;
   headers?: ResponseHeaders;
+  owners?: readonly AccessOwner[];
+  resource?: DataAccessResource;
 }
 
 const realm = 'Bearer realm="trail"';
@@ -243,6 +283,52 @@ function send(
   res.status(result.status).json(parsed.data);
 }
 
+/**
+ * Counts an answer that went out in the data access log: for the caller's
+ * own account (their session on channel `web`, their token on `api`), or for
+ * the owners a people route names. Public and token routes record nothing.
+ * Never throws: the answer is out already, and the log must not fail it.
+ */
+function recordAccess(
+  spec: RouteSpec,
+  ctx: AppContext,
+  input: UntypedInput,
+  result: UntypedResult,
+): void {
+  const { auth, req } = input;
+  if (spec.access === false || typeof spec.auth === "string" || auth === null) return;
+  try {
+    const access = spec.access?.kind ?? (spec.method === "get" ? "read" : "write");
+    const facts = { action: spec.operationId, access, status: result.status };
+    if (spec.access?.people === true) {
+      for (const owner of result.owners ?? []) {
+        ctx.dataAccess.record({
+          ...facts,
+          ownerUserId: owner.ownerUserId,
+          channel: "people",
+          actor: personActor(auth, owner.shareId),
+          resource: owner.resource,
+        });
+      }
+      return;
+    }
+    ctx.dataAccess.record({
+      ...facts,
+      ...principalActor(auth, req.get("user-agent") ?? null),
+      ownerUserId: auth.user.id,
+      resource: {
+        ...inputResource([input.params, input.query, input.body], accessPathId(spec.path)),
+        ...result.resource,
+      },
+    });
+  } catch (error) {
+    (req.log ?? ctx.logger).error(
+      { err: error, operationId: spec.operationId },
+      "data access not recorded",
+    );
+  }
+}
+
 /** Mistakes in a spec fail at startup (and in the unit tests), not on a request. */
 function checkSpec(spec: RouteSpec): void {
   if (!/^[a-z][A-Za-z0-9]*$/.test(spec.operationId)) {
@@ -264,6 +350,9 @@ function checkSpec(spec: RouteSpec): void {
       `${spec.operationId} is public and takes a body, which public routes never get`,
     );
   }
+  if (typeof spec.auth === "string" && spec.access !== undefined) {
+    throw new Error(`${spec.operationId} has no scopes, so the data access log never counts it`);
+  }
 }
 
 /**
@@ -271,7 +360,8 @@ function checkSpec(spec: RouteSpec): void {
  * single source for routing, validation, authorization and the OpenAPI
  * document, and the handler only ever sees a principal that may call the route
  * and input that matches the spec. A handler returns `{ status, body }` with a
- * status the spec lists; the body goes out through that status's schema.
+ * status the spec lists; the body goes out through that status's schema, and
+ * then the access counts in the data access log (§8.7).
  */
 export function defineRoute<const Spec extends RouteSpec>(
   spec: Spec,
@@ -294,7 +384,10 @@ export function defineRoute<const Spec extends RouteSpec>(
         body: validBody(spec.request?.body, req),
         req,
       };
-      send(spec, ctx, await run(input), req, res);
+      const result = await run(input);
+      send(spec, ctx, result, req, res);
+      // Only an answer that went out is an access: a refusal or a failure threw before here.
+      recordAccess(spec, ctx, input, result);
     },
   };
 }

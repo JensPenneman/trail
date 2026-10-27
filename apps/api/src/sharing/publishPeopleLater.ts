@@ -10,7 +10,9 @@ import { toSharedDevice } from "./toSharedDevice";
  * After an upload: a `person` event with the device as each recipient's share
  * shows it, to every recipient with a live stream whose share is in force,
  * covers the device and is not hidden (docs/architecture.md §9). The owner's
- * shares come from the one-minute cache that every change clears.
+ * shares come from the one-minute cache that every change clears. Each push
+ * counts in the owner's data access log (§8.7): per recipient, device and
+ * hour, with how many there were.
  */
 export function publishPeopleLater(ctx: AppContext, ownerId: string, deviceId: string): void {
   ctx.background.run("publish shared position", async () => {
@@ -41,6 +43,21 @@ export function publishPeopleLater(ctx: AppContext, ownerId: string, deviceId: s
       { now, recentMs: currentModeRecentMs(ctx.config) },
     );
     for (const share of receiving) {
+      ctx.dataAccess.record({
+        ownerUserId: ownerId,
+        channel: "live",
+        actor: {
+          kind: "person",
+          userId: share.recipientUserId,
+          shareId: share.id,
+          label: share.recipientName,
+        },
+        action: "live.position",
+        access: "read",
+        resource: { deviceIds: [device.id], precision: share.precision },
+        status: 200,
+        at: now,
+      });
       ctx.bus.publish(share.recipientUserId, {
         type: "person",
         userId: ownerId,

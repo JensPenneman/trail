@@ -19,7 +19,9 @@ describe("API token templates", () => {
       "history:read",
       "people:read",
       "shares:read",
+      "audit:read",
     ]);
+    // An agent reads and corrects; who looked at the account is none of its business.
     expect(apiTokenTemplates.agent).toEqual([
       "profile:read",
       "devices:read",
@@ -34,7 +36,8 @@ describe("API token templates", () => {
 
   it("are recognised from a set of scopes in any order, else it is a set of one's own", () => {
     expect(templateOfScopes([...apiTokenTemplates["read-only"]].reverse())).toBe("read-only");
-    expect(templateOfScopes(["locations:write", ...apiTokenTemplates["read-only"]])).toBe("agent");
+    expect(templateOfScopes(["locations:write", ...apiTokenTemplates.agent])).toBe("agent");
+    expect(templateOfScopes(["locations:write", ...apiTokenTemplates["read-only"]])).toBeNull();
     expect(templateOfScopes([...apiScopes])).toBe("full");
     expect(templateOfScopes(["devices:read"])).toBeNull();
     expect(templateOfScopes([])).toBeNull();

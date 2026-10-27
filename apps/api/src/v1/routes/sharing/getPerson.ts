@@ -1,6 +1,7 @@
 import { personParamsSchema, personResponseSchema } from "@trail/contracts/person";
 import { notFound } from "../../../http/httpError";
 import { loadPeople } from "../../../sharing/loadPeople";
+import { personAccess } from "../../../sharing/personAccess";
 import { defineRoute } from "../../defineRoute";
 
 /** `GET /api/v1/people/{userId}` */
@@ -11,15 +12,16 @@ export const getPerson = defineRoute(
     operationId: "getPerson",
     summary: "Get a person",
     description:
-      "One person who shares with you, as in the list. Someone who does not share with you (any more), or whom you hid, is 404.",
+      "One person who shares with you, as in the list. Someone who does not share with you (any more), or whom you hid, is 404. They can see in their data access log that you looked.",
     tags: ["People"],
     auth: { scopes: ["people:read"] },
     request: { params: personParamsSchema },
     responses: { 200: personResponseSchema },
+    access: { people: true },
   },
   async ({ ctx, auth, params }) => {
     const [person] = await loadPeople(ctx, auth, params.userId);
     if (person === undefined) throw notFound("No such person.");
-    return { status: 200, body: { person } };
+    return { status: 200, body: { person }, owners: [personAccess(person)] };
   },
 );

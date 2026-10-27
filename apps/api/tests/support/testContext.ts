@@ -4,6 +4,7 @@ import type { AppContext } from "../../src/appContext";
 import type { LogLevel } from "../../src/config/config";
 import { loadConfig } from "../../src/config/loadConfig";
 import { createAppContext } from "../../src/createAppContext";
+import type { DataAccessOptions } from "../../src/dataAccess/dataAccessRecorder";
 import { createPool } from "../../src/db/createPool";
 import { createApp } from "../../src/http/createApp";
 import type { Alert } from "../../src/jobs/alert";
@@ -40,6 +41,8 @@ export async function createTestContext(
     apiTokens?: ApiTokenVerifier;
     /** Map data for processing (default: none, so the mapped level degrades to averaged). */
     waySource?: WaySource | null;
+    /** The data access log's limits; tests read its rows after `ctx.dataAccess.flush()`. */
+    dataAccess?: DataAccessOptions;
   } = {},
 ): Promise<TestContext> {
   const config = loadConfig(testEnvironment(options.env), {
@@ -63,6 +66,7 @@ export async function createTestContext(
     dailyStatsDelayMs: 3_600_000,
     processingDelayMs: 3_600_000,
     waySource: options.waySource ?? null,
+    ...(options.dataAccess === undefined ? {} : { dataAccess: options.dataAccess }),
   });
   const server = createServer(createApp(ctx));
   await new Promise<void>((resolve, reject) => {
@@ -80,6 +84,8 @@ export async function createTestContext(
       ctx.dailyStats.stop();
       await ctx.background.drain(5_000);
       await ctx.processing.stop();
+      await ctx.dataAccess.flush();
+      ctx.dataAccess.stop();
       await pool.end();
     },
   };

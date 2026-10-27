@@ -4,6 +4,7 @@ import { chooseDevices } from "../chooseDevice";
 import { defineTool } from "../defineTool";
 import { deviceRef } from "../deviceRef";
 import { safeText } from "../safeText";
+import { ownAccess } from "../toolAccess";
 import { capItems, narrowTheRange, toolRange } from "../toolRange";
 import { kmh } from "../units";
 import { formatInZone } from "../zonedTime";
@@ -59,6 +60,10 @@ export const getTrips = defineTool({
       text: `${count} from ${result.from} to ${result.to}.${truncated ? ` ${narrowTheRange}` : ""}`,
       items: result.trips.length,
       truncated,
+      access: ownAccess(input.device === undefined ? null : devices, {
+        from: range.from.toISOString(),
+        to: range.to.toISOString(),
+      }),
     };
   },
 });

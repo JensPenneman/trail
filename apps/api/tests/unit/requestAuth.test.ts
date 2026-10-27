@@ -28,6 +28,7 @@ const token: RequestAuth = {
   kind: "token",
   user,
   tokenId: "t1",
+  tokenName: "Home Assistant",
   scopes: ["devices:read"],
   deviceIds: null,
 };

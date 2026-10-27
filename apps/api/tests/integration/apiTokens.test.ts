@@ -545,7 +545,7 @@ describe("pruning", () => {
     await t.ctx.db.execute(sql`
       UPDATE api_tokens SET revoked_at = now() - interval '29 days' WHERE id = ${revokedLately}
     `);
-    const pruned = await pruneExpiredData(t.ctx.db);
+    const pruned = await pruneExpiredData(t.ctx.db, t.ctx.config);
     expect(pruned.apiTokens).toBe(2);
     expect((await listTokens(pruner)).map((token) => token.id).sort()).toEqual(
       [revokedLately, active].sort(),

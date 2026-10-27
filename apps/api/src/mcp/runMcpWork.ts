@@ -1,7 +1,10 @@
+import type { DataAccessKind, DataAccessResource } from "@trail/contracts/dataAccess";
 import { sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { AppContext } from "../appContext";
 import type { TokenPrincipal } from "../auth/requestAuth";
+import type { AccessOwner } from "../dataAccess/accessRecord";
+import { personActor } from "../dataAccess/principalActor";
 import type { Executor } from "../db/database";
 import { errorCodes } from "../db/errorChain";
 import { isDatabaseUnavailable } from "../db/isDatabaseUnavailable";
@@ -21,6 +24,14 @@ export interface WorkContext {
 }
 
 export type McpWork<Input, Answer> = (input: Input, context: WorkContext) => Promise<Answer>;
+
+/**
+ * What a tool or resource read or changed, for the data access log
+ * (docs/architecture.md §8.7): data of the token's own account — the devices
+ * it resolved (never the name an agent typed) and the range — or, for
+ * `get_people`, of the people who share with it, one access each.
+ */
+export type WorkAccess = { resource: DataAccessResource } | { owners: readonly AccessOwner[] };
 
 /**
  * How long one statement of an MCP read may take. An agent's question is
@@ -44,6 +55,8 @@ interface Job<Answer extends Summary, Value> {
   executor: "read-only transaction" | "pool";
   /** Whether the token holds every scope the tool or resource needs. */
   allowed: boolean;
+  /** How a call that succeeded counts in the data access log; nothing is recorded without it. */
+  record?: { action: string; kind: DataAccessKind };
   work: (context: WorkContext) => Promise<Answer>;
   /** The answer through its output schema: what it does not name is dropped. */
   check: (answer: Answer) => Checked<Value>;
@@ -52,6 +65,7 @@ interface Job<Answer extends Summary, Value> {
 interface Summary {
   items?: number;
   truncated?: boolean;
+  access?: WorkAccess;
 }
 
 export type WorkOutcome<Answer, Value> =
@@ -82,11 +96,48 @@ function messageFor(error: unknown): { message: string; expected: boolean } {
 }
 
 /**
+ * Counts a call that succeeded in the data access log: for the token's own
+ * account (channel `mcp`), or for every person `get_people` showed (channel
+ * `people`, the token's owner as the person who looked). Never throws.
+ */
+function recordWork(
+  session: McpSession,
+  record: { action: string; kind: DataAccessKind },
+  access: WorkAccess,
+): void {
+  const { ctx, principal } = session;
+  try {
+    const facts = { action: record.action, access: record.kind, status: 200 };
+    if ("owners" in access) {
+      for (const owner of access.owners) {
+        ctx.dataAccess.record({
+          ...facts,
+          ownerUserId: owner.ownerUserId,
+          channel: "people",
+          actor: personActor(principal, owner.shareId),
+          resource: owner.resource,
+        });
+      }
+      return;
+    }
+    ctx.dataAccess.record({
+      ...facts,
+      ownerUserId: principal.user.id,
+      channel: "mcp",
+      actor: { kind: "token", tokenId: principal.tokenId, label: principal.tokenName },
+      resource: access.resource,
+    });
+  } catch (error) {
+    session.log.error({ err: error, action: record.action }, "data access not recorded");
+  }
+}
+
+/**
  * Runs one tool call or resource read for an MCP session (docs/mcp.md):
  * re-checks the scopes, runs reads in a read-only transaction with a short
- * statement timeout, puts the answer through its schema and logs the call —
+ * statement timeout, puts the answer through its schema, logs the call —
  * its name, duration, outcome and size at info, never its arguments, its
- * result or the token.
+ * result or the token — and counts it in the data access log.
  */
 export async function runMcpWork<Answer extends Summary, Value>(
   session: McpSession,
@@ -142,6 +193,8 @@ export async function runMcpWork<Answer extends Summary, Value>(
       }),
       `MCP ${job.kind}`,
     );
+    if (job.record !== undefined)
+      recordWork(session, job.record, answer.access ?? { resource: {} });
     return { ok: true, answer, value: checked.value };
   } catch (error) {
     const { message, expected } = messageFor(error);

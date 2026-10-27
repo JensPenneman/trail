@@ -56,6 +56,7 @@ export class DatabaseTokenVerifier implements ApiTokenVerifier {
       kind: "token",
       user,
       tokenId: token.id,
+      tokenName: token.name,
       scopes: token.scopes,
       deviceIds: token.deviceIds,
     };

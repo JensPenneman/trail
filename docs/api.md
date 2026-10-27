@@ -64,7 +64,7 @@ token**. You choose:
   | Template | Scopes |
   |---|---|
   | Read-only | every `:read` scope |
-  | Agent | every `:read` scope and `locations:write` |
+  | Agent | every `:read` scope but `audit:read`, and `locations:write` |
   | Full access | every scope |
 
 - **its devices**: all of them (also the ones you add later), or some. The
@@ -155,6 +155,7 @@ needs them all. A signed-in session holds every scope.
 | `people:read` | See the people who share their location with you. |
 | `shares:read` | List your shares, the ones you receive and your public links. |
 | `shares:write` | Start and stop sharing, hide people and manage public links. |
+| `audit:read` | Read the data access log: who looked at or changed your data, when, how and which data — without positions. |
 
 Coordinates are what `locations:read` is for: every answer with a place in it
 needs it — points, visits, the heatmap and a device's position. A device in

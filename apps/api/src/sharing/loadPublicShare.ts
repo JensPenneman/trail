@@ -2,6 +2,8 @@ import type { PublicShareResponse } from "@trail/contracts/shareLink";
 import { publicTrackMaxPoints } from "@trail/contracts/shareLink";
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { AppContext } from "../appContext";
+import { userAgentFamily } from "../auth/userAgentLabel";
+import { coarseNetwork } from "../dataAccess/coarseNetwork";
 import { devices } from "../db/schema/devices";
 import { shareLinks } from "../db/schema/shareLinks";
 import { HttpError, notFound } from "../http/httpError";
@@ -15,16 +17,25 @@ import { toSharedDevice } from "./toSharedDevice";
 
 const maxAccuracyM = 200;
 
+/** Who opens a link, as the request tells: the address `trust proxy` settles on and the user agent. */
+export interface LinkVisit {
+  ip: string | null;
+  userAgent: string | null;
+}
+
 /**
  * What a public link shows (docs/architecture.md §8.5): its label, expiry and
  * the owner's devices it names, at its precision — never the owner's account,
  * address or device ids. A secret of the wrong shape or an unknown one is
  * `not_found`; an expired or turned-off link `share_expired`, both 404. A
- * look counts as a view at most once a minute.
+ * look counts as a view at most once a minute, and in the owner's data
+ * access log (§8.7) per visitor and hour — the visitor being their network
+ * (/24 or /48) and kind of browser, never the address itself.
  */
 export async function loadPublicShare(
   ctx: AppContext,
   secret: string,
+  visit: LinkVisit,
 ): Promise<PublicShareResponse> {
   if (!isShareLinkSecret(secret)) throw notFound("This link does not exist.");
   const [link] = await ctx.db
@@ -97,6 +108,25 @@ export async function loadPublicShare(
     });
   }
 
+  ctx.dataAccess.record({
+    ownerUserId: link.ownerUserId,
+    channel: "link",
+    actor: {
+      kind: "link",
+      linkId: link.id,
+      label: link.label,
+      // Only the network leaves this function: the address itself is never kept.
+      visitor: { ipCoarse: coarseNetwork(visit.ip), uaFamily: userAgentFamily(visit.userAgent) },
+    },
+    action: "link.view",
+    access: "read",
+    resource: {
+      deviceIds: shown.map((device) => device.id),
+      precision: link.precision,
+      ...(link.historyDays === null ? {} : { historyDays: link.historyDays }),
+    },
+    status: 200,
+  });
   ctx.background.run("count a share link view", async () => {
     await ctx.db.execute(sql`
       UPDATE share_links SET view_count = view_count + 1, last_viewed_at = now()

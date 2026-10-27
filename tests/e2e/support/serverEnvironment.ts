@@ -33,6 +33,7 @@ export function e2eServerEnvironment(databaseUrl: string): Record<string, string
     SESSION_TTL_DAYS: "",
     LIVE_WINDOW_MINUTES: "",
     STALE_AFTER_HOURS: "",
+    DATA_ACCESS_RETENTION_DAYS: "",
     ALERT_NTFY_URL: "",
     ALERT_NTFY_TOKEN: "",
     DEFAULT_TIMEZONE: "",

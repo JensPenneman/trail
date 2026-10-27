@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { ApiScope } from "@trail/contracts/apiScope";
 import { eq } from "drizzle-orm";
 import type { TokenPrincipal } from "../../src/auth/requestAuth";
@@ -36,14 +36,16 @@ export class FakeApiTokens implements ApiTokenVerifier {
 export async function tokenPrincipal(
   db: Database,
   email: string,
-  options: { scopes: readonly ApiScope[]; deviceIds?: readonly string[] | null },
+  options: { scopes: readonly ApiScope[]; deviceIds?: readonly string[] | null; name?: string },
 ): Promise<TokenPrincipal> {
   const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
   if (user === undefined) throw new Error(`No account ${email}`);
   return {
     kind: "token",
     user,
-    tokenId: randomBytes(8).toString("hex"),
+    // Shaped like a real token's id: the data access log keeps it as a uuid.
+    tokenId: randomUUID(),
+    tokenName: options.name ?? "Test token",
     scopes: options.scopes,
     deviceIds: options.deviceIds ?? null,
   };

@@ -536,6 +536,7 @@ describe("what a read runs in", () => {
       kind: "token" as const,
       user: { id: "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60", timezone: "Europe/Brussels" },
       tokenId: "019a1b2c-3d4e-7f60-8a9b-0c1d2e3f4a5b",
+      tokenName: "Probe",
       scopes: ["devices:read" as const],
       deviceIds: null,
     } as unknown as TokenPrincipal,

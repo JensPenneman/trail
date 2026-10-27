@@ -38,6 +38,7 @@ const principal = (scopes: readonly ApiScope[]): TokenPrincipal => ({
   kind: "token",
   user,
   tokenId: "019a1b2c-3d4e-7f60-8a9b-0c1d2e3f4a5b",
+  tokenName: "Calendar agent",
   scopes,
   deviceIds: null,
 });
@@ -259,6 +260,70 @@ describe("running a tool", () => {
     const line = lines.find((entry) => entry["msg"] === "MCP answer does not match its schema");
     expect(JSON.stringify(line)).not.toContain("51.0543");
     expect(line?.["issues"]).toEqual([{ code: "invalid_type", path: ["value"] }]);
+  });
+
+  it("counts a call that succeeded in the data access log, and nothing else", async () => {
+    const recorded: unknown[] = [];
+    const { log } = memoryLogger();
+    const recording = {
+      ctx: {
+        ...ctx,
+        dataAccess: { record: (access: unknown) => recorded.push(access) },
+      } as unknown as AppContext,
+      principal: principal(["devices:read", "people:read"]),
+      log,
+    };
+    const device = "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3";
+    const own = { action: "mcp.probe", kind: "read" as const };
+    await runMcpWork(recording, {
+      ...job,
+      record: own,
+      work: async () => ({ result: { value: 1 }, access: { resource: { deviceIds: [device] } } }),
+    });
+    await runMcpWork(recording, {
+      ...job,
+      record: own,
+      work: async () => {
+        throw notFound("No such device.");
+      },
+    });
+    await runMcpWork(recording, {
+      ...job,
+      record: own,
+      work: async () => ({ result: { value: "not a number" as unknown as number } }),
+    });
+    await runMcpWork(recording, {
+      ...job,
+      record: { action: "mcp.get_people", kind: "read" },
+      work: async () => ({
+        result: { value: 2 },
+        access: {
+          owners: [
+            { ownerUserId: device, shareId: null, resource: { precision: "area" as const } },
+          ],
+        },
+      }),
+    });
+    expect(recorded).toEqual([
+      {
+        action: "mcp.probe",
+        access: "read",
+        status: 200,
+        ownerUserId: user.id,
+        channel: "mcp",
+        actor: { kind: "token", tokenId: principal([]).tokenId, label: "Calendar agent" },
+        resource: { deviceIds: [device] },
+      },
+      {
+        action: "mcp.get_people",
+        access: "read",
+        status: 200,
+        ownerUserId: device,
+        channel: "people",
+        actor: { kind: "person", userId: user.id, shareId: null, label: "Jens" },
+        resource: { precision: "area" },
+      },
+    ]);
   });
 
   it("logs a call's name, outcome, duration and size at info, and nothing of its content", async () => {

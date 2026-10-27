@@ -170,6 +170,7 @@ describe("Settings › API tokens", () => {
       "history:read",
       "people:read",
       "shares:read",
+      "audit:read",
     ]) {
       await person.click(within(dialog).getByRole("checkbox", { name: scope }));
     }

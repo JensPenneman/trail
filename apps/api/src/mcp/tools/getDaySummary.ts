@@ -7,6 +7,7 @@ import { loadTimeline } from "../../transport/loadTimeline";
 import { chooseDevice } from "../chooseDevice";
 import { defineTool } from "../defineTool";
 import { deviceRef, quoted } from "../deviceRef";
+import { ownAccess } from "../toolAccess";
 import { formatInZone } from "../zonedTime";
 
 /** Where a local day starts and ends, as Postgres works it out (daylight saving time included). */
@@ -95,6 +96,7 @@ export const getDaySummary = defineTool({
         result.pending ? " Some points still wait to be processed." : ""
       }`,
       items: modes.length,
+      access: ownAccess([summary], { date: input.date }),
     };
   },
 });

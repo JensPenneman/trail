@@ -172,6 +172,56 @@ const laterTables: {
       FROM users
     `,
   },
+  {
+    // The data access log: a person's look, a link visitor's and a token's, and the visitor key.
+    migration: tagOf("data_access_log"),
+    record: async (pool, { userId, deviceId }) => {
+      await pool.query(
+        `INSERT INTO data_access_events (owner_user_id, bucket_start, first_at, last_at, count,
+           actor_kind, channel, actor_user_id, actor_share_id, actor_label, action, access, resource,
+           status, dedupe_key)
+         VALUES ($1, '2026-02-01T09:00:00Z', '2026-02-01T09:05:00Z', '2026-02-01T09:55:00Z', 14,
+           'person', 'live', (SELECT id FROM users WHERE email = 'ana@example.com'),
+           (SELECT id FROM shares WHERE recipient_email = 'ana@example.com'), 'Ana',
+           'live.position', 'read', jsonb_build_object('deviceIds', jsonb_build_array($2::text),
+             'precision', 'precise'), 200, repeat('a', 43))`,
+        [userId, deviceId],
+      );
+      await pool.query(
+        `INSERT INTO data_access_events (owner_user_id, bucket_start, first_at, last_at, count,
+           actor_kind, channel, actor_link_id, actor_label, visitor_key, ip_coarse, ua_family,
+           action, access, resource, status, dedupe_key)
+         VALUES ($1, '2026-02-01T10:00:00Z', '2026-02-01T10:01:00Z', '2026-02-01T10:02:00Z', 3,
+           'link', 'link', (SELECT id FROM share_links WHERE label = 'Upgrade'), 'Upgrade',
+           '0123456789abcdef', '81.82.83.0/24', 'iPhone · Safari', 'link.view', 'read',
+           '{"precision": "approximate"}', 200, repeat('b', 43))`,
+        [userId],
+      );
+      await pool.query(
+        `INSERT INTO data_access_events (owner_user_id, bucket_start, first_at, last_at, count,
+           actor_kind, channel, actor_token_id, actor_label, action, access, resource, status,
+           dedupe_key)
+         VALUES ($1, '2026-02-01T11:00:00Z', '2026-02-01T11:00:00Z', '2026-02-01T11:00:00Z', 1,
+           'token', 'api', (SELECT id FROM api_tokens WHERE name = 'Home Assistant'),
+           'Home Assistant', 'getTracks', 'read', '{"level": "inferred"}', 200, repeat('c', 43))`,
+        [userId],
+      );
+      await pool.query(
+        `INSERT INTO server_secrets (name, secret) VALUES ('data-access-visitor', decode(repeat('cd', 32), 'hex'))`,
+      );
+    },
+    fingerprint: `
+      SELECT
+        ((SELECT count(*) FROM data_access_events)
+          + (SELECT count(*) FROM server_secrets WHERE name = 'data-access-visitor'))::int AS rows,
+        (SELECT string_agg(concat_ws('|', owner_user_id, bucket_start, first_at, last_at, count,
+          actor_kind, channel, actor_user_id, actor_session_id, actor_token_id, actor_share_id,
+          actor_link_id, actor_label, visitor_key, ip_coarse, ua_family, action, access,
+          resource::text, status, dedupe_key), ';' ORDER BY id) FROM data_access_events) AS events,
+        (SELECT encode(secret, 'hex') FROM server_secrets WHERE name = 'data-access-visitor')
+          AS visitor_key
+    `,
+  },
 ];
 
 /*

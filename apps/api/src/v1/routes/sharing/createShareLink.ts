@@ -21,5 +21,9 @@ export const createShareLink = defineRoute(
     responses: { 201: createShareLinkResponseSchema },
     errors: [409],
   },
-  async ({ ctx, auth, body }) => ({ status: 201, body: await makeShareLink(ctx, auth, body) }),
+  async ({ ctx, auth, body }) => {
+    const made = await makeShareLink(ctx, auth, body);
+    // The link's id, never its secret, goes into the data access log.
+    return { status: 201, body: made, resource: { linkId: made.link.id } };
+  },
 );

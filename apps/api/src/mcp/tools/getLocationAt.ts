@@ -9,6 +9,7 @@ import { chooseDevice } from "../chooseDevice";
 import { defineTool } from "../defineTool";
 import { deviceRef, quoted } from "../deviceRef";
 import { presentMotion } from "../presentMotion";
+import { ownAccess } from "../toolAccess";
 import { kmh, oneDecimal, secondsBetween } from "../units";
 import { formatInZone } from "../zonedTime";
 
@@ -89,6 +90,7 @@ export const getLocationAt = defineTool({
         location === null
           ? `${quoted(device.name)} recorded no position within ${toleranceMinutes} minutes of ${asked}.`
           : `${quoted(device.name)} was at ${location.lat}, ${location.lon} at ${location.recordedAt} (${location.offsetS} s from ${asked}).`,
+      access: ownAccess([summary], { at: at.toISOString() }),
     };
   },
 });

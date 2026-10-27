@@ -10,18 +10,23 @@ export interface PruneResult {
   shares: number;
   shareLinks: number;
   ingestLog: number;
+  dataAccessEvents: number;
 }
 
 /**
  * Retention (docs/architecture.md §10): expired sessions and ceremonies go
  * immediately, used or expired links and invites and revoked or expired API
  * tokens after 30 days (so the lists still show recent ones), stopped or ended
- * shares and share links after 30 days, upload logs after 90 days. Recorded
- * data is never pruned: points, visits, trips, events and the dead letter of
- * rejected records (raw phone data that may still be recovered) are kept
- * forever.
+ * shares and share links after 30 days, upload logs after 90 days, the hours
+ * of the data access log after `dataAccessRetentionDays` (a log, not location
+ * data). Recorded data is never pruned: points, visits, trips, events and the
+ * dead letter of rejected records (raw phone data that may still be
+ * recovered) are kept forever.
  */
-export async function pruneExpiredData(db: Executor): Promise<PruneResult> {
+export async function pruneExpiredData(
+  db: Executor,
+  retention: { dataAccessRetentionDays: number },
+): Promise<PruneResult> {
   const count = async (statement: ReturnType<typeof sql>) =>
     (await db.execute(statement)).rowCount ?? 0;
   return {
@@ -50,5 +55,10 @@ export async function pruneExpiredData(db: Executor): Promise<PruneResult> {
     ingestLog: await count(
       sql`DELETE FROM ingest_log WHERE received_at < now() - interval '90 days'`,
     ),
+    // By the hour's start, which the unique key holds after the owner: PostgreSQL 18 skips through it.
+    dataAccessEvents: await count(sql`
+      DELETE FROM data_access_events
+      WHERE bucket_start < now() - make_interval(days => ${retention.dataAccessRetentionDays})
+    `),
   };
 }

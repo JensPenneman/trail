@@ -18,8 +18,8 @@ export const createShare = defineRoute(
     responses: { 201: shareResponseSchema },
     errors: [409],
   },
-  async ({ ctx, auth, body }) => ({
-    status: 201,
-    body: { share: await startShare(ctx, auth, body) },
-  }),
+  async ({ ctx, auth, body }) => {
+    const share = await startShare(ctx, auth, body);
+    return { status: 201, body: { share }, resource: { shareId: share.id } };
+  },
 );

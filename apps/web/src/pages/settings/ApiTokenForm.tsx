@@ -38,8 +38,8 @@ const templates: readonly { value: ApiTokenTemplate; label: string; description:
     label: "Agent",
     description: (
       <>
-        Read-only, and may correct how you travelled: for an agent that plans with you, connected to
-        Trail's{" "}
+        Read-only but for the access log, and may correct how you travelled: for an agent that plans
+        with you, connected to Trail's{" "}
         <a href={mcpGuideUrl} target="_blank" rel="noreferrer">
           MCP server
         </a>

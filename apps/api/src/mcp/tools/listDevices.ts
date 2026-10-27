@@ -12,6 +12,7 @@ import { quoted } from "../deviceRef";
 import { presentBattery } from "../presentBattery";
 import type { WorkContext } from "../runMcpWork";
 import { safeText } from "../safeText";
+import { ownAccess } from "../toolAccess";
 import { formatInZone } from "../zonedTime";
 
 const zoned = (value: string | null, timeZone: string): string | null =>
@@ -64,6 +65,7 @@ export async function devicesAnswer(context: WorkContext): Promise<ToolAnswer<Li
         ? "This token reaches no device."
         : `${devices.length} device${devices.length === 1 ? "" : "s"}:\n${lines.join("\n")}`,
     items: devices.length,
+    access: ownAccess(null),
   };
 }
 

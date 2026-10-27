@@ -4,6 +4,8 @@ import { eventRangeQuerySchema } from "@trail/contracts/visit";
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
 import { requireAuth } from "../auth/requestAuth";
+import { inputResource } from "../dataAccess/inputResource";
+import { recordDashboardAccess } from "../dataAccess/recordDashboardAccess";
 import { parseQuery } from "../http/parseInput";
 import { findTrips } from "./findTrips";
 
@@ -16,6 +18,11 @@ export function tripsRouter(ctx: AppContext): Router {
     const query = parseQuery(eventRangeQuerySchema, req);
     const body: TripsResponse = { trips: await findTrips(ctx.db, auth, query) };
     res.json(body);
+    recordDashboardAccess(ctx, req, {
+      action: "trips",
+      kind: "read",
+      resource: inputResource([query]),
+    });
   });
 
   return router;

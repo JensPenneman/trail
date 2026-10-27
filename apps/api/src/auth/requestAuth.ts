@@ -20,6 +20,8 @@ export interface TokenPrincipal {
   kind: "token";
   user: UserRow;
   tokenId: string;
+  /** The name its owner gave it: what the data access log calls it. */
+  tokenName: string;
   scopes: readonly ApiScope[];
   /** The only devices the token may reach; null = all of the user's devices. */
   deviceIds: readonly string[] | null;

@@ -10,11 +10,15 @@ import { loadPublicShare } from "./loadPublicShare";
  * ever carries it, so no access log or proxy records it. Mounted before the
  * dashboard's `/api` chain behind its own per-address limit: no session is
  * read and no cookie set. The answer is `no-store`, like every `/api` answer.
+ * The client address is `req.ip`, which only trusted proxies can set.
  */
 export function publicShareRouter(ctx: AppContext): Router {
   const router = express.Router();
   router.get("/", async (req, res) => {
-    const body: PublicShareResponse = await loadPublicShare(ctx, req.get(shareSecretHeader) ?? "");
+    const body: PublicShareResponse = await loadPublicShare(ctx, req.get(shareSecretHeader) ?? "", {
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    });
     res.json(body);
   });
   return router;

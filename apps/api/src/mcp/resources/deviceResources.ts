@@ -26,13 +26,15 @@ const locationTemplate = "trail://devices/{id}/location";
 interface JsonResource<Output extends z.ZodType> {
   /** The resource (or template) as the log names it. */
   name: string;
+  /** Its action in the data access log. */
+  action: string;
   uri: URL;
   scope: ApiScope;
   output: Output;
   work: (context: WorkContext) => Promise<ToolAnswer<z.input<Output>>>;
 }
 
-/** Reads a resource like a tool call — scopes, read-only transaction, schema, log — as JSON. */
+/** Reads a resource like a tool call — scopes, read-only transaction, schema, log, data access log — as JSON. */
 async function readAsJson<Output extends z.ZodType>(
   session: McpSession,
   resource: JsonResource<Output>,
@@ -42,6 +44,7 @@ async function readAsJson<Output extends z.ZodType>(
     name: resource.name,
     executor: "read-only transaction",
     allowed: hasScope(session.principal, resource.scope),
+    record: { action: resource.action, kind: "read" },
     work: resource.work,
     check: (answer) => {
       const parsed = resource.output.safeParse(answer.result);
@@ -106,6 +109,7 @@ export function registerDeviceResources(server: McpServer, session: McpSession):
       (uri) =>
         readAsJson(session, {
           name: devicesUri,
+          action: "mcp.resource.devices",
           uri,
           scope: "devices:read",
           output: listDevicesOutputSchema,
@@ -128,6 +132,7 @@ export function registerDeviceResources(server: McpServer, session: McpSession):
         if (typeof id !== "string" || !isUuid(id)) throw new ResourceNotFoundError(uri.href);
         return readAsJson(session, {
           name: locationTemplate,
+          action: "mcp.resource.device_location",
           uri,
           scope: "locations:read",
           output: getCurrentLocationOutputSchema,
