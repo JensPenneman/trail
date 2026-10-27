@@ -405,6 +405,12 @@ describe("a visitor's network", () => {
     expect(coarseNetwork("64:ff9b::81.82.83.84")).toBe("64:ff9b::/48");
   });
 
+  it("reads a 6to4 address as the IPv4 address it carries: its /48 would be that address", () => {
+    expect(coarseNetwork("2002:5152:5354::1")).toBe("81.82.83.0/24");
+    expect(coarseNetwork("2002:c000:0204:1:2:3:4:5")).toBe("192.0.2.0/24");
+    expect(coarseNetwork("2002::")).toBe("0.0.0.0/24");
+  });
+
   it("reads an IPv4-mapped address as IPv4, and drops a zone", () => {
     expect(coarseNetwork("::ffff:81.82.83.84")).toBe("81.82.83.0/24");
     expect(coarseNetwork("::FFFF:192.168.1.20")).toBe("192.168.1.0/24");
@@ -435,6 +441,8 @@ describe("a visitor's network", () => {
           : Array.from({ length: 8 }, (_, group) =>
               bytes.readUInt16BE(group * 2).toString(16),
             ).join(":");
+      // A 6to4 address (2002::/16) answers with the IPv4 network it carries: tested above.
+      if (address.startsWith("2002:")) continue;
       const network = coarseNetwork(address);
       expect(network).not.toBeNull();
       const [base = "", prefix = ""] = (network ?? "").split("/");

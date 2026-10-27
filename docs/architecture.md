@@ -1405,7 +1405,8 @@ heap-only update.
 - **Public links** (`loadPublicShare`, §8.5): each view of a working link,
   per visitor and hour: `ip_coarse` = `coarseNetwork(req.ip)` — the IPv4
   /24 (`81.82.83.0/24`) or IPv6 /48 (`2001:db8:1234::/48`), an IPv4-mapped
-  address read as IPv4, null for anything else — `ua_family` =
+  or 6to4 address (`2002::/16`, whose /48 is a whole IPv4 address) read as
+  the IPv4 address it carries, null for anything else — `ua_family` =
   `userAgentFamily` ("iPhone · Safari", from the session labels' tables),
   and `visitor_key` = HMAC-SHA256 under the `data-access-visitor` key of the
   owner, the network and the family, cut to 16 hex digits. The full address
