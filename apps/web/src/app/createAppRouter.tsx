@@ -2,7 +2,7 @@ import { createBrowserRouter, type RouteObject, replace } from "react-router";
 import { NotFoundPage } from "../pages/notFound/NotFoundPage";
 import { AppLoading } from "./AppLoading";
 import { AppShell } from "./AppShell";
-import { legacyMapPath } from "./legacyMapPath";
+import { legacyMapPath, legacyPeoplePath } from "./legacyMapPath";
 import { PublicLayout } from "./PublicLayout";
 import { RequireSession } from "./RequireSession";
 import { RootLayout } from "./RootLayout";
@@ -11,7 +11,7 @@ import { settingsSections } from "./settingsSections";
 
 /**
  * Every page is its own chunk, fetched on first visit (the map library is
- * split further, inside the Map page). The previous page stays on screen
+ * split further, inside the People page). The previous page stays on screen
  * while the next one loads, with a progress bar in the shell.
  */
 export function appRoutes(): RouteObject[] {
@@ -40,7 +40,7 @@ export function appRoutes(): RouteObject[] {
             },
           ],
         },
-        // The pages the Map page replaced: bookmarks and old links land on its views.
+        // The pages the People page replaced: bookmarks and old links land on its views.
         {
           path: "history",
           loader: ({ request }) => replace(legacyMapPath(new URL(request.url), "history")),
@@ -48,6 +48,10 @@ export function appRoutes(): RouteObject[] {
         {
           path: "explore",
           loader: ({ request }) => replace(legacyMapPath(new URL(request.url), "heat")),
+        },
+        {
+          path: "people",
+          loader: ({ request }) => replace(legacyPeoplePath(new URL(request.url))),
         },
         {
           // A public link (`/s#<secret>`): no session, no navigation, a layout of its own.
@@ -65,11 +69,6 @@ export function appRoutes(): RouteObject[] {
               children: [
                 {
                   index: true,
-                  lazy: () =>
-                    import("../pages/map/MapPage").then((m) => ({ Component: m.MapPage })),
-                },
-                {
-                  path: "people",
                   lazy: () =>
                     import("../pages/people/PeoplePage").then((m) => ({ Component: m.PeoplePage })),
                 },

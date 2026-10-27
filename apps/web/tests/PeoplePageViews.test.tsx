@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MapPage } from "../src/pages/map/MapPage";
+import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { config, ids, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
@@ -19,11 +19,11 @@ const map = () => screen.getByRole("img", { name: /^(Map|Heatmap)\b/ });
 const view = (name: string) =>
   within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", { name });
 
-describe("the Map page, Live", () => {
+describe("the People page, Live", () => {
   it("proves each device is sending: status, last upload, battery and today's numbers", async () => {
     mockApi(standardRoutes());
-    renderPage(<MapPage />, { user });
-    expect(screen.getByRole("heading", { level: 1, name: "Map" })).toBeInTheDocument();
+    renderPage(<PeoplePage />, { user });
+    expect(screen.getByRole("heading", { level: 1, name: "People" })).toBeInTheDocument();
     expect(view("Live")).toBeChecked();
     const phone = await screen.findByRole("article", { name: "iPhone 16" });
     expect(within(phone).getByText("Live")).toBeInTheDocument();
@@ -43,12 +43,12 @@ describe("the Map page, Live", () => {
       "2",
     );
     expect(await screen.findByText("+40 points")).toBeInTheDocument();
-    expect(document.title).toBe("Live · Map · Trail");
+    expect(document.title).toBe("Live · People · Trail");
   });
 
   it("invites to add a first device when there are none", async () => {
     mockApi({ ...standardRoutes(), "GET /api/devices": { status: 200, body: { devices: [] } } });
-    renderPage(<MapPage />, { user });
+    renderPage(<PeoplePage />, { user });
     expect(await screen.findByText("Connect your first phone")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Add a device" })).toHaveAttribute(
       "href",
@@ -64,7 +64,7 @@ describe("the Map page, Live", () => {
         body: { error: { code: "unavailable", message: "Database down" } },
       },
     });
-    renderPage(<MapPage />, { user });
+    renderPage(<PeoplePage />, { user });
     expect(await screen.findByText("Devices could not be loaded")).toBeInTheDocument();
     expect(screen.getByText("Database down")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
@@ -72,7 +72,7 @@ describe("the Map page, Live", () => {
 
   it("asks for nothing another view needs", async () => {
     const api = mockApi(standardRoutes());
-    renderPage(<MapPage />, { user });
+    renderPage(<PeoplePage />, { user });
     await screen.findByRole("article", { name: "iPhone 16" });
     expect(await screen.findByText("+40 points")).toBeInTheDocument();
     const paths = api.calls.map((call) => call.path);
@@ -82,10 +82,10 @@ describe("the Map page, Live", () => {
   });
 });
 
-describe("the Map page, History", () => {
+describe("the People page, History", () => {
   it("shows the day's totals, visits, trips and a time slider", async () => {
     mockApi(standardRoutes());
-    renderPage(<MapPage />, { url: "/?view=history", user });
+    renderPage(<PeoplePage />, { url: "/?view=history", user });
     expect(view("History")).toBeChecked();
     expect(await screen.findByText("1.3 km")).toBeInTheDocument();
     expect(screen.getByText(/3 points/)).toBeInTheDocument();
@@ -93,13 +93,13 @@ describe("the Map page, History", () => {
     expect(await screen.findByText(/Bike ride · 8\.4 km/)).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /Show this visit on the map/ })).toHaveLength(1);
     expect(screen.getByRole("group", { name: "Devices" })).toBeInTheDocument();
-    expect(document.title).toBe("History · Map · Trail");
+    expect(document.title).toBe("History · People · Trail");
   });
 
   it("moves between days and opens the calendar", async () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
-    const { router } = renderPage(<MapPage />, {
+    const { router } = renderPage(<PeoplePage />, {
       url: "/?view=history&date=2026-09-12",
       user,
     });
@@ -113,16 +113,16 @@ describe("the Map page, History", () => {
 
   it("shows a period from a deep link", async () => {
     mockApi(standardRoutes());
-    renderPage(<MapPage />, { url: "/?view=history&from=2026-09-01&to=2026-09-07", user });
+    renderPage(<PeoplePage />, { url: "/?view=history&from=2026-09-01&to=2026-09-07", user });
     expect(await screen.findByText(/1 Sept – .*7 Sept/)).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Period" })).toBeChecked();
   });
 });
 
-describe("the Map page, Heat", () => {
+describe("the People page, Heat", () => {
   it("summarises everything recorded and hands the heatmap its place", async () => {
     mockApi(standardRoutes());
-    renderPage(<MapPage />, { url: "/?view=heat", user });
+    renderPage(<PeoplePage />, { url: "/?view=heat", user });
     expect(view("Heat")).toBeChecked();
     // 184,322 + 41,207 points over both devices.
     expect(await screen.findByText("225,529")).toBeInTheDocument();
@@ -132,7 +132,7 @@ describe("the Map page, Heat", () => {
     expect(screen.getByText("Fewer points")).toBeInTheDocument();
     // The level of the tracks has nothing to say about a heatmap.
     expect(screen.queryByRole("group", { name: "Detail of the tracks" })).not.toBeInTheDocument();
-    expect(document.title).toBe("Heatmap · Map · Trail");
+    expect(document.title).toBe("Heatmap · People · Trail");
   });
 });
 
@@ -140,7 +140,7 @@ describe("switching views", () => {
   it("keeps the one map, the device selection and the other views' parameters", async () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
-    const { router } = renderPage(<MapPage />, { url: `/?devices=${ids.phone}`, user });
+    const { router } = renderPage(<PeoplePage />, { url: `/?devices=${ids.phone}`, user });
     await screen.findByRole("article", { name: "iPhone 16" });
     expect(screen.queryByRole("article", { name: "Car" })).not.toBeInTheDocument();
     const canvas = await screen.findByRole("img", { name: /Map of today’s tracks/ });
@@ -167,7 +167,7 @@ describe("switching views", () => {
   it("frames the same day the same way in Live and History, another day anew", async () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
-    renderPage(<MapPage />, { user });
+    renderPage(<PeoplePage />, { user });
     const canvas = await screen.findByRole("img", { name: /Map of today’s tracks/ });
     await waitFor(() => expect(canvas).not.toHaveAttribute("data-fit", ""));
     const today = canvas.getAttribute("data-fit");
@@ -180,7 +180,7 @@ describe("switching views", () => {
 
   it("falls back to Live for a view it does not know", () => {
     mockApi(standardRoutes());
-    renderPage(<MapPage />, { url: "/?view=explore", user });
+    renderPage(<PeoplePage />, { url: "/?view=explore", user });
     expect(view("Live")).toBeChecked();
   });
 });
@@ -189,7 +189,7 @@ describe("the device filter", () => {
   it("narrows every view to the devices chosen, and the last one stays", async () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
-    const { router } = renderPage(<MapPage />, { user });
+    const { router } = renderPage(<PeoplePage />, { user });
     const filter = await screen.findByRole("group", { name: "Devices" });
     await person.click(within(filter).getByRole("checkbox", { name: "Car" }));
     expect(router.state.location.search).toBe(`?devices=${ids.phone}`);
@@ -204,7 +204,7 @@ describe("the map style", () => {
   it("follows the system, or the choice remembered on this browser", async () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
-    const { router } = renderPage(<MapPage />, { user });
+    const { router } = renderPage(<PeoplePage />, { user });
     const control = screen.getByRole("group", { name: "Map style" });
     expect(within(control).getByRole("radio", { name: "Auto" })).toBeChecked();
     expect(within(control).queryByRole("radio", { name: "Satellite" })).not.toBeInTheDocument();
@@ -238,7 +238,7 @@ describe("the map style", () => {
       },
     });
     const person = userEvent.setup();
-    renderPage(<MapPage />, { user });
+    renderPage(<PeoplePage />, { user });
     const control = screen.getByRole("group", { name: "Map style" });
     await person.click(await within(control).findByRole("radio", { name: "Satellite" }));
     expect(map()).toHaveAttribute("data-style", "document");
@@ -248,7 +248,7 @@ describe("the map style", () => {
   it("falls back to Auto where satellite imagery is not configured", async () => {
     window.localStorage.setItem("trail.mapStyle", "satellite");
     mockApi(standardRoutes());
-    renderPage(<MapPage />, { user });
+    renderPage(<PeoplePage />, { user });
     const control = screen.getByRole("group", { name: "Map style" });
     expect(await within(control).findByRole("radio", { name: "Auto" })).toBeChecked();
     expect(await screen.findByRole("img", { name: /^Map/ })).toHaveAttribute(

@@ -4,6 +4,7 @@ import { boundsOf } from "../src/map/boundsOf";
 import { circleRing } from "../src/map/circleRing";
 import { heatFeatures } from "../src/map/heatFeatures";
 import { heatmapParamsFor } from "../src/map/heatmapParamsFor";
+import { positionExtent } from "../src/map/positionExtent";
 import { rasterStyle } from "../src/map/rasterStyle";
 import { trackFeatures } from "../src/map/trackFeatures";
 import { personPositions } from "../src/people/personPositions";
@@ -125,6 +126,20 @@ describe("map helpers", () => {
       ]),
     ).toEqual([3.5, 51, 3.6, 51.1]);
     expect(boundsOf([])).toBeNull();
+  });
+
+  it("frames a coarse share's whole circle, a precise position as its point", () => {
+    const position = { id: "a", color: "#000", slot: 0, lon: 3.5, lat: 51, live: false };
+    expect(positionExtent({ ...position, accuracy: 12 })).toEqual([[3.5, 51]]);
+    const area = boundsOf(positionExtent({ ...position, accuracy: 5560, coarse: true }));
+    if (area === null) throw new Error("no extent");
+    const [west, south, east, north] = area;
+    // About 5.6 km north and south of the centre (0.05° of latitude), as wide east and west.
+    expect(north - 51).toBeCloseTo(0.05, 2);
+    expect(51 - south).toBeCloseTo(0.05, 2);
+    expect((east - 3.5) * Math.cos((51 * Math.PI) / 180)).toBeCloseTo(0.05, 2);
+    expect(3.5 - west).toBeCloseTo(east - 3.5, 6);
+    expect(positionExtent({ ...position, accuracy: null, coarse: true })).toEqual([[3.5, 51]]);
   });
 });
 

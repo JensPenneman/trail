@@ -3,8 +3,9 @@ import { me } from "./me";
 import { parsePeople } from "./parseMapSearch";
 
 /*
- * The changes the Map page's controls make to its URL. Each keeps every other
- * parameter, so a view, a day or a selection survives switching back and forth.
+ * The changes the map's controls make to the People page's URL. Each keeps
+ * every other parameter, so a view, a day or a selection survives switching
+ * back and forth.
  */
 
 export function withView(params: URLSearchParams, view: MapView): URLSearchParams {

@@ -13,8 +13,7 @@ interface NavItem {
 }
 
 const items: readonly NavItem[] = [
-  { to: "/", match: { path: "/", end: true }, label: "Map", icon: "map" },
-  { to: "/people", match: { path: "/people", end: false }, label: "People", icon: "users" },
+  { to: "/", match: { path: "/", end: true }, label: "People", icon: "users" },
   { to: "/devices", match: { path: "/devices", end: false }, label: "Devices", icon: "devices" },
   // Straight to the first section: `/settings` itself only redirects there.
   {

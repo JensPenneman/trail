@@ -15,7 +15,7 @@ import { ShareLinkList } from "./ShareLinkList";
 
 /**
  * Sharing: public links for people without an account, and the people the
- * signed-in person shares with (the same list as on People).
+ * signed-in person shares with (People links here with how many they are).
  */
 export function SharingSection({ headingId }: { headingId: string }) {
   const shares = useShares();
@@ -57,7 +57,7 @@ export function SharingSection({ headingId }: { headingId: string }) {
         ) : shares.data.length === 0 ? (
           <div className="settings__padded cluster">
             <p className="muted">Nobody sees your location.</p>
-            <LinkButton to="/people" icon="users">
+            <LinkButton to="/" icon="users">
               Share it on People
             </LinkButton>
           </div>

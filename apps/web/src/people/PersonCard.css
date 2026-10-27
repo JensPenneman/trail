@@ -8,6 +8,14 @@
   box-shadow: var(--shadow-1);
 }
 
+/* On the map: the accent edge, two pixels without moving the content. */
+.person-card--selected {
+  border-color: var(--color-accent);
+  box-shadow:
+    0 0 0 1px var(--color-accent),
+    var(--shadow-1);
+}
+
 .person-card__header {
   display: flex;
   align-items: center;
@@ -140,5 +148,12 @@
 @media (max-width: 22rem) {
   .person-card__facts {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (forced-colors: active) {
+  .person-card--selected {
+    border-color: Highlight;
+    outline: 1px solid Highlight;
   }
 }

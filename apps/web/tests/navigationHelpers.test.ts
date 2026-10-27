@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isSignedInPath } from "../src/app/isSignedInPath";
-import { legacyMapPath } from "../src/app/legacyMapPath";
+import { legacyMapPath, legacyPeoplePath } from "../src/app/legacyMapPath";
 import { loginPath } from "../src/app/loginPath";
 import { safeNextPath } from "../src/app/safeNextPath";
 import { settingsPathFor } from "../src/app/settingsSections";
@@ -51,7 +51,7 @@ describe("sign-in redirects", () => {
   });
 });
 
-describe("addresses of the pages the Map page replaced", () => {
+describe("addresses of the pages the People page replaced", () => {
   it("carry every parameter over to the view", () => {
     expect(
       legacyMapPath(
@@ -69,6 +69,15 @@ describe("addresses of the pages the Map page replaced", () => {
     expect(legacyMapPath(new URL("https://trail.example.com/explore?view=live#x"), "heat")).toBe(
       "/?view=heat#x",
     );
+  });
+
+  it("take the People page of old home, as it was", () => {
+    expect(legacyPeoplePath(new URL("https://trail.example.com/people"))).toBe("/");
+    expect(
+      legacyPeoplePath(
+        new URL("https://trail.example.com/people?view=heat&people=me,a&devices=b#x"),
+      ),
+    ).toBe("/?view=heat&people=me,a&devices=b#x");
   });
 });
 

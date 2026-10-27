@@ -13,6 +13,9 @@ HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
   this.dispatchEvent(new Event("close"));
 };
 
+/** jsdom lays nothing out, so there is nothing to scroll into view ("Show on map" on phones). */
+Element.prototype.scrollIntoView = function scrollIntoView() {};
+
 /** Layout never changes in jsdom; tests that care call the callback themselves. */
 class StillResizeObserver {
   observe(): void {}

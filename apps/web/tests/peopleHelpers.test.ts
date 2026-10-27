@@ -1,13 +1,15 @@
 import type { TransportMode } from "@trail/contracts/transport";
 import { describe, expect, it } from "vitest";
 import { createFormatter } from "../src/format/createFormatter";
+import { everyoneToggled, selectionShowing } from "../src/pages/people/peopleSelection";
+import { sharingSummary } from "../src/pages/people/sharingSummary";
 import { assignPersonColors } from "../src/people/assignPersonColors";
 import { describeActivity } from "../src/people/describeActivity";
 import { appleMapsUrl, googleMapsUrl } from "../src/people/mapLinks";
 import { personInitials } from "../src/people/personInitials";
 import { primaryDevice } from "../src/people/primaryDevice";
 import { devicesText, expiryText, historyText } from "../src/sharing/shareText";
-import { sharedDevice } from "./support/fixtures";
+import { outgoingShare, sharedDevice } from "./support/fixtures";
 
 const format = createFormatter("en-GB", "Europe/Brussels");
 const at = (speed: number | null) =>
@@ -111,5 +113,39 @@ describe("people helpers", () => {
     expect(devicesText(null, devices, format)).toBe("All devices");
     expect(devicesText([], devices, format)).toBe("No devices");
     expect(devicesText(["w", "p"], devices, format)).toBe("Phone and Watch");
+  });
+
+  it("show someone alone from their card, unless the map shows them already", () => {
+    expect(selectionShowing(["me"], "ana")).toEqual(["ana"]);
+    expect(selectionShowing(["ana", "bob"], "me")).toEqual(["me"]);
+    // On the map already, alone or with others: the camera moves, the choice stays.
+    expect(selectionShowing(["me", "ana"], "ana")).toBeNull();
+    expect(selectionShowing(["ana"], "ana")).toBeNull();
+  });
+
+  it("show everyone, and the signed-in person alone again", () => {
+    const everyone = ["me", "ana", "bob"];
+    expect(everyoneToggled(["me"], everyone)).toEqual(everyone);
+    expect(everyoneToggled(["ana"], everyone)).toEqual(everyone);
+    expect(everyoneToggled(["bob", "ana", "me"], everyone)).toEqual(["me"]);
+  });
+
+  it("say with how many people one shares, and who waits for a confirmation", () => {
+    const count = (value: number) => format.count(value);
+    expect(sharingSummary([], count)).toEqual({ line: "You share with nobody", toConfirm: null });
+    expect(sharingSummary([outgoingShare()], count)).toEqual({
+      line: "You share with 1 person",
+      toConfirm: null,
+    });
+    const joined = outgoingShare({ id: "joined", status: "joined" });
+    expect(
+      sharingSummary(
+        [outgoingShare(), joined, outgoingShare({ id: "pending", status: "pending" })],
+        count,
+      ),
+    ).toEqual({ line: "You share with 3 people", toConfirm: "1 waits for you to confirm" });
+    expect(sharingSummary([joined, { ...joined, id: "again" }], count).toConfirm).toBe(
+      "2 wait for you to confirm",
+    );
   });
 });

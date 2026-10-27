@@ -31,6 +31,7 @@ import { Skeleton } from "../../../ui/Skeleton";
 import { Spinner } from "../../../ui/Spinner";
 import { fitKey } from "../fitKey";
 import { inactiveView, type MapViewContent } from "../MapViewContent";
+import { me } from "../me";
 import type { MapSearch } from "../parseMapSearch";
 import { personTrackRequests } from "../personTrackRequests";
 import type { MapSelection } from "../resolveMapSelection";
@@ -67,7 +68,9 @@ type Focus = { key: string; lon: number; lat: number; zoom: number };
  * of calculation, with a time slider, per-device totals, the timeline of stops
  * and moves, visits and trips — all driven by the URL. The people chosen show
  * their tracks where their shares include history, and a word why not where
- * they do not. Asks for nothing while another view is shown.
+ * they do not; levels, the timeline, visits and trips are one's own, so they
+ * are there only while the signed-in person is chosen. Asks for nothing while
+ * another view is shown.
  */
 export function useHistoryView({
   active,
@@ -261,6 +264,8 @@ export function useHistoryView({
 
   if (!active) return inactiveView;
 
+  // Levels, the timeline, visits and trips exist for one's own devices only.
+  const meShown = selection.people.some((person) => person.key === me);
   const shownIds = [
     ...deviceList
       .filter(
@@ -274,6 +279,7 @@ export function useHistoryView({
       ? format.dayLong(period.from)
       : `${format.day(period.from)} – ${format.day(period.to)}`;
   const hasData = allTracks.length > 0;
+  const withHistory = people.filter(sharesHistory);
   const nameOf = (deviceId: string) => {
     const shared = owners.get(deviceId);
     if (shared !== undefined) return `${shared.person.displayName} · ${shared.name}`;
@@ -319,8 +325,12 @@ export function useHistoryView({
     description: period.mode === "range" ? periodLabel : undefined,
     map: {
       label: hasData
-        ? `Map of the tracks for ${periodLabel}. Totals, the timeline, visits and trips are listed on this page.`
-        : `Map. Nothing was recorded for ${periodLabel}.`,
+        ? meShown
+          ? `Map of the tracks for ${periodLabel}. Totals, the timeline, visits and trips are listed on this page.`
+          : `Map of the tracks for ${periodLabel}. Their totals are listed on this page.`
+        : meShown
+          ? `Map. Nothing was recorded for ${periodLabel}.`
+          : `Map. Nothing to show for ${periodLabel}.`,
       tracks: [...transport.tracks, ...peopleTracks],
       transport: transport.transport,
       selectedSegmentId: shownSegment?.id ?? null,
@@ -376,7 +386,7 @@ export function useHistoryView({
         ) : null}
       </>
     ),
-    transport,
+    transport: meShown ? transport : null,
     chip:
       (tracks.isFetching && !tracks.isPending) ||
       (transport.fetching && !transport.pending) ||
@@ -426,6 +436,29 @@ export function useHistoryView({
             swatchOf={swatchOf}
             withDate={withDate}
           />
+        ) : !meShown ? (
+          // Someone else alone: their tracks, or the notices above say why there are none.
+          withHistory.length === 0 ? null : personTracks.pending ? (
+            <LoadingBlock label="Loading tracks">
+              <Skeleton height="4.5rem" />
+            </LoadingBlock>
+          ) : (
+            <div className="card">
+              <EmptyState
+                icon="history"
+                title={
+                  period.mode === "day"
+                    ? `Nothing recorded on ${format.day(period.from)}`
+                    : "Nothing recorded in this period"
+                }
+              >
+                <p>
+                  Only what {format.list(withHistory.map((person) => person.displayName))}{" "}
+                  {withHistory.length === 1 ? "shares" : "share"} with you appears here.
+                </p>
+              </EmptyState>
+            </div>
+          )
         ) : (
           <div className="card">
             <EmptyState
@@ -451,56 +484,63 @@ export function useHistoryView({
           </div>
         )}
 
-        <DayTimeline
-          segments={segments}
-          pending={timeline.data?.pending ?? false}
-          loading={timeline.isPending}
-          error={timeline.isError ? timeline.error : null}
-          onRetry={() => void timeline.refetch()}
-          deviceName={deviceName}
-          day={day}
-          onOpen={(segment) => {
-            setOpenSegment(segment.id);
-            focusOn(
-              { lon: segment.centroid.lon, lat: segment.centroid.lat, zoom: 13 },
-              `segment:${segment.id}`,
-            );
-          }}
-        />
+        {meShown ? (
+          <>
+            <DayTimeline
+              segments={segments}
+              pending={timeline.data?.pending ?? false}
+              loading={timeline.isPending}
+              error={timeline.isError ? timeline.error : null}
+              onRetry={() => void timeline.refetch()}
+              deviceName={deviceName}
+              day={day}
+              onOpen={(segment) => {
+                setOpenSegment(segment.id);
+                focusOn(
+                  { lon: segment.centroid.lon, lat: segment.centroid.lat, zoom: 13 },
+                  `segment:${segment.id}`,
+                );
+              }}
+            />
 
-        <VisitList
-          visits={visitList}
-          loading={visits.isPending}
-          error={visits.isError ? visits.error : null}
-          onRetry={() => void visits.refetch()}
-          devices={deviceList}
-          slotOf={colors.slot}
-          day={day}
-          onShow={(visit) => {
-            focusOn({ lon: visit.lon, lat: visit.lat, zoom: 15 }, `visit:${visit.recordedAt}`);
-            const arrived = visit.arrivedAt ?? visit.recordedAt;
-            setScrub({ key: periodKey, value: Math.floor(Date.parse(arrived) / 1000) });
-          }}
-        />
+            <VisitList
+              visits={visitList}
+              loading={visits.isPending}
+              error={visits.isError ? visits.error : null}
+              onRetry={() => void visits.refetch()}
+              devices={deviceList}
+              slotOf={colors.slot}
+              day={day}
+              onShow={(visit) => {
+                focusOn({ lon: visit.lon, lat: visit.lat, zoom: 15 }, `visit:${visit.recordedAt}`);
+                const arrived = visit.arrivedAt ?? visit.recordedAt;
+                setScrub({ key: periodKey, value: Math.floor(Date.parse(arrived) / 1000) });
+              }}
+            />
 
-        <TripList
-          trips={range === null ? undefined : trips.data}
-          loading={trips.isPending}
-          error={trips.isError ? trips.error : null}
-          onRetry={() => void trips.refetch()}
-          devices={deviceList}
-          slotOf={colors.slot}
-          day={day}
-          onShow={(trip) => {
-            const time = Math.floor(Date.parse(trip.startedAt) / 1000);
-            setScrub({ key: periodKey, value: time });
-            const track = trackList.find((candidate) => candidate.deviceId === trip.deviceId);
-            const position = track === undefined ? null : positionAt(track.points, time);
-            if (position !== null) {
-              focusOn({ lon: position.lon, lat: position.lat, zoom: 14 }, `trip:${trip.startedAt}`);
-            }
-          }}
-        />
+            <TripList
+              trips={range === null ? undefined : trips.data}
+              loading={trips.isPending}
+              error={trips.isError ? trips.error : null}
+              onRetry={() => void trips.refetch()}
+              devices={deviceList}
+              slotOf={colors.slot}
+              day={day}
+              onShow={(trip) => {
+                const time = Math.floor(Date.parse(trip.startedAt) / 1000);
+                setScrub({ key: periodKey, value: time });
+                const track = trackList.find((candidate) => candidate.deviceId === trip.deviceId);
+                const position = track === undefined ? null : positionAt(track.points, time);
+                if (position !== null) {
+                  focusOn(
+                    { lon: position.lon, lat: position.lat, zoom: 14 },
+                    `trip:${trip.startedAt}`,
+                  );
+                }
+              }}
+            />
+          </>
+        ) : null}
       </>
     ),
     dialog:
