@@ -5,11 +5,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { enqueueBackfill } from "../../src/processing/backfill";
 import {
   enqueueWindow,
+  type FromLevel,
   rearmWindows,
   takeDeviceWindows,
   takeNextWindow,
 } from "../../src/processing/processingQueue";
-import { processingVersion } from "../../src/processing/processingVersion";
+import { processingVersions } from "../../src/processing/processingVersion";
 import { processWindow } from "../../src/processing/processWindow";
 import { planWindow } from "../../src/processing/runPipeline";
 import { parseTileKey } from "../../src/processing/tileCover";
@@ -256,10 +257,14 @@ describe("the backfill", () => {
     await t.ctx.db.execute(sql`DELETE FROM processing_state`);
     await t.ctx.db.execute(sql`DELETE FROM segments WHERE device_id = ${device.id}`);
 
-    const queued = await enqueueBackfill(t.ctx.db, processingVersion);
-    expect(queued).toBeGreaterThanOrEqual(3);
+    const queued = await enqueueBackfill(t.ctx.db, processingVersions);
+    expect(queued.fromLevel).toBe("averaged");
+    expect(queued.days).toBeGreaterThanOrEqual(3);
     expect(await subMillisecondReadyTimes()).toBe(0);
-    expect(await enqueueBackfill(t.ctx.db, processingVersion)).toBe(0);
+    expect(await enqueueBackfill(t.ctx.db, processingVersions)).toEqual({
+      days: 0,
+      fromLevel: null,
+    });
     const [first] = await takeNextWindow(t.ctx.db, new Date());
     expect(first?.priority).toBe(1);
     const newest = await t.ctx.db.execute<{ newest: string }>(sql`
@@ -289,6 +294,120 @@ describe("the backfill", () => {
     } finally {
       await restarted.close();
     }
+  });
+
+  it("re-runs only the inference, on the stored mapped points, for a history of version 1", async () => {
+    const device = await newDevice("Second look");
+    await upload(device.token, sparseTrain(morning - 6 * 86_400));
+    await upload(device.token, motorwayDrive(morning - 5 * 86_400));
+    await t.ctx.dailyStats.flush();
+    await t.ctx.processing.flush();
+    // What version 1 left behind: one version for every level, and segments without way kinds.
+    await t.ctx.db.execute(sql`
+      INSERT INTO processing_state (key, value) VALUES ('backfill', '{"version": 1}'::jsonb)
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value
+    `);
+    await t.ctx.db.execute(sql`
+      UPDATE segments SET version = 1, features = features - 'wayKinds' WHERE device_id = ${device.id}
+    `);
+    // A mark map matching would not make again: the drive's points on a trunk road instead of
+    // the motorway (the same family, so the same mode).
+    await t.ctx.db.execute(sql`
+      UPDATE processed_points SET way_kind = 'trunk' WHERE device_id = ${device.id} AND way_kind = 'motorway'
+    `);
+    const storedPoints = async () =>
+      (
+        await t.ctx.db.execute(sql`
+          SELECT recorded_at, kept, lat_map, lon_map, way_id, way_kind, snap_m, path_map, version
+          FROM processed_points WHERE device_id = ${device.id} ORDER BY recorded_at
+        `)
+      ).rows;
+    const points = await storedPoints();
+    expect(points.filter((point) => point["way_kind"] === "trunk").length).toBeGreaterThan(100);
+    const modes = await segmentsOf(device.id);
+    const asked = fixture.requested.length;
+
+    const queued = await enqueueBackfill(t.ctx.db, processingVersions);
+    expect(queued.fromLevel).toBe("inferred");
+    expect(queued.days).toBeGreaterThanOrEqual(2);
+    const levels = await t.ctx.db.execute(sql`
+      SELECT DISTINCT from_level FROM processing_queue WHERE reason = 'backfill'
+    `);
+    expect(levels.rows).toEqual([{ from_level: "inferred" }]);
+    const state = await t.ctx.db.execute(
+      sql`SELECT value FROM processing_state WHERE key = 'backfill'`,
+    );
+    expect(state.rows).toEqual([{ value: { versions: processingVersions } }]);
+    expect(await enqueueBackfill(t.ctx.db, processingVersions)).toEqual({
+      days: 0,
+      fromLevel: null,
+    });
+
+    await t.ctx.processing.flush();
+    const left = await t.ctx.db.execute(sql`SELECT 1 FROM processing_queue`);
+    expect(left.rows).toHaveLength(0);
+    // No map data fetched, and the mapped level as it was stored: not matched again.
+    expect(fixture.requested.length).toBe(asked);
+    const after = await storedPoints();
+    expect(after).toEqual(points);
+    expect(after.every((point) => point["version"] === processingVersions.mapped)).toBe(true);
+    expect(await segmentsOf(device.id)).toEqual(modes);
+    const segments = await t.ctx.db.execute<{
+      kind: string;
+      version: number;
+      way_kinds: Record<string, number> | null;
+    }>(sql`
+      SELECT kind, version, features->'wayKinds' AS way_kinds
+      FROM segments WHERE device_id = ${device.id} ORDER BY started_at
+    `);
+    expect(segments.rows.map((segment) => segment.version)).toEqual(
+      modes.map(() => processingVersions.inferred),
+    );
+    const [train, drive] = segments.rows.filter((segment) => segment.kind === "move");
+    expect(train?.way_kinds?.["rail"]).toBeGreaterThan(0.95);
+    expect(drive?.way_kinds).toMatchObject({ trunk: 1, motorway: 0 });
+  });
+
+  it("keeps the more thorough level of a day already queued", async () => {
+    const device = await newDevice("Queued before");
+    await upload(device.token, motorwayDrive(morning - 8 * 86_400));
+    await t.ctx.dailyStats.flush();
+    await t.ctx.processing.flush();
+    /** Queues the device's day the way the backfill does, from `level`. */
+    const queueTheDay = (level: FromLevel) =>
+      t.ctx.db.execute(sql`
+        INSERT INTO processing_queue (device_id, from_at, to_at, reason, from_level, priority, next_at)
+        SELECT s.device_id, (s.date::timestamp AT TIME ZONE u.timezone),
+          ((s.date + 1)::timestamp AT TIME ZONE u.timezone), 'reprocess', ${level}, 0, now()
+        FROM daily_stats s
+        JOIN devices d ON d.id = s.device_id
+        JOIN users u ON u.id = d.user_id
+        WHERE s.device_id = ${device.id}
+      `);
+    const recordVersions = (versions: Record<FromLevel, number>) =>
+      t.ctx.db.execute(sql`
+        INSERT INTO processing_state (key, value) VALUES ('backfill', ${JSON.stringify({ versions })}::jsonb)
+        ON CONFLICT (key) DO UPDATE SET value = excluded.value
+      `);
+    const queuedLevels = async () =>
+      (
+        await t.ctx.db.execute<{ from_level: string }>(sql`
+          SELECT from_level FROM processing_queue WHERE device_id = ${device.id}
+        `)
+      ).rows.map((row) => row.from_level);
+
+    // A day waiting to be worked out from averaging on stays so when only the inference changed …
+    await queueTheDay("averaged");
+    await recordVersions({ ...processingVersions, inferred: processingVersions.inferred - 1 });
+    expect((await enqueueBackfill(t.ctx.db, processingVersions)).fromLevel).toBe("inferred");
+    expect(await queuedLevels()).toEqual(["averaged"]);
+    await t.ctx.db.execute(sql`DELETE FROM processing_queue`);
+    // … and one waiting for the inference alone is matched again when the map matching changed.
+    await queueTheDay("inferred");
+    await recordVersions({ ...processingVersions, mapped: processingVersions.mapped - 1 });
+    expect((await enqueueBackfill(t.ctx.db, processingVersions)).fromLevel).toBe("mapped");
+    expect(await queuedLevels()).toEqual(["mapped"]);
+    await t.ctx.db.execute(sql`DELETE FROM processing_queue`);
   });
 });
 

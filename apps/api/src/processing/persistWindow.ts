@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
 import type { RawPoint } from "./pipelineTypes";
+import type { ProcessingVersions } from "./processingVersion";
 import type { WindowResult } from "./runPipeline";
 
 /** Rows per statement when writing processed points. */
@@ -13,6 +14,8 @@ const iso = (epochSeconds: number): string => new Date(epochSeconds * 1000).toIS
  * and mapped levels and its stops and moves — in the caller's transaction.
  * Points deleted meanwhile are skipped; segments keep their ids where their
  * start stays; a segment that began before the window ends at its start.
+ * A point records the mapped level's version (it holds the averaged and mapped
+ * levels), a segment the inferred level's.
  */
 export async function persistWindow(
   tx: Executor,
@@ -22,10 +25,10 @@ export async function persistWindow(
     to: Date;
     raw: readonly RawPoint[];
     result: WindowResult;
-    version: number;
+    versions: ProcessingVersions;
   },
 ): Promise<void> {
-  const { deviceId, raw, result, version } = input;
+  const { deviceId, raw, result, versions } = input;
   const rows = raw.map((point, index) => {
     const averaged = result.averaged[index];
     const mapped = result.mapped[index] ?? null;
@@ -52,7 +55,7 @@ export async function persistWindow(
       INSERT INTO processed_points (device_id, recorded_at, kept, lat_avg, lon_avg, speed_avg, lat_map,
         lon_map, way_id, way_kind, snap_m, path_map, version, processed_at)
       SELECT ${deviceId}::uuid, r.recorded_at, r.kept, r.lat_avg, r.lon_avg, r.speed_avg, r.lat_map,
-        r.lon_map, r.way_id, r.way_kind, r.snap_m, r.path_map, ${version}, now()
+        r.lon_map, r.way_id, r.way_kind, r.snap_m, r.path_map, ${versions.mapped}, now()
       FROM jsonb_to_recordset(${chunk}::jsonb) AS r(
         recorded_at timestamptz, kept boolean, lat_avg double precision, lon_avg double precision,
         speed_avg real, lat_map double precision, lon_map double precision, way_id bigint,
@@ -108,7 +111,7 @@ export async function persistWindow(
       end_lon, centroid_lat, centroid_lon, features, version, computed_at)
     SELECT ${deviceId}::uuid, started_at, ended_at, kind, mode, mode_inferred, mode_user, confidence,
       review, distance_m, duration_s, max_speed, point_count, start_lat, start_lon, end_lat, end_lon,
-      centroid_lat, centroid_lon, features, ${version}, now()
+      centroid_lat, centroid_lon, features, ${versions.inferred}, now()
     FROM jsonb_to_recordset(${JSON.stringify(segments)}::jsonb) AS r(
       started_at timestamptz, ended_at timestamptz, kind text, mode text, mode_inferred text,
       mode_user text, confidence real, review boolean, distance_m double precision,

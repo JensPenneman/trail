@@ -11,6 +11,7 @@ const bare = (p85: number, extra: Partial<MoveFeatures> = {}): MoveFeatures => (
   speed: { median: p85 * 0.9, p85, max: p85 * 1.1, average: p85 * 0.85 },
   accelerationVariance: null,
   ways: null,
+  wayKinds: null,
   near: null,
   corridor: null,
   dwells: null,

@@ -1247,8 +1247,8 @@ events and refetches people and shares on `share` events.
   devices in the background.
 - the processing worker (§17.4) — 3 s after new work, every minute for
   retries and every 15 minutes for windows waiting on map data and lost
-  windows; the boot-time backfill when the algorithms' version changed; map
-  tiles fetched alongside, within the daily budget.
+  windows; the boot-time backfill when a level's algorithms changed version;
+  map tiles fetched alongside, within the daily budget.
 Jobs must never crash the process; failures are logged. Runs never overlap.
 
 ## 11. CLI
@@ -1864,9 +1864,11 @@ which are merged by hand; majors wait for a person, security ones too.
 
 Trail works out how a device travelled from the recorded points, in four
 levels of calculation, each built on the one before. Recorded data is never
-changed: everything below is derived, carries the algorithm version
-(`processingVersion`, `apps/api/src/processing/processingVersion.ts`) and can
-be rebuilt with `trail reprocess`. The stages are pure functions over plain
+changed: everything below is derived, carries the version of its level's
+algorithms (`processingVersions` in `apps/api/src/processing/processingVersion.ts`:
+a level's version counts the changes to it and to the levels below it, so a
+change bumps its own level and every level above) and can be rebuilt with
+`trail reprocess`. The stages are pure functions over plain
 arrays in `apps/api/src/processing/` (`averagePoints`, `detectStops`,
 `matchToWays`, `extractFeatures`, `scoreModes`, `splitMove`, `applyOverrides`,
 composed by `planWindow`, `mapPiece` per piece of map data and `inferWindow`);
@@ -1900,15 +1902,16 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   `kept`, `lat_avg`, `lon_avg`, `speed_avg`, `lat_map`/`lon_map` (null: not
   mapped), `way_id`, `way_kind` (null for stop points, `other` off every
   way), `snap_m`, `path_map` (jsonb `[[lon, lat], …]`: the way's shape since
-  the move's previous point, both ends excluded), `version`, `processed_at`.
+  the move's previous point, both ends excluded), `version` (the mapped
+  level's: the row holds the averaged and mapped levels), `processed_at`.
 - **segments** — `id` (uuidv7, kept while a segment keeps its start),
   `device_id` → devices (cascade), `started_at`, `ended_at`, `kind`
   `stop|move`, `mode` (the one that counts: `mode_user`, else
   `mode_inferred`; null for stops), `mode_inferred`, `mode_user`,
   `confidence`, `review` (the inference was unsure; `needsReview` = review and
   no `mode_user`), `distance_m`, `duration_s`, `max_speed`, `point_count`,
-  start, end and centroid lat/lon, `features` (jsonb), `version`,
-  `computed_at`. Unique `(device_id, started_at)`, index
+  start, end and centroid lat/lon, `features` (jsonb), `version` (the
+  inferred level's), `computed_at`. Unique `(device_id, started_at)`, index
   `(device_id, ended_at)`. Stops and moves follow each other without overlap
   and share their boundary point; a recording gap without travel lies outside
   every segment.
@@ -1928,7 +1931,10 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   **osm_tile_ways** `(z, x, y, way_id)`; **osm_pois** (`id` `n…|w…|r…`,
   `kind` `station|halt|tram_stop|subway_station|bus_stop|ferry_terminal|aerodrome`,
   `lat`, `lon`, `name`, the tile it came with).
-- **processing_state** — key/value: the version the history was backfilled for.
+- **processing_state** — key/value: `backfill` holds the versions the history
+  was backfilled for, `{ "versions": { "averaged": 1, "mapped": 1, "inferred": 2 } }`
+  (`{ "version": n }`, from before the levels had versions of their own, means
+  n for every level).
 
 ### 17.3 Algorithms
 
@@ -2024,8 +2030,10 @@ time-weighted median, p85 and p98 (top) speed — the points' own speeds for
 intervals up to 30 s, distance along the track over time beyond that — the
 average speed, the acceleration variance of dense intervals, the shares of the
 distance by matched way family (rail, subway, tram, motorway, road, cycleway,
-foot, ferry, none) and near tram tracks, cycleways and footways (they run
-beside roads), the corridor ratio (samples every 250 m along the straight
+foot, ferry, none) and by way kind (`wayKinds`: every kind, a matched point
+without one counting as `other`; summed by family they give the family
+shares), and near tram tracks, cycleways and footways (they run beside
+roads), the corridor ratio (samples every 250 m along the straight
 lines between points within 200 m of a railway, and of a motorway), pauses
 inside the move (≤ 1 m/s for ≥ 15 s, or one slow reading between long
 intervals) near stations and halts (300 m), tram stops (60 m), metro stations
@@ -2094,11 +2102,15 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   queues the gap of any device whose newest point is more than 15 minutes
   newer than its newest processed point (a window lost when the process
   stopped between an upload and its queueing).
-- When `processingVersion` differs from the one in `processing_state`, the
-  worker's start queues every day with points of every device (from
-  `daily_stats`, in the owner's time zone) at low priority and records the
-  version in the same transaction: the backfill runs once per version and
-  resumes after a restart, because the queue is a table.
+- When a level's version (`processingVersions`) differs from the one in
+  `processing_state`, the worker's start queues every day with points of
+  every device (from `daily_stats`, in the owner's time zone) at low
+  priority, from the lowest level that changed (averaged when the history
+  was never processed; a day already queued keeps the more thorough level),
+  and records the versions in the same transaction: the backfill runs once
+  per change and resumes after a restart, because the queue is a table.
+  After a change to the inference alone, the days are worked out again from
+  the stored mapped points and the cached map data, without map matching.
 - `trail reprocess [--device <id>] [--from <iso> --to <iso>] [--from-level
   averaged|mapped|inferred]` queues the range in day windows, then processes
   them itself with the map data already cached; tiles still missing are left

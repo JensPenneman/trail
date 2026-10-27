@@ -5,7 +5,7 @@ import type { EventBus } from "../events/eventBus";
 import { enqueueBackfill, enqueueCatchUp } from "./backfill";
 import type { ProcessingConfig } from "./processingConfig";
 import { rearmWindows, retryWindows, takeNextWindow } from "./processingQueue";
-import { processingVersion } from "./processingVersion";
+import { processingVersions } from "./processingVersion";
 import { processWindow } from "./processWindow";
 import type { TileFetcher } from "./tileFetcher";
 import { staleBefore } from "./tileStore";
@@ -218,9 +218,13 @@ export class ProcessingWorker {
 
   async #backfill(): Promise<void> {
     try {
-      const days = await enqueueBackfill(this.#db, processingVersion);
+      const { days, fromLevel } = await enqueueBackfill(this.#db, processingVersions);
       if (days > 0) {
-        this.#logger.info({ days, version: processingVersion }, "processing backfill queued");
+        // How much is redone: everything, from map matching on, or only the inference.
+        this.#logger.info(
+          { days, fromLevel, versions: processingVersions },
+          "processing backfill queued",
+        );
       }
     } catch (error) {
       this.#logger.error({ err: error }, "processing backfill could not be queued");

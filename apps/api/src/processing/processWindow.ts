@@ -5,7 +5,7 @@ import { lockDeviceProcessing } from "./deviceLock";
 import { persistWindow } from "./persistWindow";
 import type { ProcessingConfig } from "./processingConfig";
 import { awaitTiles, type FromLevel, finishWindows, type QueueRow } from "./processingQueue";
-import { processingVersion } from "./processingVersion";
+import { processingVersions } from "./processingVersion";
 import { inferWindow, mapPiece, piecesToMap, planWindow, type StretchMapping } from "./runPipeline";
 import type { TileKey } from "./tileCover";
 import { cachedTiles, loadMapData, staleBefore } from "./tileStore";
@@ -36,6 +36,9 @@ const levels: readonly FromLevel[] = ["averaged", "mapped", "inferred"];
  * grows to whole segments, the points, visits, trips and overrides are read,
  * the pipeline runs with the cached map data loaded a piece at a time, the
  * results replace the window's derived rows and the queue rows are done.
+ * A window queued from the inferred level keeps each move's mapped points as
+ * stored by the current mapped version, so only the inference runs again (a
+ * move without them is matched).
  * Tiles older than `mapping.tileMaxAgeDays` serve, and the window waits for
  * them to be fetched again. Moves whose map tiles are missing are
  * stored unmapped, and the window waits for those tiles. Null when the
@@ -78,7 +81,7 @@ export async function processWindow(
       : { available: new Set<TileKey>(), stale: new Set<TileKey>() };
     const storedMapping =
       fromLevel === "inferred"
-        ? await loadStoredMapping(tx, deviceId, plan.raw, processingVersion)
+        ? await loadStoredMapping(tx, deviceId, plan.raw, processingVersions.mapped)
         : undefined;
     // The map data a piece at a time: a long window never holds all of it.
     const mappings: StretchMapping[] = [];
@@ -101,7 +104,7 @@ export async function processWindow(
       to: window.to,
       raw: plan.raw,
       result,
-      version: processingVersion,
+      versions: processingVersions,
     });
     await finishWindows(tx, rows);
     // Missing tiles, and old ones (they served this pass): the window is done again once they are here.

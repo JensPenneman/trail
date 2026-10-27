@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { runCli } from "../../src/cli/runCli";
+import { processingVersions } from "../../src/processing/processingVersion";
 import { agentFor, signUp } from "../support/authFlows";
 import { createDevice, postOverland } from "../support/deviceFlows";
 import { overlandFixture } from "../support/overlandFixture";
@@ -123,6 +124,8 @@ describe("trail CLI", () => {
     expect(queue.rows).toHaveLength(0);
 
     const [device] = (await t.ctx.db.execute<{ id: string }>(sql`SELECT id FROM devices`)).rows;
+    // As an older inference left the move: without way kind shares.
+    await t.ctx.db.execute(sql`UPDATE segments SET version = 1, features = features - 'wayKinds'`);
     expect(
       await run(
         "reprocess",
@@ -137,6 +140,14 @@ describe("trail CLI", () => {
       ),
     ).toBe(0);
     expect(output.join("\n")).toContain("1 stops and moves");
+    const inferred = await t.ctx.db.execute(sql`
+      SELECT version, features ? 'wayKinds' AS has_way_kinds, features->'wayKinds' AS way_kinds
+      FROM segments WHERE kind = 'move'
+    `);
+    // The tests have no map data, so the shares are null, as the family shares are.
+    expect(inferred.rows).toEqual([
+      { version: processingVersions.inferred, has_way_kinds: true, way_kinds: null },
+    ]);
     expect(await run("reprocess", "--device", "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3")).toBe(1);
   });
 

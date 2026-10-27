@@ -1,3 +1,4 @@
+import { type WayKind, wayKinds } from "@trail/contracts/transport";
 import { haversineM } from "../tracks/haversine";
 import type { KeptPoint } from "./keptPoint";
 import type { PoiKind } from "./mapData";
@@ -63,6 +64,12 @@ export interface MoveSeries {
   speed: Float64Array;
   /** Distance shares by way family per interval (half from each end point). */
   families: readonly (Partial<WayShares> | null)[];
+  /**
+   * Per point: the position of its way kind in `wayKinds` (`other` for a point
+   * without one), which each interval counts half towards, as for `families`.
+   * Empty when the move has no mapped points.
+   */
+  wayKindAt: Uint8Array;
   /** Per point: near tram tracks, a cycleway, a footway. */
   nearTram: Uint8Array;
   nearCycleway: Uint8Array;
@@ -113,6 +120,11 @@ function stopsNear(
   }
   return counts;
 }
+
+/** Each way kind's position in `wayKinds`, for `MoveSeries.wayKindAt`. */
+const kindPositions = Object.fromEntries(
+  wayKinds.map((kind, position) => [kind, position]),
+) as Readonly<Record<WayKind, number>>;
 
 const railBits = kindBits.rail | kindBits.light_rail;
 const motorwayBits = kindBits.motorway | kindBits.trunk;
@@ -215,6 +227,12 @@ export function moveSeries(
   const distance = new Float64Array(count);
   const speed = new Float64Array(count);
   const families: (Partial<WayShares> | null)[] = new Array(count).fill(null);
+  const wayKindAt = new Uint8Array(mapped === null ? 0 : count);
+  if (mapped !== null) {
+    for (let position = 0; position < count; position += 1) {
+      wayKindAt[position] = kindPositions[mapped[position]?.wayKind ?? "other"];
+    }
+  }
   const ways = map?.ways ?? emptyWaySamples(count);
   const pois = map?.pois ?? null;
   const activity = points.map((point) => motionActivity(point.motion));
@@ -312,6 +330,7 @@ export function moveSeries(
     distance,
     speed,
     families,
+    wayKindAt,
     nearTram: ways.nearTram,
     nearCycleway: ways.nearCycleway,
     nearFoot: ways.nearFoot,

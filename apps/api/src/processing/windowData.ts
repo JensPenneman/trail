@@ -200,12 +200,17 @@ interface StoredRow extends Record<string, unknown> {
   version: number;
 }
 
-/** The mapped level stored for the window's points, per point (`--from-level inferred`). */
+/**
+ * The mapped level stored for the window's points, per point; null where none
+ * was stored by `mappedVersion` (the mapped level's current version). Windows
+ * queued from the inferred level use it: `--from-level inferred`, and the
+ * backfill after a change to the inference.
+ */
 export async function loadStoredMapping(
   db: Executor,
   deviceId: string,
   points: readonly RawPoint[],
-  version: number,
+  mappedVersion: number,
 ): Promise<(MappedPoint | null)[]> {
   const first = points[0];
   const last = points.at(-1);
@@ -218,7 +223,7 @@ export async function loadStoredMapping(
   `);
   const byTime = new Map<number, MappedPoint>();
   for (const row of result.rows) {
-    if (row.version !== version || row.lat_map === null || row.lon_map === null) continue;
+    if (row.version !== mappedVersion || row.lat_map === null || row.lon_map === null) continue;
     byTime.set(epoch(row.recorded_at), {
       lat: row.lat_map,
       lon: row.lon_map,
