@@ -1,9 +1,9 @@
 import type {
   ExpressionSpecification,
   GeoJSONSourceSpecification,
-  LayerSpecification,
   Map as MapLibreMap,
 } from "maplibre-gl";
+import { heatLayerPlacement } from "./heatLayerPlacement";
 import { heatRamp } from "./heatRamp";
 
 export const trailSources = {
@@ -45,24 +45,6 @@ function heatColor(dark: boolean): ExpressionSpecification {
 }
 
 /**
- * Where the heatmap goes: over the basemap's areas, roads and buildings, which
- * would otherwise cut its squares apart (the dark style draws its roads and
- * buildings above its first label), and under its names — below the first
- * text after the basemap's last area.
- */
-function heatBeforeId(layers: readonly LayerSpecification[]): string | undefined {
-  let lastArea = -1;
-  for (const [index, layer] of layers.entries()) {
-    if (layer.id.startsWith("trail-")) continue;
-    if (layer.type === "fill" || layer.type === "fill-extrusion") lastArea = index;
-  }
-  return layers.find(
-    (layer, index) =>
-      index > lastArea && layer.type === "symbol" && layer.layout?.["text-field"] !== undefined,
-  )?.id;
-}
-
-/**
  * Adds Trail's sources and layers to the current style (again after every
  * style switch, which drops them). Data layers go below the basemap's labels
  * so street and place names stay readable; visit and scrubber dots go on top.
@@ -71,21 +53,16 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
   for (const id of Object.values(trailSources)) {
     if (map.getSource(id) === undefined) map.addSource(id, empty);
   }
-  const firstLabel = map.getStyle().layers.find((layer) => layer.type === "symbol")?.id;
+  const styleLayers = map.getStyle().layers;
+  const firstLabel = styleLayers.find((layer) => layer.type === "symbol")?.id;
   const casing = dark ? "rgba(12, 12, 14, 0.85)" : "rgba(255, 255, 255, 0.95)";
   const surface = dark ? "#1c1e20" : "#ffffff";
 
-  if (map.getLayer("trail-heat") === undefined) {
-    map.addLayer(
-      {
-        id: "trail-heat",
-        type: "fill",
-        source: trailSources.heat,
-        // A little of the map shows through, so the streets under a square still read.
-        paint: { "fill-opacity": 0.8 },
-      },
-      heatBeforeId(map.getStyle().layers),
-    );
+  const heat = heatLayerPlacement(styleLayers);
+  const heatAdded = map.getLayer("trail-heat") === undefined;
+  if (heatAdded) {
+    // Opaque: a square is exactly its colour in the key, and the ramp's contrast its own.
+    map.addLayer({ id: "trail-heat", type: "fill", source: trailSources.heat }, heat.beforeId);
   }
   map.setPaintProperty("trail-heat", "fill-color", heatColor(dark));
 
@@ -241,4 +218,8 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
     });
   }
   map.setPaintProperty("trail-cursors", "circle-stroke-color", surface);
+
+  // Last, once Trail's other layers are in under the first label: the names a style draws
+  // under its roads and boundaries go over the squares.
+  if (heatAdded) for (const id of heat.raise) map.moveLayer(id, heat.beforeId);
 }
