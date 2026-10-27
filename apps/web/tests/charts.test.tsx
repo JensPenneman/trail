@@ -470,6 +470,33 @@ describe("BarChart", () => {
     expect(hourTicks(900)).toHaveLength(24);
   });
 
+  it("keeps an axis of counts to whole steps, and colours other things in categorical slots", () => {
+    laidOutAt(600);
+    const counts: ChartRow[] = [
+      { key: "mon", label: "Monday", values: [1, 0] },
+      { key: "tue", label: "Tuesday", values: [1, 1] },
+    ];
+    const { container } = render(
+      <BarChart
+        title="Looks per day"
+        summary="Highest: Tuesday, 2."
+        series={[
+          { key: "people", label: "People", tone: "category-1" },
+          { key: "links", label: "Link visitors", tone: "category-2" },
+        ]}
+        rows={counts}
+        formatValue={(value) => String(value)}
+        integer
+      />,
+    );
+    const axis = [...container.querySelectorAll("text.chart__tick")]
+      .map((tick) => tick.textContent ?? "")
+      .filter((text) => /^\d/.test(text));
+    expect(axis).toEqual(["0", "1", "2"]);
+    expect(container.querySelector(".chart-tone-category-1 .chart__mark")).not.toBeNull();
+    expect(container.querySelector(".legend .chart-tone-category-2")).not.toBeNull();
+  });
+
   it("says there is nothing to show instead of drawing zeros or nothing", () => {
     const zeros = days.map((row) => ({ ...row, values: [0, 0] }));
     const { container, rerender } = render(
