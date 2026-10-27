@@ -6,13 +6,14 @@ import type { Formatter } from "../format/createFormatter";
 /** Below this a phone is effectively standing still (GPS speed jitters around zero). */
 const movingSpeedMs = 0.6;
 
-const motionNames: Readonly<Record<string, string>> = {
-  driving: "driving",
-  automotive: "driving",
-  walking: "walking",
-  running: "running",
-  cycling: "cycling",
-};
+/** A Map: names come from the phone; an object would answer `constructor` from its prototype. */
+const motionNames: ReadonlyMap<string, string> = new Map([
+  ["driving", "driving"],
+  ["automotive", "driving"],
+  ["walking", "walking"],
+  ["running", "running"],
+  ["cycling", "cycling"],
+]);
 
 /** Words for the transport modes Trail infers; `unknown` says nothing. */
 const modeNames: Readonly<Record<TransportMode, string | null>> = {
@@ -50,7 +51,7 @@ export function describeActivity(
       ? null
       : `on a ${tripModeLabel(activity.tripMode)}`;
   const motion = (activity?.motion ?? [])
-    .map((value) => motionNames[value])
+    .map((value) => motionNames.get(value))
     .filter((value) => value !== undefined);
   const doing = mode ?? trip ?? (motion.length > 0 ? motion.join(", ") : null);
   const speed = location.speed;
