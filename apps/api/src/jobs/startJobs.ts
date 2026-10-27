@@ -1,6 +1,8 @@
 import type { AppContext } from "../appContext";
+import { fillHeatLevels } from "../heatmap/fillHeatLevels";
 import { checkSilentDevices } from "./checkSilentDevices";
 import { intervalJob } from "./intervalJob";
+import { oneOffJob } from "./oneOffJob";
 import { pruneExpiredData } from "./pruneExpiredData";
 
 export interface Jobs {
@@ -21,6 +23,16 @@ export function startJobs(ctx: AppContext): Jobs {
         if (Object.values(pruned).some((count) => count > 0)) {
           ctx.logger.info({ pruned }, "expired data removed");
         }
+      },
+    }),
+    // Once after an upgrade that added a stored heat level: the cells of earlier uploads get it.
+    oneOffJob({
+      name: "heat levels",
+      delayMs: 5_000,
+      logger: ctx.logger,
+      task: async (signal) => {
+        const filled = await fillHeatLevels(ctx.db, ctx.logger, signal);
+        if (filled.levels.length > 0) ctx.logger.info(filled, "heat levels filled in");
       },
     }),
   ];

@@ -16,7 +16,7 @@ const latOf = (row: number, tiles: number) =>
  * slippy tile of its level that holds its centre, drawn a little smaller so
  * that a thin gap of the map shows between neighbours, with the ramp step of
  * its count's class. `zoom` is the map's zoom as the cells arrive: the gap is
- * 1.5 px there, also for the finest cells, which grow on screen past zoom 13.
+ * 1.5 px there, also for the finest cells, which grow on screen past zoom 15.
  */
 export function heatFeatures(
   heat: MapHeat | null,

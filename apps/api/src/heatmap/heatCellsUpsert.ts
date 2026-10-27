@@ -1,15 +1,20 @@
 import { type SQL, sql } from "drizzle-orm";
 import { heatCellMaxAccuracy, heatCellZooms, mercatorMaxLatitude } from "./heatCellLevels";
 
-const zoomValues = sql.raw(heatCellZooms.map((zoom) => `(${zoom})`).join(", "));
 const maxLatitude = sql.raw(String(mercatorMaxLatitude));
 
 /**
  * `INSERT INTO heat_cells … ON CONFLICT DO UPDATE` adding the points of
  * `source` (a relation with recorded_at, lat, lon, horizontal_accuracy) to a
- * device's cells at every level. The tile maths matches `tileMath.ts`.
+ * device's cells at `levels` (every stored level unless a rebuild names some).
+ * The tile maths matches `tileMath.ts`.
  */
-export function heatCellsUpsert(deviceId: string, source: SQL): SQL {
+export function heatCellsUpsert(
+  deviceId: string,
+  source: SQL,
+  levels: readonly number[] = heatCellZooms,
+): SQL {
+  const zoomValues = sql.raw(levels.map((zoom) => `(${Math.trunc(zoom)})`).join(", "));
   return sql`
     INSERT INTO heat_cells AS h (device_id, z, x, y, count, first_at, last_at)
     SELECT ${deviceId}::uuid, t.z, t.x, t.y, count(*)::int, min(t.recorded_at), max(t.recorded_at)

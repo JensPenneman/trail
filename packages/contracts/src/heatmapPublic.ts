@@ -24,7 +24,7 @@ export const heatmapPublicResponseSchema = z
   .object({
     cellZoom: z.number().int().meta({
       description:
-        "Slippy-map zoom of the cells, from 6 to 18: the rounded `zoom` + 5. A cell is the slippy-map tile of that zoom.",
+        "Slippy-map zoom of the cells, from 6 to 20: the rounded `zoom` + 5. A cell is the slippy-map tile of that zoom.",
       example: 17,
     }),
     cells: z.array(z.tuple([z.number(), z.number(), z.number().int().positive()])).meta({

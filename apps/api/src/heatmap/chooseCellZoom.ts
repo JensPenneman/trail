@@ -10,7 +10,7 @@ const cellZoomOffset = 5;
 
 /**
  * The level of the heatmap's cells for a map zoom: round(zoom) + 5, within the
- * levels the heatmap answers at (docs/architecture.md §8.2). Past map zoom 13
+ * levels the heatmap answers at (docs/architecture.md §8.2). Past map zoom 15
  * the cells stay at the finest level and grow on screen.
  */
 export function chooseCellZoom(mapZoom: number): number {

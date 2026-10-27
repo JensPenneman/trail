@@ -164,10 +164,10 @@ describe("heatmap", () => {
       cells.map(([lon, lat, count]) => [`${lonToTileX(lon, z)},${latToTileY(lat, z)}`, count]),
     );
   const finestSummed = async (deviceId: string, z: number) => {
-    const shift = 18 - z;
+    const shift = 20 - z;
     const rows = await t.ctx.db.execute<{ x: number; y: number; total: number }>(sql`
       SELECT x >> ${shift}::int AS x, y >> ${shift}::int AS y, sum(count)::int AS total
-      FROM heat_cells WHERE device_id = ${deviceId} AND z = 18 GROUP BY 1, 2
+      FROM heat_cells WHERE device_id = ${deviceId} AND z = 20 GROUP BY 1, 2
     `);
     return new Map(rows.rows.map((row) => [`${row.x},${row.y}`, row.total]));
   };
@@ -186,10 +186,10 @@ describe("heatmap", () => {
     expect(counts).toEqual([...counts].sort((a, b) => b - a));
   });
 
-  it("answers at every level from 6 to 18, summing the next finer stored one", async () => {
-    for (let zoom = 0; zoom <= 15; zoom += 1) {
+  it("answers at every level from 6 to 20, summing the next finer stored one", async () => {
+    for (let zoom = 0; zoom <= 18; zoom += 1) {
       const heatmap = await heatmapOf({ ...viewport, zoom, deviceIds: rideId });
-      const level = Math.min(18, Math.max(6, zoom + 5));
+      const level = Math.min(20, Math.max(6, zoom + 5));
       expect(heatmap.cellZoom, `zoom ${zoom}`).toBe(level);
       // The levels between the stored ones hold exactly what the finest one does, summed.
       expect(byTile(heatmap.cells, level), `zoom ${zoom}`).toEqual(
@@ -247,7 +247,7 @@ describe("heatmap", () => {
   it("keeps to the 20 000 busiest cells and says so", async () => {
     const many = await createDevice(owner, { name: "Many places" });
     const manyId = many.device.id;
-    // 20 001 finest cells, four apart: each one alone in its cell of level 16 too.
+    // 20 001 cells of level 18, four apart: each one alone in its cell of level 16 too.
     await t.ctx.db.execute(sql`
       INSERT INTO heat_cells (device_id, z, x, y, count, first_at, last_at)
       SELECT ${manyId}::uuid, 18, 134000 + (n % 200) * 4, 87500 + (n / 200) * 4, 1 + n % 997, now(), now()

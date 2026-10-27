@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { chooseCellZoom } from "../../src/heatmap/chooseCellZoom";
+import { recordedHeatLevels } from "../../src/heatmap/fillHeatLevels";
 import { heatCellWindow } from "../../src/heatmap/heatCellWindow";
 import { storedCellZoom } from "../../src/heatmap/storedCellZoom";
 import { latToTileY, lonToTileX, tileCentre } from "../../src/heatmap/tileMath";
@@ -44,20 +45,34 @@ describe("chooseCellZoom", () => {
     expect(chooseCellZoom(0)).toBe(6);
     expect(chooseCellZoom(1)).toBe(6);
     expect(chooseCellZoom(13)).toBe(18);
-    expect(chooseCellZoom(16)).toBe(18);
-    expect(chooseCellZoom(24)).toBe(18);
+    expect(chooseCellZoom(14)).toBe(19);
+    expect(chooseCellZoom(15)).toBe(20);
+    expect(chooseCellZoom(16)).toBe(20);
+    expect(chooseCellZoom(24)).toBe(20);
   });
 });
 
 describe("storedCellZoom", () => {
   it("reads the coarsest stored level at least as fine", () => {
-    expect([6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map(storedCellZoom)).toEqual([
-      6, 9, 9, 9, 12, 12, 12, 15, 15, 15, 18, 18, 18,
+    expect([6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(storedCellZoom)).toEqual([
+      6, 9, 9, 9, 12, 12, 12, 15, 15, 15, 18, 18, 18, 20, 20,
     ]);
   });
 
   it("has nothing finer than the finest stored level", () => {
-    expect(() => storedCellZoom(19)).toThrow(RangeError);
+    expect(() => storedCellZoom(21)).toThrow(RangeError);
+  });
+});
+
+describe("recordedHeatLevels", () => {
+  it("reads the levels recorded in processing_state", () => {
+    expect(recordedHeatLevels({ levels: [6, 9, 12, 15, 18, 20] })).toEqual([6, 9, 12, 15, 18, 20]);
+  });
+
+  it("takes an install that recorded nothing for one with the five levels of old", () => {
+    expect(recordedHeatLevels(null)).toEqual([6, 9, 12, 15, 18]);
+    expect(recordedHeatLevels({ levels: ["20"] })).toEqual([6, 9, 12, 15, 18]);
+    expect(recordedHeatLevels("levels")).toEqual([6, 9, 12, 15, 18]);
   });
 });
 
@@ -85,6 +100,12 @@ describe("heatCellWindow", () => {
     // So it reaches past the viewport, as far as the cells at its edges do.
     expect(area.columns[0]).toBeLessThanOrEqual(lonToTileX(3.7, 15));
     expect(area.columns[1]).toBeGreaterThanOrEqual(lonToTileX(3.73, 15));
+  });
+
+  it("sums level 19 from level 20, the finest stored", () => {
+    const area = heatCellWindow([3.7, 51.04, 3.73, 51.06], 19);
+    expect(area).toMatchObject({ stored: 20, shift: 1, wraps: false });
+    expect(area.columns).toEqual([lonToTileX(3.7, 19) * 2, lonToTileX(3.73, 19) * 2 + 1]);
   });
 
   it("keeps the antimeridian's two column ranges", () => {

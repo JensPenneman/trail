@@ -430,6 +430,34 @@ when a tile fails (with the kind of failure; it is tried again later) or the
 daily budget is spent. Which tile — a place someone has been — is logged at
 `LOG_LEVEL=debug` only, like coordinates.
 
+## Heatmap
+
+The heatmap is counted as the points arrive: every upload adds its points to
+squares at six sizes, from about 600 km down to about 24 m (level 20, as fine
+as GPS accuracy is worth), and the map sums them for every zoom in between.
+
+**After an upgrade that adds a size.** Level 20 came with the street-level
+heatmap; the points uploaded before it are not in it yet. About five seconds
+after it starts, the server builds the new level from every device's points
+by itself, once — nothing to run. It goes a device at a time, and an upload
+from that device waits until its squares are built (about 4 seconds for 1.2
+million points), so nothing is counted twice. The log says
+`heat cells filled in` per device (with the milliseconds) and
+`heat levels filled in` at the end; the database records the sizes every
+device has (`processing_state`, key `heat_levels`). Stopped half-way, it
+begins again at the next start.
+
+**Rebuild** every size of every device (or of one) from the points — after
+restoring data by hand, or whenever the heatmap looks wrong:
+
+```sh
+docker exec launchway-trail-app-1 trail recompute
+docker exec launchway-trail-app-1 trail recompute --device <id>
+```
+
+It also rebuilds the daily statistics; an upload of a device waits while that
+device is rebuilt (about 20 seconds for 1.2 million points).
+
 ## Satellite imagery
 
 The map's style control offers Auto (light or dark with the system), Light,

@@ -312,12 +312,15 @@ data that a later fix may still recover.
 
 **heat_cells** — pre-aggregated all-time density for the heatmap: PK
 `(device_id, z, x, y)`; `count` (int), `first_at`, `last_at`. `z` ∈ {6, 9, 12,
-15, 18} (slippy-map tile coordinates); the heatmap answers at every level
-from 6 to 18, the ones between summed on read from the next finer stored one
-(§8.2). Maintained in the same statement that
+15, 18, 20} (slippy-map tile coordinates; level 20 is about 24 m at 51° N, as
+fine as GPS accuracy is worth); the heatmap answers at every level from 6 to
+20, the ones between summed on read from the next finer stored one (§8.2).
+Maintained in the same statement that
 inserts locations (a CTE over `INSERT … RETURNING`, SQL tile math, upsert
 `count = count + excluded.count`), only for points with horizontal accuracy
-≤ 200 m or unknown. Rebuilt per device after deletions (`recompute`).
+≤ 200 m or unknown. Rebuilt per device after deletions (`recompute`), and a
+stored level that a release adds is built once after the upgrade (§10); the
+levels every device has are recorded in `processing_state` (`heat_levels`).
 
 **daily_stats** — PK `(device_id, date)` where `date` is the local calendar day
 in the owner's time zone: `points`, `distance_m`, `first_at`, `last_at`.
@@ -732,22 +735,39 @@ JSON `404 not_found`. Stack traces are logged, never sent.
 ### 8.2 Heatmap
 
 The cells are the slippy-map tiles of level `cellZoom` = `round(zoom) + 5`,
-kept within 6–18 (`chooseCellZoom`). MapLibre draws the tile of level z 512 px
+kept within 6–20 (`chooseCellZoom`). MapLibre draws the tile of level z 512 px
 wide at map zoom z, so a cell is 16 px wide on the map at a whole zoom (11 to
-23 px between two); past map zoom 13 the cells stay at level 18 (about 96 m
-at 51° N) and grow on screen. A stored level is read as it is; any other is
-summed on read from the coarsest stored level that is finer
-(`storedCellZoom`, s = 1 or 2 levels finer, at most 4 × 4 stored cells to a
-cell): `SELECT x >> s, y >> s, sum(count) … GROUP BY 1, 2`. The viewport is
+23 px between two), down to the streets: 16 px at map zoom 15, 32 px at 16;
+past map zoom 15 the cells stay at level 20 (about 24 m at 51° N) and grow on
+screen. A stored level is read as it is; any other is summed on read from
+the coarsest stored level that is finer (`storedCellZoom`, s = 1 or 2 levels
+finer, at most 4 × 4 stored cells to a cell):
+`SELECT x >> s, y >> s, sum(count) … GROUP BY 1, 2`. The viewport is
 widened to whole cells (`heatCellWindow`), so a cell at its edge counts every
 point it holds, as it does in the middle. The answer is the cell centres
 summed across the requested devices (the antimeridian handled when
 `west > east`), at most 20 000 cells (highest counts first,
 `truncated: true`). The query is a range scan of the primary key
 `(device_id, z, x, y)` and a hash aggregate: measured on the production data
-(1.2 M points, 6 350 cells at level 18) every viewport of the dashboard
-answers in under 10 ms, and in at most about 30 ms on cells fifteen times
-denser — no further index or stored level is needed.
+(1.2 M points; 6 350 cells at level 18, 28 035 at level 20) every viewport of
+the dashboard answers in under 10 ms, and in at most about 30 ms on cells
+fifteen times denser — no further index is needed.
+
+Every upload adds its points to the six stored levels in its one statement
+(§6.2). Level 20 costs a batch of 1 000 points of a drive 30 to 60 ms (an
+upload's median 87–92 ms with five levels, 120–151 ms with six, in the
+development container under load); in production, before it, uploads took
+28 ms at the median and the largest ones (about 900 points) 76 ms, 135 ms at
+most — far from the 10 s an upload in flight gets at shutdown. A level that a release adds (level 20) is empty for the points
+uploaded before it; `fillHeatLevels` builds it once after the upgrade, a
+device at a time, from its points, in a transaction under the device's row
+lock — the lock an upload takes first, so an upload of that device waits
+rather than being counted twice (about 4 s for 1.2 M points) — and records
+the levels in `processing_state` (`heat_levels`) once every device has them.
+A start that finds nothing recorded takes the install for one with the five
+levels of earlier releases; stopped half-way, the next start begins again,
+since rebuilding a device's level is the same however often it is done.
+`trail recompute` rebuilds every level, under the same lock.
 
 ### 8.3 Public API v1
 
@@ -1604,6 +1624,9 @@ events and refetches people and shares on `share` events.
   the owner's time zone at run time; a failed pass is retried with the next.
   Changing the time zone (`PATCH /api/me`) rebuilds every day of the user's
   devices in the background.
+- once, 5 s after the start — the stored heat levels that a release added are
+  built from every device's points (`fillHeatLevels`, §8.2), unless
+  `processing_state` (`heat_levels`) says every device has them.
 - the processing worker (§17.4) — 3 s after new work, every minute for
   retries and every 15 minutes for windows waiting on map data and lost
   windows; the boot-time backfill when a level's algorithms changed version;
@@ -1619,7 +1642,7 @@ the image, so `docker compose exec app trail <command>`):
 - `passkey-link <email> [--origin <url>]` — one-time URL to add a passkey (recovery)
 - `invite [--email <email>] [--days <n>]` — invite URL
 - `users` — list accounts
-- `recompute [--device <id>]` — rebuild heat cells + daily stats
+- `recompute [--device <id>]` — rebuild heat cells (every stored level) + daily stats
 - `reprocess [--device <id>] [--from <iso> --to <iso>] [--from-level averaged|mapped|inferred]`
   — work out the processed levels again (§17.4)
 - `prune` — run the retention cleanup now
@@ -2410,9 +2433,12 @@ which are merged by hand; majors wait for a person, security ones too.
   and session-only management); `apiV1Operations.test.ts` calls every v1
   operation of the token branch with real tokens: the same answers as the
   dashboard's routes, scopes, device restrictions and other accounts' ids.
-  `history.test.ts` holds the heatmap at every level from 6 to 18 against the
-  finest stored cells summed, several devices summed, a whole cell at the
-  edge of the view, the antimeridian and the cap of 20 000 cells.
+  `history.test.ts` holds the heatmap at every zoom from 0 to 18 (levels 6
+  to 20) against the finest stored cells summed, several devices summed, a
+  whole cell at the edge of the view, the antimeridian and the cap of 20 000
+  cells; `heatLevels.test.ts` fills level 20 in after an upgrade (once, the
+  points of an upload after the upgrade counted once, the other levels left
+  as they are, nothing recorded when stopped half-way).
   Processing is tested in the real app with map tiles cut from the hand-made
   world by a `FixtureWaySource` (no network): uploads to segments and the
   `segments` event, every level and its degradation, windows waiting for map

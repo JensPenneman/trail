@@ -4471,7 +4471,7 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991,
-            "description": "Slippy-map zoom of the cells, from 6 to 18: the rounded `zoom` + 5. A cell is the slippy-map tile of that zoom.",
+            "description": "Slippy-map zoom of the cells, from 6 to 20: the rounded `zoom` + 5. A cell is the slippy-map tile of that zoom.",
             "example": 17
           },
           "cells": {
