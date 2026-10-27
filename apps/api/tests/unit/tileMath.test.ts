@@ -66,25 +66,27 @@ describe("storedCellZoom", () => {
 
 describe("levelsToRebuild", () => {
   const totals = (entries: [number, number][]) => new Map(entries);
+  const allAt = (total: number): [number, number][] =>
+    [6, 9, 12, 15, 18, 20].map((z) => [z, total]);
 
   it("leaves a device whose levels all hold its points", () => {
-    expect(levelsToRebuild(totals([6, 9, 12, 15, 18, 20].map((z) => [z, 3400])))).toEqual([]);
+    expect(levelsToRebuild(totals(allAt(3400)))).toEqual([]);
     expect(levelsToRebuild(totals([]))).toEqual([]);
   });
 
-  it("rebuilds a level added since, or left behind by an older release, against level 18", () => {
+  it("rebuilds a level added since, or left behind by an older release", () => {
     // Before level 20, or after an older release rebuilt the device's cells: none at 20.
-    expect(levelsToRebuild(totals([6, 9, 12, 15, 18].map((z) => [z, 3400])))).toEqual([20]);
+    expect(levelsToRebuild(totals(allAt(3400).filter(([z]) => z !== 20)))).toEqual([20]);
     // After an older release's uploads: level 20 behind by their points.
-    expect(
-      levelsToRebuild(
-        totals([...[6, 9, 12, 15, 18].map((z): [number, number] => [z, 3400]), [20, 3000]]),
-      ),
-    ).toEqual([20]);
+    expect(levelsToRebuild(totals([...allAt(3400).slice(0, 5), [20, 3000]]))).toEqual([20]);
   });
 
-  it("rebuilds every level when level 18 itself has nothing to go by", () => {
-    expect(levelsToRebuild(totals([[20, 12]]))).toEqual([6, 9, 12, 15, 18, 20]);
+  it("holds every level against the highest total, level 18 too", () => {
+    // A cell gone from level 18: only level 18 is short, and only it is rebuilt.
+    const short18 = allAt(1000).map(([z, total]): [number, number] => [z, z === 18 ? 999 : total]);
+    expect(levelsToRebuild(totals(short18))).toEqual([18]);
+    // Only level 20 has cells: every other level is rebuilt.
+    expect(levelsToRebuild(totals([[20, 12]]))).toEqual([6, 9, 12, 15, 18]);
   });
 });
 
