@@ -6,7 +6,13 @@ import {
 } from "@trail/contracts/transport";
 import { expectAccessible } from "./support/expectAccessible";
 import { openMapOptions } from "./support/mapControls";
-import { type OverlandBatch, overlandBatch } from "./support/overlandBatch";
+import {
+  dayStartMarginMs,
+  type OverlandBatch,
+  type OverlandFeature,
+  overlandBatch,
+  startOfToday,
+} from "./support/overlandBatch";
 import { postOverland } from "./support/postOverland";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
@@ -43,6 +49,49 @@ function restAfter(batch: OverlandBatch): OverlandBatch {
       },
     })),
   };
+}
+
+/**
+ * Seventy-five minutes of today, on foot near Ghent: a walk, a stop in which
+ * the phone shuffles 40 m (a stop that spread), a walk away, then nothing for
+ * 45 minutes and a walk 2 km further on (a gap with travel). It ends a few
+ * minutes ago — or, early in the day, starts after midnight and reaches ahead.
+ */
+function stopAndGapBatch(timeZone: string, now = Date.now()): OverlandBatch {
+  const durationMs = 75 * 60_000;
+  const start = Math.max(
+    now - durationMs - 120_000,
+    startOfToday(now, timeZone) + dayStartMarginMs,
+  );
+  const origin = { lat: 51.05, lon: 3.72 };
+  const locations: OverlandFeature[] = [];
+  /** Metres east and north of the origin at `seconds` after the start. */
+  const at = (seconds: number, east: number, north: number, speed: number, motion: string[]) =>
+    locations.push({
+      type: "Feature",
+      geometry: {
+        type: "Point",
+        coordinates: [origin.lon + east / 69_930, origin.lat + north / 111_195],
+      },
+      properties: {
+        timestamp: new Date(start + seconds * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
+        horizontal_accuracy: 5,
+        speed,
+        motion,
+      },
+    });
+  let t = 0;
+  // Ten minutes on foot, eastwards: 840 m.
+  for (; t <= 600; t += 5) at(t, (t / 600) * 840, 0, 1.4, ["walking"]);
+  // The stop: four minutes still, 40 m north at a shuffle, four minutes still.
+  for (t = 605; t <= 845; t += 5) at(t, 840, 0, 0, ["stationary"]);
+  for (t = 850; t <= 950; t += 5) at(t, 840, ((t - 845) / 100) * 40, 0.4, []);
+  for (t = 955; t <= 1195; t += 5) at(t, 840, 40, 0, ["stationary"]);
+  // Off again: three minutes on foot.
+  for (t = 1200; t <= 1380; t += 5) at(t, 840 + ((t - 1195) / 180) * 250, 40, 1.4, ["walking"]);
+  // The phone records nothing for 45 minutes and wakes up 2 km on.
+  for (t = 4080; t <= 4380; t += 5) at(t, 3100 + ((t - 4080) / 300) * 400, 900, 1.4, ["walking"]);
+  return { locations };
 }
 
 /** Waits until processing has turned the uploads into a move (the worker runs a few seconds later). */
@@ -140,6 +189,38 @@ test("levels change the tracks, and a move's mode can be put right", async ({ pa
   await expect(page.getByRole("region", { name: "Timeline" }).getByText("set by you")).toHaveCount(
     0,
   );
+});
+
+test("a stop shows the walk within it, and a silent phone shows as no data", async ({
+  page,
+  account,
+}) => {
+  await uploadedDevice(page, "Walker", stopAndGapBatch(account.timezone));
+  await processed(page);
+
+  // What the map is given: the stop's place and the points within it, and a jump after the gap.
+  const tracks = await tracksAt(page, "inferred");
+  const stop = tracks.segments.find((segment) => segment.kind === "stop");
+  expect(stop?.centroid).not.toBeNull();
+  expect(stop?.points.length).toBeGreaterThan(1);
+  const moves = tracks.segments.filter((segment) => segment.kind === "move");
+  expect(moves.length).toBeGreaterThanOrEqual(3);
+
+  await page.goto("/?view=history");
+  const timeline = page.getByRole("region", { name: "Timeline" });
+  await expect(timeline.getByText(/^No data · 4[45] mins$/)).toBeVisible();
+  const legend = page.getByRole("region", { name: "Map legend" });
+  await expect(legend.getByText("Moved within a stop")).toBeVisible();
+  await expect(legend.getByText("No data: a gap in the recording")).toBeVisible();
+  await expectAccessible(page, "History with a stop's walk and a gap");
+
+  await timeline.getByRole("button", { name: /^Details of the stop from/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Stop" });
+  await expect(dialog.getByText("Moved within")).toBeVisible();
+  await expect(dialog.getByText(/^\d+ m$/)).toBeVisible();
+  await expectAccessible(page, "a stop's dialog");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
 });
 
 test("the quick toggle on the Me card says how you travel from now on", async ({
