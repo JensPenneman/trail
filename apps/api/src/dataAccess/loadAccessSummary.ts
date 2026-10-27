@@ -79,9 +79,13 @@ export async function loadAccessSummary(
     )
   ).rows;
   const from = new Date(toIso(start?.from ?? now));
+  // An hour counts on the local day it starts in, for the totals as for the series: in a zone
+  // with half hours the hour around the first midnight belongs to the day before. The first
+  // condition only narrows the index range.
   const period: SQL = sql`e.owner_user_id = ${owner.id}
-    AND e.bucket_start >= date_trunc('hour', ${from.toISOString()}::timestamptz)
-    AND e.bucket_start < ${now.toISOString()}::timestamptz`;
+    AND e.bucket_start >= ${from.toISOString()}::timestamptz - interval '1 hour'
+    AND e.bucket_start < ${now.toISOString()}::timestamptz
+    AND (e.bucket_start AT TIME ZONE ${timeZone})::date >= ${firstDay}::date`;
 
   const totals = await db.execute<{
     actor_kind: string;

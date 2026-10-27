@@ -600,6 +600,41 @@ describe("names", () => {
   });
 });
 
+describe("the summary in a zone with half hours", () => {
+  it("counts its period by local day, the way its series does", async () => {
+    // Asia/Kolkata is UTC+05:30: its days begin at hh:30 UTC, in the middle of an hour row.
+    const india = await account("kolkata@allowed.test");
+    await from(india.agent, "patch", apiPaths.me.root, { timezone: "Asia/Kolkata" }).expect(200);
+    const today = localDate(new Date(), "Asia/Kolkata");
+    const dayOf = (date: string, days: number) => {
+      const [year = 0, month = 1, day = 1] = date.split("-").map(Number);
+      return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+    };
+    const firstDay = dayOf(today, -6);
+    const before = dayOf(firstDay, -1);
+    const read = (at: Date): AccessRecord => ({
+      ownerUserId: india.id,
+      channel: "web",
+      actor: { kind: "owner", sessionId: india.sessionId, label: "Safari on iPhone" },
+      action: "dashboard.tracks",
+      access: "read",
+      resource: { hours: at.getUTCHours() },
+      status: 200,
+      at,
+    });
+    // 18:10 UTC is 23:40 the day before the period; 19:10 UTC is 00:40 on its first day.
+    await seed([
+      read(new Date(`${before}T18:10:00.000Z`)),
+      read(new Date(`${before}T19:10:00.000Z`)),
+    ]);
+    const summary = await summaryWith(india.agent, "7");
+    expect(summary.series[0]).toMatchObject({ date: firstDay, events: 1 });
+    expect(summary.series.reduce((sum, entry) => sum + entry.events, 0)).toBe(1);
+    expect(summary.totals.events).toBe(1);
+    expect(summary.own.events).toBe(1);
+  });
+});
+
 describe("retention", () => {
   it("prunes hours older than DATA_ACCESS_RETENTION_DAYS and keeps the rest", async () => {
     await t.ctx.dataAccess.flush();
