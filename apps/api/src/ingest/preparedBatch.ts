@@ -14,7 +14,7 @@ export interface RejectedRecord {
 
 /** An upload split into what will be stored, before touching the database. */
 export interface PreparedBatch {
-  /** Records in the upload: entries of Overland's `locations` array, one message for the other apps. */
+  /** Records in the upload: entries of Overland's `locations` or Traccar Client 9's `location` array, else one. */
   records: number;
   /** Valid location records, including repeats within this batch (for the duplicate count). */
   locationRecords: number;

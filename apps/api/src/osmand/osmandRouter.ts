@@ -12,7 +12,7 @@ import { requireApp } from "../ingest/requireApp";
 import { requireIngestDevice } from "../ingest/requireIngestDevice";
 import { invalidTokenMessage, sendIngestError } from "../ingest/sendIngestError";
 import { isOsmandApp } from "./osmandApps";
-import { osmandRequestOf, readOsmandRequest } from "./osmandRequest";
+import { isJsonBody, osmandRequestOf, readOsmandRequest } from "./osmandRequest";
 import { osmandToken } from "./osmandToken";
 import { prepareOsmand } from "./prepareOsmand";
 
@@ -31,7 +31,11 @@ export function osmandRouter(ctx: AppContext): Router {
     status: 429,
     identifier: "ingest-osmand",
   });
-  // A position is a few hundred bytes of parameters; GPSLogger's every placeholder fits many times.
+  /* Traccar Client 9's JSON holds as many points as its plugin had to send (about
+   * 500 bytes each, up to 1000); a position's parameters are a few hundred
+   * bytes, GPSLogger's every placeholder fits many times in 64 kB. The second
+   * parser skips a body the first has read. */
+  const jsonBody = express.raw({ type: isJsonBody, limit: "1mb" });
   const body = express.raw({ type: () => true, limit: "64kb" });
 
   const onlyGetAndPost: express.RequestHandler = (req, res, next) => {
@@ -48,6 +52,7 @@ export function osmandRouter(ctx: AppContext): Router {
     "/",
     onlyGetAndPost,
     refuseBasicOverHttp,
+    jsonBody,
     body,
     readOsmandRequest,
     identifyDevice(ctx.db, osmandToken),

@@ -155,6 +155,36 @@ describe("the OsmAnd format", () => {
     expect(point?.extra).not.toHaveProperty("_");
   });
 
+  it("takes a Traccar Client 9 batch of several hundred points, JSON up to 1 MB", async () => {
+    const created = await createDevice(owner, { name: "Phone with Traccar 9", source: "traccar" });
+    const token = created.credentials.accessToken;
+    const start = minutesAgo(300).getTime();
+    const location = Array.from(
+      { length: 300 },
+      (_, n) => traccarJson(token, new Date(start + n * 1000)).location,
+    );
+    const batch = JSON.stringify({ location, device_id: token });
+    // Over the 64 kB of a form: a 413 here would keep the phone's whole queue waiting.
+    expect(batch.length).toBeGreaterThan(64 * 1024);
+    await request(t.app)
+      .post(apiPaths.osmand)
+      .set("Content-Type", "application/json")
+      .send(batch)
+      .expect(200);
+    expect(await latestLog(created.device.id)).toMatchObject({
+      source: "traccar",
+      records: 300,
+      locations: 300,
+      rejected: 0,
+    });
+    const tooLarge = await request(t.app)
+      .post(apiPaths.osmand)
+      .set("Content-Type", "application/json")
+      .send(JSON.stringify({ device_id: token, location: [], padding: "x".repeat(1_100_000) }))
+      .expect(413);
+    expect(tooLarge.body).toEqual({ error: "Payload too large" });
+  });
+
   it("stores OsmAnd's GET with its milliseconds and m/s", async () => {
     const at = new Date(minutesAgo(37).getTime() + 250);
     const { id, token } = devices.osmand;

@@ -1,5 +1,7 @@
+import type { IncomingMessage } from "node:http";
 import type { Request, RequestHandler } from "express";
 import { storableText } from "../ingest/storableText";
+import { redactSecrets } from "../ingest/withoutSecrets";
 
 /** One request in the OsmAnd format, its parameters read once for the token and the record. */
 export interface OsmandRequest {
@@ -16,8 +18,13 @@ const maxParameters = 100;
 
 const requests = new WeakMap<Request, OsmandRequest>();
 
-const isJson = (req: Request): boolean =>
-  req.is(["application/json", "application/*+json"]) !== false;
+/**
+ * Traccar Client 9's body: `application/json` (or a `+json` type); any other
+ * body is parameters. A function of the raw request, as the body parser takes it.
+ */
+export function isJsonBody(req: IncomingMessage): boolean {
+  return /^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/i.test(req.headers["content-type"] ?? "");
+}
 
 function collect(
   into: Map<string, string>,
@@ -46,11 +53,12 @@ export const readOsmandRequest: RequestHandler = (req, _res, next) => {
   const body: unknown = req.body;
   if (Buffer.isBuffer(body) && body.length > 0) {
     const text = body.toString("utf8").replace(/^﻿/, "");
-    if (isJson(req)) {
+    if (isJsonBody(req)) {
       try {
         json = { ok: true, value: JSON.parse(text) as unknown };
       } catch {
-        json = { ok: false, preview: storableText(text.slice(0, 2000)) };
+        // Redacted whole, then cut: a token cut in half would no longer be recognised.
+        json = { ok: false, preview: storableText(redactSecrets(text).slice(0, 2000)) };
       }
     } else {
       collect(params, new URLSearchParams(text), counted);

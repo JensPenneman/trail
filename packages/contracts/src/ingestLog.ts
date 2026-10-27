@@ -7,7 +7,7 @@ export const ingestLogEntrySchema = z.object({
   receivedAt: z.iso.datetime(),
   /** The app the device was set up for when the upload came in: it decided how Trail read it. */
   source: deviceAppSchema,
-  /** Records in the upload: entries of Overland's `locations` array, one message for the other apps. */
+  /** Records in the upload: entries of Overland's `locations` or Traccar Client 9's `location` array, else one. */
   records: z.number().int().nonnegative(),
   /** Newly stored location points. */
   locations: z.number().int().nonnegative(),

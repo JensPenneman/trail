@@ -1,7 +1,9 @@
+import type { IncomingMessage } from "node:http";
 import type { Request } from "express";
 import { describe, expect, it } from "vitest";
 import { normaliseOsmandPoint } from "../../src/osmand/normaliseOsmandPoint";
 import {
+  isJsonBody,
   type OsmandRequest,
   osmandRequestOf,
   readOsmandRequest,
@@ -284,7 +286,7 @@ describe("the token of the OsmAnd format", () => {
         originalUrl: url,
         body: body === undefined ? undefined : Buffer.from(body),
         get: (name: string) => (name === "authorization" ? authorization : undefined),
-        is: (types: string[]) => (type !== undefined && types.includes(type) ? type : false),
+        headers: type === undefined ? {} : { "content-type": type },
       } as unknown as Request;
       readOsmandRequest(req, {} as never, () => {});
       return osmandToken(req);
@@ -309,7 +311,7 @@ describe("the token of the OsmAnd format", () => {
         originalUrl: url,
         body: Buffer.from(body),
         get: () => undefined,
-        is: () => false,
+        headers: {},
       } as unknown as Request;
       readOsmandRequest(req, {} as never, () => {});
       return osmandRequestOf(req);
@@ -322,5 +324,47 @@ describe("the token of the OsmAnd format", () => {
     ]);
     const many = Array.from({ length: 120 }, (_, n) => `p${n}=1`).join("&");
     expect(requestOf(`/api/osmand?${many}`, "lon=3")).toMatchObject({ overflow: true });
+  });
+});
+
+describe("the body of the OsmAnd format", () => {
+  const withType = (type?: string) =>
+    ({ headers: type === undefined ? {} : { "content-type": type } }) as IncomingMessage;
+
+  it("is JSON for a JSON type only, which gets the larger limit", () => {
+    for (const type of [
+      "application/json",
+      "application/json; charset=utf-8",
+      "Application/JSON",
+      "application/vnd.traccar+json",
+    ]) {
+      expect(isJsonBody(withType(type)), type).toBe(true);
+    }
+    for (const type of [
+      undefined,
+      "",
+      "application/x-www-form-urlencoded",
+      "text/plain",
+      "application/jsonp",
+      "text/json",
+    ]) {
+      expect(isJsonBody(withType(type)), String(type)).toBe(false);
+    }
+  });
+
+  it("keeps a JSON body it cannot read without a token, even one cut where the preview ends", () => {
+    const req = {
+      originalUrl: "/api/osmand",
+      // The token starts 20 characters before the preview's end: cut first, its start would stay.
+      body: Buffer.from(`{${"a".repeat(1979)}${token}}`),
+      get: () => undefined,
+      headers: { "content-type": "application/json" },
+    } as unknown as Request;
+    readOsmandRequest(req, {} as never, () => {});
+    const { json } = osmandRequestOf(req);
+    if (json === null || json.ok) throw new Error("the body was read as JSON");
+    expect(json.preview).toHaveLength(1991);
+    expect(json.preview.endsWith("[redacted]}")).toBe(true);
+    expect(json.preview).not.toContain(token.slice(0, 12));
   });
 });

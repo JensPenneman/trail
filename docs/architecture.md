@@ -423,7 +423,7 @@ set the phones up is [docs/trackers.md](trackers.md) (Overland's own:
 |---|---|---|---|---|
 | `POST /api/overland` (§6.4), `GET` the account probe | Overland (iOS) | `Authorization: Bearer`, `?token=`, `?access_token=` | Overland's JSON batch, ≤ 5 MB | `{"result":"ok"}`, with `set` once a preset waits (§6.3) |
 | `POST /api/owntracks` (§6.5) | OwnTracks (iOS, Android) in HTTP mode | HTTP Basic password (any user name; HTTPS only), `Authorization: Bearer` | one JSON message, ≤ 1 MB | `200 []` |
-| `GET`/`POST /api/osmand` (§6.6) | Traccar Client, OsmAnd, GPSLogger (and other clients of the format) | `Authorization: Bearer`, HTTP Basic password (HTTPS only), `?token=`/`?access_token=`, the device identifier `id`/`deviceid`, JSON `device_id` | query or form, or Traccar Client 9's JSON, ≤ 64 kB | `200`, empty |
+| `GET`/`POST /api/osmand` (§6.6) | Traccar Client, OsmAnd, GPSLogger (and other clients of the format) | `Authorization: Bearer`, HTTP Basic password (HTTPS only), `?token=`/`?access_token=`, the device identifier `id`/`deviceid`, JSON `device_id` | query or form, ≤ 64 kB; Traccar Client 9's JSON, ≤ 1 MB | `200`, empty |
 
 **Tokens.** One per device: `trl_` + 32 random bytes base64url, stored as
 SHA-256 in `devices.token_hash`. Whatever carries it, a value without that
@@ -672,8 +672,10 @@ the URL templates Trail gives them; Traccar Client 9 posted the JSON of
 Transistorsoft's background-geolocation plugin. `HEAD` and other methods →
 `405` (`Allow: GET, POST`): a `GET` of this format stores what it carries.
 
-The body (raw, ≤ 64 kB) is read before the token is looked up, since Traccar
-Client sends its device identifier — the token — in the form; the
+The body (raw: ≤ 64 kB, or ≤ 1 MB for a JSON type, as Traccar Client 9 sends
+up to 1000 locations of about 500 bytes in one body) is read before the token
+is looked up, since Traccar Client sends its device identifier — the token —
+in the form; the
 parameters are the query's and then the form's, the first value of each name,
 at most 100 (`readOsmandRequest`). The token is the first token-shaped value
 of: `Authorization: Bearer`, the HTTP Basic password (HTTPS only), `token`,
@@ -1922,7 +1924,8 @@ invalid value).
   deleting a device or an account and rebuilding derived data lift that limit
   for their own transaction.
 - Body limits: 100 kB default, 1 MB on `/mcp`, 5 MB on `/api/overland`, 1 MB
-  on `/api/owntracks`, 64 kB (and 100 parameters) on `/api/osmand`.
+  on `/api/owntracks`, 64 kB (and 100 parameters) on `/api/osmand`, 1 MB there
+  for Traccar Client 9's JSON.
 - Device tokens (§6): the ingest endpoints read them from the
   `Authorization` header (Bearer; HTTP Basic's password over HTTPS only —
   `req.secure`, so plain HTTP behind no trusted proxy is refused with 403
