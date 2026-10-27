@@ -650,3 +650,15 @@ describe("device names as answers show them", () => {
     );
   });
 });
+
+describe("the devices' apps", () => {
+  it("come with every device, in the data and in the summary", async () => {
+    const phone = await createDevice(owner, { name: "Android phone", source: "owntracks" });
+    const client = await clientFor("agent");
+    const { data, text } = await call(client, "list_devices", {}, listDevicesOutputSchema);
+    expect(data.devices.find((device) => device.id === phone.device.id)?.app).toBe("owntracks");
+    expect(data.devices.find((device) => device.id === commuter)?.app).toBe("overland");
+    expect(text).toContain(`"Android phone" (${phone.device.id}): OwnTracks, `);
+    expect(text).toContain(`"Commuter" (${commuter}): Overland, `);
+  });
+});
