@@ -1,0 +1,125 @@
+/* Lines of the access log: a card of rows per day, each row opening to its facts. */
+
+.access-lines {
+  display: grid;
+  gap: var(--space-6);
+  container-type: inline-size;
+}
+
+.access-line {
+  position: relative;
+  min-width: 0;
+}
+
+/* A hairline between rows, as between the rows of Settings. */
+.access-line + .access-line::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  inset-inline: var(--space-4) 0;
+  border-top: var(--border-width) solid var(--color-border);
+  pointer-events: none;
+}
+
+.access-line__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: calc(var(--target) + var(--space-1));
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  list-style: none;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease;
+}
+
+.access-line__summary::-webkit-details-marker {
+  display: none;
+}
+
+.access-line__summary:hover {
+  background: var(--color-surface-2);
+}
+
+/* Inside the card, which clips: the ring goes inside the row. */
+.access-line__summary:focus-visible {
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
+.access-line__text {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 0.0625rem;
+  min-width: 0;
+}
+
+.access-line__title {
+  font-weight: 550;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.access-line__meta {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.access-line__chevron {
+  flex-shrink: 0;
+  color: var(--color-text-2);
+  transition: rotate var(--duration-fast) ease;
+}
+
+.access-line__details[open] .access-line__chevron {
+  rotate: 180deg;
+}
+
+.access-line__facts {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-4);
+  font-size: var(--text-s);
+}
+
+/* Label and value side by side where there is room, the label above it on a phone. */
+.access-line__fact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 var(--space-3);
+}
+
+.access-line__fact dt {
+  color: var(--color-text-2);
+}
+
+.access-line__fact dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@container (min-width: 30rem) {
+  .access-line__fact {
+    grid-template-columns: 7.5rem minmax(0, 1fr);
+  }
+}
+
+.access-lines__more {
+  display: flex;
+  justify-content: center;
+}
+
+.access-lines__end {
+  margin: 0;
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  text-align: center;
+}
+
+.access-line__more {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-4);
+  font-size: var(--text-s);
+}

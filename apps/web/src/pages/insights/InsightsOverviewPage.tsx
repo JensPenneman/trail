@@ -12,11 +12,13 @@ import { ModeSeriesChart } from "./ModeSeriesChart";
 import { ModeTable } from "./ModeTable";
 import { OverviewTiles } from "./OverviewTiles";
 import { useInsightsSearch } from "./useInsightsSearch";
+import { WhoViewedYouCard } from "./WhoViewedYouCard";
 
 /**
  * Insights' overview (`/insights`): how the signed-in person travelled in a
  * period — the totals against the period before, the modes' parts, a series
- * stacked by mode and a table that opens each mode's page.
+ * stacked by mode and a table that opens each mode's page — and who viewed
+ * them in the last 30 days.
  */
 export function InsightsOverviewPage() {
   const state = useInsightsSearch();
@@ -87,6 +89,7 @@ export function InsightsOverviewPage() {
               </>
             )}
           </section>
+          <WhoViewedYouCard />
         </>
       )}
     </InsightsFrame>

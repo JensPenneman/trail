@@ -1,0 +1,23 @@
+/* The access log's filters: two columns on a phone (320 px included), four where they fit. */
+
+.access-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.access-filters .field {
+  min-width: 0;
+}
+
+@media (min-width: 40rem) {
+  .access-filters {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.access-filters__clear {
+  display: flex;
+  justify-content: flex-start;
+  margin-block-start: calc(var(--space-2) * -1);
+}

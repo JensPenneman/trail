@@ -1,5 +1,6 @@
 import type { ApiToken } from "@trail/contracts/apiToken";
 import type { PublicConfig } from "@trail/contracts/config";
+import type { DataAccessSummary } from "@trail/contracts/dataAccess";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { Passkey } from "@trail/contracts/passkey";
 import type { SessionInfo } from "@trail/contracts/session";
@@ -20,6 +21,8 @@ export interface SettingsBadgeSources {
   tokens?: readonly ApiToken[] | undefined;
   devices?: readonly DeviceSummary[] | undefined;
   config?: PublicConfig | undefined;
+  /** Who looked in the last 30 days (the Who viewed you page's default period). */
+  viewers?: DataAccessSummary | undefined;
 }
 
 const working = (token: ApiToken, now: number): boolean =>
@@ -49,6 +52,12 @@ export function settingsBadgeValue(
     case "links": {
       const active = (sources.links ?? []).filter((link) => link.status === "active").length;
       return active === 0 ? null : `${count(active)} active`;
+    }
+    case "viewers": {
+      if (sources.viewers === undefined) return null;
+      const { people, links, tokens } = sources.viewers;
+      const viewers = people.length + links.length + tokens.length;
+      return viewers === 0 ? null : count(viewers);
     }
     case "tokens":
       return counted(sources.tokens?.filter((token) => working(token, sources.now)));

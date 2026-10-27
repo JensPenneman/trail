@@ -48,6 +48,7 @@ const detailModules: Readonly<Record<SettingsDetailId, LazyPage>> = {
     import("../pages/settings/PublicLinkPage").then((m) => ({ Component: m.PublicLinkPage })),
   token: () =>
     import("../pages/settings/ApiTokenPage").then((m) => ({ Component: m.ApiTokenPage })),
+  viewer: () => import("../pages/settings/ViewerPage").then((m) => ({ Component: m.ViewerPage })),
 };
 
 /** A path of the tree relative to `/settings`, as a child route takes it. */

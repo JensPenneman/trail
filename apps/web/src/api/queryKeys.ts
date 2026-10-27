@@ -1,3 +1,5 @@
+import type { DataAccessActorKind, DataAccessChannel } from "@trail/contracts/dataAccess";
+
 /* Type aliases rather than interfaces: they must be assignable to the query-string record of `apiFetch`. */
 
 /** `[from, to)` instants plus an optional device filter (null = all of the user's devices). */
@@ -55,6 +57,22 @@ export type ActivityParams = {
   deviceIds: readonly string[] | null;
 };
 
+/** A period of the data access log summed up, of everyone or of one actor (an actor id). */
+export type AccessSummaryParams = {
+  days: 7 | 30 | 90;
+  actorId: string | null;
+};
+
+/** The lines of the data access log a list shows (its pages follow the cursor). */
+export type AccessLogParams = {
+  actor: readonly DataAccessActorKind[] | null;
+  channel: readonly DataAccessChannel[] | null;
+  action: string | null;
+  /** The first hour, an instant; null for everything kept. */
+  from: string | null;
+  actorId: string | null;
+};
+
 /**
  * Every TanStack Query key in one place. The first element names the resource,
  * so a prefix such as `queryKeys.all.tracks` invalidates every cached range.
@@ -74,6 +92,7 @@ export const queryKeys = {
     deviceMode: ["device-mode"],
     personTracks: ["person-tracks"],
     insights: ["insights"],
+    accessLog: ["access-log"],
   },
   config: ["config"],
   session: ["session"],
@@ -117,4 +136,9 @@ export const queryKeys = {
   /** Creating an API token: its dialog stays open until the one-time secret is shown. */
   createApiToken: ["create-api-token"],
   deleteDevice: (deviceId: string) => ["delete-device", deviceId] as const,
+  /** Who looked at the signed-in person's data: a summary, and the lines page by page. */
+  accessSummary: (params: AccessSummaryParams) => ["access-log", "summary", params] as const,
+  accessLog: (params: AccessLogParams) => ["access-log", "lines", params] as const,
+  recentAccess: (actorId: string, count: number) =>
+    ["access-log", "recent", actorId, count] as const,
 } as const;

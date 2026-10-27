@@ -153,29 +153,3 @@ describe("Settings › Notifications", () => {
     expect(await screen.findByRole("switch", { name: "iPhone 16" })).toBeDisabled();
   });
 });
-
-describe("Settings › the pages of the access log", () => {
-  it("say what they will show, and where to look until then", async () => {
-    mockApi(standardRoutes());
-    renderSettings("/settings/privacy/viewers");
-    expect(await heading("Who viewed you")).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { level: 2, name: "Nothing to show here yet" }),
-    ).toBeInTheDocument();
-    const until = screen.getByRole("list", { name: "Until then" });
-    expect(within(until).getByRole("link", { name: "Sharing" })).toHaveAccessibleDescription(
-      "When each person last looked",
-    );
-    expect(document.title).toBe("Who viewed you · Settings · Trail");
-  });
-
-  it("include the access log, with the preference for one's own activity", async () => {
-    mockApi(standardRoutes());
-    renderSettings("/settings/privacy/access-log");
-    expect(await heading("Access log")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Preferences" })).toHaveAttribute(
-      "href",
-      "/settings/preferences#access-log",
-    );
-  });
-});

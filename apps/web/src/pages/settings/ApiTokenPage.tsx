@@ -2,6 +2,7 @@ import { apiScopeDescriptions } from "@trail/contracts/apiScope";
 import { type ApiToken, type ApiTokenTemplate, templateOfScopes } from "@trail/contracts/apiToken";
 import { useState } from "react";
 import { useParams } from "react-router";
+import { TokenUsage } from "../../accessLog/TokenUsage";
 import { useFormatter } from "../../format/useFormatter";
 import { useApiTokens } from "../../queries/useApiTokens";
 import { useDevices } from "../../queries/useDevices";
@@ -31,7 +32,8 @@ const templateLabels: Readonly<Record<ApiTokenTemplate, string>> = {
 
 /**
  * Settings › API tokens › one token: what it may do and where, until when,
- * when it was last used; a new secret (roll) or the end of it (revoke).
+ * when it was last used and what it did (the access log); a new secret
+ * (roll) or the end of it (revoke).
  */
 export function ApiTokenPage() {
   const { tokenId } = useParams();
@@ -83,6 +85,7 @@ export function ApiTokenPage() {
         <SettingsFact label="Use">{tokenLastUseText(token, format, now)}</SettingsFact>
         <SettingsFact label="Created">{format.dateTime(token.createdAt)}</SettingsFact>
       </SettingsGroup>
+      <TokenUsage tokenId={token.id} />
       <SettingsGroup title="Scopes">
         {token.scopes.map((scope) => (
           <SettingsRow
