@@ -3,9 +3,11 @@ import { accuracyFeatures } from "../src/map/accuracyFeatures";
 import { boundsOf } from "../src/map/boundsOf";
 import { circleRing } from "../src/map/circleRing";
 import { heatmapParamsFor } from "../src/map/heatmapParamsFor";
+import { lineSpreadM, metresBetween } from "../src/map/lineGeometry";
 import { positionExtent } from "../src/map/positionExtent";
 import { rasterStyle } from "../src/map/rasterStyle";
 import { trackFeatures } from "../src/map/trackFeatures";
+import { transportFeatures } from "../src/map/transportFeatures";
 import { personPositions } from "../src/people/personPositions";
 import { levelTracksToMap } from "../src/transport/levelTracksToMap";
 import { ana, bob, ids, levelTracks } from "./support/fixtures";
@@ -160,8 +162,59 @@ describe("levelTracksToMap", () => {
     ).toEqual([
       ["stop", "#stationary", true, false],
       ["move", "#train", true, true],
+      // The unprocessed points start back where the move began: a connector joins them.
+      ["gap", "#unknown", false, false],
       ["track", "#device", false, false],
     ]);
+  });
+
+  it("bridges a recording gap with a connector and gives a stop its place", () => {
+    const response = levelTracks(
+      "2026-09-29T22:00:00.000Z",
+      "2026-09-30T22:00:00.000Z",
+      "inferred",
+    );
+    const [stop, move] = response.segments;
+    if (stop === undefined || move === undefined) throw new Error("no segments in the fixture");
+    const lastOfMove = move.points.at(-1) ?? [0, 0, 0];
+    // The phone came back 700 m north of where the train ride ended, an hour later.
+    const later = {
+      ...move,
+      id: "019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d49",
+      startedAt: new Date((lastOfMove[2] + 3600) * 1000).toISOString(),
+      points: [
+        [lastOfMove[0], lastOfMove[1] + 0.0063, lastOfMove[2] + 3600],
+        [lastOfMove[0], lastOfMove[1] + 0.01, lastOfMove[2] + 3900],
+      ] as [number, number, number][],
+    };
+    const { transport } = levelTracksToMap({ ...response, segments: [stop, move, later] }, colors);
+    expect(transport.map((segment) => segment.kind)).toEqual(["stop", "move", "gap", "move"]);
+    const gap = transport[2];
+    expect(gap).toMatchObject({ selectable: false, color: "#unknown", place: null });
+    expect(gap?.line).toEqual([
+      [lastOfMove[0], lastOfMove[1]],
+      [lastOfMove[0], lastOfMove[1] + 0.0063],
+    ]);
+    // The stop's dot goes to its place, the middle of its points.
+    expect(transport[0]?.place).toEqual([stop.centroid?.lon, stop.centroid?.lat]);
+    expect(transport[1]?.place).toBeNull();
+  });
+
+  it("connects a device's segments only to its own, and only where they do not meet", () => {
+    const response = levelTracks(
+      "2026-09-29T22:00:00.000Z",
+      "2026-09-30T22:00:00.000Z",
+      "inferred",
+    );
+    const [stop, move] = response.segments;
+    if (stop === undefined || move === undefined) throw new Error("no segments in the fixture");
+    const otherDevice = { ...move, deviceId: ids.car, id: "019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d48" };
+    const { transport } = levelTracksToMap(
+      { ...response, segments: [stop, move, otherDevice] },
+      colors,
+    );
+    // The stop and the move share their boundary point; the car's line is its own.
+    expect(transport.map((segment) => segment.kind)).toEqual(["stop", "move", "move"]);
   });
 
   it("gives tracks in device colours at the other levels", () => {
@@ -170,5 +223,70 @@ describe("levelTracksToMap", () => {
     expect(transport).toEqual([]);
     expect(tracks).toHaveLength(1);
     expect(tracks[0]?.segments[0]).toHaveLength(3);
+  });
+});
+
+describe("transportFeatures", () => {
+  const base = { selectable: true, color: "#stationary", review: false, place: null };
+  const station: [number, number] = [3.71, 51.0356];
+
+  it("draws a stop that spread with its path dotted, its dot at its place", () => {
+    // From the platform to the bike shed, 120 m south.
+    const walked = {
+      ...base,
+      id: "walked",
+      kind: "stop" as const,
+      line: [station, [3.71, 51.0351], [3.7098, 51.03452]] as const,
+      place: [3.71, 51.0349] as const,
+    };
+    const still = {
+      ...base,
+      id: "still",
+      kind: "stop" as const,
+      line: [station, [3.71005, 51.03565]] as const,
+    };
+    const { stops, stopPaths, lines, gaps } = transportFeatures([walked, still]);
+    expect(stops.features.map((feature) => feature.geometry.coordinates)).toEqual([
+      [3.71, 51.0349],
+      station,
+    ]);
+    expect(stopPaths.features.map((feature) => feature.properties.id)).toEqual(["walked"]);
+    expect(stopPaths.features[0]?.geometry.coordinates).toHaveLength(3);
+    expect(lines.features).toEqual([]);
+    expect(gaps.features).toEqual([]);
+  });
+
+  it("draws a connector apart from the lines, and never as a selectable segment", () => {
+    const gap = {
+      ...base,
+      id: "gap",
+      selectable: false,
+      kind: "gap" as const,
+      color: "#unknown",
+      line: [station, [3.72, 51.04]] as const,
+    };
+    const move = {
+      ...base,
+      id: "move",
+      kind: "move" as const,
+      line: [station, [3.7, 51.03]] as const,
+    };
+    const { lines, gaps } = transportFeatures([move, gap]);
+    expect(lines.features.map((feature) => feature.properties.id)).toEqual(["move"]);
+    expect(gaps.features.map((feature) => feature.properties)).toEqual([
+      { id: "gap", selectable: false, color: "#unknown", review: false },
+    ]);
+  });
+
+  it("measures how far a line's points lie apart", () => {
+    expect(metresBetween([3.71, 51.0356], [3.71, 51.0347])).toBeCloseTo(100, 0);
+    expect(lineSpreadM([[3.71, 51.0356]])).toBe(0);
+    expect(
+      lineSpreadM([
+        [3.71, 51.0352],
+        [3.71, 51.0356],
+        [3.71, 51.0347],
+      ]),
+    ).toBeCloseTo(100, 0);
   });
 });

@@ -1,5 +1,5 @@
 import type { Segment } from "@trail/contracts/transport";
-import { useId } from "react";
+import { type ReactElement, useId, useMemo } from "react";
 import { useFormatter } from "../format/useFormatter";
 import { localDateOf } from "../time/localDateOf";
 import { Button } from "../ui/Button";
@@ -27,10 +27,35 @@ interface DayTimelineProps {
   onOpen: (segment: Segment) => void;
 }
 
+/** Longer than this between two segments of a device, the timeline says there is no data. */
+const quietGapS = 60;
+
+/**
+ * The gaps in the recording, by the id of the segment after them: where a
+ * device's phone recorded nothing for more than a minute between two of its
+ * segments (stops and moves otherwise meet).
+ */
+function gapsBefore(segments: readonly Segment[]): Map<string, { from: string; seconds: number }> {
+  const gaps = new Map<string, { from: string; seconds: number }>();
+  const ended = new Map<string, string>();
+  for (const segment of segments) {
+    const before = ended.get(segment.deviceId);
+    if (before !== undefined) {
+      const seconds = (Date.parse(segment.startedAt) - Date.parse(before)) / 1000;
+      if (seconds > quietGapS) gaps.set(segment.id, { from: before, seconds });
+    }
+    if (before === undefined || Date.parse(segment.endedAt) > Date.parse(before)) {
+      ended.set(segment.deviceId, segment.endedAt);
+    }
+  }
+  return gaps;
+}
+
 /**
  * The stops and moves of the day as text (docs/architecture.md §17.6): every
  * segment on the map is here too, and opens the same dialog — the keyboard's
- * and the screen reader's way to the modes.
+ * and the screen reader's way to the modes. Where the phone recorded nothing
+ * for more than a minute between two of them, a quiet row says so.
  */
 export function DayTimeline({
   segments,
@@ -44,6 +69,7 @@ export function DayTimeline({
 }: DayTimelineProps) {
   const format = useFormatter();
   const headingId = useId();
+  const gaps = useMemo(() => gapsBefore(segments ?? []), [segments]);
   const when = (instant: string) =>
     day === null || localDateOf(instant, format.timeZone) !== day
       ? format.dayTime(instant)
@@ -78,10 +104,29 @@ export function DayTimeline({
         </div>
       ) : (
         <PlainList ordered className="row-list card card--flush day-timeline">
-          {(segments ?? []).map((segment) => {
+          {(segments ?? []).flatMap((segment) => {
             const name = deviceName(segment.deviceId);
             const move = segment.kind === "move";
-            return (
+            const gap = gaps.get(segment.id);
+            const rows: ReactElement[] = [];
+            if (gap !== undefined) {
+              rows.push(
+                <li
+                  key={`gap-${segment.id}`}
+                  className="row-list__item day-timeline__item day-timeline__item--gap"
+                >
+                  <span className="day-timeline__gap" aria-hidden="true" />
+                  <div className="row-list__main">
+                    <p className="row-list__title">No data · {format.duration(gap.seconds)}</p>
+                    <p className="row-list__meta">
+                      {name === null ? null : `${name} · `}
+                      {when(gap.from)} – {when(segment.startedAt)}
+                    </p>
+                  </div>
+                </li>,
+              );
+            }
+            rows.push(
               <li
                 key={segment.id}
                 className={`row-list__item day-timeline__item day-timeline__item--${segment.kind}`}
@@ -120,8 +165,9 @@ export function DayTimeline({
                 >
                   Details
                 </Button>
-              </li>
+              </li>,
             );
+            return rows;
           })}
         </PlainList>
       )}

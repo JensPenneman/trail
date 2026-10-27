@@ -23,3 +23,27 @@
 .day-timeline__mark--review {
   background: var(--color-warning-soft);
 }
+
+.day-timeline__item--gap .row-list__title {
+  color: var(--color-text-2);
+  font-weight: 400;
+}
+
+/* The map's connector across a gap: a thin dashed line. */
+.day-timeline__gap {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 0.125rem;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-text-2) 0 0.35rem,
+    transparent 0.35rem 0.6rem
+  );
+}
+
+@media (forced-colors: active) {
+  .day-timeline__gap {
+    forced-color-adjust: none;
+    background: repeating-linear-gradient(90deg, CanvasText 0 0.35rem, transparent 0.35rem 0.6rem);
+  }
+}
