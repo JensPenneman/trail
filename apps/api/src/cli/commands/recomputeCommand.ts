@@ -28,10 +28,12 @@ export async function recomputeCommand(
     return;
   }
   for (const device of targets) {
-    await ctx.db.transaction(async (tx) => {
-      await rebuildHeatCells(tx, device.id);
-      const days = await rebuildDailyStats(tx, device.id, device.timezone);
-      console.log(`${device.name} (${device.id}): heat cells rebuilt, ${days} days of statistics`);
-    });
+    // The heat cells under the device's lock, which uploads of the device wait for; the
+    // statistics after it, without it: they take longer, and uploads would run out of time.
+    await ctx.db.transaction((tx) => rebuildHeatCells(tx, device.id));
+    const days = await ctx.db.transaction((tx) =>
+      rebuildDailyStats(tx, device.id, device.timezone),
+    );
+    console.log(`${device.name} (${device.id}): heat cells rebuilt, ${days} days of statistics`);
   }
 }
