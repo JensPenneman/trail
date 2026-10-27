@@ -13,14 +13,21 @@ import type { ExportVisit } from "./exportVisit";
 const withoutNulls = (properties: Record<string, unknown>): Record<string, unknown> =>
   Object.fromEntries(Object.entries(properties).filter(([, value]) => value !== null));
 
+/* What the phone sent besides the columns, under its own names, and the columns over it
+ * where they have a value: an empty column never hides a value of the same name (the
+ * OsmAnd format's `wifi`, an access point, stays when Trail has no Wi-Fi network). */
+const propertiesOf = (
+  extra: Record<string, unknown> | null,
+  columns: Record<string, unknown>,
+): Record<string, unknown> => withoutNulls({ ...extra, ...withoutNulls(columns) });
+
 const point = (lon: number, lat: number) => ({ type: "Point", coordinates: [lon, lat] });
 
 function locationFeature(device: ExportDevice, row: ExportRow): object {
   return {
     type: "Feature",
     geometry: point(row.lon, row.lat),
-    properties: withoutNulls({
-      ...row.extra,
+    properties: propertiesOf(row.extra, {
       kind: "location",
       timestamp: toIso(row.recorded_at),
       device_id: device.deviceKey,
@@ -44,8 +51,7 @@ function visitFeature(device: ExportDevice, visit: ExportVisit): object {
   return {
     type: "Feature",
     geometry: point(visit.lon, visit.lat),
-    properties: withoutNulls({
-      ...visit.extra,
+    properties: propertiesOf(visit.extra, {
       kind: "visit",
       action: "visit",
       timestamp: toIso(visit.recorded_at),
@@ -80,8 +86,7 @@ function tripFeature(device: ExportDevice, trip: ExportTrip): object {
     // The trip record's own point (where it ended), else its end or start location.
     geometry:
       pointGeometry(geometry) ?? geometryOf(trip.end_location) ?? geometryOf(trip.start_location),
-    properties: withoutNulls({
-      ...extra,
+    properties: propertiesOf(extra, {
       kind: "trip",
       type: "trip",
       mode: trip.mode,
