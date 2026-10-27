@@ -35,9 +35,9 @@ export const basicAuth = (username: string, password: string): string =>
   `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
 
 /**
- * Posts one OwnTracks message as the Android app does, over HTTPS as Trail's
- * trusted proxy reports it (the tests trust loopback): Basic authentication
- * needs it.
+ * Posts one OwnTracks message as the Android app does, with HTTP Basic, over
+ * HTTPS as Trail's trusted proxy reports it (the tests trust loopback) — what
+ * a Trail whose phones were given an https:// address requires.
  */
 export function postOwnTracks(app: Server, token: string, message: unknown) {
   return request(app)
