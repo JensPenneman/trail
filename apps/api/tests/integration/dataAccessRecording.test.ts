@@ -17,7 +17,7 @@ import { createTestContext, type TestContext } from "../support/testContext";
 
 /*
  * The data access log through the real app, channel by channel
- * (docs/architecture.md §8.7): what each kind of access writes, for whom,
+ * (docs/architecture.md §8.8): what each kind of access writes, for whom,
  * and what it never writes — a coordinate, a secret, a recipient's
  * credentials or address, a link visitor's address.
  */
@@ -337,6 +337,76 @@ describe("the owner's API tokens", () => {
       deviceIds: [phone.id, watch].sort(),
       from: "2026-10-01",
       to: "2026-10-31",
+    });
+  });
+});
+
+describe("Insights", () => {
+  it("count as reads of the period they cover, through a token or the browser", async () => {
+    const made = await createApiToken(owner.agent, {
+      name: "Travel statistics",
+      scopes: ["history:read"],
+      expiresAt: null,
+    });
+    secrets.push(made.secret);
+    await clearLog();
+    const period = { from: "2026-10-01", to: "2026-10-27" };
+    const call = (path: string, query: Record<string, string>) =>
+      request(t.app).get(path).set("Authorization", bearer(made.secret)).query(query).expect(200);
+    await call(apiPaths.v1.insights.overview, period);
+    await call(apiPaths.v1.insights.mode("cycling"), { ...period, devices: phone.id });
+    await call(apiPaths.v1.insights.time, { ...period, mode: "walking" });
+    await call(apiPaths.v1.insights.roads, period);
+    // The Insights pages call the same operations with the session.
+    await owner.agent
+      .get(apiPaths.v1.insights.overview)
+      .set("User-Agent", iphone)
+      .query(period)
+      .expect(200);
+    // A refused period is no access.
+    await request(t.app)
+      .get(apiPaths.v1.insights.overview)
+      .set("Authorization", bearer(made.secret))
+      .query({ from: period.to, to: period.from })
+      .expect(400);
+
+    const rows = await rowsOf(owner.id);
+    expect(rows.map((row) => `${row.channel} ${row.action}`).sort()).toEqual([
+      "api getInsightsMode",
+      "api getInsightsOverview",
+      "api getInsightsRoads",
+      "api getInsightsTime",
+      "web getInsightsOverview",
+    ]);
+    expect(rows.every((row) => row.access === "read" && row.status === 200)).toBe(true);
+    const of = (channel: string, action: string) =>
+      rows.find((row) => row.channel === channel && row.action === action);
+    for (const action of [
+      "getInsightsOverview",
+      "getInsightsMode",
+      "getInsightsTime",
+      "getInsightsRoads",
+    ]) {
+      expect(of("api", action)).toMatchObject({
+        actor_kind: "token",
+        actor_token_id: made.token.id,
+        actor_label: "Travel statistics",
+        count: 1,
+      });
+    }
+    expect(of("api", "getInsightsOverview")?.resource).toEqual(period);
+    expect(of("api", "getInsightsMode")?.resource).toEqual({
+      ...period,
+      deviceIds: [phone.id],
+      mode: "cycling",
+    });
+    expect(of("api", "getInsightsTime")?.resource).toEqual({ ...period, mode: "walking" });
+    expect(of("api", "getInsightsRoads")?.resource).toEqual(period);
+    expect(of("web", "getInsightsOverview")).toMatchObject({
+      actor_kind: "owner",
+      actor_label: "Safari on iPhone",
+      actor_token_id: null,
+      resource: period,
     });
   });
 });
