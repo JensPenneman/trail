@@ -312,7 +312,9 @@ data that a later fix may still recover.
 
 **heat_cells** — pre-aggregated all-time density for the heatmap: PK
 `(device_id, z, x, y)`; `count` (int), `first_at`, `last_at`. `z` ∈ {6, 9, 12,
-15, 18} (slippy-map tile coordinates). Maintained in the same statement that
+15, 18} (slippy-map tile coordinates); the heatmap answers at every level
+from 6 to 18, the ones between summed on read from the next finer stored one
+(§8.2). Maintained in the same statement that
 inserts locations (a CTE over `INSERT … RETURNING`, SQL tile math, upsert
 `count = count + excluded.count`), only for points with horizontal accuracy
 ≤ 200 m or unknown. Rebuilt per device after deletions (`recompute`).
@@ -729,10 +731,23 @@ JSON `404 not_found`. Stack traces are logged, never sent.
 
 ### 8.2 Heatmap
 
-Pick `cellZoom` = the largest level in {6, 9, 12, 15, 18} that is
-`≤ round(zoom) + 5` (minimum 6); return cell centres in the bbox (handle the
-antimeridian when `west > east`) summed across the requested devices, at most
-20 000 cells (highest counts first, `truncated: true`).
+The cells are the slippy-map tiles of level `cellZoom` = `round(zoom) + 5`,
+kept within 6–18 (`chooseCellZoom`). MapLibre draws the tile of level z 512 px
+wide at map zoom z, so a cell is 16 px wide on the map at a whole zoom (11 to
+23 px between two); past map zoom 13 the cells stay at level 18 (about 96 m
+at 51° N) and grow on screen. A stored level is read as it is; any other is
+summed on read from the coarsest stored level that is finer
+(`storedCellZoom`, s = 1 or 2 levels finer, at most 4 × 4 stored cells to a
+cell): `SELECT x >> s, y >> s, sum(count) … GROUP BY 1, 2`. The viewport is
+widened to whole cells (`heatCellWindow`), so a cell at its edge counts every
+point it holds, as it does in the middle. The answer is the cell centres
+summed across the requested devices (the antimeridian handled when
+`west > east`), at most 20 000 cells (highest counts first,
+`truncated: true`). The query is a range scan of the primary key
+`(device_id, z, x, y)` and a hash aggregate: measured on the production data
+(1.2 M points, 6 350 cells at level 18) every viewport of the dashboard
+answers in under 10 ms, and in at most about 30 ms on cells fifteen times
+denser — no further index or stored level is needed.
 
 ### 8.3 Public API v1
 
@@ -1889,9 +1904,35 @@ count among them, since they lead to signed-in pages.
     a moment; distance, points, first/last; the timeline of stops and moves,
     with a dialog to correct a mode; visits and trips of the day. Other
     people's tracks as their shares allow (below).
-  - **Heat** — all-time heatmap (`/api/heatmap`, refetched as the map moves),
-    totals and the busiest places in view. Heatmaps cover one's own devices
-    only, so Heat offers no people and says so when some are chosen with Me.
+  - **Heat** — all-time heatmap (`/api/heatmap` for the view once the map
+    has stood still for 300 ms, its box rounded outward to a thousandth of a
+    degree and its zoom to a whole level, so that small moves hit the
+    cache), totals and the busiest places in view. The cells are drawn as
+    squares (`heatFeatures`: each the tile of its level, with a gap of the
+    map 1.5 px wide between neighbours at the zoom they arrive at) in the
+    classes of `heatScale`, taken from the cells in view: from the smallest
+    count to the busiest 3 % of the cells, the classes start at round
+    numbers — 1, 2, 5, 10 … over a short range, 1, 3, 10, 30 … over a longer
+    one (its highest five when it has one or two too many, so that the
+    rarest counts share the first class), whole decades over longer ones —
+    six classes at most; panning moves the counts but rarely the round
+    numbers. The classes take the steps of one ramp (`heatRamp`), spread
+    over all six when there are fewer: pink to purple at even steps of OKLCH
+    lightness, darker for more on a light map and brighter for more on a
+    dark or satellite one, the lightest step 2:1 against the light map's
+    ground and the darkest 3:1 against the dark map's, neighbouring steps
+    apart for protanopia and deuteranopia, in hues the basemaps hardly use
+    (their parks, water and roads are green, blue, yellow and orange). The
+    squares lie over the basemap's areas, roads and buildings, which would
+    otherwise cut them apart (the dark style draws its roads above its first
+    label), and under its names — below its first text after its last area
+    — at 80 % opacity, so the streets under a square still read. The key
+    (`HeatLegend`) is that scale: "Points recorded in each square", a
+    swatch and the counts of every class, "Rarely" and "Often" at its ends
+    as a visual cue only; it follows the view, as the squares do. Nothing in
+    the heatmap moves (no transitions, so nothing for reduced motion to
+    stop). Heatmaps cover one's own devices only, so Heat offers no people
+    and says so when some are chosen with Me.
 
   The head holds the controls the views share, in this order: **people**
   (Me and everyone who shares with me, plus Everyone — a checkbox for all,
@@ -2305,7 +2346,8 @@ which are merged by hand; majors wait for a person, security ones too.
 
 - `packages/contracts/tests` — schema and helper unit tests.
 - `apps/api/tests/unit` — pure logic (Overland normalisation, timestamps,
-  RDP, distance, tile math, token hashing, config parsing, presets, share
+  RDP, distance, tile math and the heatmap's levels and whole-cell windows,
+  token hashing, config parsing, presets, share
   durations across DST and skipped midnights, the sharing grids — one per
   owner, fixed, within the cell around the position, area cells made of whole
   approximate cells, whole at the antimeridian, and a property test that no
@@ -2368,6 +2410,9 @@ which are merged by hand; majors wait for a person, security ones too.
   and session-only management); `apiV1Operations.test.ts` calls every v1
   operation of the token branch with real tokens: the same answers as the
   dashboard's routes, scopes, device restrictions and other accounts' ids.
+  `history.test.ts` holds the heatmap at every level from 6 to 18 against the
+  finest stored cells summed, several devices summed, a whole cell at the
+  edge of the view, the antimeridian and the cap of 20 000 cells.
   Processing is tested in the real app with map tiles cut from the hand-made
   world by a `FixtureWaySource` (no network): uploads to segments and the
   `segments` event, every level and its degradation, windows waiting for map
@@ -2453,8 +2498,9 @@ which are merged by hand; majors wait for a person, security ones too.
   `legacyPeoplePath`, and the redirects through the app's own route table),
   Settings' tree (groups, paths, levels, administrators' rows), its search
   index and row values, the old anchors (`settingsPathFor`),
-  `isSignedInPath` and the precedence of the map's defaults have unit tests
-  of their own; Settings itself renders through its real routes
+  `isSignedInPath`, the precedence of the map's defaults and the heatmap's
+  scale, classes and squares (`heatHelpers.test.ts`) have unit tests of
+  their own; Settings itself renders through its real routes
   (`renderSettings`, phone or wide screen) for the list, search, going
   deeper and back with focus, and every page. The charts' helpers (scales,
   nice ticks, bands, tick thinning, the heat grid's bins, summaries, tooltip
@@ -2493,7 +2539,9 @@ which are merged by hand; majors wait for a person, security ones too.
   Devices page: status, points, battery, trip, activity and the upload feed;
   on People the Me card), ingest log and raw points, remote settings, token
   rotation, History and its scrubber,
-  the heatmap, sign-in by email, passkey button and autofill, invitations and
+  the heatmap (its squares on the map, found by their colours in a
+  screenshot of the canvas, its key and the busiest places), sign-in by email,
+  passkey button and autofill, invitations and
   isolation, passkeys and passkey links, sessions, export, deleting a period
   and the account, Overland's protocol, static files and headers, the API
   reference at `/docs` and the OpenAPI document, API tokens (create one in
