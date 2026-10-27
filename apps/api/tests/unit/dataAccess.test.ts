@@ -258,6 +258,57 @@ describe("the data access recorder", () => {
     expect(store.rows).toHaveLength(0);
   });
 
+  it("refuses an action or a resource the contract does not know, instead of keeping less", async () => {
+    const { store, log } = recorder();
+    log.record(ownRead({ action: "DROP TABLE" }));
+    log.record(ownRead({ action: "x".repeat(65) }));
+    log.record(ownRead({ resource: { deviceIds: ["not-a-device"] } }));
+    log.record(ownRead({ resource: { level: "precise" } as never }));
+    log.record(ownRead());
+    await log.flush();
+    expect(store.rows.map((row) => [row.action, row.resource])).toEqual([
+      ["dashboard.tracks", ownRead().resource],
+    ]);
+  });
+
+  it("keeps writing after a write broke in a way nobody foresaw", async () => {
+    const store = new MemoryStore();
+    let failLogging = true;
+    const brittle = createLogger({ level: "silent" });
+    brittle.error = (() => {
+      if (failLogging) throw new Error("the logger is broken");
+    }) as typeof brittle.error;
+    const log = new DataAccessRecorder(store, brittle, { flushIntervalMs: 3_600_000 });
+    store.failures.push(unavailable());
+    log.record(ownRead());
+    await expect(log.flush()).resolves.toBeUndefined();
+    failLogging = false;
+    log.record(personLook());
+    await expect(log.flush()).resolves.toBeUndefined();
+    expect(store.rows.map((row) => row.action)).toContain("listPeople");
+  });
+
+  it("loads the server's key for visitor keys once, and again only after a failure", async () => {
+    const store = new MemoryStore();
+    let loads = 0;
+    let failNext = true;
+    store.visitorSecret = async () => {
+      loads += 1;
+      if (failNext) {
+        failNext = false;
+        throw unavailable();
+      }
+      return secret;
+    };
+    const log = new DataAccessRecorder(store, quiet, { flushIntervalMs: 3_600_000 });
+    for (let round = 0; round < 4; round += 1) {
+      log.record(linkView(`81.82.${83 + round}.0/24`));
+      await log.flush();
+    }
+    expect(loads).toBe(2);
+    expect(store.rows.filter((row) => row.visitorKey !== null)).toHaveLength(4);
+  });
+
   it("keeps at most so many rows waiting while the database is away", async () => {
     const { store, log } = recorder({ maxPending: 3, foldAfter: 100 });
     for (let index = 0; index < 10; index += 1)

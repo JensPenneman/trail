@@ -1352,9 +1352,12 @@ refuses a statement's data, its rows go in one by one and only the refused
 one is dropped and logged; any other failure leaves the rows for the next
 write, a row at most three times; at most 10 000 rows wait in memory, more
 are dropped and logged. The shutdown writes what is waiting (§12). `record`
-never throws and never waits, so the log cannot slow or fail a request.
-A link visitor's key needs the `data-access-visitor` key of
-`server_secrets`, which the write loads (once) rather than the request.
+never throws and never waits, so the log cannot slow or fail a request, and
+the chain of writes survives even a write that throws. An access whose
+action or resource the contract refuses is not recorded — a bug, logged —
+rather than kept with less. A link visitor's key needs the
+`data-access-visitor` key of `server_secrets`, which the write loads once
+(again only after a failed load) rather than the request.
 
 **Bounded.** Hour rows bound repetition but not variety: a caller could ask
 for a new range every second. So per owner, hour, actor and action at most

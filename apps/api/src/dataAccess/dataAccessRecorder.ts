@@ -1,4 +1,4 @@
-import type { DataAccessResource } from "@trail/contracts/dataAccess";
+import { type DataAccessResource, dataAccessActionSchema } from "@trail/contracts/dataAccess";
 import type { Logger } from "pino";
 import { errorCodes } from "../db/errorChain";
 import { refusedDataCode } from "../db/refusedDataCode";
@@ -170,9 +170,20 @@ export class DataAccessRecorder {
   flush(): Promise<void> {
     clearTimeout(this.#timer);
     this.#timer = undefined;
-    const write = this.#writing.then(() => this.#write());
+    // A write handles its own failures; should one throw all the same, the chain must hold.
+    const write = this.#writing
+      .then(() => this.#write())
+      .catch((error: unknown) => this.#reportFailure(error));
     this.#writing = write;
     return write;
+  }
+
+  #reportFailure(error: unknown): void {
+    try {
+      this.#logger.error({ err: error }, "data access log write failed");
+    } catch {
+      // Even the logger failed: there is nobody left to tell.
+    }
   }
 
   /** Takes no more accesses; `flush` first to write what is pending. */
@@ -190,6 +201,14 @@ export class DataAccessRecorder {
       );
       return;
     }
+    if (!dataAccessActionSchema.safeParse(access.action).success) {
+      // The list answers through the contract: a row it refuses would break the whole page.
+      this.#logger.error(
+        { actor: access.actor.kind },
+        "data access with an unknown action not recorded",
+      );
+      return;
+    }
     const at = access.at ?? new Date();
     const hour = Math.floor(at.getTime() / hourMs) * hourMs;
     if (hour > this.#hour) {
@@ -198,11 +217,14 @@ export class DataAccessRecorder {
       this.#perActor.clear();
       this.#registered = 0;
     }
-    let resource = canonicalResource(access.resource);
+    const resource = canonicalResource(access.resource);
     if (resource === null) {
-      // A bug, not a request's fault: the access still counts, without its details.
-      this.#logger.error({ action: access.action }, "data access resource refused by its schema");
-      resource = {};
+      // A bug, not a request's fault: an access whose data cannot be told is not made up as none.
+      this.#logger.error(
+        { action: access.action },
+        "data access with a refused resource not recorded",
+      );
+      return;
     }
     let record = { ...access, actor: cleaned(access.actor), resource } as AccessRecord;
     record = this.#foldVisitor(record, hour);
@@ -357,8 +379,8 @@ export class DataAccessRecorder {
    */
   async #recover(chunk: readonly Pending[], error: unknown): Promise<void> {
     if (!refusesRows(error)) {
-      this.#logger.error({ err: error, rows: chunk.length }, "data access log not written yet");
       this.#retry(chunk);
+      this.#logger.error({ err: error, rows: chunk.length }, "data access log not written yet");
       return;
     }
     let refused = 0;
