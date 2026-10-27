@@ -90,7 +90,14 @@ export async function loadRawPoints(
   return points;
 }
 
-/** The iOS visits overlapping the window, arrival and departure reports merged. */
+/**
+ * The iOS visits overlapping the window. iOS reports a visit twice — on
+ * arrival (no departure yet) and again on departure, with the same arrival —
+ * and both rows are kept as recorded, so they are merged first, per arrival:
+ * a report with a departure supersedes the arrival alone, the latest report
+ * wins among several. Only then is a visit that departed before the window
+ * left out: the arrival alone must not pass for a visit still open.
+ */
 export async function loadVisits(
   db: Executor,
   deviceId: string,
@@ -104,12 +111,16 @@ export async function loadVisits(
     lon: number;
     horizontal_accuracy: number | null;
   }>(sql`
-    SELECT DISTINCT ON (arrived_at) arrived_at::text, departed_at::text, lat, lon, horizontal_accuracy
-    FROM visits
-    WHERE device_id = ${deviceId} AND arrived_at IS NOT NULL
-      AND arrived_at <= ${to.toISOString()}::timestamptz
-      AND (departed_at IS NULL OR departed_at >= ${from.toISOString()}::timestamptz)
-    ORDER BY arrived_at, departed_at DESC NULLS LAST, recorded_at DESC
+    SELECT arrived_at::text, departed_at::text, lat, lon, horizontal_accuracy
+    FROM (
+      SELECT DISTINCT ON (arrived_at) arrived_at, departed_at, lat, lon, horizontal_accuracy
+      FROM visits
+      WHERE device_id = ${deviceId} AND arrived_at IS NOT NULL
+        AND arrived_at <= ${to.toISOString()}::timestamptz
+      ORDER BY arrived_at, (departed_at IS NULL), recorded_at DESC
+    ) merged
+    WHERE departed_at IS NULL OR departed_at >= ${from.toISOString()}::timestamptz
+    ORDER BY arrived_at
   `);
   return result.rows.map((row) => ({
     arrivedAt: epoch(row.arrived_at),
@@ -202,9 +213,11 @@ interface StoredRow extends Record<string, unknown> {
 
 /**
  * The mapped level stored for the window's points, per point; null where none
- * was stored by `mappedVersion` (the mapped level's current version). Windows
- * queued from the inferred level use it: `--from-level inferred`, and the
- * backfill after a change to the inference.
+ * was stored by `mappedVersion` (the mapped level's current version), and for
+ * the points of a stop (no way kind: stops are not matched), so a move made of
+ * points that were part of a stop before is matched afresh. Windows queued
+ * from the inferred level use it: `--from-level inferred`, and the backfill
+ * after a change to the inference.
  */
 export async function loadStoredMapping(
   db: Executor,
@@ -224,6 +237,7 @@ export async function loadStoredMapping(
   const byTime = new Map<number, MappedPoint>();
   for (const row of result.rows) {
     if (row.version !== mappedVersion || row.lat_map === null || row.lon_map === null) continue;
+    if (row.way_kind === null) continue;
     byTime.set(epoch(row.recorded_at), {
       lat: row.lat_map,
       lon: row.lon_map,

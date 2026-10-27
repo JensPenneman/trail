@@ -13,9 +13,12 @@ const iso = (epochSeconds: number): string => new Date(epochSeconds * 1000).toIS
  * Writes a processed window (docs/architecture.md §17.2) — its points' averaged
  * and mapped levels and its stops and moves — in the caller's transaction.
  * Points deleted meanwhile are skipped; segments keep their ids where their
- * start stays; a segment that began before the window ends at its start.
- * A point records the mapped level's version (it holds the averaged and mapped
- * levels), a segment the inferred level's.
+ * start stays. The window has grown to whole segments, but at most two days
+ * out (§17.4): a segment that began before it ends at its start, and the part
+ * of one that reaches beyond its end stays, starting at the end, so no time
+ * is lost from the timeline; both keep their other values until a window over
+ * them works them out again. A point records the mapped level's version (it
+ * holds the averaged and mapped levels), a segment the inferred level's.
  */
 export async function persistWindow(
   tx: Executor,
@@ -93,6 +96,18 @@ export async function persistWindow(
     centroid_lon: segment.centroid.lon,
     features: segment.features,
   }));
+  await tx.execute(sql`
+    INSERT INTO segments (device_id, started_at, ended_at, kind, mode, mode_inferred, mode_user,
+      confidence, review, distance_m, duration_s, max_speed, point_count, start_lat, start_lon, end_lat,
+      end_lon, centroid_lat, centroid_lon, features, version, computed_at)
+    SELECT device_id, ${to}::timestamptz, ended_at, kind, mode, mode_inferred, mode_user, confidence,
+      review, distance_m, extract(epoch FROM ended_at - ${to}::timestamptz)::integer, max_speed,
+      point_count, start_lat, start_lon, end_lat, end_lon, centroid_lat, centroid_lon, features, version,
+      computed_at
+    FROM segments
+    WHERE device_id = ${deviceId} AND started_at < ${to}::timestamptz AND ended_at > ${to}::timestamptz
+    ON CONFLICT (device_id, started_at) DO NOTHING
+  `);
   await tx.execute(sql`
     UPDATE segments SET ended_at = ${from}::timestamptz,
       duration_s = extract(epoch FROM ${from}::timestamptz - started_at)::integer

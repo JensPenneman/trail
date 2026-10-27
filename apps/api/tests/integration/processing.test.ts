@@ -14,15 +14,17 @@ import { processingVersions } from "../../src/processing/processingVersion";
 import { processWindow } from "../../src/processing/processWindow";
 import { planWindow } from "../../src/processing/runPipeline";
 import { parseTileKey } from "../../src/processing/tileCover";
+import { loadVisits } from "../../src/processing/windowData";
 import { type Agent, signUpWithCookie } from "../support/authFlows";
+import { commuteDays, rides } from "../support/commuteDays";
 import { createDevice } from "../support/deviceFlows";
 import { FixtureWaySource } from "../support/fixtureWaySource";
 import { morning, motorwayDrive, sparseTrain, tramRide } from "../support/journeys";
-import { uploadJourney } from "../support/overlandPoints";
+import { uploadJourney, uploadVisits } from "../support/overlandPoints";
 import { withPieceBudget } from "../support/processWorld";
 import { resetDatabase } from "../support/resetDatabase";
 import { SseClient } from "../support/sseClient";
-import { distanceToLine, railLine, toXY } from "../support/syntheticWorld";
+import { distanceToLine, lastT, railLine, stay, toXY } from "../support/syntheticWorld";
 import { createTestContext, type TestContext } from "../support/testContext";
 import { testOrigin } from "../support/testEnvironment";
 
@@ -48,6 +50,12 @@ async function newDevice(name: string) {
 async function upload(token: string, points: Parameters<typeof uploadJourney>[2], context = t) {
   await uploadJourney(context.app, token, points);
   await context.ctx.background.drain(5000);
+}
+
+/** Uploads iOS's visit reports, as the phone does. */
+async function sendVisits(token: string, visits: Parameters<typeof uploadVisits>[2]) {
+  await uploadVisits(t.app, token, visits);
+  await t.ctx.background.drain(5000);
 }
 
 const segmentsOf = async (deviceId: string, context = t) =>
@@ -517,5 +525,194 @@ describe("the queue's clock", () => {
       expect(rows.map((row) => row.deviceId)).toEqual([device.id]);
       await t.ctx.db.execute(sql`DELETE FROM processing_queue WHERE device_id = ${device.id}`);
     }
+  });
+});
+
+describe("stops that end when the phone leaves", () => {
+  /** A device's segments as times, oldest first. */
+  const timesOf = async (deviceId: string) =>
+    (
+      await t.ctx.db.execute<{ kind: string; mode: string | null; from: number; to: number }>(sql`
+        SELECT kind, mode, extract(epoch FROM started_at)::float8 AS from,
+          extract(epoch FROM ended_at)::float8 AS to
+        FROM segments WHERE device_id = ${deviceId} ORDER BY started_at
+      `)
+    ).rows;
+
+  /** Recorded points (kept by averaging) that lie in no segment. */
+  const pointsOutside = async (deviceId: string) =>
+    (
+      await t.ctx.db.execute<{ count: number }>(sql`
+        SELECT count(*)::int AS count FROM processed_points p
+        WHERE p.device_id = ${deviceId} AND p.kept
+          AND NOT EXISTS (
+            SELECT 1 FROM segments s WHERE s.device_id = p.device_id
+              AND s.started_at <= p.recorded_at AND s.ended_at >= p.recorded_at
+          )
+      `)
+    ).rows[0]?.count;
+
+  /** Works a range out again the way `trail reprocess` does: day windows, oldest first. */
+  async function reprocessOldestFirst(
+    deviceId: string,
+    from: number,
+    to: number,
+    level: FromLevel,
+  ) {
+    for (let start = from; start < to; start += 86_400) {
+      await enqueueWindow(t.ctx.db, {
+        deviceId,
+        from: new Date(start * 1000),
+        to: new Date(Math.min(start + 86_400, to) * 1000),
+        reason: "reprocess",
+        fromLevel: level,
+      });
+    }
+    for (;;) {
+      const rows = await takeDeviceWindows(
+        t.ctx.db,
+        deviceId,
+        new Date(from * 1000),
+        new Date(to * 1000),
+      );
+      if (rows.length === 0) break;
+      await processWindow(t.ctx.db, rows, {
+        config: t.ctx.processing.config,
+        mapping: true,
+        now: new Date(),
+      });
+    }
+  }
+
+  it("merges iOS's two reports of a visit before leaving out the ones that departed earlier", async () => {
+    const device = await newDevice("Visitor");
+    const arrivedAt = morning - 12 * 3600;
+    const departedAt = morning - 2 * 3600;
+    const [lon, lat] = [3.7, 51.0];
+    await sendVisits(device.token, [
+      { arrivedAt, departedAt: null, lat, lon, accuracy: 14 },
+      { arrivedAt, departedAt, lat, lon, accuracy: 9 },
+      // Later the phone reports the same visit's departure once more, a little later.
+      { arrivedAt, departedAt: departedAt + 40, lat, lon, accuracy: 8 },
+    ]);
+    // The window after the departure: the visit is over, its arrival alone no open visit.
+    const after = await loadVisits(
+      t.ctx.db,
+      device.id,
+      new Date((departedAt + 600) * 1000),
+      new Date((departedAt + 7200) * 1000),
+    );
+    expect(after).toEqual([]);
+    // A window over the stay: one visit, as the latest report has it.
+    const over = await loadVisits(
+      t.ctx.db,
+      device.id,
+      new Date((arrivedAt - 600) * 1000),
+      new Date((arrivedAt + 3600) * 1000),
+    );
+    expect(over).toEqual([{ arrivedAt, departedAt: departedAt + 40, lat, lon, accuracy: 8 }]);
+  });
+
+  it("keeps the part of a long stay beyond a window that cannot take all of it", async () => {
+    // Four days on the sofa, a point every six minutes (one upload, so one window): one stop.
+    const device = await newDevice("Sofa");
+    const start = morning - 20 * 86_400;
+    const days = stay([-600, -400], { startT: start, durationS: 4 * 86_400, intervalS: 360 });
+    await upload(device.token, days);
+    await t.ctx.processing.flush();
+    expect((await timesOf(device.id)).map((segment) => segment.kind)).toEqual(["stop"]);
+    // A window early in the stay grows at most two days out: the rest of the stop lies beyond it.
+    await enqueueWindow(t.ctx.db, {
+      deviceId: device.id,
+      from: new Date((start + 6 * 3600) * 1000),
+      to: new Date((start + 12 * 3600) * 1000),
+      reason: "reprocess",
+    });
+    await t.ctx.processing.flush();
+    const after = await timesOf(device.id);
+    expect(after.map((segment) => segment.kind)).toEqual(["stop", "stop"]);
+    // Nothing of the four days lost, nothing twice.
+    expect(after[0]?.from).toBe(start);
+    expect(after[1]?.to).toBe(lastT(days));
+    expect(after[1]?.from).toBeGreaterThanOrEqual(after[0]?.to ?? 0);
+    expect((after[1]?.from ?? 0) - (after[0]?.to ?? 0)).toBeLessThan(360);
+    expect(await pointsOutside(device.id)).toBe(0);
+  });
+
+  it("replaces a stale multi-day stop, newest day first and oldest first: every ride a move", async () => {
+    const device = await newDevice("Commuter days");
+    const start = morning - 40 * 86_400;
+    const days = commuteDays({ startT: start, days: 4, homeIntervalS: 30, homeDepartures: true });
+    await upload(device.token, days.points);
+    await sendVisits(device.token, days.visits);
+    await t.ctx.dailyStats.flush();
+    await t.ctx.processing.flush();
+    const end = lastT(days.points);
+
+    /** As the inference of version 2 left the history: one stop over all four days. */
+    const makeStale = async () => {
+      await t.ctx.db.execute(sql`DELETE FROM segments WHERE device_id = ${device.id}`);
+      // A stop's points: where averaging put them, no way, no shape (stops are not matched).
+      await t.ctx.db.execute(sql`
+        UPDATE processed_points SET lat_map = lat_avg, lon_map = lon_avg, way_id = NULL,
+          way_kind = NULL, snap_m = 0, path_map = NULL
+        WHERE device_id = ${device.id} AND kept
+      `);
+      await t.ctx.db.execute(sql`
+        INSERT INTO segments (device_id, started_at, ended_at, kind, distance_m, duration_s,
+          point_count, start_lat, start_lon, end_lat, end_lon, centroid_lat, centroid_lon, features, version)
+        SELECT ${device.id}::uuid, min(recorded_at), max(recorded_at), 'stop', 0,
+          extract(epoch FROM max(recorded_at) - min(recorded_at))::integer, count(*),
+          51.0, 3.7, 51.0, 3.7, 51.0, 3.7, '{}'::jsonb, ${processingVersions.inferred - 1}
+        FROM processed_points WHERE device_id = ${device.id} AND kept
+      `);
+      expect(await timesOf(device.id)).toHaveLength(1);
+    };
+    const expectEveryRideAMove = async () => {
+      const segments = await timesOf(device.id);
+      for (const leg of rides(days.legs)) {
+        let moving = 0;
+        for (const segment of segments) {
+          if (segment.kind !== "move") continue;
+          moving += Math.max(
+            0,
+            Math.min(leg.endT, segment.to) - Math.max(leg.startT, segment.from),
+          );
+        }
+        expect(moving / (leg.endT - leg.startT), `${leg.kind} from ${leg.startT}`).toBeGreaterThan(
+          0.9,
+        );
+      }
+      const longest = Math.max(...segments.map((segment) => segment.to - segment.from));
+      expect(longest).toBeLessThan(14 * 3600);
+      expect(await pointsOutside(device.id)).toBe(0);
+      // The rides were matched afresh: their points were a stop's, with no way to reuse.
+      const unmatched = await t.ctx.db.execute<{ count: number }>(sql`
+        SELECT count(*)::int AS count FROM processed_points p
+        JOIN segments s ON s.device_id = p.device_id AND s.kind = 'move'
+          AND p.recorded_at > s.started_at AND p.recorded_at < s.ended_at
+        WHERE p.device_id = ${device.id} AND p.kept AND p.way_kind IS NULL
+      `);
+      expect(unmatched.rows[0]?.count).toBe(0);
+      expect(new Set(segments.filter((s) => s.kind === "move").map((s) => s.mode))).toEqual(
+        new Set(["cycling", "walking", "train"]),
+      );
+    };
+
+    // The boot-time backfill: newest day first, from the inferred level.
+    await makeStale();
+    await t.ctx.db.execute(sql`
+      INSERT INTO processing_state (key, value)
+      VALUES ('backfill', ${JSON.stringify({ versions: { ...processingVersions, inferred: processingVersions.inferred - 1 } })}::jsonb)
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value
+    `);
+    expect((await enqueueBackfill(t.ctx.db, processingVersions)).fromLevel).toBe("inferred");
+    await t.ctx.processing.flush();
+    await expectEveryRideAMove();
+
+    // `trail reprocess --from-level inferred`: day windows, oldest first.
+    await makeStale();
+    await reprocessOldestFirst(device.id, start, end + 1, "inferred");
+    await expectEveryRideAMove();
   });
 });
