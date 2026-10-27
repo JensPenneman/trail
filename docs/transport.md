@@ -75,9 +75,11 @@ as part of the stop at home.
 
 A real walk between two places you waited at — from the bike shed to the
 platform: half a minute or more at walking pace — is a move of its own, so
-the Timeline reads stop, walk, stop, however close together they are.
-Shuffling along the platform, or a step or two, is no walk: it stays part of
-the stop, and the map draws it as the stop's dotted line. When your phone
+the Timeline reads stop, walk, stop, however close together they are —
+unless your iPhone reported one visit for both places: then the walk stays
+inside that stop, drawn as its dotted line. Shuffling along the platform, or
+a step or two, is no walk: it stays part of the stop, and the map draws it
+as the stop's dotted line. When your phone
 recorded nothing for half an hour or more but was back where it had been,
 Trail counts that time as a stop, so the day has no hole. When it was
 somewhere else afterwards, the Timeline shows a quiet "No data" row with how
@@ -98,7 +100,10 @@ sure, especially between a car and a train.
 - **From now on**: your own card, **Me**, on the People page has a row
   *Now: Walk · Bike · Car · Bus · Train · Tram · Metro · Other · Auto*. Tap
   the mode you are switching to — getting on a train, say — and it holds
-  until you stop for 10 minutes or more: changing trains does not end it.
+  until you stop for 10 minutes or more, or Trail sees you travel another
+  way (on foot, by bike, in a vehicle): changing trains does not end it,
+  cycling home from the station does. Set it once you are on board: a ride
+  Trail reads as another way of travelling ends it.
   Auto hands it back to Trail; Other has every mode.
   It sets the phone that reported last, which the row names; a second
   device (a tracker in the car, say) is not changed, and its own page under

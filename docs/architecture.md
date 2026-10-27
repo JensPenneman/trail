@@ -2301,8 +2301,9 @@ count among them, since they lead to signed-in pages.
   (`describeActivity`), without a speed once the position is older than the
   live window, "No recent location" past the stale window (a share without
   history shows no more); the quick toggle (§17.6) for that device, which
-  its description names ("Until you stop for 10 minutes or more, for iPhone
-  16: the device that reported last. Your other devices are not changed." —
+  its description names ("Until you stop for 10 minutes or more or travel
+  another way, for iPhone 16: the device that reported last. Your other
+  devices are not changed." —
   another
   device is set on its own page); with no device yet "Connect your first
   phone", and while no device has uploaded "Waiting for the first upload"
@@ -3048,7 +3049,8 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   when the last point of its own was recorded (§17.3).
 - **mode_overrides** — user data, part of the migration-upgrade fingerprint:
   `id`, `device_id` (cascade), `kind` `segment|toggle`, `from_at`, `to_at`
-  (null: until the first stop of ten minutes or more), `mode`, `source`
+  (null: until the first stop of ten minutes or more, or move of another kind
+  of travel), `mode`, `source`
   `ui|api|mcp`, `created_by`
   (set null), `created_at`, `revoked_at` (rows are kept).
 - **processing_queue** — PK `(device_id, from_at)`: `to_at`, `reason`,
@@ -3096,7 +3098,11 @@ none holds travel. A stop is:
   walk in it — 30 s or more faster than 0.6 m/s by the phone's own speed
   reading, averaged over 30 s (where the phone gave none, the averaged speed
   with CoreMotion on foot) — makes it two dwells when both last 180 s without
-  it: the walk from the bike shed to the platform is a move.
+  it: the walk from the bike shed to the platform is a move — unless an iOS
+  visit takes in both places: a visit's stop is not split at a walk, which
+  stays inside it, drawn as the stop's path. A limit: without a visit, a fix
+  wandering 30 m or more at a point every few seconds to a minute still
+  breaks a stay into dwells with moves between them.
 - an **iOS visit**. iOS reports a visit twice, on arrival (no departure yet)
   and on departure (the same arrival); both rows are kept as recorded, and
   `loadVisits` merges them per arrival before anything else — a report with a
@@ -3107,9 +3113,11 @@ none holds travel. A stop is:
   from the arrival on, for as long as the phone stays. A short excursion does
   not end it — away for at most five minutes from its first point to its
   last, never two minutes on end farther than 300 m (a fix 350 m off now and
-  then is no departure), and without a recording gap of more than five
-  minutes that could hide where the phone went, so with a point every five
-  minutes one fix off between two at the place is no departure either — nor
+  then is no departure), and, while the departure is not known, without a
+  recording gap of more than five minutes that could hide where the phone
+  went — so with a point every five minutes one fix off between two at the
+  place is no departure, and under a visit whose departure is known (iOS
+  vouches for the stay until then) neither with a point every ten — nor
   does a recording pause the phone spent there. A visit whose departure is known
   gives a stop for every time the phone was there before it (and lasts until
   the departure when nothing was recorded after its last point: iOS pauses the
@@ -3134,10 +3142,12 @@ none holds travel. A stop is:
 Overlapping stops are one, and so are adjacent ones unless the phone jumped
 more than 300 m between them. Stops at one place on both sides of a recording
 pause (300 m), or within 80 m with at most five minutes of wandering seen
-between them (from the first point away to the last, without a recording gap
-of more than five minutes) and no real walk (as above, or CoreMotion on foot
-throughout half a minute or more; one "walking" reading as the fix jumps is
-none), are one stop — unless joined they would hold travel. No stop holds
+between them (from the first point away to the last, however far a fix
+jumped, and without a recording gap of more than five minutes — one fix
+within 300 m between two at the place hides nothing) and no real walk (as
+above, or CoreMotion on foot for half a minute or more by the readings
+themselves; one "walking" reading as the fix jumps is none), are one stop —
+unless joined they would hold travel. No stop holds
 travel: where two
 minutes or more of its points lie farther than 300 m from its centroid, it is
 cut there, the parts that still last 180 s stay stops, and so do the stays
@@ -3345,11 +3355,15 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   it, for every move it covered), shows the inferred mode at once and queues
   the span for the inference again. A stop has no mode (409).
 - `POST /api/v1/devices/{id}/mode { mode, until? }` is the quick toggle: a
-  `toggle` override from now until `until` or the first detected stop of ten
+  `toggle` override from now until `until`, the first detected stop of ten
   minutes or more (`toggleEndingStopS`: changing trains or waiting at the
-  lights does not end it), whichever comes first; the toggle in force is the
-  latest one with no such stop since it began. The same mode again changes
-  nothing (but a new
+  lights does not end it), or the first part of a move starting after it
+  that the inference reads as another kind of travel than the toggle's — on
+  foot, by bike or by vehicle, the families `splitMove` cuts between (cycling
+  home from the station ends a train toggle; a part it was set during, or a
+  move without a kind, `stationary` or `unknown`, does not) — whichever comes
+  first; the toggle in force is the latest one with neither since it began
+  (`endsToggleSql`). The same mode again changes nothing (but a new
   `until`); another mode ends the running toggle and starts a new one; `mode:
   null` ends it. `GET` on the same path answers the toggle in force and the
   current mode, which shares and links with details show too (§8.5).
@@ -3360,7 +3374,10 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   still fits after recomputation moved the segment by a few seconds; an
   override covering less than 90 s of a move, and not most of it, leaves it
   alone. A toggle that began before the window gets the first stored stop of
-  ten minutes or more after it, which ends it. The applied override is in
+  ten minutes or more, or move of another kind of travel, after it, which
+  ends it. A toggle set before boarding ends at a ride the inference reads
+  as another kind of travel (a tram read as a bike): set it once aboard, or
+  correct the ride. The applied override is in
   `features.override`
   (`{ id, kind, source }`); `GET /api/v1/stats/modes` counts the corrected
   segments.
