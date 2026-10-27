@@ -3,7 +3,9 @@ import type { Request } from "express";
 
 /* `__Host-` makes the browser insist on Secure, Path=/ and no Domain, so a
  * sibling subdomain or a plain-HTTP page cannot plant a session cookie. It only
- * works over HTTPS; plain-HTTP localhost uses the unprefixed name. */
+ * works over HTTPS; plain-HTTP localhost uses the unprefixed name.
+ * `SameSite=Strict`: the dashboard calls its API from its own pages only, so
+ * no request another site starts — a link, a form, an image — carries it. */
 export const secureSessionCookieName = "__Host-trail_session";
 export const plainSessionCookieName = "trail_session";
 
@@ -19,7 +21,7 @@ export function sessionCookie(token: string, secure: boolean, maxAgeSeconds: num
     value: token,
     httpOnly: true,
     secure,
-    sameSite: "lax",
+    sameSite: "strict",
     path: "/",
     maxAge: maxAgeSeconds,
   });
@@ -32,7 +34,7 @@ export function clearedSessionCookie(secure: boolean): string {
     value: "",
     httpOnly: true,
     secure,
-    sameSite: "lax",
+    sameSite: "strict",
     path: "/",
     maxAge: 0,
     expires: new Date(0),

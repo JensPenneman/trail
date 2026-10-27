@@ -61,7 +61,10 @@ yourself: location data is personal data.
 - **Authentication**: passkeys only (WebAuthn with user verification, bound to
   the origin), no passwords. Session, device, invite and passkey-link tokens
   are random and stored as SHA-256 hashes only; session cookies are
-  `HttpOnly`, `SameSite=Lax` and `__Host-`/`Secure` on HTTPS.
+  `HttpOnly`, `SameSite=Strict` and `__Host-`/`Secure` on HTTPS, and a
+  request another site's page makes with one is refused whatever its method
+  (`Sec-Fetch-Site`), so no link or image elsewhere can read with your
+  session — or make you "look" at someone in their data access log.
 - **API tokens**: 32 random bytes (`trlk_…`), stored as SHA-256 hashes only
   and shown once, when created or rolled. Each token has scopes (positions
   only with `locations:read`), can be limited to some devices and to IP

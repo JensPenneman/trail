@@ -472,6 +472,27 @@ describe("people the owner shares with", () => {
     expect(await rowsOf(ana.id)).toEqual([]);
   });
 
+  it("cannot be forged by a page of another site that sends her browser to the track", async () => {
+    await clearLog();
+    const stamped = async () =>
+      (
+        await t.ctx.db.execute<{ at: string | null }>(sql`
+        SELECT last_viewed_at::text AS at FROM shares WHERE id = ${shareId}
+      `)
+      ).rows[0]?.at ?? null;
+    await t.ctx.db.execute(sql`UPDATE shares SET last_viewed_at = NULL WHERE id = ${shareId}`);
+    // What a link or an image on another site does: a GET with the cookie, no Origin.
+    for (const site of ["cross-site", "same-site"]) {
+      await ana.agent
+        .get(apiPaths.v1.people.track(owner.id))
+        .query({ from: day.from, to: day.to })
+        .set("Sec-Fetch-Site", site)
+        .expect(403);
+    }
+    expect(await rowsOf(owner.id)).toEqual([]);
+    expect(await stamped()).toBeNull();
+  });
+
   it("counts an agent's get_people for each person shown", async () => {
     const agentToken = await createApiToken(ana.agent, {
       name: "Ana's agent",

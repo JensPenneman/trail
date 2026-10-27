@@ -513,8 +513,12 @@ Passkeys only (no passwords), SimpleWebAuthn v14 on both ends.
   ceremony `400 ceremony_expired`.
 - **Ceremonies** expire after 5 min, are single use, bound to origin + RP ID.
 - **Sessions.** Token = 32 random bytes base64url in cookie
-  `__Host-trail_session` (`Secure; HttpOnly; SameSite=Lax; Path=/`) on HTTPS,
-  or `trail_session` (no `Secure`) on plain-HTTP localhost. DB keeps only the
+  `__Host-trail_session` (`Secure; HttpOnly; SameSite=Strict; Path=/`) on
+  HTTPS, or `trail_session` (no `Secure`) on plain-HTTP localhost. `Strict`:
+  the dashboard calls its API from its own pages only, so no request another
+  site starts — a link followed, a form, an image — carries the cookie; the
+  page itself (`index.html`) is public, and the requests it makes once it has
+  loaded are same-site, invitation and passkey links included. DB keeps only the
   SHA-256. Sliding expiry `SESSION_TTL_DAYS`; `last_seen_at` updated at most
   every 5 min (the cookie is re-sent then). Logout deletes the row. On HTTPS
   only the `__Host-` cookie is read, on HTTP only the plain one; an unknown or
@@ -522,7 +526,13 @@ Passkeys only (no passwords), SimpleWebAuthn v14 on both ends.
 - **CSRF.** Cookie-authenticated unsafe methods require an allowed `Origin`
   header (and `Sec-Fetch-Site` `same-origin` when present) and a JSON body
   where there is one. The ingest route is exempt (bearer token, no cookies),
-  and so are `/api/v1` requests with an API token.
+  and so are `/api/v1` requests with an API token. Requests of every method
+  that a session authenticates — on `/api` and `/api/v1` — are refused (403
+  `origin_not_allowed`, `sameOriginSessions`) when their `Sec-Fetch-Site` is
+  anything but `same-origin` or `none` (a client that is no browser sends
+  none): a GET from another site's link or image would otherwise read with
+  the visitor's session and write their look into someone's data access
+  log (§8.7).
 - **Principals.** Every request has at most one: a session (cookie) or, on
   `/api/v1` only, an API token. Routes ask for `requireAuth` (either),
   `requireSession` (sessions, passkeys, live events, device credentials,
@@ -715,7 +725,8 @@ rest:
    by shared caches, which must not pass the session's sliding refresh, or the
    clearing of a stale cookie, on to someone else; they take no body.
 7. The session (`loadSession`), only when there was no bearer token: a bearer
-   request never reads the cookie.
+   request never reads the cookie; a session from another site's page is
+   refused, whatever the method (`sameOriginSessions`, §7).
 8. The CSRF guard of §7 for every request without a token (a token is no
    ambient credential).
 9. `express.json` (100 kB; `application/json` and `application/*+json`).
@@ -1558,8 +1569,9 @@ invalid value).
   `style-src` (scripts stay `'self'`, everything else as above; §8.3).
 - `/api/v1` answers any origin (`Access-Control-Allow-Origin: *`) without
   credentials: a page on another site reaches it with an API token, never with
-  the visitor's session cookie (which is `SameSite=Lax` and never sent with a
-  credential-less request either).
+  the visitor's session cookie (which is `SameSite=Strict`, never sent with a
+  credential-less request either, and refused from another site's page by
+  `Sec-Fetch-Site`, §7).
 - `/mcp` (§8.6) takes an API token only, never the session cookie, and
   refuses a request whose `Origin` is not one of the instance's or
   `MCP_ALLOWED_ORIGINS` (403, before the token lookup). Its tools see what

@@ -37,6 +37,7 @@ import { ipRateLimit } from "./ipRateLimit";
 import { noStore } from "./noStore";
 import { pageNotFound } from "./pageNotFound";
 import { requestLogger } from "./requestLogger";
+import { sameOriginSessions } from "./sameOriginSessions";
 import { securityHeaders } from "./securityHeaders";
 import { spaRouter } from "./spaRouter";
 
@@ -96,6 +97,7 @@ export function createApp(ctx: AppContext): Express {
   app.use("/api", csrfGuard(config.allowedOrigins));
   app.use("/api", express.json({ limit: "100kb" }));
   app.use("/api", loadSession(ctx.db, config.sessionTtlDays));
+  app.use("/api", sameOriginSessions);
 
   app.use(authRouter(ctx));
   app.use(meRouter(ctx));

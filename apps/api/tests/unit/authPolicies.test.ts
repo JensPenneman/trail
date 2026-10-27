@@ -81,11 +81,11 @@ describe("session cookie", () => {
     expect(sessionCookieName(false)).toBe(plainSessionCookieName);
     const secure = sessionCookie("t".repeat(43), true, 2_592_000);
     expect(secure).toBe(
-      `__Host-trail_session=${"t".repeat(43)}; Max-Age=2592000; Path=/; HttpOnly; Secure; SameSite=Lax`,
+      `__Host-trail_session=${"t".repeat(43)}; Max-Age=2592000; Path=/; HttpOnly; Secure; SameSite=Strict`,
     );
     const plain = sessionCookie("t".repeat(43), false, 60);
     expect(plain).toBe(
-      `trail_session=${"t".repeat(43)}; Max-Age=60; Path=/; HttpOnly; SameSite=Lax`,
+      `trail_session=${"t".repeat(43)}; Max-Age=60; Path=/; HttpOnly; SameSite=Strict`,
     );
   });
 
