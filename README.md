@@ -170,6 +170,12 @@ need the first account on that server, so they run on a fresh one only.
 For coverage, pass the flag to the workspaces directly:
 `npm run test --workspaces --if-present -- --coverage`.
 
+The unit tests size their pool of workers to the CPUs, and to the machine's
+cgroup CPU quota when there is one (a check in a Launchway container).
+`VITEST_MAX_WORKERS=2 npm test` sets the size by hand; leave it out of
+`npm run test:integration`, whose files share one database and run one after
+the other, since it overrides that too.
+
 Git hooks (lefthook) run Biome and the type check before a commit, commitlint
 on the message ([Conventional Commits](https://www.conventionalcommits.org))
 and the unit tests before a push.
