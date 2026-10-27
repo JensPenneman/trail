@@ -46,6 +46,11 @@ export const v1Tags = [
     description:
       "Your location shared with people (one way, for as long as you choose) and as public links, and the shares people give you.",
   },
+  {
+    name: "Access log",
+    description:
+      "Who read or changed your data — you, your tokens, the people you share with and the visitors of your links — when, through which channel and what (`audit:read`).",
+  },
   { name: "Reference", description: "This API's own description." },
 ] as const satisfies readonly { name: string; description: string }[];
 

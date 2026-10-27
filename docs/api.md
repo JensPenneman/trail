@@ -379,6 +379,8 @@ toggle, else the latest stop or move while it is recent) come along when
   `distanceM` starts from your own most recently located device and needs
   `locations:read` as well. `GET /api/v1/people/{userId}/track` returns
   their track for shares with history, never older than the history allows.
+  The people you look at see in their [access log](#access-log) that you
+  looked, when and at what — not from where or with which token.
 - `GET`, `POST /api/v1/shares` and `PATCH`, `DELETE /api/v1/shares/{id}`
   manage your own shares: listing needs `shares:read`, stopping
   `shares:write`, starting and changing `shares:write` and `locations:read`.
@@ -424,6 +426,64 @@ curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" -H "Content-Type: application/j
 
 # Who shares with you, and where they are
 curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/people"
+```
+
+## Access log
+
+Trail records who reads your data and who changes it or who may see it: the
+data access log. A line of it counts one kind of access by one actor within
+one UTC hour — "Ana looked at your live position 14 times between 18:00 and
+19:00" — with when it happened first and last, which data it was and the
+answer's status. The actors and channels:
+
+| Channel | Actor (`actorKind`) | What is recorded |
+|---|---|---|
+| `web` | you (`owner`), signed in, by browser | your reads in the dashboard (tracks, timeline, heatmap, visits, trips, raw points, statistics), exports, and your changes: modes, shares, links, tokens, deleted periods and devices |
+| `api` | one of your API tokens (`token`) | every `/api/v1` operation it calls, except `tokens/verify`, the OpenAPI document and the access log itself |
+| `mcp` | one of your API tokens (`token`) | every tool it calls and resource it reads on the [MCP server](https://github.com/JensPenneman/trail/blob/main/docs/mcp.md), as `mcp.<tool>` |
+| `people` | someone you share with (`person`) | when they look at you: People, `GET /api/v1/people…` with their session or token, their agent's `get_people` |
+| `live` | someone you share with (`person`) | the new positions their open page received, counted per hour |
+| `link` | a visitor of a public link (`link`) | the views of the link's page, per visitor and hour |
+
+What a line says about the data (`resource`) is in the server's words:
+device ids, a range (`from`, `to`), a level, a precision, a mode, a share, a
+link or a token — never a coordinate or a map viewport, and nothing a caller
+typed. Of the people you share with it names the person and the share they
+looked through, never their own sessions, tokens, browsers or addresses. A
+link visitor is anonymous: the log keeps their network (the first three parts
+of an IPv4 address, `81.82.83.0/24`, or the first 48 bits of an IPv6 one) and
+the kind of browser (`iPhone · Safari`), and a `key` that stands for one
+network and kind of browser on your links and cannot be turned back into an
+address. Names show as they are now while the token, link or person still
+exists, and as they were otherwise. When one actor does one thing with more
+different data in an hour than fifty lines hold, or a link has more than
+fifty visitors in an hour, the rest is counted on one line marked `folded`.
+
+- `GET /api/v1/access-log` (`audit:read`) lists the lines, newest hour first,
+  a page of `limit` (50 by default, at most 200) at a time; follow
+  `nextCursor`. `from` and `to` narrow the period, `actor` and `channel` take
+  comma-separated kinds (`actor=person,link,token` leaves your own sessions
+  out), `action` one action (`getPersonTrack`, `mcp.get_timeline`,
+  `link.view`, `live.position`, `dashboard.export` …).
+- `GET /api/v1/access-log/summary?days=7|30|90` (`audit:read`) sums up a
+  period of local days, today included: totals per kind of actor, channel
+  and kind of access, a series per day of your time zone, the people who
+  looked (and at what), your links (with their distinct visitors) and your
+  tokens with how often and when last, and your own activity in the browser
+  on its own.
+
+The log is yours alone: no other account, an administrator neither, can
+read it, and reading it is not recorded. `audit:read` is not limited by a
+token's devices. The Read-only template includes it, the Agent template does
+not. Lines are kept for a year (the server's `DATA_ACCESS_RETENTION_DAYS`)
+and go with the account.
+
+```sh
+# Who looked at you this month
+curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/access-log/summary?days=30"
+
+# Every look by people you share with and by visitors of your links, newest first
+curl -sS -H "Authorization: Bearer $TRAIL_TOKEN" "$TRAIL/api/v1/access-log?actor=person,link&limit=100"
 ```
 
 ## Examples
