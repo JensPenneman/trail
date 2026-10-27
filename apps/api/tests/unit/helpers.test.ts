@@ -141,7 +141,13 @@ describe("logging safety", () => {
       "/api//osmand?lat=[redacted]&lon=[redacted]",
     );
     expect(redactUrl("//api/OSMAND//x/?timestamp=1")).toBe("//api/OSMAND//x/?timestamp=[redacted]");
-    expect(redactUrl("/api/osmandx?lat=51.05")).toBe("/api/osmandx?lat=51.05");
+    // Whatever follows the endpoint's name in its segment: a 404 all the same.
+    for (const path of ["/api/osmand;x", "/api/osmand%2Fx", "/api/osmand%00", "/api/osmandx"]) {
+      expect(redactUrl(`${path}?lat=51.05&lon=3.71`), path).toBe(
+        `${path}?lat=[redacted]&lon=[redacted]`,
+      );
+    }
+    expect(redactUrl("/api/overland?lat=51.05")).toBe("/api/overland?lat=51.05");
     // A device token is found by its shape wherever a client puts it.
     expect(redactUrl(`/api/owntracks?u=jens&id=${token}`)).toBe(
       "/api/owntracks?u=jens&id=[redacted]",

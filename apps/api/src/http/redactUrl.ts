@@ -12,10 +12,11 @@ const tokenParameters = new Set(["token", "access_token"]);
  * The endpoint whose query is a phone's upload: the OsmAnd format sends the
  * position (coordinates, which the logs never hold above debug) and Traccar
  * Client's device identifier, the token, as parameters. Every value goes, the
- * names stay — also below the endpoint and with doubled slashes, where a
- * mistyped template ends in a 404 at warn level.
+ * names stay — also for any path a mistyped template makes of it (below it,
+ * with doubled slashes, `;x`, `%2Fx`, `%00` after it), which ends in a 404 at
+ * warn level.
  */
-const payloadEndpoint = ["api", "osmand"];
+const payloadEndpoint = "osmand";
 
 /* A device token, an API token or a share link secret: API tokens belong in the
  * Authorization header and share link secrets in the X-Share-Secret header only;
@@ -33,10 +34,10 @@ const decoded = (text: string): string => {
   }
 };
 
-/* `/api/osmand`, `/API/OSMAND/`, `/api//osmand/x`: the decoded, lower-cased path's first two names. */
+/* The decoded, lower-cased path's first two names: `api`, and one that starts as the endpoint. */
 const isPayloadPath = (names: readonly string[]): boolean => {
-  const parts = names.filter((name) => name !== "");
-  return payloadEndpoint.every((part, index) => parts[index] === part);
+  const [api, endpoint] = names.filter((name) => name !== "");
+  return api === "api" && endpoint?.startsWith(payloadEndpoint) === true;
 };
 
 /**
