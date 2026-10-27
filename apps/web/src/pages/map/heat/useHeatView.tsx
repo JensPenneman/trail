@@ -4,7 +4,8 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { useFormatter } from "../../../format/useFormatter";
 import { boundsOf } from "../../../map/boundsOf";
 import { heatmapParamsFor } from "../../../map/heatmapParamsFor";
-import type { Bounds, MapViewState } from "../../../map/mapTypes";
+import { heatScale } from "../../../map/heatScale";
+import type { Bounds, MapHeat, MapViewState } from "../../../map/mapTypes";
 import { useDays } from "../../../queries/useDays";
 import { useHeatmap } from "../../../queries/useHeatmap";
 import { addDays } from "../../../time/addDays";
@@ -100,7 +101,20 @@ export function useHeatView({
       ),
     [devices.data],
   );
-  const cells = active ? (heatmap.data?.cells ?? []) : [];
+  const shown = active ? heatmap.data : undefined;
+  const cells = shown?.cells ?? [];
+  // One scale for the squares on the map and the legend, from the cells in view.
+  const heat = useMemo<MapHeat | null>(
+    () =>
+      shown === undefined
+        ? null
+        : {
+            cells: shown.cells,
+            cellZoom: shown.cellZoom,
+            scale: heatScale(shown.cells.map(([, , count]) => count)),
+          },
+    [shown],
+  );
   // Once the first cells are known the camera tightens to them; after that it is the person's.
   const [dataBounds, setDataBounds] = useState<Bounds | null>(null);
   useEffect(() => {
@@ -123,7 +137,7 @@ export function useHeatView({
     description: "Everywhere your devices have been, as a heatmap of every recorded point.",
     map: {
       label: "Heatmap of all recorded points in view. The busiest places are listed on this page.",
-      heat: cells,
+      heat,
       ...(framesCamera
         ? {
             fit:
@@ -149,7 +163,7 @@ export function useHeatView({
     panelLabel: "Totals and busiest places",
     panel: (
       <>
-        <HeatLegend dark={dark} />
+        {heat === null ? null : <HeatLegend scale={heat.scale} dark={dark} />}
         {othersSelected ? (
           <Notice tone="info" title="Your own devices only">
             <p>The heatmap covers the points of your devices; nobody shares theirs for it.</p>

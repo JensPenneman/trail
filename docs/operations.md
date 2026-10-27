@@ -254,7 +254,10 @@ The commit is the short SHA of the image's `sha-<commit>` tag.
 Redeploy an older release in Launchway (the app's deployments list): it pulls
 that release's `sha-<commit>` image again. Migrations only move forward, so an
 older image runs against the newer schema; when that does not work, restore
-the dump made before the update ([Backups](#backups)).
+the dump made before the update ([Backups](#backups)). Back on the newer
+release, run `trail recompute` ([Heatmap](#heatmap)): an older release keeps
+fewer sizes of the heatmap. The server also rebuilds the sizes it finds out of
+step at every start.
 
 ## Your data
 
@@ -429,6 +432,35 @@ stops, bytes, milliseconds), `processing backfill queued` (days), and warnings
 when a tile fails (with the kind of failure; it is tried again later) or the
 daily budget is spent. Which tile — a place someone has been — is logged at
 `LOG_LEVEL=debug` only, like coordinates.
+
+## Heatmap
+
+The heatmap is counted as the points arrive: every upload adds its points to
+squares at six sizes, from about 600 km down to about 24 m (level 20, as fine
+as GPS accuracy is worth), and the map sums them for every zoom in between.
+
+**After an upgrade that adds a size.** Level 20 came with the street-level
+heatmap; the points uploaded before it are not in it yet. About five seconds
+after every start, the server compares the sizes of every device (a point
+counts once in each) and builds the ones that miss points from the device's
+points by itself — nothing to run. It goes a device at a time, and an upload
+from that device waits until its squares are built (1 to 4 seconds for 1.2
+million points), so nothing is counted twice. The log says
+`heat cells filled in` per device (with the milliseconds) and
+`heat levels filled in` at the end, or `heat levels stopped before every
+device was done` when the server stopped first: the next start does the
+rest.
+
+**Rebuild** every size of every device (or of one) from the points — after
+restoring data by hand, or whenever the heatmap looks wrong:
+
+```sh
+docker exec launchway-trail-app-1 trail recompute
+docker exec launchway-trail-app-1 trail recompute --device <id>
+```
+
+It also rebuilds the daily statistics; an upload of a device waits while that
+device is rebuilt (about 20 seconds for 1.2 million points).
 
 ## Satellite imagery
 

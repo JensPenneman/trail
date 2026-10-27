@@ -1,6 +1,8 @@
 import type { AppContext } from "../appContext";
+import { fillHeatLevels } from "../heatmap/fillHeatLevels";
 import { checkSilentDevices } from "./checkSilentDevices";
 import { intervalJob } from "./intervalJob";
+import { oneOffJob } from "./oneOffJob";
 import { pruneExpiredData } from "./pruneExpiredData";
 
 export interface Jobs {
@@ -20,6 +22,20 @@ export function startJobs(ctx: AppContext): Jobs {
         const pruned = await pruneExpiredData(ctx.db, ctx.config);
         if (Object.values(pruned).some((count) => count > 0)) {
           ctx.logger.info({ pruned }, "expired data removed");
+        }
+      },
+    }),
+    // At every start: the heat levels a release added, or an older one left behind, are rebuilt.
+    oneOffJob({
+      name: "heat levels",
+      delayMs: 5_000,
+      logger: ctx.logger,
+      task: async (signal) => {
+        const filled = await fillHeatLevels(ctx.db, ctx.logger, signal);
+        if (!filled.complete) {
+          ctx.logger.info(filled, "heat levels stopped before every device was done");
+        } else if (filled.devices > 0) {
+          ctx.logger.info(filled, "heat levels filled in");
         }
       },
     }),

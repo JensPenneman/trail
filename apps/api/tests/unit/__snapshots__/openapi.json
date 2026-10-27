@@ -693,11 +693,11 @@
               "type": "number",
               "minimum": 0,
               "maximum": 24,
-              "description": "The map's zoom level; the cells get finer as it grows.",
+              "description": "The map's zoom level (MapLibre's, with 512-pixel tiles); the cells get finer as it grows, about 16 pixels wide at that zoom.",
               "example": 12
             },
             "required": true,
-            "description": "The map's zoom level; the cells get finer as it grows."
+            "description": "The map's zoom level (MapLibre's, with 512-pixel tiles); the cells get finer as it grows, about 16 pixels wide at that zoom."
           },
           {
             "in": "query",
@@ -4471,8 +4471,8 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991,
-            "description": "Slippy-map zoom of the cells (6, 9, 12, 15 or 18).",
-            "example": 15
+            "description": "Slippy-map zoom of the cells, from 6 to 20: the rounded `zoom` + 5. A cell is the slippy-map tile of that zoom.",
+            "example": 17
           },
           "cells": {
             "type": "array",
@@ -4495,7 +4495,7 @@
               "minItems": 3,
               "maxItems": 3
             },
-            "description": "`[lon, lat, count]` of each cell centre with points, busiest first, at most 20 000.",
+            "description": "`[lon, lat, count]` of each cell centre with points, busiest first, at most 20 000. A cell at the edge of the viewport counts all of its points.",
             "example": [
               [
                 3.7174,

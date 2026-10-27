@@ -135,7 +135,7 @@ describe("Overland ingest", () => {
     const result = await t.ctx.db.execute<{ z: number; total: number }>(
       sql`SELECT z, sum(count)::int AS total FROM heat_cells WHERE device_id = ${deviceId} GROUP BY z ORDER BY z`,
     );
-    expect(result.rows).toEqual([6, 9, 12, 15, 18].map((z) => ({ z, total: 30 })));
+    expect(result.rows).toEqual([6, 9, 12, 15, 18, 20].map((z) => ({ z, total: 30 })));
   });
 
   it("acknowledges batches with invalid records and keeps them in the dead letter", async () => {

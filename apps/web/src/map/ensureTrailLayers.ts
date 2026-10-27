@@ -1,4 +1,10 @@
-import type { GeoJSONSourceSpecification, Map as MapLibreMap } from "maplibre-gl";
+import type {
+  ExpressionSpecification,
+  GeoJSONSourceSpecification,
+  Map as MapLibreMap,
+} from "maplibre-gl";
+import { heatLayerPlacement } from "./heatLayerPlacement";
+import { heatRamp } from "./heatRamp";
 
 export const trailSources = {
   heat: "trail-heat",
@@ -18,37 +24,25 @@ const empty: GeoJSONSourceSpecification = {
   data: { type: "FeatureCollection", features: [] },
 };
 
-/** One hue from transparent to strong, flipped for the dark map so dense means bright. */
-const heatRamp = {
-  light: [
-    0,
-    "rgba(61, 61, 178, 0)",
-    0.12,
-    "rgba(129, 125, 235, 0.35)",
-    0.35,
-    "rgba(96, 90, 222, 0.58)",
-    0.6,
-    "rgba(66, 58, 196, 0.76)",
-    0.85,
-    "rgba(45, 38, 150, 0.88)",
-    1,
-    "rgba(28, 22, 104, 0.95)",
-  ],
-  dark: [
-    0,
-    "rgba(181, 174, 254, 0)",
-    0.12,
-    "rgba(84, 78, 170, 0.42)",
-    0.35,
-    "rgba(122, 115, 222, 0.6)",
-    0.6,
-    "rgba(166, 158, 250, 0.78)",
-    0.85,
-    "rgba(208, 203, 255, 0.9)",
-    1,
-    "rgba(246, 244, 255, 0.96)",
-  ],
-} as const;
+/** A square's colour: the step of the ramp its `shade` (1–6) names, for a dark or a light map. */
+function heatColor(dark: boolean): ExpressionSpecification {
+  const ramp = dark ? heatRamp.dark : heatRamp.light;
+  return [
+    "step",
+    ["get", "shade"],
+    ramp[0],
+    2,
+    ramp[1],
+    3,
+    ramp[2],
+    4,
+    ramp[3],
+    5,
+    ramp[4],
+    6,
+    ramp[5],
+  ];
+}
 
 /**
  * Adds Trail's sources and layers to the current style (again after every
@@ -59,44 +53,18 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
   for (const id of Object.values(trailSources)) {
     if (map.getSource(id) === undefined) map.addSource(id, empty);
   }
-  const firstLabel = map.getStyle().layers.find((layer) => layer.type === "symbol")?.id;
+  const styleLayers = map.getStyle().layers;
+  const firstLabel = styleLayers.find((layer) => layer.type === "symbol")?.id;
   const casing = dark ? "rgba(12, 12, 14, 0.85)" : "rgba(255, 255, 255, 0.95)";
   const surface = dark ? "#1c1e20" : "#ffffff";
 
-  if (map.getLayer("trail-heat") === undefined) {
-    map.addLayer(
-      {
-        id: "trail-heat",
-        type: "heatmap",
-        source: trailSources.heat,
-        paint: {
-          "heatmap-weight": ["get", "weight"],
-          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 2, 0.5, 10, 0.8, 16, 1.3],
-          "heatmap-radius": [
-            "interpolate",
-            ["exponential", 1.5],
-            ["zoom"],
-            2,
-            6,
-            8,
-            12,
-            13,
-            20,
-            18,
-            34,
-          ],
-          "heatmap-opacity": 0.78,
-        },
-      },
-      firstLabel,
-    );
+  const heat = heatLayerPlacement(styleLayers);
+  const heatAdded = map.getLayer("trail-heat") === undefined;
+  if (heatAdded) {
+    // Opaque: a square is exactly its colour in the key, and the ramp's contrast its own.
+    map.addLayer({ id: "trail-heat", type: "fill", source: trailSources.heat }, heat.beforeId);
   }
-  map.setPaintProperty("trail-heat", "heatmap-color", [
-    "interpolate",
-    ["linear"],
-    ["heatmap-density"],
-    ...(dark ? heatRamp.dark : heatRamp.light),
-  ]);
+  map.setPaintProperty("trail-heat", "fill-color", heatColor(dark));
 
   if (map.getLayer("trail-accuracy-fill") === undefined) {
     map.addLayer(
@@ -250,4 +218,8 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
     });
   }
   map.setPaintProperty("trail-cursors", "circle-stroke-color", surface);
+
+  // Last, once Trail's other layers are in under the first label: the names a style draws
+  // under its roads and boundaries go over the squares.
+  if (heatAdded) for (const id of heat.raise) map.moveLayer(id, heat.beforeId);
 }

@@ -144,7 +144,13 @@ describe("the People page, Heat", () => {
     expect(
       await screen.findByRole("img", { name: /Heatmap of all recorded points/ }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Fewer points")).toBeInTheDocument();
+    // The key of the squares' colours, from the cells in view (both busy: one class).
+    const legend = await screen.findByRole("list", { name: "Points recorded in each square" });
+    expect(
+      within(legend)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["6,400 or more"]);
     // The level of the tracks has nothing to say about a heatmap.
     expect(screen.queryByRole("group", { name: "Detail of the tracks" })).not.toBeInTheDocument();
     expect(document.title).toBe("Heatmap · People · Trail");

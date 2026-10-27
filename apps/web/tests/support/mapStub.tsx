@@ -17,7 +17,7 @@ export function MapStub(props: TrailMapProps) {
       data-tracks={props.tracks?.length ?? 0}
       data-transport={props.transport?.length ?? 0}
       data-positions={props.positions?.length ?? 0}
-      data-heat={props.heat?.length ?? 0}
+      data-heat={props.heat?.cells.length ?? 0}
       data-fit={props.fit?.key ?? ""}
       data-focus={props.focus?.key ?? ""}
     />

@@ -24,7 +24,7 @@ export const heatmapQuerySchema = z.object({
 export type HeatmapQueryInput = z.input<typeof heatmapQuerySchema>;
 
 export const heatmapResponseSchema = z.object({
-  /** Slippy-tile zoom of the cells. */
+  /** Slippy-tile zoom of the cells (6–20): a cell is that zoom's tile. */
   cellZoom: z.number().int(),
   /** `[lon, lat, count]` of each cell centre. */
   cells: z.array(z.tuple([z.number(), z.number(), z.number().int().positive()])),

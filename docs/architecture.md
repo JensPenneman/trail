@@ -312,10 +312,15 @@ data that a later fix may still recover.
 
 **heat_cells** — pre-aggregated all-time density for the heatmap: PK
 `(device_id, z, x, y)`; `count` (int), `first_at`, `last_at`. `z` ∈ {6, 9, 12,
-15, 18} (slippy-map tile coordinates). Maintained in the same statement that
+15, 18, 20} (slippy-map tile coordinates; level 20 is about 24 m at 51° N, as
+fine as GPS accuracy is worth); the heatmap answers at every level from 6 to
+20, the ones between summed on read from the next finer stored one (§8.2).
+Maintained in the same statement that
 inserts locations (a CTE over `INSERT … RETURNING`, SQL tile math, upsert
 `count = count + excluded.count`), only for points with horizontal accuracy
-≤ 200 m or unknown. Rebuilt per device after deletions (`recompute`).
+≤ 200 m or unknown. Rebuilt per device after deletions (`recompute`), and at
+every start a device's levels that miss points — one a release added, or one
+an older release left behind after a rollback — are rebuilt (§8.2, §10).
 
 **daily_stats** — PK `(device_id, date)` where `date` is the local calendar day
 in the owner's time zone: `points`, `distance_m`, `first_at`, `last_at`.
@@ -729,10 +734,50 @@ JSON `404 not_found`. Stack traces are logged, never sent.
 
 ### 8.2 Heatmap
 
-Pick `cellZoom` = the largest level in {6, 9, 12, 15, 18} that is
-`≤ round(zoom) + 5` (minimum 6); return cell centres in the bbox (handle the
-antimeridian when `west > east`) summed across the requested devices, at most
-20 000 cells (highest counts first, `truncated: true`).
+The cells are the slippy-map tiles of level `cellZoom` = `round(zoom) + 5`,
+kept within 6–20 (`chooseCellZoom`). MapLibre draws the tile of level z 512 px
+wide at map zoom z, so a cell is 16 px wide on the map at a whole zoom (11 to
+23 px between two), down to the streets: 16 px at map zoom 15, 32 px at 16;
+past map zoom 15 the cells stay at level 20 (about 24 m at 51° N) and grow on
+screen. A stored level is read as it is; any other is summed on read from
+the coarsest stored level that is finer (`storedCellZoom`, s = 1 or 2 levels
+finer, at most 4 × 4 stored cells to a cell):
+`SELECT x >> s, y >> s, sum(count) … GROUP BY 1, 2`. The viewport is
+widened to whole cells (`heatCellWindow`), so a cell at its edge counts every
+point it holds, as it does in the middle. The answer is the cell centres
+summed across the requested devices (the antimeridian handled when
+`west > east`), at most 20 000 cells (highest counts first,
+`truncated: true`). The query is a range scan of the primary key
+`(device_id, z, x, y)` and a hash aggregate: measured on the production data
+(1.2 M points; 6 350 cells at level 18, 28 035 at level 20) every viewport of
+the dashboard answers in under 10 ms, and in at most about 30 ms on cells
+fifteen times denser — no further index is needed.
+
+Every upload adds its points to the six stored levels in its one statement
+(§6.2). Level 20 costs a batch of 1 000 points of a drive 30 to 60 ms (an
+upload's median 87–92 ms with five levels, 120–151 ms with six, in the
+development container under load); in production, before it, uploads took
+28 ms at the median and the largest ones (about 900 points) 76 ms, 135 ms at
+most — far from the 10 s an upload in flight gets at shutdown.
+
+Every point adds one to every stored level, so a device's levels hold the
+same total unless one was not kept: a level a release adds (level 20) misses
+the points uploaded before it, and after a rollback to a release without it,
+that release's uploads skip it and its rebuilds (a deleted period, its
+`trail recompute`) drop it. So at every start `fillHeatLevels` reads the
+total of each device's levels (one pass over the cells: milliseconds for
+1.2 M points) and rebuilds from the device's points every level below the
+highest of them (`levelsToRebuild`): uploads and rebuilds write every level
+in one statement under the device's lock, so no level ever holds more points
+than the device has, and a level short of cells for any other reason is
+rebuilt too — that level alone. It goes a device at a time, each in a
+transaction under the device's row lock — the lock an upload takes first, so
+an upload of that device waits rather than being counted twice (1–4 s for
+1.2 M points). A stop cancels the statement in progress, a wait for that
+lock included (that of its own transaction, found by backend and start), or
+throws between two statements, and the transaction rolls back; the next
+start finds what is left. `trail recompute` rebuilds every
+level under the same lock, then the daily statistics without it.
 
 ### 8.3 Public API v1
 
@@ -1589,6 +1634,9 @@ events and refetches people and shares on `share` events.
   the owner's time zone at run time; a failed pass is retried with the next.
   Changing the time zone (`PATCH /api/me`) rebuilds every day of the user's
   devices in the background.
+- once, 5 s after the start — the heat levels of every device whose totals
+  disagree are rebuilt from its points (`fillHeatLevels`, §8.2). A shutdown
+  does not wait for it: it is cancelled and rolls back.
 - the processing worker (§17.4) — 3 s after new work, every minute for
   retries and every 15 minutes for windows waiting on map data and lost
   windows; the boot-time backfill when a level's algorithms changed version;
@@ -1604,7 +1652,7 @@ the image, so `docker compose exec app trail <command>`):
 - `passkey-link <email> [--origin <url>]` — one-time URL to add a passkey (recovery)
 - `invite [--email <email>] [--days <n>]` — invite URL
 - `users` — list accounts
-- `recompute [--device <id>]` — rebuild heat cells + daily stats
+- `recompute [--device <id>]` — rebuild heat cells (every stored level) + daily stats
 - `reprocess [--device <id>] [--from <iso> --to <iso>] [--from-level averaged|mapped|inferred]`
   — work out the processed levels again (§17.4)
 - `prune` — run the retention cleanup now
@@ -1889,9 +1937,45 @@ count among them, since they lead to signed-in pages.
     a moment; distance, points, first/last; the timeline of stops and moves,
     with a dialog to correct a mode; visits and trips of the day. Other
     people's tracks as their shares allow (below).
-  - **Heat** — all-time heatmap (`/api/heatmap`, refetched as the map moves),
-    totals and the busiest places in view. Heatmaps cover one's own devices
-    only, so Heat offers no people and says so when some are chosen with Me.
+  - **Heat** — all-time heatmap (`/api/heatmap` for the view once the map
+    has stood still for 300 ms, its box rounded outward to a thousandth of a
+    degree and its zoom to a whole level, so that small moves hit the
+    cache), totals and the busiest places in view. The cells are drawn as
+    squares (`heatFeatures`: each the tile of its level, with a gap of the
+    map 1.5 px wide between neighbours at the zoom they arrive at, and at
+    most 20 px wide, centred in its tile — past map zoom 15 the cells of
+    level 20 grow on screen, their squares do not, so the busiest places
+    never blank whole blocks of the map) in the
+    classes of `heatScale`, taken from the cells in view: from the smallest
+    count to the busiest 3 % of the cells, the classes start at round
+    numbers — 1, 2, 5, 10 … over a short range, 1, 3, 10, 30 … over a longer
+    one (its highest five when it has one or two too many, so that the
+    rarest counts share the first class), whole decades over longer ones —
+    six classes at most; panning moves the counts but rarely the round
+    numbers. The classes take the steps of one ramp (`heatRamp`), spread
+    over all six when there are fewer: pink to purple at even steps of OKLCH
+    lightness, darker for more on a light map and brighter for more on a
+    dark or satellite one, in hues the basemaps hardly use (their parks,
+    water and roads are green, blue, yellow and orange). The squares are
+    opaque, so each is exactly its colour in the key and the ramp's numbers
+    are what the map shows: against the ground of OpenFreeMap's styles the
+    lightest step of the light ramp has 2.24:1 (#f8f4f0) and the darkest of
+    the dark one 3.28:1 (#0c0c0c); neighbouring steps are 0.08 or more
+    apart in lightness and 8.9–10.0 (light) and 8.4–10.1 (dark) in ΔE
+    (OKLab × 100), at least 7.0 and 6.6 for protanopia and 8.9 and 7.9 for
+    deuteranopia. The squares lie over every area, road, building and
+    boundary of the basemap, which would otherwise cut them apart, and under
+    every name (`heatLayerPlacement`): below the first of the symbols after
+    the style's last other layer, with the names a style draws earlier
+    moved over the squares (OpenFreeMap's dark style draws its water names
+    under its buildings and its road names under its boundaries), once
+    Trail's lines are in under the style's first symbol. The key
+    (`HeatLegend`) is that scale: "Points recorded in each square", a
+    swatch and the counts of every class, "Rarely" and "Often" at its ends
+    as a visual cue only; it follows the view, as the squares do. Nothing in
+    the heatmap moves (no transitions, so nothing for reduced motion to
+    stop). Heatmaps cover one's own devices only, so Heat offers no people
+    and says so when some are chosen with Me.
 
   The head holds the controls the views share, in this order: **people**
   (Me and everyone who shares with me, plus Everyone — a checkbox for all,
@@ -2305,7 +2389,10 @@ which are merged by hand; majors wait for a person, security ones too.
 
 - `packages/contracts/tests` — schema and helper unit tests.
 - `apps/api/tests/unit` — pure logic (Overland normalisation, timestamps,
-  RDP, distance, tile math, token hashing, config parsing, presets, share
+  RDP, distance, tile math and the heatmap's levels, whole-cell windows and
+  the levels a device's totals call for rebuilding (those below the highest,
+  level 18 included),
+  token hashing, config parsing, presets, share
   durations across DST and skipped midnights, the sharing grids — one per
   owner, fixed, within the cell around the position, area cells made of whole
   approximate cells, whole at the antimeridian, and a property test that no
@@ -2368,6 +2455,16 @@ which are merged by hand; majors wait for a person, security ones too.
   and session-only management); `apiV1Operations.test.ts` calls every v1
   operation of the token branch with real tokens: the same answers as the
   dashboard's routes, scopes, device restrictions and other accounts' ids.
+  `history.test.ts` holds the heatmap at every zoom from 0 to 18 (levels 6
+  to 20) against the finest stored cells summed, several devices summed, a
+  whole cell at the edge of the view, the antimeridian and the cap of 20 000
+  cells; `heatLevels.test.ts` the start-up fill: nothing to do while the
+  levels agree, level 20 built for the points from before it (an upload
+  after the upgrade counted once), what an older release left behind after
+  a rollback (its uploads, its rebuild) repaired, a stop after one device
+  with the rest done at the next start, a stop while it waits for a
+  device's lock (back at once, nothing kept), an upload that waits for the
+  device's rebuild and counts once, and the levels that agree left alone.
   Processing is tested in the real app with map tiles cut from the hand-made
   world by a `FixtureWaySource` (no network): uploads to segments and the
   `segments` event, every level and its degradation, windows waiting for map
@@ -2453,8 +2550,11 @@ which are merged by hand; majors wait for a person, security ones too.
   `legacyPeoplePath`, and the redirects through the app's own route table),
   Settings' tree (groups, paths, levels, administrators' rows), its search
   index and row values, the old anchors (`settingsPathFor`),
-  `isSignedInPath` and the precedence of the map's defaults have unit tests
-  of their own; Settings itself renders through its real routes
+  `isSignedInPath`, the precedence of the map's defaults, the heatmap's
+  scale, classes and squares (`heatHelpers.test.ts`) and where its layer
+  goes in OpenFreeMap's two styles, their layers as served
+  (`heatLayers.test.ts`: over every shape, under every name, Trail's lines
+  where they were) have unit tests of their own; Settings itself renders through its real routes
   (`renderSettings`, phone or wide screen) for the list, search, going
   deeper and back with focus, and every page. The charts' helpers (scales,
   nice ticks, bands, tick thinning, the heat grid's bins, summaries, tooltip
@@ -2493,7 +2593,9 @@ which are merged by hand; majors wait for a person, security ones too.
   Devices page: status, points, battery, trip, activity and the upload feed;
   on People the Me card), ingest log and raw points, remote settings, token
   rotation, History and its scrubber,
-  the heatmap, sign-in by email, passkey button and autofill, invitations and
+  the heatmap (its squares on the map, found by their colours in a
+  screenshot of the canvas, its key and the busiest places), sign-in by email,
+  passkey button and autofill, invitations and
   isolation, passkeys and passkey links, sessions, export, deleting a period
   and the account, Overland's protocol, static files and headers, the API
   reference at `/docs` and the OpenAPI document, API tokens (create one in
