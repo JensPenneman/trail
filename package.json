@@ -33,12 +33,12 @@
     "node": ">=24"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.13.0",
+    "@axe-core/playwright": "^4.14.0",
     "@biomejs/biome": "2.6.2",
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.2.3",
     "@commitlint/types": "^21.2.3",
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.1",
     "@trail/contracts": "*",
     "@types/node": "^24.19.0",
     "@vitest/coverage-v8": "^5.0.5",
