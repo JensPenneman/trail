@@ -422,9 +422,10 @@ match — `raw` for tracks, visits, trips and `level=raw`; `raw` and
 `processed` for level tracks, the timeline and Insights — and its
 `staleTime` is infinite (`staleTime` is a function of the query in TanStack
 5): stepping back through History asks the server for nothing it saw before.
-A mismatch sets `staleTime` 0: the entry is painted and refetched whole,
-with its ETag for the case where the server finds the data unchanged after
-all. Ranges skip the comparison and use their ETag.
+A digest a processing change marked stale (§4.3) settles nothing until it
+is fetched again. A mismatch sets `staleTime` 0: the entry is painted and
+refetched whole, with its ETag for the case where the server finds the data
+unchanged after all. Ranges skip the comparison and use their ETag.
 
 ### 4.2 Conditional requests
 
@@ -485,7 +486,10 @@ page does, at once. Changes (`apps/api/src/events/`):
   (the browser updates the month's `days` entry in place and marks the
   named days stale), and `ingest` keeps today's points and the feed live as
   now. `segments` keeps its shape; the browser marks the days it names
-  stale instead of every level track and timeline in memory.
+  stale instead of every level track and timeline in memory, and the
+  digests covering them with them: processing moves their processed stamps
+  without a `days` event, so a digest left fresh would settle those days as
+  they were.
 - **`hello`** gains `versions` (`processingVersions`): a page that stays
   open across a release learns of a new version and lets the next stamps do
   the rest; nothing in the browser depends on it beyond a line in About.
