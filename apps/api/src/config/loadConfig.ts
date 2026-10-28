@@ -111,6 +111,8 @@ export function loadConfig(
       osmTtlDays: env.PROCESSING_OSM_TTL_DAYS,
       maxAccuracyM: env.PROCESSING_MAX_ACCURACY_M,
       stopMinS: env.PROCESSING_STOP_MIN_S,
+      passMaxPoints: env.PROCESSING_PASS_MAX_POINTS,
+      passMaxSpanHours: env.PROCESSING_PASS_MAX_SPAN_HOURS,
     },
     loadTest: env.LOAD_TEST,
     launchwayEnvironment: env.LAUNCHWAY_ENVIRONMENT ?? null,

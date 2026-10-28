@@ -65,6 +65,8 @@ describe("loadConfig", () => {
         osmTtlDays: 90,
         maxAccuracyM: 150,
         stopMinS: 180,
+        passMaxPoints: 60_000,
+        passMaxSpanHours: 36,
       },
       loadTest: false,
       launchwayEnvironment: null,
@@ -107,6 +109,8 @@ describe("loadConfig", () => {
         PROCESSING_OSM_TTL_DAYS: "30",
         PROCESSING_MAX_ACCURACY_M: "100",
         PROCESSING_STOP_MIN_S: "300",
+        PROCESSING_PASS_MAX_POINTS: "20000",
+        PROCESSING_PASS_MAX_SPAN_HOURS: "12",
       },
       defaults,
     );
@@ -118,12 +122,25 @@ describe("loadConfig", () => {
       osmTtlDays: 30,
       maxAccuracyM: 100,
       stopMinS: 300,
+      passMaxPoints: 20_000,
+      passMaxSpanHours: 12,
     });
     expect(
       issuesOf({ ...minimal, PROCESSING_ENABLED: "yes", PROCESSING_OVERPASS_URL: "ftp://x" }),
     ).toEqual([
       "PROCESSING_ENABLED: Use true or false",
       expect.stringMatching(/^PROCESSING_OVERPASS_URL: /),
+    ]);
+    // A pass reads at least a thousand points and spans at least an hour.
+    expect(
+      issuesOf({
+        ...minimal,
+        PROCESSING_PASS_MAX_POINTS: "999",
+        PROCESSING_PASS_MAX_SPAN_HOURS: "0",
+      }),
+    ).toEqual([
+      expect.stringMatching(/^PROCESSING_PASS_MAX_POINTS: /),
+      expect.stringMatching(/^PROCESSING_PASS_MAX_SPAN_HOURS: /),
     ]);
   });
 
