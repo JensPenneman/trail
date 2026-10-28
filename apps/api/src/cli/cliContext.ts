@@ -16,11 +16,17 @@ export interface CliContext {
 /**
  * Configuration and a small pool for one command. Pending migrations are
  * applied first (under the same lock as the server), so commands also work
- * before the server has ever started. Logs go to stderr: stdout is the output.
+ * before the server has ever started; a command's `preflight` sees the
+ * configuration before that and may refuse. Logs go to stderr: stdout is the
+ * output.
  */
-export async function openCliContext(entryUrl: string): Promise<CliContext> {
+export async function openCliContext(
+  entryUrl: string,
+  preflight?: (config: Config) => void,
+): Promise<CliContext> {
   const paths = runtimePaths(entryUrl);
   const config = loadConfig(process.env, { webDistDir: paths.webDistDir });
+  preflight?.(config);
   const verbose = config.logLevel === "debug" || config.logLevel === "trace";
   const logger = createLogger({
     level: verbose ? config.logLevel : "warn",
