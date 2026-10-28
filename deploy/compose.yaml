@@ -94,6 +94,12 @@ services:
       PROCESSING_STOP_MIN_S:
       PROCESSING_PASS_MAX_POINTS:
       PROCESSING_PASS_MAX_SPAN_HOURS:
+      # `trail load-fleet` only (docs/perf/README.md): a preview's load test sets
+      # LOAD_TEST=true, and Launchway's name of the deployment (production or
+      # preview) makes the command refuse anywhere but in a preview. Launchway
+      # writes it to .env; it is the one of its variables the app receives.
+      LOAD_TEST:
+      LAUNCHWAY_ENVIRONMENT:
       # The V8 heap's limit, set instead of Node's own guess from mem_limit
       # (about 560 MB of the 1 GB on Node 24; other V8 versions guess
       # otherwise). A processing backfill holds up to ~250 MB per piece:

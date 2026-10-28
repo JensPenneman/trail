@@ -111,7 +111,7 @@ export class EventBus {
     return this.#byUser.get(userId)?.size ?? 0;
   }
 
-  /** Every open stream of every user (the global cap of §9). */
+  /** Every open stream of every user (the global cap of §9, the load line). */
   streamCount(): number {
     let total = 0;
     for (const subscribers of this.#byUser.values()) total += subscribers.size;

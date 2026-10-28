@@ -114,5 +114,7 @@ export function loadConfig(
       passMaxPoints: env.PROCESSING_PASS_MAX_POINTS,
       passMaxSpanHours: env.PROCESSING_PASS_MAX_SPAN_HOURS,
     },
+    loadTest: env.LOAD_TEST,
+    launchwayEnvironment: env.LAUNCHWAY_ENVIRONMENT ?? null,
   };
 }

@@ -13,6 +13,11 @@ export class BackgroundTasks {
     this.#logger = logger;
   }
 
+  /** Tasks still running (the load line). */
+  get size(): number {
+    return this.#running.size;
+  }
+
   run(name: string, task: () => Promise<void>): void {
     const promise = task()
       .catch((error: unknown) => {

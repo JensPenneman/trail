@@ -109,4 +109,8 @@ export interface Config {
   build: BuildInfo;
   rateLimits: RateLimitConfig;
   processing: ProcessingSettings;
+  /** `LOAD_TEST=true`: one of the conditions of `trail load-fleet` (docs/perf/README.md). */
+  loadTest: boolean;
+  /** `LAUNCHWAY_ENVIRONMENT` as Launchway set it (`production`, `preview`), null elsewhere. */
+  launchwayEnvironment: string | null;
 }
