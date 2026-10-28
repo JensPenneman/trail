@@ -55,6 +55,10 @@ interface ProcessingSettings {
   osmTtlDays: number;
   maxAccuracyM: number;
   stopMinS: number;
+  /** A pass reads at most this many raw points: a bigger job is split first. */
+  passMaxPoints: number;
+  /** The points a pass reads span at most this long. */
+  passMaxSpanHours: number;
 }
 
 /** Validated runtime configuration (docs/architecture.md §4). */

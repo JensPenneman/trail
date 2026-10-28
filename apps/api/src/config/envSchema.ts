@@ -139,6 +139,10 @@ export const envSchema = z
     PROCESSING_OSM_TTL_DAYS: env(intSchema(1, 3650).default(90)),
     PROCESSING_MAX_ACCURACY_M: env(intSchema(10, 5000).default(150)),
     PROCESSING_STOP_MIN_S: env(intSchema(30, 7200).default(180)),
+    // A pass works out at most this many points, spanning at most this long; bigger work is
+    // split first (docs/architecture.md §17.4). A very large value restores unbounded passes.
+    PROCESSING_PASS_MAX_POINTS: env(intSchema(1000, 100_000_000).default(60_000)),
+    PROCESSING_PASS_MAX_SPAN_HOURS: env(intSchema(1, 87_600).default(36)),
   })
   .superRefine((values, context) => {
     // Refinements see invalid fields too; an invalid URL has its own issue already.

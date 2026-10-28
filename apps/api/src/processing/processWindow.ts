@@ -5,9 +5,18 @@ import { notifySegments } from "../events/processingNotify";
 import { lockDeviceProcessing } from "./deviceLock";
 import { persistWindow } from "./persistWindow";
 import type { ProcessingConfig } from "./processingConfig";
-import { awaitTiles, type FromLevel, finishWindows, type QueueRow } from "./processingQueue";
+import {
+  awaitTiles,
+  deferLiveWindows,
+  enqueueWindow,
+  type FromLevel,
+  finishWindows,
+  type QueueRow,
+  queuePriority,
+} from "./processingQueue";
 import { processingVersions } from "./processingVersion";
 import { inferWindow, mapPiece, piecesToMap, planWindow, type StretchMapping } from "./runPipeline";
+import { splitJob } from "./splitJob";
 import type { TileKey } from "./tileCover";
 import { cachedTiles, loadMapData, staleBefore } from "./tileStore";
 import {
@@ -22,8 +31,14 @@ import {
 export interface WindowOutcome {
   deviceId: string;
   userId: string;
+  /** The window worked out: the queued range grown to whole segments. */
   from: Date;
   to: Date;
+  /** The queued range the pass took on: all of the rows', or the newest part of a split. */
+  queued: { from: Date; to: Date };
+  /** Whether the rows were too big for one pass: their older part waits in the queue. */
+  split: boolean;
+  /** The raw points read. */
   points: number;
   segments: number;
   missingTiles: readonly TileKey[];
@@ -33,11 +48,16 @@ const levels: readonly FromLevel[] = ["averaged", "mapped", "inferred"];
 
 /**
  * One pass of the worker over a device's queued windows (docs/architecture.md
- * §17.4), in one transaction under the device's processing lock: the window
- * grows to whole segments — at most two days out of the queued range, which
- * a window waiting for tiles keeps as it was — the points, visits, trips and overrides are read,
- * the pipeline runs with the cached map data loaded a piece at a time, the
- * results replace the window's derived rows and the queue rows are done.
+ * §17.4), in one transaction under the device's processing lock, bounded by
+ * `config.passes`: rows holding more points than a pass may read are split
+ * first, the pass going on with their newest part and queuing the older one
+ * (as repair when it was an upload's); the window grows to whole segments
+ * within the budget — at most two days out of the queued range, which a
+ * window waiting for tiles keeps as it was — the points, visits, trips and
+ * overrides are read, the pipeline runs with the cached map data loaded a
+ * piece at a time, the results replace the window's derived rows and the
+ * queue rows are done. After a pass of new data, an upload queued meanwhile
+ * waits for the device's pass interval.
  * A window queued from the inferred level keeps each move's mapped points as
  * stored by the current mapped version, so only the inference runs again (a
  * move without them is matched).
@@ -61,7 +81,9 @@ export async function processWindow(
   const fromLevel =
     levels[Math.min(...rows.map((row) => levels.indexOf(row.fromLevel)))] ?? "averaged";
   const priority = Math.min(...rows.map((row) => row.priority));
+  const live = priority === queuePriority.live;
   const { config, now } = options;
+  const { gapSplitS } = config.stops;
 
   return db.transaction(async (tx) => {
     await lockDeviceProcessing(tx, deviceId);
@@ -72,7 +94,12 @@ export async function processWindow(
       .limit(1);
     if (owner === undefined) return null;
 
-    const window = await extendWindow(tx, deviceId, span, config.stops.gapSplitS);
+    const split = await splitJob(tx, deviceId, span, { budget: config.passes, gapSplitS });
+    const queued = split.span;
+    const window = await extendWindow(tx, deviceId, queued, {
+      gapSplitS,
+      maxPoints: config.passes.maxPoints,
+    });
     const raw = await loadRawPoints(tx, deviceId, window.from, window.to);
     const visits = await loadVisits(tx, deviceId, window.from, window.to);
     const trips = await loadTrips(tx, deviceId, window.from, window.to, now);
@@ -100,6 +127,9 @@ export async function processWindow(
       config,
     );
 
+    // The rows are done first: a part of a stale segment the window cuts off is queued afresh, not
+    // merged into a row of this pass (one starting where the segment did) and kept with its range.
+    await finishWindows(tx, rows);
     await persistWindow(tx, {
       deviceId,
       from: window.from,
@@ -109,13 +139,25 @@ export async function processWindow(
       versions: processingVersions,
       config,
     });
-    await finishWindows(tx, rows);
+    // The older part of a split keeps the rows' reason and level; an upload's is repair: history
+    // that must not hold up the fresh points of other devices.
+    if (split.older !== null) {
+      const head = rows.find((row) => row.priority === priority) ?? first;
+      await enqueueWindow(tx, {
+        deviceId,
+        ...split.older,
+        reason: live ? "split" : head.reason,
+        fromLevel,
+        priority: live ? queuePriority.repair : priority,
+      });
+    }
     // Missing tiles, and old ones (they served this pass): the window is done again once they are
     // here — with the bounds it was queued with: the next pass grows them anew, never from these.
     const waitFor = [...new Set([...result.missingTiles, ...stale])].sort();
     if (waitFor.length > 0) {
-      await awaitTiles(tx, { deviceId, ...span, fromLevel, priority }, waitFor);
+      await awaitTiles(tx, { deviceId, ...queued, fromLevel, priority }, waitFor);
     }
+    if (live) await deferLiveWindows(tx, deviceId);
     // The owner's streams learn of it with the commit, whichever process ran the pass (§9).
     await notifySegments(tx, { userId: owner.userId, deviceId, from: window.from, to: window.to });
     return {
@@ -123,6 +165,8 @@ export async function processWindow(
       userId: owner.userId,
       from: window.from,
       to: window.to,
+      queued,
+      split: split.older !== null,
       points: raw.length,
       segments: result.segments.length,
       missingTiles: waitFor,

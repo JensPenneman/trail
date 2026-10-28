@@ -78,6 +78,19 @@ describe("the configuration", () => {
     expect(config.stops.minDurationS).toBe(240);
     expect(config.mapping.tileMaxAgeDays).toBe(30);
     expect(config.mapping.pieceMaxTiles).toBe(defaultProcessingConfig.mapping.pieceMaxTiles);
+    expect(config.passes).toEqual({ maxPoints: 60_000, maxSpanS: 36 * 3600 });
+  });
+
+  it("bounds a pass as the environment says", () => {
+    const config = processingConfigWith({
+      maxAccuracyM: 150,
+      stopMinS: 180,
+      osmTtlDays: 90,
+      passMaxPoints: 20_000,
+      passMaxSpanHours: 12,
+    });
+    expect(config.passes).toEqual({ maxPoints: 20_000, maxSpanS: 12 * 3600 });
+    expect(config.stops).toEqual(defaultProcessingConfig.stops);
   });
 });
 

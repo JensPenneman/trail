@@ -12,6 +12,30 @@ const maxExtensionMs = 2 * 86_400_000;
 
 const epoch = (value: string): number => Math.round(Date.parse(toIso(value)) / 1000);
 
+const instant = (value: string): Date => new Date(toIso(value));
+
+/** The first recorded point at `from` or later (and at `to` or earlier), if any. */
+async function firstPointFrom(db: Executor, deviceId: string, from: Date, to: Date) {
+  const result = await db.execute<{ at: string | null }>(sql`
+    SELECT min(recorded_at)::text AS at FROM locations
+    WHERE device_id = ${deviceId}
+      AND recorded_at >= ${from.toISOString()}::timestamptz AND recorded_at <= ${to.toISOString()}::timestamptz
+  `);
+  const at = result.rows[0]?.at ?? null;
+  return at === null ? null : instant(at);
+}
+
+/** The last recorded point at `to` or earlier (and at `from` or later), if any. */
+async function lastPointUntil(db: Executor, deviceId: string, from: Date, to: Date) {
+  const result = await db.execute<{ at: string | null }>(sql`
+    SELECT max(recorded_at)::text AS at FROM locations
+    WHERE device_id = ${deviceId}
+      AND recorded_at >= ${from.toISOString()}::timestamptz AND recorded_at <= ${to.toISOString()}::timestamptz
+  `);
+  const at = result.rows[0]?.at ?? null;
+  return at === null ? null : instant(at);
+}
+
 /**
  * The window grown to whole segments (docs/architecture.md §17.4): the stop or
  * move under each edge — and one that just touches it — is processed again as
@@ -23,14 +47,25 @@ const epoch = (value: string): number => Math.round(Date.parse(toIso(value)) / 1
  * the gap is worked out with both its ends: a gap the phone lay still through
  * is a stop, a visit's stop lasts until its departure. A shorter hole is no
  * such gap: the window starts where it did.
+ *
+ * Within the budget of a pass: the growth is taken while the window holds at
+ * most `maxPoints` points — forward first (the segment the window's end runs
+ * into), then back, nearest first (the segment under the start, then the one
+ * before a gap, else the point before it) — each whole or not at all, so the
+ * window is not cut again at another place with every upload. A segment that
+ * does not fit stays as it is, cut where the queued range starts or ends:
+ * at a point, so that its part and the window meet, and its part counts its
+ * own and keeps its mode (`persistWindow`). A stale multi-day stop at an edge
+ * thus costs a pass at most the budget, never two days of it.
  */
 export async function extendWindow(
   db: Executor,
   deviceId: string,
   window: { from: Date; to: Date },
-  gapSplitS: number,
+  options: { gapSplitS: number; maxPoints: number },
 ): Promise<{ from: Date; to: Date }> {
   const { from, to } = window;
+  const { gapSplitS } = options;
   const result = await db.execute<{ first: string | null; last: string | null }>(sql`
     SELECT min(started_at)::text AS first, max(ended_at)::text AS last
     FROM segments
@@ -39,9 +74,14 @@ export async function extendWindow(
       AND ended_at >= ${from.toISOString()}::timestamptz
   `);
   const row = result.rows[0];
-  let first = row?.first === null || row?.first === undefined ? from : new Date(toIso(row.first));
-  const last = row?.last === null || row?.last === undefined ? to : new Date(toIso(row.last));
-  const start = new Date(Math.min(first.getTime(), from.getTime()));
+  // The segments under the edges, or that just touch them, where they reach beyond the range.
+  const first = row?.first === null || row?.first === undefined ? from : instant(row.first);
+  const last = row?.last === null || row?.last === undefined ? to : instant(row.last);
+  const underFrom = first < from ? first : null;
+  const underTo = last > to ? last : null;
+  // Back, outermost first: the segment before a gap, the point before it, the segment under the start.
+  const back: Date[] = [];
+  const start = underFrom ?? from;
   const before = await db.execute<{ started_at: string; ended_at: string }>(sql`
     SELECT started_at::text, ended_at::text FROM segments
     WHERE device_id = ${deviceId} AND ended_at <= ${start.toISOString()}::timestamptz
@@ -72,16 +112,79 @@ export async function extendWindow(
     const holeTo =
       edge?.after === null || edge?.after === undefined ? null : Date.parse(toIso(edge.after));
     if (holeFrom !== null && holeTo !== null && holeTo - holeFrom > gapSplitS * 1000) {
-      const reach = previous !== undefined ? Date.parse(toIso(previous.started_at)) : holeFrom;
-      first = new Date(Math.min(first.getTime(), reach));
+      if (previous !== undefined) back.push(instant(previous.started_at));
+      if (edge?.before !== null && edge?.before !== undefined) back.push(instant(edge.before));
     }
   }
-  return {
-    from: new Date(
-      Math.max(Math.min(first.getTime(), from.getTime()), from.getTime() - maxExtensionMs),
+  if (underFrom !== null) back.push(underFrom);
+
+  // Two days out at most, cut at a point.
+  const capFrom = new Date(from.getTime() - maxExtensionMs);
+  const capTo = new Date(to.getTime() + maxExtensionMs);
+  const backAtCap = back.some((at) => at < capFrom)
+    ? await firstPointFrom(db, deviceId, capFrom, from)
+    : null;
+  const backward = [
+    ...new Set(
+      back
+        .map((at) => (at >= capFrom ? at : backAtCap))
+        .filter((at): at is Date => at !== null && at < from)
+        .map((at) => at.getTime()),
     ),
-    to: new Date(Math.min(Math.max(last.getTime(), to.getTime()), to.getTime() + maxExtensionMs)),
+  ].map((ms) => new Date(ms));
+  const forward =
+    underTo === null
+      ? null
+      : underTo <= capTo
+        ? underTo
+        : await lastPointUntil(db, deviceId, to, capTo).then((at) =>
+            at !== null && at > to ? at : null,
+          );
+
+  // The points of the queued range, of the growth forward and of each step back: one scan.
+  const lowest = new Date(Math.min(from.getTime(), ...backward.map((at) => at.getTime())));
+  const highest = forward ?? to;
+  const counts = await db.execute<Record<string, number | string | null>>(sql`
+    SELECT
+      count(*) FILTER (WHERE recorded_at >= ${from.toISOString()}::timestamptz
+        AND recorded_at <= ${to.toISOString()}::timestamptz)::int AS queued,
+      count(*) FILTER (WHERE recorded_at > ${to.toISOString()}::timestamptz)::int AS forward,
+      min(recorded_at) FILTER (WHERE recorded_at >= ${from.toISOString()}::timestamptz
+        AND recorded_at <= ${to.toISOString()}::timestamptz)::text AS first_queued,
+      max(recorded_at) FILTER (WHERE recorded_at >= ${from.toISOString()}::timestamptz
+        AND recorded_at <= ${to.toISOString()}::timestamptz)::text AS last_queued
+      ${sql.join(
+        backward.map(
+          (at, index) =>
+            sql`, count(*) FILTER (WHERE recorded_at >= ${at.toISOString()}::timestamptz
+              AND recorded_at < ${from.toISOString()}::timestamptz)::int AS ${sql.raw(`back_${index}`)}`,
+        ),
+      )}
+    FROM locations
+    WHERE device_id = ${deviceId}
+      AND recorded_at >= ${lowest.toISOString()}::timestamptz
+      AND recorded_at <= ${highest.toISOString()}::timestamptz
+  `);
+  const tally = counts.rows[0] ?? {};
+  const countOf = (key: string) => Number(tally[key] ?? 0);
+  const pointOf = (key: string) => {
+    const value = tally[key];
+    return typeof value === "string" ? instant(value) : null;
   };
+  let room = options.maxPoints - countOf("queued");
+  let end = underTo === null ? to : (pointOf("last_queued") ?? to);
+  if (forward !== null && countOf("forward") <= room) {
+    room -= countOf("forward");
+    end = forward;
+  }
+  const reached = backward.findIndex((_, index) => countOf(`back_${index}`) <= room);
+  const begin =
+    reached >= 0
+      ? (backward[reached] ?? from)
+      : underFrom === null
+        ? from
+        : (pointOf("first_queued") ?? from);
+  return { from: begin, to: end };
 }
 
 interface PointRow extends Record<string, unknown> {

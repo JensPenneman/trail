@@ -87,14 +87,14 @@ export async function enqueueBackfill(
  * A safety net for windows lost between an upload and its queueing (the
  * process stopped in between): a device whose newest point is more than a
  * quarter of an hour newer than its newest processed point, with nothing
- * queued for it, gets the gap queued. Devices never processed are the
- * backfill's. Returns the number of devices.
+ * queued for it, gets the gap queued, as repair. Devices never processed are
+ * the backfill's. Returns the number of devices.
  */
 export async function enqueueCatchUp(db: Executor): Promise<number> {
   const result = await db.execute(sql`
     INSERT INTO processing_queue (device_id, from_at, to_at, reason, priority, next_at)
     SELECT d.id, processed.last - interval '30 minutes', recorded.last + interval '1 second',
-      'catch-up', ${queuePriority.normal}, ${readyNow}
+      'catch-up', ${queuePriority.repair}, ${readyNow}
     FROM devices d
     CROSS JOIN LATERAL (SELECT max(recorded_at) AS last FROM locations WHERE device_id = d.id) recorded
     CROSS JOIN LATERAL (SELECT max(recorded_at) AS last FROM processed_points WHERE device_id = d.id) processed
