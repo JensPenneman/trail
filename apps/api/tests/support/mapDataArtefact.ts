@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -59,7 +59,12 @@ export function writeArtefact(changes: ArtefactChanges = {}): string {
     counts: { ways: number; wayNodeRefs: number; pois: { features: number } };
     files: { name: string; bytes: number; sha256: string }[];
   };
-  manifest.build = { ...manifest.build, at: new Date().toISOString().replace(/\.\d+Z$/, "Z") };
+  // A build of its own: copies made within the same second must not share a digest.
+  manifest.build = {
+    ...manifest.build,
+    at: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
+    commit: randomBytes(20).toString("hex"),
+  };
   if (changes.keepChecksums !== true) {
     manifest.counts.ways = wayLines.length;
     manifest.counts.wayNodeRefs = wayLines.reduce((sum, line) => sum + nodeRefs(line), 0);

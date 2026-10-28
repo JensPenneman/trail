@@ -232,6 +232,19 @@ async function takeMapTables(client: PoolClient, signal: AbortSignal | undefined
 
 /** Records the build as `importing` (a failed or interrupted one again); null when it is ready already. */
 async function recordImporting(client: PoolClient, artefact: Artefact): Promise<string | null> {
+  const { key, source } = artefact;
+  try {
+    return await upsertImporting(client, artefact);
+  } catch (error) {
+    if (!isUniqueViolation(error, "osm_regions_source_key")) throw error;
+    // Two digests of one region and day that share their first 8 hex digits: one in 4 billion.
+    throw new MapDataError(
+      `another build of ${key.region} from ${key.buildId} has a digest that begins like this one's, so both would be ${source}: this one can be imported once that build is replaced`,
+    );
+  }
+}
+
+async function upsertImporting(client: PoolClient, artefact: Artefact): Promise<string | null> {
   const { key, source, manifest, outline } = artefact;
   const row = await client.query<{ id: string }>(
     `INSERT INTO osm_regions (name, build_id, digest, source, status, extract_timestamp, built_at,
@@ -336,11 +349,12 @@ export async function importRegion(options: ImportRegionOptions): Promise<Import
           await takeMapTables(client, signal);
           await onStep?.("locked");
           await attachBuildTables(client, key, source);
-          const old = await client.query<{ source: string }>(
-            "DELETE FROM osm_regions WHERE name = $1 AND status = 'ready' AND id <> $2 RETURNING source",
+          // The region's previous build goes, and its failed attempts with it (their reasons are logged).
+          const old = await client.query<{ source: string; status: string }>(
+            "DELETE FROM osm_regions WHERE name = $1 AND id <> $2 RETURNING source, status",
             [key.region, buildRow],
           );
-          replaced = old.rows.map((row) => row.source);
+          replaced = old.rows.filter((row) => row.status === "ready").map((row) => row.source);
           await client.query(
             `UPDATE osm_regions SET status = 'ready', error = NULL, way_count = $2,
                membership_count = $3, poi_count = $4, imported_at = now(), updated_at = now()

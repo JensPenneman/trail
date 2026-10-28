@@ -119,23 +119,31 @@ interface MapRelation extends Record<string, unknown> {
 }
 
 /**
- * Removes the partitions and tables of builds that no `osm_regions` row
- * references: the build a swap replaced, and what a crash left between the
- * swap's commit and the drop. An attached one is detached concurrently
- * (readers never wait for it) or, left half detached, finished; then it is
- * dropped. Outside a transaction, as DETACH … CONCURRENTLY must be, and only
- * under the import lock (importRegion.ts). Returns the tables it dropped.
+ * Clears up after imports that did not finish, under the import lock
+ * (importRegion.ts), so no import is running: a build still `importing` was
+ * cut off and becomes `failed`; a partition left half detached is finished
+ * and dropped, whatever references it (a detach is never a serving build);
+ * the partitions and tables of builds that are not `ready` (the build a swap
+ * replaced, what a crash left between the swap's commit and the drop) are
+ * detached concurrently, so readers never wait, and dropped. Outside a
+ * transaction, as DETACH … CONCURRENTLY must be. Returns the tables dropped.
  */
 export async function sweepBuildTables(client: PoolClient, logger: Logger): Promise<string[]> {
-  const regions = await client.query<{
+  const interrupted = await client.query(
+    "UPDATE osm_regions SET status = 'failed', error = 'interrupted', updated_at = now() WHERE status = 'importing'",
+  );
+  if ((interrupted.rowCount ?? 0) > 0) {
+    logger.warn({ builds: interrupted.rowCount }, "map region imports found interrupted");
+  }
+  const ready = await client.query<{
     name: string;
     build_id: string;
     digest: string;
     source: string;
-  }>("SELECT name, build_id, digest, source FROM osm_regions");
-  const sources = new Set([overpassSource, ...regions.rows.map((row) => row.source)]);
+  }>("SELECT name, build_id, digest, source FROM osm_regions WHERE status = 'ready'");
+  const sources = new Set([overpassSource, ...ready.rows.map((row) => row.source)]);
   const names = new Set(
-    regions.rows.flatMap((row) =>
+    ready.rows.flatMap((row) =>
       mapTables.map((table) =>
         partitionName(table, { region: row.name, buildId: row.build_id, digest: row.digest }),
       ),
@@ -156,8 +164,10 @@ export async function sweepBuildTables(client: PoolClient, logger: Logger): Prom
     const parent = relation.parent;
     if (parent !== null) {
       if (!(mapTables as readonly string[]).includes(parent)) continue;
-      const source = /^FOR VALUES IN \('([^']*)'\)$/.exec(relation.bound ?? "")?.[1];
-      if (source === undefined || sources.has(source)) continue;
+      if (relation.pending !== true) {
+        const source = /^FOR VALUES IN \('([^']*)'\)$/.exec(relation.bound ?? "")?.[1];
+        if (source === undefined || sources.has(source)) continue;
+      }
       await client.query(
         `ALTER TABLE ${quoteIdentifier(parent)} DETACH PARTITION ${quoteIdentifier(relation.name)} ${relation.pending === true ? "FINALIZE" : "CONCURRENTLY"}`,
       );

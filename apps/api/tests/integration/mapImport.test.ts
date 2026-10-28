@@ -12,6 +12,7 @@ import {
   partitionIndexes,
   partitionName,
 } from "../../src/mapdata/buildPartitions";
+import { CopyStream } from "../../src/mapdata/copyStream";
 import { decodeGeometry } from "../../src/mapdata/geometryCodec";
 import { type ImportStep, importRegion, MapImportBusyError } from "../../src/mapdata/importRegion";
 import { MapDataError } from "../../src/mapdata/mapDataError";
@@ -493,11 +494,71 @@ describe("trail map import", () => {
     await expect(importRegion({ db: t.ctx.db, logger, dir: bomb, digest: null })).rejects.toThrow(
       /ways\.opl\.gz unpacks to more than \d+ bytes/,
     );
+    // Postgres refusing the rows halfway (a full disk, here a constraint): its reason is kept.
+    const refused = artefact({
+      ways: (lines) =>
+        lines.map((line, index) => (index === 0 ? line.replace(/^w4097656 /, "w4097655 ") : line)),
+    });
+    await t.ctx.db.execute(
+      sql`ALTER TABLE osm_ways ADD CONSTRAINT osm_ways_refused_check CHECK (id <> 4097655)`,
+    );
+    try {
+      await expect(
+        importRegion({ db: t.ctx.db, logger, dir: refused, digest: null }),
+      ).rejects.toThrow(/violates check constraint "osm_ways_refused_check"/);
+    } finally {
+      await t.ctx.db.execute(sql`ALTER TABLE osm_ways DROP CONSTRAINT osm_ways_refused_check`);
+    }
+    expect(
+      (await listRegionRows(t.ctx.db)).find((row) => row.digest === manifestDigest(refused)),
+    ).toMatchObject({
+      status: "failed",
+      error: expect.stringMatching(/violates check constraint "osm_ways_refused_check"/),
+    });
     expect(await readMonaco()).toBe(before);
     expect((await listRegionRows(t.ctx.db)).filter((row) => row.status === "failed")).toHaveLength(
-      4,
+      5,
     );
     expect(await partitions()).toHaveLength(6);
+
+    // A build that does go in takes the region's failed attempts with it (their reasons are logged).
+    const good = artefact();
+    await importRegion({ db: t.ctx.db, logger, dir: good, digest: null });
+    expect((await listRegionRows(t.ctx.db)).map((row) => [row.digest, row.status])).toEqual([
+      [manifestDigest(good), "ready"],
+    ]);
+  });
+
+  it("keeps Postgres' reason when it refuses a COPY halfway, and leaves the COPY to it", async () => {
+    const client = await t.ctx.db.$client.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("CREATE TEMP TABLE copy_refused (n integer CHECK (n < 1000))");
+      const copy = new CopyStream(client, "COPY copy_refused (n) FROM STDIN");
+      for (let n = 0; n < 2000; n += 1) copy.add(`${n}\n`);
+      await copy.flush();
+      // The refusal arrives while nothing waits for the stream: the next write must not
+      // reach the connection pg-copy-streams has let go of, but say what Postgres said.
+      let refusal: unknown = null;
+      for (let attempt = 0; attempt < 50 && refusal === null; attempt += 1) {
+        await delay(100);
+        copy.add("5\n");
+        refusal = await copy.flush().then(
+          () => null,
+          (error: unknown) => error,
+        );
+      }
+      expect(refusal).toMatchObject({
+        code: "23514",
+        message: expect.stringMatching(/violates check constraint/),
+      });
+      await expect(copy.end()).rejects.toMatchObject({ code: "23514" });
+      expect(() => copy.abort(new Error("the loader gives up"))).not.toThrow();
+      await client.query("ROLLBACK");
+      expect((await client.query("SELECT 1 AS ok")).rows).toEqual([{ ok: 1 }]);
+    } finally {
+      client.release();
+    }
   });
 
   it("refuses an artefact that is damaged, incomplete, linked or the world overview, before writing", async () => {
@@ -579,6 +640,92 @@ describe("trail map import", () => {
       sql`SELECT to_regclass(${partitionName("osm_ways", stale)}) AS table`,
     );
     expect(leftover.rows).toEqual([{ table: null }]);
+  });
+
+  it("finishes a detach a crash cut off and fails a build a crash left importing, whatever references them", async () => {
+    const cut = { region: "monaco", buildId: "20200102", digest: `sha256:${"e".repeat(64)}` };
+    const cutSource = buildSource(cut);
+    const name = partitionName("osm_pois", cut);
+    await t.ctx.db.execute(
+      sql.raw(`CREATE TABLE ${name} PARTITION OF osm_pois FOR VALUES IN ('${cutSource}')`),
+    );
+    // The build was being imported again when the process died: its row still says so.
+    await t.ctx.db.execute(sql`
+      INSERT INTO osm_regions (name, build_id, digest, source, status, extract_timestamp, polygon,
+        min_lat, min_lon, max_lat, max_lon)
+      VALUES ('monaco', ${cut.buildId}, ${cut.digest}, ${cutSource}, 'importing', '2020-01-02T00:00:00Z',
+        '{"type": "MultiPolygon", "coordinates": []}', 0, 0, 0, 0)
+    `);
+    // A DETACH … CONCURRENTLY cut off between its two transactions: a reader holds up its
+    // second, and it is cancelled there.
+    const pendingOf = async () =>
+      (
+        await t.ctx.db.execute<{ pending: boolean }>(
+          sql`SELECT inhdetachpending AS pending FROM pg_inherits WHERE inhrelid = to_regclass(${name})`,
+        )
+      ).rows;
+    const reader = await t.ctx.db.$client.connect();
+    const detacher = await t.ctx.db.$client.connect();
+    try {
+      await reader.query("BEGIN");
+      await reader.query("SELECT count(*) FROM osm_pois");
+      const pid = (await detacher.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]
+        ?.pid;
+      const detaching = detacher
+        .query(`ALTER TABLE osm_pois DETACH PARTITION ${name} CONCURRENTLY`)
+        .then(
+          () => null,
+          (error: unknown) => error,
+        );
+      for (
+        let attempt = 0;
+        attempt < 100 && (await pendingOf())[0]?.pending !== true;
+        attempt += 1
+      ) {
+        await delay(50);
+      }
+      await t.ctx.db.execute(sql`SELECT pg_cancel_backend(${pid})`);
+      expect(String(await detaching)).toMatch(/canceling statement/);
+      await reader.query("COMMIT");
+    } finally {
+      reader.release();
+      detacher.release();
+    }
+    expect(await pendingOf()).toEqual([{ pending: true }]);
+
+    expect(await sweepMapBuilds(t.ctx.db, logger)).toEqual([name]);
+    expect(await pendingOf()).toEqual([]);
+    const leftover = await t.ctx.db.execute(sql`SELECT to_regclass(${name}) AS table`);
+    expect(leftover.rows).toEqual([{ table: null }]);
+    expect((await listRegionRows(t.ctx.db)).find((row) => row.digest === cut.digest)).toMatchObject(
+      {
+        status: "failed",
+        error: "interrupted",
+      },
+    );
+  });
+
+  it("refuses a build whose source another build of the region and day has already", async () => {
+    const dir = artefact();
+    const digest = manifestDigest(dir);
+    // The first 8 hex digits are what the source keeps of a digest.
+    const twin = `${digest.slice(0, "sha256:".length + 8)}${digest.endsWith("0".repeat(56)) ? "1".repeat(56) : "0".repeat(56)}`;
+    await t.ctx.db.execute(sql`
+      INSERT INTO osm_regions (name, build_id, digest, source, status, extract_timestamp, polygon,
+        min_lat, min_lon, max_lat, max_lon)
+      VALUES ('monaco', '20261027', ${twin}, ${buildSource({ region: "monaco", buildId: "20261027", digest: twin })},
+        'failed', '2026-10-27T21:23:59Z', '{"type": "MultiPolygon", "coordinates": []}', 0, 0, 0, 0)
+    `);
+    try {
+      await expect(importRegion({ db: t.ctx.db, logger, dir, digest: null })).rejects.toThrow(
+        MapDataError,
+      );
+      await expect(importRegion({ db: t.ctx.db, logger, dir, digest: null })).rejects.toThrow(
+        `so both would be ${buildSource({ region: "monaco", buildId: "20261027", digest })}`,
+      );
+    } finally {
+      await t.ctx.db.execute(sql`DELETE FROM osm_regions WHERE digest = ${twin}`);
+    }
   });
 
   it("gives a build's partitions the parents' keys and indexes, so attaching builds none", async () => {
