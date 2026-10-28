@@ -135,21 +135,32 @@ export function targetRows(context) {
       );
     }
   }
+  // The flush's own row of §3.1 (500 points), as backlog.js holds it.
+  const flushTarget = ingestTargets.find((target) => target.batch === "400-699");
   const backlogLarge = metric(
     backlog,
     "http_req_duration{phase:backlog,kind:ingest,batch:400-699}",
   );
-  rows.push(
-    row(
-      "3.1",
-      "backlog flush, batches of 400–699 points, p95 ≤ 250 ms",
-      (backlogLarge?.["count"] ?? 0) > 0 ? backlogLarge?.["p(95)"] : null,
-      (value) => value <= 250 / calibration.latency,
-      ` ms (n ${show(backlogLarge?.["count"] ?? 0)})`,
-      true,
-      1,
-    ),
-  );
+  if (flushTarget !== undefined) {
+    for (const [stat, limit] of /** @type {const} */ ([
+      ["p(50)", flushTarget.p50],
+      ["p(95)", flushTarget.p95],
+      ["p(99)", flushTarget.p99],
+    ])) {
+      const scaled = limit / calibration.latency;
+      rows.push(
+        row(
+          "3.1",
+          `backlog flush, batches of 400–699 points, ${stat.replace("p(", "p").replace(")", "")} ≤ ${show(scaled)} ms`,
+          (backlogLarge?.["count"] ?? 0) > 0 ? backlogLarge?.[stat] : null,
+          (value) => value <= scaled,
+          ` ms (n ${show(backlogLarge?.["count"] ?? 0)})`,
+          true,
+          1,
+        ),
+      );
+    }
+  }
   rows.push(
     row(
       "3.1",
