@@ -113,15 +113,36 @@ layers=()
 # put FILE NAME: a whole file into the stage, a hard link where it can be
 put() { ln -f "$1" "$stage/$2" 2>/dev/null || cp "$1" "$stage/$2"; }
 
+# media_type_of NAME: the media type a server's registry client accepts for
+# the file (artefactFiles in apps/api/src/mapdata/artefactLayout.ts); a build
+# with another one would be refused by every server once its tag had moved
+media_type_of() {
+  case $1 in
+    ways.opl.gz) echo application/vnd.trail.mapdata.ways.v1+gzip ;;
+    pois.geojsonseq.gz) echo application/vnd.trail.mapdata.pois.v1+gzip ;;
+    region.poly) echo application/vnd.trail.mapdata.poly.v1 ;;
+    basemap.pmtiles) echo application/vnd.trail.mapdata.basemap.v1 ;;
+    *) return 1 ;;
+  esac
+}
+
 put "$manifest" manifest.json
 layers+=("manifest.json:$manifest_type")
 printf 'manifest.json\t%s\tsha256:%s\n' "$(bytes_of "$manifest")" "$(sha256_of "$manifest")" >>"$expected"
 
+listed=' '
 while IFS=$'\t' read -r name media_type bytes sha256 chunk_count; do
-  case $name in
-    ways.opl.gz | pois.geojsonseq.gz | region.poly | basemap.pmtiles) ;;
-    *) die "the manifest lists $name, which is not a file of a map data artefact" ;;
+  expected_type=$(media_type_of "$name") ||
+    die "the manifest lists $name, which is not a file of a map data artefact"
+  [ "$media_type" = "$expected_type" ] ||
+    die "the manifest gives $name the media type $media_type, not $expected_type: every server would refuse the build"
+  case $listed in
+    *" $name "*) die "the manifest lists $name twice" ;;
   esac
+  listed="$listed$name "
+  if [ "$chunk_count" -gt 0 ] && [ "$name" = region.poly ]; then
+    die "region.poly is never published in chunks"
+  fi
   [ -f "$dir/$name" ] || die "$dir has no $name, which the manifest lists"
   [ "$(bytes_of "$dir/$name")" = "$bytes" ] && [ "$(sha256_of "$dir/$name")" = "$sha256" ] ||
     die "$dir/$name is not the file the manifest describes"
@@ -142,6 +163,15 @@ while IFS=$'\t' read -r name media_type bytes sha256 chunk_count; do
     printf '%s\t%s\tsha256:%s\n' "$name" "$bytes" "$sha256" >>"$expected"
   fi
 done < <(jq -r '.files[] | [.name, .mediaType, (.bytes | tostring), .sha256, ((.chunks // []) | length | tostring)] | @tsv' "$manifest")
+
+# The files a server needs of the build, as its client checks before it downloads anything
+if [ "$region" = world ]; then required='basemap.pmtiles'; else required='ways.opl.gz pois.geojsonseq.gz region.poly'; fi
+for name in $required; do
+  case $listed in
+    *" $name "*) ;;
+    *) die "the manifest of $region lists no $name, which every server needs" ;;
+  esac
+done
 
 total=$(awk -F'\t' '{ sum += $2 } END { printf "%d", sum }' "$expected")
 count=$(wc -l <"$expected" | tr -d ' ')

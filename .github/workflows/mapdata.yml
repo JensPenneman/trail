@@ -12,8 +12,11 @@
 # region are kept (scripts/mapdata/retain.sh). A dispatch builds the regions
 # it names; a run on main publishes them, a run on another branch only the
 # test region (`"fixture": true` in regions.json, Monaco), so that a branch
-# nobody reviewed never moves a tag the servers pull. A pull request that
-# changes the pipeline builds Monaco and publishes nothing.
+# nobody reviewed does not move a tag the servers pull by mistake. That is a
+# guard, not a control: this file and regions.json come from the dispatched
+# ref, and the attestation, which names the ref, is what tells a build of
+# main (`gh attestation verify --source-ref refs/heads/main`). A pull request
+# that changes the pipeline builds Monaco and publishes nothing.
 #
 # Publishing is a job of its own, the only one with `packages`, `id-token` and
 # `attestations: write` and one that never runs for a pull request: the
@@ -140,8 +143,8 @@ jobs:
     # Measured: Belgium 15 min, France 1 h 45 min; Germany did not finish in
     # two hours (70 min of it the download from Geofabrik)
     timeout-minutes: 240
-    # One build of a region at a time, whichever run or ref started it; a
-    # newer run waits.
+    # One build of a region at a time, whichever run or ref started it: a
+    # newer run waits, and a third one cancels the waiting one.
     concurrency:
       group: mapdata-${{ matrix.region }}
       cancel-in-progress: false
@@ -231,7 +234,8 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-    # One publication of a region at a time: its tags, its retention
+    # One publication of a region at a time (its tags, its retention): a
+    # newer one waits, a third cancels the waiting one
     concurrency:
       group: mapdata-publish-${{ matrix.region }}
       cancel-in-progress: false
