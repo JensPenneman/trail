@@ -84,13 +84,15 @@ export function useServerEvents(store: LiveStore): void {
       resyncAfterGap(queryClient);
     };
 
-    /** A server that could not replay the gap: refetch, at a moment of this tab's own. */
+    /**
+     * A server that could not replay the gap: refetch, at a moment of this tab's own, and no
+     * more often than any resync (a server that keeps restarting gets one now and then).
+     */
     const resyncSpread = (): void => {
       if (spreadTimer !== undefined) return;
       spreadTimer = setTimeout(() => {
         spreadTimer = undefined;
-        lastResync = Date.now();
-        resyncAfterGap(queryClient);
+        resync();
       }, Math.random() * resyncSpreadMs);
     };
 

@@ -244,5 +244,39 @@ describe("useServerEvents", () => {
       act(() => latest().send("hello", hello));
       expect(refetchedDevices(invalidate)).toBe(true);
     });
+
+    it("refetches after a resync no more often than any resync, however often the server restarts", () => {
+      const { queryClient } = setup();
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      vi.spyOn(Math, "random").mockReturnValue(0);
+      const resyncs = () =>
+        invalidate.mock.calls.filter(
+          ([filters]) =>
+            (filters as { queryKey?: unknown } | undefined)?.queryKey === queryKeys.devices,
+        ).length;
+      const restart = (boot: string) => {
+        act(() => latest().fail());
+        act(() => {
+          vi.advanceTimersByTime(3000);
+        });
+        act(() => latest().open());
+        act(() => latest().send("hello", hello, `${boot}:1`));
+        act(() => latest().send("resync", { type: "resync" }, `${boot}:2`));
+        act(() => {
+          vi.advanceTimersByTime(0);
+        });
+      };
+      act(() => latest().open());
+      act(() => latest().send("hello", hello, "boot1:1"));
+      restart("boot2");
+      expect(resyncs()).toBe(1);
+      // The server restarts again at once: that resync waits for the interval.
+      restart("boot3");
+      expect(resyncs()).toBe(1);
+      act(() => {
+        vi.advanceTimersByTime(15_000);
+      });
+      expect(resyncs()).toBe(2);
+    });
   });
 });

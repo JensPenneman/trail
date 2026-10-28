@@ -234,3 +234,47 @@ describe("the purges of the copy on disk", () => {
     expect(await store.list()).toEqual([]);
   });
 });
+
+describe("the copy across offline paints and other tabs", () => {
+  it("binds the copy for real once the probe answers after an offline paint", async () => {
+    const { factory, store } = await filledStore();
+    // Untouched for over a week: the start-up sweep removes it.
+    await seedEntry(store, {
+      user,
+      queryKey: queryKeys.ingestLog(ids.phone, 50),
+      answer: { entries: [] },
+      touchedAt: Date.now() - 8 * 86_400_000,
+    });
+    const client = new QueryClient();
+    const cache = testCache(factory);
+    caches.push(cache);
+    attachBrowserCache(client, cache);
+    cache.prepare();
+    const offlineUser = await cache.offlineUser();
+    if (offlineUser === null) throw new Error("no copy to paint from");
+    await cache.paintOffline(offlineUser);
+    const renamed = { ...user, displayName: "Jens P." };
+    await cache.signedIn(renamed);
+    expect((await store.readMeta())?.user.displayName).toBe("Jens P.");
+    await expect
+      .poll(async () => (await store.list()).map((entry) => entry.resource), { timeout: 5000 })
+      .not.toContain("ingest-log");
+  });
+
+  it("forgets the answers of the account another tab signed out when another one signs in", async () => {
+    const { factory } = await filledStore();
+    const name = `trail-cache-test-${Math.random()}`;
+    const first = new BroadcastChannel(name);
+    const second = new BroadcastChannel(name);
+    channels.push(first, second);
+    const one = new QueryClient();
+    const other = new QueryClient();
+    const tab = await signedIn(one, factory, first);
+    const otherTab = await signedIn(other, factory, second);
+    other.setQueryData(queryKeys.devices, { devices: [device()] });
+    await tab.purge("sign-out");
+    await expect.poll(() => otherTab.state().owner).toBeNull();
+    await otherTab.signedIn({ ...user, id: ids.ana, email: "ana@example.com" });
+    expect(other.getQueryData(queryKeys.devices)).toBeUndefined();
+  });
+});

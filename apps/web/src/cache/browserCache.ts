@@ -172,14 +172,18 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
   let binding: Promise<void> | null = null;
   /** Whose account `binding` binds. */
   let bindingFor: string | null = null;
+  /**
+   * The account this page last showed: a purge (here or in another tab) forgets the owner,
+   * not whose answers are still in memory.
+   */
+  let lastUser: string | null = null;
   /** The probe is on its way at start-up: writes wait for it rather than being dropped. */
   let awaitingOwner = false;
   const pending = new Map<string, { queryKey: unknown[]; answer: unknown; fetchedAt: number }>();
   /** The answer object each key holds in the store: writing the same one again is a touch. */
   let writtenAs = new WeakMap<object, string>();
-  /** The bytes of the entries this page knows of, on top of `baseBytes` it does not. */
+  /** The bytes of every entry of the owner, read when the store was bound and kept since. */
   let sizes = new Map<string, number>();
-  let baseBytes = 0;
   const touches = new Map<string, EntryTouch>();
   let touchTimer: ReturnType<typeof setTimeout> | undefined;
   let sweepTimer: ReturnType<typeof setTimeout> | undefined;
@@ -210,8 +214,7 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
     return storePromise;
   };
 
-  const total = (): number =>
-    baseBytes + [...sizes.values()].reduce((sum, bytes) => sum + bytes, 0);
+  const total = (): number => [...sizes.values()].reduce((sum, bytes) => sum + bytes, 0);
 
   /** Forgets this page's state of the copy: its owner, what it wrote, its timers. */
   const forget = () => {
@@ -224,7 +227,6 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
     pending.clear();
     writtenAs = new WeakMap();
     sizes = new Map();
-    baseBytes = 0;
     touches.clear();
     clearTimeout(touchTimer);
     clearTimeout(sweepTimer);
@@ -271,7 +273,6 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
     sizes = new Map(
       entries.filter((entry) => !removed.has(entry.key)).map((entry) => [entry.key, entry.bytes]),
     );
-    baseBytes = 0;
     stats.add("sweeps");
     stats.add("swept", result.remove.length);
     notify();
@@ -392,9 +393,13 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
     if (gen !== generation) return;
     if (!(await opened.writeMeta({ owner: user.id, timezone: user.timezone, user }))) return;
     if (gen !== generation) return;
+    // What the store already holds counts from the start, each entry once.
+    const listed = await opened.list();
+    if (gen !== generation) return;
+    sizes = new Map(listed.map((entry) => [entry.key, entry.bytes]));
     owner = { id: user.id, timezone: user.timezone };
     account = user;
-    baseBytes = meta !== null && meta.owner === user.id ? meta.bytes : 0;
+    lastUser = user.id;
     awaitingOwner = false;
     const waiting = [...pending.values()];
     pending.clear();
@@ -446,6 +451,14 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
   };
 
   const signedIn = async (user: SessionUser) => {
+    if (owner !== null && owner.id === user.id && binding === null) {
+      // Painted offline from the copy: the probe answered, so bind it for real now (the
+      // sweeps, what the store holds, its meta).
+      binding = bind(user);
+      bindingFor = user.id;
+      await Promise.race([binding, delay(warmWaitMs)]);
+      return;
+    }
     if (owner !== null && owner.id === user.id) {
       if (owner.timezone !== user.timezone) {
         // New answers are the new zone's from now on; the old zone's days go.
@@ -460,12 +473,13 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
       }
       return;
     }
-    if (owner !== null) {
+    if (lastUser !== null && lastUser !== user.id) {
       // Another account in this page (signed in elsewhere in this browser): nothing of the
       // previous one may be kept for the new one, on disk or on screen.
       forget();
       client?.removeQueries({ predicate: (query) => query.queryKey[0] !== "session" });
     }
+    lastUser = user.id;
     if (binding === null || bindingFor !== user.id) {
       binding = bind(user).then(() => applyWarm(user));
       bindingFor = user.id;
@@ -554,12 +568,15 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
       if (message.reason === "cleared") {
         writtenAs = new WeakMap();
         sizes = new Map();
-        baseBytes = 0;
         notify();
       } else forget();
     } else if (message.type === "toggle") {
       on = message.on;
       if (!on) forget();
+      else {
+        const user = client?.getQueryData<SessionUser | null>(["session"]);
+        if (user !== undefined && user !== null) void bind(user);
+      }
       notify();
     } else if (owner !== null) {
       owner = { ...owner, timezone: message.timezone };
@@ -634,6 +651,7 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
       if (!on || owner !== null) return;
       owner = { id: user.id, timezone: user.timezone };
       account = user;
+      lastUser = user.id;
       notify();
       await applyWarm(user);
     },
