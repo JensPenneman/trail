@@ -242,8 +242,16 @@ async function pointFromEnd(deviceId: string, range: Range, count: number, conte
   return new Date(toIso(row.at));
 }
 
-/** Runs a finished pass again: its queued part, as `trail reprocess` queues a range. */
-async function runAgain(deviceId: string, pass: Pass, context = t): Promise<void> {
+/**
+ * Runs a finished pass again: its queued part, as `trail reprocess` queues a
+ * range, with map data or without, as the context's passes ran.
+ */
+async function runAgain(
+  deviceId: string,
+  pass: Pass,
+  mapping: boolean,
+  context = t,
+): Promise<void> {
   await enqueueWindow(context.ctx.db, {
     deviceId,
     ...pass.outcome.queued,
@@ -258,7 +266,7 @@ async function runAgain(deviceId: string, pass: Pass, context = t): Promise<void
   );
   await processWindow(context.ctx.db, rows, {
     config: context.ctx.processing.config,
-    mapping: context.ctx.processing.mapping,
+    mapping,
     now: new Date(),
   });
 }
@@ -339,7 +347,7 @@ describe("a job too big for one pass", () => {
       ]);
       // I6: the pass, run again on what it wrote, changes nothing.
       await assertIdempotent(context.ctx.db, device.id, windowOf(first), () =>
-        runAgain(device.id, first, context),
+        runAgain(device.id, first, false, context),
       );
       const passes = [first, ...(await runner.drain())];
 
@@ -1073,7 +1081,9 @@ describe("twenty live uploads after a stale multi-day stop", () => {
     // I6 on the last upload's pass, and nothing of the older inference anywhere once all is done.
     if (lastLive !== null) {
       const pass = lastLive;
-      await assertIdempotent(t.ctx.db, device.id, windowOf(pass), () => runAgain(device.id, pass));
+      await assertIdempotent(t.ctx.db, device.id, windowOf(pass), () =>
+        runAgain(device.id, pass, true),
+      );
     }
     await runner.drain();
     await assertSegmentInvariants(t.ctx.db, device.id, {
