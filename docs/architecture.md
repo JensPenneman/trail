@@ -218,6 +218,8 @@ All configuration is environment variables, validated at boot with zod
 | `PROCESSING_OSM_TTL_DAYS` | `90` | Map tiles are refreshed after this many days |
 | `PROCESSING_MAX_ACCURACY_M` | `150` | Less accurate points are dropped from the averaged level on |
 | `PROCESSING_STOP_MIN_S` | `180` | The shortest stop |
+| `PROCESSING_PASS_MAX_POINTS` | `60000` | A processing pass reads at most this many points (1 000 or more); bigger work is split first (§17.4) |
+| `PROCESSING_PASS_MAX_SPAN_HOURS` | `36` | The points a pass takes on span at most this long |
 | `NODE_ENV` | `development` | `production` in the image (see below) |
 
 Development safety: when `NODE_ENV !== "production"` the API refuses to start
@@ -3120,11 +3122,14 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   of travel), `mode`, `source`
   `ui|api|mcp`, `created_by`
   (set null), `created_at`, `revoked_at` (rows are kept).
-- **processing_queue** — PK `(device_id, from_at)`: `to_at`, `reason`,
-  `from_level` `averaged|mapped|inferred`, `priority` (0 new data, 1
-  backfill), `attempts`, `next_at`, `enqueued_at` (the version a finished pass
-  compares against), `missing_tiles` (jsonb `["z/x/y", …]`: the window waits
-  for map data), `last_error`.
+- **processing_queue** — PK `(device_id, from_at)`: `to_at`, `reason`
+  (`ingest`, `delete`, `override`, `reprocess`, `catch-up`, `backfill`,
+  `map`, `split`), `from_level` `averaged|mapped|inferred`, `priority` (0 new
+  data from the phones, 1 repair — the rest but the backfill —, 2 the
+  backfill; rows that 0.5 queued at 1 were its backfill and run as repair),
+  `attempts`, `next_at`, `enqueued_at` (the version a finished pass compares
+  against), `missing_tiles` (jsonb `["z/x/y", …]`: the window waits for map
+  data), `last_error`.
 - Map cache: **osm_tiles** PK `(z, x, y)` with `status` `ok|failed`,
   `fetched_at`, `way_count`, `poi_count`, `bytes`, `failures`, `retry_at`;
   **osm_ways** (`id` = OSM way id, `kind`, the kept `tags`, `nodes` bigint[],
@@ -3356,30 +3361,62 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
 ### 17.4 Scheduling
 
 - After an upload's commit its window (earliest new point − 30 min, latest +
-  30 min) is queued (a window with the same start widens the queued one);
-  `POST /api/locations/delete` deletes the segments touching the range at
-  once and queues the range ± 30 min, and all of the deleted segments' time
-  (a long stop reaching far beyond the range leaves no hole), in its
-  transaction, under the device's processing lock; deleting a device
-  cascades. A time-zone change needs nothing (segments are UTC).
+  30 min) is queued as new data (a window with the same start widens the
+  queued one), ready no sooner than 30 s after the device's last pass began
+  and not before a window of the device that already waits for its turn
+  (`livePassIntervalMs`); `POST /api/locations/delete` deletes the segments
+  touching the range at once and queues the range ± 30 min, and all of the
+  deleted segments' time (a long stop reaching far beyond the range leaves no
+  hole), in its transaction, under the device's processing lock; deleting a
+  device cascades. A time-zone change needs nothing (segments are UTC). The
+  work has three priorities: new data from the phones (0); repair (1) — a
+  deletion, a corrected mode, the catch-up, `trail reprocess`, the older part
+  of an upload's window too big for one pass; the backfill (2).
 - One in-process worker (`ProcessingWorker`, the daily-statistics scheduler's
   pattern, reading the table) wakes 3 s after new work, every minute for
-  retries and on a 15-minute pass. It takes the next ready window — new data
-  oldest first, then the backfill newest day first, and after a pass of new
-  data a ready backfill window gets the next turn, so a phone uploading every
-  few minutes never starves the backfill — with every ready window of the
-  device that overlaps it (not one waiting for map tiles or a retry: it would
-  be worked out again with every upload, before its tiles are there), grows
-  it to whole segments at both edges (at most two days out of the range the
-  rows were queued with: a segment reaching further back is cut at the window's
-  start, and the part of one reaching beyond its end stays as a segment from
-  the window's end, so no time drops out of the timeline; each part counts
+  retries, when a window that waits for its device's pass interval comes
+  due, and on a 15-minute pass. It takes the next ready window — new data
+  oldest first, then repair and the backfill newest first, and after a pass
+  of new data the backfill (else repair) gets the next turn, so a phone
+  uploading every few minutes never starves them — with every ready window
+  of the device that overlaps it (not one waiting for map tiles or a retry:
+  it would be worked out again with every upload, before its tiles are
+  there; and the backfill only with the backfill, so an upload's pass stays
+  the size of the upload and a backfill day waits its turn).
+- **Bounded passes.** A pass reads at most `PROCESSING_PASS_MAX_POINTS`
+  (60 000) raw points, and the points it takes on span at most
+  `PROCESSING_PASS_MAX_SPAN_HOURS` (36). Rows that hold more are split first,
+  in the pass's own transaction (`splitJob`): their points are counted on the
+  primary key, and the split falls at the end of the longest recording gap of
+  more than 30 minutes — the night the phone slept through — among those that
+  leave a newest part within the budget (the older of equal ones), else at
+  the budget's point boundary, the newest 60 000 points or 36 hours. The pass
+  goes on with the newest part; the older part is queued with the rows'
+  reason and level — an upload's as repair (`split`), so a backlog of history
+  never holds up the fresh points of other devices — and is split again when
+  it is taken. The parts share the point at the split, so their segments
+  meet. One upload's window over twelve days of a phone recording every
+  second (575 000 points, 0.5.0) is so worked out in about ten passes of a
+  few seconds, the newest first.
+- The window then grows to whole segments at both edges, within the budget:
+  the growth is taken while the window holds at most the budget's points —
+  forward first (the segment the window's end runs into), then back, nearest
+  first (the segment under the start, then the one before a gap, else the
+  point before it) — each whole or not at all, so that a window is not cut
+  again at another place with every upload. A segment that does not fit stays
+  as it is, cut at the queued range's first or last point; a stale multi-day
+  stop at an edge costs a pass at most the budget, never two days of it.
+  Growth goes at most two days out of the range the rows were queued with: a
+  segment reaching further back is cut at the first point within them, and
+  the part of one reaching beyond its end stays as a segment from the
+  window's last point, so no time drops out of the timeline. Cuts fall on
+  points, so the parts meet the window; each part counts
   what it holds of its own — its points, distance, ends and middle, a stop's
   spread and last point — and keeps its mode until a window over it works it
   out again, and a part left by another version of the inference is queued
   for that at once, at low priority from the inferred level: a stale
   multi-day stop is replaced piece by piece even beyond the range `trail
-  reprocess` was given). When no segment meets the window's start and a
+  reprocess` was given. When no segment meets the window's start and a
   recording gap of more than 30 minutes lies before its first point — the
   night the phone slept through — it reaches back to the segment before the
   gap (or, with none yet, the point before it), so that the gap is worked out
@@ -3401,6 +3438,11 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   window queued for an upload crept back across days of history (0.5.0);
   tiles are fetched alongside, so a missing tile never holds up other
   windows. Ready times are kept to the millisecond, the worker's clock.
+- **The pass interval.** When a pass of new data ends, a window of the device
+  still queued — an upload came while it ran — waits until 30 s after the
+  pass ended, and the uploads after it with it: a phone uploading every few
+  seconds costs a pass per half minute, not one per upload. A flush (the
+  tests, the CLI) does not wait for the interval.
 - The 15-minute pass makes waiting windows whose tiles arrived ready and
   queues the gap of any device whose newest point is more than 15 minutes
   newer than its newest processed point (a window lost when the process
@@ -3534,3 +3576,5 @@ current mode.
 | `PROCESSING_OSM_TTL_DAYS` | `90` | Map tiles are refreshed after this many days |
 | `PROCESSING_MAX_ACCURACY_M` | `150` | Points less accurate than this are left out from the averaged level on |
 | `PROCESSING_STOP_MIN_S` | `180` | A stop lasts at least this long |
+| `PROCESSING_PASS_MAX_POINTS` | `60000` | A pass reads at most this many raw points (at least 1 000): a bigger job is split first, and growth to whole segments stops at it (§17.4). A very large value restores unbounded passes |
+| `PROCESSING_PASS_MAX_SPAN_HOURS` | `36` | The points a pass takes on span at most this long (1 hour or more); its growth adds at most two days at each end |
