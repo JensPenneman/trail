@@ -5,8 +5,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { enqueueBackfill } from "../../src/processing/backfill";
 import { persistWindow } from "../../src/processing/persistWindow";
 import {
+  awaitTiles,
   enqueueWindow,
   type FromLevel,
+  queuePriority,
   rearmWindows,
   takeDeviceWindows,
   takeNextWindow,
@@ -35,6 +37,7 @@ import {
   stay,
   toXY,
   travel,
+  type Vertex,
 } from "../support/syntheticWorld";
 import { createTestContext, type TestContext } from "../support/testContext";
 import { testOrigin } from "../support/testEnvironment";
@@ -1113,5 +1116,162 @@ describe("the edges of a window", () => {
     await leftBefore(processingVersions.mapped - 1);
     await persist();
     expect(await wayKinds()).toEqual([...Array(5).fill("road"), ...Array(6).fill(null)]);
+  });
+});
+
+describe("live uploads while windows wait for map tiles", () => {
+  /** The device's queue rows, bounds as epoch seconds. */
+  const queueOf = async (deviceId: string) =>
+    (
+      await t.ctx.db.execute<{ from: number; to: number; waiting: boolean; priority: number }>(sql`
+        SELECT extract(epoch FROM from_at)::float8 AS from, extract(epoch FROM to_at)::float8 AS to,
+          missing_tiles IS NOT NULL AS waiting, priority
+        FROM processing_queue WHERE device_id = ${deviceId} ORDER BY from_at
+      `)
+    ).rows;
+
+  it("keeps a waiting window's queued bounds: live passes never creep back over the history", {
+    timeout: 180_000,
+  }, async () => {
+    const device = await newDevice("Live over an older history");
+    const start = morning - 160 * 86_400;
+    // Three days at home, by bike to work, two hours there: worked out, with the map data at hand.
+    const home: Vertex = [0, -2000];
+    const work: Vertex = [3000, -2000];
+    const atHome = stay(home, { startT: start, durationS: 3 * 86_400, intervalS: 600 });
+    const toWork = travel([home, work], {
+      startT: lastT(atHome) + 60,
+      speedMs: 5,
+      intervalS: 2,
+      motion: ["cycling"],
+      seed: 3,
+    });
+    const atWork = stay(work, {
+      startT: lastT(toWork) + 2,
+      durationS: 7200,
+      intervalS: 30,
+      seed: 4,
+    });
+    await upload(device.token, concat(atHome, toWork, atWork));
+    await t.ctx.processing.flush();
+    // As an older inference left it: the stay at home of the version before, the rest current.
+    const stale = await t.ctx.db.execute(sql`
+      UPDATE segments SET version = ${processingVersions.inferred - 1}
+      WHERE device_id = ${device.id} AND kind = 'stop' AND started_at < to_timestamp(${start + 86_400})
+    `);
+    expect(stale.rowCount).toBe(1);
+
+    // Riding on north, out of the map data fetched so far, whose tiles cannot be fetched now: an
+    // upload every three minutes.
+    const ride = travel([work, [work[0], work[1] + 20_000]], {
+      startT: lastT(atWork) + 2,
+      speedMs: 5,
+      intervalS: 2,
+      motion: ["cycling"],
+      seed: 5,
+    });
+    // Not fetched yet, whatever other tests fetched: the tiles the ride needs answer with errors.
+    for (const tile of planWindow(ride, [], t.ctx.processing.config).tiles) {
+      fixture.failing.add(tile);
+      const address = parseTileKey(tile);
+      if (address !== null) {
+        await t.ctx.db.execute(sql`
+          DELETE FROM osm_tiles WHERE z = ${address.z} AND x = ${address.x} AND y = ${address.y}
+        `);
+      }
+    }
+    const riding = ride[0]?.t ?? 0;
+    const uploads = Array.from({ length: 6 }, (_, index) =>
+      ride.filter(
+        (point) => point.t >= riding + index * 180 && point.t < riding + (index + 1) * 180,
+      ),
+    );
+    const queued: { from: number; to: number }[] = [];
+    try {
+      for (const batch of uploads) {
+        await upload(device.token, batch);
+        queued.push({ from: (batch[0]?.t ?? 0) - 1800, to: lastT(batch) + 1800 });
+        const firstQueued = queued[0]?.from ?? 0;
+        for (;;) {
+          const rows = await takeNextWindow(t.ctx.db, new Date());
+          if (rows.length === 0) break;
+          // Only windows an upload queued, never the bounds an earlier pass grew one to …
+          for (const row of rows) {
+            expect(queued.map((range) => range.from)).toContain(row.from.getTime() / 1000);
+          }
+          const outcome = await processWindow(t.ctx.db, rows, {
+            config: t.ctx.processing.config,
+            mapping: true,
+            now: new Date(),
+          });
+          // … so a live pass grows at most two days out of them.
+          expect((outcome?.from.getTime() ?? 0) / 1000).toBeGreaterThanOrEqual(
+            firstQueued - 2 * 86_400,
+          );
+        }
+        // A window waiting for its tiles waits with the bounds it was queued with.
+        const waiting = (await queueOf(device.id)).filter((row) => row.waiting);
+        expect(waiting.length).toBeGreaterThan(0);
+        for (const row of waiting) {
+          expect(queued).toContainEqual({ from: row.from, to: row.to });
+        }
+      }
+    } finally {
+      fixture.failing.clear();
+    }
+    // Once the tiles come and the backfill has worked the old stay out: nothing stale, nothing lost.
+    await t.ctx.db.execute(
+      sql`UPDATE osm_tiles SET retry_at = now() - interval '1 minute' WHERE status = 'failed'`,
+    );
+    await enqueueWindow(t.ctx.db, {
+      deviceId: device.id,
+      from: new Date(start * 1000),
+      to: new Date((start + 86_400) * 1000),
+      reason: "backfill",
+      fromLevel: "inferred",
+      priority: queuePriority.backfill,
+    });
+    await t.ctx.processing.flush();
+    const versions = await t.ctx.db.execute<{ version: number }>(sql`
+      SELECT DISTINCT version FROM segments WHERE device_id = ${device.id}
+    `);
+    expect(versions.rows).toEqual([{ version: processingVersions.inferred }]);
+    const outside = await t.ctx.db.execute<{ count: number }>(sql`
+      SELECT count(*)::int AS count FROM processed_points p
+      WHERE p.device_id = ${device.id} AND p.kept AND NOT EXISTS (
+        SELECT 1 FROM segments s WHERE s.device_id = p.device_id
+          AND s.started_at <= p.recorded_at AND s.ended_at >= p.recorded_at)
+    `);
+    expect(outside.rows[0]?.count).toBe(0);
+    expect(await queueOf(device.id)).toEqual([]);
+  });
+
+  it("takes along only ready windows, and gives the backfill its turn when asked", async () => {
+    const device = await newDevice("Queue order");
+    const at = (hours: number) => new Date((morning - 170 * 86_400 + hours * 3600) * 1000);
+    // A window waiting for tiles, a fresh one overlapping it, and the backfill of an older day.
+    await awaitTiles(
+      t.ctx.db,
+      { deviceId: device.id, from: at(0), to: at(30), fromLevel: "averaged", priority: 0 },
+      ["14/8000/5000"],
+    );
+    await enqueueWindow(t.ctx.db, {
+      deviceId: device.id,
+      from: at(20),
+      to: at(21),
+      reason: "ingest",
+    });
+    await enqueueWindow(t.ctx.db, {
+      deviceId: device.id,
+      from: at(-48),
+      to: at(-24),
+      reason: "backfill",
+      priority: queuePriority.backfill,
+    });
+    const live = await takeNextWindow(t.ctx.db, new Date());
+    expect(live.map((row) => row.from)).toEqual([at(20)]);
+    const backfill = await takeNextWindow(t.ctx.db, new Date(), { backfillFirst: true });
+    expect(backfill.map((row) => row.from)).toEqual([at(-48)]);
+    await t.ctx.db.execute(sql`DELETE FROM processing_queue WHERE device_id = ${device.id}`);
   });
 });

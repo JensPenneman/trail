@@ -97,15 +97,23 @@ export async function enqueueWindow(
 
 /**
  * The next window to process: new data oldest first, then the backfill newest
- * first — and every queued window of the same device that overlaps it, so one
- * pass covers them all.
+ * first (`backfillFirst`: the backfill first, its turn between passes of new
+ * data) — and every ready window of the same device that overlaps it, so one
+ * pass covers them all. A window waiting for map tiles, or for a retry, is
+ * not taken along: it would be worked out again with every upload, for
+ * nothing, before its tiles are there.
  */
-export async function takeNextWindow(db: Executor, now: Date): Promise<QueueRow[]> {
+export async function takeNextWindow(
+  db: Executor,
+  now: Date,
+  options: { backfillFirst?: boolean } = {},
+): Promise<QueueRow[]> {
+  const order = options.backfillFirst === true ? sql.raw("-priority") : sql.raw("priority");
   const head = await db.execute<QueueSqlRow>(sql`
     SELECT device_id, from_at, to_at, reason, from_level, priority, attempts, enqueued_at::text
     FROM processing_queue
     WHERE next_at <= ${now.toISOString()}::timestamptz
-    ORDER BY priority,
+    ORDER BY ${order},
       CASE WHEN priority = 0 THEN extract(epoch FROM next_at) ELSE -extract(epoch FROM from_at) END,
       device_id, from_at
     LIMIT 1
@@ -117,6 +125,8 @@ export async function takeNextWindow(db: Executor, now: Date): Promise<QueueRow[
     FROM processing_queue
     WHERE device_id = ${first.device_id}
       AND from_at < ${toIso(first.to_at)}::timestamptz AND to_at > ${toIso(first.from_at)}::timestamptz
+      AND (from_at = ${toIso(first.from_at)}::timestamptz
+        OR (missing_tiles IS NULL AND next_at <= ${now.toISOString()}::timestamptz))
     ORDER BY from_at
   `);
   return overlapping.rows.map(toRow);
@@ -184,7 +194,10 @@ export async function retryWindows(
 /**
  * A processed window that still lacks map tiles waits for them: the tile
  * fetcher fetches what `missing_tiles` lists and makes the window ready again
- * once they are there; after a day it is processed again regardless.
+ * once they are there; after a day it is processed again regardless. It waits
+ * with the bounds it was queued with — never the ones a pass grew it to, or
+ * the next pass would grow from those again, and a window queued for an
+ * upload creep back across days of history.
  */
 export async function awaitTiles(
   db: Executor,
