@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { dayStampsSchema } from "./cacheStamp";
+import { cacheStampSchema } from "./cacheStamp";
+import { localDateSchema } from "./datetime";
 import { deviceSummarySchema } from "./device";
 import { sharedDeviceSchema } from "./person";
+import { dayStatSchema } from "./stats";
 import { trackPointSchema } from "./track";
 import { processingVersionsSchema } from "./transport";
 
@@ -80,14 +82,23 @@ export const serverEventSchema = z.discriminatedUnion("type", [
   }),
   /**
    * The daily statistics summed up some of a device's days again (after
-   * uploads or a deletion, or for a new time zone): the stamps of those days
-   * now. A copy of one of them whose stamps differ is out of date.
+   * uploads or a deletion), told to the owner's streams only, never to the
+   * people the device is shared with. `dates` are those days and `days` their
+   * rows now, each with its stamp: a date without a row lost its last point. A
+   * new time zone rebuilds every day and publishes `resync` instead of a
+   * `days` event per day.
    */
-  z.object({ type: z.literal("days"), deviceId: z.uuid(), days: dayStampsSchema }),
+  z.object({
+    type: z.literal("days"),
+    deviceId: z.uuid(),
+    dates: z.array(localDateSchema),
+    days: z.array(dayStatSchema.extend({ stamp: cacheStampSchema })),
+  }),
   /**
-   * Sent first to a stream reopened with `?after=<id>` (the `id:` of the last
-   * message it got) when the server no longer holds what came since, or has
-   * restarted: events were lost, so what the page shows may be out of date.
+   * Right after `hello` on a stream reopened with `?after=<id>` whose id the
+   * server no longer holds; otherwise the missed events are replayed in its
+   * place. Also once a new time zone has rebuilt every day. Either way what the
+   * page shows may be out of date.
    */
   z.object({ type: z.literal("resync") }),
   /**
@@ -99,3 +110,13 @@ export const serverEventSchema = z.discriminatedUnion("type", [
 ]);
 export type ServerEvent = z.infer<typeof serverEventSchema>;
 export type ServerEventType = ServerEvent["type"];
+
+/**
+ * `GET /api/events` — `after` is the `id:` of the last message received,
+ * passed back verbatim; also honoured as `Last-Event-ID`. It is opaque on
+ * purpose: a per-user counter starts again at 1 with every process, so a bare
+ * number could replay the wrong events, while an id like `${bootId}:${seq}`
+ * lets the server answer one it does not recognise with `resync` (never 400).
+ */
+export const eventsQuerySchema = z.object({ after: z.string().min(1).max(64).optional() });
+export type EventsQueryInput = z.input<typeof eventsQuerySchema>;

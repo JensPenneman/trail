@@ -4801,8 +4801,8 @@
           "raw": {
             "type": "string",
             "minLength": 1,
-            "description": "The day's recorded data. It changes when points, visits or trips of the day arrive — also late, for a day long past — or are deleted; a re-sent upload of duplicates changes nothing.",
-            "example": "1840.1792995160000.1793051883000.2.1"
+            "description": "A hash of the day's recorded data. It changes when points, visits or trips of the day arrive — also late, for a day long past — or are deleted; a re-sent upload of duplicates changes nothing.",
+            "example": "GGJyqloxyuYLlVGgXnOvXX"
           },
           "processed": {
             "anyOf": [
@@ -4814,8 +4814,8 @@
                 "type": "null"
               }
             ],
-            "description": "The day's processing: its averaged and mapped levels and its stops and moves. It changes when the day waits for processing and again when processing has worked it out — after new points, a corrected transport mode or a new version of the algorithms. Null while the day has no stops or moves.",
-            "example": "37.1793052291000.3.false"
+            "description": "A hash of the day's processing: its averaged and mapped levels and its stops and moves. It changes when the day waits for processing and again when processing has worked it out — after new points, a corrected transport mode or a new version of the algorithms. Null while the day has no stops or moves.",
+            "example": "AHW_x1m7axfLciupDmb52n"
           }
         },
         "required": [
@@ -5407,8 +5407,8 @@
           "raw": {
             "type": "string",
             "minLength": 1,
-            "description": "The day's recorded data. It changes when points, visits or trips of the day arrive — also late, for a day long past — or are deleted; a re-sent upload of duplicates changes nothing.",
-            "example": "1840.1792995160000.1793051883000.2.1"
+            "description": "A hash of the day's recorded data. It changes when points, visits or trips of the day arrive — also late, for a day long past — or are deleted; a re-sent upload of duplicates changes nothing.",
+            "example": "GGJyqloxyuYLlVGgXnOvXX"
           },
           "processed": {
             "anyOf": [
@@ -5420,8 +5420,8 @@
                 "type": "null"
               }
             ],
-            "description": "The day's processing: its averaged and mapped levels and its stops and moves. It changes when the day waits for processing and again when processing has worked it out — after new points, a corrected transport mode or a new version of the algorithms. Null while the day has no stops or moves.",
-            "example": "37.1793052291000.3.false"
+            "description": "A hash of the day's processing: its averaged and mapped levels and its stops and moves. It changes when the day waits for processing and again when processing has worked it out — after new points, a corrected transport mode or a new version of the algorithms. Null while the day has no stops or moves.",
+            "example": "AHW_x1m7axfLciupDmb52n"
           }
         },
         "required": [
@@ -5429,7 +5429,7 @@
           "processed"
         ],
         "additionalProperties": false,
-        "description": "A device's local day in two opaque strings: while they stay the same, so do the day's answers. Tracks at the `raw` level, visits and trips depend on `raw`; the other levels and the timeline on both. Compare stamps, never parse them."
+        "description": "A device's local day in two opaque hashes: while they stay the same, so do the day's answers. Tracks at the `raw` level, visits and trips depend on `raw`; the other levels and the timeline on both. Compare stamps and nothing more: a release may change what goes into them, which costs a copy one refetch."
       },
       "ActivityBucket": {
         "type": "object",

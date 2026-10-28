@@ -6,10 +6,11 @@ import { localDateSchema } from "./datetime";
  * again. A delta of a simplified track or of the timeline does not compose; a
  * day does: every answer sliced by local day carries a stamp per device and
  * day, the calendar's digest (`/api/stats/days`) carries the same, and equal
- * stamps mean the same answer. The strings are opaque — clients compare them
- * and never parse them, so the server may change what goes into them. The
- * fields that carry stamps are optional: an answer from a server that does not
- * stamp yet still parses.
+ * stamps mean the same answer. A stamp hashes what went into the day — with no
+ * salt and no owner, so that it compares equal across restarts and routes —
+ * and clients compare stamps without being able to parse them, so what goes
+ * into them stays the server's to change. The fields that carry stamps are
+ * optional: an answer from a server that does not stamp yet still parses.
  */
 
 /** What a device's answers for one local day are made of. */
@@ -17,19 +18,19 @@ export const cacheStampSchema = z
   .object({
     raw: z.string().min(1).meta({
       description:
-        "The day's recorded data. It changes when points, visits or trips of the day arrive — also late, for a day long past — or are deleted; a re-sent upload of duplicates changes nothing.",
-      example: "1840.1792995160000.1793051883000.2.1",
+        "A hash of the day's recorded data. It changes when points, visits or trips of the day arrive — also late, for a day long past — or are deleted; a re-sent upload of duplicates changes nothing.",
+      example: "GGJyqloxyuYLlVGgXnOvXX",
     }),
     processed: z.string().min(1).nullable().meta({
       description:
-        "The day's processing: its averaged and mapped levels and its stops and moves. It changes when the day waits for processing and again when processing has worked it out — after new points, a corrected transport mode or a new version of the algorithms. Null while the day has no stops or moves.",
-      example: "37.1793052291000.3.false",
+        "A hash of the day's processing: its averaged and mapped levels and its stops and moves. It changes when the day waits for processing and again when processing has worked it out — after new points, a corrected transport mode or a new version of the algorithms. Null while the day has no stops or moves.",
+      example: "AHW_x1m7axfLciupDmb52n",
     }),
   })
   .meta({
     id: "CacheStamp",
     description:
-      "A device's local day in two opaque strings: while they stay the same, so do the day's answers. Tracks at the `raw` level, visits and trips depend on `raw`; the other levels and the timeline on both. Compare stamps, never parse them.",
+      "A device's local day in two opaque hashes: while they stay the same, so do the day's answers. Tracks at the `raw` level, visits and trips depend on `raw`; the other levels and the timeline on both. Compare stamps and nothing more: a release may change what goes into them, which costs a copy one refetch.",
   });
 export type CacheStamp = z.infer<typeof cacheStampSchema>;
 

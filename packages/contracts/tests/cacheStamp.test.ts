@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { cacheStampSchema, type DayStamp, dayStampSchema } from "../src/cacheStamp";
-import { serverEventSchema } from "../src/events";
+import { eventsQuerySchema, serverEventSchema } from "../src/events";
 import { dayStatSchema, daysResponseSchema } from "../src/stats";
 import { dayStatsResponseSchema, dayStatsSchema } from "../src/statsPublic";
 import { type TrackPoint, tracksResponseSchema } from "../src/track";
@@ -12,17 +12,18 @@ import { visitsResponseSchema } from "../src/visit";
 const car = "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3";
 const bike = "0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f";
 
-const raw = "1840.1792995160000.1793051883000.2.1";
-const processed = "37.1793052291000.3.false";
+// As the server makes them: the first 22 base64url characters of a SHA-256.
+const raw = "GGJyqloxyuYLlVGgXnOvXX";
+const processed = "AHW_x1m7axfLciupDmb52n";
 
 const stamps: DayStamp[] = [
   { deviceId: car, date: "2026-10-25", raw, processed },
-  { deviceId: car, date: "2026-10-26", raw: "12.1793049600000.1793050320000.0.0", processed: null },
+  { deviceId: car, date: "2026-10-26", raw: "Tl4NdXrbmc-lRloe9UYyjY", processed: null },
   { deviceId: bike, date: "2026-10-26", raw, processed },
 ];
 
 describe("day stamps", () => {
-  it("are two opaque strings per device and local day, `processed` null before processing", () => {
+  it("are two opaque hashes per device and local day, `processed` null before processing", () => {
     for (const stamp of stamps) expect(dayStampSchema.parse(stamp)).toStrictEqual(stamp);
     const [stamp] = stamps;
     const refused = [
@@ -250,16 +251,27 @@ function parseServerEventWith(schema: z.ZodType, event: unknown): unknown {
 
 const versions = { averaged: 1, mapped: 1, inferred: 3 };
 const hello = { type: "hello", serverTime: "2026-10-26T09:00:00.000Z" };
-const days = { type: "days", deviceId: car, days: stamps.slice(0, 2) };
+// The 25th lost its last point, the 26th was summed up again.
+const days = {
+  type: "days",
+  deviceId: car,
+  dates: ["2026-10-25", "2026-10-26"],
+  days: [{ ...day, stamp: { raw, processed } }],
+};
 const resync = { type: "resync" };
 
 describe("server events", () => {
-  it("tell a stream the stamps of days summed up again, and when to resync", () => {
+  it("tell the owner the days summed up again, rows and stamps, and when to resync", () => {
     expect(parseServerEventWith(serverEventSchema, days)).toStrictEqual(days);
     expect(parseServerEventWith(serverEventSchema, resync)).toStrictEqual(resync);
-    const malformed = { ...days, days: [{ ...stamps[0], raw: "" }] };
-    expect(parseServerEventWith(serverEventSchema, malformed)).toBeNull();
-    expect(parseServerEventWith(serverEventSchema, { ...days, deviceId: "car" })).toBeNull();
+    const refused = [
+      { ...days, days: [day] },
+      { ...days, days: [{ ...day, stamp: { raw: "", processed } }] },
+      { ...days, dates: ["26 October 2026"] },
+      { type: "days", deviceId: car, days: [] },
+      { ...days, deviceId: "car" },
+    ];
+    for (const event of refused) expect(parseServerEventWith(serverEventSchema, event)).toBeNull();
   });
 
   it("say hello with the processing versions, or without them as before", () => {
@@ -293,5 +305,17 @@ describe("server events", () => {
     expect(parseServerEventWith(previous, days)).toBeNull();
     expect(parseServerEventWith(previous, resync)).toBeNull();
     expect(parseServerEventWith(previous, { ...hello, versions })).toStrictEqual(hello);
+  });
+});
+
+describe("the events query", () => {
+  it("takes back the `id:` of the last message verbatim, as an opaque id", () => {
+    expect(eventsQuerySchema.parse({})).toStrictEqual({});
+    for (const after of ["0193c3b2:500", "500", " 7 ", "x".repeat(64)]) {
+      expect(eventsQuerySchema.parse({ after })).toStrictEqual({ after });
+    }
+    for (const after of ["", "x".repeat(65), ["0193c3b2:500", "0193c3b2:501"], 500]) {
+      expect(eventsQuerySchema.safeParse({ after }).success).toBe(false);
+    }
   });
 });
