@@ -58,7 +58,7 @@ export function continuesStop(before: StopShape, part: StopShape): boolean {
 }
 
 /** SQL expressions of the columns the rule reads of a segment. */
-export interface StopColumns {
+interface StopColumns {
   kind: string;
   startedAt: string;
   endedAt: string;
@@ -91,7 +91,7 @@ const metresSql = (lat1: string, lon1: string, lat2: string, lon2: string): SQL 
     + power(cos(radians(${lat1})) * (${lon2} - ${lon1}), 2)))`);
 
 /** `continuesStop` in SQL, of column expressions: false where either is missing. */
-export function continuesSql(
+function continuesSql(
   before: Omit<StopColumns, "startedAt" | "startLat" | "startLon">,
   part: Omit<StopColumns, "endedAt" | "endLat" | "endLon">,
 ): SQL {
@@ -134,5 +134,78 @@ export function stayStartedAfterSql(alias: string, since: SQL): SQL {
       AND NOT ${continuesBeforeSql("stay_part")}
     ORDER BY stay_part.started_at DESC
     LIMIT 1
+  )`;
+}
+
+/** The parts of a stay are looked for this far beyond the range asked for (§17.6). */
+const stayReach = sql.raw("interval '14 days'");
+
+/** A part and the segment before it, as `stayPartsSql` names their columns. */
+const continuesBefore = continuesSql(
+  {
+    kind: "before_kind",
+    endedAt: "before_end",
+    endLat: "before_end_lat",
+    endLon: "before_end_lon",
+    centroidLat: "before_lat",
+    centroidLon: "before_lon",
+    spreadM: "before_spread",
+  },
+  {
+    kind: "kind",
+    startedAt: "started_at",
+    startLat: "start_lat",
+    startLon: "start_lon",
+    centroidLat: "centroid_lat",
+    centroidLon: "centroid_lon",
+    spreadM: "spread_m",
+  },
+);
+
+/**
+ * The stored segments of `devices` (an expression of `uuid[]`) within two
+ * weeks of `[from, to)`, each with the stay it is part of — one definition for
+ * the stays the timeline serves (`servedSegments`) and for what stamps them
+ * (`loadStampedDays`, `insightsValidator`). A subquery for the caller to name:
+ * the segment's columns the serving reads (with `computed_at` and `version`),
+ * `continues` (`continuesSql`, against the segment before it), `stay` (numbered
+ * per device in time order: a part that continues the one before it keeps its
+ * number; a move is a stay of its own) and `shares_point` (the point at its
+ * start is the earlier part's own, counted there, unless that part lasted
+ * beyond its last point), and the stay's extent: `stay_from`, `stay_to`.
+ */
+export function stayPartsSql(devices: SQL, from: SQL, to: SQL): SQL {
+  return sql`(
+    WITH parts AS (
+      SELECT p.id, p.device_id, p.kind, p.started_at, p.ended_at, p.duration_s, p.distance_m,
+        p.mode, p.mode_inferred, p.mode_user, p.confidence, p.review, p.max_speed, p.point_count,
+        p.start_lat, p.start_lon, p.end_lat, p.end_lon, p.centroid_lat, p.centroid_lon,
+        p.computed_at, p.version,
+        (p.features->>'spreadM')::float8 AS spread_m,
+        (p.features->>'lastPointT')::float8 AS last_point_t,
+        lag(p.kind) OVER w AS before_kind, lag(p.ended_at) OVER w AS before_end,
+        lag(p.end_lat) OVER w AS before_end_lat, lag(p.end_lon) OVER w AS before_end_lon,
+        lag(p.centroid_lat) OVER w AS before_lat, lag(p.centroid_lon) OVER w AS before_lon,
+        lag((p.features->>'spreadM')::float8) OVER w AS before_spread,
+        lag((p.features->>'lastPointT')::float8) OVER w AS before_last_point_t
+      FROM segments p
+      WHERE p.device_id = ANY(${devices})
+        AND p.started_at < (${to}) + ${stayReach} AND p.ended_at > (${from}) - ${stayReach}
+      WINDOW w AS (PARTITION BY p.device_id ORDER BY p.started_at)
+    ), marked AS (
+      SELECT *, ${continuesBefore} AS continues
+      FROM parts
+    ), numbered AS (
+      SELECT *,
+        count(*) FILTER (WHERE NOT continues) OVER (PARTITION BY device_id ORDER BY started_at) AS stay,
+        (continues AND started_at = before_end
+          AND (before_last_point_t IS NULL OR before_last_point_t >= extract(epoch FROM before_end)))
+          AS shares_point
+      FROM marked
+    )
+    SELECT *,
+      min(started_at) OVER stays AS stay_from, max(ended_at) OVER stays AS stay_to
+    FROM numbered
+    WINDOW stays AS (PARTITION BY device_id, stay)
   )`;
 }

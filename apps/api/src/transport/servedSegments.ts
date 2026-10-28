@@ -1,5 +1,5 @@
 import { type SQL, sql } from "drizzle-orm";
-import { continuesSql } from "../processing/stayParts";
+import { stayPartsSql } from "../processing/stayParts";
 
 /*
  * A stay is one stop (docs/architecture.md §17.6). Bounded passes work a long
@@ -11,31 +11,6 @@ import { continuesSql } from "../processing/stayParts";
  * Nothing is changed in the stored segments: processing stays as it is, every
  * pass repeatable.
  */
-
-/** The parts of a stay are looked for this far beyond the range asked for. */
-const stayReachMs = 14 * 86_400_000;
-
-/** A part and the segment before it, as `parts` names their columns. */
-const continues = continuesSql(
-  {
-    kind: "before_kind",
-    endedAt: "before_end",
-    endLat: "before_end_lat",
-    endLon: "before_end_lon",
-    centroidLat: "before_lat",
-    centroidLon: "before_lon",
-    spreadM: "before_spread",
-  },
-  {
-    kind: "kind",
-    startedAt: "started_at",
-    startLat: "start_lat",
-    startLon: "start_lon",
-    centroidLat: "centroid_lat",
-    centroidLon: "centroid_lon",
-    spreadM: "spread_m",
-  },
-);
 
 /**
  * The segments of `deviceIds` around `[from, to)` as they are served, a
@@ -52,37 +27,12 @@ const continues = continuesSql(
  * part within them); the caller keeps what overlaps the range, orders and pages.
  */
 export function servedSegments(deviceIds: readonly string[], range: { from: Date; to: Date }): SQL {
-  const from = new Date(range.from.getTime() - stayReachMs).toISOString();
-  const to = new Date(range.to.getTime() + stayReachMs).toISOString();
+  const parts = stayPartsSql(
+    sql`${sql.param(deviceIds)}::uuid[]`,
+    sql`${range.from.toISOString()}::timestamptz`,
+    sql`${range.to.toISOString()}::timestamptz`,
+  );
   return sql`(
-    WITH parts AS (
-      SELECT p.id, p.device_id, p.kind, p.started_at, p.ended_at, p.duration_s, p.distance_m,
-        p.mode, p.mode_inferred, p.mode_user, p.confidence, p.review, p.max_speed, p.point_count,
-        p.start_lat, p.start_lon, p.end_lat, p.end_lon, p.centroid_lat, p.centroid_lon,
-        (p.features->>'spreadM')::float8 AS spread_m,
-        (p.features->>'lastPointT')::float8 AS last_point_t,
-        lag(p.kind) OVER w AS before_kind, lag(p.ended_at) OVER w AS before_end,
-        lag(p.end_lat) OVER w AS before_end_lat, lag(p.end_lon) OVER w AS before_end_lon,
-        lag(p.centroid_lat) OVER w AS before_lat, lag(p.centroid_lon) OVER w AS before_lon,
-        lag((p.features->>'spreadM')::float8) OVER w AS before_spread,
-        lag((p.features->>'lastPointT')::float8) OVER w AS before_last_point_t
-      FROM segments p
-      WHERE p.device_id = ANY(${sql.param(deviceIds)}::uuid[])
-        AND p.started_at < ${to}::timestamptz AND p.ended_at > ${from}::timestamptz
-      WINDOW w AS (PARTITION BY p.device_id ORDER BY p.started_at)
-    ), marked AS (
-      SELECT *, ${continues} AS continues
-      FROM parts
-    ), stays AS (
-      SELECT *,
-        count(*) FILTER (WHERE NOT continues) OVER (PARTITION BY device_id ORDER BY started_at) AS stay,
-        -- The point at the boundary is the earlier part's own (and counted by it) unless that part
-        -- lasted beyond its last point: counted once.
-        (continues AND started_at = before_end
-          AND (before_last_point_t IS NULL OR before_last_point_t >= extract(epoch FROM before_end)))
-          AS shares_point
-      FROM marked
-    )
     SELECT (array_agg(id ORDER BY started_at))[1] AS id, device_id, min(kind) AS kind,
       min(started_at) AS started_at, max(ended_at) AS ended_at,
       CASE WHEN count(*) = 1 THEN min(duration_s)
@@ -105,7 +55,7 @@ export function servedSegments(deviceIds: readonly string[], range: { from: Date
         AS centroid_lon,
       max(spread_m) AS spread_m,
       (array_agg(last_point_t ORDER BY started_at DESC))[1] AS last_point_t
-    FROM stays
+    FROM ${parts} stays
     GROUP BY device_id, stay
   ) s`;
 }

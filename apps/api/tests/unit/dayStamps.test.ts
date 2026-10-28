@@ -34,6 +34,7 @@ const row = (changes: Partial<DayStampRow> = {}): DayStampRow => ({
   max_version: 3,
   starts: "3586001000.000000",
   ends: "3586090000.000000",
+  points_of_parts: "1612",
   pending: false,
   ...changes,
 });
@@ -59,7 +60,7 @@ describe("stampDay", () => {
       `raw1|${deviceId}|2026-10-26|${zone}|1840|23510.4|2026-10-26 05:12:40+00|2026-10-26 21:58:03+00|-|-|1|1793000000.000000|1|1793003600.000000`,
     );
     expect(canonical.processed).toBe(
-      `processed1|${deviceId}|2026-10-26|${zone}|2|2026-10-26 22:00:01.5+00|3|3|3586001000.000000|3586090000.000000|settled`,
+      `processed2|${deviceId}|2026-10-26|${zone}|2|2026-10-26 22:00:01.5+00|3|3|3586001000.000000|3586090000.000000|1612|settled`,
     );
   });
 
@@ -91,6 +92,8 @@ describe("stampDay", () => {
       // A pass next door cut a segment of this day without rewriting it.
       { ends: "3586089000.000000" },
       { starts: "3586002000.000000" },
+      // A part of a stay served on this day, on another day, counted anew.
+      { points_of_parts: "1617" },
       { pending: true },
     ] satisfies Partial<DayStampRow>[]) {
       const stamp = stampOf(changes).stamp;
