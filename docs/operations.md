@@ -652,6 +652,25 @@ Every container keeps at most 5 files of 10 MB of logs. Device and API tokens,
 cookies, coordinates and map tiles never appear in the app's logs at the
 default level; the API token lines carry the token's and the user's id only.
 
+Once a minute the app logs its `load` line — event-loop delay, the database
+pool, open streams, the minute's uploads and points, memory and the
+processing queue's age, numbers only ([docs/perf/README.md](perf/README.md#what-a-run-does)):
+
+```sh
+docker logs --since 1h launchway-trail-app-1 2>&1 | grep '"msg":"load"'
+```
+
+## Load tests
+
+Load tests run on the Mac against a capped copy of this stack
+(`npm run load -- fleet-10`), never against production; how to run one, how
+to read its report and the targets are in [docs/perf/README.md](perf/README.md).
+Their synthetic people come from `trail load-fleet`, which refuses unless
+`LOAD_TEST=true`, the deployment is not Launchway's `production` and its
+database holds no passkey and no real account. A load test on the node (a
+later milestone) is a preview with `LOAD_TEST=true` in its variables; never
+set it in production's.
+
 ## Local run
 
 `deploy/compose.dev.yaml` builds the working tree into an image and runs the
