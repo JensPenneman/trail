@@ -1,5 +1,6 @@
 import type { ServerEvent } from "@trail/contracts/events";
 import { sql } from "drizzle-orm";
+import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EventBus } from "../../src/events/eventBus";
 import { ProcessingListener } from "../../src/events/processingListener";
@@ -178,6 +179,51 @@ describe("the API's listener", () => {
       await listener.stop();
     }
     expect(listener.listening).toBe(false);
+  });
+
+  it("lets go at once when stopped in the middle of a reconnect's catch-up", async () => {
+    let paused = () => {};
+    const reconnectPending = new Promise<void>((resolve) => {
+      paused = resolve;
+    });
+    let release = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const listener = new ProcessingListener({
+      connectionString: testDatabaseUrl,
+      bus: new EventBus(),
+      logger: createLogger({ level: "silent" }),
+      wait: async () => {
+        paused();
+        await released;
+      },
+    });
+    await listener.start();
+    const holder = new pg.Client({ connectionString: testDatabaseUrl });
+    await holder.connect();
+    try {
+      await api.ctx.db.execute(sql`SELECT pg_terminate_backend(${listener.backendPid})`);
+      await reconnectPending;
+      // The catch-up's read of segments waits for this lock: a reconnect that takes its time.
+      await holder.query("BEGIN");
+      await holder.query("LOCK TABLE segments IN ACCESS EXCLUSIVE MODE");
+      release();
+      await eventually("the catch-up waiting for the lock", async () => {
+        const waiting = await api.ctx.db.execute<{ count: number }>(sql`
+          SELECT count(*)::int AS count FROM pg_stat_activity
+          WHERE application_name = 'trail-listener' AND wait_event_type = 'Lock'
+        `);
+        return (waiting.rows[0]?.count ?? 0) > 0;
+      });
+      const stopping = Date.now();
+      await listener.stop();
+      expect(Date.now() - stopping).toBeLessThan(1_000);
+      expect(listener.listening).toBe(false);
+    } finally {
+      await holder.query("ROLLBACK");
+      await holder.end();
+    }
   });
 });
 

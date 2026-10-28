@@ -1,5 +1,5 @@
 {
-  "id": "8898a89b-5959-4183-a33b-7a345e6d4ee3",
+  "id": "79133d9a-67f3-4896-86fe-04d0568d14df",
   "prevId": "452daa71-07a3-4637-9ef5-35c1a7c72e62",
   "version": "7",
   "dialect": "postgresql",
@@ -2792,6 +2792,21 @@
             },
             {
               "expression": "ended_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "segments_computed_at_idx": {
+          "name": "segments_computed_at_idx",
+          "columns": [
+            {
+              "expression": "computed_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

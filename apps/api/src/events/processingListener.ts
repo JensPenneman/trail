@@ -12,6 +12,8 @@ const checkEveryMs = 30_000;
 const checkTimeoutMs = 10_000;
 /** A clean stop waits this long for the server to say goodbye, then drops the socket. */
 const endTimeoutMs = 2_000;
+/** The catch-up reads an index range; a statement that takes longer than this gives up and retries. */
+const statementTimeoutMs = 30_000;
 /**
  * Segments carry the start of their pass's transaction (`computed_at`), so
  * the catch-up after a reconnect reaches back this far before the moment the
@@ -36,6 +38,19 @@ const failure = (error: unknown): Error =>
   error instanceof Error ? error : new Error(String(error));
 
 /**
+ * Closes a connection's socket at once: a half-open one would never answer a
+ * goodbye. `connection.stream` is node-postgres's socket — typed, though not
+ * documented, and what its own `end()` destroys for a hung query — so it is
+ * looked for first, and the documented `end()` stands in should it be gone.
+ */
+function dropSocket(client: pg.Client): void {
+  const stream = (client as { connection?: { stream?: { destroy?: () => void } } }).connection
+    ?.stream;
+  if (typeof stream?.destroy === "function") stream.destroy();
+  else void client.end().catch(() => {});
+}
+
+/**
  * The API's end of the processing channel (docs/architecture.md §9): one
  * connection of its own, outside the pool, that LISTENs on
  * `trail_processing` and republishes every `segments` message on the
@@ -52,6 +67,8 @@ export class ProcessingListener {
   readonly #abort = new AbortController();
   readonly #created = new Date();
   #client: pg.Client | null = null;
+  /** A connection being opened (and caught up), which a stop must not wait for. */
+  #connecting: pg.Client | null = null;
   #backendPid: number | null = null;
   /** The database's clock when the connection last answered. */
   #lastAlive: Date | null = null;
@@ -88,15 +105,18 @@ export class ProcessingListener {
     try {
       await this.#connect(null);
     } catch (error) {
+      if (this.#stopped) return;
       this.#logger.warn({ err: error }, "processing events not listened to yet; trying again");
       this.#reconnect(this.#created);
     }
   }
 
+  /** Lets go of the channel at once, also in the middle of a reconnect and its catch-up. */
   async stop(): Promise<void> {
     this.#stopped = true;
     this.#abort.abort();
     clearInterval(this.#check);
+    if (this.#connecting !== null) this.#drop(this.#connecting);
     const client = this.#client;
     this.#client = null;
     this.#backendPid = null;
@@ -111,7 +131,7 @@ export class ProcessingListener {
       ),
       sleep(endTimeoutMs, false, { ref: false }),
     ]);
-    if (!ended) client.connection.stream.destroy();
+    if (!ended) dropSocket(client);
   }
 
   /**
@@ -124,7 +144,7 @@ export class ProcessingListener {
     const client = new pg.Client({
       connectionString: this.#connectionString,
       application_name: "trail-listener",
-      options: "-c TimeZone=UTC",
+      options: `-c TimeZone=UTC -c statement_timeout=${statementTimeoutMs}`,
       connectionTimeoutMillis: 5_000,
       keepAlive: true,
     });
@@ -136,6 +156,7 @@ export class ProcessingListener {
       }
     });
     let caughtUp = 0;
+    this.#connecting = client;
     try {
       await client.connect();
       await client.query(`LISTEN ${processingChannel}`);
@@ -150,6 +171,8 @@ export class ProcessingListener {
     } catch (error) {
       this.#drop(client);
       throw error;
+    } finally {
+      this.#connecting = null;
     }
     this.#check = setInterval(() => void this.#checkConnection(client), checkEveryMs);
     this.#check.unref();
@@ -232,11 +255,11 @@ export class ProcessingListener {
     this.#reconnect(this.#lastAlive ?? this.#created);
   }
 
-  /** Lets go of a connection without waiting for it: a half-open socket would never answer. */
+  /** Lets go of a connection without waiting for it; what it still had running fails. */
   #drop(client: pg.Client): void {
     client.removeAllListeners();
     client.on("error", () => {});
-    client.connection.stream.destroy();
+    dropSocket(client);
   }
 
   #reconnect(missedSince: Date): void {

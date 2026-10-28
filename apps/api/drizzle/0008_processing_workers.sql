@@ -7,3 +7,5 @@ CREATE TABLE "processing_workers" (
 	"passes" bigint DEFAULT 0 NOT NULL,
 	"points" bigint DEFAULT 0 NOT NULL
 );
+--> statement-breakpoint
+CREATE INDEX "segments_computed_at_idx" ON "segments" USING btree ("computed_at");
