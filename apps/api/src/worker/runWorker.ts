@@ -3,10 +3,11 @@ import type { Config } from "../config/config";
 import { type StartedWorker, startWorker } from "./startWorker";
 
 /**
- * A pass in progress gets this long to commit after SIGTERM: under the 90 s
- * a container is given to stop, so the worker exits on its own first.
+ * A pass in progress gets this long to commit after SIGTERM: under the 60 s
+ * Launchway gives a container to stop (`up` and `down --timeout 60`, which
+ * override `stop_grace_period`), so the worker exits on its own first.
  */
-const forcedExitMs = 80_000;
+const forcedExitMs = 50_000;
 
 /**
  * Runs the worker in this process until SIGTERM or SIGINT, then stops it:

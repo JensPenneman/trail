@@ -49,7 +49,8 @@ COPY --from=build /app/apps/api/package.json ./apps/api/
 COPY --from=build /app/apps/api/drizzle ./apps/api/drizzle
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/web/dist ./apps/web/dist
-# `docker compose exec app trail <command>` runs the management CLI
+# `docker compose exec app trail <command>` runs the management CLI, and
+# `trail worker` is the worker's command (docs/architecture.md section 3)
 COPY --chmod=0755 <<'EOF' /usr/local/bin/trail
 #!/bin/sh
 exec node --enable-source-maps /app/apps/api/dist/cli.mjs "$@"
@@ -60,10 +61,14 @@ EOF
 USER 1000:1000
 EXPOSE 8080
 STOPSIGNAL SIGTERM
-# /api/health/live never touches the database, so a database outage does not
-# get the app container restarted; busybox wget avoids starting a second Node.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD ["/bin/sh", "-c", "wget -q -O /dev/null \"http://127.0.0.1:${PORT}/api/health/live\" || exit 1"]
+# Liveness for both roles: the API's /api/health/live, which never touches the
+# database, so a database outage does not get the app container restarted —
+# or, in a worker (`trail worker`, no HTTP server), its own /health/live on
+# PROCESSING_METRICS_PORT, which fails once its heartbeat is 90 s old.
+# deploy/compose.yaml gives each service its half; this covers any other run.
+# busybox wget avoids starting a second Node.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD ["/bin/sh", "-c", "wget -q -O /dev/null \"http://127.0.0.1:${PORT}/api/health/live\" || wget -q -O /dev/null \"http://127.0.0.1:${PROCESSING_METRICS_PORT:-8081}/health/live\" || exit 1"]
 CMD ["node", "--enable-source-maps", "apps/api/dist/main.mjs"]
 
 # Build metadata last: it changes on every build and must not invalidate the

@@ -1,7 +1,8 @@
 # A local, production-like run of the working tree: builds the image instead
-# of pulling one from GHCR and publishes the app on http://localhost:8080.
-# Launchway never uses this file. In deploy/.env (git-ignored; every variable
-# is explained in .env.example):
+# of pulling one from GHCR, runs it as `app` and as `worker` with the caps of
+# compose.yaml, and publishes the app on http://localhost:8080. Launchway
+# never uses this file. In deploy/.env (git-ignored; every variable is
+# explained in .env.example):
 #
 #   TRAIL_IMAGE=trail:dev
 #   POSTGRES_PASSWORD=<openssl rand -hex 32>
@@ -23,3 +24,13 @@ services:
     pull_policy: build
     ports:
       - "127.0.0.1:8080:8080"
+
+  worker:
+    # the image `app` builds (TRAIL_IMAGE); there is nothing to pull
+    pull_policy: never
+    environment:
+      # A test of the worker's health check, never set in production:
+      # `PROCESSING_TEST_STALL=true docker compose … up -d worker` starts a
+      # worker that beats once and stands still, so its health check fails
+      # (docs/operations.md, "Local run").
+      PROCESSING_TEST_STALL: ${PROCESSING_TEST_STALL:-}

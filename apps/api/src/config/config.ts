@@ -46,6 +46,10 @@ type ProcessingRole = "api" | "worker" | "all";
 /** Location processing (docs/architecture.md §17.7). */
 interface ProcessingSettings {
   role: ProcessingRole;
+  /** The worker process's liveness port (`/health/live`); 0 = none. */
+  metricsPort: number;
+  /** Tests of the worker's health check: it beats once and then stands still. */
+  testStall: boolean;
   enabled: boolean;
   /** Overpass interpreter for map data; null when mapping is switched off. */
   overpassUrl: string | null;

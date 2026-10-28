@@ -105,6 +105,8 @@ export function loadConfig(
     },
     processing: {
       role: env.PROCESSING_ROLE,
+      metricsPort: env.PROCESSING_METRICS_PORT,
+      testStall: env.PROCESSING_TEST_STALL,
       enabled: env.PROCESSING_ENABLED,
       overpassUrl: env.PROCESSING_OVERPASS_URL,
       overpassDailyBytes: env.PROCESSING_OVERPASS_DAILY_MB * 1_000_000,

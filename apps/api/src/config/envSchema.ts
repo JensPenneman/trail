@@ -133,6 +133,12 @@ export const envSchema = z
     // What this process runs (docs/architecture.md §3): `api` queues and processes nothing,
     // `worker` processes and serves no HTTP, `all` does both, as one container always did.
     PROCESSING_ROLE: env(z.enum(["api", "worker", "all"]).default("all")),
+    // A worker process's own port (role `worker`): `/health/live` for its container's health
+    // check (docs/architecture.md §3). 0 switches it off; role `all` opens none (the API's port is
+    // its probe).
+    PROCESSING_METRICS_PORT: env(intSchema(0, 65_535).default(8081)),
+    // Tests of that health check only: the worker beats once, then stands still.
+    PROCESSING_TEST_STALL: env(booleanSchema.default(false)),
     PROCESSING_ENABLED: env(booleanSchema.default(true)),
     PROCESSING_OVERPASS_URL: overpassUrlSchema,
     PROCESSING_OVERPASS_DAILY_MB: env(intSchema(1, 100_000).default(300)),

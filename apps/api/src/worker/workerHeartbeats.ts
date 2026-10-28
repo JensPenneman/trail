@@ -4,6 +4,13 @@ import { sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
 import { toIso } from "../db/toIso";
 
+/**
+ * A worker whose newest heartbeat is older than this is down — six beats of
+ * 15 s missed: to the API (`/api/health`, by the database's clock) and to its
+ * own liveness probe (`/health/live`, docs/architecture.md §3).
+ */
+export const heartbeatStaleS = 90;
+
 /** What a worker tells of itself with every heartbeat (docs/architecture.md §17.4). */
 export interface WorkerBeat {
   id: string;
