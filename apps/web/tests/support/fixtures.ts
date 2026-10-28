@@ -1,4 +1,5 @@
 import type { ApiToken } from "@trail/contracts/apiToken";
+import type { DayStamp } from "@trail/contracts/cacheStamp";
 import type { PublicConfig } from "@trail/contracts/config";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { Person, SharedDevice } from "@trail/contracts/person";
@@ -360,4 +361,14 @@ export function shareLink(overrides: Partial<ShareLink> = {}): ShareLink {
     lastViewedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
     ...overrides,
   };
+}
+
+/** A device's local day as the server stamps it (opaque strings: only equality counts). */
+export function dayStamp(
+  deviceId: string,
+  date: string,
+  raw = `raw-${date}`,
+  processed: string | null = `processed-${date}`,
+): DayStamp {
+  return { deviceId, date, raw, processed };
 }

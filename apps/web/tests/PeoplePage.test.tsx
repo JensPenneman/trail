@@ -1,10 +1,31 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { DeviceSummary } from "@trail/contracts/device";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { queryKeys } from "../src/api/queryKeys";
+import { FreshnessIndicator } from "../src/app/FreshnessIndicator";
+import type { CacheStore } from "../src/cache/openCacheStore";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
-import { ana, device, ids, outgoingShare, sharedDevice, user } from "./support/fixtures";
+import { localDateOf } from "../src/time/localDateOf";
+import { localDayRange } from "../src/time/localDayRange";
+import { holdAll, seedEntry, warmClient } from "./support/cacheHarness";
+import {
+  ana,
+  automatic,
+  car,
+  config,
+  dayStamp,
+  device,
+  ids,
+  levelTracks,
+  outgoingShare,
+  sharedDevice,
+  timeline,
+  tracks,
+  user,
+} from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
-import { renderPage } from "./support/renderPage";
+import { createTestQueryClient, renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
 
 vi.mock("../src/map/LazyTrailMap", async () => ({
@@ -470,5 +491,122 @@ describe("the People page's list", () => {
     ).toBeInTheDocument();
     // Opened, since the address sets a filter.
     expect(screen.getByText("Advanced").closest("details")).toHaveAttribute("open");
+  });
+});
+
+describe("the People page on a warm open", () => {
+  const today = localDateOf(Date.now(), user.timezone);
+  const range = { ...localDayRange(today, today, user.timezone), deviceIds: null };
+  const tracksKey = queryKeys.tracks(range);
+  const timelineKey = queryKeys.timeline(range);
+  const levelKey = queryKeys.levelTracks({ ...range, level: "inferred" });
+  const stamps = [dayStamp(ids.phone, today, "raw-today", "processed-today")];
+
+  /** The last visit's answers, kept on disk with their ETags. */
+  async function lastVisit(store: CacheStore, devices: DeviceSummary[], fetchedAt: number) {
+    await seedEntry(store, { user, queryKey: queryKeys.config, answer: config, fetchedAt });
+    await seedEntry(store, {
+      user,
+      queryKey: queryKeys.devices,
+      answer: { devices },
+      fetchedAt,
+      etag: 'W/"devices"',
+    });
+    await seedEntry(store, {
+      user,
+      queryKey: tracksKey,
+      answer: { ...tracks(range.from, range.to), stamps },
+      fetchedAt,
+      etag: 'W/"tracks"',
+    });
+    await seedEntry(store, {
+      user,
+      queryKey: levelKey,
+      answer: { ...levelTracks(range.from, range.to, "inferred"), stamps },
+      fetchedAt,
+      etag: 'W/"levels"',
+    });
+    await seedEntry(store, {
+      user,
+      queryKey: timelineKey,
+      answer: { items: timeline(range.from), pending: false, stamps },
+      fetchedAt,
+      etag: 'W/"timeline"',
+    });
+    await seedEntry(store, {
+      user,
+      queryKey: queryKeys.deviceMode(ids.phone),
+      answer: { mode: automatic },
+      fetchedAt,
+    });
+  }
+
+  /** The server: the standard answers with the same ETags, every one held until released. */
+  function slowServer(devices: DeviceSummary[]) {
+    const held = holdAll({
+      ...standardRoutes(),
+      "GET /api/config": { status: 200, body: config },
+      "GET /api/devices": { status: 200, body: { devices }, etag: 'W/"devices"' },
+      "GET /api/tracks": { status: 200, body: tracks(range.from, range.to), etag: 'W/"tracks"' },
+      "GET /api/v1/tracks": {
+        status: 200,
+        body: levelTracks(range.from, range.to, "inferred"),
+        etag: 'W/"levels"',
+      },
+      "GET /api/v1/segments": {
+        status: 200,
+        body: { items: timeline(range.from), nextCursor: null, pending: false },
+        etag: 'W/"timeline"',
+      },
+      [`GET /api/v1/devices/${ids.phone}/mode`]: { status: 200, body: { mode: automatic } },
+    });
+    return { release: held.release, api: mockApi(held.routes) };
+  }
+
+  it("shows the copy before any request resolved, says so, then revalidates with 304s", async () => {
+    const devices = [device(), car()];
+    const queryClient = createTestQueryClient();
+    await warmClient(queryClient, user, (store) => lastVisit(store, devices, Date.now() - 180_000));
+    const server = slowServer(devices);
+    const { liveStore } = renderPage(
+      <>
+        <FreshnessIndicator />
+        <PeoplePage />
+      </>,
+      { user, queryClient },
+    );
+    // From the copy: what the phone does and today's stops and moves.
+    expect(within(meCard()).getByText("Standing still")).toBeInTheDocument();
+    const day = screen.getByRole("region", { name: "Your day so far" });
+    expect(within(day).getAllByText(/Train/).length).toBeGreaterThan(0);
+    expect(server.api.calls.every((call) => call.status === undefined)).toBe(true);
+    expect(await screen.findByText("Updating…")).toBeInTheDocument();
+
+    act(() => server.release());
+    // Every revalidation sent its ETag and came back unchanged.
+    await waitFor(() => expect(screen.queryByText("Updating…")).toBeNull());
+    const conditional = server.api.calls.filter((call) => call.headers?.["if-none-match"]);
+    expect(conditional.map((call) => call.path).sort()).toEqual(
+      ["/api/devices", "/api/tracks", "/api/v1/segments", "/api/v1/tracks"].sort(),
+    );
+    expect(conditional.every((call) => call.status === 304)).toBe(true);
+    expect(screen.getByText("Updated just now")).toBeInTheDocument();
+    act(() => liveStore.setConnection("open"));
+    expect(screen.getByText("Live", { selector: ".freshness__text" })).toBeInTheDocument();
+    expect(within(meCard()).getByText("Standing still")).toBeInTheDocument();
+  });
+
+  it("does not call a copy live that is older than the live window while the stream is down", async () => {
+    const devices = [device(), car()];
+    const queryClient = createTestQueryClient();
+    await warmClient(queryClient, user, (store) =>
+      lastVisit(store, devices, Date.now() - 20 * 60_000),
+    );
+    slowServer(devices);
+    renderPage(<PeoplePage />, { user, queryClient });
+    const me = meCard();
+    // The phone's position is a minute and a half old, but the copy is twenty minutes old.
+    expect(within(me).queryByText("Live")).toBeNull();
+    expect(within(me).getByText(/^as of \d\d:\d\d$/)).toBeInTheDocument();
   });
 });

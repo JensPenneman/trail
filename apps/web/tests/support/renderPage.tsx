@@ -8,6 +8,16 @@ import { createLiveStore } from "../../src/live/createLiveStore";
 import { LiveStoreContext } from "../../src/live/LiveStoreContext";
 import { AnnouncerProvider } from "../../src/ui/AnnouncerProvider";
 
+/** The query client of a page test: no retries, nothing collected while the test runs. */
+export function createTestQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: Number.POSITIVE_INFINITY },
+      mutations: { retry: false },
+    },
+  });
+}
+
 /**
  * Renders one screen the way the app does — query cache, router, announcer,
  * live store and (for signed-in screens) the session user — without the
@@ -23,14 +33,11 @@ export function renderPage(
     routes?: RouteObject[];
     /** Addresses in the history before `url`, for Back. */
     before?: readonly string[];
+    /** A client of the test's own, such as one with a copy on disk (cacheHarness). */
+    queryClient?: QueryClient;
   } = {},
 ) {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, gcTime: Number.POSITIVE_INFINITY },
-      mutations: { retry: false },
-    },
-  });
+  const queryClient = options.queryClient ?? createTestQueryClient();
   const liveStore = createLiveStore();
   const router = createMemoryRouter(
     options.routes ?? [

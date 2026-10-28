@@ -1,8 +1,9 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import { tracksResponseSchema } from "@trail/contracts/track";
-import { apiFetch } from "../api/apiFetch";
 import { queryKeys, type RangeParams } from "../api/queryKeys";
+import { cachedFetch } from "../cache/cachedFetch";
+import { dayQueryOptions } from "../cache/dayQueryOptions";
 
 /**
  * Tracks of every (or the selected) device in `[from, to)`. `ingest` events
@@ -10,14 +11,15 @@ import { queryKeys, type RangeParams } from "../api/queryKeys";
  * grows without refetching.
  */
 export function useTracks(params: RangeParams | null) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: params === null ? queryKeys.all.tracks : queryKeys.tracks(params),
-    queryFn: ({ signal }) =>
-      apiFetch(apiPaths.tracks, tracksResponseSchema, {
+    queryFn: ({ client, queryKey, signal }) =>
+      cachedFetch({ client, queryKey, signal }, apiPaths.tracks, tracksResponseSchema, {
         query: params === null ? {} : params,
-        signal,
       }),
     enabled: params !== null,
     placeholderData: keepPreviousData,
+    ...dayQueryOptions(queryClient, "tracks", params),
   });
 }

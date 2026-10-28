@@ -1,5 +1,6 @@
 import { type ReactNode, useId } from "react";
 import { Link } from "react-router";
+import { offlineReasonId, useReadOnly } from "../app/useReadOnly";
 import { Icon } from "../ui/Icon";
 import type { IconName } from "../ui/iconPaths";
 import { Spinner } from "../ui/Spinner";
@@ -44,7 +45,16 @@ interface AwayRow extends RowLook {
   to: string;
 }
 
-interface ActionRow extends RowLook {
+/**
+ * Rows that change something are off while the browser is offline, with the
+ * offline banner as their reason (nothing is queued); `worksOffline` keeps on
+ * the ones that change this browser only (its copy of the data).
+ */
+interface ChangeRow {
+  worksOffline?: boolean;
+}
+
+interface ActionRow extends RowLook, ChangeRow {
   kind: "action";
   onClick: () => void;
   /** Red, for what removes or ends something. */
@@ -53,7 +63,7 @@ interface ActionRow extends RowLook {
   disabled?: boolean;
 }
 
-interface SwitchRow extends Omit<RowLook, "value"> {
+interface SwitchRow extends Omit<RowLook, "value">, ChangeRow {
   kind: "switch";
   checked: boolean;
   onChange: (checked: boolean) => void;
@@ -61,7 +71,7 @@ interface SwitchRow extends Omit<RowLook, "value"> {
   disabled?: boolean;
 }
 
-interface SelectRow extends Omit<RowLook, "value"> {
+interface SelectRow extends Omit<RowLook, "value">, ChangeRow {
   kind: "select";
   selected: string;
   options: readonly { value: string; label: string }[];
@@ -126,11 +136,17 @@ export function SettingsRow(props: SettingsRowProps) {
   const labelId = `${id}-label`;
   const detailId = `${id}-detail`;
   const valueId = `${id}-value`;
+  const readOnly = useReadOnly();
+  const off =
+    (props.kind === "action" || props.kind === "switch" || props.kind === "select") &&
+    readOnly &&
+    props.worksOffline !== true;
   const value = "value" in props ? props.value : undefined;
   const describedBy =
     [
       props.detail === undefined ? null : detailId,
       value === undefined || value === null ? null : valueId,
+      off ? offlineReasonId : null,
     ]
       .filter((part) => part !== null)
       .join(" ") || undefined;
@@ -234,7 +250,7 @@ export function SettingsRow(props: SettingsRowProps) {
             className={`settings-row__body settings-row__body--interactive settings-row__action${props.danger === true ? " settings-row__action--danger" : ""}`}
             aria-labelledby={labelId}
             aria-describedby={describedBy}
-            disabled={props.disabled === true || props.busy === true}
+            disabled={props.disabled === true || props.busy === true || off}
             aria-busy={props.busy === true ? true : undefined}
             onClick={props.onClick}
           >
@@ -254,8 +270,9 @@ export function SettingsRow(props: SettingsRowProps) {
               label={props.label}
               description={props.detail}
               checked={props.checked}
-              disabled={props.disabled === true}
+              disabled={props.disabled === true || off}
               busy={props.busy === true}
+              {...(off ? { describedBy: offlineReasonId } : {})}
               onChange={props.onChange}
             />
           </div>
@@ -280,9 +297,13 @@ export function SettingsRow(props: SettingsRowProps) {
               <select
                 id={id}
                 value={props.selected}
-                disabled={props.disabled === true || props.busy === true}
+                disabled={props.disabled === true || props.busy === true || off}
                 aria-busy={props.busy === true ? true : undefined}
-                aria-describedby={props.detail === undefined ? undefined : detailId}
+                aria-describedby={
+                  [props.detail === undefined ? null : detailId, off ? offlineReasonId : null]
+                    .filter((part) => part !== null)
+                    .join(" ") || undefined
+                }
                 onChange={(event) => props.onChange(event.currentTarget.value)}
               >
                 {props.options.map((option) => (

@@ -5,6 +5,8 @@ import { useId } from "react";
 import { Link } from "react-router";
 import { addDevicePath, devicePath } from "../../devices/devicePaths";
 import { useFormatter } from "../../format/useFormatter";
+import { liveWindowOpen } from "../../live/liveWindowOpen";
+import { useLiveState } from "../../live/useLiveState";
 import { describeMe } from "../../people/describeMe";
 import { latestOwnDevice } from "../../people/latestOwnDevice";
 import { PersonSummary } from "../../people/PersonSummary";
@@ -47,8 +49,12 @@ export function MeCard({ name, devices, now, thresholds, shown, onShowOnMap }: M
   const waiting = list.length > 0 && list.every((device) => device.lastSeenAt === null);
   const mode = useDeviceMode(latest?.lastSeenAt == null ? null : latest.id);
   const location = latest?.lastLocation ?? null;
-  const live =
+  const { connection } = useLiveState();
+  const positionLive =
     location !== null && now - Date.parse(location.recordedAt) <= thresholds.liveMinutes * 60_000;
+  // A copy restored from disk long after it was fetched is not live, whatever it holds.
+  const windowOpen = liveWindowOpen(connection, devices.dataUpdatedAt, now, thresholds.liveMinutes);
+  const live = positionLive && windowOpen;
   const doing =
     devices.data === undefined
       ? null
@@ -74,7 +80,11 @@ export function MeCard({ name, devices, now, thresholds, shown, onShowOnMap }: M
         titleId={titleId}
         level={2}
         avatar={{ name, slot: "me" }}
-        freshness={location === null ? null : { recordedAt: location.recordedAt, live }}
+        freshness={
+          location === null
+            ? null
+            : { recordedAt: location.recordedAt, live, asOf: positionLive && !windowOpen }
+        }
         doing={doing}
         onMap={shown}
       />

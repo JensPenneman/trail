@@ -13,8 +13,12 @@ interface PersonSummaryProps {
   level: 2 | 3;
   /** Whose initials the avatar shows, in which colour (`me`: the accent). */
   avatar: { name: string; slot: number | "me" };
-  /** When their position was recorded and whether that is live; null without one. */
-  freshness: { recordedAt: string; live: boolean } | null;
+  /**
+   * When their position was recorded and whether that is live; null without
+   * one. `asOf`: it would be live, but it comes from a copy too old to say so
+   * (the stream is not open) — the time stands in for "Live".
+   */
+  freshness: { recordedAt: string; live: boolean; asOf?: boolean } | null;
   /** What they are doing now, or why nothing can be said ("No recent location"). */
   doing: string | null;
   /** Right of the name: the distance from you. */
@@ -62,7 +66,15 @@ export function PersonSummary({
         </div>
       )}
       <p className="person-summary__line">
-        {freshness === null ? null : freshness.live ? (
+        {freshness === null ? null : freshness.asOf === true ? (
+          <time
+            className="person-summary__fresh"
+            dateTime={freshness.recordedAt}
+            title={format.dateTime(freshness.recordedAt)}
+          >
+            as of {format.time(freshness.recordedAt)}
+          </time>
+        ) : freshness.live ? (
           <time
             className="person-summary__live"
             dateTime={freshness.recordedAt}

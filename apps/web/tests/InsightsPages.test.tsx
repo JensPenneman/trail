@@ -1,12 +1,14 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { queryKeys } from "../src/api/queryKeys";
 import { InsightsModePage } from "../src/pages/insights/InsightsModePage";
 import { InsightsOverviewPage } from "../src/pages/insights/InsightsOverviewPage";
 import { InsightsRoadsPage } from "../src/pages/insights/InsightsRoadsPage";
 import { InsightsTimePage } from "../src/pages/insights/InsightsTimePage";
 import { addDays } from "../src/time/addDays";
 import { localDateOf } from "../src/time/localDateOf";
+import { holdAll, seedEntry, warmClient } from "./support/cacheHarness";
 import { user } from "./support/fixtures";
 import {
   modeInsights,
@@ -16,7 +18,7 @@ import {
   timeInsights,
 } from "./support/insightsFixtures";
 import { mockApi } from "./support/mockApi";
-import { renderPage } from "./support/renderPage";
+import { createTestQueryClient, renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
 
 const today = () => localDateOf(Date.now(), "Europe/Brussels");
@@ -280,5 +282,37 @@ describe("roads", () => {
     });
     renderPage(<InsightsRoadsPage />, { path: "/insights/roads", user });
     expect(await screen.findByText("No map data for these moves")).toBeVisible();
+  });
+});
+
+describe("the Insights overview on a warm open", () => {
+  it("shows the copy of the period at once, then the server's newer numbers", async () => {
+    const params = { from: addDays(today(), -29), to: today(), deviceIds: null, mode: null };
+    const queryClient = createTestQueryClient();
+    await warmClient(queryClient, user, (store) =>
+      seedEntry(store, {
+        user,
+        queryKey: queryKeys.insightsOverview(params),
+        answer: overview(),
+        fetchedAt: Date.now() - 3_600_000,
+        etag: 'W/"overview-1"',
+      }),
+    );
+    const newer = overview({ totals: { ...overview().totals, distanceM: 77_000 } });
+    const server = holdAll({
+      ...standardRoutes(),
+      "GET /api/v1/insights/overview": { status: 200, body: newer, etag: 'W/"overview-2"' },
+    });
+    const api = mockApi(server.routes);
+    renderPage(<InsightsOverviewPage />, { path: "/insights", user, queryClient });
+    // Not warm: the persister restores it on mount, still before the server answered.
+    const tiles = await screen.findByRole("group", { name: "Totals" });
+    expect(within(tiles).getByText("66.0 km")).toBeVisible();
+    expect(api.calls.every((call) => call.status === undefined)).toBe(true);
+    server.release();
+    expect(await within(tiles).findByText("77.0 km")).toBeVisible();
+    const revalidation = api.calls.find((call) => call.path === "/api/v1/insights/overview");
+    expect(revalidation?.headers?.["if-none-match"]).toBe('W/"overview-1"');
+    expect(revalidation?.status).toBe(200);
   });
 });

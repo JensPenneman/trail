@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { queryKeys } from "../src/api/queryKeys";
 import { applyServerEvent } from "../src/live/applyServerEvent";
 import { createLiveStore } from "../src/live/createLiveStore";
+import { localDayRange } from "../src/time/localDayRange";
 import { ana, bob, car, device, ids, sharedDevice, tracks } from "./support/fixtures";
 
 const range = { from: "2026-09-29T22:00:00.000Z", to: "2026-09-30T22:00:00.000Z" };
@@ -209,5 +210,187 @@ describe("applyServerEvent for people", () => {
     const { queryClient, store } = withPeople();
     applyServerEvent(queryClient, store, { type: "device", device: device() });
     expect(queryClient.getQueryState(queryKeys.people)?.isInvalidated).toBe(true);
+  });
+});
+
+describe("applyServerEvent for the copy and the digest", () => {
+  const owner = {
+    id: ids.user,
+    email: "jens@example.com",
+    displayName: "Jens",
+    isAdmin: true,
+    timezone: "Europe/Brussels",
+    createdAt: "2026-03-02T19:20:11.000Z",
+    preferences: { mapStyle: "auto", level: "inferred", showOwnActivity: false },
+  } as const;
+  const monthKey = queryKeys.days({ from: "2026-10-01", to: "2026-10-31", deviceIds: null });
+  const row = (deviceId: string, date: string, points: number, raw: string) => ({
+    date,
+    deviceId,
+    points,
+    distanceM: points * 10,
+    firstAt: `${date}T06:00:00.000Z`,
+    lastAt: `${date}T18:00:00.000Z`,
+    stamp: { raw, processed: null },
+  });
+  const day = (date: string) => localDayRange(date, date, "Europe/Brussels");
+
+  function withDigest() {
+    const { queryClient, store } = setup();
+    queryClient.setQueryData(queryKeys.session, owner);
+    queryClient.setQueryData(
+      monthKey,
+      {
+        timezone: "Europe/Brussels",
+        days: [
+          row(ids.phone, "2026-10-24", 100, "a"),
+          row(ids.car, "2026-10-24", 50, "c"),
+          row(ids.phone, "2026-10-25", 80, "b"),
+        ],
+      },
+      { updatedAt: 1000 },
+    );
+    return { queryClient, store };
+  }
+
+  it("learns from hello whether the server tells of every change to the daily statistics", () => {
+    const { queryClient, store } = setup();
+    applyServerEvent(queryClient, store, { type: "hello", serverTime: new Date().toISOString() });
+    expect(store.getSnapshot()).toMatchObject({ versions: null, sendsDays: false });
+    const versions = { averaged: 2, mapped: 3, inferred: 4 };
+    applyServerEvent(queryClient, store, {
+      type: "hello",
+      serverTime: new Date().toISOString(),
+      versions,
+    });
+    expect(store.getSnapshot()).toMatchObject({ versions, sendsDays: true });
+  });
+
+  it("updates the month's digest in place with the rows a days event carries", () => {
+    const { queryClient, store } = withDigest();
+    applyServerEvent(queryClient, store, {
+      type: "days",
+      deviceId: ids.phone,
+      // the 24th grew, the 25th lost its last point, the 26th got its first
+      dates: ["2026-10-24", "2026-10-25", "2026-10-26"],
+      days: [row(ids.phone, "2026-10-24", 120, "a2"), row(ids.phone, "2026-10-26", 5, "d")],
+    });
+    const state = queryClient.getQueryState(monthKey);
+    expect(state?.data).toEqual({
+      timezone: "Europe/Brussels",
+      days: [
+        row(ids.phone, "2026-10-24", 120, "a2"),
+        row(ids.car, "2026-10-24", 50, "c"),
+        row(ids.phone, "2026-10-26", 5, "d"),
+      ].sort((a, b) =>
+        a.date === b.date ? (a.deviceId < b.deviceId ? -1 : 1) : a.date < b.date ? -1 : 1,
+      ),
+    });
+    // No newer than it was: the rest of it was not confirmed.
+    expect(state?.dataUpdatedAt).toBe(1000);
+    expect(store.getSnapshot().sendsDays).toBe(true);
+  });
+
+  it("leaves digests alone that cover other devices or other days", () => {
+    const { queryClient, store } = withDigest();
+    const carOnly = queryKeys.days({ from: "2026-10-01", to: "2026-10-31", deviceIds: [ids.car] });
+    const september = queryKeys.days({ from: "2026-09-01", to: "2026-09-30", deviceIds: null });
+    const carDigest = { timezone: "Europe/Brussels", days: [row(ids.car, "2026-10-24", 50, "c")] };
+    queryClient.setQueryData(carOnly, carDigest);
+    queryClient.setQueryData(september, { timezone: "Europe/Brussels", days: [] });
+    applyServerEvent(queryClient, store, {
+      type: "days",
+      deviceId: ids.phone,
+      dates: ["2026-10-24"],
+      days: [row(ids.phone, "2026-10-24", 120, "a2")],
+    });
+    expect(queryClient.getQueryData(carOnly)).toBe(carDigest);
+    expect(queryClient.getQueryState(september)?.isInvalidated).toBe(false);
+  });
+
+  it("marks stale the answers of the days it names, of that device, and no others", () => {
+    const { queryClient, store } = withDigest();
+    const named = queryKeys.tracks({ ...day("2026-10-24"), deviceIds: null });
+    const otherDay = queryKeys.tracks({ ...day("2026-10-23"), deviceIds: null });
+    const otherDevice = queryKeys.visits({ ...day("2026-10-24"), deviceIds: [ids.car] });
+    const timeline = queryKeys.timeline({ ...day("2026-10-24"), deviceIds: [ids.phone] });
+    for (const key of [named, otherDay, otherDevice, timeline]) queryClient.setQueryData(key, {});
+    applyServerEvent(queryClient, store, {
+      type: "days",
+      deviceId: ids.phone,
+      dates: ["2026-10-24"],
+      days: [row(ids.phone, "2026-10-24", 120, "a2")],
+    });
+    expect(queryClient.getQueryState(named)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(timeline)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(otherDay)?.isInvalidated).toBe(false);
+    expect(queryClient.getQueryState(otherDevice)?.isInvalidated).toBe(false);
+  });
+
+  it("stops marking every digest stale on uploads once the server sends days events", () => {
+    const { queryClient, store } = withDigest();
+    const upload = {
+      type: "ingest" as const,
+      deviceId: ids.phone,
+      receivedAt: "2026-10-26T10:00:05.000Z",
+      inserted: 1,
+      duplicates: 0,
+      rejected: 0,
+      points: [],
+    };
+    applyServerEvent(queryClient, store, upload);
+    expect(queryClient.getQueryState(monthKey)?.isInvalidated).toBe(true);
+    const { queryClient: newer, store: newerStore } = withDigest();
+    newerStore.setServer({ sendsDays: true });
+    applyServerEvent(newer, newerStore, upload);
+    expect(newer.getQueryState(monthKey)?.isInvalidated).toBe(false);
+  });
+
+  it("marks stale only the levels, timelines and Insights a processing window touched", () => {
+    const { queryClient, store } = withDigest();
+    const inside = queryKeys.levelTracks({
+      ...day("2026-10-26"),
+      deviceIds: null,
+      level: "inferred",
+    });
+    const before = queryKeys.levelTracks({
+      ...day("2026-10-20"),
+      deviceIds: null,
+      level: "inferred",
+    });
+    const carOnly = queryKeys.timeline({ ...day("2026-10-26"), deviceIds: [ids.car] });
+    const timeline = queryKeys.timeline({ ...day("2026-10-26"), deviceIds: [ids.phone] });
+    const rawTracks = queryKeys.tracks({ ...day("2026-10-26"), deviceIds: null });
+    const recent = queryKeys.insightsOverview({
+      from: "2026-10-20",
+      to: null,
+      deviceIds: null,
+      mode: null,
+    });
+    const lastMonth = queryKeys.insightsOverview({
+      from: "2026-09-01",
+      to: "2026-09-30",
+      deviceIds: null,
+      mode: null,
+    });
+    const mode = queryKeys.deviceMode(ids.phone);
+    for (const key of [inside, before, carOnly, timeline, rawTracks, recent, lastMonth, mode]) {
+      queryClient.setQueryData(key, {});
+    }
+    applyServerEvent(queryClient, store, {
+      type: "segments",
+      deviceId: ids.phone,
+      from: "2026-10-26T06:00:00.000Z",
+      to: "2026-10-26T09:00:00.000Z",
+    });
+    const invalidated = (key: readonly unknown[]) => queryClient.getQueryState(key)?.isInvalidated;
+    expect(invalidated(inside)).toBe(true);
+    expect(invalidated(timeline)).toBe(true);
+    expect(invalidated(recent)).toBe(true);
+    expect(invalidated(mode)).toBe(true);
+    expect(invalidated(before)).toBe(false);
+    expect(invalidated(carOnly)).toBe(false);
+    expect(invalidated(rawTracks)).toBe(false);
+    expect(invalidated(lastMonth)).toBe(false);
   });
 });

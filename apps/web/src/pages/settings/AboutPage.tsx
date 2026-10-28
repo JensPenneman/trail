@@ -5,8 +5,12 @@ import { SettingsGroup } from "../../settings/SettingsGroup";
 import { SettingsPage } from "../../settings/SettingsPage";
 import { SettingsFact, SettingsRow } from "../../settings/SettingsRow";
 import { ErrorState } from "../../ui/ErrorState";
+import { OnThisDevice } from "./OnThisDevice";
 
-/** Settings › About: which build runs here, and signing out (the only place for it on phones). */
+/**
+ * Settings › About: which build runs here, what this device keeps (and what
+ * its copy did), and signing out (the only place for it on phones).
+ */
 export function AboutPage() {
   const format = useFormatter();
   const config = useConfig();
@@ -35,6 +39,7 @@ export function AboutPage() {
           </SettingsFact>
         </SettingsGroup>
       )}
+      <OnThisDevice />
       {signOut.isError ? <ErrorState title="Signing out failed" error={signOut.error} /> : null}
       <SettingsGroup>
         <SettingsRow

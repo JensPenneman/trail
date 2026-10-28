@@ -2,6 +2,9 @@ import type { Preferences } from "@trail/contracts/preferences";
 import { processingLevels } from "@trail/contracts/transport";
 import { useState } from "react";
 import { useSessionUser } from "../../app/useSessionUser";
+import { useCacheBytes } from "../../cache/useCacheBytes";
+import { useCacheEnabled } from "../../cache/useCacheEnabled";
+import { useFormatter } from "../../format/useFormatter";
 import { isMapStyleChoice, mapStyleChoices, mapStyleLabels } from "../../map/mapStyleChoices";
 import { useConfig } from "../../queries/useConfig";
 import { useUpdatePreferences } from "../../queries/useUpdatePreferences";
@@ -47,6 +50,10 @@ function settled(
  */
 export function PreferencesPage() {
   const session = useSessionUser();
+  const format = useFormatter();
+  const copy = useCacheEnabled();
+  const bytes = useCacheBytes();
+  const [clearing, setClearing] = useState(false);
   const config = useConfig();
   const announce = useAnnounce();
   // Shown the moment a control changes, before the session follows (a switch must not flick back).
@@ -99,6 +106,53 @@ export function PreferencesPage() {
           options={processingLevels.map((level) => ({ value: level, label: levelLabels[level] }))}
           onChange={(value) => {
             if (isLevel(value)) save({ level: value });
+          }}
+        />
+      </SettingsGroup>
+      <SettingsGroup
+        title="On this device"
+        id="device"
+        footer="A setting of this browser, not of your account. The copy holds only your own data — never anyone else’s, nor what is in Settings — and signing out deletes it. Nothing about it leaves this device; About shows what it did."
+      >
+        <SettingsRow
+          kind="switch"
+          icon="database"
+          tone="blue"
+          label="Keep a copy of your data on this device"
+          detail={
+            copy.on && !copy.available
+              ? "This browser keeps no copy now (no storage, or no room left): Trail shows what it loads while the page is open."
+              : "Shows your map at once when you open Trail and works when you are offline. Turn it off on a shared computer."
+          }
+          checked={copy.on}
+          worksOffline
+          onChange={(on) => {
+            void copy
+              .setOn(on)
+              .then(() =>
+                announce(
+                  on ? "A copy is kept on this device." : "The copy on this device is deleted.",
+                ),
+              );
+          }}
+        />
+        <SettingsRow
+          kind="plain"
+          label="Size of the copy"
+          value={bytes === null ? "…" : format.bytes(bytes)}
+        />
+        <SettingsRow
+          kind="action"
+          label="Clear the copy"
+          worksOffline
+          busy={clearing}
+          disabled={!copy.on}
+          onClick={() => {
+            setClearing(true);
+            void copy.clear().then(() => {
+              setClearing(false);
+              announce("The copy on this device is cleared.");
+            });
           }}
         />
       </SettingsGroup>

@@ -1,5 +1,6 @@
 import type { ChosenMode, Segment } from "@trail/contracts/transport";
-import { useState } from "react";
+import { useId, useState } from "react";
+import { useReadOnly } from "../app/useReadOnly";
 import { useFormatter } from "../format/useFormatter";
 import { visibleGapM } from "../map/lineGeometry";
 import { useSegmentModeChange } from "../queries/useSegmentModeChange";
@@ -8,6 +9,7 @@ import { Dialog } from "../ui/Dialog";
 import { errorMessage } from "../ui/errorMessage";
 import { Icon } from "../ui/Icon";
 import { Notice } from "../ui/Notice";
+import { OfflineReason } from "../ui/OfflineReason";
 import { ModePicker } from "./ModePicker";
 import { segmentTitle } from "./segmentTitle";
 import { transportModeInfo } from "./transportModes";
@@ -29,6 +31,8 @@ interface SegmentDialogProps {
 export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogProps) {
   const format = useFormatter();
   const change = useSegmentModeChange(segment.id);
+  const readOnly = useReadOnly();
+  const offlineId = useId();
   const [saved, setSaved] = useState<string | null>(null);
   const move = segment.kind === "move";
   const mode = segment.mode ?? "stationary";
@@ -129,6 +133,8 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
                     variant="primary"
                     icon="check"
                     busy={change.isPending}
+                    disabled={readOnly}
+                    aria-describedby={readOnly ? offlineId : undefined}
                     onClick={() => apply(confirmable)}
                   >
                     Yes, {inferred.label.toLowerCase()}
@@ -140,15 +146,26 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
             ) : null}
             <section className="segment-dialog__change" aria-label="Change mode">
               <h3 className="segment-dialog__heading">Change mode</h3>
+              {readOnly ? (
+                <OfflineReason id={offlineId}>
+                  You’re offline: the mode can be corrected once you reconnect.
+                </OfflineReason>
+              ) : null}
               <ModePicker
                 label="Change mode"
                 current={segment.modeUser}
-                disabled={change.isPending}
+                disabled={change.isPending || readOnly}
                 onPick={apply}
               />
             </section>
             {segment.modeUser === null ? null : (
-              <Button icon="refresh" busy={change.isPending} onClick={() => apply(null)}>
+              <Button
+                icon="refresh"
+                busy={change.isPending}
+                disabled={readOnly}
+                aria-describedby={readOnly ? offlineId : undefined}
+                onClick={() => apply(null)}
+              >
                 Reset to detected
               </Button>
             )}

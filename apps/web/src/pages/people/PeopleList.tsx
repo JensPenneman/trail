@@ -3,6 +3,7 @@ import type { Person, SharedDevice } from "@trail/contracts/person";
 import type { OutgoingShare } from "@trail/contracts/share";
 import { useContext, useId, useState } from "react";
 import { Link } from "react-router";
+import { offlineReasonId, useReadOnly } from "../../app/useReadOnly";
 import { useSessionUser } from "../../app/useSessionUser";
 import { useFormatter } from "../../format/useFormatter";
 import { LiveStoreContext } from "../../live/LiveStoreContext";
@@ -22,6 +23,7 @@ import { ErrorState } from "../../ui/ErrorState";
 import { Icon } from "../../ui/Icon";
 import { LoadingBlock } from "../../ui/LoadingBlock";
 import { Notice } from "../../ui/Notice";
+import { OfflineReason } from "../../ui/OfflineReason";
 import { PlainList } from "../../ui/PlainList";
 import { Skeleton } from "../../ui/Skeleton";
 import { useAnnounce } from "../../ui/useAnnounce";
@@ -79,6 +81,8 @@ export function PeopleList({
   const announce = useAnnounce();
   const live = useLiveState();
   const store = useContext(LiveStoreContext);
+  const readOnly = useReadOnly();
+  const offlineId = useId();
   const [dialog, setDialog] = useState<ShareDialogMode | null>(null);
   const [stopping, setStopping] = useState<OutgoingShare | null>(null);
 
@@ -203,6 +207,8 @@ export function PeopleList({
                   <Button
                     variant="ghost"
                     busy={hide.isPending && hide.variables.shareId === share.id}
+                    disabled={readOnly}
+                    aria-describedby={readOnly ? offlineReasonId : undefined}
                     aria-label={`Show ${share.owner.displayName} again`}
                     onClick={() =>
                       hide.mutate(
@@ -223,9 +229,20 @@ export function PeopleList({
       </section>
 
       <div className="people-list__yours">
-        <Button variant="primary" icon="users" onClick={() => setDialog({ kind: "create" })}>
+        <Button
+          variant="primary"
+          icon="users"
+          disabled={readOnly}
+          aria-describedby={readOnly ? offlineId : undefined}
+          onClick={() => setDialog({ kind: "create" })}
+        >
           Share my location
         </Button>
+        {readOnly ? (
+          <OfflineReason id={offlineId}>
+            You’re offline: whom you share with can be changed once you reconnect.
+          </OfflineReason>
+        ) : null}
         {shares.isPending ? null : shares.isError ? (
           <ErrorState
             title="Your shares could not be loaded"

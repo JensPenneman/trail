@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import { deviceModeResponseSchema } from "@trail/contracts/transport";
-import { apiFetch } from "../api/apiFetch";
 import { queryKeys } from "../api/queryKeys";
+import { cachedFetch } from "../cache/cachedFetch";
 import { goneDevices } from "../devices/goneDevices";
 
 /**
@@ -13,8 +13,12 @@ export function useDeviceMode(deviceId: string | null) {
   const queryClient = useQueryClient();
   return useQuery({
     queryKey: queryKeys.deviceMode(deviceId ?? ""),
-    queryFn: ({ signal }) =>
-      apiFetch(apiPaths.v1.devices.mode(deviceId ?? ""), deviceModeResponseSchema, { signal }),
+    queryFn: ({ client, queryKey, signal }) =>
+      cachedFetch(
+        { client, queryKey, signal },
+        apiPaths.v1.devices.mode(deviceId ?? ""),
+        deviceModeResponseSchema,
+      ),
     enabled: () => deviceId !== null && !goneDevices.has(queryClient, deviceId),
     select: (response) => response.mode,
   });

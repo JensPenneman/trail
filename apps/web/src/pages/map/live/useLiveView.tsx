@@ -6,6 +6,8 @@ import type { ProcessingLevel } from "@trail/contracts/transport";
 import { useMemo, useRef, useState } from "react";
 import type { DeviceColors } from "../../../devices/useDeviceColors";
 import { useFormatter } from "../../../format/useFormatter";
+import { liveWindowOpen } from "../../../live/liveWindowOpen";
+import { useLiveState } from "../../../live/useLiveState";
 import { boundsOf } from "../../../map/boundsOf";
 import type { MapPosition } from "../../../map/mapTypes";
 import { positionExtent } from "../../../map/positionExtent";
@@ -75,6 +77,9 @@ export function useLiveView({
   const focusCount = useRef(0);
 
   const own = selection.own;
+  const { connection } = useLiveState();
+  // A marker pulses only while what it shows may be called live (liveWindowOpen).
+  const windowOpen = liveWindowOpen(connection, devices.dataUpdatedAt, now, thresholds.liveMinutes);
   const day = useMemo(() => localDayRange(today, today, timeZone), [today, timeZone]);
   const range = useMemo(
     () => (!active || own === null ? null : { ...day, deviceIds: own.deviceIds }),
@@ -129,7 +134,9 @@ export function useLiveView({
                 lon: device.lastLocation.lon,
                 lat: device.lastLocation.lat,
                 accuracy: device.lastLocation.accuracy,
-                live: deviceStatus(device.lastSeenAt, new Date(now), thresholds) === "live",
+                live:
+                  windowOpen &&
+                  deviceStatus(device.lastSeenAt, new Date(now), thresholds) === "live",
               },
             ],
       ),
@@ -140,7 +147,7 @@ export function useLiveView({
         (recordedAt) => now - Date.parse(recordedAt) <= thresholds.liveMinutes * 60_000,
       ),
     ],
-    [shown, colors, people, selection, personColors, now, thresholds],
+    [shown, colors, people, selection, personColors, now, thresholds, windowOpen],
   );
   const bounds = useMemo(
     () =>

@@ -1,15 +1,18 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { DeviceListResponse } from "@trail/contracts/device";
 import { queryKeys } from "../api/queryKeys";
+import { browserCacheOf } from "../cache/attachBrowserCache";
 import { goneDevices } from "./goneDevices";
 
 /**
  * Forgets a deleted device. Its points are gone on the server too, so every
- * cached range that may have included them is refetched.
+ * cached range that may have included them is refetched, and the copy on
+ * disk loses every entry that may hold them.
  */
 export function removeDeviceFromCache(queryClient: QueryClient, deviceId: string): void {
   // first, so that no query of the device can start again from here on
   goneDevices.mark(queryClient, deviceId);
+  void browserCacheOf(queryClient)?.forgetDevice(deviceId);
   const own = [
     queryKeys.device(deviceId),
     queryKeys.locations(deviceId),

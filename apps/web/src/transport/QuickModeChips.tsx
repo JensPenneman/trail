@@ -1,9 +1,11 @@
 import { type ChosenMode, toggleEndingStopS } from "@trail/contracts/transport";
 import { useId, useState } from "react";
+import { useReadOnly } from "../app/useReadOnly";
 import { useDeviceMode } from "../queries/useDeviceMode";
 import { useSetDeviceMode } from "../queries/useSetDeviceMode";
 import { Dialog } from "../ui/Dialog";
 import { errorMessage } from "../ui/errorMessage";
+import { OfflineReason } from "../ui/OfflineReason";
 import { ModePicker } from "./ModePicker";
 import { quickModes, transportModeInfo } from "./transportModes";
 import "./QuickModeChips.css";
@@ -38,6 +40,8 @@ export function QuickModeChips({
   const mode = useDeviceMode(deviceId);
   const set = useSetDeviceMode(deviceId);
   const descriptionId = useId();
+  const offlineId = useId();
+  const readOnly = useReadOnly();
   const [otherOpen, setOtherOpen] = useState(false);
   const chosen = mode.data?.override?.mode ?? null;
   const detected =
@@ -49,14 +53,17 @@ export function QuickModeChips({
     if (next === chosen) return;
     set.mutate(next);
   };
-  const busy = set.isPending || mode.isPending;
+  const busy = set.isPending || mode.isPending || readOnly;
+  const describedBy = [
+    description === undefined ? null : descriptionId,
+    readOnly ? offlineId : null,
+  ]
+    .filter((id) => id !== null)
+    .join(" ");
 
   return (
     <div className="quick-modes">
-      <fieldset
-        className="quick-modes__chips"
-        aria-describedby={description === undefined ? undefined : descriptionId}
-      >
+      <fieldset className="quick-modes__chips" aria-describedby={describedBy || undefined}>
         <legend className="quick-modes__label">Now:</legend>
         {quickModes.map((option) => (
           <button
@@ -96,6 +103,11 @@ export function QuickModeChips({
           {description}
         </p>
       )}
+      {readOnly ? (
+        <OfflineReason id={offlineId}>
+          You’re offline: how you travel can be set once you reconnect.
+        </OfflineReason>
+      ) : null}
       {set.isError ? (
         <p className="quick-modes__error" role="alert">
           {errorMessage(set.error)}

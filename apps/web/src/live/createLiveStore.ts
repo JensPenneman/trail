@@ -1,3 +1,5 @@
+import type { ProcessingVersions } from "@trail/contracts/transport";
+
 type LiveConnection = "connecting" | "open" | "reconnecting";
 
 /** An upload as announced by the `ingest` server event. */
@@ -22,6 +24,14 @@ export interface LiveState {
   uploads: readonly LiveUpload[];
   /** Newest first; dismissed or stopped ones are gone. */
   shareNotices: readonly ShareNotice[];
+  /** The processing versions the server's `hello` named; null before one did. */
+  versions: ProcessingVersions | null;
+  /**
+   * The server tells this page whenever the daily statistics changed (`days`
+   * events, from the same release as the versions in `hello`): the totals are
+   * updated in place, and nothing needs to poll them.
+   */
+  sendsDays: boolean;
 }
 
 export interface LiveStore {
@@ -31,6 +41,8 @@ export interface LiveStore {
   addUpload(upload: LiveUpload): void;
   addShareNotice(notice: ShareNotice): void;
   dismissShareNotice(shareId: string): void;
+  /** What the server's `hello` and events say it does. */
+  setServer(server: { versions?: ProcessingVersions | null; sendsDays?: boolean }): void;
 }
 
 const maxUploads = 50;
@@ -41,7 +53,13 @@ const maxUploads = 50;
  * was open. One store per signed-in shell, so signing out forgets it.
  */
 export function createLiveStore(): LiveStore {
-  let state: LiveState = { connection: "connecting", uploads: [], shareNotices: [] };
+  let state: LiveState = {
+    connection: "connecting",
+    uploads: [],
+    shareNotices: [],
+    versions: null,
+    sendsDays: false,
+  };
   const listeners = new Set<() => void>();
   const update = (next: LiveState): void => {
     state = next;
@@ -67,6 +85,14 @@ export function createLiveStore(): LiveStore {
     addShareNotice: (notice) => {
       if (state.shareNotices.some((known) => known.shareId === notice.shareId)) return;
       update({ ...state, shareNotices: [notice, ...state.shareNotices].slice(0, maxUploads) });
+    },
+    setServer: ({ versions, sendsDays }) => {
+      const next = {
+        ...state,
+        ...(versions === undefined ? {} : { versions }),
+        ...(sendsDays === undefined ? {} : { sendsDays }),
+      };
+      if (next.versions !== state.versions || next.sendsDays !== state.sendsDays) update(next);
     },
     dismissShareNotice: (shareId) => {
       if (!state.shareNotices.some((notice) => notice.shareId === shareId)) return;

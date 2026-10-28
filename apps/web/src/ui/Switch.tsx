@@ -7,11 +7,21 @@ interface SwitchProps {
   checked: boolean;
   disabled?: boolean;
   busy?: boolean;
+  /** Another element that describes it too: why it is off. */
+  describedBy?: string;
   onChange: (checked: boolean) => void;
 }
 
 /** An on/off setting that takes effect immediately (no form to submit). */
-export function Switch({ label, description, checked, disabled, busy, onChange }: SwitchProps) {
+export function Switch({
+  label,
+  description,
+  checked,
+  disabled,
+  busy,
+  describedBy,
+  onChange,
+}: SwitchProps) {
   const id = useId();
   return (
     <div className="switch">
@@ -34,7 +44,11 @@ export function Switch({ label, description, checked, disabled, busy, onChange }
         aria-checked={checked}
         disabled={disabled === true || busy === true}
         aria-busy={busy === true ? true : undefined}
-        aria-describedby={description === undefined ? undefined : `${id}-description`}
+        aria-describedby={
+          [description === undefined ? null : `${id}-description`, describedBy ?? null]
+            .filter((part) => part !== null)
+            .join(" ") || undefined
+        }
         onChange={(event) => onChange(event.currentTarget.checked)}
       />
     </div>

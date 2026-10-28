@@ -47,6 +47,8 @@ export interface Formatter {
   coordinates(lat: number, lon: number, digits?: 4 | 5): string;
   /** iPhone, iPad and Watch */
   list(items: readonly string[]): string;
+  /** 12.4 MB, 380 kB — sizes on disk, in decimal units as the browsers state them */
+  bytes(value: number): string;
 }
 
 const toTime = (instant: number | string): number =>
@@ -191,6 +193,26 @@ export function createFormatter(locale: string, timeZone: string): Formatter {
     5: new Intl.NumberFormat(locale, { minimumFractionDigits: 5, maximumFractionDigits: 5 }),
   } as const;
   const list = new Intl.ListFormat(locale, { style: "long", type: "conjunction" });
+  const sizeUnits = [
+    { unit: "gigabyte", size: 1e9 },
+    { unit: "megabyte", size: 1e6 },
+    { unit: "kilobyte", size: 1e3 },
+  ] as const;
+  const sizes = sizeUnits.map(({ unit, size }) => ({
+    size,
+    format: new Intl.NumberFormat(locale, {
+      style: "unit",
+      unit,
+      unitDisplay: "short",
+      maximumFractionDigits: 1,
+    }),
+  }));
+  const byteCount = new Intl.NumberFormat(locale, {
+    style: "unit",
+    unit: "byte",
+    unitDisplay: "short",
+    maximumFractionDigits: 0,
+  });
   const currentYear = new Date().getUTCFullYear();
 
   return {
@@ -261,5 +283,9 @@ export function createFormatter(locale: string, timeZone: string): Formatter {
     coordinates: (lat, lon, digits = 4) =>
       `${degrees[digits].format(Math.abs(lat))}° ${lat >= 0 ? "N" : "S"}, ${degrees[digits].format(Math.abs(lon))}° ${lon >= 0 ? "E" : "W"}`,
     list: (items) => list.format(items),
+    bytes: (value) => {
+      const unit = sizes.find(({ size }) => value >= size);
+      return unit === undefined ? byteCount.format(value) : unit.format.format(value / unit.size);
+    },
   };
 }
