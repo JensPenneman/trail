@@ -1,5 +1,117 @@
 # Changelog
 
+## [0.6.0](https://github.com/JensPenneman/trail/compare/v0.5.1...v0.6.0) (2026-10-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **operations:** a rollback to 0.5.x needs the database restored from the dump made before the update (docs/operations.md, Rollback): 0.5.x can neither write nor read the rebuilt map tables, so its map matching stops until then.
+
+### Features
+
+* **api:** /api/health reports the worker, /api/health/processing 503s without one ([3d193cd](https://github.com/JensPenneman/trail/commit/3d193cd5b08e4e28fb1bd673c889d7814617def5))
+* **api:** day stamps and conditional answers ([cc6b6ee](https://github.com/JensPenneman/trail/commit/cc6b6ee1953f0c6c28cdcb990c07ee1445da1f58))
+* **api:** day stamps, conditional answers and resumable events ([#75](https://github.com/JensPenneman/trail/issues/75)) ([25dbf5d](https://github.com/JensPenneman/trail/commit/25dbf5dd3395845b9ca2416e8aebf7f253bcb168))
+* **api:** event ids, resume, days and resync ([6f881cd](https://github.com/JensPenneman/trail/commit/6f881cd8e9f792a78bfe3c2d94eb4bc7980bf608))
+* **api:** link a rebuild's unchanged files, bound slow downloads ([9f05b34](https://github.com/JensPenneman/trail/commit/9f05b34c610ef1e455fe4b88fed65569fa0c6e6a))
+* **api:** log a load line every minute ([a1e5859](https://github.com/JensPenneman/trail/commit/a1e585958906eeb5339a23ae70e40c4e60768460))
+* **api:** map data tables and loader, trail map import ([#74](https://github.com/JensPenneman/trail/issues/74)) ([60cdd38](https://github.com/JensPenneman/trail/commit/60cdd38966203f784680e1530f17ae2d364264fa))
+* **api:** map region refresh in the worker, trail map refresh and status ([ea41164](https://github.com/JensPenneman/trail/commit/ea4116405bbe137fa41f921f5ddef061b4a15a8b))
+* **api:** MAP_DATA_* configuration and the trail-map volume ([9ea72a3](https://github.com/JensPenneman/trail/commit/9ea72a398a42a8aba7fef01aed6aeea2fcb4eba0))
+* **api:** the map data registry client, every blob verified ([a2a3b93](https://github.com/JensPenneman/trail/commit/a2a3b93407dff19a39221a63b1b8b8e42aa25409))
+* **api:** trail map import and status, a region's build swapped in whole ([50abbd1](https://github.com/JensPenneman/trail/commit/50abbd1091f25102dcc5c8d763553f185c582d0e))
+* **cli:** trail load-fleet for load tests ([60b4480](https://github.com/JensPenneman/trail/commit/60b4480a62f867b1a707a64b22d21f053e9ce85b))
+* **contracts:** stamps as hashes, the days event's rows, an opaque after ([bc54d84](https://github.com/JensPenneman/trail/commit/bc54d8440a21fad2f71ad679fa0784c0c226d47e))
+* **contracts:** stamps per device and local day, days and resync events ([9a16a74](https://github.com/JensPenneman/trail/commit/9a16a749734c474c7192d46d32559805318f0027))
+* **contracts:** stamps per device and local day, days and resync events ([#65](https://github.com/JensPenneman/trail/issues/65)) ([2734523](https://github.com/JensPenneman/trail/commit/27345234c8604fac685e89cc7a9fc31b346106d8))
+* **db:** map data by source in partitioned tables, geometry in 1e-7 degrees ([32f6376](https://github.com/JensPenneman/trail/commit/32f63763c06321a4e1eb25c3bea5a386fe287fd3))
+* **deploy:** a worker container beside the app, with caps for every service ([7c9b495](https://github.com/JensPenneman/trail/commit/7c9b49592228264cf846ac058cf6cc8f1e816b43))
+* **deploy:** the worker container, its caps and health, /api/health reports the worker ([#76](https://github.com/JensPenneman/trail/issues/76)) ([dd2fe77](https://github.com/JensPenneman/trail/commit/dd2fe775b6527412d692b17e3c5291f94a4fce84))
+* Devices in Settings — People · Insights · Settings, a device's parts a level deeper ([#66](https://github.com/JensPenneman/trail/issues/66)) ([f845093](https://github.com/JensPenneman/trail/commit/f845093f39df8c5da6d2ac5c3d759885a341cf82))
+* **dev:** npm run dev runs the API and the worker as two processes ([d5b678e](https://github.com/JensPenneman/trail/commit/d5b678e6544271bd379d2c3b5a01ccf342abee7b))
+* **load:** gate the uploads server-side, as §3 defines them ([09678cb](https://github.com/JensPenneman/trail/commit/09678cb067b9bd75f455f940de0265eba92d480e))
+* **load:** k6 load harness on a capped stack of the Mac ([9292c85](https://github.com/JensPenneman/trail/commit/9292c85391874891463d00efe7b2f01e9979516b))
+* **load:** load-test harness, trail load-fleet and the first reports ([#71](https://github.com/JensPenneman/trail/issues/71)) ([e724617](https://github.com/JensPenneman/trail/commit/e724617d5afc37787eac42bb3f3220471ec10ee9))
+* **load:** server-side latencies in the design's classes too ([ff03338](https://github.com/JensPenneman/trail/commit/ff033383322888cb039d6f1e5a9cc5e0aee087ad))
+* **load:** the generator's lateness, and the flush as it really runs ([b0d41ce](https://github.com/JensPenneman/trail/commit/b0d41ce0c82d98e327ccbece0a4297ee496619da))
+* **mapdata:** a refresh imports what it pulls, through the loader ([b847c75](https://github.com/JensPenneman/trail/commit/b847c757ca8c617002c617174ec98cf9c5c8bbb3))
+* **mapdata:** publish map data to GHCR, pull it verified, trail map refresh and status ([#73](https://github.com/JensPenneman/trail/issues/73)) ([106c857](https://github.com/JensPenneman/trail/commit/106c857d6ca74568fd7a8f303670f8ac51e9b385))
+* **processing:** bounded passes — a job too big for one pass is split, growth stays within the budget ([#69](https://github.com/JensPenneman/trail/issues/69)) ([eeb66ed](https://github.com/JensPenneman/trail/commit/eeb66ed7e2edddd595e847b369c2c8f1f55d5147))
+* **processing:** passes of a useful size whose seams meet ([d24029c](https://github.com/JensPenneman/trail/commit/d24029c58110bf298f27efcef9d04b635d179326))
+* **processing:** passes within a budget of points and hours ([4bcac99](https://github.com/JensPenneman/trail/commit/4bcac99b79a0aec5f21a059fa4f5748ade95115b))
+* **processing:** trail worker and PROCESSING_ROLE, passes announced through NOTIFY ([dec5ef6](https://github.com/JensPenneman/trail/commit/dec5ef6304678691110b4f05bdea6224ce077fd7))
+* **processing:** trail worker and PROCESSING_ROLE, passes announced through NOTIFY ([#67](https://github.com/JensPenneman/trail/issues/67)) ([c9a1444](https://github.com/JensPenneman/trail/commit/c9a1444a4995ec7b912acce8bc6542295b5eedb2))
+* **web:** a copy of one's own data in the browser, resumable events, an installable shell ([#77](https://github.com/JensPenneman/trail/issues/77)) ([70ecd45](https://github.com/JensPenneman/trail/commit/70ecd45209811d4d019b7529898a44c4269a7ad4))
+* **web:** Devices in Settings, a page per device and its parts a level deeper ([7591e89](https://github.com/JensPenneman/trail/commit/7591e8991c0820695bb4c06d53af2b8bc0fa59f5))
+* **web:** keep a copy of one's own answers in the browser ([1c38750](https://github.com/JensPenneman/trail/commit/1c38750f5d3ecb948a209c376ee75ccab5fe1498))
+* **web:** Settings takes pages for the parts of an item, and finds items by name ([e8a552b](https://github.com/JensPenneman/trail/commit/e8a552b7ea7ea57d234df8f9fd8d6ff2c20d90b1))
+* **web:** the people list revalidates with its ETag, kept in memory only ([c6634f3](https://github.com/JensPenneman/trail/commit/c6634f3f80ccfc3daa97d9b6e904971c892017cf))
+* **worker:** a liveness probe on PROCESSING_METRICS_PORT, and a stall to test it ([e782165](https://github.com/JensPenneman/trail/commit/e7821658f1c0f62a8b092f03e914933b0c14c9cf))
+
+
+### Bug Fixes
+
+* **api:** follow no link into a build, count a rebuild's files once ([d3751e8](https://github.com/JensPenneman/trail/commit/d3751e87a7fffffaadfa4734270fc6999ca8698f))
+* **api:** what the review of the cache's server side found ([249ae6c](https://github.com/JensPenneman/trail/commit/249ae6c39129d640dcd0e95ccce7a4830f276540))
+* **cache:** a day's stamps cover every part of the stays it serves ([070bef4](https://github.com/JensPenneman/trail/commit/070bef47bc13e83d3b5b530f5a6ec003523c663f))
+* **cli:** load-fleet runs only in a preview or where Launchway is absent ([3e53463](https://github.com/JensPenneman/trail/commit/3e53463e304dd0d9c10280e41323af92fe4a4490))
+* **cli:** refuse load-fleet before migrating someone's database ([4ad139b](https://github.com/JensPenneman/trail/commit/4ad139b075a1734769e87c8dd14f931e18ddd1d5))
+* **deploy:** 60 s to stop, no swap on top, probes live while migrating ([d1794b1](https://github.com/JensPenneman/trail/commit/d1794b1aea8a4e1c91f11e9d00dca5ca74b2fc13))
+* **load:** hold the backlog flush to all three of its percentiles ([1ff1f09](https://github.com/JensPenneman/trail/commit/1ff1f0936d37fa4ed5beef8b667a2591a33d500b))
+* **load:** name no Docker address in the runner's refusal ([c9da82c](https://github.com/JensPenneman/trail/commit/c9da82ce9f549afbd7d9eedcaa57f81f796f06bb))
+* **load:** queue age from when new data was queued, held to the probe ([f401899](https://github.com/JensPenneman/trail/commit/f40189922fb5f2fedabf2545a8ae23aee7020ad4))
+* **load:** retries, cleanup and redaction of the harness ([b0351f8](https://github.com/JensPenneman/trail/commit/b0351f89ea1b200c37fd9401d1b8eb9c2a71a0a9))
+* **load:** the load stack's volume is always its own ([cc598c5](https://github.com/JensPenneman/trail/commit/cc598c5c595ceffb582151cf2388276336eb28ec))
+* **load:** wait at most 45 minutes for a quiet Mac ([925dc82](https://github.com/JensPenneman/trail/commit/925dc82c6eddbff19a6605b074836d059cbd17bd))
+* **mapdata:** a manifest names its build ([0c12f52](https://github.com/JensPenneman/trail/commit/0c12f524b041cd504aef6210ca3cc723455f08af))
+* **mapdata:** Postgres' reason for a refused COPY, and what crashes leave ([83d8ed4](https://github.com/JensPenneman/trail/commit/83d8ed4bbbc9c21c93e5e1a310c3dc1ed8281b7d))
+* **processing:** a toggle set during a stay runs on through its parts ([8a2d22c](https://github.com/JensPenneman/trail/commit/8a2d22c4d6705c06738e074f258fbf1858f38afa))
+* **processing:** repair before the backfill, seams that meet at the budget ([ed324c4](https://github.com/JensPenneman/trail/commit/ed324c4cd9d692fb47ce25c13852896535fa92f2))
+* **processing:** the listener's catch-up reads an index and never holds up a stop ([301a591](https://github.com/JensPenneman/trail/commit/301a59132ee05ddd6332f3d63126e1aff2354f8e))
+* **transport:** a stay is one stop, however many passes worked it out ([51449ee](https://github.com/JensPenneman/trail/commit/51449ee02d498805067ccd1bec6ed2f2d758af32))
+* **transport:** a stay is one stop, however many passes worked it out ([#70](https://github.com/JensPenneman/trail/issues/70)) ([5dfd516](https://github.com/JensPenneman/trail/commit/5dfd5169bc82e7e5d35d8cda3127a23fd0af18d5))
+* **transport:** one stay as a pass would see it, its points counted exactly ([538eaa7](https://github.com/JensPenneman/trail/commit/538eaa72074b0dc2bdbe68cca3c1a65453f9f481))
+* **web:** a copy from another page load is always asked for again ([e087b50](https://github.com/JensPenneman/trail/commit/e087b509ca9401fff344e9ae69a87d2018f1efe3))
+* **web:** a device's History row leaves Settings with an arrow ([757801f](https://github.com/JensPenneman/trail/commit/757801fdc9a2b5f5f70c79edcfeebd11f07d945e))
+* **web:** a focused Settings search field shows the accent's edge ([6dab8eb](https://github.com/JensPenneman/trail/commit/6dab8eb4e76a99a3eb6e35b04add447b8a3d6609))
+* **web:** resyncs keep their interval, an offline paint is bound once online ([638d44e](https://github.com/JensPenneman/trail/commit/638d44e4387a9d762ac64cb8582078417b363000))
+* **web:** the Settings search field keeps its room for the icon ([a73afc3](https://github.com/JensPenneman/trail/commit/a73afc3ea62e3cbe564d7e4daff18220606c07bc))
+
+
+### Performance Improvements
+
+* **api:** the day stamps in one aggregate, parsed once per connection ([f791391](https://github.com/JensPenneman/trail/commit/f791391e4ce874c018cae2f1bdfc01cf5df38099))
+* **processing:** a toggle's stays read along started_at, first one only ([8610925](https://github.com/JensPenneman/trail/commit/8610925b5778d74b0ce445e1861e7f7fb524162a))
+
+
+### Documentation
+
+* **architecture:** the map data tables, trail map, regions beside the cache ([9bb5ea3](https://github.com/JensPenneman/trail/commit/9bb5ea3effdfacd9faae37db3c405dfe47108a9b))
+* conditional requests, day stamps and resumable events ([ecae6e1](https://github.com/JensPenneman/trail/commit/ecae6e14174a301cbf6cb4889a64e6734bf733b5))
+* **design:** browser cache and delta sync ([1e787b7](https://github.com/JensPenneman/trail/commit/1e787b7015df78943913f5ffe38d0fdcb7f0de4b))
+* **design:** load test and capacity targets for 1 000 people on one node ([9d0903a](https://github.com/JensPenneman/trail/commit/9d0903ae1a48a8b0113a314127e82e770f83640a))
+* **design:** measured map data sizes and times ([bb5b291](https://github.com/JensPenneman/trail/commit/bb5b29135221214d5674d99461af641a1e9a0a06))
+* **design:** one tile rule, MultiPolygon stops, coverage by union ([5219f04](https://github.com/JensPenneman/trail/commit/5219f0439e76b57e7062af3dba174043ea9fa321))
+* **design:** partitions per build, as built ([602d4b4](https://github.com/JensPenneman/trail/commit/602d4b4859020672eed62d17efc16f8122e978dc))
+* **design:** processing as a service ([d35f3af](https://github.com/JensPenneman/trail/commit/d35f3af79c3622872938106686a8f64795e144a1))
+* **design:** round 4 — processing service, browser cache, capacity ([#63](https://github.com/JensPenneman/trail/issues/63)) ([01a5185](https://github.com/JensPenneman/trail/commit/01a518503aabce9418fec25c9c082a5bc8535605))
+* **design:** self-hosted map data and basemap ([593d5fc](https://github.com/JensPenneman/trail/commit/593d5fcff9003db6daf615663ddf7fa5cc35fb8b))
+* Devices in Settings — navigation, routes, a device's pages, the guides ([c26ff32](https://github.com/JensPenneman/trail/commit/c26ff32395cd747e16aba801df3bda4f148c244e))
+* integrity, not provenance; the pipeline as built; Germany measured ([8a5a6ca](https://github.com/JensPenneman/trail/commit/8a5a6ca8ffff5a148f5399e19edad16dae387f2d))
+* load tests, their reports and production's baseline ([008c991](https://github.com/JensPenneman/trail/commit/008c991b546909b701fab70c83fd7a9de783cdfd))
+* map data from the registry, trail map, the publishing workflow ([1e29623](https://github.com/JensPenneman/trail/commit/1e2962334381a47e6cd939890ebab0e50663b660))
+* one worker at a time, the catch-up's index, reprocess works on its own ([7018445](https://github.com/JensPenneman/trail/commit/70184457312c36b088d2b6c47ebb2c000d16178e))
+* **operations:** a rollback to 0.5.x needs the database restored ([b22e5d8](https://github.com/JensPenneman/trail/commit/b22e5d831cbeab5c1792ca166776ad0bb13ef7d1))
+* **perf:** name the commits the reports measured, across the rebase ([3385665](https://github.com/JensPenneman/trail/commit/338566510caa4b0c24fd62cfc09a1e46a1780fa1))
+* **perf:** say what has changed under the two first reports ([b71c971](https://github.com/JensPenneman/trail/commit/b71c971e325b5e525646965cef4e10f4c889d527))
+* **perf:** the fleet-10 report and the harness's safety notes ([f257597](https://github.com/JensPenneman/trail/commit/f2575972c0fef3a6d0b4d282f9bf4dd461ce5a63))
+* **perf:** the fleet-100 report and the first look at the Mac against the node ([4a1d718](https://github.com/JensPenneman/trail/commit/4a1d718b114937f7769f829fa9ae74eb07c55307))
+* **processing:** any stay begun after a toggle lets a kind of travel end it ([35f929c](https://github.com/JensPenneman/trail/commit/35f929cd17a079c435c0feec1fa1321aae6340b5))
+* the copy on this device, the stream's resume, offline and the worker ([c3e79a5](https://github.com/JensPenneman/trail/commit/c3e79a5c7737589c394ba4eec021986a24b3caba))
+* the worker container, its health and caps, rollback, a stall to test it ([39b6f2c](https://github.com/JensPenneman/trail/commit/39b6f2c1a2b88bc62dddf2678c4ea6a6583a2e83))
+* what runs where with the worker role, the processing channel and trail worker ([8a70cbb](https://github.com/JensPenneman/trail/commit/8a70cbb4c8c9fb451c04647a440da3517dd523de))
+* when a part of an item gets a page a level deeper, and the leaving row ([4587ea0](https://github.com/JensPenneman/trail/commit/4587ea0e9ef6b58c8c5f90c41ba3a2869fc53e70))
+
 ## [0.5.1](https://github.com/JensPenneman/trail/compare/v0.5.0...v0.5.1) (2026-10-28)
 
 
