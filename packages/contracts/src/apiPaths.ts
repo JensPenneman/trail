@@ -5,8 +5,10 @@ export const apiPaths = {
   config: "/api/config",
   health: "/api/health",
   healthLive: "/api/health/live",
-  /** Overland receiver endpoint (Bearer device token). */
+  /** The ingest endpoints (docs/architecture.md §6), authenticated by a device token. */
   overland: "/api/overland",
+  owntracks: "/api/owntracks",
+  osmand: "/api/osmand",
   events: "/api/events",
   auth: {
     session: "/api/auth/session",

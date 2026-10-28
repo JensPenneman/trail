@@ -1,4 +1,5 @@
 import { batteryStates, type DeviceSummary } from "@trail/contracts/device";
+import { deviceApps } from "@trail/contracts/deviceApp";
 import { remoteSettingsPresets } from "@trail/contracts/remoteSettings";
 import { toIso, toIsoOrNull } from "../db/toIso";
 
@@ -6,6 +7,7 @@ import { toIso, toIsoOrNull } from "../db/toIso";
 export interface DeviceSummaryRow extends Record<string, unknown> {
   id: string;
   name: string;
+  source: string;
   device_key: string;
   token_hint: string;
   alerts_enabled: boolean;
@@ -36,6 +38,10 @@ const batteryStateOf = (value: string | null) =>
 const presetOf = (value: string | null) =>
   remoteSettingsPresets.find((preset) => preset === value) ?? null;
 
+/* The column's check holds the same list; a value this version does not know (a
+ * later release's, after a rollback) reads as Overland, which every version has. */
+const appOf = (value: string) => deviceApps.find((app) => app === value) ?? "overland";
+
 const liveTripOf = (value: unknown): DeviceSummary["liveTrip"] => {
   if (typeof value !== "object" || value === null) return null;
   if (!("mode" in value) || !("startedAt" in value) || !("distanceM" in value)) return null;
@@ -50,7 +56,7 @@ export function toDeviceSummary(row: DeviceSummaryRow): DeviceSummary {
   return {
     id: row.id,
     name: row.name,
-    source: "overland",
+    source: appOf(row.source),
     deviceKey: row.device_key,
     tokenHint: row.token_hint,
     alertsEnabled: row.alerts_enabled,

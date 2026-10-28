@@ -6,6 +6,7 @@ import { ids } from "./support/fixtures";
 const entry = (id: string, receivedAt: string, locations: number): IngestLogEntry => ({
   id,
   receivedAt,
+  source: "overland",
   records: locations,
   locations,
   duplicates: 0,

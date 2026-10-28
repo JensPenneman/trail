@@ -21,6 +21,11 @@ describe("classifyWay", () => {
     expect(classifyWay({ route: "ferry", highway: "service" })).toBe("ferry");
   });
 
+  it("reads a tag value as a value, even one that names an object's own methods", () => {
+    expect(classifyWay({ highway: "constructor" })).toBe("other");
+    expect(classifyWay({ railway: "toString", highway: "service" })).toBe("service");
+  });
+
   it("skips what nobody travels on", () => {
     expect(classifyWay({ highway: "construction" })).toBeNull();
     expect(classifyWay({ highway: "proposed" })).toBeNull();

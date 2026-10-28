@@ -3,6 +3,7 @@ import { emailSchema } from "@trail/contracts/email";
 import { z } from "zod";
 import { databaseName } from "./databaseName";
 import { normaliseOrigin } from "./normaliseOrigin";
+import { parseTrustProxy, trustsNoProxy } from "./parseTrustProxy";
 import { readSatelliteStyle } from "./satelliteStyle";
 
 /* Environment variables arrive as strings; an empty value (`FOO=` in an env
@@ -123,6 +124,8 @@ export const envSchema = z
     RATE_LIMIT_AUTH_PER_MINUTE: env(intSchema(1, 1_000_000).default(20)),
     RATE_LIMIT_API_PER_MINUTE: env(intSchema(1, 1_000_000).default(600)),
     RATE_LIMIT_INGEST_PER_MINUTE: env(intSchema(1, 1_000_000).default(300)),
+    // One point per request, and a phone back online sends its backlog at once (docs/architecture.md §6).
+    RATE_LIMIT_INGEST_SINGLE_PER_MINUTE: env(intSchema(1, 1_000_000).default(1200)),
     RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES: env(intSchema(1, 1_000_000).default(30)),
     RATE_LIMIT_TOKEN_PER_MINUTE: env(intSchema(1, 1_000_000).default(600)),
     RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES: env(intSchema(1, 1_000_000).default(30)),
@@ -142,6 +145,20 @@ export const envSchema = z
       : null;
     if (problem !== null) {
       context.addIssue({ code: "custom", path: [problem.variable], message: problem.message });
+    }
+    // Trail serves plain HTTP: with an https:// address for the phones, only a
+    // trusted proxy can say a request came over HTTPS, or every upload is refused.
+    const ingestBase = values.INGEST_BASE_URL ?? values.PUBLIC_URL;
+    const ingestVariable = values.INGEST_BASE_URL === undefined ? "PUBLIC_URL" : "INGEST_BASE_URL";
+    if (
+      URL.parse(ingestBase)?.protocol === "https:" &&
+      trustsNoProxy(parseTrustProxy(values.TRUST_PROXY))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["TRUST_PROXY"],
+        message: `${ingestVariable} is https://, but Trail serves plain HTTP and trusts no proxy to say a request came over HTTPS, so every upload would be refused: set TRUST_PROXY to the proxy that terminates TLS, or give the phones an http:// address`,
+      });
     }
     // A development shell may export DATABASE_URL for an unrelated project:
     // outside production only databases named trail* are ever touched.

@@ -101,7 +101,7 @@ export function DevicesPage() {
         title="Devices"
         description={
           <>
-            <p>Phones that send their location to Trail with Overland.</p>
+            <p>Phones that send their location to Trail with a tracking app.</p>
             {some ? <LiveSummary devices={list} statuses={statuses} /> : null}
           </>
         }
@@ -182,12 +182,17 @@ export function DevicesPage() {
         </h2>
         <ol className="devices-page__steps">
           <li>
-            Install <strong>Overland</strong> (free, open source) from the App Store on the iPhone.
+            Install a tracking app on the phone: <strong>Overland</strong> on an iPhone,{" "}
+            <strong>OwnTracks</strong> or <strong>Traccar Client</strong> on an iPhone or an Android
+            phone, <strong>OsmAnd</strong> or <strong>GPSLogger</strong> on Android. All are free.
           </li>
-          <li>Add a device here and scan the code it shows with the iPhone’s camera.</li>
           <li>
-            Overland sends its points in batches; each upload appears here within seconds, and the
-            phone keeps anything it could not send until the next try.
+            Add a device here, choose the app, and scan the code it shows or copy the values into
+            the app.
+          </li>
+          <li>
+            Each upload appears here within seconds, and the phone keeps anything it could not send
+            until the next try.
           </li>
         </ol>
       </section>

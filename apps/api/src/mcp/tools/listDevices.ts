@@ -1,3 +1,4 @@
+import { deviceAppInfo } from "@trail/contracts/deviceApp";
 import { deviceStatus } from "@trail/contracts/deviceStatus";
 import {
   type ListDevicesOutput,
@@ -36,6 +37,7 @@ export async function devicesAnswer(context: WorkContext): Promise<ToolAnswer<Li
     devices.push({
       id: summary.id,
       name: safeText(summary.name),
+      app: summary.source,
       status: deviceStatus(summary.lastSeenAt, now, thresholds),
       lastSeenAt: zoned(summary.lastSeenAt, timeZone),
       lastPositionAt: zoned(summary.lastLocation?.recordedAt ?? null, timeZone),
@@ -56,7 +58,7 @@ export async function devicesAnswer(context: WorkContext): Promise<ToolAnswer<Li
     const upload = device.lastSeenAt === null ? "" : `, last upload ${device.lastSeenAt}`;
     const level = device.battery?.levelPercent;
     const battery = level === undefined || level === null ? "" : `, battery ${level} %`;
-    return `${quoted(device.name)} (${device.id}): ${device.status}${upload}${battery}`;
+    return `${quoted(device.name)} (${device.id}): ${deviceAppInfo[device.app].name}, ${device.status}${upload}${battery}`;
   });
   return {
     result: { devices },
@@ -74,7 +76,7 @@ export const listDevices = defineTool({
   name: "list_devices",
   title: "List devices",
   description:
-    "Lists the account's devices (phones running Overland) that this token reaches: id, name, whether data still comes in (status, last upload), battery, a trip running in Overland and, for a token with locations:read, how the device travels now. No positions: get_current_location has those. Call it first to learn the device ids and names the other tools take.",
+    "Lists the account's devices (phones running a tracking app: Overland, OwnTracks, Traccar Client, OsmAnd or GPSLogger) that this token reaches: id, name, the app, whether data still comes in (status, last upload), battery, a trip running in Overland and, for a token with locations:read, how the device travels now. No positions: get_current_location has those. Call it first to learn the device ids and names the other tools take.",
   scopes: ["devices:read"],
   input: listDevicesInputSchema,
   output: listDevicesOutputSchema,

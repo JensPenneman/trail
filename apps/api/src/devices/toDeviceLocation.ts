@@ -1,5 +1,5 @@
 import type { DeviceLocation } from "@trail/contracts/devicePublic";
-import { batteryStateOf } from "../overland/overlandValues";
+import { batteryStateOf } from "../ingest/ingestValues";
 import type { DeviceRow } from "./findOwnedDevice";
 
 /** The device cache's newest position and battery reading; null before the first position. */

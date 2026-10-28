@@ -1,4 +1,5 @@
 import { Writable } from "node:stream";
+import { brotliCompressSync } from "node:zlib";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import type { ApiScope } from "@trail/contracts/apiScope";
 import { apiTokenTemplates } from "@trail/contracts/apiToken";
@@ -389,6 +390,14 @@ describe("HTTP", () => {
       .send(JSON.stringify({ ...toolsList, params: { padding: "x".repeat(1024 * 1024) } }))
       .expect(413);
     expect(errorOf(large.body).code).toBe("payload_too_large");
+    const compressed = await request(t.app)
+      .post(apiPaths.mcp)
+      .set("Authorization", auth)
+      .set("Content-Type", "application/json")
+      .set("Content-Encoding", "br")
+      .send(brotliCompressSync(JSON.stringify(toolsList)))
+      .expect(415);
+    expect(errorOf(compressed.body).code).toBe("bad_request");
   });
 
   it("takes one message per request: a batch would run many calls for one count", async () => {

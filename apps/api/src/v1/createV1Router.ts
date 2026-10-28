@@ -77,7 +77,14 @@ export function createV1Router(ctx: AppContext): Router {
   router.use((req, res, next) =>
     getRequestAuth(req)?.kind === "token" ? next() : csrf(req, res, next),
   );
-  router.use(express.json({ limit: "100kb", type: ["application/json", "application/*+json"] }));
+  // No body is decompressed (415): clients of the API send plain JSON, and a session is not proof yet.
+  router.use(
+    express.json({
+      limit: "100kb",
+      type: ["application/json", "application/*+json"],
+      inflate: false,
+    }),
+  );
   for (const route of routes.filter((candidate) => !isPublic(candidate))) mount(route);
   router.use(apiNotFound);
   return router;

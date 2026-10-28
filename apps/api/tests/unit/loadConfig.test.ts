@@ -6,6 +6,8 @@ const defaults = { webDistDir: "/srv/web/dist" };
 const minimal = {
   DATABASE_URL: "postgres://trail:trail@db:5432/trail",
   PUBLIC_URL: "https://trail.example.com/",
+  // Launchway's edge, deploy/compose.yaml's default: an https:// address needs a trusted proxy.
+  TRUST_PROXY: "10.210.0.2",
 };
 
 const issuesOf = (environment: NodeJS.ProcessEnv): readonly string[] => {
@@ -30,7 +32,7 @@ describe("loadConfig", () => {
       mcpAllowedOrigins: ["https://trail.example.com"],
       ingestUrl: "https://trail.example.com/api/overland",
       signupAllowlist: [],
-      trustProxy: false,
+      trustProxy: "10.210.0.2",
       sessionTtlDays: 30,
       liveWindowMinutes: 15,
       staleAfterHours: 12,
@@ -201,6 +203,63 @@ describe("loadConfig", () => {
       defaults,
     );
     expect(config.ingestUrl).toBe("http://192.168.1.20:8080/api/overland");
+    // The phones were given an http:// address: every credential is taken over HTTP.
+    expect(config.ingestHttpsOnly).toBe(false);
+  });
+
+  it("takes uploads over HTTPS only once the phones are given an https:// address", () => {
+    expect(loadConfig(minimal, defaults).ingestHttpsOnly).toBe(true);
+    expect(
+      loadConfig({ ...minimal, PUBLIC_URL: "http://localhost:5173" }, defaults).ingestHttpsOnly,
+    ).toBe(false);
+    expect(
+      loadConfig(
+        {
+          ...minimal,
+          PUBLIC_URL: "http://localhost:5173",
+          INGEST_BASE_URL: "https://trail.example.com",
+        },
+        defaults,
+      ).ingestHttpsOnly,
+    ).toBe(true);
+  });
+
+  it("trusts no proxy by default, and will not start so with an https:// address for phones", () => {
+    const bare = { DATABASE_URL: minimal.DATABASE_URL };
+    expect(loadConfig({ ...bare, PUBLIC_URL: "http://localhost:5173" }, defaults).trustProxy).toBe(
+      false,
+    );
+    // Trail serves plain HTTP: every upload would be refused, while the dashboard seemed to work.
+    expect(issuesOf({ ...bare, PUBLIC_URL: "https://trail.example.com" })).toEqual([
+      expect.stringMatching(/^TRUST_PROXY: PUBLIC_URL is https:\/\/, but Trail serves plain HTTP/),
+    ]);
+    for (const trustProxy of ["false", "0", " , "]) {
+      expect(
+        issuesOf({ ...bare, PUBLIC_URL: "https://trail.example.com", TRUST_PROXY: trustProxy }),
+        trustProxy,
+      ).toHaveLength(1);
+    }
+    expect(
+      issuesOf({
+        ...bare,
+        PUBLIC_URL: "http://localhost:5173",
+        INGEST_BASE_URL: "https://trail.example.com",
+      }),
+    ).toEqual([expect.stringMatching(/^TRUST_PROXY: INGEST_BASE_URL is https:\/\//)]);
+    // A trusted proxy, or an http:// address for the phones (a home network), starts.
+    for (const trustProxy of ["10.210.0.2", "1", "loopback", "true"]) {
+      expect(
+        issuesOf({ ...bare, PUBLIC_URL: "https://trail.example.com", TRUST_PROXY: trustProxy }),
+        trustProxy,
+      ).toEqual([]);
+    }
+    expect(
+      issuesOf({
+        ...bare,
+        PUBLIC_URL: "https://trail.example.com",
+        INGEST_BASE_URL: "http://192.168.1.20:8080",
+      }),
+    ).toEqual([]);
   });
 
   it("reports every invalid variable", () => {

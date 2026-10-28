@@ -172,9 +172,18 @@ A token can also be limited to some of the account's devices. The other
 devices then look as if they did not exist: they are missing from lists and
 answer `404`.
 
+A device's `source` names the app on the phone: `overland`, `owntracks`,
+`traccar` (Traccar Client), `osmand` or `gpslogger` (see
+[docs/trackers.md](https://github.com/JensPenneman/trail/blob/main/docs/trackers.md)).
+Visits, trips and a `liveTrip` come from Overland only, and so do settings
+presets: `PATCH /api/v1/devices/{id}` with a `pendingSettings` preset answers
+`409 conflict` for a device of another app. Which app a device records with,
+like its token, is changed in the dashboard only.
+
 ## Requests and responses
 
-- JSON in UTF-8. Request bodies are `application/json`, at most 100 kB.
+- JSON in UTF-8. Request bodies are `application/json`, at most 100 kB, and
+  not compressed: a `Content-Encoding` other than `identity` is `415`.
 - Times are ISO 8601. Responses give UTC (`2026-10-26T08:41:07.000Z`);
   requests may use any offset. A range `from`–`to` includes `from` and
   excludes `to`. Local days, like statistics per day, follow the account's
@@ -198,7 +207,7 @@ trips and statistics per day.
 
 `GET /api/v1/locations` returns one device's points oldest first, up to 1000
 a page, exactly as the phone recorded them: the documented fields, not the
-Wi-Fi network or Overland's own ids, which stay on the server. A phone uploads when it can, so points
+Wi-Fi network or what else the app sent, which stay on the server. A phone uploads when it can, so points
 may arrive later than newer ones: to keep a copy current, ask again for a
 range that overlaps the end of the previous one.
 
@@ -328,7 +337,7 @@ change. `fields` appears with `validation_failed` and maps each request field
 | 404 | `not_found` | No such resource or route |
 | 409 | `conflict` | The change conflicts with the current state |
 | 413 | `payload_too_large` | The body is over 100 kB |
-| 415 | `bad_request` | The body is not JSON |
+| 415 | `bad_request` | The body is not JSON, or it is compressed |
 | 429 | `rate_limited` | A rate limit was reached (see below) |
 | 500 | `internal` | A server error; it has been logged |
 | 503 | `unavailable` | The database is down for a moment; retry |

@@ -126,7 +126,7 @@ test("every page of Settings, and the page of each kind of item, renders and is 
     ["/settings/mcp", "MCP", "Server address"],
     ["/settings/preferences", "Preferences", "Detail of the tracks"],
     ["/settings/notifications", "Notifications", "Settings phone"],
-    ["/settings/about", "About", "Receiver endpoint"],
+    ["/settings/about", "About", "OwnTracks endpoint"],
   ] as const) {
     await open(page, path, name, ready);
     await expect(page).toHaveTitle(`${name} · Settings · Trail`);

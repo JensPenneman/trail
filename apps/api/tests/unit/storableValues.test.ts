@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { deadLetterRecord } from "../../src/overland/deadLetterRecord";
-import { countOrNull, nonNegativeRealOrNull, realOrNull } from "../../src/overland/overlandValues";
-import { storableJson } from "../../src/overland/storableJson";
-import { storableText } from "../../src/overland/storableText";
+import { deadLetterRecord } from "../../src/ingest/deadLetterRecord";
+import { countOrNull, nonNegativeRealOrNull, realOrNull } from "../../src/ingest/ingestValues";
+import { storableJson } from "../../src/ingest/storableJson";
+import { storableText } from "../../src/ingest/storableText";
 
 describe("storableText", () => {
   it("drops NUL characters and replaces lone surrogates, keeping real emoji", () => {

@@ -33,6 +33,9 @@ describe("motionActivity", () => {
     expect(motionActivity(["walking"])).toBe("walking");
     expect(motionActivity([])).toBeNull();
     expect(motionActivity(["unknown"])).toBeNull();
+    // A phone's words are values, never the names of an object's own methods.
+    expect(motionActivity(["constructor", "toString"])).toBeNull();
+    expect(motionActivity(["__proto__", "walking"])).toBe("walking");
   });
 });
 

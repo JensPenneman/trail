@@ -24,8 +24,14 @@ export function AboutPage() {
               ? "Development build"
               : format.dateTime(config.data.builtAt)}
           </SettingsFact>
-          <SettingsFact label="Receiver endpoint">
-            <span className="mono">{config.data.ingestUrl}</span>
+          <SettingsFact label="Overland endpoint">
+            <span className="mono">{config.data.ingestUrls.overland}</span>
+          </SettingsFact>
+          <SettingsFact label="OwnTracks endpoint">
+            <span className="mono">{config.data.ingestUrls.owntracks}</span>
+          </SettingsFact>
+          <SettingsFact label="Traccar Client, OsmAnd and GPSLogger endpoint">
+            <span className="mono">{config.data.ingestUrls.osmand}</span>
           </SettingsFact>
         </SettingsGroup>
       )}

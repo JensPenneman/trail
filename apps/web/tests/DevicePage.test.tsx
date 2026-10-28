@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { removeDeviceFromCache } from "../src/devices/removeDeviceFromCache";
 import { DevicePage } from "../src/pages/device/DevicePage";
-import { ids, user } from "./support/fixtures";
+import { device, ids, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
@@ -13,7 +13,12 @@ describe("DevicePage", () => {
     mockApi(standardRoutes());
     renderPage(<DevicePage />, { path: "/devices/:deviceId", url: `/devices/${ids.phone}`, user });
     expect(await screen.findByRole("heading", { level: 1, name: "iPhone 16" })).toBeInTheDocument();
-    expect(screen.getByText("iphone-16-k3f9")).toBeInTheDocument();
+    const overview = screen.getByRole("region", { name: "Overview" });
+    expect(within(overview).getByText("iphone-16-k3f9")).toBeInTheDocument();
+    expect(within(overview).getByText("Overland")).toBeInTheDocument();
+    const setup = screen.getByRole("region", { name: "Setup" });
+    expect(within(setup).getByText("https://trail.example.com/api/overland")).toBeInTheDocument();
+    expect(within(setup).getByText("Recommended Overland settings")).toBeInTheDocument();
     expect(
       await screen.findByRole("table", { name: "Uploads of this device" }),
     ).toBeInTheDocument();
@@ -35,6 +40,71 @@ describe("DevicePage", () => {
         name: "Now:",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("shows another app's setup and no Overland presets", async () => {
+    const pixel = device({ source: "owntracks", deviceKey: "pixel-k3f9", name: "Pixel 8" });
+    mockApi({
+      ...standardRoutes(),
+      [`GET /api/devices/${ids.phone}`]: { status: 200, body: { device: pixel } },
+    });
+    const person = userEvent.setup();
+    renderPage(<DevicePage />, { path: "/devices/:deviceId", url: `/devices/${ids.phone}`, user });
+    expect(await screen.findByRole("heading", { level: 1, name: "Pixel 8" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Tracking settings" })).toBeNull();
+    const setup = screen.getByRole("region", { name: "Setup" });
+    expect(within(setup).getByText(/^OwnTracks \(iOS and Android\)/)).toBeInTheDocument();
+    expect(within(setup).getByText("https://trail.example.com/api/owntracks")).toBeInTheDocument();
+    expect(within(setup).getByText("P8")).toBeInTheDocument();
+    // On an iPhone the token goes in a header; on Android it is the password.
+    const fact = (label: string) => within(setup).queryByText(label, { selector: ".facts dt" });
+    expect(fact("HTTP Headers")).toBeInTheDocument();
+    expect(within(setup).getByText(/…q7Zx/)).toBeInTheDocument();
+    await person.click(within(setup).getByRole("radio", { name: "Significant changes" }));
+    expect(
+      within(setup).getByText(/^Significant changes leaves the fixes to iOS/),
+    ).toBeInTheDocument();
+    await person.click(within(setup).getByRole("radio", { name: "Android" }));
+    expect(
+      within(setup).getByText("Recommended OwnTracks settings on Android"),
+    ).toBeInTheDocument();
+    expect(fact("Password")).toBeInTheDocument();
+    expect(fact("HTTP Headers")).toBeNull();
+  });
+
+  it("issues a new token for another app and shows that app's setup", async () => {
+    const token = "trl_Xq8vM2kPz7LtR4nW9cYb3hJd6fGs1aEe0uTiKoNpQrS";
+    const moved = device({ source: "gpslogger" });
+    const { calls } = mockApi({
+      ...standardRoutes(),
+      [`POST /api/devices/${ids.phone}/token`]: {
+        status: 200,
+        body: {
+          device: moved,
+          credentials: {
+            app: "gpslogger",
+            endpoint: "https://trail.example.com/api/osmand",
+            accessToken: token,
+            url: "https://trail.example.com/api/osmand?lat=%LAT",
+            headers: `Authorization: Bearer ${token}`,
+          },
+        },
+      },
+    });
+    const person = userEvent.setup();
+    renderPage(<DevicePage />, { path: "/devices/:deviceId", url: `/devices/${ids.phone}`, user });
+    await person.click(await screen.findByRole("button", { name: "Issue new token" }));
+    const dialog = screen.getByRole("dialog", { name: "Issue a new access token?" });
+    await person.click(within(dialog).getByRole("radio", { name: /GPSLogger/ }));
+    expect(
+      within(dialog).getByText("From now on Trail takes uploads from GPSLogger only"),
+    ).toBeInTheDocument();
+    await person.click(within(dialog).getByRole("button", { name: "Issue new token" }));
+    const issued = await screen.findByRole("dialog", { name: "New token for iPhone 16" });
+    expect(within(issued).getByLabelText("HTTP Headers")).toHaveValue(
+      `Authorization: Bearer ${token}`,
+    );
+    expect(calls.find((call) => call.method === "POST")?.body).toEqual({ source: "gpslogger" });
   });
 
   it("asks for the device's name before deleting it", async () => {

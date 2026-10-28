@@ -1,20 +1,10 @@
-import { type BatteryReading, batteryReading } from "./batteryReading";
-import { type Normalised, rejected } from "./normalised";
-import { asRecord, extraOf, nonNegativeRealOrNull } from "./overlandValues";
-import { parseOverlandTimestamp } from "./parseOverlandTimestamp";
+import { batteryReading } from "../ingest/batteryReading";
+import { asRecord, extraOf, nonNegativeRealOrNull } from "../ingest/ingestValues";
+import { type Normalised, rejected } from "../ingest/normalised";
+import type { NormalisedVisit } from "../ingest/normalisedRecords";
+import { parseIsoTimestamp } from "../ingest/parseIsoTimestamp";
+import { recordTime } from "../ingest/recordTime";
 import { parsePointGeometry } from "./parsePointGeometry";
-import { recordTime } from "./recordTime";
-
-export interface NormalisedVisit {
-  recordedAt: Date;
-  arrivedAt: Date | null;
-  departedAt: Date | null;
-  lat: number;
-  lon: number;
-  horizontalAccuracy: number | null;
-  extra: Record<string, unknown> | null;
-  battery: BatteryReading | null;
-}
 
 const mapped = new Set([
   "action",
@@ -32,7 +22,7 @@ const yearMs = 366 * 86_400_000;
  * such far-away date is treated the same way.
  */
 const visitDate = (value: unknown, receivedAt: Date): Date | null => {
-  const date = parseOverlandTimestamp(value);
+  const date = parseIsoTimestamp(value);
   if (date === null) return null;
   if (date.getUTCFullYear() < 1990 || date.getTime() > receivedAt.getTime() + yearMs) return null;
   return date;

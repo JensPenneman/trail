@@ -1,9 +1,10 @@
 # Trail — architecture
 
-Trail is a self-hosted location history for the iOS app
-[Overland](https://github.com/aaronpk/Overland-iOS). Phones post GPS batches to
-the API; people sign in with passkeys and see where their devices are, where
-they have been, and proof that data keeps arriving.
+Trail is a self-hosted location history for phones. A tracking app —
+[Overland](https://github.com/aaronpk/Overland-iOS) on iPhones, OwnTracks or
+Traccar Client on iPhones and Android phones, OsmAnd or GPSLogger on Android —
+posts the points to the API (§6); people sign in with passkeys and see where
+their devices are, where they have been, and proof that data keeps arriving.
 
 - One person owns many devices; many people can share one server.
 - Everything runs as Docker containers on a home server, deployed by Launchway
@@ -21,7 +22,7 @@ implementation has to deviate, update this document in the same change.
 ```
 trail/
 ├── apps/
-│   ├── api/            Express 5 API + Overland ingest + CLI (Node LTS, TypeScript)
+│   ├── api/            Express 5 API + ingest of the tracking apps + CLI (Node LTS, TypeScript)
 │   └── web/            React 19 SPA (Vite 8), served by the API in production
 ├── packages/
 │   └── contracts/      zod schemas + types = the HTTP contract (imported by both)
@@ -158,8 +159,8 @@ the image whenever `.devcontainer/`, `package-lock.json` or `ci.yml` change
 ### Production (Launchway)
 
 ```
-iPhone (Overland) ─┐
-Browser ───────────┴─▶ Launchway edge (HTTPS, 10.210.0.2 on its proxy network) ─▶ app :8080 ──▶ db (postgres:18-alpine)
+Phones (tracking apps) ─┐
+Browser ────────────────┴─▶ Launchway edge (HTTPS, 10.210.0.2 on its proxy network) ─▶ app :8080 ──▶ db (postgres:18-alpine)
                                                                                      backup ──┘ (pg_dump → host folder)
 GitHub release published ─▶ Launchway deploys deploy/compose.yaml with image sha-<commit>
 Pull request (same repository) ─▶ preview project launchway-trail-pr-<n>, own host name and volume
@@ -185,9 +186,9 @@ All configuration is environment variables, validated at boot with zod
 | `PUBLIC_URL` | — (required) | Canonical origin, e.g. `https://trail.jenspenneman.com`; used in links, CSRF/WebAuthn origin checks |
 | `ADDITIONAL_ORIGINS` | empty | More allowed origins, comma-separated (e.g. `http://localhost:8080`) |
 | `MCP_ALLOWED_ORIGINS` | empty | Origins of browser-based MCP clients that may call `/mcp` besides `PUBLIC_URL` and `ADDITIONAL_ORIGINS` (§8.6), comma-separated |
-| `INGEST_BASE_URL` | `PUBLIC_URL` | Base URL shown to phones; endpoint = `<base>/api/overland` |
+| `INGEST_BASE_URL` | `PUBLIC_URL` | Base URL shown to phones; endpoints `<base>/api/overland`, `<base>/api/owntracks`, `<base>/api/osmand` (§6). An `https:` base makes the endpoints refuse uploads over plain HTTP |
 | `SIGNUP_ALLOWLIST` | empty | Emails (or `*@domain`) that may create an account without an invite |
-| `TRUST_PROXY` | `false` (nobody) | Express `trust proxy`: the proxies whose `X-Forwarded-For`/`-Proto` decide client address and HTTPS; `deploy/compose.yaml` defaults to Launchway's edge, `10.210.0.2` (§12) |
+| `TRUST_PROXY` | `false` (nobody) | Express `trust proxy`: the proxies whose `X-Forwarded-For`/`-Proto` decide client address and HTTPS; `deploy/compose.yaml` defaults to Launchway's edge, `10.210.0.2` (§12). Required with an `https:` address for the phones: Trail will not start without a trusted proxy then (§6) |
 | `SESSION_TTL_DAYS` | `30` | Sliding session lifetime |
 | `LIVE_WINDOW_MINUTES` | `15` | "live" status window |
 | `STALE_AFTER_HOURS` | `12` | "stale" status + silent-device alert threshold; also how old the position of a live-only share may be (§8.5) |
@@ -205,8 +206,9 @@ All configuration is environment variables, validated at boot with zod
 | `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` | root package.json version / `dev` / null | Baked into the image by the Dockerfile |
 | `RATE_LIMIT_AUTH_PER_MINUTE` | `20` | Auth routes, per IP (§12) |
 | `RATE_LIMIT_API_PER_MINUTE` | `600` | Every other `/api` request (dashboard and v1) and `/docs`, per IP |
-| `RATE_LIMIT_INGEST_PER_MINUTE` | `300` | Accepted uploads, per device token |
-| `RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES` | `30` | Uploads with an unknown token, per IP |
+| `RATE_LIMIT_INGEST_PER_MINUTE` | `300` | Accepted Overland uploads (batches), per device token |
+| `RATE_LIMIT_INGEST_SINGLE_PER_MINUTE` | `1200` | Accepted uploads of the one-point-per-request endpoints (OwnTracks, the OsmAnd format), per device token (§6) |
+| `RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES` | `30` | Uploads with an unknown token, per IP, all ingest endpoints together |
 | `RATE_LIMIT_TOKEN_PER_MINUTE` | `600` | `/api/v1` and `/mcp` requests with a valid API token, per token, both together (§8.3, §8.6) |
 | `RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES` | `30` | `/api/v1` and `/mcp` requests with an invalid API token, per IP |
 | `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE` | `60` | The public share endpoint (`/api/public/share`), per IP (§8.5) |
@@ -267,8 +269,10 @@ users (cascade), `created_at`, `last_seen_at`, `expires_at`, `user_agent`,
 opens on), `created_by` (`cli|user`), `created_at`, `expires_at` (15 min),
 `used_at`.
 
-**devices** — `id`, `user_id` → users (cascade), `name`, `source`
-(`overland`), `device_key` (the Overland "Device ID"; unique per user),
+**devices** — `id`, `user_id` → users (cascade), `name`, `source` (the app:
+`overland | owntracks | traccar | osmand | gpslogger`, checked; contracts
+`deviceApp.ts`, §6), `device_key` (Overland's "Device ID", OwnTracks' user
+name and device ID; unique per user),
 `token_hash` (unique), `token_hint` (last 4 chars), `alerts_enabled` (bool,
 default true), `created_at`, `updated_at`, `last_seen_at` (last accepted
 upload), latest-position cache `last_recorded_at`, `last_lat`, `last_lon`,
@@ -276,17 +280,20 @@ upload), latest-position cache `last_recorded_at`, `last_lat`, `last_lon`,
 (text[]), battery cache `battery_level`, `battery_state`,
 `battery_recorded_at`, `live_trip` (jsonb: `{mode, startedAt, distanceM}` or
 null), `points_total` (bigint counter), `pending_settings` (text preset or
-null), `settings_applied_at`, `stale_alerted_at`.
+null; Overland only), `settings_applied_at`, `stale_alerted_at`.
 
 **locations** — the points. PK `(device_id, recorded_at)` = natural dedupe
-(Overland timestamps have 1 s resolution and at most one point per second;
-re-sent batches collide and are skipped with `ON CONFLICT DO NOTHING`).
+(Overland, OwnTracks and Traccar Client send whole seconds, OsmAnd and
+GPSLogger milliseconds, kept as they came; at most one point per instant:
+re-sent uploads collide and are skipped with `ON CONFLICT DO NOTHING`).
 Columns: `device_id` → devices (cascade), `recorded_at`, `received_at`
 (default now()), `lat`, `lon` (double precision), `altitude`, `speed`,
 `course`, `horizontal_accuracy`, `vertical_accuracy`, `speed_accuracy`,
 `course_accuracy` (real, nullable), `motion` (text[]), `battery_level` (real),
-`battery_state` (text), `wifi` (text), `extra` (jsonb: every Overland property
-without a column — tracking stats, `unique_id`, …). Extra index: BRIN on
+`battery_state` (text), `wifi` (text, the network's name), `extra` (jsonb:
+everything the app sent without a column, under its own name — Overland's
+tracking stats and `unique_id`, OwnTracks' `t`, `tid`, `conn` …, the OsmAnd
+format's other parameters; never a credential). Extra index: BRIN on
 `received_at` (activity chart).
 
 **visits** — PK `(device_id, recorded_at)`; `arrived_at`, `departed_at`,
@@ -296,14 +303,19 @@ without a column — tracking stats, `unique_id`, …). Extra index: BRIN on
 `duration_s`, `steps`, `stopped_automatically`, `start_location` (jsonb),
 `end_location` (jsonb), `extra`.
 
-**device_events** — Overland app/tracking log actions ("Include tracking
-stats"): PK `(device_id, recorded_at, action)`; `lat`, `lon` (nullable — log
-actions may lack geometry), `extra`.
+**device_events** — what the apps report besides points: Overland's
+app/tracking log actions ("Include tracking stats"), OwnTracks' region
+transitions (`region_enter:<region>`, `region_leave:<region>`) and last will
+(`lwt`), the OsmAnd format's `heartbeat` and `alarm`: PK `(device_id,
+recorded_at, action)`; `lat`, `lon` (nullable — events may lack geometry),
+`extra`.
 
 **ingest_log** — one row per accepted upload: `id` (bigint identity),
-`device_id` → devices (cascade), `received_at`, `records`, `locations`,
-`duplicates`, `visits`, `trips`, `events`, `rejected`, `duration_ms`,
-`user_agent`. Index `(device_id, received_at DESC)`. Retention 90 days.
+`device_id` → devices (cascade), `received_at`, `source` (the device's app at
+the time, checked like `devices.source`; rows from before it are Overland's),
+`records`, `locations`, `duplicates`, `visits`, `trips`, `events`, `rejected`,
+`duration_ms`, `user_agent`. Index `(device_id, received_at DESC)`. Retention
+90 days. The one-point-per-request apps make one row per point.
 
 **ingest_rejects** — dead letter for invalid records (never silently drop
 data): `id`, `device_id` → devices (cascade), `received_at`, `reason`,
@@ -398,70 +410,107 @@ counting a row again stays a heap-only update. Kept
 `DATA_ACCESS_RETENTION_DAYS` (365) days; it is a log, not recorded location
 data.
 
-## 6. Overland ingest
+## 6. Ingest
 
-`POST /api/overland` — the "Receiver Endpoint" configured in Overland.
+Phones post to three endpoints, one per protocol; a device's app
+(`devices.source`, §5) decides which one takes its token. Every endpoint is
+mounted before cookies, CSRF checks and the dashboard's body parser, speaks
+its clients' dialect and never reads a session. The guide for the people who
+set the phones up is [docs/trackers.md](trackers.md) (Overland's own:
+[docs/overland.md](overland.md)).
 
-**Auth.** `Authorization: Bearer <device token>`; also accepts `?token=` /
-`?access_token=` for clients that cannot set headers. Token → SHA-256 →
-`devices.token_hash`. Unknown token → `401 {"error":"Invalid access token"}`.
-Tokens: `trl_` + 32 random bytes base64url. Never log tokens (redact the
-header and those query params).
+| Endpoint | Apps | Token | Body | Answer to an accepted upload |
+|---|---|---|---|---|
+| `POST /api/overland` (§6.4), `GET` the account probe | Overland (iOS) | `Authorization: Bearer`, `?token=`, `?access_token=` | Overland's JSON batch, ≤ 5 MB | `{"result":"ok"}`, with `set` once a preset waits (§6.3) |
+| `POST /api/owntracks` (§6.5) | OwnTracks (iOS, Android) in HTTP mode | HTTP Basic password (any user name; Android), `Authorization: Bearer` (the iPhone's *HTTP Headers*) | one JSON message, ≤ 256 kB | `200 []` |
+| `GET`/`POST /api/osmand` (§6.6) | Traccar Client, OsmAnd, GPSLogger (and other clients of the format) | `Authorization: Bearer`, HTTP Basic password, `?token=`/`?access_token=`, the device identifier `id`/`deviceid`, JSON `device_id` | query or form (≤ 100 parameters), or Traccar Client 9's JSON; ≤ 64 kB | `200`, empty |
 
-**Protocol** (verified against Overland's source):
-- Body `{ "locations": Feature[], "current"?: Feature, "trip"?: {...} }`,
-  `Content-Type: application/json`, up to ~600 kB (1000-point batches).
-  JSON limit on this route: 5 MB.
-- The app deletes its queued batch only if the response is JSON
-  `{"result":"ok"}`. Anything else → it retries the whole batch later. A
-  response `{"error":"…"}` is shown to the user as a notification.
-- Optional `set` object in the ok-response pushes settings to the app (§6.3).
-- Timestamps: current app sends `YYYY-MM-DDTHH:MM:SSZ`; old versions sent
-  offsets without a colon (`2015-10-01T08:00:00-0700`). Accept `Z`, `±HH:MM`,
-  `±HHMM`, optional fractions. Reject anything else, and anything before 1990
-  (a reset clock or iOS's `distantPast`; year 0000 is not even a Postgres date).
-- Invalid-value sentinels are negative numbers: `speed`, `course`,
-  `*_accuracy`, `battery_level` < 0 → null; `vertical_accuracy` < 0 → altitude
-  null too. Coordinates truncated to 7 decimals by the app.
-- `GET /api/overland` with a valid token → `{"name": "<device name>"}` (Overland
-  account-info probe; also a handy connectivity test). Other methods →
-  `405 {"error":"Method not allowed"}`.
-- The token is checked before the body is parsed, so an unauthenticated
-  request never costs a 5 MB JSON parse. Errors of this route always use
-  Overland's `{"error":"…"}` body (413 `Payload too large`, 429, 500, 503).
+**Tokens.** One per device: `trl_` + 32 random bytes base64url, stored as
+SHA-256 in `devices.token_hash`. Whatever carries it, a value without that
+shape is no token and costs no lookup. A token at another app's endpoint is
+refused with `403 {"error":"This device is set up for <App> in Trail. …"}`
+(`requireApp`): the app decides how an upload reads — the OsmAnd format's
+speed unit is the app's — so it is never guessed per request, and the holder
+learns nothing they could not try. Unknown token → `401 {"error":"Invalid
+access token"}` with a `WWW-Authenticate` challenge per scheme the endpoint
+takes (`Bearer realm="trail"`; `Basic realm="trail"` too where Basic is read).
+Tokens never reach a log, a stored record or an answer (§12).
 
-**Record kinds** in `locations[]` (classification by properties):
-1. `properties.action === "visit"` → **visit** (`arrival_date`,
-   `departure_date` — may be null, `horizontal_accuracy`).
-2. `properties.type === "trip"` → **trip** (`mode`, `start`, `end`,
-   `duration`, `distance`, `steps`, `stopped_automatically`,
-   `start_location`, `end_location`).
-3. other `properties.action` (e.g. `paused_location_updates`,
-   `resumed_location_updates`, `exited_pause_region`, `did_enter_background`,
-   `will_terminate`, `will_resign_active`,
-   `application_launched_with_location`) → **device event**; geometry optional.
-4. otherwise → **location** (`timestamp`, `altitude`, `speed`, `course`,
-   `horizontal_accuracy`, `vertical_accuracy`, `speed_accuracy`,
-   `course_accuracy`, `motion[]`, `battery_state`, `battery_level`, `wifi`,
-   `device_id`, `unique_id`, plus optional tracking stats `pauses`,
-   `activity`, `desired_accuracy`, `deferred`, `significant_change`,
-   `locations_in_payload`). Unknown properties go to `extra`.
-Every record also carries metadata `device_id`, `wifi`, `battery_*`.
-`properties.device_id` is informational — the token decides the device.
+**HTTPS, one rule for every credential** (`refuseCredentialsOverHttp`), set by
+the address the phones were given — `INGEST_BASE_URL`, else `PUBLIC_URL`
+(`ingestHttpsOnly`). An `https:` address: an upload over plain HTTP is refused
+with `403 {"error":"Uploads need HTTPS: use https://…"}` before anything is read
+or looked up, whatever would carry its token — a bearer token, a Basic
+password, `?token=`, a form's `id`, a JSON `device_id`. HTTPS is `req.secure`,
+the rule of the `__Host-` session cookie: as Trail serves plain HTTP, a
+trusted proxy's `X-Forwarded-Proto: https` (`TRUST_PROXY`, §12). So Trail
+refuses to start with an `https:` address and no proxy trusted (`false`, `0`,
+none listed) — every upload would be refused while the dashboard seemed to
+work — and the first refused upload that an untrusted hop says came over
+HTTPS logs a warning that names `TRUST_PROXY`. An `http:`
+address — a home network while Trail is set up (README, docs/overland.md) —
+takes every credential over HTTP, Basic included: the phones were told to use
+it, and refusing one scheme there would protect nothing while breaking the
+phones that use it (OwnTracks for iOS drops a message it gets a 4xx for).
+
+**Rate limits** (§12): uploads with an unknown token count per IP in one
+budget for all three endpoints (`RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES`,
+consulted after the lookup, valid tokens skipped); accepted uploads per
+device token per minute, `RATE_LIMIT_INGEST_PER_MINUTE` (300) for Overland's
+batches and `RATE_LIMIT_INGEST_SINGLE_PER_MINUTE` (1200, 20 a second) for the
+one-point-per-request endpoints. In motion those send a point every few
+seconds at most (OwnTracks' move mode, Traccar Client at 30 m), but a phone
+back online sends its backlog as fast as it can — OwnTracks one after the
+other, Traccar Client in order, GPSLogger in parallel jobs that drop a point
+after three failed tries — so their budget is four times Overland's. Over the
+limit the answer has a `Retry-After`: `429`, except on `/api/owntracks`,
+which answers `503`, because OwnTracks for iOS drops a message it gets a 4xx
+for and keeps one it gets a 5xx for.
+
+**Acknowledged, always.** Every app keeps what it could not send and retries
+it — Overland its batch until `{"result":"ok"}`, OwnTracks for Android a
+message for weeks ahead of everything queued after it, Traccar Client its
+queue in order — so an upload with a valid token is acknowledged whatever its
+content: what cannot be stored goes to `ingest_rejects` (§6.1). The only other
+answers are the refusals above, `413` for a body over the limit, `415` for a
+compressed body (no app compresses an upload, and none is decompressed: a
+body of a few bytes could otherwise cost the server a megabyte of work before
+any token is checked), `405` for another method, `503` while the database is
+down (`{"error":"Server temporarily unavailable"}`: the phone keeps its data)
+and `500`. Errors use
+`{"error":"…"}` on every endpoint (`sendIngestError`); Overland shows it on the
+phone, the other apps only look at the status.
+
+The routers (`overland/`, `owntracks/`, `osmand/` in `apps/api/src`) turn
+what arrived into a `PreparedBatch` of normalised records
+(`ingest/normalisedRecords.ts`: points, visits, trips, events, rejects, the
+newest battery reading); `ingest/` stores it the same way for every app
+(`ingestUpload`, §6.2).
 
 ### 6.1 Validation policy
 
-- Top level not an object with a `locations` array (or > 5000 items) →
-  `400 {"error":"Expected Overland JSON with a \"locations\" array. In Overland set Logging Mode to “All Data”."}`
-  (OwnTracks mode sends a single object — tell the user to switch).
 - An individual invalid record (bad geometry, lat/lon out of range, exactly
   0,0, unparseable timestamp, timestamp before 1990 or > now + 24 h, an event
-  action over 100 characters) → stored in `ingest_rejects` with a reason; the
-  batch is still acknowledged so the phone's queue never gets stuck on one bad
-  record. A rejected record larger than 16 kB is kept as a 2 000-character
-  preview.
+  action over 100 characters, a time without a zone) → stored in
+  `ingest_rejects` with a reason; the upload is still acknowledged so the
+  phone's queue never gets stuck on one bad record. A rejected record larger
+  than 16 kB is kept as a 2 000-character preview.
+- Nothing a phone sent keeps a credential where Trail stores it — a column
+  (a Wi-Fi name, a motion activity, an event's action), `extra` or the dead
+  letter (`withoutSecrets`): keys that hold one (`password`, `token`,
+  `accessToken` and the like, however spelled) are left out, and token-shaped
+  text is replaced — found in the text as it will be stored, so that a NUL
+  cannot hide a token; a text without one reaches the normalisers unchanged.
+  OwnTracks' message and Overland's upload pass it as a whole before anything
+  reads them; the OsmAnd format's parameters, whose text Trail keeps in
+  `extra` only, lose `id`, `deviceid`, `token` and `access_token` too. A preview of a body that is
+  no JSON is redacted whole, after JSON's `\uXXXX` escapes are decoded (as
+  `JSON.parse` would have), and only then cut.
+- A body the endpoint cannot read at all — OwnTracks text that is no JSON, a
+  message without `_type`, the OsmAnd format with more than 100 parameters —
+  is one rejected record, acknowledged likewise.
 - Every stored value is one Postgres accepts — a value it refuses would fail
-  the whole upload, and Overland resends an unacknowledged batch forever. Text
+  the whole upload, and the phone resends an unacknowledged upload. Text
   (columns, `extra`, trip locations, the dead letter; keys too) loses NUL
   characters and has lone UTF-16 surrogates replaced by U+FFFD; readings for
   `real` columns outside float4's normal range become null, trip steps beyond
@@ -470,12 +519,14 @@ Every record also carries metadata `device_id`, `wifi`, `battery_*`.
   54000), the upload is stored again in a new transaction, record by record,
   each in its own savepoint: a refused record goes to `ingest_rejects` with
   its SQLSTATE, a refused device update is retried without the newest
-  readings, and the batch is acknowledged.
+  readings, and the upload is acknowledged.
 - Log events keep an unusable geometry in `extra` instead of being rejected;
   visit dates before 1990 or more than a year ahead (iOS `distantPast` /
   `distantFuture`) become null.
-- Database unavailable → `503 {"error":"Server temporarily unavailable"}` so
-  the phone keeps the data and retries.
+- Readings an app marks as unknown become null: negative numbers (iOS), an
+  accuracy of 0 (Android apps send 0 when the platform gave none), and
+  whatever an app leaves out (OwnTracks for Android omits every reading that
+  is 0).
 
 ### 6.2 Processing (one transaction)
 
@@ -485,25 +536,31 @@ Every record also carries metadata `device_id`, `wifi`, `battery_*`.
    insert visits / trips / events (`ON CONFLICT DO NOTHING`); insert rejects.
 2. Update the device: `last_seen_at = now()`, `points_total += inserted`,
    latest position from the newest record if newer than the cached one; if
-   `current` is present and newer, use it for the cached position (not stored
-   as a point — it arrives later in a batch), battery from the newest record,
-   `live_trip` from the payload's `trip` (null when absent).
-3. Insert the `ingest_log` row.
-4. Respond `{"result":"ok"}` (plus `set` when a preset is pending, §6.3).
+   Overland's `current` is present and newer, use it for the cached position
+   (not stored as a point — it arrives later in a batch), battery from the
+   newest record, `live_trip` from Overland's `trip` (null when absent, always
+   for the other apps).
+3. Insert the `ingest_log` row, with the device's app as its `source`.
+4. Answer as the protocol expects (§6) — for Overland `{"result":"ok"}` plus
+   `set` when a preset is pending (§6.3), which is then cleared; no other app
+   takes presets, so their uploads leave a pending preset alone.
    `duplicates` = valid location records − inserted points (repeats within
-   one batch count too).
+   one upload count too).
 5. After commit and the response: publish SSE events (`ingest`, `device`;
    `person` to the people the device is shared with, §8.5), schedule
-   daily-stats recomputation for touched days, and if `stale_alerted_at` was
-   set send the "sending data again" alert (the stamp is cleared in step 2).
+   daily-stats recomputation for touched days, queue the new points' window
+   for processing (§17), and if `stale_alerted_at` was set send the "sending
+   data again" alert (the stamp is cleared in step 2).
 
 ### 6.3 Remote settings presets
 
-`devices.pending_settings` (one of `balanced | balanced-plus |
-high-resolution | battery-saver`, contracts `remoteSettings.ts`) is sent once as `set` in the
-next ok-response, then cleared and `settings_applied_at` stamped. Mapping
-(Overland value vocabularies from its README; never `send_interval: "off"` or
-`tracking_mode: "off"`):
+Overland only: `devices.pending_settings` (one of `balanced | balanced-plus |
+high-resolution | battery-saver`, contracts `remoteSettings.ts`) is sent once
+as `set` in the next ok-response, then cleared and `settings_applied_at`
+stamped. Queuing one for a device of another app is `409 conflict` (dashboard
+and `PATCH /api/v1/devices/{id}`); moving a device to another app clears a
+pending one. Mapping (Overland value vocabularies from its README; never
+`send_interval: "off"` or `tracking_mode: "off"`):
 
 - **balanced** — `send_interval "5m"`; main: `tracking_mode "standard"`,
   `visit_tracking true`, `desired_accuracy "100m"`, `activity_type "other"`,
@@ -528,6 +585,191 @@ next ok-response, then cleared and `settings_applied_at` stamped. Mapping
   `activity_type "other"`, `pause_automatically true`,
   `resume_with_geofence "500m"`, `logging_mode "all"`, `batch_size 200`,
   `min_distance "off"`, `min_time "1s"`.
+
+### 6.4 Overland
+
+`POST /api/overland` — the "Receiver Endpoint" configured in Overland
+(`overland/overlandRouter.ts`). Verified against Overland's source:
+
+- Body `{ "locations": Feature[], "current"?: Feature, "trip"?: {...} }`,
+  `Content-Type: application/json`, up to ~600 kB (1000-point batches).
+  JSON limit on this route: 5 MB.
+- The app deletes its queued batch only if the response is JSON
+  `{"result":"ok"}`. Anything else → it retries the whole batch later. A
+  response `{"error":"…"}` is shown to the user as a notification.
+- Optional `set` object in the ok-response pushes settings to the app (§6.3).
+- Timestamps: current app sends `YYYY-MM-DDTHH:MM:SSZ`; old versions sent
+  offsets without a colon (`2015-10-01T08:00:00-0700`). Accept `Z`, `±HH:MM`,
+  `±HHMM`, optional fractions (`parseIsoTimestamp`). Reject anything else, and
+  anything before 1990 (a reset clock or iOS's `distantPast`; year 0000 is not
+  even a Postgres date).
+- Invalid-value sentinels are negative numbers: `speed`, `course`,
+  `*_accuracy`, `battery_level` < 0 → null; `vertical_accuracy` < 0 → altitude
+  null too. Coordinates truncated to 7 decimals by the app.
+- `GET /api/overland` with a valid token → `{"name": "<device name>"}` (Overland
+  account-info probe; also a handy connectivity test). Other methods →
+  `405 {"error":"Method not allowed"}`.
+- The token is checked before the body is parsed, so an unauthenticated
+  request never costs a 5 MB JSON parse.
+- Top level not an object with a `locations` array (or > 5000 items) →
+  `400 {"error":"Expected Overland JSON with a \"locations\" array. In Overland set Logging Mode to “All Data”."}`
+  (Overland's OwnTracks logging mode sends a single object — tell the user to
+  switch).
+
+**Record kinds** in `locations[]` (classification by properties):
+1. `properties.action === "visit"` → **visit** (`arrival_date`,
+   `departure_date` — may be null, `horizontal_accuracy`).
+2. `properties.type === "trip"` → **trip** (`mode`, `start`, `end`,
+   `duration`, `distance`, `steps`, `stopped_automatically`,
+   `start_location`, `end_location`).
+3. other `properties.action` (e.g. `paused_location_updates`,
+   `resumed_location_updates`, `exited_pause_region`, `did_enter_background`,
+   `will_terminate`, `will_resign_active`,
+   `application_launched_with_location`) → **device event**; geometry optional.
+4. otherwise → **location** (`timestamp`, `altitude`, `speed`, `course`,
+   `horizontal_accuracy`, `vertical_accuracy`, `speed_accuracy`,
+   `course_accuracy`, `motion[]`, `battery_state`, `battery_level`, `wifi`,
+   `device_id`, `unique_id`, plus optional tracking stats `pauses`,
+   `activity`, `desired_accuracy`, `deferred`, `significant_change`,
+   `locations_in_payload`). Unknown properties go to `extra`.
+Every record also carries metadata `device_id`, `wifi`, `battery_*`.
+`properties.device_id` is informational — the token decides the device.
+
+### 6.5 OwnTracks
+
+`POST /api/owntracks` (`owntracks/owntracksRouter.ts`) — OwnTracks in HTTP
+mode, verified against the booklet (owntracks.org/booklet, *HTTP* and *JSON*)
+and the apps' sources (Android 2.5.9 and 2.6 betas, iOS 27.1.2): one JSON
+message per request with `_type`, `Content-Type: application/json`, the token
+as HTTP Basic password (Android sends Basic only when user name and password
+are both set; iOS when *Authentication* is on) or, from iOS's custom *HTTP
+Headers*, as a bearer token. The header is checked before the body is read
+(raw, never decompressed, ≤ 256 kB: a message is a few hundred bytes, a point
+of interest's photo, which the apps scale to 192 px, under 150 kB in base64).
+`X-Limit-U`/`X-Limit-D` and the query are ignored. Other methods → `405`
+(`Allow: POST`).
+
+Every accepted request is answered `200 []` (`Content-Type:
+application/json`): the apps parse the answer as a list of messages
+(friends' locations, cards, commands) and Trail sends none. Each request is
+one record of the ingest log (`records` 1; an empty body, which OwnTracks
+posts when a friend is removed, 0).
+
+| `_type` | Stored as |
+|---|---|
+| `location` | a point. `lat`, `lon` (required, checked like every position); `tst` (required, UNIX seconds, iOS a double) → `recorded_at`; `acc` → horizontal and `vac` → vertical accuracy (0 → null); `alt` → altitude, but null when it is exactly 0 without a `vac` (iOS sends `alt` with no `vac` when the altitude is invalid; Android never sends 0); `vel` (km/h, whole numbers) → speed in m/s; `cog` → course; `batt` (%) → `battery_level` 0..1; `bs` 0 unknown, 1 unplugged, 2 charging, 3 full → `battery_state`; `SSID` (Android) or `ssid` (iOS) → `wifi`; iOS's `motionactivities` (CoreMotion's words, as Overland's) → `motion`. Everything else — `t` (trigger), `tid`, `topic`, `conn`, `BSSID`/`bssid`, `m` (monitoring mode), `inregions`, `inrids`, `created_at`, `p` (pressure, kPa), `_id`, `source`, `poi`, `tag`, `image` … — goes to `extra` under its own name. |
+| `transition` | a device event at `tst`: `region_enter` or `region_leave`, then `:` and the region's `rid` (else its `desc`), so two regions in one second keep both; its position when usable, the message in `extra` |
+| `lwt` | a device event `lwt` at `tst` |
+| `waypoint`, `waypoints`, `status`, `cmd`, `card`, `beacon`, `steps`, `request`, `clear` | acknowledged, counted, not stored |
+| `dump`, `configuration` | acknowledged and never stored: they hold the password, the device token |
+| `encrypted` | `ingest_rejects` ("encrypted message: turn off encryption in OwnTracks"): the key stays on the phone |
+| anything else, no `_type`, no JSON | `ingest_rejects` |
+
+Duplicates: a point is keyed by device and time, as Overland's; a message
+sent again is stored once. OwnTracks for Android retries a message that got no
+2xx up to 100 000 times (backing off to two minutes), ahead of everything
+queued after it; OwnTracks for iOS drops a message that gets a 4xx (with an
+alert) and keeps one that gets a 5xx — hence `503` over the rate limit (§6).
+
+The setup links (contracts `owntracksSetup.ts`) are `owntracks:///config?inline=`
+and a configuration message in base64, percent-encoded (Android decodes the
+query with `URLDecoder`, which reads `+` as a space): `mode` 3 (HTTP), `url`,
+`username` (the device key), `deviceId`, `tid` (the name's initials),
+`extendedData`, the token as each app sends it — Android `auth` on with the
+token as `password` (it sends Basic only, and only with both set), iOS `auth`
+off and `httpHeaders` `Authorization: Bearer <token>` (the lines of its *HTTP
+Headers* setting go with every request) — and the tracking per profile,
+because the apps read the same keys differently:
+
+| Profile | Tracking |
+|---|---|
+| `ios` (the default) | `monitoring` 2, move: GPS on, a point every `locatorDisplacement` 30 m and at least every `locatorInterval` 60 s — what transport modes need, at a high battery cost, which the setup screen states |
+| `iosSignificant` | `monitoring` 1, significant changes: iOS's own fixes every few hundred metres or minutes, little battery; the move values stay set for the app's mode button |
+| `android` | `monitoring` 1 with `locatorPriority` `"HighAccuracy"`, `locatorInterval` 15 s, `locatorDisplacement` 25 m, `moveModeLocatorInterval` 15 s and `pegLocatorFastestIntervalToInterval`: a point every 15 to 30 s while moving |
+
+The locator priority goes by name: Android reads a number as a position in its
+own list (0 would be High Accuracy, 3 No Power), which its documentation
+numbers the other way round. Both apps import a link only once *Allow external
+configuration* is on (iOS; Android from 2.6).
+
+### 6.6 The OsmAnd format
+
+`GET`/`POST /api/osmand` (`osmand/osmandRouter.ts`) — the protocol that
+Traccar's server calls OsmAnd's (traccar.org/osmand, its
+`OsmAndProtocolDecoder`), verified against the clients' sources: Traccar
+Client 10 (traccar-client-sdk 1.1, `HttpUploader`) posts a form; the old
+Traccar Client for Android (7.x) posted the same as a query without a body;
+OsmAnd for Android (`LiveSender`) and GPSLogger (`CustomUrlManager`) fill in
+the URL templates Trail gives them; Traccar Client 9 posted the JSON of
+Transistorsoft's background-geolocation plugin. `HEAD` and other methods →
+`405` (`Allow: GET, POST`): a `GET` of this format stores what it carries.
+
+Traccar Client sends its device identifier — the token — in the form, so the
+body is read before the token is looked up: raw, ≤ 64 kB, never decompressed
+(`415`). Before the lookup it is parsed only as far as the token needs
+(`readOsmandRequest`): the parameters, the query's and then the form's, the
+first value of each name, at most 100 parts in all — read part by part, so
+whatever follows the hundredth is never looked at, however long the body; a
+JSON body is only searched for a token-shaped `"device_id"` in one pass, and
+parsed once the device is known (`osmandRequestOf`). The token is the first
+token-shaped value of: `Authorization: Bearer`, the HTTP Basic password,
+`token`, `access_token`, `id`, `deviceid`, and a JSON body's `device_id`. A
+request without a known token thus costs a bounded read, never a parse of
+everything a body can hold. Every accepted request is answered `200` with an
+empty body, all these clients look at. One request is one record (a JSON
+body: one per location).
+
+| Parameter | Stored as |
+|---|---|
+| `lat`, `lon` (or `location=lat,lon`) | the position; neither → a `heartbeat` event (Traccar Client's heartbeat without a fix) that still updates the battery |
+| `timestamp` | UNIX seconds (Traccar Client), milliseconds (OsmAnd's `{2}`) or ISO 8601 with a zone (GPSLogger's `%TIME`): numbers below 1e11 are seconds, above milliseconds, which cannot be confused from 1990 to the year 5138. Required; a time without a zone (Traccar's `yyyy-MM-dd HH:mm:ss`) is rejected, never guessed |
+| `speed` | m/s from the unit of the device's app: Traccar Client sends knots (× 0.514444), OsmAnd and GPSLogger m/s |
+| `bearing` or `heading` | course |
+| `altitude` | altitude |
+| `accuracy` | horizontal accuracy (0 → null: the old Android client sent 0 for every GPS fix); for OsmAnd also `hdop`, which is OsmAnd's accuracy in metres (`{3}`) |
+| `batt` (or OsmAnd's `batproc`) | battery level from percent |
+| `charge` | `true`/`1` charging, `false`/`0` unplugged |
+| `valid` | `false`/`0` → rejected: the app itself marks the fix invalid |
+| `alarm` | kept with the point, and an `alarm` event (Traccar Client's *Send SOS* sends `alarm=sos`) |
+| `id`, `deviceid`, `token`, `access_token` | the credential: never stored |
+| anything else (`hdop` of other apps, `sat`, `cell`, `wifi` — an access point, not a network's name —, `driverUniqueId`, `mock` …) | `extra`, as text |
+
+Traccar Client 9's JSON (`Content-Type: application/json`):
+`{ device_id, location: {…} }`, one location per request — Traccar Client 9
+leaves the plugin's `batchSync` off (checked in 9.0.0, 9.3.0, 9.5.0 and
+9.7.20); an array, which the plugin sends with it on, is read too, up to 1000
+entries. Each location has
+`timestamp` (ISO 8601), `coords` (`latitude`, `longitude`, `accuracy`, `speed`
+in m/s, `heading`, `altitude`, optional `altitude_accuracy`,
+`speed_accuracy`, `heading_accuracy`; negative values unknown), `battery`
+(`level` 0..1, `is_charging`) and `activity.type` → motion (`still`
+stationary, `on_foot`/`walking` walking, `running`, `on_bicycle` cycling,
+`in_vehicle` automotive); the rest (`is_moving`, `odometer`, `event`,
+`extras` …) goes to `extra`, but not `_`, Traccar Client's copy of the
+position as query text with the token in it. A location without `coords` is a
+`heartbeat` event. Its units are the plugin's, whatever the app.
+
+The apps' setup (contracts `traccarSetup.ts`, `osmandSetup.ts`,
+`gpsloggerSetup.ts`): Traccar Client's link `org.traccar.client://setup?url=…&id=<token>&accuracy=highest&distance=30&interval=30&angle=30&buffer=true&stop_detection=true`,
+which the app applies after asking (and its own QR scanner reads); OsmAnd's
+web address `…/api/osmand?token=<token>&lat={0}&lon={1}&timestamp={2}&accuracy={3}&altitude={4}&speed={5}&bearing={6}&batt={11}`
+(never `{12}`/`{13}`, OsmAnd Cloud's own device id and access token); GPSLogger's URL
+`…/api/osmand?lat=%LAT&lon=%LON&timestamp=%TIME&accuracy=%ACC&altitude=%ALT&speed=%SPD&bearing=%DIR&batt=%BATT&charge=%ISCHARGING`
+with the header `Authorization: Bearer <token>`, so its token stays out of the URL.
+
+### 6.7 Not yet: importing a history
+
+Trail records what phones send from now on. Importing what was recorded
+before — a Google Timeline export (Takeout's `Records.json` or the newer
+on-device `Timeline.json`), a GPX or GeoJSON file of another tracker, another
+Trail's export — is a planned follow-up: an upload in the dashboard that
+reads such a file into a device's `locations` (and visits) through the same
+normalisers, dead letter and deduplication, with the source in `extra`. It
+will be a signed-in request with the dashboard's CSRF checks, read by a
+streaming parser under size caps (the file's bytes, its records, the time it
+may take), never through the ingest endpoints: those are made for phones —
+a device token, small bodies read before the lookup — not for a file of years
+that someone chose on a computer.
 
 ## 7. Authentication
 
@@ -621,7 +863,9 @@ public, versioned one is `/api/v1` (§8.3).
 |---|---|---|
 | `GET /api/config` | — | `config.ts` `PublicConfig` |
 | `GET /api/health`, `GET /api/health/live` | — | `{status, db?, version, commit, uptimeS}`; 503 when the DB is down (`/live` never touches the DB) |
-| `POST /api/overland`, `GET /api/overland` | device token | §6 |
+| `POST /api/overland`, `GET /api/overland` | device token | §6, §6.4 |
+| `POST /api/owntracks` | device token | §6, §6.5 |
+| `GET /api/osmand`, `POST /api/osmand` | device token | §6, §6.6 |
 | `GET /api/auth/session` | cookie | `sessionResponseSchema` or 401 |
 | `POST /api/auth/start` | — | `startAuthRequest/Response` |
 | `POST /api/auth/passkey` | — | `passkeyOptionsResponse` |
@@ -639,9 +883,9 @@ public, versioned one is `/api/v1` (§8.3).
 | `PATCH/DELETE /api/me/tokens/:id`, `POST /api/me/tokens/:id/roll` | cookie | `updateApiTokenRequest` → `apiTokenResponse`; revoke 204; roll → `apiTokenWithSecretResponse` |
 | `GET/POST /api/admin/invites`, `DELETE /api/admin/invites/:id` | admin | `invite.ts` |
 | `GET /api/admin/users` | admin | `adminUser.ts` |
-| `GET/POST /api/devices` | cookie | `deviceListResponse`, `createDeviceRequest` → `deviceWithCredentialsResponse` (201) |
+| `GET/POST /api/devices` | cookie | `deviceListResponse`, `createDeviceRequest` (name, app as `source`, optional device key) → `deviceWithCredentialsResponse` (201; the credentials of that app) |
 | `GET/PATCH/DELETE /api/devices/:id` | cookie (owner) | `deviceResponse`, `updateDeviceRequest`; delete removes all its data |
-| `POST /api/devices/:id/token` | cookie (owner) | rotate → `deviceWithCredentialsResponse` |
+| `POST /api/devices/:id/token` | cookie (owner) | rotate, optionally to another app (`rotateDeviceTokenRequest` `{ source? }`; the history stays, a pending preset goes) → `deviceWithCredentialsResponse` |
 | `GET /api/devices/:id/ingest-log` | cookie (owner) | `ingestLogQuery/Response` |
 | `GET /api/tracks` | cookie | `tracksQuery/Response` |
 | `GET /api/heatmap` | cookie | `heatmapQuery/Response` |
@@ -826,7 +1070,8 @@ rest:
    refused, whatever the method (`sameOriginSessions`, §7).
 8. The CSRF guard of §7 for every request without a token (a token is no
    ambient credential).
-9. `express.json` (100 kB; `application/json` and `application/*+json`).
+9. `express.json` (100 kB; `application/json` and `application/*+json`; a
+   compressed body 415).
 10. The other routes of the registry, then a JSON 404 `not_found` for
     anything else under `/api/v1`. Errors go through the shared error handler.
 
@@ -1045,7 +1290,8 @@ The credentials of `/api/v1` for scripts, apps and agents: created in Settings
   where a scope guards part of an answer (`hasScope`: a device's position only
   with `locations:read`, `toDevicePublic(summary, auth)`), and its devices
   through `DeviceAccess`. `devices:write` renames a device, switches its alerts
-  and queues presets, never its credentials or its deletion, which stay with
+  and queues presets (Overland's only, 409 for another app), never its
+  credentials, its app or its deletion, which stay with
   the session. The dialog's templates (`apiTokenTemplates`): Read-only = every
   `:read` scope, Agent = those but `audit:read` (an agent has no business
   with who looked at the account) and `locations:write`, Full access = all.
@@ -1267,11 +1513,11 @@ rest:
    token for both.
 7. `postJsonOnly`: other methods 405 `method_not_allowed` with `Allow:
    POST`; a POST without a body 400, with another media type 415.
-8. `express.json` (1 MB, `application/json`) and `singleMessage` (a JSON
-   array is 400: the SDK's 2025 transport would take a batch of 100 calls
-   for one count of the rate limits), then the SDK, which gets the parsed
-   body and the principal (in `AuthInfo.extra` as an `McpCall`, with
-   the token's id as `token`, never the secret).
+8. `express.json` (1 MB, `application/json`, a compressed body 415) and
+   `singleMessage` (a JSON array is 400: the SDK's 2025 transport would take
+   a batch of 100 calls for one count of the rate limits), then the SDK, which
+   gets the parsed body and the principal (in `AuthInfo.extra` as an
+   `McpCall`, with the token's id as `token`, never the secret).
 9. A JSON 404 for other paths under `/mcp` and an error handler with the
    API's error body. Before the SDK every refusal uses `{ error: { code,
    message } }`; from the SDK on, JSON-RPC.
@@ -1305,7 +1551,7 @@ and answers a generic message.
 
 | Tool | Scopes | Built on |
 |---|---|---|
-| `list_devices` | `devices:read` | `loadDeviceSummaries`; `loadDeviceMode` only for a token with `locations:read` too (the mode tells when a device moves, as `GET /api/v1/devices/{id}/mode`); no position, no segment id |
+| `list_devices` | `devices:read` | `loadDeviceSummaries`, with each device's `app`; `loadDeviceMode` only for a token with `locations:read` too (the mode tells when a device moves, as `GET /api/v1/devices/{id}/mode`); no position, no segment id |
 | `get_current_location` | `locations:read` | the device cache (`loadDeviceSummaries`), `loadDeviceMode` |
 | `get_location_at` | `locations:read` | `readPoints`, twice: the last point at or before `at` and the first after it within the tolerance |
 | `get_timeline` | `locations:read` | `loadTimeline`, 500 items a call |
@@ -1707,11 +1953,14 @@ invalid value).
   Launchway's edge at its fixed address on Launchway's proxy network (§13);
   the app publishes no host port.
 - Rate limits: auth routes ~20/min/IP (all `/api/auth/*` except the session
-  probe); ingest ~300/min/token and ~30 failed tokens/10 min/IP; API tokens
+  probe); ingest ~300/min/token for Overland's batches, ~1200/min/token for
+  the one-point-per-request endpoints, and ~30 failed tokens/10 min/IP across
+  all three (§6); API tokens
   ~600/min/token and ~30 failed tokens/10 min/IP; the data of public share
   pages ~60/min/IP; everything else, `/docs` included, ~600/min/IP
   (`/api/health*` and `/api/config` excluded). `429
-  rate_limited` (ingest: Overland's `{"error"}`), IETF `RateLimit` headers.
+  rate_limited` (ingest: `{"error"}`, and `503` on `/api/owntracks`, whose iOS
+  app drops a message on a 4xx), IETF `RateLimit` headers.
   Configurable (§4). The failed-token limits are consulted after the token
   lookup and only for requests without a valid token: a scanner sharing the
   phones' or a client's address (NAT, proxy) never locks out a valid token.
@@ -1719,7 +1968,33 @@ invalid value).
 - Database statements time out after 120 s (10 s for the MCP server's reads);
   deleting a device or an account and rebuilding derived data lift that limit
   for their own transaction.
-- Body limits: 100 kB default, 1 MB on `/mcp`, 5 MB on the ingest route.
+- Body limits: 100 kB default, 1 MB on `/mcp`, 5 MB on `/api/overland`,
+  256 kB on `/api/owntracks`, 64 kB (and 100 parameters) on `/api/osmand`. No
+  request body is decompressed anywhere — the dashboard, `/api/v1`, `/mcp` and
+  the ingest endpoints answer a compressed one with `415` before reading it:
+  no client of Trail compresses a request, and a body of a few bytes would
+  otherwise cost up to its limit in work, before authentication where the
+  parser runs first. A request to `/api/osmand` is parsed only as far as its
+  token needs before the lookup (§6.6).
+- Device tokens (§6): the ingest endpoints read them from the
+  `Authorization` header (Bearer, HTTP Basic's password), and where a client
+  can send nothing else from the query (`token`, `access_token`; Traccar
+  Client's device identifier `id`/`deviceid`) or the body (Traccar Client 10's
+  form, Traccar Client 9's `device_id`). One rule decides plain HTTP for all of
+  them (`refuseCredentialsOverHttp`): once the phones are given an `https:`
+  address, an upload over plain HTTP — `req.secure` false, so also behind a
+  proxy Trail does not trust — is refused with 403 before anything is read or
+  looked up; with an `http:` address every credential is taken. Every
+  candidate is shape-checked before the lookup. A token in a URL is the price
+  of clients that cannot send headers (OsmAnd, the old Traccar Client for
+  Android): Trail's own logs redact it (below), a proxy in front of Trail may
+  log it, and docs/trackers.md says so; Traccar Client shows its identifier —
+  the token — on its main screen. What a phone sends is stored without
+  credentials, in columns, `extra` and the dead letter alike (§6.1,
+  `withoutSecrets`), OwnTracks' configuration dumps (which hold the
+  password) are never stored, and no ingest answer carries data: Overland's
+  `ok` (and `set`), OwnTracks' `[]`, the OsmAnd format's empty `200`. A token
+  works at its own app's endpoint only (403 elsewhere).
 - Map data (§17.3) is the only outbound request besides ntfy: tile bounding
   boxes posted to `PROCESSING_OVERPASS_URL` without credentials or cookies,
   without redirects, with a capped answer parsed strictly, and a User-Agent
@@ -1736,10 +2011,14 @@ invalid value).
   times and the kind of failure, `TileFetchError.reason`). The access log keeps
   method, redacted URL, status, client address and user agent only. The URL is
   redacted from its parsed parts, as the routers read them (decoded,
-  case-insensitive): device tokens in `token`/`access_token`, the one-time
-  tokens of `/link/…`, `/invite/…` and `/api/auth/link/…`, and any API token or
-  share link secret (`trlk_…`, `trls_…`) a client puts into a URL after all —
-  public links keep theirs in the fragment and a header (§8.5). Database errors are
+  case-insensitive): device tokens in `token`/`access_token`, every value of
+  an upload in the OsmAnd format (`/api/osmand?…`: Traccar Client's `id` and
+  the coordinates), the one-time tokens of `/link/…`, `/invite/…` and
+  `/api/auth/link/…`, and any device token, API token or share link secret
+  (`trl_…`, `trlk_…`, `trls_…`) a client puts into a URL after all —
+  public links keep theirs in the fragment and a header (§8.5). Request bodies
+  are never logged, not even in an error: the `body` a body parser keeps in
+  its error is dropped with the other fields below. Database errors are
   logged without query parameters or failing-row details; for an error from
   Postgres only its SQLSTATE, routine and the names of what failed (constraint,
   table, column), because its message can quote the refused value.
@@ -2090,8 +2369,9 @@ count among them, since they lead to signed-in pages.
   of 2 devices live · last upload 2 min ago", ticking); a card per device
   (`DeviceCard`, the name leading to its page): status badge
   (`deviceStatus()`: Live, Idle, Silent, No data yet, with what each means),
-  its Device ID and points in total, last upload ("2 min ago", ticking;
-  "Waiting for the first upload" with the way to its setup), the Overland trip
+  its app, Device ID and points in total, last upload ("2 min ago", ticking;
+  "Waiting for the first upload" with the app to open and the way to its
+  setup), the Overland trip
   in progress, battery, movement ("Last seen …" once it is not live), points
   today, the distance today (from the day's sums, `/api/stats/days`, not
   from its whole track; asked for every 10 s while uploads come in, until a
@@ -2101,17 +2381,30 @@ count among them, since they lead to signed-in pages.
   hour and a tick per hour with uploads, its numbers in a table); then
   **Uploads**, the feed of every upload of every device, newest first (the
   ingest logs merged with those the event stream announces while the page is
-  open, marked New); "How it works". The "Add
-  device" flow: name → big QR of `setupUrl` ("scan with the iPhone camera,
-  Overland opens with everything filled in"), "Open in Overland" button (on
-  the phone itself), manual values with copy buttons, recommended Overland
-  settings, then "Waiting for the first upload…" that turns into a success
-  state via SSE. Device page: status, overview (last upload and position,
-  movement, altitude, battery, trip, points, Device ID, token, added),
+  open, marked New); "How it works". The "Add device" flow: name and the
+  app on the phone (Overland · OwnTracks · Traccar Client · OsmAnd · GPSLogger,
+  each with its platforms and a line on what Trail gets from it; the device
+  key only for Overland and OwnTracks), then what that app needs
+  (`CredentialsView`, one component per app in `devices/setup/`): Overland's
+  QR of `overland://setup` and "Open in Overland"; OwnTracks' configuration
+  link per platform (an iPhone · Android switch, on an iPhone Move ·
+  Significant changes with what each costs in battery, "Allow external
+  configuration" first) with URL, user name, device ID, tracker ID and the
+  token — the iPhone's *HTTP Headers* line, Android's password; Traccar Client's `org.traccar.client://` link with server URL and device
+  identifier (and a word that it is the token); OsmAnd's web address and
+  GPSLogger's URL, header and method to copy — every value with a copy button,
+  the settings Trail recommends for that app (`recommendedSettings.ts`, the
+  numbers from the same contracts as the links), then "Waiting for the first
+  upload…" with what to check in that app, which turns into a success state
+  via SSE. Device page: status, overview (last upload and position, movement,
+  altitude, battery, trip, points, the app, Device ID, token, added),
   **Activity** (the same sparkline), **Travelling now** (the quick toggle for
   this device: the Me card's sets the device that reported last), remote
-  settings preset, alerts toggle, ingest log, raw points (paginated), rotate
-  token (re-shows the QR), rename, delete (type the name to confirm).
+  settings presets (Overland only), alerts toggle, ingest log, raw points
+  (paginated), Setup (the app, its connection without the token, its
+  recommended settings), rotate token — optionally to another app, which
+  keeps the history — re-showing the setup, rename, delete (type the name to
+  confirm).
 - **Insights** (`pages/insights/`) — how the signed-in person travelled,
   from the operations of §8.7, on four pages that share a heading, a
   navigation of their own (Overview · When you travel · Roads; a mode's page
@@ -2388,7 +2681,14 @@ which are merged by hand; majors wait for a person, security ones too.
 ## 16. Testing
 
 - `packages/contracts/tests` — schema and helper unit tests.
-- `apps/api/tests/unit` — pure logic (Overland normalisation, timestamps,
+- `apps/api/tests/unit` — pure logic (Overland normalisation; OwnTracks' and
+  the OsmAnd format's on messages built from the apps' sources
+  (`tests/support/trackerSamples.ts` names the source of each), every field
+  and unit — km/h, knots, m/s, percent, seconds against milliseconds, ISO
+  with and without a zone — heartbeats, alarms, region events, ignored and
+  rejected messages; the tokens of every scheme; the scrub of credentials and
+  the redaction of URLs and error bodies; the setup links, decoded as the apps
+  decode them; timestamps,
   RDP, distance, tile math and the heatmap's levels, whole-cell windows and
   the levels a device's totals call for rebuilding (those below the highest,
   level 18 included),
@@ -2441,7 +2741,16 @@ which are merged by hand; majors wait for a person, security ones too.
 - `apps/api/tests/integration` — supertest against the real app and the
   `trail_test` database (`TEST_DATABASE_URL`), including passkey ceremonies
   with a software authenticator (ES256, `none` attestation, CBOR via
-  `@levischuck/tiny-cbor`). `migrationUpgrade.test.ts` builds the schema of the
+  `@levischuck/tiny-cbor`). `owntracksIngest.test.ts` and
+  `osmandIngest.test.ts` upload every app's real format (OwnTracks for Android
+  and iOS, Traccar Client 10, 9 and the old Android client, OsmAnd, GPSLogger):
+  the points, the device's position and battery, the ingest log with its
+  `source`, heat cells, events, the dead letter while the upload is still
+  acknowledged, resends stored once, 401 for missing and unknown tokens,
+  Basic over plain HTTP refused, a token at another app's endpoint, body and
+  parameter limits, the per-device limits (503 for OwnTracks, 429 for the
+  OsmAnd format), one failed-token budget for every endpoint, and that no
+  token or coordinate reaches the log or the database. `migrationUpgrade.test.ts` builds the schema of the
   first release, records data with it, applies every later migration and
   requires every row unchanged — deployed databases are only ever migrated.
   The v1 tests run the routes with a session and, through a fake
@@ -2591,7 +2900,10 @@ which are merged by hand; majors wait for a person, security ones too.
   third-party requests refused. The Overland fixture is shifted to today.
   Scenarios: sign-up and refusal, device setup and the live upload (on the
   Devices page: status, points, battery, trip, activity and the upload feed;
-  on People the Me card), ingest log and raw points, remote settings, token
+  on People the Me card), setting up OwnTracks (its links for both platforms
+  and both ways an iPhone tracks decoded, the first uploads with Android's
+  Basic and the iPhone's bearer header over the suite's http:// address, the
+  device page), ingest log and raw points, remote settings, token
   rotation, History and its scrubber,
   the heatmap (its squares on the map, found by their colours in a
   screenshot of the canvas, its key and the busiest places), sign-in by email,

@@ -18,7 +18,8 @@ export function PublicLayout() {
           <Outlet />
         </div>
         <p className="public-layout__footer">
-          Your location history, on your own server. Recorded with Overland for iOS.
+          Your location history, on your own server. Recorded with Overland, OwnTracks, Traccar
+          Client, OsmAnd or GPSLogger.
         </p>
       </main>
     </div>

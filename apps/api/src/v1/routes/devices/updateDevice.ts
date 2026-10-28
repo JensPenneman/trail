@@ -15,11 +15,12 @@ export const updateDevice = defineRoute(
     operationId: "updateDevice",
     summary: "Change a device",
     description:
-      "Renames the device, switches its silence alerts or queues a settings preset for Overland. Its credentials are out of reach: no token can replace a device's access token or delete a device, which takes a signed-in session. The answer has the device and its settings after the change; the device's position only for a credential with `locations:read`.",
+      "Renames the device, switches its silence alerts or queues a settings preset for Overland. A preset is for a device that records with Overland only: for another app the answer is 409. Its credentials and its app are out of reach: no token can replace a device's access token, move it to another app or delete it, which takes a signed-in session. The answer has the device and its settings after the change; the device's position only for a credential with `locations:read`.",
     tags: ["Devices"],
     auth: { scopes: ["devices:write"] },
     request: { params: deviceParamsSchema, body: deviceUpdateSchema },
     responses: { 200: deviceUpdateResponseSchema },
+    errors: [409],
   },
   async ({ ctx, auth, params, body }) => {
     const device = await changeDevice(ctx, auth, params.id, body);

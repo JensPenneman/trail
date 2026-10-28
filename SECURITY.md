@@ -22,13 +22,14 @@ There is no bug bounty.
 
 ## Scope
 
-- the application: the API, the Overland ingest endpoint, authentication and
-  the web app;
+- the application: the API, the ingest endpoints (Overland, OwnTracks, the
+  OsmAnd format), authentication and the web app;
 - the container image `ghcr.io/jenspenneman/trail`;
 - the deployment configuration in `deploy/` and the CI/CD workflows in
   `.github/`.
 
-Third-party software and services (Overland, Cloudflare, GitHub, Docker,
+Third-party software and services (the tracking apps — Overland, OwnTracks,
+Traccar Client, OsmAnd, GPSLogger —, Cloudflare, GitHub, Docker,
 PostgreSQL, the map tile provider) are out of scope; report issues there to
 the respective vendor. A self-hosted server's own configuration (router, DNS,
 the host and its deployment platform) is the operator's responsibility.
@@ -87,9 +88,11 @@ yourself: location data is personal data.
   (31 days, 500 items, one message per request); calls are logged without
   their arguments or results.
 - **Requests**: origin checks against cross-site requests, input validation of
-  every request with zod, body size limits, rate limits per IP, per device
-  token and per API token (and for refused tokens per IP); client addresses
-  and HTTPS are taken from forwarded headers of the stack's own proxies only.
+  every request with zod, body size limits, no compressed body decompressed
+  (415), rate limits per IP, per device token and per API token (and for
+  refused tokens per IP); once the phones have an `https://` address, no device
+  token is taken over plain HTTP; client addresses and HTTPS are taken from
+  forwarded headers of the stack's own proxies only.
 - **Headers**: a strict Content Security Policy without inline scripts or
   styles, HSTS on HTTPS, `frame-ancestors 'none'`, COOP/CORP, a
   Permissions-Policy that denies everything except passkeys.

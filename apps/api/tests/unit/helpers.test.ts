@@ -128,6 +128,46 @@ describe("logging safety", () => {
     expect(serialized).not.toContain("51.0543");
   });
 
+  it("drops every value of an upload in the OsmAnd format from the URL, and device tokens anywhere", () => {
+    const token = `trl_${"A".repeat(43)}`;
+    expect(redactUrl(`/api/osmand?id=${token}&lat=51.0543&lon=3.7174&timestamp=1730000000`)).toBe(
+      "/api/osmand?id=[redacted]&lat=[redacted]&lon=[redacted]&timestamp=[redacted]",
+    );
+    expect(redactUrl("/API/OsmAnd/?lat=51.05")).toBe("/API/OsmAnd/?lat=[redacted]");
+    expect(redactUrl("/api/%6Fsmand?lat=51.05")).toBe("/api/%6Fsmand?lat=[redacted]");
+    // A mistyped template's path, below the endpoint or with doubled slashes, ends in a 404 at warn.
+    expect(redactUrl("/api/osmand/more?lat=51.05")).toBe("/api/osmand/more?lat=[redacted]");
+    expect(redactUrl("/api//osmand?lat=51.05&lon=3.71")).toBe(
+      "/api//osmand?lat=[redacted]&lon=[redacted]",
+    );
+    expect(redactUrl("//api/OSMAND//x/?timestamp=1")).toBe("//api/OSMAND//x/?timestamp=[redacted]");
+    // Whatever follows the endpoint's name in its segment: a 404 all the same.
+    for (const path of ["/api/osmand;x", "/api/osmand%2Fx", "/api/osmand%00", "/api/osmandx"]) {
+      expect(redactUrl(`${path}?lat=51.05&lon=3.71`), path).toBe(
+        `${path}?lat=[redacted]&lon=[redacted]`,
+      );
+    }
+    expect(redactUrl("/api/overland?lat=51.05")).toBe("/api/overland?lat=51.05");
+    // A device token is found by its shape wherever a client puts it.
+    expect(redactUrl(`/api/owntracks?u=jens&id=${token}`)).toBe(
+      "/api/owntracks?u=jens&id=[redacted]",
+    );
+    expect(redactUrl(`/api/whatever/${token}`)).toBe("/api/whatever/[redacted]");
+    expect(redactUrl(`/api/overland?next=Bearer%20${token}`)).toBe("/api/overland?next=[redacted]");
+  });
+
+  it("never logs a request body a body parser kept in its error", () => {
+    const parseError = Object.assign(new SyntaxError("Unexpected token"), {
+      status: 400,
+      type: "entity.parse.failed",
+      body: "id=trl_secret&lat=51.0543",
+    });
+    const serialized = JSON.stringify(serializeError(parseError));
+    expect(serialized).toContain("entity.parse.failed");
+    expect(serialized).not.toContain("51.0543");
+    expect(serialized).not.toContain("trl_secret");
+  });
+
   it("never logs query parameters or failing rows of database errors", () => {
     const cause = Object.assign(new Error("null value violates not-null constraint"), {
       code: "23502",

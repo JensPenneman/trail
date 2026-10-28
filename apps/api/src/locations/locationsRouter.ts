@@ -12,7 +12,7 @@ import { recordDashboardAccess } from "../dataAccess/recordDashboardAccess";
 import { findOwnedDevice } from "../devices/findOwnedDevice";
 import { publishDeviceLater } from "../devices/publishDevice";
 import { parseBody, parseQuery } from "../http/parseInput";
-import { batteryStateOf } from "../overland/overlandValues";
+import { batteryStateOf } from "../ingest/ingestValues";
 import { deleteLocationRange } from "./deleteLocationRange";
 import { readPoints } from "./readPoints";
 

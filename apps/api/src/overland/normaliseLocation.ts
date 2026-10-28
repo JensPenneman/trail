@@ -1,8 +1,6 @@
-import { type BatteryReading, batteryReading } from "./batteryReading";
-import { type Normalised, rejected } from "./normalised";
+import { batteryReading } from "../ingest/batteryReading";
 import {
   asRecord,
-  type BatteryState,
   batteryLevelOf,
   batteryStateOf,
   extraOf,
@@ -10,28 +8,11 @@ import {
   realOrNull,
   stringArrayOf,
   wifiOf,
-} from "./overlandValues";
+} from "../ingest/ingestValues";
+import { type Normalised, rejected } from "../ingest/normalised";
+import type { NormalisedLocation } from "../ingest/normalisedRecords";
+import { recordTime } from "../ingest/recordTime";
 import { parsePointGeometry } from "./parsePointGeometry";
-import { recordTime } from "./recordTime";
-
-export interface NormalisedLocation {
-  recordedAt: Date;
-  lat: number;
-  lon: number;
-  altitude: number | null;
-  speed: number | null;
-  course: number | null;
-  horizontalAccuracy: number | null;
-  verticalAccuracy: number | null;
-  speedAccuracy: number | null;
-  courseAccuracy: number | null;
-  motion: string[];
-  batteryLevel: number | null;
-  batteryState: BatteryState | null;
-  wifi: string | null;
-  extra: Record<string, unknown> | null;
-  battery: BatteryReading | null;
-}
 
 /** Properties stored in their own columns; the rest (tracking stats, unique_id, …) goes to `extra`. */
 const mapped = new Set([

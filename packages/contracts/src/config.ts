@@ -27,8 +27,10 @@ export const publicConfigSchema = z.object({
   builtAt: z.iso.datetime().nullable(),
   /** Canonical origin of the dashboard, e.g. `https://trail.jenspenneman.com`. */
   publicUrl: z.url(),
-  /** Full URL devices post to, e.g. `https://trail.jenspenneman.com/api/overland`. */
+  /** Overland's receiver endpoint, e.g. `https://trail.jenspenneman.com/api/overland`. */
   ingestUrl: z.url(),
+  /** Every ingest endpoint, per protocol (docs/architecture.md §6). */
+  ingestUrls: z.object({ overland: z.url(), owntracks: z.url(), osmand: z.url() }),
   /** MapLibre style JSON URLs per colour scheme, and satellite imagery when configured. */
   mapStyles: z.object({
     light: z.url(),

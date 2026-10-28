@@ -1,3 +1,5 @@
+import { ownEntry } from "../lib/ownEntry";
+
 /*
  * AAGUID → passkey provider, for the passkey list. A small curated subset of
  * the community list (github.com/passkeydeveloper/passkey-authenticator-aaguids);
@@ -26,5 +28,5 @@ const providers: Readonly<Record<string, string>> = {
 };
 
 export function providerForAaguid(aaguid: string): string | null {
-  return providers[aaguid.trim().toLowerCase()] ?? null;
+  return ownEntry(providers, aaguid.trim().toLowerCase()) ?? null;
 }

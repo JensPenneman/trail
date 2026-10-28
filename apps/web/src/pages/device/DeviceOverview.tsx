@@ -1,4 +1,5 @@
 import type { DeviceSummary } from "@trail/contracts/device";
+import { deviceAppInfo } from "@trail/contracts/deviceApp";
 import { useId } from "react";
 import { describeMovement } from "../../devices/describeMovement";
 import { tripModeLabel } from "../../devices/tripModeLabel";
@@ -83,9 +84,16 @@ export function DeviceOverview({ device, live }: DeviceOverviewProps) {
           </dd>
         </div>
         <div>
-          <dt>Device ID</dt>
-          <dd className="mono">{device.deviceKey}</dd>
+          <dt>App</dt>
+          <dd>{deviceAppInfo[device.source].name}</dd>
         </div>
+        {/* The other apps have no use for the device key. */}
+        {device.source === "overland" || device.source === "owntracks" ? (
+          <div>
+            <dt>Device ID</dt>
+            <dd className="mono">{device.deviceKey}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Access token</dt>
           <dd>

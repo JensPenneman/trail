@@ -1,4 +1,5 @@
 import type { DeviceWithCredentialsResponse } from "@trail/contracts/device";
+import { deviceAppInfo } from "@trail/contracts/deviceApp";
 import { useState } from "react";
 import { CredentialsView } from "../../devices/CredentialsView";
 import { UploadWait } from "../../devices/UploadWait";
@@ -14,8 +15,9 @@ interface AddDeviceDialogProps {
 }
 
 /**
- * Adding a phone: name it, then show the one-time credentials (QR code first)
- * and wait until its first upload arrives.
+ * Adding a phone: name it and choose its app, then show the one-time
+ * credentials for that app (a setup code first, where the app takes one) and
+ * wait until its first upload arrives.
  */
 export function AddDeviceDialog({ open, onClose }: AddDeviceDialogProps) {
   const [created, setCreated] = useState<DeviceWithCredentialsResponse | null>(null);
@@ -33,8 +35,8 @@ export function AddDeviceDialog({ open, onClose }: AddDeviceDialogProps) {
       title={created === null ? "Add a device" : `Set up ${created.device.name}`}
       description={
         created === null
-          ? "A phone running Overland for iOS. It gets its own access token."
-          : "Connect Overland on the phone to Trail."
+          ? "A phone with a tracking app. It gets its own access token."
+          : `Connect ${deviceAppInfo[created.device.source].name} on the phone to Trail.`
       }
       size={created === null ? "s" : "l"}
     >
@@ -49,6 +51,7 @@ export function AddDeviceDialog({ open, onClose }: AddDeviceDialogProps) {
               <UploadWait
                 deviceId={created.device.id}
                 deviceName={created.device.name}
+                app={created.device.source}
                 after={created.device.lastSeenAt}
                 reason="new-device"
               />

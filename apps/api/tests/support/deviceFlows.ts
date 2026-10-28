@@ -3,14 +3,15 @@ import {
   type DeviceWithCredentialsResponse,
   deviceWithCredentialsResponseSchema,
 } from "@trail/contracts/device";
+import type { DeviceApp } from "@trail/contracts/deviceApp";
 import request from "supertest";
 import type { Agent } from "./authFlows";
 import { testOrigin } from "./testEnvironment";
 
-/** Registers a device for the agent's user and returns its credentials. */
+/** Registers a device for the agent's user (Overland's unless `source` says otherwise) and returns its credentials. */
 export async function createDevice(
   agent: Agent,
-  body: { name: string; deviceKey?: string },
+  body: { name: string; deviceKey?: string; source?: DeviceApp },
 ): Promise<DeviceWithCredentialsResponse> {
   const response = await agent
     .post("/api/devices")
@@ -27,4 +28,25 @@ export function postOverland(app: Server, token: string, payload: unknown) {
     .set("Authorization", `Bearer ${token}`)
     .set("User-Agent", "Overland/2025.9 CFNetwork Darwin")
     .send(payload as object);
+}
+
+/** HTTP Basic credentials as OwnTracks sends them: any user name, the token as password. */
+export const basicAuth = (username: string, password: string): string =>
+  `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
+
+/**
+ * Posts one OwnTracks message as the Android app does, with HTTP Basic, over
+ * HTTPS as Trail's trusted proxy reports it (the tests trust loopback) — what
+ * a Trail whose phones were given an https:// address requires.
+ */
+export function postOwnTracks(app: Server, token: string, message: unknown) {
+  return request(app)
+    .post("/api/owntracks")
+    .set("Authorization", basicAuth("pixel-8-k3f9", token))
+    .set("X-Forwarded-Proto", "https")
+    .set("X-Limit-U", "pixel-8-k3f9")
+    .set("X-Limit-D", "pixel-8-k3f9")
+    .set("User-Agent", "Owntracks-Android/gms/420509000")
+    .set("Content-Type", "application/json; charset=utf-8")
+    .send(JSON.stringify(message));
 }

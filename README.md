@@ -1,8 +1,10 @@
 # Trail
 
-Self-hosted location history for the iOS GPS logger
-[Overland](https://github.com/aaronpk/Overland-iOS). Phones post their GPS
-batches to Trail; people sign in with passkeys to see where their devices are,
+Self-hosted location history for iPhones and Android phones. A tracking app on
+the phone — [Overland](https://github.com/aaronpk/Overland-iOS),
+[OwnTracks](https://owntracks.org), [Traccar Client](https://www.traccar.org/client/),
+[OsmAnd](https://osmand.net) or [GPSLogger](https://gpslogger.app) — posts its
+points to Trail; people sign in with passkeys to see where their devices are,
 where they have been, and that data keeps arriving.
 
 It runs as a small Docker Compose stack on a home server, deployed by
@@ -12,10 +14,13 @@ every pull request gets a preview deployment of its own.
 
 ## Features
 
-- **Overland receiver**: the batch protocol with duplicate-safe storage, a
-  reject log for invalid points (a bad point never blocks a phone's queue),
-  visits, trips and app events, and four remote settings presets sent back
-  to the phone.
+- **Five tracking apps**: Overland's batch protocol (with visits, trips, app
+  events and four remote settings presets sent back to the phone), OwnTracks
+  in HTTP mode and Traccar's OsmAnd format (Traccar Client, OsmAnd, GPSLogger),
+  each with duplicate-safe storage and a reject log for invalid points (a bad
+  point never blocks a phone's queue). Adding a device shows exactly what its
+  app needs: a setup code or link where the app takes one, every value with a
+  copy button, and recommended settings.
 - **Passkeys only**: no passwords. Several people per server, invites,
   one-time links to add a passkey on another device or address.
 - **People, the home page**: one map with three views — **Live** (where
@@ -86,7 +91,7 @@ every pull request gets a preview deployment of its own.
 
 ```mermaid
 flowchart LR
-  phone["iPhone<br/>Overland"]
+  phone["Phones<br/>Overland, OwnTracks, Traccar Client, OsmAnd, GPSLogger"]
   browser["Browser<br/>passkeys"]
   ci["GitHub Actions<br/>tests, image build"]
   ghcr["GHCR<br/>ghcr.io/jenspenneman/trail"]
@@ -115,7 +120,7 @@ flowchart LR
 
 Previews run the same stack as separate projects with their own host name
 and database, without `backup`. The API (Express 5) serves the
-Overland endpoint, the JSON API and the built single-page app from one
+ingest endpoints, the JSON API and the built single-page app from one
 container on port 8080; PostgreSQL is reachable only on an internal network.
 The specification, including the data model, the HTTP API and the security
 model, is [docs/architecture.md](docs/architecture.md).
@@ -270,10 +275,18 @@ among them, once CI is green; majors, Biome and TypeScript are merged by hand
 
 ## Phones
 
-Install Overland from the App Store, add a device in Trail and scan its QR
-code with the iPhone camera; Overland opens with everything filled in. Allow
-location access "Always" and keep Logging Mode on "All Data". Recommended
-settings and troubleshooting: [docs/overland.md](docs/overland.md).
+Install a tracking app, add a device in Trail and choose the app:
+
+- **iPhone**: Overland (the most detail for the least battery, with visits,
+  trips and settings sent from Trail), OwnTracks or Traccar Client.
+- **Android**: OwnTracks, Traccar Client, GPSLogger, or OsmAnd's online
+  tracking.
+
+Overland, OwnTracks and Traccar Client set themselves up from the QR code or
+link Trail shows; OsmAnd and GPSLogger take one URL to paste. The comparison,
+every app's setup, recommended settings and troubleshooting:
+[docs/trackers.md](docs/trackers.md); Overland's own guide:
+[docs/overland.md](docs/overland.md).
 
 ## Public API and MCP
 
@@ -313,11 +326,11 @@ How the API is built and how to add an operation: [docs/architecture.md
 ## Repository layout
 
 ```
-apps/api/            Express API, Overland ingest, CLI (Node LTS, TypeScript)
+apps/api/            Express API, ingest of the tracking apps, CLI (Node LTS, TypeScript)
 apps/web/            React single-page app, served by the API in production
 packages/contracts/  zod schemas and types of the HTTP API
 deploy/              compose stack for Launchway, .env example, local run
-docs/                architecture (the specification), API and sharing guides, operations, Overland, transport modes
+docs/                architecture (the specification), API and sharing guides, operations, phone setup, transport modes
 scripts/             development, build, hook and release scripts
 tests/e2e/           Playwright end-to-end tests
 .devcontainer/       development container (scripts/devc.sh)

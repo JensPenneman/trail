@@ -1,8 +1,9 @@
-import { asRecord, finiteOrNull } from "./overlandValues";
+import { type CoordinatesResult, checkCoordinates } from "../ingest/checkCoordinates";
+import { asRecord, finiteOrNull } from "../ingest/ingestValues";
 
-export type GeometryResult = { ok: true; lat: number; lon: number } | { ok: false; reason: string };
+export type GeometryResult = CoordinatesResult;
 
-/** A GeoJSON Point with a plausible position; (0, 0) is a GPS failure, not a place. */
+/** A GeoJSON Point with a plausible position. */
 export function parsePointGeometry(value: unknown): GeometryResult {
   if (value === undefined || value === null) return { ok: false, reason: "missing geometry" };
   const geometry = asRecord(value);
@@ -14,12 +15,5 @@ export function parsePointGeometry(value: unknown): GeometryResult {
   if (!Array.isArray(coordinates) || coordinates.length < 2) {
     return { ok: false, reason: "invalid coordinates" };
   }
-  const lon = finiteOrNull(coordinates[0]);
-  const lat = finiteOrNull(coordinates[1]);
-  if (lon === null || lat === null) return { ok: false, reason: "invalid coordinates" };
-  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-    return { ok: false, reason: "coordinates out of range" };
-  }
-  if (lat === 0 && lon === 0) return { ok: false, reason: "coordinates are exactly 0,0" };
-  return { ok: true, lat, lon };
+  return checkCoordinates(finiteOrNull(coordinates[1]), finiteOrNull(coordinates[0]));
 }

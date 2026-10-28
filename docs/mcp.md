@@ -87,7 +87,7 @@ every scope in its row. Anything that can yield coordinates needs
 
 | Tool | Scopes | What it answers |
 |---|---|---|
-| `list_devices` | `devices:read` | The devices: id, name, status (`live`, `idle`, `stale`, `never`), last upload, last position time, battery, a trip running in Overland, and how it travels now for a token with `locations:read` too. No positions. |
+| `list_devices` | `devices:read` | The devices: id, name, the app that records it (`overland`, `owntracks`, `traccar`, `osmand`, `gpslogger`), status (`live`, `idle`, `stale`, `never`), last upload, last position time, battery, a trip running in Overland, and how it travels now for a token with `locations:read` too. No positions. |
 | `get_current_location({ device? })` | `locations:read` | The newest known position (latitude, longitude, accuracy), its age, speed, motion, mode and battery. |
 | `get_location_at({ at, device?, toleranceMinutes? })` | `locations:read` | The recorded position nearest to `at`, within `toleranceMinutes` (30 by default, at most 1440), and how far from `at` it lies. |
 | `get_timeline({ from, to, device? })` | `locations:read` | Stops (place, arrival, departure, duration) and moves (mode, whether you set it, confidence, distance, duration, average speed), oldest first. The main tool for an agent that plans. |
@@ -145,7 +145,7 @@ text only.
 |---|---|
 | Range per call | 31 days (local days: the night the clocks go back has 25 hours) |
 | Items per answer | 500; an answer that hit it says `truncated: true` — ask again with a narrower range |
-| Request body | 1 MB, one JSON-RPC message (no batches) |
+| Request body | 1 MB, one JSON-RPC message (no batches), not compressed (`415` otherwise) |
 | Database time per statement | 10 s, in a read-only transaction (`get_people` reads through the sharing code on the server's general limit); a call that needs more answers "This took too long" |
 | Requests | the API's: 600 a minute per client address and 600 a minute per token, shared with `/api/v1`, and 30 refused tokens in 10 minutes per address |
 

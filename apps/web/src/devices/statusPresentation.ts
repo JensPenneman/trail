@@ -24,7 +24,7 @@ export function statusPresentation(
       return {
         label: "Idle",
         icon: "pause",
-        description: `Uploaded within the last ${thresholds.staleHours} hours. Normal while the phone stands still: Overland pauses to save battery.`,
+        description: `Uploaded within the last ${thresholds.staleHours} hours. Normal while the phone stands still: tracking apps pause to save battery.`,
       };
     case "stale":
       return {

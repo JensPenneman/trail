@@ -2,7 +2,7 @@ import { doublePrecision, jsonb, pgTable, primaryKey, text, uuid } from "drizzle
 import { timestamptz } from "../columns/timestamptz";
 import { devices } from "./devices";
 
-/** Overland app/tracking log actions ("Include tracking stats"); geometry is optional. */
+/** What the apps report besides points: Overland's log actions ("Include tracking stats"), OwnTracks' region transitions, heartbeats; geometry is optional. */
 export const deviceEvents = pgTable(
   "device_events",
   {

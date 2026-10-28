@@ -1,3 +1,4 @@
+import { gzipSync } from "node:zlib";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import { apiErrorSchema } from "@trail/contracts/errors";
 import { sessionListResponseSchema } from "@trail/contracts/session";
@@ -150,6 +151,17 @@ describe("CSRF protection", () => {
       .send({ name: "x", padding: "y".repeat(120_000) })
       .expect(413);
     expect(errorCode(response.body)).toBe("payload_too_large");
+  });
+
+  it("decompresses no dashboard body: browsers never compress one", async () => {
+    const response = await laptop
+      .post("/api/devices")
+      .set("Origin", testOrigin)
+      .set("Content-Type", "application/json")
+      .set("Content-Encoding", "gzip")
+      .send(gzipSync(JSON.stringify({ name: "x" })))
+      .expect(415);
+    expect(errorCode(response.body)).toBe("bad_request");
   });
 });
 

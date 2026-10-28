@@ -1,6 +1,6 @@
 import type { StoredLiveTrip } from "../db/schema/devices";
-import { asRecord, nonNegativeOrNull, textOrNull } from "./overlandValues";
-import { recordTime } from "./recordTime";
+import { asRecord, nonNegativeOrNull, textOrNull } from "../ingest/ingestValues";
+import { recordTime } from "../ingest/recordTime";
 
 /** The payload's top-level `trip` (a trip in progress on the phone), or null when absent or unusable. */
 export function normaliseLiveTrip(value: unknown, receivedAt: Date): StoredLiveTrip | null {

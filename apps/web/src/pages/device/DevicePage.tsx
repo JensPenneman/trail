@@ -22,6 +22,7 @@ import { ActivitySection } from "./ActivitySection";
 import { AlertsSection } from "./AlertsSection";
 import { DeleteDeviceDialog } from "./DeleteDeviceDialog";
 import { DeviceOverview } from "./DeviceOverview";
+import { DeviceSetupSection } from "./DeviceSetupSection";
 import { IngestLogSection } from "./IngestLogSection";
 import { RawPointsSection } from "./RawPointsSection";
 import { RemoteSettingsSection } from "./RemoteSettingsSection";
@@ -127,10 +128,14 @@ export function DevicePage() {
         colorSlot={colors.slot(current.id)}
       />
       {current.lastSeenAt === null ? null : <TravelModeSection device={current} />}
-      <RemoteSettingsSection key={current.pendingSettings ?? "none"} device={current} />
+      {/* Settings presets travel in Overland's answers; no other app takes them. */}
+      {current.source === "overland" ? (
+        <RemoteSettingsSection key={current.pendingSettings ?? "none"} device={current} />
+      ) : null}
       <AlertsSection device={current} />
-      <IngestLogSection deviceId={current.id} />
+      <IngestLogSection deviceId={current.id} app={current.source} />
       <RawPointsSection deviceId={current.id} lastSeenAt={current.lastSeenAt} />
+      <DeviceSetupSection device={current} />
 
       <section className="section" aria-labelledby="device-danger">
         <h2 className="section__title" id="device-danger">
@@ -141,8 +146,8 @@ export function DevicePage() {
             <div>
               <p className="device-page__danger-title">New access token</p>
               <p className="muted">
-                For a lost token or a phone that changed hands. The current one (…
-                {current.tokenHint}) stops working.
+                For a lost token, a phone that changed hands or another app on the phone. The
+                current one (…{current.tokenHint}) stops working.
               </p>
             </div>
             <Button icon="refresh" onClick={() => setDialog("rotate")}>
@@ -167,6 +172,7 @@ export function DevicePage() {
         onClose={() => setDialog(null)}
       />
       <RotateTokenDialog
+        key={current.source}
         device={current}
         open={dialog === "rotate"}
         onClose={() => setDialog(null)}

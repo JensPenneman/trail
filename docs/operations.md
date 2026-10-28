@@ -11,14 +11,15 @@ deploys `deploy/compose.yaml` from this repository in two ways:
   change can be tried before it is merged ([Previews](#previews)).
 
 The architecture behind it is in [architecture.md](architecture.md) (sections
-3 and 13); phone setup is in [overland.md](overland.md). Commands run on the
+3 and 13); phone setup is in [trackers.md](trackers.md) (Overland's own guide:
+[overland.md](overland.md)). Commands run on the
 Launchway server unless noted.
 
 ## What runs
 
 | Service | Image | Production | Preview |
 |---|---|---|---|
-| `app` | `ghcr.io/jenspenneman/trail:sha-<commit>` | API, Overland ingest and the dashboard on port 8080 | the same, for the pull request's head commit |
+| `app` | `ghcr.io/jenspenneman/trail:sha-<commit>` | API, the phones' ingest and the dashboard on port 8080 | the same, for the pull request's head commit |
 | `db` | `postgres:18-alpine` | the database, in the volume `TRAIL_DB_VOLUME` | the database, in a volume of the preview's own project |
 | `backup` | `postgres:18-alpine` | daily `pg_dump` into `BACKUP_DIR` (profile `production`) | not started |
 
@@ -127,9 +128,9 @@ On a server without Trail:
 5. Open `https://trail.jenspenneman.com`, enter the address from
    `SIGNUP_ALLOWLIST` and create a passkey. The first account is the admin;
    others join through the allowlist or an invite (Settings > Accounts).
-6. Add a phone: Devices > Add device, scan the QR code with the iPhone's
-   Camera app; Overland opens with endpoint, token and device ID filled in
-   ([overland.md](overland.md)).
+6. Add a phone: Devices > Add device, choose its app and follow what Trail
+   shows — for Overland, OwnTracks and Traccar Client a QR code that sets the
+   app up ([trackers.md](trackers.md)).
 
 ```sh
 curl -i https://trail.jenspenneman.com/api/health      # 200: app and database are up
@@ -214,7 +215,7 @@ forks get no preview, and CI never publishes their images.
   ```
 - **Sign-in.** Passkeys are bound to a host name, so every preview needs its
   own account: sign up with an address from `SIGNUP_ALLOWLIST`.
-- **Phones.** Overland can post to a preview like to production (Devices > Add
+- **Phones.** A phone can post to a preview like to production (Devices > Add
   device in the preview), for example with a test device. Do not move a real
   device there: its points would end up in a database that disappears.
 - **No backups.** The `backup` service runs only with the `production`
@@ -548,6 +549,8 @@ Day-to-day development uses `npm run dev` instead (README).
 | `app` keeps restarting; its log says "Invalid configuration" | A value is invalid; the log names it. Fix it in Launchway and redeploy. |
 | `/api/health` answers 503 | The database is down: `docker logs launchway-trail-db-1`. |
 | Requests all share one client address, or the session cookie is not `Secure` | `TRUST_PROXY` does not name Launchway's edge address. |
+| `app` will not start: "TRUST_PROXY: PUBLIC_URL is https://, but Trail serves plain HTTP and trusts no proxy …" | Trail serves plain HTTP, so only a trusted proxy can say a phone's upload came over HTTPS; without one every upload would be refused. Set `TRUST_PROXY` to the proxy that terminates TLS (Launchway's edge, `10.210.0.2`, is the compose default). |
+| Phones get 403 "Uploads need HTTPS" while the dashboard works; the log says "a proxy that TRUST_PROXY does not trust says they came over HTTPS" | `TRUST_PROXY` names another proxy than the one in front of Trail: the log line shows the address it came from. |
 | An API token with an IP allowlist is refused (401) from an allowed address | The same: without the edge in `TRUST_PROXY` every request seems to come from the edge. Settings › API tokens shows the address a token was last used from. |
 | "No passkey for this address" | Passkeys are per host name: a preview needs its own account; a new production address needs [a new passkey](#changing-the-public-address). |
 | `backup` restarts with "pg_dump failed" | The database is not reachable; the log line before it shows why. |

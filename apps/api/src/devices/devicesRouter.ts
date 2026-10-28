@@ -4,6 +4,7 @@ import {
   type DeviceListResponse,
   type DeviceResponse,
   type DeviceWithCredentialsResponse,
+  rotateDeviceTokenRequestSchema,
   updateDeviceRequestSchema,
 } from "@trail/contracts/device";
 import { type IngestLogResponse, ingestLogQuerySchema } from "@trail/contracts/ingestLog";
@@ -30,7 +31,8 @@ import { publishDevice } from "./publishDevice";
 
 /**
  * `/api/devices*` — the user's trackers, their credentials and upload audit log.
- * Whatever creates, replaces or destroys a device token needs the browser session.
+ * Whatever creates, replaces or destroys a device token — or moves a device to
+ * another app, which takes a new token — needs the browser session.
  */
 export function devicesRouter(ctx: AppContext): Router {
   const router = express.Router();
@@ -48,17 +50,23 @@ export function devicesRouter(ctx: AppContext): Router {
     const created = await createDevice(db, {
       userId: user.id,
       name: request.name,
+      source: request.source,
       deviceKey: request.deviceKey,
     });
     const device = await loadDeviceSummary(db, auth, created.id);
     publishDevice(ctx, user.id, device);
-    ctx.logger.info({ deviceId: created.id, userId: user.id }, "device created");
+    ctx.logger.info(
+      { deviceId: created.id, userId: user.id, app: request.source },
+      "device created",
+    );
     const body: DeviceWithCredentialsResponse = {
       device,
       credentials: deviceCredentials({
-        ingestUrl: config.ingestUrl,
+        app: request.source,
+        ingestUrls: config.ingestUrls,
         accessToken: created.token,
         deviceKey: created.deviceKey,
+        deviceName: device.name,
       }),
     };
     res.status(201).json(body);
@@ -114,21 +122,39 @@ export function devicesRouter(ctx: AppContext): Router {
 
   router.post("/api/devices/:id/token", async (req, res) => {
     const auth = requireSession(req);
+    const request = req.body === undefined ? {} : parseBody(rotateDeviceTokenRequestSchema, req);
     const existing = await findOwnedDevice(db, auth, req.params.id);
+    const app = request.source ?? existing.source;
     const token = generateDeviceToken();
     await db
       .update(devices)
-      .set({ tokenHash: token.hash, tokenHint: token.hint, updatedAt: new Date() })
+      .set({
+        tokenHash: token.hash,
+        tokenHint: token.hint,
+        source: app,
+        // A preset waits for Overland's next upload; another app would never take it.
+        ...(app === "overland" ? {} : { pendingSettings: null }),
+        updatedAt: new Date(),
+      })
       .where(eq(devices.id, existing.id));
     const device = await loadDeviceSummary(db, auth, existing.id);
     publishDevice(ctx, auth.user.id, device);
-    ctx.logger.info({ deviceId: existing.id }, "device token rotated");
+    ctx.logger.info(
+      {
+        deviceId: existing.id,
+        app,
+        ...(app === existing.source ? {} : { previousApp: existing.source }),
+      },
+      "device token rotated",
+    );
     const body: DeviceWithCredentialsResponse = {
       device,
       credentials: deviceCredentials({
-        ingestUrl: config.ingestUrl,
+        app,
+        ingestUrls: config.ingestUrls,
         accessToken: token.token,
         deviceKey: existing.deviceKey,
+        deviceName: existing.name,
       }),
     };
     res.json(body);
@@ -147,6 +173,7 @@ export function devicesRouter(ctx: AppContext): Router {
       entries: rows.map((row) => ({
         id: String(row.id),
         receivedAt: row.receivedAt.toISOString(),
+        source: row.source,
         records: row.records,
         locations: row.locations,
         duplicates: row.duplicates,

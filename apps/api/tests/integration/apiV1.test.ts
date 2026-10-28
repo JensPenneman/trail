@@ -1,3 +1,4 @@
+import { deflateSync } from "node:zlib";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import { deviceResponseSchema } from "@trail/contracts/device";
 import {
@@ -426,6 +427,14 @@ describe("v1 plumbing", () => {
       .send({ padding: "x".repeat(120_000) })
       .expect(413);
     expect(errorOf(response.body).code).toBe("payload_too_large");
+    const compressed = await request(withTokens.app)
+      .post("/api/v1/nope")
+      .set("Authorization", bearer(secret))
+      .set("Content-Type", "application/json")
+      .set("Content-Encoding", "deflate")
+      .send(deflateSync(JSON.stringify({ name: "x" })))
+      .expect(415);
+    expect(errorOf(compressed.body).code).toBe("bad_request");
   });
 });
 

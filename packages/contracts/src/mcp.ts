@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { batteryStates } from "./device";
+import { deviceApps } from "./deviceApp";
 import { sharePrecisions } from "./share";
 import { transportModes } from "./transport";
 
@@ -162,6 +163,11 @@ export const listDevicesOutputSchema = z.object({
       z.object({
         id: id("The device's id: pass it as `device` to the other tools."),
         name: deviceRef.shape.name,
+        app: z
+          .enum(deviceApps)
+          .describe(
+            "The app that records it: overland, owntracks, traccar (Traccar Client), osmand or gpslogger. Visits and trips come from Overland only.",
+          ),
         status: z
           .enum(["live", "idle", "stale", "never"])
           .describe(

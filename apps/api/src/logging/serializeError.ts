@@ -2,7 +2,9 @@ import { DrizzleQueryError } from "drizzle-orm";
 
 /* Postgres puts the failing row into `detail`/`where`, and Drizzle puts every
  * query parameter into its error message — both can hold coordinates or other
- * personal data, which must never reach the logs above debug level. */
+ * personal data, which must never reach the logs above debug level. A body
+ * parser's error carries the request `body`: an upload's coordinates, and in
+ * the OsmAnd format's form the device token. */
 const droppedKeys = new Set([
   "detail",
   "where",
@@ -11,6 +13,7 @@ const droppedKeys = new Set([
   "query",
   "cause",
   "raw",
+  "body",
 ]);
 
 const stackFrames = (stack: string | undefined): string =>

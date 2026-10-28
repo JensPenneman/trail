@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { apiPaths } from "@trail/contracts/apiPaths";
 import type { z } from "zod";
 import { defaultAppVersion, defaultCommit } from "./buildDefaults";
 import type { Config } from "./config";
@@ -62,7 +63,13 @@ export function loadConfig(
     publicUrl: env.PUBLIC_URL,
     allowedOrigins,
     mcpAllowedOrigins: [...new Set([...allowedOrigins, ...env.MCP_ALLOWED_ORIGINS])],
-    ingestUrl: `${ingestBase}/api/overland`,
+    ingestUrl: `${ingestBase}${apiPaths.overland}`,
+    ingestUrls: {
+      overland: `${ingestBase}${apiPaths.overland}`,
+      owntracks: `${ingestBase}${apiPaths.owntracks}`,
+      osmand: `${ingestBase}${apiPaths.osmand}`,
+    },
+    ingestHttpsOnly: new URL(ingestBase).protocol === "https:",
     signupAllowlist: env.SIGNUP_ALLOWLIST,
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
     sessionTtlDays: env.SESSION_TTL_DAYS,
@@ -90,6 +97,7 @@ export function loadConfig(
       authPerMinute: env.RATE_LIMIT_AUTH_PER_MINUTE,
       apiPerMinute: env.RATE_LIMIT_API_PER_MINUTE,
       ingestPerMinute: env.RATE_LIMIT_INGEST_PER_MINUTE,
+      ingestSinglePerMinute: env.RATE_LIMIT_INGEST_SINGLE_PER_MINUTE,
       ingestFailedPer10Minutes: env.RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES,
       tokenPerMinute: env.RATE_LIMIT_TOKEN_PER_MINUTE,
       tokenFailedPer10Minutes: env.RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES,

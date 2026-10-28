@@ -1,4 +1,4 @@
-import { asRecord } from "./overlandValues";
+import { asRecord } from "../ingest/ingestValues";
 
 /** Upper bound on records per upload; Overland's largest batch setting is 1000. */
 const maxRecords = 5000;

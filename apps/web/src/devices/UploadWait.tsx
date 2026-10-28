@@ -1,3 +1,4 @@
+import type { DeviceApp } from "@trail/contracts/deviceApp";
 import { useEffect, useState } from "react";
 import { useFormatter } from "../format/useFormatter";
 import { useDevice } from "../queries/useDevice";
@@ -9,6 +10,8 @@ import "./UploadWait.css";
 interface UploadWaitProps {
   deviceId: string;
   deviceName: string;
+  /** The app on the phone, for what to check there. */
+  app: DeviceApp;
   /**
    * The device's `lastSeenAt` when the wait began (null for a new device): any
    * later upload counts. Comparing server times avoids trusting this clock.
@@ -18,12 +21,26 @@ interface UploadWaitProps {
   reason: "new-device" | "new-token";
 }
 
+/** What to check in each app while Trail waits, and how to send a point at once. */
+const nudges: Readonly<Record<DeviceApp, string>> = {
+  overland:
+    "In Overland, check that tracking is on. Batches go out every few minutes; “Send now” in the app sends one right away.",
+  owntracks:
+    "In OwnTracks, check that the mode is HTTP and monitoring is not Quiet or Manual. It sends every point as it records it; the publish button on its map sends one right away.",
+  traccar:
+    "In Traccar Client, turn Continuous tracking on. It sends every point as it records it; “Send location” sends one right away.",
+  osmand:
+    "In OsmAnd, start recording a trip with Online tracking on: it sends points only while it records.",
+  gpslogger:
+    "In GPSLogger, start logging with Log to custom URL on. It sends every point it logs, after the logging interval.",
+};
+
 /**
  * "Waiting for the first upload…" that turns into a success message the
  * moment the device's next upload is announced over the event stream (with
  * polling as a fallback when the stream is down).
  */
-export function UploadWait({ deviceId, deviceName, after, reason }: UploadWaitProps) {
+export function UploadWait({ deviceId, deviceName, app, after, reason }: UploadWaitProps) {
   const format = useFormatter();
   const announce = useAnnounce();
   const [settled, setSettled] = useState(false);
@@ -72,10 +89,7 @@ export function UploadWait({ deviceId, deviceName, after, reason }: UploadWaitPr
             ? "Waiting for the first upload…"
             : "Waiting for an upload with the new token…"}
         </p>
-        <p className="upload-wait__text">
-          In Overland, check that tracking is on. Batches go out every few minutes; “Send now” in
-          the app sends one right away.
-        </p>
+        <p className="upload-wait__text">{nudges[app]}</p>
       </div>
     </div>
   );
