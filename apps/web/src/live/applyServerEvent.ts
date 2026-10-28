@@ -1,7 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { ServerEvent } from "@trail/contracts/events";
 import type { TracksResponse } from "@trail/contracts/track";
-import type { SessionUser } from "@trail/contracts/user";
 import { queryKeys } from "../api/queryKeys";
 import { removeDeviceFromCache } from "../devices/removeDeviceFromCache";
 import { upsertDeviceInCache } from "../devices/upsertDeviceInCache";
@@ -12,13 +11,10 @@ import { appendTrackPoints } from "./appendTrackPoints";
 import { applyDaysEvent } from "./applyDaysEvent";
 import type { LiveStore } from "./createLiveStore";
 import { isRangeParams } from "./isRangeParams";
-import { staleDaySlices } from "./staleDaySlices";
+import { staleProcessed } from "./staleProcessed";
 
 /** The server's default `maxAccuracy` for `/api/tracks`, which the web app never overrides. */
 const trackMaxAccuracyM = 200;
-
-/** What a finished processing window changes: its levels, its stops and moves, the period sums. */
-const processed = new Set(["level-tracks", "timeline", "insights"]);
 
 /** Folds one server event into the query caches and the live store. */
 export function applyServerEvent(
@@ -68,14 +64,10 @@ export function applyServerEvent(
       removeDeviceFromCache(queryClient, event.deviceId);
       return;
     case "segments":
-      // Processing finished a window: its levels, stops and moves, the current mode and the
-      // statistics of Insights changed — of that device, in that window only.
-      void staleDaySlices(queryClient, processed, {
-        deviceId: event.deviceId,
-        spans: [{ from: Date.parse(event.from), to: Date.parse(event.to) }],
-        timezone: queryClient.getQueryData<SessionUser | null>(queryKeys.session)?.timezone ?? null,
-      });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.deviceMode(event.deviceId) });
+      // Processing finished a window, or a mode was corrected: its levels, stops and moves, the
+      // current mode, the statistics of Insights and the digests' stamps changed — of that
+      // device, in that window only.
+      staleProcessed(queryClient, event);
       return;
     case "session-ended":
       // The route guard takes the person to the sign-in page, with a way back here.

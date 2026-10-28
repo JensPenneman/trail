@@ -8,9 +8,10 @@ import { applyServerEvent } from "../src/live/applyServerEvent";
 import { createLiveStore } from "../src/live/createLiveStore";
 import { DevicePage } from "../src/pages/device/DevicePage";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
-import { automatic, car, ids, levelTracks, timeline, user } from "./support/fixtures";
+import { localDayRange } from "../src/time/localDayRange";
+import { automatic, car, dayStamp, ids, levelTracks, timeline, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
-import { renderPage } from "./support/renderPage";
+import { createTestQueryClient, renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
 
 vi.mock("../src/map/LazyTrailMap", async () => ({
@@ -82,6 +83,71 @@ describe("the Transport level on History", () => {
     expect(api.calls.filter((call) => call.method === "PUT").at(-1)?.body).toEqual({
       mode: "train",
     });
+  });
+
+  it("shows a past day's confirmed mode at once, though the calendar's digest had settled the day", async () => {
+    // Yesterday: its timeline came with the stamps the month's digest has, so the day is settled.
+    const date = new Intl.DateTimeFormat("en-CA", { timeZone: user.timezone }).format(
+      Date.now() - 86_400_000,
+    );
+    const day = localDayRange(date, date, user.timezone);
+    const [stop, unsure] = timeline(day.from);
+    if (stop === undefined || unsure === undefined) throw new Error("no timeline in the fixture");
+    let train = unsure;
+    // The processed stamp moves with the correction; the recorded data does not.
+    let processed = "processed-1";
+    const api = mockApi({
+      ...standardRoutes(),
+      "GET /api/stats/days": () => ({
+        status: 200,
+        body: {
+          timezone: user.timezone,
+          days: [
+            {
+              date,
+              deviceId: ids.phone,
+              points: 52,
+              distanceM: 31_240,
+              firstAt: stop.startedAt,
+              lastAt: train.endedAt,
+              stamp: { raw: "raw-1", processed },
+            },
+          ],
+        },
+      }),
+      "GET /api/v1/segments": () => ({
+        status: 200,
+        body: {
+          items: [stop, train],
+          nextCursor: null,
+          pending: false,
+          stamps: [dayStamp(ids.phone, date, "raw-1", processed)],
+        },
+      }),
+      [`PUT /api/v1/segments/${ids.train}/mode`]: () => {
+        train = { ...train, modeUser: "train", needsReview: false };
+        processed = "processed-2";
+        return { status: 200, body: { segment: train } };
+      },
+    });
+    const queryClient = createTestQueryClient();
+    // The zone the stamps' days are in, as the session probe leaves it.
+    queryClient.setQueryData(queryKeys.session, user);
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: `/?view=history&date=${date}`, user, queryClient });
+    await person.click(await screen.findByRole("button", { name: /Details of the train/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Train" });
+    await person.click(within(dialog).getByRole("button", { name: "Yes, train" }));
+
+    expect(await within(dialog).findByText("set by you")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Was this a train ride?")).not.toBeInTheDocument();
+    const list = screen.getByRole("region", { name: "Timeline" });
+    expect(within(list).queryByText("unsure")).not.toBeInTheDocument();
+    // The day was asked for again after the correction, the digest too.
+    const put = api.calls.findIndex((call) => call.method === "PUT");
+    const after = api.calls.slice(put + 1).map((call) => call.path);
+    expect(after).toContain("/api/v1/segments");
+    expect(after).toContain("/api/stats/days");
   });
 });
 

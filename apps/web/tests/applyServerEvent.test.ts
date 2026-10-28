@@ -346,8 +346,15 @@ describe("applyServerEvent for the copy and the digest", () => {
     expect(newer.getQueryState(monthKey)?.isInvalidated).toBe(false);
   });
 
-  it("marks stale only the levels, timelines and Insights a processing window touched", () => {
+  it("marks stale only the levels, timelines, Insights and digests a processing window touched", () => {
     const { queryClient, store } = withDigest();
+    // The digests' processed stamps moved without a days event: the month's may not vouch any more.
+    const september = queryKeys.days({ from: "2026-09-01", to: "2026-09-30", deviceIds: null });
+    const carDigest = queryKeys.days({
+      from: "2026-10-01",
+      to: "2026-10-31",
+      deviceIds: [ids.car],
+    });
     const inside = queryKeys.levelTracks({
       ...day("2026-10-26"),
       deviceIds: null,
@@ -374,7 +381,18 @@ describe("applyServerEvent for the copy and the digest", () => {
       mode: null,
     });
     const mode = queryKeys.deviceMode(ids.phone);
-    for (const key of [inside, before, carOnly, timeline, rawTracks, recent, lastMonth, mode]) {
+    for (const key of [
+      inside,
+      before,
+      carOnly,
+      timeline,
+      rawTracks,
+      recent,
+      lastMonth,
+      mode,
+      september,
+      carDigest,
+    ]) {
       queryClient.setQueryData(key, {});
     }
     applyServerEvent(queryClient, store, {
@@ -388,9 +406,12 @@ describe("applyServerEvent for the copy and the digest", () => {
     expect(invalidated(timeline)).toBe(true);
     expect(invalidated(recent)).toBe(true);
     expect(invalidated(mode)).toBe(true);
+    expect(invalidated(monthKey)).toBe(true);
     expect(invalidated(before)).toBe(false);
     expect(invalidated(carOnly)).toBe(false);
     expect(invalidated(rawTracks)).toBe(false);
     expect(invalidated(lastMonth)).toBe(false);
+    expect(invalidated(september)).toBe(false);
+    expect(invalidated(carDigest)).toBe(false);
   });
 });
