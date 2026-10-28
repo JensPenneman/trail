@@ -2723,6 +2723,16 @@ SHA; per-job least-privilege permissions (`packages`, `id-token`,
 minute).
 The weekly run only rebuilds the image: no tests run on a schedule.
 
+**Map data** (`.github/workflows/mapdata.yml`; first version, from task 0 of
+`docs/design/self-hosted-maps.md`): on dispatch with a `region` input (one
+job per region of `scripts/mapdata/regions.json`), and on Monaco for pull
+requests that change it or `scripts/mapdata/`, it runs
+`scripts/mapdata/build.sh` on `ubuntu-24.04` with Ubuntu's osmium-tool and
+Planetiler 0.10.2 (its jar pinned by SHA-256) on Temurin 25.0.5+8, with
+Planetiler's sources in a monthly Actions cache, and keeps the files of each
+region as artefacts of the run for 14 days. Read-only token; nothing is
+published yet (GHCR comes with the design's task 2).
+
 **Branch rules of `main`.** The ruleset "main protection" requires a pull
 request (merge commits only) and, up to date with `main`, the status checks
 `launchway/quality`, `launchway/integration` and `launchway/e2e` with the
