@@ -6,7 +6,8 @@
 # its build provenance attestation (GHCR has no referrers API, so the
 # attestation is the version tagged sha256-<hex of the build's digest>).
 # --also deletes a build a rebuild left untagged (publish.sh's `previous`),
-# if nothing tags it any more. Versions of other regions are never touched.
+# if no tag but an attestation's names it any more. A version that carries
+# another region's tag is never touched.
 #
 # .github/workflows/mapdata.yml runs it after publishing, with the job's
 # token (packages: write; the repository needs the Admin role in the
@@ -83,7 +84,8 @@ plan=$(jq --arg region "$region" --argjson keep "$keep" --argjson also "$also_js
   | ([$builds[] | select((tags | map(select(test("^sha256-") | not)) | length) == (regional | length))]) as $own
   | ([$own | to_entries[] | select(.key >= $keep and (.value.moving | not)) | .value
       | { id, name, why: "older than the newest \($keep)" }]
-     + [$versions[] | select(.name as $name | $also | index($name)) | select((regional | length) == 0)
+     + [$versions[] | select(.name as $name | $also | index($name))
+      | select([tags[] | select(test("^sha256-") | not)] | length == 0)
       | { id, name, why: "replaced by a rebuild" }]) as $old
   | $old + [$old[] as $build | $versions[] | select(tags | index(attestation($build.name)))
       | { id, name, why: "the attestation of \($build.name)" }]
