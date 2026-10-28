@@ -1,12 +1,12 @@
 import { type ReactNode, useId } from "react";
-import { Link, useLocation } from "react-router";
+import { Link } from "react-router";
 import { Icon } from "../ui/Icon";
 import type { IconName } from "../ui/iconPaths";
 import { Spinner } from "../ui/Spinner";
 import { Switch } from "../ui/Switch";
-import { useSettingsShell } from "./SettingsShellContext";
 import { SettingsTile } from "./SettingsTile";
 import type { SettingsTone } from "./settingsTree";
+import { useSettingsLink } from "./useSettingsLink";
 
 interface RowLook {
   label: string;
@@ -71,12 +71,33 @@ interface PlainRow extends RowLook {
 
 export type SettingsRowProps = LinkRow | ExternalRow | ActionRow | SwitchRow | SelectRow | PlainRow;
 
-/** The path of an address, without its query and part. */
-const pathOf = (to: string): string => to.split(/[?#]/, 1)[0] ?? to;
-
-/** Where a row was opened from, so the page's back control can go back instead of on. */
-export interface SettingsLocationState {
-  settingsFrom: string;
+/** A row that opens a page of Settings: named by its label, described by the rest. */
+function LinkRowBody({
+  to,
+  current,
+  labelId,
+  describedBy,
+  children,
+}: {
+  to: string;
+  current: boolean;
+  labelId: string;
+  describedBy: string | undefined;
+  children: ReactNode;
+}) {
+  const link = useSettingsLink(to);
+  return (
+    <Link
+      to={to}
+      {...link}
+      className="settings-row__body settings-row__body--interactive"
+      aria-labelledby={labelId}
+      aria-describedby={describedBy}
+      aria-current={current ? "page" : undefined}
+    >
+      {children}
+    </Link>
+  );
 }
 
 /**
@@ -89,8 +110,6 @@ export function SettingsRow(props: SettingsRowProps) {
   const labelId = `${id}-label`;
   const detailId = `${id}-detail`;
   const valueId = `${id}-value`;
-  const { pathname } = useLocation();
-  const { returnedFrom } = useSettingsShell();
   const value = "value" in props ? props.value : undefined;
   const describedBy =
     [
@@ -127,29 +146,22 @@ export function SettingsRow(props: SettingsRowProps) {
     );
 
   switch (props.kind) {
-    case "link": {
-      const state: SettingsLocationState = { settingsFrom: pathname };
+    case "link":
       return (
         <li className="settings-row">
-          <Link
+          <LinkRowBody
             to={props.to}
-            state={state}
-            className="settings-row__body settings-row__body--interactive"
-            aria-labelledby={labelId}
-            aria-describedby={describedBy}
-            aria-current={props.current === true ? "page" : undefined}
-            // Coming back from this row's page, focus returns to it (see useRouteFocus), whatever
-            // the page's query or part (`?days=7`, `#access-log`).
-            data-route-focus={returnedFrom === pathOf(props.to) ? "" : undefined}
+            current={props.current === true}
+            labelId={labelId}
+            describedBy={describedBy}
           >
             {tile}
             {text}
             {shownValue}
             <Icon name="chevronRight" className="settings-row__chevron" />
-          </Link>
+          </LinkRowBody>
         </li>
       );
-    }
     case "external":
       return (
         <li className="settings-row">
