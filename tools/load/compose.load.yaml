@@ -63,3 +63,10 @@ services:
       - /tmp
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+
+volumes:
+  # Always the project's own volume, removed with `down --volumes`: composed by
+  # hand beside production's .env (TRAIL_DB_VOLUME=trail-db), the load stack
+  # must still never mount the production database.
+  trail-db:
+    name: ${COMPOSE_PROJECT_NAME}_trail-db
