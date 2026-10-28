@@ -652,9 +652,12 @@ function oneStay(
       : 0;
   const single = stop.first === previous.last + 2;
   const hidden = unseen && !(single && wander <= config.pauseRadiusM);
+  // One fix may jump however far (GPS indoors); an excursion of more than one, only within
+  // `pauseRadiusM`: without speed readings, a ride to a shop 400 m away is no wander.
   const shortWander =
     apart <= config.mergeRadiusM &&
     awayS <= config.mergeMoveMaxS &&
+    (single || wander <= config.pauseRadiusM) &&
     !hidden &&
     !walkedBetween(points, paces, previous.last, stop.first, config);
   if (!((pause && apart <= config.pauseRadiusM) || shortWander)) return false;

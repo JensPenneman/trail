@@ -3142,12 +3142,19 @@ none holds travel. A stop is:
 Overlapping stops are one, and so are adjacent ones unless the phone jumped
 more than 300 m between them. Stops at one place on both sides of a recording
 pause (300 m), or within 80 m with at most five minutes of wandering seen
-between them (from the first point away to the last, however far a fix
-jumped, and without a recording gap of more than five minutes — one fix
-within 300 m between two at the place hides nothing) and no real walk (as
+between them (from the first point away to the last; one fix however far it
+jumped, more of them within 300 m — without speed readings, a ride to a shop
+400 m away is no wander — and without a recording gap of more than five
+minutes — one fix within 300 m between two at the place hides nothing) and
+no real walk (as
 above, or CoreMotion on foot for half a minute or more by the readings
 themselves; one "walking" reading as the fix jumps is none), are one stop —
-unless joined they would hold travel. No stop holds
+unless joined they would hold travel. A limit, and the way on: one fix far
+off between two points minutes apart joins them however far it lies, so a
+four-minute drive 1.2 km away with a point every three minutes and one fix
+there disappears into the stop; a single far fix should be tolerated only
+where the round trip it implies would be implausible (faster than 10 m/s).
+No stop holds
 travel: where two
 minutes or more of its points lie farther than 300 m from its centroid, it is
 cut there, the parts that still last 180 s stay stops, and so do the stays

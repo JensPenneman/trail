@@ -627,6 +627,51 @@ describe("detectStops", () => {
     expect(across(600, 400)).toEqual(["stop", "move", "stop"]);
   });
 
+  for (const intervalS of [2, 60]) {
+    it(`keeps a ride to a shop 400 m away apart from home, without speed readings, a point every ${intervalS} s`, () => {
+      // Half an hour at home, by bike to the shop and back with 40 s there, half an hour more.
+      const before = stay([0, -2000], {
+        startT: morning,
+        durationS: 1800,
+        intervalS,
+        motion: [],
+      });
+      const quiet = { intervalS, reportSpeed: false, motion: [] } as const;
+      const there = travel(
+        [
+          [0, -2000],
+          [400, -2000],
+        ],
+        { ...quiet, startT: lastT(before) + intervalS, speedMs: 5, seed: 3 },
+      );
+      const shop = stay([400, -2000], {
+        startT: lastT(there) + intervalS,
+        durationS: 40,
+        intervalS: Math.min(intervalS, 20),
+        motion: [],
+        seed: 4,
+      });
+      const back = travel(
+        [
+          [400, -2000],
+          [0, -2000],
+        ],
+        { ...quiet, startT: lastT(shop) + intervalS, speedMs: 5, seed: 5 },
+      );
+      const after = stay([0, -2000], {
+        startT: lastT(back) + intervalS,
+        durationS: 1800,
+        intervalS,
+        motion: [],
+        seed: 6,
+      });
+      const kinds = spansOf(concat(before, there, shop, back, after)).map((span) => span.kind);
+      expect(kinds[0]).toBe("stop");
+      expect(kinds.at(-1)).toBe("stop");
+      expect(kinds).toContain("move");
+    });
+  }
+
   it("does not merge stays across a jump of more than 300 m", () => {
     // Ten minutes without a point between two places: within 300 m iOS resumed outside its
     // geofence (one stop), farther the phone was carried there (a move in between).
