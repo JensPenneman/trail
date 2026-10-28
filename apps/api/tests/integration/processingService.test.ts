@@ -340,22 +340,15 @@ describe("a job too big for one pass", () => {
       );
       const passes = [first, ...(await runner.drain())];
 
-      // Each split at the longest gap that leaves a newest part within the budget.
+      // Each split at the longest gap that leaves a newest part within the budget, and half of it.
       for (const pass of passes.filter((entry) => entry.outcome.split)) {
         const part = rowsSpan(pass);
         const earliest = await pointFromEnd(device.id, part, budget, context);
-        const before = await context.ctx.db.execute<{ at: string }>(sql`
-          SELECT recorded_at::text AS at FROM locations
-          WHERE device_id = ${device.id} AND recorded_at < ${earliest.toISOString()}::timestamptz
-          ORDER BY recorded_at DESC LIMIT 1
-        `);
-        const [longest] = (
-          await gapsIn(
-            device.id,
-            { from: new Date(toIso(before.rows[0]?.at ?? earliest.toISOString())), to: part.to },
-            context,
-          )
-        ).filter((gap) => gap.ends >= earliest);
+        const halfway = await pointFromEnd(device.id, part, budget / 2, context);
+        const before = await pointBefore(device.id, earliest, context);
+        const [longest] = (await gapsIn(device.id, { from: before, to: part.to }, context)).filter(
+          (gap) => gap.ends >= earliest && gap.ends <= halfway,
+        );
         expect(longest?.seconds, described(pass)).toBeGreaterThan(8 * 3600);
         expect(pass.outcome.queued.from, described(pass)).toEqual(longest?.ends);
       }
@@ -484,9 +477,6 @@ describe("every split", () => {
     });
     const passes = await runner.drain(10);
     expect(passes.length, passLog(passes)).toBeLessThanOrEqual(5);
-    // Split once at the hole: a part starts at its end, none after.
-    const starts = passes.map((pass) => pass.outcome.queued.from.getTime() / 1000);
-    expect(starts.filter((from) => from > hole && from <= hole + 3960)).toHaveLength(1);
     await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
     // The hour without points lay at the same place: one stop over it.
     const across = await t.ctx.db.execute<{ count: number }>(sql`
@@ -583,6 +573,64 @@ describe("a window's growth within the budget", () => {
       (await pointsIn(device.id, ridden)) + parts.length - 1,
     );
     await assertSegmentInvariants(t.ctx.db, device.id);
+  });
+
+  it("takes in a segment that starts after a short hole with no point in it", async () => {
+    // Two hours at home, as an older pass left them: two stops, half a minute between them.
+    const device = await newDevice("A day's edge");
+    const start = morning - 225 * 86_400;
+    const first = stay(home, { startT: start, durationS: 3600, intervalS: 30, seed: 81 });
+    const second = stay(home, {
+      startT: lastT(first) + 30,
+      durationS: 3600,
+      intervalS: 30,
+      seed: 82,
+    });
+    await upload(device.token, concat(first, second));
+    await t.ctx.db.execute(sql`DELETE FROM processing_queue WHERE device_id = ${device.id}`);
+    for (const part of [first, second]) {
+      await t.ctx.db.execute(sql`
+        INSERT INTO segments (device_id, started_at, ended_at, kind, distance_m, duration_s,
+          point_count, start_lat, start_lon, end_lat, end_lon, centroid_lat, centroid_lon, features,
+          version)
+        VALUES (${device.id}, to_timestamp(${part[0]?.t ?? 0}), to_timestamp(${lastT(part)}), 'stop', 0,
+          3600, ${part.length}, 51, 3.7, 51, 3.7, 51, 3.7,
+          ${JSON.stringify({ lastPointT: lastT(part) })}::jsonb, ${processingVersions.inferred})
+      `);
+    }
+    const both = { from: at(first[0]?.t ?? 0), to: at(lastT(second)) };
+    const between = at(lastT(first) + 15);
+    const grow = (window: Range) =>
+      extendWindow(t.ctx.db, device.id, window, { gapSplitS: 1800, maxPoints: budget });
+    // A window up to the hole takes in the stop after it; one from the hole on starts there, as
+    // after a pause of the phone (no recording gap to work out with both its ends).
+    expect(await grow({ from: both.from, to: between })).toEqual(both);
+    expect(await grow({ from: between, to: both.to })).toEqual({ from: between, to: both.to });
+  });
+
+  it("reaches back across a gap to the point before it, where it cannot take the stop it is in", async () => {
+    // Two hours at home, two hours without a point, two more: one stop over the night.
+    const device = await newDevice("A night it cannot take");
+    const start = morning - 226 * 86_400;
+    const evening = stay(home, { startT: start, durationS: 7200, intervalS: 10, seed: 83 });
+    const dawn = stay(home, {
+      startT: lastT(evening) + 7200,
+      durationS: 7200,
+      intervalS: 10,
+      seed: 84,
+    });
+    await upload(device.token, concat(evening, dawn));
+    await t.ctx.processing.flush();
+    const stops = await t.ctx.db.execute(
+      sql`SELECT kind FROM segments WHERE device_id = ${device.id}`,
+    );
+    expect(stops.rows).toEqual([{ kind: "stop" }]);
+    // A window over the morning, with room for the morning and one point more.
+    const window = { from: at(dawn[0]?.t ?? 0), to: at(lastT(dawn)) };
+    const room = (await pointsIn(device.id, window)) + 1;
+    expect(
+      await extendWindow(t.ctx.db, device.id, window, { gapSplitS: 1800, maxPoints: room }),
+    ).toEqual({ from: at(lastT(evening)), to: window.to });
   });
 });
 

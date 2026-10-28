@@ -46,7 +46,10 @@ async function lastPointUntil(db: Executor, deviceId: string, from: Date, to: Da
  * segment before the gap (or, with none yet, to the point before it), so that
  * the gap is worked out with both its ends: a gap the phone lay still through
  * is a stop, a visit's stop lasts until its departure. A shorter hole is no
- * such gap: the window starts where it did.
+ * such gap: the window starts where it did. At its end, though, a segment
+ * that starts after a short hole with no point in it (a day's edge between
+ * two points, as an older pass left it) touches the window like one sharing
+ * its edge, so the window that comes before the hole works the seam out.
  *
  * Within the budget of a pass: the growth is taken while the window holds at
  * most `maxPoints` points — forward first (the segment the window's end runs
@@ -55,8 +58,10 @@ async function lastPointUntil(db: Executor, deviceId: string, from: Date, to: Da
  * window is not cut again at another place with every upload. A segment that
  * does not fit stays as it is, cut where the queued range starts or ends:
  * at a point, so that its part and the window meet, and its part counts its
- * own and keeps its mode (`persistWindow`). A stale multi-day stop at an edge
- * thus costs a pass at most the budget, never two days of it.
+ * own and keeps its mode (`persistWindow`); the window still reaches back to
+ * the point before a recording gap that precedes its first point. A stale
+ * multi-day stop at an edge thus costs a pass at most the budget, never two
+ * days of it.
  */
 export async function extendWindow(
   db: Executor,
@@ -132,11 +137,13 @@ export async function extendWindow(
         .map((at) => at.getTime()),
     ),
   ].map((ms) => new Date(ms));
+  // Forward: the segment under the end, else one beyond a short hole without a point in it.
+  const reaching = underTo ?? (await nextTouching(db, deviceId, to, gapSplitS));
   const forward =
-    underTo === null
+    reaching === null
       ? null
-      : underTo <= capTo
-        ? underTo
+      : reaching <= capTo
+        ? reaching
         : await lastPointUntil(db, deviceId, to, capTo).then((at) =>
             at !== null && at > to ? at : null,
           );
@@ -152,7 +159,9 @@ export async function extendWindow(
       min(recorded_at) FILTER (WHERE recorded_at >= ${from.toISOString()}::timestamptz
         AND recorded_at <= ${to.toISOString()}::timestamptz)::text AS first_queued,
       max(recorded_at) FILTER (WHERE recorded_at >= ${from.toISOString()}::timestamptz
-        AND recorded_at <= ${to.toISOString()}::timestamptz)::text AS last_queued
+        AND recorded_at <= ${to.toISOString()}::timestamptz)::text AS last_queued,
+      max(recorded_at) FILTER (WHERE recorded_at < ${from.toISOString()}::timestamptz)::text
+        AS before_queued
       ${sql.join(
         backward.map(
           (at, index) =>
@@ -178,13 +187,46 @@ export async function extendWindow(
     end = forward;
   }
   const reached = backward.findIndex((_, index) => countOf(`back_${index}`) <= room);
-  const begin =
-    reached >= 0
-      ? (backward[reached] ?? from)
-      : underFrom === null
-        ? from
-        : (pointOf("first_queued") ?? from);
-  return { from: begin, to: end };
+  if (reached >= 0) return { from: backward[reached] ?? from, to: end };
+  if (underFrom === null) return { from, to: end };
+  // Cut at the queued range's first point — or at the one before it, across a recording gap.
+  const firstQueued = pointOf("first_queued");
+  const beforeQueued = pointOf("before_queued");
+  const acrossGap =
+    firstQueued !== null &&
+    beforeQueued !== null &&
+    room >= 1 &&
+    firstQueued.getTime() - beforeQueued.getTime() > gapSplitS * 1000;
+  return { from: acrossGap ? beforeQueued : (firstQueued ?? from), to: end };
+}
+
+/**
+ * The end of the segment that starts after `to` with no recorded point
+ * between — after a hole of at most `gapSplitS` from the last point before
+ * `to` — if there is one: it touches a window ending at `to`.
+ */
+async function nextTouching(
+  db: Executor,
+  deviceId: string,
+  to: Date,
+  gapSplitS: number,
+): Promise<Date | null> {
+  const result = await db.execute<{ ended_at: string | null }>(sql`
+    SELECT s.ended_at::text FROM (
+      SELECT started_at, ended_at FROM segments
+      WHERE device_id = ${deviceId} AND started_at > ${to.toISOString()}::timestamptz
+      ORDER BY started_at LIMIT 1
+    ) s
+    WHERE NOT EXISTS (
+        SELECT 1 FROM locations
+        WHERE device_id = ${deviceId} AND recorded_at > ${to.toISOString()}::timestamptz
+          AND recorded_at < s.started_at)
+      AND s.started_at - ${gapSplitS}::integer * interval '1 second' <= (
+        SELECT max(recorded_at) FROM locations
+        WHERE device_id = ${deviceId} AND recorded_at <= ${to.toISOString()}::timestamptz)
+  `);
+  const at = result.rows[0]?.ended_at ?? null;
+  return at === null ? null : instant(at);
 }
 
 interface PointRow extends Record<string, unknown> {

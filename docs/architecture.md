@@ -3389,23 +3389,33 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   in the pass's own transaction (`splitJob`): their points are counted on the
   primary key, and the split falls at the end of the longest recording gap of
   more than 30 minutes — the night the phone slept through — among those that
-  leave a newest part within the budget (the older of equal ones), else at
-  the budget's point boundary, the newest 60 000 points or 36 hours. The pass
-  goes on with the newest part; the older part is queued with the rows'
-  reason and level — an upload's as repair (`split`), so a backlog of history
-  never holds up the fresh points of other devices — and is split again when
-  it is taken. The parts share the point at the split, so their segments
-  meet. One upload's window over twelve days of a phone recording every
-  second (575 000 points, 0.5.0) is so worked out in about ten passes of a
-  few seconds, the newest first.
+  leave a newest part within the budget and holding at least half of what
+  the budget allows there (the older of equal ones; no pass of a few points),
+  else at the budget's point boundary, the newest 60 000 points or 36 hours.
+  The pass goes on with the newest part; the older part is queued with the
+  rows' reason and level — an upload's as repair (`split`), so a backlog of
+  history never holds up the fresh points of other devices — and is split
+  again when it is taken. At a gap the older part ends at the point before
+  it and the newer part's pass reaches back over it, so the gap is worked out
+  with both its ends; at a point boundary both parts hold the point, so their
+  segments meet. Every split leaves the older part fewer points, so a job is
+  worked through. The window 0.5.0 ran as one pass of 10 to 20 minutes, with
+  every upload — twelve days of a phone recording every second, 570 000
+  points of production's history — is so worked out in eleven passes of at
+  most 3.5 s on a Mac, the newest first.
 - The window then grows to whole segments at both edges, within the budget:
   the growth is taken while the window holds at most the budget's points —
   forward first (the segment the window's end runs into), then back, nearest
   first (the segment under the start, then the one before a gap, else the
   point before it) — each whole or not at all, so that a window is not cut
   again at another place with every upload. A segment that does not fit stays
-  as it is, cut at the queued range's first or last point; a stale multi-day
-  stop at an edge costs a pass at most the budget, never two days of it.
+  as it is, cut at the queued range's first or last point — or at the point
+  before a recording gap that precedes the first, so the gap is still worked
+  out with both its ends; a stale multi-day stop at an edge costs a pass at
+  most the budget, never two days of it. A segment that starts after the
+  window's end with only a short hole and no point between counts as
+  touching it, as one sharing the end does: a day's edge that an older pass
+  left between two points is worked out across by the window before it.
   Growth goes at most two days out of the range the rows were queued with: a
   segment reaching further back is cut at the first point within them, and
   the part of one reaching beyond its end stays as a segment from the
