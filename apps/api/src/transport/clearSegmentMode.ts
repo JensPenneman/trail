@@ -45,8 +45,9 @@ export async function clearSegmentMode(
     if (segment.mode_user === null && revoked.rows.length === 0) {
       return { segment: toSegment(segment), revoked: [] };
     }
+    // `computed_at` moves with the mode, so the day's processed stamp does (docs/architecture.md §8.9).
     const updated = await tx.execute<SegmentRow>(sql`
-      UPDATE segments s SET mode_user = NULL, mode = s.mode_inferred,
+      UPDATE segments s SET mode_user = NULL, mode = s.mode_inferred, computed_at = now(),
         features = jsonb_set(s.features, '{override}', 'null'::jsonb)
       WHERE s.id = ${segment.id}
       RETURNING ${segmentColumns}

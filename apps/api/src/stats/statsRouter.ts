@@ -8,13 +8,18 @@ import {
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
 import { requireAuth } from "../auth/requestAuth";
+import { answerConditionally } from "../cache/answerConditionally";
+import { weakEtag } from "../cache/weakEtag";
 import { inputResource } from "../dataAccess/inputResource";
 import { recordDashboardAccess } from "../dataAccess/recordDashboardAccess";
 import { parseQuery } from "../http/parseInput";
 import { findActivity } from "./findActivity";
 import { findDayStats } from "./findDayStats";
 
-/** `GET /api/stats/days` (calendar, coverage) and `GET /api/stats/activity` ("is data flowing"). */
+/**
+ * `GET /api/stats/days` (calendar, coverage; with the days' stamps, `304` for
+ * an unchanged answer) and `GET /api/stats/activity` ("is data flowing").
+ */
 export function statsRouter(ctx: AppContext): Router {
   const router = express.Router();
   const { db } = ctx;
@@ -26,11 +31,14 @@ export function statsRouter(ctx: AppContext): Router {
       timezone: auth.user.timezone,
       days: await findDayStats(db, auth, query),
     };
-    res.json(body);
+    // A few hundred small rows: their hash is the validator (docs/architecture.md §8.9).
+    const etag = weakEtag(auth.user.id, apiPaths.statsDays, body);
+    const status = await answerConditionally(req, res, etag, () => body);
     recordDashboardAccess(ctx, req, {
       action: "statsDays",
       kind: "read",
       resource: inputResource([query]),
+      status,
     });
   });
 

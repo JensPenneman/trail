@@ -14,6 +14,7 @@ import { resolveDeviceIds } from "../devices/resolveDeviceIds";
 import { DistanceAccumulator } from "../tracks/distanceAccumulator";
 import { haversineM } from "../tracks/haversine";
 import { simplifyParts } from "../tracks/simplifyTrack";
+import { segmentOverlaps } from "./segmentOverlaps";
 import { type SegmentRow, toSegment } from "./segmentRow";
 import { servedColumns, servedSegments } from "./servedSegments";
 
@@ -350,8 +351,11 @@ export async function loadLevelTracks(
       // The timeline's stops and moves, a stay one stop: the map and the timeline name the same.
       const rows = await db.execute<SegmentRow>(sql`
         SELECT ${servedColumns} FROM ${servedSegments([device.id], query)}
-        WHERE s.started_at < ${query.to.toISOString()}::timestamptz
-          AND s.ended_at > ${query.from.toISOString()}::timestamptz
+        WHERE ${segmentOverlaps(
+          "s",
+          sql`${query.from.toISOString()}::timestamptz`,
+          sql`${query.to.toISOString()}::timestamptz`,
+        )}
         ORDER BY s.started_at
       `);
       const ends = new Set<number>();

@@ -1,14 +1,21 @@
 import { sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
+import { toIso } from "../db/toIso";
 import type { NormalisedTrip } from "./normalisedRecords";
 
-/** Stores finished trips, skipping re-sent ones; returns how many were new. */
+/** A trip this upload stored: the times that decide which days it touches. */
+export interface InsertedTrip {
+  startedAt: Date;
+  endedAt: Date;
+}
+
+/** Stores finished trips, skipping re-sent ones; returns the new ones. */
 export async function insertTrips(
   tx: Executor,
   deviceId: string,
   trips: readonly NormalisedTrip[],
-): Promise<number> {
-  if (trips.length === 0) return 0;
+): Promise<InsertedTrip[]> {
+  if (trips.length === 0) return [];
   const rows = JSON.stringify(
     trips.map((trip) => ({
       started_at: trip.startedAt.toISOString(),
@@ -23,7 +30,7 @@ export async function insertTrips(
       extra: trip.extra,
     })),
   );
-  const result = await tx.execute(sql`
+  const result = await tx.execute<{ started_at: string; ended_at: string }>(sql`
     INSERT INTO trips (
       device_id, started_at, ended_at, mode, distance_m, duration_s, steps, stopped_automatically,
       start_location, end_location, extra
@@ -36,6 +43,10 @@ export async function insertTrips(
       start_location jsonb, end_location jsonb, extra jsonb
     )
     ON CONFLICT (device_id, started_at) DO NOTHING
+    RETURNING started_at::text, ended_at::text
   `);
-  return result.rowCount ?? 0;
+  return result.rows.map((row) => ({
+    startedAt: new Date(toIso(row.started_at)),
+    endedAt: new Date(toIso(row.ended_at)),
+  }));
 }

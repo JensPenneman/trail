@@ -374,7 +374,7 @@ describe("v1 plumbing", () => {
     expect(response.headers).toMatchObject({
       "access-control-allow-origin": "*",
       "access-control-allow-methods": methods,
-      "access-control-allow-headers": "Authorization, Content-Type, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, If-None-Match, Last-Event-ID",
       "access-control-max-age": "600",
     });
     // The methods of the registry; more arrive with new operations.

@@ -5,10 +5,23 @@ import { hasPendingWork } from "../processing/processingQueue";
 import { buildOverview } from "./buildOverview";
 import { countStops, loadInsightMoves } from "./insightMoves";
 import { bucketFor, previousPeriod } from "./insightsPeriod";
-import { insightsScope } from "./insightsScope";
+import { type InsightsScope, insightsScope } from "./insightsScope";
 import { localHours } from "./localHours";
 
-/** `GET /api/v1/insights/overview`: the period and the one before it, in one read of the segments. */
+/** What the overview reads: its period and the one before it, as instants. */
+export function overviewRange(scope: InsightsScope): { startMs: number; endMs: number } {
+  const previous = previousPeriod(scope.period);
+  const previousHours = localHours(previous.from, previous.to, scope.timezone);
+  return {
+    startMs: previousHours[0]?.start ?? scope.start.getTime(),
+    endMs: scope.end.getTime(),
+  };
+}
+
+/**
+ * `GET /api/v1/insights/overview`: the period and the one before it, in one
+ * read of the segments; `scope` when the caller resolved it already.
+ */
 export async function loadInsightsOverview(
   db: Executor,
   access: DeviceAccess & { user: { id: string; timezone: string } },
@@ -17,8 +30,9 @@ export async function loadInsightsOverview(
     to?: string | undefined;
     devices?: readonly string[] | undefined;
   },
+  given?: InsightsScope,
 ): Promise<InsightsOverview> {
-  const scope = await insightsScope(db, access, query);
+  const scope = given ?? (await insightsScope(db, access, query));
   const previous = previousPeriod(scope.period);
   const previousHours = localHours(previous.from, previous.to, scope.timezone);
   const previousStart = previousHours[0]?.start ?? scope.start.getTime();

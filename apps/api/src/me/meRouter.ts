@@ -48,9 +48,11 @@ export function meRouter(ctx: AppContext): Router {
     if (user === undefined) throw new HttpError(401, "unauthorized", "Sign in to continue.");
     if (changes.timezone !== undefined && changes.timezone !== auth.user.timezone) {
       // Days are local calendar days: a new time zone moves every day boundary.
-      ctx.background.run("rebuild daily stats after a time zone change", () =>
-        rebuildUserDailyStats(ctx.db, user.id),
-      );
+      ctx.background.run("rebuild daily stats after a time zone change", async () => {
+        await rebuildUserDailyStats(ctx.db, user.id);
+        // Every day and stamp moved: the open pages start afresh rather than hear of each day (§9).
+        ctx.bus.publish(user.id, { type: "resync" });
+      });
     }
     const body: SessionResponse = { user: toSessionUser(user) };
     res.json(body);

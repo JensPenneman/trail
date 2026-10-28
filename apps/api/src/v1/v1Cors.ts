@@ -1,7 +1,7 @@
 import type { RequestHandler } from "express";
 
-/** What a cross-origin client may send: a token, JSON and (live events, later) a resume point. */
-const allowedHeaders = "Authorization, Content-Type, Last-Event-ID";
+/** What a cross-origin client may send: a token, JSON, a validator and (live events, later) a resume point. */
+const allowedHeaders = "Authorization, Content-Type, If-None-Match, Last-Event-ID";
 
 /** What a cross-origin client may read beyond the CORS-safelisted response headers. */
 const exposedHeaders =

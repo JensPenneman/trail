@@ -194,13 +194,52 @@ like its token, is changed in the dashboard only.
   outside the token's devices answers `404 not_found`, whichever it is.
 - `HEAD` works wherever `GET` does.
 - Responses are `Cache-Control: no-store`, except the OpenAPI document,
-  which may be cached for five minutes and revalidated with its `ETag`.
-- Answers sliced by local day may carry stamps: `GET /api/v1/tracks` and
+  which may be cached for five minutes and revalidated with its `ETag`. Some
+  answers can be revalidated all the same: see
+  [Conditional requests](#conditional-requests).
+- Answers sliced by local day carry stamps: `GET /api/v1/tracks` and
   `GET /api/v1/segments` one per device and local day of the range
   (`stamps`), `GET /api/v1/stats/days` one on every day (`stamp`). A stamp is
   two opaque hashes that stay the same while the day's recorded data and its
   processing do: a copy of a day is current as long as its stamp has not
   changed. Compare stamps and nothing more.
+
+## Conditional requests
+
+The answers that are expensive to build, or large, carry a weak `ETag`:
+`GET /api/v1/tracks`, `GET /api/v1/segments`, `GET /api/v1/stats/days`,
+`GET /api/v1/people` and the four `GET /api/v1/insights/…`. Send it back as
+`If-None-Match` with the same request, and while nothing the answer is made
+of has changed, the answer is `304 Not Modified` with no body — the copy you
+have is current. Otherwise you get the full answer with a new `ETag`.
+
+```sh
+curl -si -H "Authorization: Bearer $TOKEN" \
+  "$TRAIL/api/v1/segments?from=2026-10-26T00:00:00%2B01:00&to=2026-10-27T00:00:00%2B01:00" \
+  | grep -i '^etag'
+# ETag: W/"q8Zr2mXnB4vT1cKd9LsE0a"
+curl -si -H "Authorization: Bearer $TOKEN" -H 'If-None-Match: W/"q8Zr2mXnB4vT1cKd9LsE0a"' \
+  "$TRAIL/api/v1/segments?from=2026-10-26T00:00:00%2B01:00&to=2026-10-27T00:00:00%2B01:00" \
+  | head -1
+# HTTP/1.1 304 Not Modified
+```
+
+- An `ETag` belongs to its request: the same path and parameters, from the
+  same account. Another account's, or another query's, never matches.
+- It is opaque and weak: compare it, never parse it. A new release of Trail
+  may change what goes into it, which costs you one full answer.
+- A `304` counts as a look, like a `200`: the [access log](#access-log) shows
+  it with its status, and the people listed by `GET /api/v1/people` see it in
+  theirs.
+- The tracks and the timeline decide from the stamps of their days, which
+  they also return; the daily statistics, the people and Insights from the
+  answer itself or what it is made of. So the `ETag` of a range changes when
+  any of its days does — a day of a range that holds today changes with every
+  upload. For days you already hold, compare the `stamp`s of
+  `GET /api/v1/stats/days` instead and ask again only for the days that
+  changed.
+- Answers stay `Cache-Control: no-store`: keep the copy yourself, a browser or
+  a proxy does not.
 
 ## Pagination
 
@@ -381,7 +420,7 @@ entry per limit (`"ip"`, `"token"`), for example
 Any origin may call the API: responses carry `Access-Control-Allow-Origin: *`
 and expose `ETag`, `RateLimit`, `RateLimit-Policy`, `Retry-After`,
 `WWW-Authenticate` and `X-Request-Id` to scripts. Requests may send
-`Authorization`, `Content-Type` and `Last-Event-ID`; preflight requests need
+`Authorization`, `Content-Type`, `If-None-Match` and `Last-Event-ID`; preflight requests need
 no credential. There are no credentialed cross-origin requests: a page on
 another site uses a token, never the visitor's session. A token in a web page
 can be read by anyone who opens that page, so give such a token as few
