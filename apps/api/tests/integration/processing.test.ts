@@ -8,6 +8,7 @@ import {
   awaitTiles,
   enqueueWindow,
   type FromLevel,
+  livePassIntervalMs,
   queuePriority,
   rearmWindows,
   takeDeviceWindows,
@@ -24,6 +25,7 @@ import { createDevice } from "../support/deviceFlows";
 import { FixtureWaySource } from "../support/fixtureWaySource";
 import { morning, motorwayDrive, sparseTrain, tramRide } from "../support/journeys";
 import { uploadJourney, uploadVisits } from "../support/overlandPoints";
+import { assertQueueInvariants, assertSegmentInvariants } from "../support/processingInvariants";
 import { withPieceBudget } from "../support/processWorld";
 import { resetDatabase } from "../support/resetDatabase";
 import { SseClient } from "../support/sseClient";
@@ -48,6 +50,11 @@ import { testOrigin } from "../support/testEnvironment";
  * source, and the levels come back through /api/v1/tracks.
  */
 let t: TestContext;
+/**
+ * The app with passes as long as a week (PROCESSING_PASS_MAX_SPAN_HOURS): a stay of a few days
+ * uploaded at once is worked out in one pass, one stop — where a test's subject is that stop.
+ */
+let weekLong: TestContext;
 const fixture = new FixtureWaySource();
 let owner: Agent;
 let cookie = "";
@@ -105,10 +112,15 @@ const tracksAt = async (deviceId: string, level: string, range = day) =>
 beforeAll(async () => {
   await resetDatabase();
   t = await createTestContext({ waySource: fixture });
+  weekLong = await createTestContext({
+    waySource: fixture,
+    env: { PROCESSING_PASS_MAX_SPAN_HOURS: "168" },
+  });
   ({ agent: owner, cookie } = await signUpWithCookie(t.app, "first@example.com"));
 });
 
 afterAll(async () => {
+  await weekLong.close();
   await t.close();
 });
 
@@ -288,9 +300,9 @@ describe("the backfill", () => {
       fromLevel: null,
     });
     const [first] = await takeNextWindow(t.ctx.db, new Date());
-    expect(first?.priority).toBe(1);
+    expect(first?.priority).toBe(queuePriority.backfill);
     const newest = await t.ctx.db.execute<{ newest: string }>(sql`
-      SELECT max(from_at)::text AS newest FROM processing_queue WHERE priority = 1
+      SELECT max(from_at)::text AS newest FROM processing_queue WHERE priority = ${queuePriority.backfill}
     `);
     expect(first?.from.toISOString()).toBe(new Date(newest.rows[0]?.newest ?? "").toISOString());
 
@@ -304,7 +316,7 @@ describe("the backfill", () => {
     const restarted = await createTestContext({ waySource: fixture });
     try {
       const remaining = await restarted.ctx.db.execute(
-        sql`SELECT 1 FROM processing_queue WHERE priority = 1`,
+        sql`SELECT 1 FROM processing_queue WHERE priority = ${queuePriority.backfill}`,
       );
       expect(remaining.rows.length).toBeGreaterThan(0);
       await restarted.ctx.processing.flush();
@@ -679,6 +691,7 @@ describe("stops that end when the phone leaves", () => {
       expect(segments[1]?.from).toBeGreaterThanOrEqual(dawn + 895);
     };
     await covered();
+    await assertSegmentInvariants(t.ctx.db, device.id);
 
     // The backfill works it out a local day at a time: the night spans midnight.
     await t.ctx.dailyStats.flush();
@@ -691,15 +704,17 @@ describe("stops that end when the phone leaves", () => {
     expect((await enqueueBackfill(t.ctx.db, processingVersions)).fromLevel).toBe("inferred");
     await t.ctx.processing.flush();
     await covered();
+    await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
   });
 
   it("keeps the part of a long stay beyond a window that cannot take all of it", async () => {
-    // Four days on the sofa, a point every six minutes (one upload, so one window): one stop.
+    // Four days on the sofa, a point every six minutes (one upload, so one window, one pass as long
+    // as the stay): one stop.
     const device = await newDevice("Sofa");
     const start = morning - 20 * 86_400;
     const days = stay([-600, -400], { startT: start, durationS: 4 * 86_400, intervalS: 360 });
-    await upload(device.token, days);
-    await t.ctx.processing.flush();
+    await upload(device.token, days, weekLong);
+    await weekLong.ctx.processing.flush();
     expect((await timesOf(device.id)).map((segment) => segment.kind)).toEqual(["stop"]);
     // A window early in the stay grows at most two days out: the rest of the stop lies beyond it.
     await enqueueWindow(t.ctx.db, {
@@ -791,11 +806,13 @@ describe("stops that end when the phone leaves", () => {
     expect((await enqueueBackfill(t.ctx.db, processingVersions)).fromLevel).toBe("inferred");
     await t.ctx.processing.flush();
     await expectEveryRideAMove();
+    await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
 
     // `trail reprocess --from-level inferred`: day windows, oldest first.
     await makeStale();
     await reprocessOldestFirst(device.id, start, end + 1, "inferred");
     await expectEveryRideAMove();
+    await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
   });
 });
 
@@ -840,8 +857,8 @@ describe("the edges of a window", () => {
     const device = await newDevice("Sofa of an older version");
     const start = morning - 30 * 86_400;
     const days = stay([-600, -400], { startT: start, durationS: 5 * 86_400, intervalS: 360 });
-    await upload(device.token, days);
-    await t.ctx.processing.flush();
+    await upload(device.token, days, weekLong);
+    await weekLong.ctx.processing.flush();
     // As an older inference left it: one stop over the five days, counting more than it holds.
     await t.ctx.db.execute(sql`
       UPDATE segments SET version = ${processingVersions.inferred - 1}, point_count = 99999
@@ -894,8 +911,8 @@ describe("the edges of a window", () => {
     const device = await newDevice("Sofa with an hour deleted");
     const start = morning - 50 * 86_400;
     const days = stay([-600, -400], { startT: start, durationS: 4 * 86_400, intervalS: 360 });
-    await upload(device.token, days);
-    await t.ctx.processing.flush();
+    await upload(device.token, days, weekLong);
+    await weekLong.ctx.processing.flush();
     expect((await partsOf(device.id)).map((part) => part.kind)).toEqual(["stop"]);
     const middle = start + 2 * 86_400;
     await owner
@@ -925,7 +942,10 @@ describe("the edges of a window", () => {
         stay([-600, -400], { startT: resumed, durationS: 600, intervalS: 30 }),
       );
       const window = { from: new Date(resumed * 1000), to: new Date((resumed + 600) * 1000) };
-      const grown = await extendWindow(t.ctx.db, device.id, window, 1800);
+      const grown = await extendWindow(t.ctx.db, device.id, window, {
+        gapSplitS: 1800,
+        maxPoints: t.ctx.processing.config.passes.maxPoints,
+      });
       return { start, resumed, from: grown.from.getTime() / 1000 };
     };
     // Ten minutes without a point: no gap to work out with both its ends.
@@ -1193,7 +1213,10 @@ describe("live uploads while windows wait for map tiles", () => {
         queued.push({ from: (batch[0]?.t ?? 0) - 1800, to: lastT(batch) + 1800 });
         const firstQueued = queued[0]?.from ?? 0;
         for (;;) {
-          const rows = await takeNextWindow(t.ctx.db, new Date());
+          // As a flush: the upload does not wait for the device's pass interval.
+          const rows = await takeNextWindow(t.ctx.db, new Date(), {
+            liveReadyBy: new Date(Date.now() + livePassIntervalMs),
+          });
           if (rows.length === 0) break;
           // Only windows an upload queued, never the bounds an earlier pass grew one to …
           for (const row of rows) {
@@ -1208,6 +1231,14 @@ describe("live uploads while windows wait for map tiles", () => {
           expect((outcome?.from.getTime() ?? 0) / 1000).toBeGreaterThanOrEqual(
             firstQueued - 2 * 86_400,
           );
+          await assertSegmentInvariants(t.ctx.db, device.id);
+          await assertQueueInvariants(t.ctx.db, {
+            deviceId: device.id,
+            uploads: queued.map((range) => ({
+              from: new Date(range.from * 1000),
+              to: new Date(range.to * 1000),
+            })),
+          });
         }
         // A window waiting for its tiles waits with the bounds it was queued with.
         const waiting = (await queueOf(device.id)).filter((row) => row.waiting);
@@ -1270,7 +1301,7 @@ describe("live uploads while windows wait for map tiles", () => {
     });
     const live = await takeNextWindow(t.ctx.db, new Date());
     expect(live.map((row) => row.from)).toEqual([at(20)]);
-    const backfill = await takeNextWindow(t.ctx.db, new Date(), { backfillFirst: true });
+    const backfill = await takeNextWindow(t.ctx.db, new Date(), { othersFirst: true });
     expect(backfill.map((row) => row.from)).toEqual([at(-48)]);
     await t.ctx.db.execute(sql`DELETE FROM processing_queue WHERE device_id = ${device.id}`);
   });

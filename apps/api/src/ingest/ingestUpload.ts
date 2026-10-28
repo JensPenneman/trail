@@ -8,6 +8,8 @@ import type { InsertedPoint } from "./insertLocations";
 import { insertPreparedRecords } from "./insertPreparedRecords";
 import { insertRecordByRecord, type SingleRecord } from "./insertRecordByRecord";
 import { insertRejects } from "./insertRejects";
+import type { InsertedTrip } from "./insertTrips";
+import type { InsertedVisit } from "./insertVisits";
 import type { PreparedBatch } from "./preparedBatch";
 import type { StoredRecords } from "./storedRecords";
 import { updateDeviceAfterIngest } from "./updateDeviceAfterIngest";
@@ -27,6 +29,9 @@ export interface IngestOutcome {
   counts: IngestCounts;
   /** Newly stored points, oldest first. */
   inserted: InsertedPoint[];
+  /** Newly stored visits and trips: their days' stamps changed too. */
+  visits: InsertedVisit[];
+  trips: InsertedTrip[];
   /** Preset to send back once as Overland's `set` (always null for the other apps). */
   pendingSettings: string | null;
   /** The device had been reported silent: send the "sending data again" alert. */
@@ -111,8 +116,8 @@ async function storeUpload(
     records: batch.records,
     locations: stored.inserted.length,
     duplicates: stored.locationRecords - stored.inserted.length,
-    visits: stored.visits,
-    trips: stored.trips,
+    visits: stored.visits.length,
+    trips: stored.trips.length,
     events: stored.events,
     rejected: stored.rejects.length,
   };
@@ -128,6 +133,8 @@ async function storeUpload(
     receivedAt,
     counts,
     inserted: stored.inserted,
+    visits: stored.visits,
+    trips: stored.trips,
     pendingSettings: deliversSettings ? state.pendingSettings : null,
     wasSilent: state.staleAlertedAt !== null,
   };

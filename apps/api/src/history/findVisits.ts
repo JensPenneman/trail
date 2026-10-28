@@ -5,6 +5,7 @@ import { toIso, toIsoOrNull } from "../db/toIso";
 import type { DeviceAccess } from "../devices/deviceAccess";
 import { resolveDeviceIds } from "../devices/resolveDeviceIds";
 import type { HistoryRange } from "./historyRange";
+import { visitTouches } from "./visitTouches";
 
 interface VisitRow extends Record<string, unknown> {
   device_id: string;
@@ -35,14 +36,9 @@ export async function findVisits(
     SELECT * FROM (
       SELECT DISTINCT ON (device_id, coalesce(arrived_at, recorded_at))
         device_id, recorded_at, arrived_at, departed_at, lat, lon, horizontal_accuracy
-      FROM visits
+      FROM visits v
       WHERE device_id = ANY(${sql.param(ids)}::uuid[])
-        AND (
-          (recorded_at >= ${from}::timestamptz AND recorded_at < ${to}::timestamptz)
-          OR (arrived_at >= ${from}::timestamptz AND arrived_at < ${to}::timestamptz)
-          OR (departed_at >= ${from}::timestamptz AND departed_at < ${to}::timestamptz)
-          OR (arrived_at < ${from}::timestamptz AND departed_at >= ${to}::timestamptz)
-        )
+        AND ${visitTouches("v", sql`${from}::timestamptz`, sql`${to}::timestamptz`)}
       ORDER BY device_id, coalesce(arrived_at, recorded_at), departed_at DESC NULLS LAST,
         recorded_at DESC
     ) merged

@@ -77,6 +77,14 @@ x-app-environment: &app-environment
   PROCESSING_OSM_TTL_DAYS:
   PROCESSING_MAX_ACCURACY_M:
   PROCESSING_STOP_MIN_S:
+  PROCESSING_PASS_MAX_POINTS:
+  PROCESSING_PASS_MAX_SPAN_HOURS:
+  # `trail load-fleet` only (docs/perf/README.md): a preview's load test sets
+  # LOAD_TEST=true, and Launchway's name of the deployment (production or
+  # preview) makes the command refuse anywhere but in a preview. Launchway
+  # writes it to .env; it is the one of its variables the containers receive.
+  LOAD_TEST:
+  LAUNCHWAY_ENVIRONMENT:
 
 services:
   app:

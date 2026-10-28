@@ -3,6 +3,9 @@ import { sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
 import type { DeviceAccess } from "../devices/deviceAccess";
 import { resolveDeviceIds } from "../devices/resolveDeviceIds";
+import { servedSegments } from "./servedSegments";
+
+const dayMs = 86_400_000;
 
 interface StatRow extends Record<string, unknown> {
   date: string;
@@ -17,7 +20,8 @@ interface StatRow extends Record<string, unknown> {
 /**
  * Distance and time per local day and mode (docs/architecture.md §17.6), in
  * the account's time zone. A segment across midnight counts on both days in
- * proportion to its time there; stops count as `stationary`.
+ * proportion to its time there; stops count as `stationary`, a stay as one
+ * stop (`servedSegments`).
  */
 export async function loadModeStats(
   db: Executor,
@@ -28,6 +32,11 @@ export async function loadModeStats(
   const owned = await resolveDeviceIds(db, access, query.devices);
   const ids = owned.map((device) => device.id);
   if (ids.length === 0) return { timezone, days: [] };
+  // The local days' instants lie within a day of their dates' midnight in UTC.
+  const range = {
+    from: new Date(Date.parse(`${query.from}T00:00:00Z`) - dayMs),
+    to: new Date(Date.parse(`${query.to}T00:00:00Z`) + 2 * dayMs),
+  };
   const result = await db.execute<StatRow>(sql`
     WITH days AS (
       SELECT day::date AS date,
@@ -43,8 +52,7 @@ export async function loadModeStats(
       count(*)::int AS segments,
       count(*) FILTER (WHERE s.mode_user IS NOT NULL)::int AS set_by_user
     FROM days
-    JOIN segments s ON s.device_id = ANY(${sql.param(ids)}::uuid[])
-      AND s.started_at < days.day_end AND s.ended_at >= days.day_start
+    JOIN ${servedSegments(ids, range)} ON s.started_at < days.day_end AND s.ended_at >= days.day_start
       AND (s.ended_at > days.day_start OR s.started_at = s.ended_at)
     CROSS JOIN LATERAL (
       SELECT extract(epoch FROM least(s.ended_at, days.day_end) - greatest(s.started_at, days.day_start))::float8 AS seconds

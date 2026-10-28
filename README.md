@@ -163,9 +163,11 @@ phone on the same Wi-Fi, set `INGEST_BASE_URL` to the Mac's LAN address (see
 | `npm run lint` / `npm run lint:fix` | Biome lint and format check / with fixes |
 | `npm run format` | Biome format |
 | `npm run typecheck` | TypeScript in every workspace |
-| `npm test` | unit tests of every workspace |
+| `npm test` | unit tests of every workspace and of the load harness |
 | `npm run test:integration` | API tests against PostgreSQL (`TEST_DATABASE_URL`) |
 | `npm run test:e2e` | Playwright against the built server (`E2E_DATABASE_URL`; run `npm run build` first) |
+| `npm run test:load` | the load harness's own tests (also part of `npm test`) |
+| `npm run load -- fleet-10` | a load test on the capped stack, its report in `docs/perf/` ([docs/perf/README.md](docs/perf/README.md)) |
 | `npm run knip` | unused files, exports and dependencies |
 | `npm run check` | lint, typecheck, knip and unit tests |
 | `npm run db:generate -w @trail/api` | a new SQL migration from the Drizzle schema |
@@ -365,8 +367,9 @@ apps/api/            Express API, ingest of the tracking apps, CLI (Node LTS, Ty
 apps/web/            React single-page app, served by the API in production
 packages/contracts/  zod schemas and types of the HTTP API
 deploy/              compose stack for Launchway, .env example, local run
-docs/                architecture (the specification), API and sharing guides, operations, phone setup, transport modes
+docs/                architecture (the specification), API and sharing guides, operations, phone setup, transport modes, load-test reports
 scripts/             development, build, hook and release scripts
+tools/load/          load tests: k6 scenarios, SSE probe, collector, reports (docs/perf/)
 tests/e2e/           Playwright end-to-end tests
 .devcontainer/       development container (scripts/devc.sh)
 compose.yaml         development database

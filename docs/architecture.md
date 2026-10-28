@@ -27,8 +27,9 @@ trail/
 ├── packages/
 │   └── contracts/      zod schemas + types = the HTTP contract (imported by both)
 ├── deploy/             production compose stack, env example, Windows docs/scripts
-├── docs/               this file, the public API guide (api.md), operations and user docs
+├── docs/               this file, the public API guide (api.md), operations and user docs, load-test reports (perf/)
 ├── scripts/            repo tooling (dev, build, hooks, db init)
+├── tools/load/         the load-test harness: k6 scenarios, SSE probe, collector, reports (docs/perf/README.md)
 ├── tests/e2e/          Playwright end-to-end suite (whole stack)
 ├── .devcontainer/      development container (scripts/devc.sh, §3), where the node's checks run (§15)
 ├── compose.yaml        development services (Postgres)
@@ -294,6 +295,10 @@ All configuration is environment variables, validated at boot with zod
 | `PROCESSING_OSM_TTL_DAYS` | `90` | Map tiles are refreshed after this many days |
 | `PROCESSING_MAX_ACCURACY_M` | `150` | Less accurate points are dropped from the averaged level on |
 | `PROCESSING_STOP_MIN_S` | `180` | The shortest stop |
+| `PROCESSING_PASS_MAX_POINTS` | `60000` | A processing pass reads at most this many points (1 000 or more); bigger work is split first (§17.4) |
+| `PROCESSING_PASS_MAX_SPAN_HOURS` | `36` | The points a pass takes on span at most this long |
+| `LOAD_TEST` | `false` | `true` lets `trail load-fleet` create a load test's synthetic people (§11, docs/perf/README.md); previews only |
+| `LAUNCHWAY_ENVIRONMENT` | unset | Set by Launchway (`production` or `preview`), never by hand; `trail load-fleet` runs only where it is `preview` or unset |
 | `NODE_ENV` | `development` | `production` in the image (see below) |
 
 Development safety: when `NODE_ENV !== "production"` the API refuses to start
@@ -933,8 +938,9 @@ JSON over `/api`. Request/response shapes are the zod schemas in
 `packages/contracts` (paths in `apiPaths.ts`); the API validates every input
 with them, the web parses every response with them. Errors: `{ error: { code,
 message, fields? } }` (`errors.ts`). All `/api` responses are `Cache-Control:
-no-store` unless stated. The routes below are the dashboard's private API; the
-public, versioned one is `/api/v1` (§8.3).
+no-store` unless stated; the answers the browser's cache revalidates carry a
+weak `ETag` and answer `304` to it (§8.9). The routes below are the
+dashboard's private API; the public, versioned one is `/api/v1` (§8.3).
 
 | Method & path | Auth | Contract |
 |---|---|---|
@@ -960,19 +966,19 @@ public, versioned one is `/api/v1` (§8.3).
 | `PATCH/DELETE /api/me/tokens/:id`, `POST /api/me/tokens/:id/roll` | cookie | `updateApiTokenRequest` → `apiTokenResponse`; revoke 204; roll → `apiTokenWithSecretResponse` |
 | `GET/POST /api/admin/invites`, `DELETE /api/admin/invites/:id` | admin | `invite.ts` |
 | `GET /api/admin/users` | admin | `adminUser.ts` |
-| `GET/POST /api/devices` | cookie | `deviceListResponse`, `createDeviceRequest` (name, app as `source`, optional device key) → `deviceWithCredentialsResponse` (201; the credentials of that app) |
+| `GET/POST /api/devices` | cookie | `deviceListResponse` (conditional, §8.9), `createDeviceRequest` (name, app as `source`, optional device key) → `deviceWithCredentialsResponse` (201; the credentials of that app) |
 | `GET/PATCH/DELETE /api/devices/:id` | cookie (owner) | `deviceResponse`, `updateDeviceRequest`; delete removes all its data |
 | `POST /api/devices/:id/token` | cookie (owner) | rotate, optionally to another app (`rotateDeviceTokenRequest` `{ source? }`; the history stays, a pending preset goes) → `deviceWithCredentialsResponse` |
 | `GET /api/devices/:id/ingest-log` | cookie (owner) | `ingestLogQuery/Response` |
-| `GET /api/tracks` | cookie | `tracksQuery/Response` |
-| `GET /api/heatmap` | cookie | `heatmapQuery/Response` |
-| `GET /api/stats/days` | cookie | `daysQuery/Response` |
+| `GET /api/tracks` | cookie | `tracksQuery/Response`, with `stamps` (conditional, §8.9) |
+| `GET /api/heatmap` | cookie | `heatmapQuery/Response` (conditional, §8.9) |
+| `GET /api/stats/days` | cookie | `daysQuery/Response`, a `stamp` on every day (conditional, §8.9) |
 | `GET /api/stats/activity` | cookie | `activityQuery/Response` |
-| `GET /api/visits`, `GET /api/trips` | cookie | `eventRangeQuery` → `visitsResponse` / `tripsResponse` |
+| `GET /api/visits`, `GET /api/trips` | cookie | `eventRangeQuery` → `visitsResponse` / `tripsResponse`, with `stamps` (conditional, §8.9) |
 | `GET /api/locations` | cookie (owner) | `locationsQuery` → `locationsPage` |
 | `POST /api/locations/delete` | cookie (owner) | `deleteLocationsRequest/Response` |
 | `GET /api/export` | cookie | `exportQuery` → streamed GeoJSON / GPX 1.1 / CSV attachment |
-| `GET /api/events` | cookie | SSE, `events.ts` |
+| `GET /api/events` | cookie | SSE, `events.ts`; `eventsQuery` (`after`) or `Last-Event-ID` to resume (§9) |
 | `/api/v1/*` | API token or cookie | §8.3; `GET /api/v1/openapi.json` is public; people, shares and public links §8.5 |
 | `GET /api/public/share` | the link's secret in `X-Share-Secret` | `shareLink.ts` `publicShareResponse` (§8.5) |
 | `POST /mcp` | API token | the MCP server (§8.6); `GET`, `DELETE` and other methods answer 405 |
@@ -1122,7 +1128,7 @@ rest:
 2. The per-IP limiter, the same instance as the dashboard's `/api` chain and
    `/docs` (`RATE_LIMIT_API_PER_MINUTE`, policy `"ip"`).
 3. Preflight: any `OPTIONS` answers 204 with `Allow-Methods` (the methods of
-   the registry), `Allow-Headers: Authorization, Content-Type, Last-Event-ID`
+   the registry), `Allow-Headers: Authorization, Content-Type, If-None-Match, Last-Event-ID`
    and `Max-Age: 600`, before credentials and the session are looked at.
 4. `authenticateBearer(ctx)`: a request whose `Authorization` header uses the
    Bearer scheme (in any letter case) is a bearer request; any other scheme
@@ -1209,19 +1215,25 @@ The spec:
 | `tags` | names from `v1Tags.ts` |
 | `auth` | `"public"` (no session is loaded, no body accepted: the handler sees a token's principal or none); `"token"`, any API token whatever its scopes, for operations about the calling token itself (a session gets 400 `bad_request`); or `{ scopes: [...] }` (any one grants access) / `{ scopes: [...], all: true }`, with `allDevices: true` for an answer that covers the whole account (a token limited to some devices gets 403 `insufficient_scope`) |
 | `request` | optional zod schemas: `params` (one key per path parameter; a value that fails it answers 404 — it names nothing), `query` (values are strings: coerce in the schema; failure 400 `validation_failed` with `fields`), `body` (JSON; not JSON 415, invalid 400) |
-| `responses` | the body schema of each success status (`200`, `201`, `202`, `204`); `null` for no body |
+| `responses` | the body schema of each success status (`200`, `201`, `202`, `204`); `null` for no body — and `304: null` for a conditional GET (§8.9), which documents `If-None-Match`, the 200's `ETag` and the `304` |
 | `errors` | error statuses beyond the implied ones (401, 403 and 503 for scoped routes; 400, 401 and 503 for token routes; 404 with path parameters, 400 with a query or body, 413 and 415 with a body, 429 and 500 always), e.g. `[409]` |
 | `access` | how a scoped route counts in the data access log (§8.8): left out, every success is recorded for the caller with the operationId and what the validated input names, `read` for GET and `write` otherwise; `{ kind }` names another kind (`export`); `{ people: true }` marks an answer with other people's data, whose handler names their owners; `false` records nothing (the log's own routes). Not allowed on public and token routes, which are never recorded |
 
-The handler receives `{ ctx, auth, params, query, body, req }`, typed from the
-spec — `auth` is non-null on scoped routes and a `TokenPrincipal` on token
-routes, absent parts are `undefined` — and
+The handler receives `{ ctx, auth, params, query, body, ifNoneMatch, req }`,
+typed from the spec — `auth` is non-null on scoped routes and a
+`TokenPrincipal` on token routes, absent parts are `undefined`, `ifNoneMatch`
+the request's header — and
 returns `{ status, body, headers? }` with a status the spec lists — and, for
 the data access log, `owners` (required with `access: { people: true }`)
 or `resource` (what else the answer names, such as a new share's id) — the
-type checker enforces all of it. The body goes out through that status's
+type checker enforces all of it. A conditional route (one listing `304`)
+returns `etag` with every 200 and `{ status: 304, etag }` when `ifNoneMatch`
+names it (`etagMatches`), which it decides from its validator before the
+heavy read (§8.9); a 200 whose `etag` the request names goes out as a 304
+all the same. The body goes out through that status's
 schema, so fields the schema does not name are dropped and a mismatch is a
-logged 500; after it, the access is recorded (§8.8).
+logged 500 without the ETag; after it, the access is recorded with the status
+that went out (§8.8).
 Errors are thrown as `HttpError`s. Streaming responses (SSE) are not supported
 yet: extend `defineRoute` rather than mounting around the registry. Mistakes in
 a spec (path parameters without params keys, a duplicate operationId or
@@ -1287,7 +1299,9 @@ docs/api.md without its title as the description), `servers` = `PUBLIC_URL`,
 `securitySchemes.bearer` (http bearer, `trlk_…`, the scope table), one security
 requirement per granting scope (`security: []` on public routes, a bearer
 requirement without scopes on token routes), the tags of
-`v1Tags.ts`, shared error responses per status listing their codes, and the
+`v1Tags.ts`, shared error responses per status listing their codes, the
+`If-None-Match` parameter, the `ETag` header and the `304 Not Modified`
+response the conditional routes share (`conditionalResponses.ts`), and the
 contracts as components (request parts as input schemas, responses as output
 schemas; regex patterns of UUIDs and timestamps are left out for
 readability). `createV1Router` builds it once at startup; `GET
@@ -1815,8 +1829,15 @@ grow somebody's log faster than that, and the retention ends every row
   (the access log's own); token routes (`tokens/verify`) and public ones (the
   OpenAPI document) record nothing; nor does a refusal, an invalid request or
   a failure, which throw before.
+- **A look is a request** (§8.9): a `304` is recorded exactly as the `200`
+  it confirms — the same action, actor and resource, so the same row of the
+  hour, counted once more, with `status` 304 (the row keeps the newest
+  status). On the people routes it is a look in each person's log too. What
+  a browser shows from its own copy without asking is not recorded; the
+  revalidation that follows is.
 - **The dashboard's private API** (`recordDashboardAccess`, after the
-  answer): tracks (level `raw`), the heatmap (its devices; the viewport is a
+  answer, with the status that went out): tracks (level `raw`), the heatmap
+  (its devices; the viewport is a
   place and is never kept), daily statistics, activity, visits, trips, raw
   points (the device; the page cursor stays out), the export (`export`, as
   the download starts), deleting a period or a device, and creating,
@@ -1899,17 +1920,141 @@ them unless the `actor` filter leaves them out.
 - *Bounded growth.* Hour rows, the fold limits per actor and per link, the
   in-memory limit, the retention, and the cascade with the account.
 
+### 8.9 Conditional answers and day stamps
+
+The browser keeps a copy of the owner's own data and asks whether it is still
+current (§14); the server answers that question cheaply. Code in
+`apps/api/src/cache/`; the guide for API users is
+[docs/api.md](api.md#conditional-requests).
+
+**Day stamps** (`dayStamps.ts`, contract `cacheStamp.ts`). A local day of a
+device in the owner's time zone has two stamps, each the first 22 base64url
+characters of SHA-256 over a canonical string — no salt, no owner, so they
+compare equal across restarts and routes; clients compare them and never
+parse them:
+
+| Stamp | Canonical string | Moves with |
+|---|---|---|
+| `raw` | `raw1`, device, date, zone; `daily_stats` (points, distance, first and last point); the visits touching the day (`visitTouches`, the finders' rule) — their count and the sum of their recorded times; the trips touching it (`tripTouches`) — count and sum of their starts; on the owner's current day the device's counter and newest point | an upload of the day's points (today at once, a past day once its statistics ran after their 10-s debounce), a deletion, a new visit or trip; never a re-sent upload of duplicates |
+| `processed` | `processed2`, device, date, zone; the stored segments of the stays overlapping the day — every part of a stay the timeline serves as one stop (§17.6, `stayPartsSql`), also its parts on other days — count, newest `computed_at`, lowest and highest version, the sums of their starts, ends and points; whether a waiting window (a queue row without missing tiles, as `hasPendingWork`) overlaps the day or one of those stays. Null while the day has no segment | a window queued over the day and again once worked out (it rewrites its segments with a new `computed_at` and cuts a neighbour's, which moves the sums), a corrected mode (`setSegmentMode` and `clearSegmentMode` set `computed_at`), a new version of the inference |
+
+They are read in one statement (`loadStampedDays`): a range scan each of
+`daily_stats`, `visits`, `trips`, `segments` and `processing_queue` and the
+devices' rows, never `locations` or `processed_points`; a row that spans
+days is counted on every day it touches, its candidate days a
+`generate_series` within the asked span that the row's rule then filters,
+and one aggregate sums them per device and day.
+`raw1` and `processed1` are recipe versions: what goes in changes, or the
+answers built from the same rows do (a track's simplification or distance,
+the assembly of the levels), and the number goes up. The day-sliced answers
+carry `stamps` — every device the principal reaches × every local day the
+range intersects, days without points too: `/api/tracks`, `/api/visits`,
+`/api/trips`, `/api/v1/tracks`, `/api/v1/segments`. The digests
+(`/api/stats/days`, `/api/v1/stats/days`) put a `stamp` on every row, and the
+`days` event carries them (§9): one function, so they are equal for the same
+instant. **Stamps are read before the data** (`stampRange`, then the
+loaders): an upload between the two is in the data and not yet in the
+stamps, so the next comparison fetches again — never the other way round,
+which would let a copy pass for newer than it is
+(`conditionalAnswers.test.ts` puts an upload between the two).
+
+**Conditional answers.** The routes below compute a validator before the
+heavy read and send it as a weak ETag: `W/"` + the first 22 base64url
+characters of SHA-256 over the owner, the route with its validated query and
+the validator (`weakEtag`), so an ETag of one account, or of another
+question, never matches; it is computed once the principal is known. A
+request whose `If-None-Match` names it (`etagMatches`: weak comparison, any
+tag of a list, `*`, which Express's own `req.fresh` also takes) gets
+`304 Not Modified` with no body, compressed by nobody, keeping
+`Cache-Control: no-store`, `ETag` and `X-Request-Id`; otherwise the answer
+goes out with the ETag, set only after the body is built (and, in v1,
+parsed). Express's own ETags stay off: a body that is never stored is not
+hashed for nothing. The dashboard's routers use `answerConditionally`, v1
+`defineRoute` (§8.3).
+
+| Route | Validator, read before the data |
+|---|---|
+| `GET /api/devices` | the summaries' columns of the devices the principal reaches (`deviceSummaryColumns`), the owner's local date and each device's oldest point of the last 24 hours (one index seek): the summaries count today and the last 24 hours, which midnight and the clock move |
+| `GET /api/tracks`, `/api/visits`, `/api/trips` | the raw strings of the range's days |
+| `GET /api/v1/tracks` | the raw strings at level `raw`, raw and processed otherwise |
+| `GET /api/v1/segments` | raw and processed (the cursor and limit are in the query) |
+| `GET /api/stats/days`, `/api/v1/stats/days` | the body: a few hundred small rows with their stamps |
+| `GET /api/heatmap` | the devices, the sum of their point counters (an upload of points too inaccurate for the cells moves it: a needless 200, never a wrong 304), the newest `updated_at` of their rows, which a deletion sets (as many points uploaded as deleted would leave the sum as it was), and the generation of rebuilt cells (`heatGeneration`, which the start-up fill moves) |
+| `GET /api/v1/insights/*` | the scope (zone, period, devices) and over the segments of the period — the overview's with the period before — their count, newest `computed_at`, versions and the sums of their bounds, and `pending` |
+| `GET /api/v1/people` | the body (projecting it is cheap: the saving is bytes and parsing) |
+
+A 304 is a look (§8.8). Measured in the development container on a processed
+day of 9 600 points, the People open — the devices, the people, the day's
+track, its inferred tracks and its timeline: before, 14 statements, about
+90 ms and 765 kB on every open; now 22 statements and the same time and bytes
+cold, and warm 13 statements, about 10 ms and no body — each 304 is its
+session, its validator and nothing else (`conditionalAnswers.test.ts` keeps
+the counts). The stamps' statement is one aggregate over a union of the
+tables' rows, prepared on each connection under a name taken from its text
+(an edited statement is a new one): about 1 ms for a device's day and 1.2 ms
+for a month. A named statement lives on its connection, so Trail talks to
+Postgres directly or through a pooler in session mode, never one in
+transaction mode (PgBouncer's default), which would run it on a connection
+that never prepared it.
+
+What a stamp cannot see, accepted: points replaced by as many within the same
+bounds on one day (the counts and the first and last point stay); a day with
+points and no segment (its processed stamp is null, so a copy is refetched
+each time); a window that worked out points and no segment of a day that has
+others (its points' levels change, its stamp only through `pending`);
+`trail recompute`, run in another process, rebuilding heat cells that were
+wrong (the heatmap's generation does not see it; the start-up fill repairs
+missing levels first, and the daily statistics it rewrites move the stamps
+as they change).
+
 ## 9. Live updates (SSE)
 
 `GET /api/events` — `text/event-stream`, `Cache-Control: no-store`,
-`X-Accel-Buffering: no`, never compressed, `: ping` every 20 s (proxies drop
-idle streams after ~100 s). A stream starts with `retry: 5000` and a `hello`
-event. In-process event bus keyed by user id (the app is a single instance).
-At most 10 streams per user (the 11th → `429 rate_limited`). Logout, session
-revocation and account deletion close the affected streams at once, and every
-ping re-checks the session; such a stream first gets a `session-ended` event,
-so the page shows the sign-in page instead of checking the session (a 401)
-and reconnecting. A shutdown closes streams without it (clients reconnect). A
+`X-Accel-Buffering: no`, never compressed. The API is one process, and its
+event bus, keyed by user id, lives in it (`events/eventBus.ts`): `ingest`,
+`device`, `person`, `share`, `days`, `resync` and a corrected mode's
+`segments` start there in every role, and a processing pass, in whichever
+process it ran (§3), reaches it through `NOTIFY` and the processing listener
+(below) — its `segments` events get ids and rings like any other. A stream starts with
+a `retry:` of its own between 3 and 8 s (the browsers' own reconnects after a
+restart then come back spread out) and a `hello` event with the server's
+time and the processing `versions`, so a page open across a release learns of
+new ones.
+
+**Ids and resuming.** Every event has an `id:`, `<key>:<seq>`: its place in
+the user's ring (`events/eventRing.ts`), which keeps the last 256 events, two
+minutes and 256 Ki characters of them, oldest out first; an event larger than
+a quarter of that is not kept. The key is random for every ring, so an id of
+another process, or of a ring dropped since, is never taken for one of this
+ring's. A ring lives while the user has a stream and two minutes after the
+last one closed (swept every 30 s), so events published while a stream is
+away for a moment are kept for it; a user without one keeps nothing, and an
+account's deletion drops its ring at once. A stream that comes back names
+the id it saw last: `?after=<id>` (`eventsQuery`, a page reopening the stream
+itself) or `Last-Event-ID` (the browser's own reconnect, which wins: it is
+newer than the `after` the page put in the URL). When the ring still holds
+everything since, `hello` carries that id and the missed events follow, each
+with its own; otherwise — an unknown or malformed id, another process, a
+dropped ring, too long ago — `resync` follows `hello`, both with the ring's
+current id, never a 400. A `person` event goes to open pages only (it counts
+as a look, §8.8): a recipient whose stream is away is marked as having missed
+one (`miss`), so their stream resyncs when it comes back; a `device` event is
+published while the owner's ring lives. The browser keeps the last id per
+tab, reconnects with it, refetches only on `resync` and spreads those
+refetches over 0–20 s — the web app's part.
+
+**Sessions and limits.** One interval per process while streams are open,
+every 20 s: `: ping` to every stream (proxies drop idle streams after ~100 s),
+then one statement for all their sessions (`activeSessions`:
+`id = ANY($1) AND expires_at > now()`) — a thousand streams, three statements
+a minute; a check still running when the next tick comes is not doubled, and
+a stream opened during one waits for the next. Logout, session revocation
+and account deletion close the affected streams at once; such a stream, and
+one whose session a tick found gone, first gets a `session-ended` event, so
+the page shows the sign-in page instead of checking the session (a 401) and
+reconnecting. A shutdown closes streams without it (clients reconnect). At
+most 10 streams per user (the 11th → `429 rate_limited`) and 5 000 per
+process (then `503 unavailable` with a random `Retry-After` of 10–30 s). A
 client with more than 1 MB unsent is dropped.
 `ingest` is published for every accepted upload (also when everything was a
 duplicate), followed by a `device` event with the fresh summary. The web app
@@ -1947,6 +2092,18 @@ the owner confirms a joined share; never while the recipient hides the owner),
 for confirmation). The web app updates the people list from `person`
 events and refetches people and shares on `share` events.
 
+The browser cache (§8.9) adds two. `days` (`{ deviceId, dates, days }`) goes
+to the owner's streams only, never to the people the device is shared with,
+after a daily statistics pass (§10): the dates it summed up again — also
+those whose stamps changed without their points, a new visit or trip
+(`afterIngest`, the days it touches, a month of them at most) or a deletion
+(whose transaction summed them up: the days of its points, of the visits and
+trips it removed and of the segments it took away, also when no point went)
+— and their rows now, each with its stamp; a date without a row has no
+points. The pass computes them only
+while the owner's ring lives. `resync` also follows a new time zone's
+rebuild of every day, instead of a `days` event per day.
+
 ## 10. Background jobs (in-process, single instance)
 
 All of them run in the API's process except the processing worker, which
@@ -1971,12 +2128,21 @@ runs in the worker (§3) — or in the API's process too, in role `all`.
 - every 2 s while accesses wait — the data access log's write (§8.8), in one
   statement per 500 rows; a failed write is tried again with the next.
 - debounced (10 s) — daily-stats recomputation per touched (device, day), in
-  the owner's time zone at run time; a failed pass is retried with the next.
+  the owner's time zone at run time, then a `days` event per device for the
+  owner's streams (§9), with the days whose stamps changed without their
+  points (`announce`); a failed pass is retried with the next.
   Changing the time zone (`PATCH /api/me`) rebuilds every day of the user's
-  devices in the background.
+  devices in the background, then publishes `resync`.
 - once, 5 s after the start — the heat levels of every device whose totals
   disagree are rebuilt from its points (`fillHeatLevels`, §8.2). A shutdown
   does not wait for it: it is cancelled and rolls back.
+- every minute — the API's `load` log line at `info` (docs/perf/README.md): the
+  minute's event-loop delay (p50, p99, max), the pool (connections, idle,
+  waiting), open SSE streams, background tasks, device-days waiting for their
+  daily statistics, the minute's uploads, points, duplicates and rejects, RSS
+  and heap, and the processing queue (rows, new windows ready, how long the
+  oldest of those has waited since it was queued; one small aggregate).
+  Numbers only, for `docker logs` and the load harness; no endpoint.
 - the processing worker (§17.4), in the worker's process (role `worker`) or
   the API's (`all`) — 3 s after new work in its own process, every 2 s while
   idle in a worker process, every minute for retries and every 15 minutes for
@@ -2007,6 +2173,20 @@ the image, so `docker compose exec app trail <command>`):
   Its liveness probe answers on `PROCESSING_METRICS_PORT` (§3); a port in use
   fails the start. Exit 1 also on an invalid configuration, in role `api` (a
   process that must not process) and when it cannot start.
+- `load-fleet --people <n> [--mix default|steered] [--shares <0-1>] [--probe]`
+  — the synthetic people of a load test (docs/perf/README.md): an account per
+  person at `load.invalid`, one phone each with its device token, one session
+  each, shares among them (`--shares`, 0.3: a person in three shares with the
+  next two), the SSE probe's own person with `--probe`; the profiles of
+  docs/design/capacity.md §2.2 (`apps/api/src/load/fleetProfiles.ts`) in the
+  mix's shares, ten phones one of each. The fleet's ids and secrets go to
+  stdout as one JSON document (refused into a terminal: exit 2); stderr gets
+  counts only. Refused (exit 1) unless `LOAD_TEST=true`, `LAUNCHWAY_ENVIRONMENT`
+  is `preview` or unset (fail closed: `production` and any other name are
+  refused) — both checked before the database is opened — and the
+  database holds no passkey and no account outside `load.invalid`, checked
+  before the CLI migrates it and again under the sign-up lock in the
+  transaction that writes the fleet.
 - `help` / `--help`
 
 Every command applies pending migrations first (same advisory lock as the
@@ -2164,7 +2344,15 @@ codes: 0 success, 1 failure (including invalid configuration), 2 wrong usage
 - Postgres is not published outside the Docker network in production.
 - The app container receives an explicit list of its own variables (§4), not
   the whole `deploy/.env`: Launchway's and the backup's variables never reach
-  it.
+  it — but `LAUNCHWAY_ENVIRONMENT`, the deployment's kind, on which `trail
+  load-fleet` refuses anywhere but in a preview.
+- Load tests never share a database with real people: `trail load-fleet`
+  (§11) refuses without `LOAD_TEST=true`, in a deployment Launchway calls
+  anything but a preview, and in a database that holds a passkey or an
+  account outside `load.invalid`; the harness
+  (`tools/load/`) drives only the stack it started, redacts tokens, sessions,
+  addresses and positions from every line of output it shows, and refuses to
+  write a report that would hold any (docs/perf/README.md, "Safety").
 
 ## 13. Deployment
 
@@ -3014,6 +3202,22 @@ security ones too.
   input (never a viewport or a name), and that every v1 path with an `{id}`
   names what it stands for; `defineRoute.test.ts` and `mcpServer.test.ts`
   what the route registry and the tool runner record, and when not.
+  The browser cache's server side (§8.9, §9): `weakEtag.test.ts` (the owner,
+  route and question in the hash, 22 characters, stable; `If-None-Match`
+  lists, weak and strong, `*`, malformed headers), `dayStamps.test.ts` (the
+  canonical strings, what moves the raw stamp and what the processed one, a
+  null processed stamp also while a window waits, device, day and zone in
+  both, the local days of a range across a change of the clocks, the days a
+  visit or trip names), `eventRing.test.ts` (256 events, two minutes, the
+  size budget, an event too large to keep, a skipped one, replay from an id,
+  ids of other rings, future and malformed ones), `eventBus.test.ts` (one id
+  per event on every stream, resuming, resync, a ring kept two minutes after
+  the last stream, a thousand streams' sessions in one statement per tick, a
+  stream opened during a check, a failing check) and `defineRoute.test.ts`
+  (304 to its own ETag before the heavy work, never to another account's,
+  no ETag on a body its schema refused, a 200 turned into a 304, the access
+  record with status 304, the spec and the types that refuse a 304 where no
+  client holds a 200).
 - `apps/api/tests/integration` — supertest against the real app and the
   `trail_test` database (`TEST_DATABASE_URL`), including passkey ceremonies
   with a software authenticator (ES256, `none` attestation, CBOR via
@@ -3093,6 +3297,25 @@ security ones too.
   (`history:read`), a token limited to some devices, other people's devices
   and their own data, and segments written at exact times across local
   midnight and the night summer time ends.
+  `conditionalAnswers.test.ts` asks every conditional route (§8.9) for a 200
+  with an ETag, a 304 without a body to it (weak or strong, in a list),
+  another account's 304 refused, and a 200 after what the answer is made of
+  changed (an upload, a visit, a trip, a corrected mode, a share); the
+  stamps equal the digest's on every route, cover days without points, are
+  read before the data (an upload between the stamps and the points: the
+  answer newer than its stamps, the next look a 200) and change for today
+  at once; and it counts the statements of a People open, cold and warm.
+  `dayStamps.test.ts` moves the digest's stamps: both digests alike, nothing
+  for re-sent duplicates, the raw stamp with a point, a visit, a trip and a
+  deletion of the day, the processed one while a window waits and once it
+  is worked out and with a corrected mode, another time zone.
+  `events.test.ts` adds the ids of every message, `hello`'s versions, the
+  jittered `retry`, a stream resumed with what it missed, `Last-Event-ID`
+  over `after`, `resync` for unknown, malformed and another process's ids
+  and for a recipient who missed a position, `days` after a statistics pass
+  (equal to the digest) and after a visit-only upload, `resync` after a new
+  time zone, one session statement per tick for a thousand streams, and the
+  process's cap.
   The migration-upgrade test also records rows in the user-data tables that
   later migrations add (`api_tokens`, `mode_overrides`, `shares`,
   `share_links`, `hidden_people` and the grid key of sharing, and
@@ -3115,7 +3338,9 @@ security ones too.
   a recipient looking with their session, their token and their agent (one
   person, no credentials of theirs), live positions over SSE, two visitors of
   a public link from IPv4 and IPv6 (and one with an unreadable address), the
-  writes (modes, a deleted period and device, tokens, shares, links), what
+  writes (modes, a deleted period and device, tokens, shares, links), a 304
+  counted on the row of the 200 it confirms with its own status (the
+  dashboard's routes, v1 and the people's logs), what
   is never recorded (the device list, configuration, health, `tokens/verify`,
   the OpenAPI document, refusals and failures), and a scan of every row for
   coordinates, secrets and addresses; `dataAccessLog.test.ts` the list and
@@ -3128,6 +3353,25 @@ security ones too.
   and remembered names, the retention, the account's deletion and the
   shutdown's last write. The migration-upgrade test fingerprints its rows and
   the visitor key.
+- The load harness (`tools/load/test`, `node --test`, part of `npm test`):
+  the profiles equal `trail load-fleet`'s and give §2.2's day; a thousand
+  phones played over a day send what docs/design/capacity.md §2.3 computes
+  (points and requests a day, the morning peak and the night, the worst ten
+  seconds, an eight-hour backlog) and a compressed day the same rates; a
+  phone's points are the same whenever asked for, on whole seconds, one a
+  second at most; the encoders send the fields and units of
+  `trackerSamples.ts` and the Overland fixture, the token where each app
+  puts it; routes from the fixture and from a file; the targets as k6
+  thresholds; the redaction of tokens, sessions, addresses and positions;
+  the collector's rates and its reading of the app's log (numbers only); the
+  report (every target, the verdict, the index) and its refusal to hold a
+  secret; the SSE probe's lags against a fake server. In the API,
+  `loadFleet.test.ts` (unit) allocates the profiles and checks every refusal
+  condition alone, and `loadFleet.test.ts` (integration) runs `trail
+  load-fleet` refused without each condition, then creates a fleet whose
+  phones upload through all three protocols, whose sessions sign in and whose
+  shares show, with no secret on stderr; `loadLine.test.ts` (both) holds the
+  load line to numbers and counts an upload.
 - `apps/web/tests` — Vitest + Testing Library (jsdom). Pages render through
   `renderPage` with the API answered by `mockApi` and the map replaced by a
   stub that shows what it was handed; the People page's tests also check
@@ -3360,11 +3604,15 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   of travel), `mode`, `source`
   `ui|api|mcp`, `created_by`
   (set null), `created_at`, `revoked_at` (rows are kept).
-- **processing_queue** — PK `(device_id, from_at)`: `to_at`, `reason`,
-  `from_level` `averaged|mapped|inferred`, `priority` (0 new data, 1
-  backfill), `attempts`, `next_at`, `enqueued_at` (the version a finished pass
-  compares against), `missing_tiles` (jsonb `["z/x/y", …]`: the window waits
-  for map data), `last_error`.
+- **processing_queue** — PK `(device_id, from_at)`: `to_at`, `reason`
+  (`ingest`, `delete`, `override`, `reprocess`, `catch-up`, `backfill`,
+  `map`, `split`), `from_level` `averaged|mapped|inferred`, `priority` (0 new
+  data from the phones, 1 repair — the rest but the backfill —, 2 the
+  backfill; rows that 0.5 queued at 1 were its backfill and run as repair,
+  its rows at 0 as new data),
+  `attempts`, `next_at`, `enqueued_at` (the version a finished pass compares
+  against), `missing_tiles` (jsonb `["z/x/y", …]`: the window waits for map
+  data), `last_error`.
 - Map cache: **osm_tiles** PK `(z, x, y)` with `status` `ok|failed`,
   `fetched_at`, `way_count`, `poi_count`, `bytes`, `failures`, `retry_at`;
   **osm_ways** (`id` = OSM way id, `kind`, the kept `tags`, `nodes` bigint[],
@@ -3603,32 +3851,86 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
 ### 17.4 Scheduling
 
 - After an upload's commit its window (earliest new point − 30 min, latest +
-  30 min) is queued (a window with the same start widens the queued one);
-  `POST /api/locations/delete` deletes the segments touching the range at
-  once and queues the range ± 30 min, and all of the deleted segments' time
-  (a long stop reaching far beyond the range leaves no hole), in its
-  transaction, under the device's processing lock; deleting a device
-  cascades. A time-zone change needs nothing (segments are UTC).
+  30 min) is queued as new data (a window with the same start widens the
+  queued one), ready no sooner than 30 s after the device's last pass began
+  and not before a window of the device that already waits for its turn
+  (`livePassIntervalMs`); `POST /api/locations/delete` deletes the segments
+  touching the range at once and queues the range ± 30 min, and all of the
+  deleted segments' time (a long stop reaching far beyond the range leaves no
+  hole), in its transaction, under the device's processing lock; deleting a
+  device cascades. A time-zone change needs nothing (segments are UTC). The
+  work has three priorities: new data from the phones (0); repair (1) — a
+  deletion, a corrected mode, the catch-up, `trail reprocess`, the older part
+  of an upload's window too big for one pass; the backfill (2). Rows that 0.5
+  queued keep their numbers: its backfill (1) runs as repair until it drains,
+  never taken along by an upload's pass, and its deletions, corrections and
+  catch-ups (0) run as new data.
 - One worker (`ProcessingWorker`, the daily-statistics scheduler's pattern,
   reading the table), in the worker process or in the API's in role `all`
   (§3), wakes 3 s after new work queued in its own process, every 2 s while
-  idle in a worker process, every minute for retries and on a 15-minute
-  pass. It takes the next ready window — new data oldest first, then the
-  backfill newest day first, and after a pass of new
-  data a ready backfill window gets the next turn, so a phone uploading every
-  few minutes never starves the backfill — with every ready window of the
-  device that overlaps it (not one waiting for map tiles or a retry: it would
-  be worked out again with every upload, before its tiles are there), grows
-  it to whole segments at both edges (at most two days out of the range the
-  rows were queued with: a segment reaching further back is cut at the window's
-  start, and the part of one reaching beyond its end stays as a segment from
-  the window's end, so no time drops out of the timeline; each part counts
+  idle in a worker process, every minute for retries, when a window that
+  waits for its device's pass interval comes due, and on a 15-minute pass.
+  It takes the next ready window — new data, then repair, each in the order
+  it came, then the backfill newest first; after a pass of new data the
+  others get the next turn, repair before the backfill (repair is finite: a
+  corrected mode never waits for a whole run, and the backfill gets the turns
+  once repair is done), so a phone uploading every few minutes never starves
+  them — with every ready window of the device that overlaps it (not one
+  waiting for map tiles or a retry: it would be worked out again with every
+  upload, before its tiles are there; and the backfill only with the
+  backfill, so an upload's pass stays the size of the upload and a backfill
+  day waits its turn).
+- **Bounded passes.** A pass reads at most `PROCESSING_PASS_MAX_POINTS`
+  (60 000) raw points, and the points it takes on span at most
+  `PROCESSING_PASS_MAX_SPAN_HOURS` (36). Rows that hold more are split first,
+  in the pass's own transaction (`splitJob`): their points are counted on the
+  primary key, and the split falls at the end of the longest recording gap of
+  more than 30 minutes — the night the phone slept through — among those that
+  leave a newest part within the budget and holding at least half of what
+  the budget allows there (the older of equal ones; no pass of a few points),
+  else at the budget's point boundary, the newest 60 000 points (less two
+  kept for the window's seams, below) or 36 hours. The pass goes on with the
+  newest part; the older part is queued with the rows' reason and level — an
+  upload's as repair (`split`), so a backlog of history never holds up the
+  fresh points of other devices — and is split again when it is taken. At a
+  gap the older part ends at the point before it and the newer part's pass
+  steps back over it, so the gap is worked out with both its ends — an older
+  part of that one point alone is none, the newer pass takes it in; at a
+  point boundary both parts hold the point, so their segments meet. Every
+  split leaves the older part fewer points, so a job is worked through. The
+  window 0.5.0 ran as one pass of 10 to 20 minutes, with
+  every upload — twelve days of a phone recording every second, 570 000
+  points of production's history — is so worked out in eleven passes of at
+  most 3.5 s on a Mac, the newest first.
+- The window then grows to whole segments at both edges, within the budget:
+  the growth is taken while the window holds at most the budget's points —
+  forward first (the segment the window's end runs into), then back, nearest
+  first (the segment under the start, then the one before a gap, else the
+  point before it) — each whole or not at all, so that a window is not cut
+  again at another place with every upload. A segment that does not fit stays
+  as it is, cut at the queued range's first or last point; a stale multi-day
+  stop at an edge costs a pass at most the budget, never two days of it. A
+  segment that starts after the window's end with only a short hole and no
+  point between counts as touching it, as one sharing the end does: a day's
+  edge that an older pass left between two points is worked out across by
+  the window before it. Two steps of one point each are taken even when
+  nothing else fits, with the two points the split keeps of the budget for
+  them: back to the point before a recording gap in front of the window's
+  first point, so the gap is worked out with both its ends, and forward to
+  the first point of a touching segment the window cannot take, so the two
+  meet. To decide, the pass counts the points up to two days on either side
+  of its range — an index scan of up to those two days, not of the budget.
+  Growth goes at most two days out of the range the rows were queued with: a
+  segment reaching further back is cut at the first point within them, and
+  the part of one reaching beyond its end stays as a segment from the
+  window's last point, so no time drops out of the timeline. Cuts fall on
+  points, so the parts meet the window; each part counts
   what it holds of its own — its points, distance, ends and middle, a stop's
   spread and last point — and keeps its mode until a window over it works it
   out again, and a part left by another version of the inference is queued
   for that at once, at low priority from the inferred level: a stale
   multi-day stop is replaced piece by piece even beyond the range `trail
-  reprocess` was given). When no segment meets the window's start and a
+  reprocess` was given. When no segment meets the window's start and a
   recording gap of more than 30 minutes lies before its first point — the
   night the phone slept through — it reaches back to the segment before the
   gap (or, with none yet, the point before it), so that the gap is worked out
@@ -3650,6 +3952,11 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   window queued for an upload crept back across days of history (0.5.0);
   tiles are fetched alongside, so a missing tile never holds up other
   windows. Ready times are kept to the millisecond, the worker's clock.
+- **The pass interval.** When a pass of a device ends — of new data or any
+  other — a live window of the device still queued (an upload came while it
+  ran) waits until 30 s after the pass ended, and the uploads after it with
+  it: a phone uploading every few seconds costs a pass per half minute, not
+  one per upload. A flush (the tests, the CLI) does not wait for the interval.
 - The 15-minute pass makes waiting windows whose tiles arrived ready and
   queues the gap of any device whose newest point is more than 15 minutes
   newer than its newest processed point (a window lost when the process
@@ -3699,7 +4006,13 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   and so does the walk to the platform a train toggle was set at the
   entrance for. The toggle in force is the latest one with nothing that ends
   it since it began (`endsToggleSql`: the move's kind counts only with a stop
-  of the device between the toggle and it). The same mode again changes nothing (but a new
+  of the device between the toggle and it). A stop here is a stay, counted
+  from its first part (§17.6's rule, `processing/stayParts.ts`): bounded passes
+  leave a long stay as parts one after the other, and a part that continues
+  the stop before it is no new stop. A toggle set during a stay runs on
+  through the parts the passes leave of it until the device leaves, and a
+  stay that began after the toggle ends it once it has lasted ten minutes,
+  however the passes cut it. The same mode again changes nothing (but a new
   `until`); another mode ends the running toggle and starts a new one; `mode:
   null` ends it. `GET` on the same path answers the toggle in force and the
   current mode, which shares and links with details show too (§8.5).
@@ -3709,12 +4022,15 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   mode. Leftovers shorter than 90 s join the corrected part, so an override
   still fits after recomputation moved the segment by a few seconds; an
   override covering less than 90 s of a move, and not most of it, leaves it
-  alone. A toggle that began before the window gets the first stored stop of
-  ten minutes or more, or move of another kind of travel after a stop, after
-  it, which ends it, and whether any stop of the device came between it and
-  the window — a window that starts at the ride home after a short wait (an
-  upload half an hour into the ride) does not take that ride for the
-  toggle's own. The applied override is in
+  alone. A toggle that began before the window gets the first stored stay of
+  ten minutes or more that began after it, or move of another kind of travel
+  after any stay that began after it, which ends it, and whether a stay of the
+  device began between it and the window — a window that starts at the ride
+  home after a short wait (an upload half an hour into the ride) does not
+  take that ride for the toggle's own. The window's first stop, where it
+  continues the stored stop the window begins in or right after
+  (`loadStayBefore`), counts from that stay's start, and so does a stop of
+  the window that continues the one before it. The applied override is in
   `features.override`
   (`{ id, kind, source }`); `GET /api/v1/stats/modes` counts the corrected
   segments.
@@ -3747,6 +4063,35 @@ the same scope), with `pending` while points of the range wait for processing. `
 (`history:read`, local days, ≤ 400) gives distance, time and segments per day,
 device and mode. `/api/v1/locations` (owned by the token pull request) stays
 raw-only, and `/stats/days` is not extended.
+
+A stay is one stop wherever it is served (`transport/servedSegments.ts`, the
+rule in `processing/stayParts.ts`, which the quick toggle reads too, §17.5).
+Bounded passes (§17.4) work a long stay out a part at a time, so it is
+stored as stops of one device one after the other; read with `lag()` over the
+device's segments, consecutive stops are one where the next begins as the one
+before ends and within 300 m of where it ended (the parts of one stay share
+their boundary point, or follow a stop that lasted beyond its last point; a
+pass joins stops at one place within 300 m, §17.3), or, a short hole apart
+(not a travel gap: more than 30 minutes with ends more than 300 m apart), where
+their middles lie within the larger of their spreads or 100 m. The stop runs
+from the first part's start to the last part's end, under the first part's
+id, its points counted once (a point two parts share once, as each part
+counts its own up to `min(ended_at, lastPointT)`) and its middle weighed by
+them, its spread the largest. The parts are looked for up to two weeks
+beyond the range asked for: a stay longer than that is served — its start,
+duration and id — from its earliest part within them, and a device's `since`
+reaches back two weeks at most (walking the chain of parts back to its start
+with a bounded recursive query is a follow-up). The timeline (and the MCP
+`get_timeline`, `get_day_summary`), the inferred tracks — so the map and the
+timeline name the same stop — the current mode of a device (`since` is the
+stay's start; it reads the latest segment and coalesces only when that is a
+stop), Insights' count of stops and the stationary `segments` of the mode
+statistics read it; the stored segments stay as the passes left them, every
+pass repeatable. `get_visits` serves the visits iOS reported, one a stay
+already. The query reads the device's segments of the range and two weeks on
+either side, a window function and a grouping over them; its plan on a large
+history is to be measured (`EXPLAIN ANALYZE` on a restored dump, a one-day
+timeline and the device mode).
 
 The dashboard calls these with its session (`apps/web/src/transport/`):
 History and Live get the level `SegmentedControl` (Raw · Averaged · Mapped ·
@@ -3787,3 +4132,5 @@ current mode.
 | `PROCESSING_OSM_TTL_DAYS` | `90` | Map tiles are refreshed after this many days |
 | `PROCESSING_MAX_ACCURACY_M` | `150` | Points less accurate than this are left out from the averaged level on |
 | `PROCESSING_STOP_MIN_S` | `180` | A stop lasts at least this long |
+| `PROCESSING_PASS_MAX_POINTS` | `60000` | A pass reads at most this many raw points (at least 1 000): a bigger job is split first, and growth to whole segments stops at it (§17.4). A very large value restores unbounded passes |
+| `PROCESSING_PASS_MAX_SPAN_HOURS` | `36` | The points a pass takes on span at most this long (1 hour or more); its growth adds at most two days at each end |

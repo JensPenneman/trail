@@ -3,28 +3,50 @@ import { type IncomingMessage, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { type ServerEvent, serverEventSchema } from "@trail/contracts/events";
 
+/** How a stream comes back: `?after=` (a page's own reconnect) or `Last-Event-ID` (the browser's). */
+export interface SseResume {
+  after?: string;
+  lastEventId?: string;
+}
+
 /** A minimal EventSource for tests: collects parsed events from `GET /api/events`. */
 export class SseClient {
   readonly events: ServerEvent[] = [];
+  /** The `id:` of each event, in step with `events` (undefined where a message had none). */
+  readonly ids: (string | undefined)[] = [];
+  /** The `retry:` the server asked for. */
+  retryMs: number | undefined;
   #response: IncomingMessage | undefined;
   #waiters: Array<() => void> = [];
   #ended: Promise<void> = new Promise(() => {});
 
-  static async connect(server: Server, cookie: string): Promise<SseClient> {
+  static async connect(server: Server, cookie: string, resume: SseResume = {}): Promise<SseClient> {
     const client = new SseClient();
     const { port } = server.address() as AddressInfo;
+    const query = resume.after === undefined ? "" : `?after=${encodeURIComponent(resume.after)}`;
     await new Promise<void>((resolve, reject) => {
       const req = request(
         {
           host: "127.0.0.1",
           port,
-          path: "/api/events",
-          headers: { Cookie: cookie, Accept: "text/event-stream" },
+          path: `/api/events${query}`,
+          headers: {
+            Cookie: cookie,
+            Accept: "text/event-stream",
+            ...(resume.lastEventId === undefined ? {} : { "Last-Event-ID": resume.lastEventId }),
+          },
         },
         (res) => {
           client.#response = res;
           if (res.statusCode !== 200) {
-            reject(new Error(`SSE answered ${res.statusCode}`));
+            const status = res.statusCode;
+            const retryAfter = res.headers["retry-after"];
+            res.resume();
+            reject(
+              new Error(
+                `SSE answered ${status}${retryAfter === undefined ? "" : ` (Retry-After ${retryAfter})`}`,
+              ),
+            );
             return;
           }
           res.setEncoding("utf8");
@@ -49,14 +71,22 @@ export class SseClient {
   }
 
   #receive(message: string): void {
-    const data = message
-      .split("\n")
+    const lines = message.split("\n");
+    const retry = lines.find((line) => line.startsWith("retry: "));
+    if (retry !== undefined) this.retryMs = Number(retry.slice(7));
+    const data = lines
       .filter((line) => line.startsWith("data: "))
       .map((line) => line.slice(6))
       .join("\n");
     if (data === "") return;
     this.events.push(serverEventSchema.parse(JSON.parse(data)));
+    this.ids.push(lines.find((line) => line.startsWith("id: "))?.slice(4));
     for (const wake of this.#waiters.splice(0)) wake();
+  }
+
+  /** The id of the newest event that had one: where this stream stands. */
+  get lastId(): string | undefined {
+    return this.ids.findLast((id) => id !== undefined);
   }
 
   /**

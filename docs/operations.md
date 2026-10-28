@@ -504,9 +504,13 @@ for the details): the averaged level (outliers dropped, noise smoothed), the
 mapped one (snapped to roads and railways from OpenStreetMap), and the
 inferred one — stops and moves, each move with its transport mode. All of it
 lives in tables of its own and can be rebuilt; the recorded points are never
-changed. One worker does the work a few seconds after each upload; after a
-release that changes the algorithms it works through the whole history again,
-newest days first, while new uploads keep going first.
+changed. One worker does the work a few seconds after each upload, at most
+every half minute per device; after a release that changes the algorithms it
+works through the whole history again, newest days first, while new uploads
+keep going first. Every pass is bounded — at most 60 000 points, taken on
+over at most 36 hours — so a long trip, a long time offline or the history of
+a phone that records every second is worked through in passes of a few
+seconds each, never in one long one.
 
 **Where the worker runs** (`PROCESSING_ROLE`, [architecture.md
 §3](architecture.md#3-runtime-topology)): in the `worker` container,
@@ -591,6 +595,7 @@ interface is there for it).
 | `PROCESSING_OVERPASS_URL=` (empty) | No map data: stops, moves and modes are still worked out, without map evidence |
 | `PROCESSING_OVERPASS_DAILY_MB=100` | A smaller daily download budget |
 | `PROCESSING_MAX_ACCURACY_M`, `PROCESSING_STOP_MIN_S` | The two thresholds worth tuning: points left out as inaccurate (150 m), the shortest stop (180 s) |
+| `PROCESSING_PASS_MAX_POINTS`, `PROCESSING_PASS_MAX_SPAN_HOURS` | The most one pass reads (60 000 points) and spans (36 hours); bigger work is split into passes first. Lower them on a small machine; a very large value works everything in one pass, as before 0.6 |
 
 **Reprocess** after changing those thresholds, or to fill in the map after a
 long budget pause:
@@ -610,13 +615,15 @@ would share that container's 1 GB with the worker's own heap.
 
 The worker's log (`docker logs launchway-trail-worker-1`) tells what it
 does: `Trail worker started` (with its liveness port), `processing window
-done` (device, range, points, segments, missing tiles, milliseconds), `map
-tile stored` (ways, stops, bytes, milliseconds),
+done` (device, range, points, segments, missing tiles, priority, whether the
+work was split for being too big for one pass, milliseconds), `map tile
+stored` (ways, stops, bytes, milliseconds),
 `processing backfill queued` (days), and warnings when a tile fails (with the
 kind of failure; it is tried again later), the daily budget is spent or a
 heartbeat could not be written. The API warns `processing events: connection
 lost; reconnecting` when its listening connection broke, and says `processing
-events listened to again` with the number of devices it caught up on. Which tile — a place someone has been — is logged at
+events listened to again` with the number of devices it caught up on. Which
+tile — a place someone has been — is logged at
 `LOG_LEVEL=debug` only, like coordinates.
 
 ## Heatmap
@@ -705,6 +712,25 @@ docker logs launchway-trail-app-1 2>&1 | grep '"msg":"API token'      # API toke
 Every container keeps at most 5 files of 10 MB of logs. Device and API tokens,
 cookies, coordinates and map tiles never appear in the app's logs at the
 default level; the API token lines carry the token's and the user's id only.
+
+Once a minute the app logs its `load` line — event-loop delay, the database
+pool, open streams, the minute's uploads and points, memory and the
+processing queue's age, numbers only ([docs/perf/README.md](perf/README.md#what-a-run-does)):
+
+```sh
+docker logs --since 1h launchway-trail-app-1 2>&1 | grep '"msg":"load"'
+```
+
+## Load tests
+
+Load tests run on the Mac against a capped copy of this stack
+(`npm run load -- fleet-10`), never against production; how to run one, how
+to read its report and the targets are in [docs/perf/README.md](perf/README.md).
+Their synthetic people come from `trail load-fleet`, which refuses unless
+`LOAD_TEST=true`, the deployment is not Launchway's `production` and its
+database holds no passkey and no real account. A load test on the node (a
+later milestone) is a preview with `LOAD_TEST=true` in its variables; never
+set it in production's.
 
 ## Local run
 

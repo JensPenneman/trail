@@ -15,8 +15,9 @@ import { devices } from "./devices";
 
 /**
  * Windows of history waiting to be processed (docs/architecture.md §17.4): a
- * table, so a restart loses nothing. Priority 0 is new data, 1 the backfill.
- * `missing_tiles` lists the map tiles a processed window still waits for.
+ * table, so a restart loses nothing. Priority 0 is new data, 1 repair, 2 the
+ * backfill. `missing_tiles` lists the map tiles a processed window still
+ * waits for.
  */
 export const processingQueue = pgTable(
   "processing_queue",

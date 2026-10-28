@@ -13,6 +13,12 @@ interface DraftStop {
   ownLast: number;
   startT: number;
   endT: number;
+  /**
+   * When the stay it is part of began: its own start, or that of the stop it
+   * continues (`continuesStop`) — the stored one before the window too; minus
+   * infinity where that stay began before the window's toggles.
+   */
+  stayStartT: number;
 }
 
 /** A move (or part of one) of the window: kept-point indices, its scores, the person's mode. */
@@ -42,11 +48,13 @@ export interface OverrideContext {
 
 /**
  * Where an override applies: a segment override its span; a toggle until the
- * first stop of `toggleEndingStopS` or more, or a move after a stop that
- * followed it that the inference reads as another kind of travel (`familyOf`).
- * The first move it reaches is its own, all its parts, whatever the inference
- * reads in them (a ride partly read as a car, the walk to the platform) — a
- * change of trains does not end it, cycling home from the station does.
+ * first stay of `toggleEndingStopS` or more that began after it, or a move
+ * after any stay that began after it that the inference reads as another kind
+ * of travel (`familyOf`). The first move it reaches is its own, all its parts, whatever
+ * the inference reads in them (a ride partly read as a car, the walk to the
+ * platform) — a change of trains does not end it, cycling home from the
+ * station does. A stay counts from its first part: the parts the passes left
+ * of the stay it was set in neither end it nor come after it.
  */
 function effectiveSpan(
   override: OverrideSpan,
@@ -56,15 +64,17 @@ function effectiveSpan(
   if (override.kind === "toggle") {
     if (override.endsBy !== null) to = Math.min(to, override.endsBy);
     const family = familyOf(override.mode);
-    // Whether a stop came since the toggle began — before this window too: only moves after
+    // Whether a stay began since the toggle began — before this window too: only moves after
     // one can end it by kind.
     let afterStop = override.stoppedBefore;
     for (const segment of segments) {
       if (segment.startT <= override.from) continue;
+      // A part of the stay the toggle was set in: the device has not left yet.
+      if (segment.kind === "stop" && segment.stayStartT <= override.from) continue;
       const inferred = segment.kind === "move" ? familyOf(segment.part.verdict.mode) : null;
       const ends =
         segment.kind === "stop"
-          ? segment.endT - segment.startT >= toggleEndingStopS
+          ? segment.endT - segment.stayStartT >= toggleEndingStopS
           : afterStop && family !== null && inferred !== null && inferred !== family;
       if (ends) {
         to = Math.min(to, segment.startT);

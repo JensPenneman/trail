@@ -69,5 +69,9 @@ export function e2eServerEnvironment(databaseUrl: string): Record<string, string
     PROCESSING_OSM_TTL_DAYS: "",
     PROCESSING_MAX_ACCURACY_M: "",
     PROCESSING_STOP_MIN_S: "",
+    PROCESSING_PASS_MAX_POINTS: "",
+    PROCESSING_PASS_MAX_SPAN_HOURS: "",
+    LOAD_TEST: "",
+    LAUNCHWAY_ENVIRONMENT: "",
   };
 }

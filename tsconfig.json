@@ -13,6 +13,10 @@
    * stays without Node's types, since their code runs in browsers too. */
   "include": [
     "scripts/**/*.mjs",
+    /* The load harness's Node side and the library it shares with k6; the k6
+     * scripts themselves (tools/load/*.js, tools/load/k6/) run in k6's runtime. */
+    "tools/load/**/*.mjs",
+    "tools/load/lib/**/*.js",
     "tests/**/*.ts",
     "*.config.ts",
     "*.config.mjs",

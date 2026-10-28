@@ -217,6 +217,65 @@ describe("the owner's own browser", () => {
     expect(await rowsOf(owner.id)).toEqual([]);
   });
 
+  it("records a 304 as the look it is: the 200's action and resource, status 304", async () => {
+    await clearLog();
+    const twice = async (path: string, query: Record<string, string>) => {
+      const first = await owner.agent.get(path).set("User-Agent", iphone).query(query).expect(200);
+      await t.ctx.dataAccess.flush();
+      const before = (await rowsOf(owner.id)).length;
+      await owner.agent
+        .get(path)
+        .set("User-Agent", iphone)
+        .set("If-None-Match", first.headers["etag"] ?? "")
+        .query(query)
+        .expect(304);
+      // One access counted again within its hour: no new row.
+      expect((await rowsOf(owner.id)).length).toBe(before);
+    };
+    await twice(apiPaths.tracks, { from: day.from, to: day.to, deviceIds: phone.id });
+    await twice(apiPaths.statsDays, { from: "2026-10-01", to: "2026-10-31" });
+    await twice(apiPaths.v1.tracks, { from: day.from, to: day.to, level: "averaged" });
+    await twice(apiPaths.v1.segments.root, { from: day.from, to: day.to });
+    const rows = await rowsOf(owner.id);
+    expect(
+      rows.map(({ action, count, status, resource }) => ({ action, count, status, resource })),
+    ).toEqual([
+      {
+        action: "dashboard.tracks",
+        count: 2,
+        status: 304,
+        resource: {
+          deviceIds: [phone.id],
+          from: new Date(day.from).toISOString(),
+          to: new Date(day.to).toISOString(),
+          level: "raw",
+        },
+      },
+      {
+        action: "dashboard.statsDays",
+        count: 2,
+        status: 304,
+        resource: { from: "2026-10-01", to: "2026-10-31" },
+      },
+      {
+        action: "getTracks",
+        count: 2,
+        status: 304,
+        resource: {
+          from: new Date(day.from).toISOString(),
+          to: new Date(day.to).toISOString(),
+          level: "averaged",
+        },
+      },
+      {
+        action: "listSegments",
+        count: 2,
+        status: 304,
+        resource: { from: new Date(day.from).toISOString(), to: new Date(day.to).toISOString() },
+      },
+    ]);
+  });
+
   it("records changes: a mode, a deleted period, a deleted device, tokens", async () => {
     await clearLog();
     await from(owner.agent, "post", apiPaths.v1.devices.mode(phone.id), { mode: "train" }).expect(
@@ -553,6 +612,19 @@ describe("people the owner shares with", () => {
       own.map((row) => [row.action, row.channel, row.actor_kind, row.count, row.resource]),
     ).toEqual([["listPeople", "api", "token", 1, {}]]);
     expect(JSON.stringify(own)).not.toMatch(new RegExp(`${owner.id}|${shareId}|${phone.id}`));
+  });
+
+  it("count a look that a 304 confirmed in the owner's log too", async () => {
+    await clearLog();
+    const first = await ana.agent.get(apiPaths.v1.people.root).expect(200);
+    await ana.agent
+      .get(apiPaths.v1.people.root)
+      .set("If-None-Match", first.headers["etag"] ?? "")
+      .expect(304);
+    const rows = await rowsOf(owner.id);
+    expect(rows.map(({ action, count, status }) => ({ action, count, status }))).toEqual([
+      { action: "listPeople", count: 2, status: 304 },
+    ]);
   });
 
   it("cannot be forged by a page of another site that sends her browser to the track", async () => {

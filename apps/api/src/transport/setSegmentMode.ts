@@ -48,8 +48,9 @@ export async function setSegmentMode(
       RETURNING id
     `);
     const overrideId = created.rows[0]?.id ?? null;
+    // `computed_at` moves with the mode, so the day's processed stamp does (docs/architecture.md §8.9).
     const updated = await tx.execute<SegmentRow>(sql`
-      UPDATE segments s SET mode_user = ${mode}, mode = ${mode},
+      UPDATE segments s SET mode_user = ${mode}, mode = ${mode}, computed_at = now(),
         features = s.features || jsonb_build_object('override',
           jsonb_build_object('id', ${overrideId}::text, 'kind', 'segment', 'source', ${source}::text))
       WHERE s.id = ${segment.id}
