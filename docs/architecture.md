@@ -2462,7 +2462,10 @@ count among them, since they lead to signed-in pages.
   the pages of its items (`/settings/tokens/:tokenId`), whether search finds
   the items by name (`searchable`: the devices) and the pages of the parts of
   an item (`/settings/devices/:deviceId/uploads`, each with its title and
-  line). The routes (`settingsRoutes.tsx`, a chunk per page),
+  line). A part of an item gets a page a level deeper when it is a table, a
+  list loaded on its own or a choice (a device's uploads, raw points, presets
+  and setup); otherwise it stays a section of the item's page, `#anchor` and
+  all (a token's scopes and use, a share's terms and its use). The routes (`settingsRoutes.tsx`, a chunk per page),
   `isSignedInPath`, the old anchors (`settingsPathFor`, own keys only), the
   search index and the devices' addresses (`devicePaths.ts`, every link to a
   device's pages) are built from it. `useSettingsTree` adds what the person
@@ -2491,8 +2494,9 @@ count among them, since they lead to signed-in pages.
   its title; also an ordered list, the uploads newest first, and a group of
   cards, a device each), `SettingsRow` (an icon tile, the label, a second
   line and the value, then a chevron — or a switch, a choice, an action, an
-  arrow for a page outside the app; a row's link is named by its label and
-  described by the rest; `useSettingsLink` gives it, and a device's card,
+  arrow for a page outside Settings: the API reference outside the app, a
+  device's History in it (`away`, a link that keeps no way back into
+  Settings); a row's link is named by its label and described by the rest; `useSettingsLink` gives it, and a device's card,
   where it was opened from and the focus on the way back), `SettingsPage` (a
   region named by its h1, the bar, the title and description; for the part
   of an item the way back is the item's page, by the item's name) and
@@ -2652,8 +2656,8 @@ count among them, since they lead to signed-in pages.
   **Activity** (the same sparkline); **Travelling now** (the quick toggle for
   this device: the Me card's sets the device that reported last); **Alerts**
   (its switch, as Notifications has it); **What it sent**: Uploads, Raw points
-  (its total on the right) and History (its tracks on the People page's
-  History); **The phone**: Tracking settings (Overland only; "Queued" while a
+  (its total on the right) and History (its tracks in the People page's
+  History, with the arrow of a row that leaves Settings); **The phone**: Tracking settings (Overland only; "Queued" while a
   preset waits) and Setup; then Rename; Issue new
   token — optionally to another app, which keeps the history — re-showing the
   setup; and Delete device (type the name to confirm), which goes back in the
