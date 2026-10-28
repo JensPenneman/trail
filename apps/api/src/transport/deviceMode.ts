@@ -14,7 +14,8 @@ import { HttpError } from "../http/httpError";
 import { lockDeviceProcessing } from "../processing/deviceLock";
 import { enqueueWindow } from "../processing/processingQueue";
 import { endsToggleSql } from "../processing/travelFamily";
-import { type SegmentRow, segmentColumns } from "./segmentRow";
+import type { SegmentRow } from "./segmentRow";
+import { servedColumns, servedSegments } from "./servedSegments";
 
 interface ToggleRow extends Record<string, unknown> {
   id: string;
@@ -79,9 +80,10 @@ export async function loadDeviceMode(
 ): Promise<DeviceMode> {
   const device = await findOwnedDevice(db, access, deviceId);
   const toggle = await openToggle(db, device.id, options.now);
+  // The latest stop or move as the timeline serves it: a stay since it began, under its id.
+  const recentFrom = new Date(options.now.getTime() - options.recentMs);
   const latest = await db.execute<SegmentRow>(sql`
-    SELECT ${segmentColumns} FROM segments s
-    WHERE s.device_id = ${device.id}
+    SELECT ${servedColumns} FROM ${servedSegments([device.id], { from: recentFrom, to: options.now })}
     ORDER BY s.started_at DESC
     LIMIT 1
   `);

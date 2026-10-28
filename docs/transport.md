@@ -84,7 +84,9 @@ recorded nothing for half an hour or more but was back where it had been,
 Trail counts that time as a stop, so the day has no hole. When it was
 somewhere else afterwards, the Timeline shows a quiet "No data" row with how
 long the phone was silent. A stop's details say how long you stayed and,
-when you moved around within it, how far.
+when you moved around within it, how far. A long stay — a week at home, a
+holiday flat — is one stop from the day you arrived to the day you left,
+however many days it lasted.
 
 Without map data — when it is switched off on your server, or not fetched yet
 for an area — Trail decides on speed, motion and pauses alone and is less

@@ -3562,6 +3562,22 @@ the same scope), with `pending` while points of the range wait for processing. `
 device and mode. `/api/v1/locations` (owned by the token pull request) stays
 raw-only, and `/stats/days` is not extended.
 
+A stay is one stop wherever it is served (`transport/servedSegments.ts`).
+Bounded passes (§17.4) work a long stay out a part at a time, so it is
+stored as stops of one device one after the other; read with `lag()` over the
+device's segments, consecutive stops with no travel gap between them (more
+than 30 minutes with ends more than 300 m apart, as in §17.3) and their
+middles within the larger of their spreads or 100 m are one: from the first
+part's start to the last part's end, under the first part's id, its points
+counted once at the points two parts share and its middle weighed by them,
+its spread the largest. The parts are looked for up to two weeks beyond the
+range asked for. The timeline (and the MCP `get_timeline`, `get_day_summary`),
+the inferred tracks — so the map and the timeline name the same stop — the
+current mode of a device (`since` is the stay's start), Insights' count of
+stops and the stationary `segments` of the mode statistics read it; the
+stored segments stay as the passes left them, every pass repeatable.
+`get_visits` serves the visits iOS reported, one a stay already.
+
 The dashboard calls these with its session (`apps/web/src/transport/`):
 History and Live get the level `SegmentedControl` (Raw · Averaged · Mapped ·
 Transport; `?level=` in the URL and remembered in `localStorage`, else the
