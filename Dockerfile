@@ -24,7 +24,8 @@ FROM manifests AS build
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     npm ci --ignore-scripts --no-audit --no-fund
 COPY . .
-RUN npm run build
+RUN npm run build \
+    && mkdir -p /out/map
 
 FROM manifests AS runtime-deps
 # Production dependencies of the API only. The workspace links npm creates are
@@ -49,6 +50,9 @@ COPY --from=build /app/apps/api/package.json ./apps/api/
 COPY --from=build /app/apps/api/drizzle ./apps/api/drizzle
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/web/dist ./apps/web/dist
+# The map data's volume (MAP_DATA_DIR): the one directory the app writes, so
+# the mount point is the app user's, and a new named volume takes that owner.
+COPY --from=build --chown=1000:1000 /out/map /var/lib/trail/map
 # `docker compose exec app trail <command>` runs the management CLI
 COPY --chmod=0755 <<'EOF' /usr/local/bin/trail
 #!/bin/sh

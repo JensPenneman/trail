@@ -32,6 +32,8 @@ services:
       ADDITIONAL_ORIGINS: http://localhost:8787
       SIGNUP_ALLOWLIST: "*@example.com"
       LOG_LEVEL: debug
+      # no map data from the registry for `npm run dev` here: Belgium is 0.56 GB
+      MAP_DATA_REGIONS: ""
       # One Playwright worker per run: its browser draws the maps in software, a
       # CPU's worth, and with more the suites of three worktrees at once overload
       # an 8-CPU Docker until tests time out (README, "Develop in a container")

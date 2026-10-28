@@ -1,5 +1,7 @@
 import type { SatelliteStyle } from "@trail/contracts/config";
 import type { IngestProtocol } from "@trail/contracts/deviceApp";
+import type { RegistryCredentials } from "../mapdata/registryCredentials";
+import type { RegistryReference } from "../mapdata/registryReference";
 
 /** Express `trust proxy` value: hop count, boolean, or a list of addresses/subnet names. */
 export type TrustProxySetting = boolean | number | string;
@@ -57,6 +59,22 @@ interface ProcessingSettings {
   stopMinS: number;
 }
 
+/** Map data from the registry (docs/architecture.md §4, docs/design/self-hosted-maps.md §4). */
+export interface MapDataSettings {
+  /** The regions to keep imported (`MAP_DATA_REGIONS`); empty: none, the fallbacks only. */
+  regions: readonly string[];
+  /** Where the artefacts come from. */
+  registry: RegistryReference;
+  /** For a private registry; null pulls anonymously, as from the public package. */
+  credentials: RegistryCredentials | null;
+  /** The volume (absolute): builds in `regions/<region>/<build>/`, downloads under way in `tmp/`. */
+  dir: string;
+  /** How often the worker looks for a newer build. */
+  refreshDays: number;
+  /** The largest build, all its files together, the worker downloads. */
+  maxBytes: number;
+}
+
 /** Validated runtime configuration (docs/architecture.md §4). */
 export interface Config {
   nodeEnv: string;
@@ -105,4 +123,5 @@ export interface Config {
   build: BuildInfo;
   rateLimits: RateLimitConfig;
   processing: ProcessingSettings;
+  mapData: MapDataSettings;
 }

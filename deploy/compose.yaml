@@ -92,6 +92,14 @@ services:
       PROCESSING_OSM_TTL_DAYS:
       PROCESSING_MAX_ACCURACY_M:
       PROCESSING_STOP_MIN_S:
+      # map data from the registry (docs/operations.md, "Map data"); an empty
+      # MAP_DATA_REGIONS (set in .env) means none, an unset one Belgium.
+      # MAP_DATA_DIR stays the image's default, where trail-map is mounted.
+      MAP_DATA_REGIONS:
+      MAP_DATA_REGISTRY:
+      MAP_DATA_REGISTRY_TOKEN:
+      MAP_DATA_REFRESH_DAYS:
+      MAP_DATA_MAX_GB:
       # The V8 heap's limit, set instead of Node's own guess from mem_limit
       # (about 560 MB of the 1 GB on Node 24; other V8 versions guess
       # otherwise). A processing backfill holds up to ~250 MB per piece:
@@ -100,11 +108,15 @@ services:
       # the heap is collected, or at worst fails with an out-of-memory error in
       # the log, before the kernel would OOM-kill the container mid-backfill.
       NODE_OPTIONS: --max-old-space-size=640
-    # default: the way out (ntfy alerts, map data from Overpass); backend: the database
+    # default: the way out (ntfy alerts, map data from Overpass and the
+    # registry); backend: the database
     networks: [default, backend]
     read_only: true
     tmpfs:
       - /tmp
+    volumes:
+      # the regions' map data, pulled from the registry and rebuildable from it
+      - trail-map:/var/lib/trail/map
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: 1g
@@ -204,6 +216,10 @@ volumes:
   # volume of their own project, removed with the preview.
   trail-db:
     name: ${TRAIL_DB_VOLUME:-${COMPOSE_PROJECT_NAME}_trail-db}
+  # The map data of MAP_DATA_REGIONS (docs/operations.md, "Map data"): the
+  # project's own, in production and in every preview, and nothing that a
+  # backup needs, since the next refresh pulls it again.
+  trail-map:
 
 configs:
   backup-script:
