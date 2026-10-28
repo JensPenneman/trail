@@ -104,7 +104,7 @@ test.describe("API tokens", () => {
 
   test("limit a token to some devices and an expiry date", async ({ page, account }) => {
     expect(account.id).toBeTruthy();
-    await page.goto("/devices?add=1");
+    await page.goto("/settings/devices?add=1");
     const add = page.getByRole("dialog", { name: "Add a device" });
     await add.getByLabel("Name").fill("Tracked phone");
     await add.getByRole("button", { name: "Add device" }).click();

@@ -91,9 +91,9 @@ devices on the same trip it shows one of them and says that two recorded,
 rather than adding them up. The card of someone who shares no history says "Shares live location
 only", and the map shows only where they are now. Your own card says what you are doing now
 ("At the same place since 08:12"), from the phone that reported last, with
-*Now* to set how you travel; its **Details** list your devices, and the
-**Devices** page shows what they upload. Your own levels, timeline (under your
-card in Live), visits, trips and heatmap are there while you are on the map.
+*Now* to set how you travel; its **Details** list your devices, and
+**Settings › Devices** shows what they upload. Your own levels, timeline (under
+your card in Live), visits, trips and heatmap are there while you are on the map.
 **Hide** removes someone from your People page without asking them to stop;
 they still share, are told that you hid them, and you can show them again
 under *Hidden*. Hiding holds for the person: when they share with you again

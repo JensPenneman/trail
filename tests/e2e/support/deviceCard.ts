@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 
-/** A device's card on the Live page (an article named after the device). */
+/** A device's card in Settings › Devices (an article named after the device). */
 export function deviceCard(page: Page, name: string): Locator {
   return page.getByRole("article", { name });
 }

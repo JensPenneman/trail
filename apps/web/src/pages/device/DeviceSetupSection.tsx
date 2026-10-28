@@ -1,14 +1,16 @@
 import type { DeviceSummary } from "@trail/contracts/device";
-import { deviceAppInfo, type PhonePlatform, platformsLabel } from "@trail/contracts/deviceApp";
+import type { PhonePlatform } from "@trail/contracts/deviceApp";
 import {
   type OwnTracksProfile,
   platformOfProfile,
   trackerIdFor,
 } from "@trail/contracts/owntracksSetup";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { RecommendedSettings } from "../../devices/RecommendedSettings";
 import { OwnTracksProfileChoice } from "../../devices/setup/OwnTracksProfileChoice";
 import { useConfig } from "../../queries/useConfig";
+import { SettingsGroup } from "../../settings/SettingsGroup";
+import { SettingsFact } from "../../settings/SettingsRow";
 
 interface DeviceSetupSectionProps {
   device: DeviceSummary;
@@ -23,78 +25,63 @@ function ConnectionFacts({
   const urls = config.data?.ingestUrls;
   const token = <span className="mono">the access token (…{device.tokenHint})</span>;
   const fact = (label: string, value: ReactNode) => (
-    <div key={label}>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </div>
+    <SettingsFact key={label} label={label}>
+      {value}
+    </SettingsFact>
   );
   const url = (value: string | undefined) => <span className="mono">{value ?? "—"}</span>;
   switch (device.source) {
     case "overland":
-      return (
-        <dl className="facts card">
-          {fact("Receiver endpoint", url(urls?.overland))}
-          {fact("Access token", token)}
-          {fact("Device ID", <span className="mono">{device.deviceKey}</span>)}
-        </dl>
-      );
+      return [
+        fact("Receiver endpoint", url(urls?.overland)),
+        fact("Access token", token),
+        fact("Device ID", <span className="mono">{device.deviceKey}</span>),
+      ];
     case "owntracks":
-      return (
-        <dl className="facts card">
-          {fact("Mode", "HTTP")}
-          {fact("URL", url(urls?.owntracks))}
-          {platform === "ios"
-            ? fact("HTTP Headers", <>Authorization: Bearer {token}</>)
-            : fact("Password", token)}
-          {fact("Username", <span className="mono">{device.deviceKey}</span>)}
-          {fact("Device ID", <span className="mono">{device.deviceKey}</span>)}
-          {fact("Tracker ID", <span className="mono">{trackerIdFor(device.name)}</span>)}
-        </dl>
-      );
+      return [
+        fact("Mode", "HTTP"),
+        fact("URL", url(urls?.owntracks)),
+        platform === "ios"
+          ? fact("HTTP Headers", <>Authorization: Bearer {token}</>)
+          : fact("Password", token),
+        fact("Username", <span className="mono">{device.deviceKey}</span>),
+        fact("Device ID", <span className="mono">{device.deviceKey}</span>),
+        fact("Tracker ID", <span className="mono">{trackerIdFor(device.name)}</span>),
+      ];
     case "traccar":
-      return (
-        <dl className="facts card">
-          {fact("Server URL", url(urls?.osmand))}
-          {fact("Device identifier", token)}
-        </dl>
-      );
+      return [fact("Server URL", url(urls?.osmand)), fact("Device identifier", token)];
     case "osmand":
-      return (
-        <dl className="facts card">
-          {fact("Web address", <>{url(urls?.osmand)}, with the token and OsmAnd’s placeholders</>)}
-        </dl>
-      );
+      return [
+        fact("Web address", <>{url(urls?.osmand)}, with the token and OsmAnd’s placeholders</>),
+      ];
     case "gpslogger":
-      return (
-        <dl className="facts card">
-          {fact("Custom URL", <>{url(urls?.osmand)}, with GPSLogger’s placeholders</>)}
-          {fact("HTTP Headers", <>Authorization: Bearer {token}</>)}
-        </dl>
-      );
+      return [
+        fact("Custom URL", <>{url(urls?.osmand)}, with GPSLogger’s placeholders</>),
+        fact("HTTP Headers", <>Authorization: Bearer {token}</>),
+      ];
   }
 }
 
-/** Which app the device records with, how it is connected and the settings Trail recommends for it. */
+/**
+ * How the device's app is connected — for OwnTracks on the phone it runs on —
+ * and the settings Trail recommends for it: what to check or set again by
+ * hand. The token itself is shown only when Trail issues one.
+ */
 export function DeviceSetupSection({ device }: DeviceSetupSectionProps) {
-  const headingId = useId();
   const [profile, setProfile] = useState<OwnTracksProfile>("ios");
-  const app = deviceAppInfo[device.source];
   return (
-    <section className="section" aria-labelledby={headingId}>
-      <div className="section__header">
-        <h2 className="section__title" id={headingId}>
-          Setup
-        </h2>
-        <p className="section__description">
-          {app.name} ({platformsLabel(app.platforms)}). To set the phone up again, or with another
-          app, issue a new token below: Trail shows the token only when it issues one.
-        </p>
-      </div>
+    <>
       {device.source === "owntracks" ? (
-        <OwnTracksProfileChoice value={profile} onChange={setProfile} />
+        <SettingsGroup title="The phone" variant="card">
+          <OwnTracksProfileChoice value={profile} onChange={setProfile} />
+        </SettingsGroup>
       ) : null}
-      <ConnectionFacts device={device} platform={platformOfProfile(profile)} />
-      <RecommendedSettings app={device.source} owntracksProfile={profile} />
-    </section>
+      <SettingsGroup title="Connection" variant="facts">
+        <ConnectionFacts device={device} platform={platformOfProfile(profile)} />
+      </SettingsGroup>
+      <SettingsGroup variant="card">
+        <RecommendedSettings app={device.source} owntracksProfile={profile} titleAs="h2" />
+      </SettingsGroup>
+    </>
   );
 }

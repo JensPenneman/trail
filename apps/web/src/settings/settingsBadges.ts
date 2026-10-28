@@ -43,6 +43,8 @@ export function settingsBadgeValue(
   switch (id) {
     case "profile":
       return sources.user.displayName;
+    case "devices":
+      return counted(sources.devices);
     case "passkeys":
       return counted(sources.passkeys);
     case "browsers":

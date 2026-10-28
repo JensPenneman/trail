@@ -35,6 +35,15 @@
   overflow: visible;
 }
 
+/* Items that are cards of their own, one under the other. */
+.settings-group__cards {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
 .settings-group__footer {
   padding: 0 var(--space-4);
   color: var(--color-text-2);

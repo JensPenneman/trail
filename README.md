@@ -54,18 +54,19 @@ and every pull request gets a preview deployment of its own.
   doing and how far away they are. Public links show your location to
   someone without an account until the link expires. How it works:
   [docs/sharing.md](docs/sharing.md).
-- **Devices**: set up a phone by scanning a QR code; the proof that data
-  still comes in — each phone's status, last upload, battery, movement, trip,
-  position and two days of points and uploads per hour, and a feed of uploads
-  as they arrive; per-device ingest log, raw points, token rotation.
+- **Devices**, in Settings: set up a phone by scanning a QR code; the proof
+  that data still comes in — each phone's status, last upload, battery,
+  movement, trip, position and two days of points and uploads per hour, and a
+  feed of uploads as they arrive; a page per device with its ingest log, raw
+  points, tracking settings and setup a level deeper, and token rotation.
 - **Alerts** through [ntfy](https://ntfy.sh) when a device goes silent and
   when it recovers.
 - **Your data**: export as GeoJSON, GPX or CSV; delete a range or the account.
-- **Settings** in the style of the iPhone's: groups of rows with search, a
-  page for every part (and for each passkey, share, public link and API
-  token), the list beside the page on wide screens, and preferences the
-  account takes to every browser — the map's style and the level of its
-  tracks.
+- **Settings** in the style of the iPhone's: groups of rows with search
+  (one's devices found by name), a page for every part (and for each device,
+  passkey, share, public link and API token), the list beside the page on wide
+  screens, and preferences the account takes to every browser — the map's
+  style and the level of its tracks.
 - **Public API**: a versioned JSON API under `/api/v1` for scripts, apps and
   agents — devices, positions, every recorded point, visits, trips, daily
   statistics, activity and the heatmap — described in OpenAPI 3.1 and

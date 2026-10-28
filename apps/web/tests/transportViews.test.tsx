@@ -315,9 +315,15 @@ describe("the quick toggle on the Me card", () => {
       [`POST /api/v1/devices/${ids.car}/mode`]: { status: 200, body: { mode: automatic } },
     });
     const person = userEvent.setup();
-    renderPage(<DevicePage />, { path: "/devices/:deviceId", url: `/devices/${ids.car}`, user });
-    const section = await screen.findByRole("region", { name: "Travelling now" });
-    const chips = within(section).getByRole("group", { name: "Now:" });
+    renderPage(<DevicePage />, {
+      path: "/settings/devices/:deviceId",
+      url: `/settings/devices/${ids.car}`,
+      user,
+    });
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Travelling now" }),
+    ).toBeInTheDocument();
+    const chips = screen.getByRole("group", { name: "Now:" });
     await person.click(await within(chips).findByRole("button", { name: "Car" }));
     expect(api.calls.find((call) => call.method === "POST")?.path).toBe(
       `/api/v1/devices/${ids.car}/mode`,

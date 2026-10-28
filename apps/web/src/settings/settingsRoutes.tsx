@@ -2,6 +2,7 @@ import { Navigate, type RouteObject, useLocation } from "react-router";
 import {
   type SettingsDetailId,
   type SettingsPageId,
+  type SettingsPartId,
   settingsPageNodes,
   settingsRedirects,
   settingsRootPath,
@@ -13,6 +14,7 @@ type LazyPage = NonNullable<RouteObject["lazy"]>;
 const pageModules: Readonly<Record<SettingsPageId, LazyPage>> = {
   profile: () =>
     import("../pages/settings/ProfilePage").then((m) => ({ Component: m.ProfilePage })),
+  devices: () => import("../pages/devices/DevicesPage").then((m) => ({ Component: m.DevicesPage })),
   passkeys: () =>
     import("../pages/settings/PasskeysPage").then((m) => ({ Component: m.PasskeysPage })),
   browsers: () =>
@@ -41,6 +43,7 @@ const pageModules: Readonly<Record<SettingsPageId, LazyPage>> = {
 };
 
 const detailModules: Readonly<Record<SettingsDetailId, LazyPage>> = {
+  device: () => import("../pages/device/DevicePage").then((m) => ({ Component: m.DevicePage })),
   passkey: () =>
     import("../pages/settings/PasskeyPage").then((m) => ({ Component: m.PasskeyPage })),
   share: () => import("../pages/settings/SharePage").then((m) => ({ Component: m.SharePage })),
@@ -49,6 +52,19 @@ const detailModules: Readonly<Record<SettingsDetailId, LazyPage>> = {
   token: () =>
     import("../pages/settings/ApiTokenPage").then((m) => ({ Component: m.ApiTokenPage })),
   viewer: () => import("../pages/settings/ViewerPage").then((m) => ({ Component: m.ViewerPage })),
+};
+
+const partModules: Readonly<Record<SettingsPartId, LazyPage>> = {
+  uploads: () =>
+    import("../pages/device/DeviceUploadsPage").then((m) => ({ Component: m.DeviceUploadsPage })),
+  points: () =>
+    import("../pages/device/DevicePointsPage").then((m) => ({ Component: m.DevicePointsPage })),
+  tracking: () =>
+    import("../pages/device/DeviceTrackingPage").then((m) => ({
+      Component: m.DeviceTrackingPage,
+    })),
+  setup: () =>
+    import("../pages/device/DeviceSetupPage").then((m) => ({ Component: m.DeviceSetupPage })),
 };
 
 /** A path of the tree relative to `/settings`, as a child route takes it. */
@@ -71,10 +87,13 @@ export const settingsRoute: RouteObject = {
     },
     ...settingsPageNodes.flatMap((page): RouteObject[] => [
       { path: relative(page.path), lazy: pageModules[page.id as SettingsPageId] },
-      ...(page.details ?? []).map((detail) => ({
-        path: relative(detail.path),
-        lazy: detailModules[detail.id as SettingsDetailId],
-      })),
+      ...(page.details ?? []).flatMap((detail): RouteObject[] => [
+        { path: relative(detail.path), lazy: detailModules[detail.id as SettingsDetailId] },
+        ...(detail.parts ?? []).map((part) => ({
+          path: relative(part.path),
+          lazy: partModules[part.id as SettingsPartId],
+        })),
+      ]),
     ]),
     ...settingsRedirects.map((redirect) => ({
       path: relative(redirect.from),

@@ -1,3 +1,5 @@
+import type { DeviceSummary } from "@trail/contracts/device";
+import { deviceAppInfo } from "@trail/contracts/deviceApp";
 import { useMemo } from "react";
 import { useSessionUser } from "../app/useSessionUser";
 import { useFormatter } from "../format/useFormatter";
@@ -13,6 +15,7 @@ import { useNow } from "../time/useNow";
 import { type SettingsBadgeSources, settingsBadgeValue } from "./settingsBadges";
 import {
   type SettingsSearchEntry,
+  type SettingsSearchItem,
   searchSettings,
   settingsSearchIndex,
 } from "./settingsSearchIndex";
@@ -29,16 +32,24 @@ export interface SettingsTree {
   search: (query: string) => SettingsSearchEntry[];
 }
 
+/** A device as search finds it: by its name, its app and its device ID. */
+const searchItemOf = (device: DeviceSummary): SettingsSearchItem => ({
+  id: device.id,
+  label: device.name,
+  keywords: [deviceAppInfo[device.source].name, device.deviceKey],
+});
+
 /**
  * The tree as the signed-in person sees it: administrators' rows only for
- * administrators, each row with its value. The values come from the lists
- * the pages show themselves (one cache), so opening a page after the list
- * asks for nothing again.
+ * administrators, each row with its value, and search that also finds one's
+ * devices by name. The values come from the lists the pages show themselves
+ * (one cache), so opening a page after the list asks for nothing again.
  */
 export function useSettingsTree(): SettingsTree {
   const user = useSessionUser();
   const format = useFormatter();
   const now = useNow(60_000);
+  const devices = useDevices().data;
   const sources: SettingsBadgeSources = {
     user,
     now,
@@ -48,11 +59,14 @@ export function useSettingsTree(): SettingsTree {
     shares: useShares().data,
     links: useShareLinks().data,
     tokens: useApiTokens().data,
-    devices: useDevices().data,
+    devices,
     config: useConfig().data,
     viewers: useAccessSummary({ days: 30, actorId: null }).data,
   };
-  const index = useMemo(() => settingsSearchIndex(user.isAdmin), [user.isAdmin]);
+  const index = useMemo(
+    () => settingsSearchIndex(user.isAdmin, { device: (devices ?? []).map(searchItemOf) }),
+    [user.isAdmin, devices],
+  );
   return {
     groups: settingsGroupsFor(user.isAdmin).map(({ group, nodes }) => ({
       group,

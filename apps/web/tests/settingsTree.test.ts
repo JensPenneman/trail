@@ -1,14 +1,26 @@
 import { describe, expect, it } from "vitest";
+import { addDevicePath, devicePath, devicesPath } from "../src/devices/devicePaths";
 import { settingsBadgeValue } from "../src/settings/settingsBadges";
 import { fold, searchSettings, settingsSearchIndex } from "../src/settings/settingsSearchIndex";
 import {
   settingsGroupsFor,
+  settingsItemPath,
   settingsNodes,
   settingsPage,
   settingsPageNodes,
+  settingsPart,
   settingsPlaceOf,
 } from "../src/settings/settingsTree";
-import { apiToken, config, device, outgoingShare, shareLink, user } from "./support/fixtures";
+import {
+  apiToken,
+  car,
+  config,
+  device,
+  ids,
+  outgoingShare,
+  shareLink,
+  user,
+} from "./support/fixtures";
 
 const labelsOf = (isAdmin: boolean) =>
   settingsGroupsFor(isAdmin).map(({ group, nodes }) => [
@@ -19,7 +31,7 @@ const labelsOf = (isAdmin: boolean) =>
 describe("the Settings tree", () => {
   it("has the groups and rows of the plan, in their order", () => {
     expect(labelsOf(true)).toEqual([
-      ["Account", ["Profile", "Passkeys", "Browsers"]],
+      ["Account", ["Profile", "Devices", "Passkeys", "Browsers"]],
       ["Privacy & data", ["Sharing", "Public links", "Who viewed you", "Access log", "Your data"]],
       ["Developer", ["API tokens", "MCP", "API reference"]],
       ["App", ["Preferences", "Notifications", "About"]],
@@ -35,7 +47,10 @@ describe("the Settings tree", () => {
   it("puts every page at an address of its own under /settings", () => {
     const paths = settingsPageNodes.flatMap((page) => [
       page.path,
-      ...(page.details ?? []).map((detail) => detail.path),
+      ...(page.details ?? []).flatMap((detail) => [
+        detail.path,
+        ...(detail.parts ?? []).map((part) => part.path),
+      ]),
     ]);
     expect(new Set(paths).size).toBe(paths.length);
     for (const path of paths)
@@ -44,6 +59,15 @@ describe("the Settings tree", () => {
     expect(settingsPage("viewers").path).toBe("/settings/privacy/viewers");
     expect(settingsPage("access-log").path).toBe("/settings/privacy/access-log");
     expect(settingsPage("accounts")).toMatchObject({ path: "/settings/accounts", adminOnly: true });
+    expect(settingsPage("devices")).toMatchObject({ path: "/settings/devices", adminOnly: false });
+    // A part of an item lives under the item's own address.
+    for (const page of settingsPageNodes) {
+      for (const detail of page.details ?? []) {
+        for (const part of detail.parts ?? []) {
+          expect(part.path.startsWith(`${detail.path}/`), part.path).toBe(true);
+        }
+      }
+    }
     // A page's anchors for search are ids its headings can carry.
     for (const page of settingsPageNodes) {
       for (const row of page.rows ?? []) {
@@ -64,7 +88,35 @@ describe("the Settings tree", () => {
       level: 1,
       page: { id: "viewers" },
     });
+    expect(settingsPlaceOf("/settings/devices")).toMatchObject({
+      level: 1,
+      page: { id: "devices" },
+    });
+    expect(settingsPlaceOf("/settings/devices/abc")).toMatchObject({
+      level: 2,
+      page: { id: "devices" },
+    });
+    for (const part of ["uploads", "points", "tracking", "setup"]) {
+      expect(settingsPlaceOf(`/settings/devices/abc/${part}/`), part).toMatchObject({
+        level: 3,
+        page: { id: "devices" },
+      });
+    }
     expect(settingsPlaceOf("/settings/elsewhere")).toEqual({ level: 1, page: undefined });
+  });
+
+  it("makes the addresses of the devices from the tree, their ids made safe", () => {
+    expect(devicesPath).toBe("/settings/devices");
+    expect(addDevicePath).toBe("/settings/devices?add=1");
+    expect(devicePath(ids.phone)).toBe(`/settings/devices/${ids.phone}`);
+    expect(devicePath(ids.phone, "uploads")).toBe(`/settings/devices/${ids.phone}/uploads`);
+    expect(devicePath(ids.phone, "points")).toBe(`/settings/devices/${ids.phone}/points`);
+    expect(devicePath("a/b?c#d", "setup")).toBe("/settings/devices/a%2Fb%3Fc%23d/setup");
+    expect(settingsItemPath("/settings/tokens/:tokenId", "x y")).toBe("/settings/tokens/x%20y");
+    expect(settingsPart("tracking")).toMatchObject({
+      label: "Tracking settings",
+      path: "/settings/devices/:deviceId/tracking",
+    });
   });
 });
 
@@ -112,6 +164,42 @@ describe("search in Settings", () => {
     ]);
   });
 
+  it("finds the person's devices by name, app and device ID, and leads to their pages", () => {
+    const withDevices = settingsSearchIndex(false, {
+      device: [
+        { id: ids.phone, label: "iPhone 16", keywords: ["Overland", "iphone-16-k3f9"] },
+        { id: ids.car, label: "Car", keywords: ["OwnTracks", "car-old-iphone"] },
+      ],
+    });
+    const inIndex = (query: string) =>
+      searchSettings(withDevices, query).map((entry) => [entry.label, entry.trail, entry.to]);
+    expect(inIndex("iphone 16")[0]).toEqual([
+      "iPhone 16",
+      "Account › Devices",
+      `/settings/devices/${ids.phone}`,
+    ]);
+    expect(inIndex("car")[0]).toEqual(["Car", "Account › Devices", `/settings/devices/${ids.car}`]);
+    expect(inIndex("owntracks").map(([label]) => label)).toEqual(
+      expect.arrayContaining(["Devices", "Car", "OwnTracks endpoint"]),
+    );
+    expect(inIndex("owntracks").map(([label]) => label)).not.toContain("iPhone 16");
+    expect(inIndex("k3f9").map(([label]) => label)).toEqual(["iPhone 16"]);
+    // Without its list, search knows no devices, only the page.
+    expect(found("iphone 16")).toEqual([]);
+    expect(found("devices")[0]).toEqual(["Devices", "Account", "/settings/devices"]);
+    // A part of the Devices page, and adding one with the dialog open.
+    expect(found("add device")[0]).toEqual([
+      "Add device",
+      "Account › Devices",
+      "/settings/devices?add=1",
+    ]);
+    expect(found("uploads")[0]).toEqual([
+      "Uploads",
+      "Account › Devices",
+      "/settings/devices#uploads",
+    ]);
+  });
+
   it("finds nothing for nothing, and administrators' pages only for them", () => {
     expect(found("")).toEqual([]);
     expect(found("  ·  ")).toEqual([]);
@@ -156,6 +244,12 @@ describe("the values of the rows", () => {
       apiToken({ expiresAt: null }),
     ];
     expect(settingsBadgeValue("tokens", { ...sources, tokens })).toBe("2");
+  });
+
+  it("count the devices once they have loaded", () => {
+    expect(settingsBadgeValue("devices", sources)).toBeNull();
+    expect(settingsBadgeValue("devices", { ...sources, devices: [] })).toBeNull();
+    expect(settingsBadgeValue("devices", { ...sources, devices: [device(), car()] })).toBe("2");
   });
 
   it("show the name, the version and whether alerts are on", () => {

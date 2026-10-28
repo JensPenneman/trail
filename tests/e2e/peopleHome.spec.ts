@@ -146,8 +146,15 @@ test("a person's card shows them alone, with only what their share allows", asyn
       url.searchParams.get("date") === localDate(account.timezone, -1),
   );
   await expect(theirDay).toContainText("Nothing recorded on");
+  // Today's track is asked for again (none is kept off screen): its answer is in before the
+  // share changes, so that request is not taken for one made after the change.
+  const todaysTrack = page.waitForResponse((response) =>
+    /^\/api\/v1\/people\/[^/]+\/track$/.test(new URL(response.url()).pathname),
+  );
   await theirDay.getByRole("button", { name: "Next day" }).click();
+  await todaysTrack;
   await expect(theirDay.getByText("Today", { exact: true })).toBeVisible();
+  await expect(theirDay).toContainText(/\d+(\.\d)? km · \d\d:\d\d – \d\d:\d\d/);
 
   // Approximate and live only from now on: the page stops asking for their history.
   asked.length = 0;

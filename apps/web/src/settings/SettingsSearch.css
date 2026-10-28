@@ -11,15 +11,21 @@
   pointer-events: none;
 }
 
-.settings-search__input {
+/* Over the field's own look (Field.css), whichever of the two style sheets loads last. */
+.settings-search .settings-search__input {
   padding-inline-start: calc(var(--space-3) + 1.25rem + var(--space-2));
   border-color: var(--color-border);
   border-radius: var(--radius-l);
   background: var(--color-surface-2);
 }
 
-.settings-search__input:hover:not(:disabled) {
+.settings-search .settings-search__input:hover:not(:disabled) {
   border-color: var(--color-border-strong);
+}
+
+/* Focused, the accent's edge every field has: its quieter edge above outweighs Field.css's. */
+.settings-search .settings-search__input:focus-visible {
+  border-color: var(--color-accent);
 }
 
 .settings-search__empty {

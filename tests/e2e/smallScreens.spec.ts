@@ -11,7 +11,8 @@ const overflow = (page: Page) =>
 test.use({ viewport: { width: 320, height: 640 } });
 
 test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account }) => {
-  // Every page, Settings' fourteen included, each loaded by its address: a long walk.
+  // Every page, Settings' fifteen and a device's four included, each loaded by its address: a
+  // long walk.
   test.slow();
   const device = await uploadedDevice(
     page,
@@ -23,10 +24,14 @@ test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account 
     ["/", "People", "Timeline"],
     ["/?view=history", "People", "30 points"],
     ["/?view=heat", "People", /^\d+ points$/],
-    ["/devices", "Devices", "30 points in total"],
-    [`/devices/${device.id}`, "A phone with a rather long name", "25 shown"],
     ["/settings", "Settings", "Privacy & data"],
     ["/settings/profile", "Profile", "Time zone"],
+    ["/settings/devices", "Devices", "30 points in total"],
+    [`/settings/devices/${device.id}`, "A phone with a rather long name", "Overview"],
+    [`/settings/devices/${device.id}/uploads`, "Uploads", "Overland"],
+    [`/settings/devices/${device.id}/points`, "Raw points", "25 shown"],
+    [`/settings/devices/${device.id}/tracking`, "Tracking settings", "Send with next upload"],
+    [`/settings/devices/${device.id}/setup`, "Setup", "Recommended Overland settings"],
     ["/settings/passkeys", "Passkeys", "works on this address"],
     ["/settings/browsers", "Browsers", "This browser"],
     ["/settings/sharing", "Sharing", "Nobody sees your location."],
@@ -46,14 +51,14 @@ test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account 
     await expect(page.getByText(loaded).first()).toBeVisible();
     expect(await overflow(page), path).toBe(0);
   }
-  await page.goto("/devices?add=1");
+  await page.goto("/settings/devices?add=1");
   await page.getByRole("dialog").getByLabel("Name").fill("Narrow phone");
   await page.getByRole("dialog").getByRole("button", { name: "Add device" }).click();
   await expect(page.getByRole("dialog", { name: "Set up Narrow phone" })).toBeVisible();
   expect(await overflow(page), "the setup dialog").toBe(0);
 
   // OwnTracks' setup: long URLs, a link per platform, two lists of settings.
-  await page.goto("/devices?add=1");
+  await page.goto("/settings/devices?add=1");
   const form = page.getByRole("dialog", { name: "Add a device" });
   await form.getByLabel("Name").fill("Narrow Pixel");
   await form.getByRole("radio", { name: /^OwnTracks/ }).check();

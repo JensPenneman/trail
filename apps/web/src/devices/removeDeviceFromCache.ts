@@ -10,21 +10,21 @@ import { goneDevices } from "./goneDevices";
 export function removeDeviceFromCache(queryClient: QueryClient, deviceId: string): void {
   // first, so that no query of the device can start again from here on
   goneDevices.mark(queryClient, deviceId);
-  for (const queryKey of [
+  const own = [
     queryKeys.device(deviceId),
     queryKeys.locations(deviceId),
     [...queryKeys.all.ingestLog, deviceId],
-  ]) {
-    void queryClient.cancelQueries({ queryKey });
-  }
+  ];
+  for (const queryKey of own) void queryClient.cancelQueries({ queryKey });
   queryClient.setQueryData<DeviceListResponse>(queryKeys.devices, (current) =>
     current === undefined
       ? current
       : { devices: current.devices.filter((device) => device.id !== deviceId) },
   );
-  queryClient.removeQueries({ queryKey: queryKeys.device(deviceId) });
-  queryClient.removeQueries({ queryKey: queryKeys.locations(deviceId) });
-  queryClient.removeQueries({ queryKey: [...queryKeys.all.ingestLog, deviceId] });
+  // Emptied before they are forgotten: removing a query tells nobody, and a page that shows the
+  // device (deleted in another tab) would go on showing it. Gone, they are not fetched again.
+  for (const queryKey of own) void queryClient.resetQueries({ queryKey });
+  for (const queryKey of own) queryClient.removeQueries({ queryKey });
   for (const queryKey of [
     queryKeys.all.tracks,
     queryKeys.all.days,

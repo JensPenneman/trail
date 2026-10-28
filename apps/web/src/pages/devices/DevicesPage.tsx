@@ -1,7 +1,6 @@
 import { type DeviceStatus, deviceStatus } from "@trail/contracts/deviceStatus";
-import { useId, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
-import { DocumentTitle } from "../../app/DocumentTitle";
 import { activitySlots } from "../../devices/activitySlots";
 import { useDeviceColors } from "../../devices/useDeviceColors";
 import { useLiveState } from "../../live/useLiveState";
@@ -9,14 +8,16 @@ import { useActivity } from "../../queries/useActivity";
 import { useConfig } from "../../queries/useConfig";
 import { useDays } from "../../queries/useDays";
 import { useDevices } from "../../queries/useDevices";
+import { SettingsGroup } from "../../settings/SettingsGroup";
+import { SettingsPage } from "../../settings/SettingsPage";
+import { SettingsRow } from "../../settings/SettingsRow";
+import { settingsPage } from "../../settings/settingsTree";
 import { useNow } from "../../time/useNow";
 import { useToday } from "../../time/useToday";
 import { Button } from "../../ui/Button";
 import { EmptyState } from "../../ui/EmptyState";
 import { ErrorState } from "../../ui/ErrorState";
 import { LoadingBlock } from "../../ui/LoadingBlock";
-import { PageHeader } from "../../ui/PageHeader";
-import { PlainList } from "../../ui/PlainList";
 import { Skeleton } from "../../ui/Skeleton";
 import { AddDeviceDialog } from "./AddDeviceDialog";
 import { DeviceCard } from "./DeviceCard";
@@ -36,15 +37,15 @@ const dayStatsEveryMs = 10_000;
 const uploadsRecentMs = 60_000;
 
 /**
- * Every phone of the signed-in person and the proof that each keeps sending:
- * how many are live and the last upload, a card per device (status, last
- * upload, trip, battery, movement, today's points and distance, last position,
- * 48 hours of activity), the feed of uploads as they arrive, and the way to
- * add one (`?add=1` opens the dialog).
+ * Settings › Devices: every phone of the signed-in person and the proof that
+ * each keeps sending — how many are live and the last upload, a card per
+ * device (status, last upload, trip, battery, movement, today's points and
+ * distance, last position, 48 hours of activity) that leads to its page, the
+ * feed of uploads as they arrive, and the way to add one (`?add=1` opens the
+ * dialog).
  */
 export function DevicesPage() {
   const [params, setParams] = useSearchParams();
-  const howId = useId();
   const devices = useDevices();
   const config = useConfig();
   const colors = useDeviceColors();
@@ -95,22 +96,24 @@ export function DevicesPage() {
     );
 
   return (
-    <div className="page">
-      <DocumentTitle title="Devices" />
-      <PageHeader
-        title="Devices"
-        description={
-          <>
-            <p>Phones that send their location to Trail with a tracking app.</p>
-            {some ? <LiveSummary devices={list} statuses={statuses} /> : null}
-          </>
-        }
-        actions={
-          <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
-            Add device
-          </Button>
-        }
-      />
+    <SettingsPage
+      page="devices"
+      description={
+        <>
+          <p>{settingsPage("devices").description}</p>
+          {some ? <LiveSummary devices={list} statuses={statuses} /> : null}
+        </>
+      }
+    >
+      <SettingsGroup>
+        <SettingsRow
+          kind="action"
+          icon="plus"
+          tone="teal"
+          label="Add device"
+          onClick={() => setAdding(true)}
+        />
+      </SettingsGroup>
 
       {devices.isPending ? (
         <LoadingBlock label="Loading devices">
@@ -125,10 +128,11 @@ export function DevicesPage() {
           retrying={devices.isFetching}
         />
       ) : devices.data.length === 0 ? (
-        <div className="card">
+        <SettingsGroup title="Your devices" variant="card">
           <EmptyState
             icon="devices"
             title="No devices yet"
+            level={3}
             action={
               <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
                 Add your first device
@@ -137,10 +141,10 @@ export function DevicesPage() {
           >
             <p>Each phone gets its own access token, so you can see and manage them separately.</p>
           </EmptyState>
-        </div>
+        </SettingsGroup>
       ) : (
         <>
-          <PlainList className="devices-page__cards">
+          <SettingsGroup title="Your devices" variant="cards">
             {devices.data.map((device) => (
               <li key={device.id}>
                 <DeviceCard
@@ -163,7 +167,7 @@ export function DevicesPage() {
                 />
               </li>
             ))}
-          </PlainList>
+          </SettingsGroup>
           {days.isError ? (
             <ErrorState
               title="Today’s distances could not be loaded"
@@ -176,10 +180,7 @@ export function DevicesPage() {
         </>
       )}
 
-      <section className="section devices-page__how" aria-labelledby={howId}>
-        <h2 className="section__title" id={howId}>
-          How it works
-        </h2>
+      <SettingsGroup title="How it works" variant="card">
         <ol className="devices-page__steps">
           <li>
             Install a tracking app on the phone: <strong>Overland</strong> on an iPhone,{" "}
@@ -195,9 +196,9 @@ export function DevicesPage() {
             until the next try.
           </li>
         </ol>
-      </section>
+      </SettingsGroup>
 
       <AddDeviceDialog open={adding} onClose={() => setAdding(false)} />
-    </div>
+    </SettingsPage>
   );
 }

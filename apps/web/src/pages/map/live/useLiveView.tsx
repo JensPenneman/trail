@@ -51,7 +51,7 @@ type Focus = { key: string; lon: number; lat: number; zoom: number };
  * from the event stream, the people chosen as their shares allow. Its panel
  * is one's own day so far — today's timeline of stops and moves, under the Me
  * card — while the signed-in person is on the map; what proves that the
- * phones keep sending is the Devices page's. Asks for nothing while another
+ * phones keep sending is Settings › Devices'. Asks for nothing while another
  * view is shown.
  */
 export function useLiveView({

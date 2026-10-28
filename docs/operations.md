@@ -142,9 +142,9 @@ On a server without Trail:
 5. Open `https://trail.jenspenneman.com`, enter the address from
    `SIGNUP_ALLOWLIST` and create a passkey. The first account is the admin;
    others join through the allowlist or an invite (Settings > Accounts).
-6. Add a phone: Devices > Add device, choose its app and follow what Trail
-   shows — for Overland, OwnTracks and Traccar Client a QR code that sets the
-   app up ([trackers.md](trackers.md)).
+6. Add a phone: Settings > Devices > Add device, choose its app and follow
+   what Trail shows — for Overland, OwnTracks and Traccar Client a QR code that
+   sets the app up ([trackers.md](trackers.md)).
 
 ```sh
 curl -i https://trail.jenspenneman.com/api/health      # 200: app and database are up
@@ -262,9 +262,10 @@ forks get no preview, and CI never publishes their images.
   ```
 - **Sign-in.** Passkeys are bound to a host name, so every preview needs its
   own account: sign up with an address from `SIGNUP_ALLOWLIST`.
-- **Phones.** A phone can post to a preview like to production (Devices > Add
-  device in the preview), for example with a test device. Do not move a real
-  device there: its points would end up in a database that disappears.
+- **Phones.** A phone can post to a preview like to production (Settings >
+  Devices > Add device in the preview), for example with a test device. Do not
+  move a real device there: its points would end up in a database that
+  disappears.
 - **No backups.** The `backup` service runs only with the `production`
   profile, so a preview needs no host folder.
 
@@ -473,9 +474,9 @@ setup QR code. After a new `PUBLIC_URL`:
    the passkey. The link is valid for 15 minutes and works once. Without a
    working sign-in, create the link with the CLI:
    `docker exec launchway-trail-app-1 trail passkey-link you@example.com --origin https://<new address>`.
-2. **Move each phone.** Devices > the device > Rotate token shows a new QR code
-   with the new endpoint; scan it with the phone right away (the old token
-   stops working at once). Points queued on the phone are kept.
+2. **Move each phone.** Settings > Devices > the device > Issue new token shows
+   a new QR code with the new endpoint; scan it with the phone right away (the
+   old token stops working at once). Points queued on the phone are kept.
 3. **Public links** carry the address they were made on. Links sent before the
    change still work as long as the old address reaches the server; otherwise
    make new ones in Settings › Public links.

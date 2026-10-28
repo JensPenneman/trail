@@ -256,10 +256,9 @@ test("the quick toggle on the Me card says how you travel from now on", async ({
   await expect(again.getByRole("button", { name: "Other: Boat", pressed: true })).toBeVisible();
 
   // The same device's page has the same toggle, set to the same.
-  await page.goto(`/devices/${commuter.id}`);
-  const onItsPage = page
-    .getByRole("region", { name: "Travelling now" })
-    .getByRole("group", { name: "Now:" });
+  await page.goto(`/settings/devices/${commuter.id}`);
+  await expect(page.getByRole("heading", { level: 2, name: "Travelling now" })).toBeVisible();
+  const onItsPage = page.getByRole("group", { name: "Now:" });
   await expect(onItsPage.getByRole("button", { name: "Other: Boat", pressed: true })).toBeVisible();
   await onItsPage.getByRole("button", { name: /^Auto/ }).click();
   await expect(onItsPage.getByRole("button", { name: /^Auto/, pressed: true })).toBeVisible();
