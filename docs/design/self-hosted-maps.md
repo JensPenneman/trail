@@ -207,9 +207,9 @@ parsing and `COPY` at 58 500 ways a second, of which the parsing itself is
 `SET maintenance_work_mem = '512MB'` for the session; 5 s of
 `VACUUM ANALYZE`), plus the download of the artefact. Extrapolated by way
 count (*not measured*): Benelux about 2¼ min, Germany about 8 min, France
-about 6 min, Europe 40–50 min. A refresh takes three to four times as long
-as a first import as §2.6 describes it, which is one more reason for its
-partitions.
+about 6 min, Europe 40–50 min. A refresh takes as long as a first import:
+it loads a build of its own and swaps it in (§2.6); the loader of task 1
+imports Belgium in 16 s, refreshes it in 17 s.
 
 ### 2.3 What is extracted
 
@@ -248,34 +248,50 @@ query Trail has no other use for, at the price of the database image and
 every environment that runs tests. Changes to the tables (one migration,
 §8.3):
 
-- `osm_ways`: `source text not null` (`overpass`, or `region:<name>@<build>`,
-  the artefact's build id); `geometry bytea` instead of jsonb: big-endian
-  `int32` pairs of lon and lat in 1e-7 degrees — OSM's own precision, what
-  Overpass's JSON carries in 7 decimals — read with a `DataView`, 8 bytes a
-  vertex instead of about 22. `nodes bigint[]` and the kept `tags jsonb`
-  stay. An index on `(source)`.
-- `osm_tile_ways`: `source` joins the primary key `(z, x, y, way_id, source)`.
-  `loadMapData` already reads `DISTINCT`, so a way that two sources hold
-  (a border tile fetched from Overpass before the region arrived) is one
-  way.
-- `osm_pois`: `source`, and an index on it.
-- `osm_regions` (new): `name` (PK, `belgium`), `build_id`, `digest`,
-  `extract_timestamp`, `polygon jsonb` (the `.poly` rings), `bbox`, `status`
-  (`importing|ready|failed`), `error`, `way_count`, `poi_count`,
-  `imported_at`, `updated_at`.
+- `osm_ways`, `osm_tile_ways`, `osm_pois`: `source text not null`, and the
+  three **partitioned by list on it**. `overpass` is the cache's source, in
+  the partition `<table>_overpass` (never a default partition, which
+  `DETACH … CONCURRENTLY` refuses); a region's build is
+  `<region>@<yyyymmdd>-<first 8 hex of its digest>`, in partitions
+  `<table>_<region>_<yyyymmdd>_<digest8>` (dashes as underscores; a region
+  name of at most 31 characters keeps them within Postgres' 63) created at
+  the build's import. The keys end in `source`, as a partitioned table's
+  must: `osm_ways (id, source)`, `osm_tile_ways (z, x, y, way_id, source)` (a
+  tile is still a prefix lookup), `osm_pois (id, source)` with its index on
+  the tile. No index on `source` (the partitions prune), and no foreign key
+  from `osm_tile_ways` to `osm_ways`: a build's partitions come and go whole,
+  and the cache drops its orphans itself, so only its partition keeps an
+  index on `way_id`.
+- `osm_ways.geometry` is `bytea` instead of jsonb: big-endian `int32` pairs
+  of lon and lat in 1e-7 degrees — OSM's own precision, what Overpass's JSON
+  carries in 7 decimals, exact on the way back — read with a `DataView`, 8
+  bytes a vertex instead of about 22. node-postgres hands it over as hex,
+  which decodes in half the time of the JSON (an `int4[]` would take ten
+  times as long). `nodes bigint[]` and the kept `tags jsonb` stay.
+- `loadMapData` reads every serving source — the cache and each ready
+  build — in one statement; a way or stop two of them hold (a border tile
+  fetched from Overpass before the region arrived) comes once, from the
+  newer data (`fetched_at`, then the source).
+- `osm_regions` (new): one row per region and build — `id`, `name`
+  (`belgium`), `build_id` (yyyymmdd), `digest` (the OCI manifest's; the
+  SHA-256 of `manifest.json` for a hand import), unique together with the
+  name, `source` (unique), `status` (`importing|ready|failed`, at most one
+  `ready` a region), `error`, `extract_timestamp`, `built_at`, `polygon jsonb`
+  (the `.poly` rings as a GeoJSON MultiPolygon) with its bounding box,
+  `way_count`, `membership_count`, `poi_count`, `imported_at`, `created_at`,
+  `updated_at`.
 - `osm_tiles` stays what it is: the cache bookkeeping of the Overpass
   fallback. A region writes no rows into it; coverage comes from polygons
   (§2.5).
 
-Sizes, measured on a first import of Belgium with the loader prototype
-(§10): 329 B per way (`osm_ways`, 299 B of row and 30 B of primary key),
-166 B per membership row (`osm_tile_ways`, 77 B of row and 89 B of the two
-indexes: the text `source` in the primary key costs 34 B a row; a `smallint`
-source id would make it 132 B), 196 B per stop; Belgium's 1.53 M ways,
-1.73 M memberships (1.13 tiles a way) and 62 k stops take 0.80 GB.
-Extrapolated by way count from the extracts of §2.1: the Netherlands 1.5 GB,
-France 6.6 GB, Germany 8.7 GB, Europe about 45 GB. A refresh as §2.6
-describes it doubles that on disk (measured there). Today's cache tables
+Sizes, measured on Belgium with the loader of task 1: 849 MB of tables for
+its 1.53 M ways, 1.73 M memberships (1.13 tiles a way) and 62 k stops —
+`osm_ways` 557 MB (466 MB of rows, 90 MB of key: the text `source` in the
+key doubles it against the prototype's id alone), `osm_tile_ways` 279 MB
+(146 MB of rows, 133 MB of key), `osm_pois` 13 MB — and the same 849 MB
+after a refresh. The prototype's 0.80 GB (§10) had no `source` in the ways'
+key. Extrapolated by way count from the extracts of §2.1: the Netherlands
+1.6 GB, France 7 GB, Germany 9 GB, Europe about 48 GB. Today's cache tables
 hold a few thousand tiles, so the migration converts them in place (a
 statement at its end; the cache is rebuildable either way).
 
@@ -346,33 +362,31 @@ switched off". `availableLevel` keeps degrading to `averaged` as today.
 
 - Monthly, full replacement. The worker checks the registry tag of each
   region every `MAP_DATA_REFRESH_DAYS` days (and on `trail map refresh`);
-  a changed digest is downloaded and verified (§4.3), then imported under a
-  new source id `region:belgium@<build>` beside the old one. When the load
-  is complete, one transaction sets `osm_regions.build_id` to the new build
-  (and with it the region's source id), after which the old source's
-  membership and POI rows are
-  deleted and ways no membership row references any more are dropped (the
-  orphan rule of `saveTile`). Windows never see a half-imported region;
-  the price is twice a region's disk during the swap (§2.7).
-- Measured with the prototype on Belgium (§10), a refresh to identical
-  data takes 2 min 38 s: 22 s of `COPY` into staging tables, 33 s to upsert
-  the ways, 81 s to add the new memberships beside the old ones (a
-  five-column text key and the foreign key checked row by row), 6 s to
-  drop the old memberships and the orphans, 13 s of `VACUUM ANALYZE`. And
-  it does not give the space back: every way row is rewritten (its `source`
-  carries the build id, so no row is unchanged), every membership row is
-  new, and after the vacuum `osm_ways` is 2.0 times and `osm_tile_ways`
-  2.3 times their size after the first import (0.80 GB → 1.68 GB in all);
-  the next refresh reuses the freed pages (Monaco: 2.0 times after the
-  first refresh and after the second), so a region costs about twice its
-  import for good, not only during the swap. Task 1 should rather give
-  each build partitions of its own (the three tables partitioned by list
-  on `source` and keyed by source and id, a new build's partitions loaded
-  without indexes, indexed, then attached; the swap detaches and drops
-  the old build's partitions, which frees the space at once), or at least
-  keep the build id out of the rows that do not change
-  (`source = 'region:belgium'`, an upsert that skips unchanged ways with
-  `WHERE … IS DISTINCT FROM`, memberships replaced by difference).
+  a changed digest is downloaded and verified (§4.3), then imported as a
+  build of its own, under its source `<region>@<yyyymmdd>-<digest8>`. In
+  one transaction its three tables are created and loaded with one
+  `COPY … FREEZE` each (the rows frozen as they arrive, so no vacuum visits
+  them again), keyed, and swapped in: the three parents taken for a moment
+  (a reader's partitions are fixed when it is planned and its rows when it
+  runs, so the attach and the flip must not fall between the two), the
+  tables attached as the build's partitions, the build `ready` and the
+  region's previous build's row gone, all in one commit. Then the old
+  build's partitions are detached concurrently and dropped, which frees
+  their space at once. Windows never see a half-imported region, and a
+  reader sees the old build or the new one, whole; the price is the
+  region's tables twice during the import (§2.7). A failed import leaves
+  the build `failed` with its reason and the previous one serving; tables
+  of builds no ready row holds (a crash between the commit and the drop)
+  are swept under the import lock at the next import and at the worker's
+  start.
+- Measured on Belgium with the loader of task 1 on the development
+  container's Postgres: a first import in 16 s, a refresh to identical
+  data in 17 s, the tables 849 MB before and after it; under production's
+  `mem_limit` of 2 GB, 18 s, of which 1.7 s for the keys. The prototype's
+  refresh (§10), an upsert beside the old rows and a delete of them, took
+  2 min 38 s and left the tables at twice their size for good (0.80 →
+  1.68 GB): every way row was rewritten, since its `source` carries the
+  build id, and the next refresh only reused the freed pages.
 - No reprocessing after a refresh. The ways a move was matched to a month
   ago are still right; `processed_points.way_id` keeps pointing at OSM ids
   that may have changed, which nothing reads back. `trail reprocess
@@ -395,23 +409,25 @@ the registry) and in the database, from the measurements of §10:
 
 | Regions | One build's artefact | Database after an import | Peak during a refresh | Steady |
 |---|---|---|---|---|
-| `belgium` | 0.56 GB | 0.80 GB | 4.2 GB | 2.8 GB (1.9 GB with partitions) |
-| `benelux` | 1.51 GB | *2.4 GB* | *12 GB* | *8.0 GB (5.4 GB)* |
-| `belgium,germany` | *4.8 GB* | *9.5 GB* | *44 GB* | *30 GB (19 GB)* |
-| `europe` | *about 31 GB* | *about 45 GB* | *about 230 GB* | *about 160 GB (107 GB)* |
+| `belgium` | 0.56 GB | 0.85 GB | 4.2 GB | 1.9 GB |
+| `benelux` | 1.51 GB | *2.5 GB* | *12 GB* | *5.4 GB* |
+| `belgium,germany` | *4.8 GB* | *10 GB* | *44 GB* | *19 GB* |
+| `europe` | *about 31 GB* | *about 48 GB* | *about 230 GB* | *about 107 GB* |
 
 The volume keeps two builds (the old one serves open maps until the next
 refresh, §3.5) and holds a third while a new one downloads; the database
-holds the region's tables (twice their import size for good with the refresh
-of §2.6, once with partitions per build), and during a refresh a staging
-copy and up to 1 GB of write-ahead log besides. So Belgium: 1.1 GB on the
-volume and 1.7 GB of tables steady (0.8 GB with partitions); 1.7 GB and
-about 2.5 GB at the peak. *Italics* are extrapolated from Belgium's bytes
-per way. Europe does not fit this node with the refresh of §2.6 (about
-230 GB at the peak against 181 GB free) and fits it narrowly with partitions
-per build and the previous build deleted before a download (about 150 GB);
-it is supported on a bigger disk, not the default, and §9 says what it costs
-in time. RAM: the loader 300 MB in the worker (272 MB measured); the API's
+holds the region's tables once (each build has partitions of its own, and
+the old build's are dropped at the swap), and during a refresh the new
+build's tables beside the old and up to 1 GB of write-ahead log besides. So
+Belgium: 1.1 GB on the volume and 0.85 GB of tables steady; 1.7 GB and
+about 2.7 GB at the peak. The peak column is the prototype's, measured
+before the partitions; with them the database's share of it is about the
+old and the new build's tables and the log. *Italics* are extrapolated from Belgium's bytes
+per way. Europe fits this node narrowly, with the previous build deleted
+from the volume before a download (about 150 GB at the peak against 181 GB
+free; the prototype's refresh would have needed about 230 GB); it is
+supported on a bigger disk, not the default, and §9 says what it costs in
+time. RAM: the loader 300 MB in the worker (272 MB measured); the API's
 tile serving a few MB (the PMTiles directory cache, §3.4); Postgres
 unchanged at 2 GB (`shared_buffers` of the image's default serves the hot
 tiles; `osm_tile_ways` of Belgium is 287 MB).
