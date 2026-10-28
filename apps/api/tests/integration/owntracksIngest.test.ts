@@ -9,6 +9,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { deviceEvents } from "../../src/db/schema/deviceEvents";
 import { ingestRejects } from "../../src/db/schema/ingestRejects";
+import { heatCellZooms } from "../../src/heatmap/heatCellLevels";
 import { type Agent, agentFor, signUp } from "../support/authFlows";
 import { basicAuth, createDevice, postOverland, postOwnTracks } from "../support/deviceFlows";
 import { resetDatabase } from "../support/resetDatabase";
@@ -118,7 +119,7 @@ describe("OwnTracks ingest", () => {
     const cells = await t.ctx.db.execute<{ z: number; total: number }>(
       sql`SELECT z, sum(count)::int AS total FROM heat_cells WHERE device_id = ${deviceId} GROUP BY z ORDER BY z`,
     );
-    expect(cells.rows).toEqual([6, 9, 12, 15, 18].map((z) => ({ z, total: 1 })));
+    expect(cells.rows).toEqual(heatCellZooms.map((z) => ({ z, total: 1 })));
   });
 
   it("stores a message sent again once", async () => {

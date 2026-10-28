@@ -8,6 +8,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { deviceEvents } from "../../src/db/schema/deviceEvents";
 import { ingestRejects } from "../../src/db/schema/ingestRejects";
+import { heatCellZooms } from "../../src/heatmap/heatCellLevels";
 import { type Agent, agentFor, signUp } from "../support/authFlows";
 import { basicAuth, createDevice, postOwnTracks } from "../support/deviceFlows";
 import { resetDatabase } from "../support/resetDatabase";
@@ -110,12 +111,15 @@ describe("the OsmAnd format", () => {
     const cells = await t.ctx.db.execute<{ z: number; total: number }>(
       sql`SELECT z, sum(count)::int AS total FROM heat_cells WHERE device_id = ${id} GROUP BY z ORDER BY z`,
     );
-    expect(cells.rows).toEqual([6, 9, 12, 15, 18].map((z) => ({ z, total: 1 })));
+    expect(cells.rows).toEqual(heatCellZooms.map((z) => ({ z, total: 1 })));
   });
 
   it("stores a position sent again once", async () => {
     const { id, token } = devices.traccar;
-    await postForm(traccarForm(token, minutesAgo(40))).expect(200);
+    // The very time stored before: recomputed, it would be a second later once a second passed.
+    const [stored] = await pointsOf(id);
+    if (stored === undefined) throw new Error("the test before stored no point");
+    await postForm(traccarForm(token, new Date(stored.recordedAt))).expect(200);
     expect(await latestLog(id)).toMatchObject({ records: 1, locations: 0, duplicates: 1 });
     expect(await pointsOf(id)).toHaveLength(1);
   });
