@@ -412,10 +412,12 @@ export async function loadOverrides(
         WHERE o.kind = 'toggle' AND s.device_id = o.device_id
           AND s.started_at > o.from_at AND s.started_at < ${from.toISOString()}::timestamptz
           AND ${endsToggleSql("s", "o")}) AS ends_by,
-      (o.kind = 'toggle' AND EXISTS (SELECT 1 FROM segments s
+      (o.kind = 'toggle' AND (SELECT 1 FROM segments s
         WHERE s.device_id = o.device_id AND s.kind = 'stop'
           AND s.started_at > o.from_at AND s.started_at < ${from.toISOString()}::timestamptz
-          AND NOT ${continuesBeforeSql("s")}))
+          AND NOT ${continuesBeforeSql("s")}
+        ORDER BY s.started_at
+        LIMIT 1) IS NOT NULL)
         AS stopped_before
     FROM mode_overrides o
     WHERE o.device_id = ${deviceId} AND o.revoked_at IS NULL

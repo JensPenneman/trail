@@ -52,10 +52,13 @@ export function endsToggleSql(segment: string, toggle: string): SQL {
         >= make_interval(secs => ${toggleEndingStopS}))
     OR (${s}.kind = 'move'
       AND ${familySql(sql`${s}.mode_inferred`)} <> ${familySql(sql`${o}.mode`)}
-      AND EXISTS (
+      AND (
+        -- The first such stay, read along (device_id, started_at): not the device's whole history.
         SELECT 1 FROM segments toggle_stop
         WHERE toggle_stop.device_id = ${s}.device_id AND toggle_stop.kind = 'stop'
           AND toggle_stop.started_at > ${o}.from_at AND toggle_stop.started_at < ${s}.started_at
           AND NOT ${continuesBeforeSql("toggle_stop")}
-      )))`;
+        ORDER BY toggle_stop.started_at
+        LIMIT 1
+      ) IS NOT NULL))`;
 }
