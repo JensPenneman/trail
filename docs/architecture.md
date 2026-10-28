@@ -205,8 +205,10 @@ and the API none of the worker's:
 Both entries wait for the database and migrate under the same advisory lock:
 whichever starts first migrates, the other finds nothing to do, and neither
 needs the other to be up. On SIGTERM the worker takes no new window and lets
-the one in progress commit (§11). `deploy/compose.yaml` runs `app` in the
-default role so far.
+the one in progress commit (§11). One worker works the queue out at a time:
+two would take the same windows and work each out twice, as the queue has no
+claims yet. `deploy/compose.yaml` fixes `app` at `PROCESSING_ROLE: all` (not
+taken from `.env`).
 
 ## 4. Configuration (API environment)
 
@@ -3179,8 +3181,9 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   `confidence`, `review` (the inference was unsure; `needsReview` = review and
   no `mode_user`), `distance_m`, `duration_s`, `max_speed`, `point_count`,
   start, end and centroid lat/lon, `features` (jsonb), `version` (the
-  inferred level's), `computed_at`. Unique `(device_id, started_at)`, index
-  `(device_id, ended_at)`. Stops and moves follow each other without overlap
+  inferred level's), `computed_at`. Unique `(device_id, started_at)`, indexes
+  `(device_id, ended_at)` and `(computed_at)` (the listener's catch-up, §9).
+  Stops and moves follow each other without overlap
   and share their boundary point — except after a stop that lasted beyond its
   last point (until a visit's departure, through a pause or a still gap), whose
   next move starts at the point after it; a recording gap the phone lay still

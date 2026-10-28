@@ -31,7 +31,7 @@ The image has a second role: `trail worker` runs the processing worker
 without an HTTP server, and `PROCESSING_ROLE=api` keeps a container from
 processing, so the work can leave the API's container for one of its own
 ([Processing](#processing)). `deploy/compose.yaml` runs no such container
-yet: `app` keeps the default, `all`.
+yet: it fixes `app` at `PROCESSING_ROLE: all`.
 
 Launchway names the Compose projects `launchway-trail` (production) and
 `launchway-trail-pr-<number>` (previews); the containers are
@@ -495,10 +495,12 @@ newest days first, while new uploads keep going first.
 
 **Where the worker runs** (`PROCESSING_ROLE`, [architecture.md
 §3](architecture.md#3-runtime-topology)): in the app's own process by default
-(`all`). In a container of its own it is the same image running `trail worker`
-(role `worker`, no HTTP server), next to an app with `PROCESSING_ROLE=api`,
+(`all`). In a container of its own it is one worker, the same image running
+`trail worker` (role `worker`, no HTTP server), next to an app in role `api`,
 which still takes the uploads and queues their work but works nothing out —
-without a worker, the queue only grows. Both start in any order: whichever
+without a worker, the queue only grows. Run exactly one: a second worker, or a
+worker next to an app in role `all`, would take the same windows and work
+each out twice (the queue has no claims yet). Both start in any order: whichever
 starts first applies the migrations. The worker writes a heartbeat every 15
 seconds to `processing_workers` (rows of stopped workers go after an hour),
 and each finished window reaches the open dashboards through Postgres
@@ -549,7 +551,9 @@ docker exec launchway-trail-app-1 trail reprocess --from-level inferred         
 
 It works through the range in day windows and prints a line per device;
 tiles it lacks are left to the server, which fetches them politely
-afterwards. The modes people set are kept through every reprocessing.
+afterwards. The modes people set are kept through every reprocessing. It does
+the work itself, in the command's own process, whatever role the container
+has: in an app in role `api` too.
 
 The log tells what the worker does: `Trail worker started` (in a container of
 its own), `processing window done` (device, range, points, segments, missing
