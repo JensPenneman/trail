@@ -3,6 +3,7 @@ import { ConfigError } from "../config/loadConfig";
 import { ownEntry } from "../lib/ownEntry";
 import { type CliContext, openCliContext } from "./cliContext";
 import { inviteCommand } from "./commands/inviteCommand";
+import { mapCommand } from "./commands/mapCommand";
 import { passkeyLinkCommand } from "./commands/passkeyLinkCommand";
 import { pruneCommand } from "./commands/pruneCommand";
 import { recomputeCommand } from "./commands/recomputeCommand";
@@ -73,6 +74,7 @@ const commands: Readonly<Record<string, Command>> = {
     noOptions(args);
     return pruneCommand;
   },
+  map: mapCommand,
 };
 
 const isArgumentError = (error: unknown): error is Error =>

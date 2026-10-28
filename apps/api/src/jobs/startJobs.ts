@@ -1,5 +1,7 @@
 import type { AppContext } from "../appContext";
 import { fillHeatLevels } from "../heatmap/fillHeatLevels";
+import { createMapDataRefresher } from "../mapdata/createMapDataRefresher";
+import { startMapDataSchedule } from "../mapdata/mapDataSchedule";
 import { checkSilentDevices } from "./checkSilentDevices";
 import { intervalJob } from "./intervalJob";
 import { oneOffJob } from "./oneOffJob";
@@ -56,6 +58,22 @@ export function startJobs(ctx: AppContext): Jobs {
           });
           if (sent > 0) ctx.logger.info({ sent }, "silent-device alerts sent");
         },
+      }),
+    );
+  }
+  // The map data of MAP_DATA_REGIONS: a look at the registry soon after the start, then
+  // every MAP_DATA_REFRESH_DAYS (docs/design/self-hosted-maps.md §2.6).
+  const { mapData } = ctx.config;
+  if (mapData.regions.length > 0) {
+    jobs.push(
+      startMapDataSchedule({
+        refresher: createMapDataRefresher({
+          config: ctx.config,
+          pool: ctx.pool,
+          logger: ctx.logger,
+        }),
+        refreshDays: mapData.refreshDays,
+        logger: ctx.logger.child({ component: "mapdata" }),
       }),
     );
   }

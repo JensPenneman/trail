@@ -1,4 +1,4 @@
-import { destination } from "pino";
+import { destination, type Logger } from "pino";
 import type { Config } from "../config/config";
 import { loadConfig } from "../config/loadConfig";
 import { createPool } from "../db/createPool";
@@ -10,6 +10,8 @@ import { runtimePaths } from "../runtimePaths";
 export interface CliContext {
   config: Config;
   db: Database;
+  /** Warnings and errors on stderr (everything with LOG_LEVEL=debug). */
+  logger: Logger;
   close(): Promise<void>;
 }
 
@@ -33,5 +35,5 @@ export async function openCliContext(entryUrl: string): Promise<CliContext> {
     await pool.end();
     throw error;
   }
-  return { config, db: createDatabase(pool), close: () => pool.end() };
+  return { config, db: createDatabase(pool), logger, close: () => pool.end() };
 }
