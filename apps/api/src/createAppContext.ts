@@ -11,6 +11,7 @@ import { ProcessingListener } from "./events/processingListener";
 import type { AlertSender } from "./jobs/alert";
 import { createNtfySender } from "./jobs/createNtfySender";
 import { BackgroundTasks } from "./lib/backgroundTasks";
+import { IngestMeter } from "./load/ingestMeter";
 import { processingConfigWith } from "./processing/processingConfig";
 import { ProcessingService } from "./processing/processingService";
 import type { WaySource } from "./processing/waySource";
@@ -67,6 +68,7 @@ export function createAppContext(input: {
     bus,
     dailyStats: new DailyStatsScheduler(db, logger, input.dailyStatsDelayMs),
     background,
+    ingestMeter: new IngestMeter(),
     alerts,
     apiTokens: input.apiTokens ?? new DatabaseTokenVerifier(db, background),
     processing: new ProcessingService({

@@ -35,6 +35,13 @@ export class EventBus {
     return this.#byUser.get(userId)?.size ?? 0;
   }
 
+  /** Every open stream of every user (the load line). */
+  streamCount(): number {
+    let total = 0;
+    for (const subscribers of this.#byUser.values()) total += subscribers.size;
+    return total;
+  }
+
   publish(userId: string, event: ServerEvent): void {
     for (const subscriber of this.#byUser.get(userId) ?? []) subscriber.send(event);
   }
