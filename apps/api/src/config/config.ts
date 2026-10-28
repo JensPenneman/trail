@@ -25,6 +25,8 @@ interface RateLimitConfig {
   tokenFailedPer10Minutes: number;
   /** Requests of the public share endpoint (`/api/public/share`), per IP. */
   publicSharePerMinute: number;
+  /** Requests of the basemap (`/map/*`), per IP. */
+  mapPerMinute: number;
 }
 
 export interface AlertConfig {
@@ -83,6 +85,16 @@ export interface MapDataSettings {
   maxBytes: number;
 }
 
+/** The basemap (docs/architecture.md §14, docs/design/self-hosted-maps.md §3). */
+export interface BasemapSettings {
+  /** `self`: Trail serves it from the map data volume; `openfreemap`: the external styles, always. */
+  mode: "self" | "openfreemap";
+  /** Whose `basemap.pmtiles` the map draws (`MAP_BASEMAP_REGION`); null: nobody's. */
+  region: string | null;
+  /** Without a basemap on the volume: the external styles (true) or a plain map (false). */
+  fallback: boolean;
+}
+
 /** Validated runtime configuration (docs/architecture.md §4). */
 export interface Config {
   nodeEnv: string;
@@ -121,10 +133,19 @@ export interface Config {
   /** Silent/recovered device alerts, or null when not configured. */
   alerts: AlertConfig | null;
   defaultTimezone: string;
-  /** MapLibre styles; satellite imagery only when `MAP_STYLE_SATELLITE` is set. */
+  /**
+   * The external MapLibre styles (`MAP_STYLE_LIGHT`, `MAP_STYLE_DARK`), for
+   * `MAP_BASEMAP=openfreemap` and the fallback; satellite imagery only when
+   * `MAP_STYLE_SATELLITE` is set.
+   */
   mapStyles: { light: string; dark: string; satellite: SatelliteStyle | null };
-  /** Extra CSP `connect-src`/`img-src` sources for the map (includes the styles' and tiles' origins). */
-  mapOrigins: readonly string[];
+  basemap: BasemapSettings;
+  /**
+   * Extra CSP `connect-src`/`img-src` sources for the map: `self` while Trail
+   * serves the basemap (satellite imagery and an explicit `MAP_CONNECT_SRC`),
+   * `external` while the map uses the external styles (their origins too).
+   */
+  mapOrigins: { self: readonly string[]; external: readonly string[] };
   /** Built SPA directory (absolute). */
   webDistDir: string;
   logLevel: LogLevel;

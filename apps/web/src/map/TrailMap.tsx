@@ -13,6 +13,7 @@ import {
 } from "maplibre-gl";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useMediaQuery } from "../ui/useMediaQuery";
+import { absoluteSprite } from "./absoluteSprite";
 import { accuracyFeatures } from "./accuracyFeatures";
 import { ensureTrailLayers, trailSources, transportLayers } from "./ensureTrailLayers";
 import { heatFeatures } from "./heatFeatures";
@@ -39,6 +40,8 @@ export interface TrailMapProps {
   mapStyle: string | StyleSpecification;
   /** Whether the basemap is dark: Trail's lines and dots are drawn to stand out on it. */
   dark: boolean;
+  /** A line shown over the map (no basemap yet), or null. */
+  notice?: string | null;
   tracks?: readonly MapTrack[];
   /** Stops and moves in the colours of their modes, and connectors across gaps (the Transport level). */
   transport?: readonly MapTransportSegment[];
@@ -150,6 +153,7 @@ export function TrailMap({
   initialView,
   onViewChange,
   cooperativeGestures = false,
+  notice = null,
 }: TrailMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<MapLibreMap | null>(null);
@@ -200,7 +204,6 @@ export function TrailMap({
     try {
       instance = new MapLibreMap({
         container,
-        style: initial.mapStyle,
         center: [...(initial.initialView?.center ?? fallbackView.center)],
         zoom: initial.initialView?.zoom ?? fallbackView.zoom,
         maxZoom: 19,
@@ -238,6 +241,8 @@ export function TrailMap({
     });
     instance.on("load", () => reportView(instance));
     instance.on("moveend", () => reportView(instance));
+    // After the listeners: the style's errors and its load reach them.
+    instance.setStyle(initial.mapStyle, { transformStyle: absoluteSprite });
     setMap(instance);
     const placed = markers.current;
     return () => {
@@ -252,7 +257,7 @@ export function TrailMap({
     if (map === null || loadedStyle.current === mapStyle) return;
     loadedStyle.current = mapStyle;
     styleReady.current = false;
-    map.setStyle(mapStyle, { diff: false });
+    map.setStyle(mapStyle, { diff: false, transformStyle: absoluteSprite });
   }, [map, mapStyle]);
 
   useEffect(() => {
@@ -424,6 +429,11 @@ export function TrailMap({
           {problem === "webgl"
             ? "This browser can’t draw the map (WebGL is unavailable). Everything it would show is listed on this page."
             : "The map background could not be loaded. Check the connection; everything on the map is also listed on this page."}
+        </div>
+      )}
+      {problem !== null || notice === null ? null : (
+        <div className="trail-map__problem" role="status">
+          {notice}
         </div>
       )}
     </div>

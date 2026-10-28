@@ -4,7 +4,7 @@ import { permissionsPolicy } from "./permissionsPolicy";
 
 const twoYearsInSeconds = 63_072_000;
 
-/** The CSP of docs/architecture.md §12; `mapOrigins` are the map's tile and style servers. */
+/** The CSP of docs/architecture.md §12; `mapOrigins` are the map's outside tile and style servers. */
 export function contentSecurityPolicyDirectives(
   mapOrigins: readonly string[],
   https: boolean,
@@ -33,7 +33,7 @@ function helmetFor(mapOrigins: readonly string[], https: boolean): RequestHandle
       useDefaults: false,
       directives: contentSecurityPolicyDirectives(mapOrigins, https),
     },
-    // Map tiles come from another origin without CORP headers: no COEP.
+    // Satellite imagery and the external styles come from other origins without CORP headers: no COEP.
     crossOriginEmbedderPolicy: false,
     crossOriginOpenerPolicy: { policy: "same-origin" },
     crossOriginResourcePolicy: { policy: "same-origin" },
@@ -51,13 +51,26 @@ function helmetFor(mapOrigins: readonly string[], https: boolean): RequestHandle
 /**
  * Security headers of docs/architecture.md §12. HSTS and
  * `upgrade-insecure-requests` only make sense (and are only sent) on HTTPS —
- * plain HTTP on localhost/LAN must keep working.
+ * plain HTTP on localhost/LAN must keep working. The map's origins are those
+ * of `mapOrigins.external` while the map uses the external styles
+ * (`usesExternalStyles`, asked per request: the basemap can arrive while the
+ * server runs) and `mapOrigins.self` while Trail serves the basemap itself.
  */
-export function securityHeaders(mapOrigins: readonly string[]): RequestHandler {
-  const secure = helmetFor(mapOrigins, true);
-  const plain = helmetFor(mapOrigins, false);
+export function securityHeaders(
+  mapOrigins: { self: readonly string[]; external: readonly string[] },
+  usesExternalStyles: () => boolean,
+): RequestHandler {
+  const self = {
+    secure: helmetFor(mapOrigins.self, true),
+    plain: helmetFor(mapOrigins.self, false),
+  };
+  const external = {
+    secure: helmetFor(mapOrigins.external, true),
+    plain: helmetFor(mapOrigins.external, false),
+  };
   return (req, res, next) => {
     res.setHeader("Permissions-Policy", permissionsPolicy);
-    (req.secure ? secure : plain)(req, res, next);
+    const headers = usesExternalStyles() ? external : self;
+    (req.secure ? headers.secure : headers.plain)(req, res, next);
   };
 }

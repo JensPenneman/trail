@@ -25,6 +25,8 @@ beforeAll(async () => {
   );
   writeFileSync(join(webDist, "assets", "app-3f9a.js"), "console.log('trail');");
   writeFileSync(join(webDist, "manifest.webmanifest"), '{"name":"Trail"}');
+  mkdirSync(join(webDist, "map-assets"));
+  writeFileSync(join(webDist, "map-assets", "assets.json"), '{"hash":"0123456789abcdef"}');
   spa = await createTestContext({ webDistDir: webDist });
 });
 
@@ -198,6 +200,8 @@ describe("static web app", () => {
     expect(manifest.headers["cache-control"]).toBe("no-cache");
     await request(spa.app).get("/assets/missing.js").expect(404);
     await request(spa.app).get("/missing.png").expect(404);
+    // The map's fonts and sprites beside the build: served under /map/assets only.
+    await request(spa.app).get("/map-assets/assets.json").expect(404);
     await request(spa.app).post("/").set("Origin", testOrigin).expect(404);
     const api = await request(spa.app).get("/api/missing").expect(404);
     expect(apiErrorSchema.parse(api.body).error.code).toBe("not_found");

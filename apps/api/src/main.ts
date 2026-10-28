@@ -35,6 +35,8 @@ async function start(config: Config, logger: Logger): Promise<void> {
   const ctx = createAppContext({ config, logger, pool });
   // Before the first stream connects: what a pass finishes from now on reaches it.
   await ctx.processingListener.start();
+  // Before the first request: the config and the styles name the basemap on the volume.
+  await ctx.basemap.start();
   serve(createApp(ctx));
   const jobs = startJobs(ctx);
   ctx.processing.start();

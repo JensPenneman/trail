@@ -102,6 +102,24 @@ const mapDataRegionsSchema = z
     return names;
   });
 
+const basemapRegionSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .superRefine((name, context) => {
+    if (!isRegionName(name)) {
+      context.addIssue({
+        code: "custom",
+        message: `"${name}" is not a region: lowercase letters, digits and dashes, as scripts/mapdata/regions.json names them`,
+      });
+    } else if (name === worldRegion) {
+      context.addIssue({
+        code: "custom",
+        message: "world is the world overview, which every basemap draws on: name a country",
+      });
+    }
+  });
+
 const registrySchema = z.string().transform((value, context) => {
   const reference = parseRegistryReference(value);
   if (reference === null) {
@@ -162,13 +180,15 @@ export const envSchema = z
     // Off unless set: imagery has terms and usually a key (docs/operations.md).
     MAP_STYLE_SATELLITE: env(httpUrlSchema.optional()),
     MAP_STYLE_SATELLITE_ATTRIBUTION: env(z.string().trim().max(300).optional()),
-    MAP_CONNECT_SRC: env(
-      z
-        .string()
-        .transform(splitList)
-        .pipe(z.array(cspSourceSchema))
-        .default(["https://tiles.openfreemap.org"]),
-    ),
+    // Unset: OpenFreeMap's origin, while the map uses the external styles (loadConfig.ts).
+    MAP_CONNECT_SRC: env(z.string().transform(splitList).pipe(z.array(cspSourceSchema)).optional()),
+    // Trail serves the basemap from the map data volume (docs/design/self-hosted-maps.md §3), or
+    // the map uses the external styles above as before.
+    MAP_BASEMAP: env(z.enum(["self", "openfreemap"]).default("self")),
+    // Whose basemap.pmtiles the map draws: the first of MAP_DATA_REGIONS unless set.
+    MAP_BASEMAP_REGION: env(basemapRegionSchema.optional()),
+    // Without a basemap on the volume yet: the external styles (true), or a plain map (false).
+    MAP_BASEMAP_FALLBACK: env(booleanSchema.default(true)),
     WEB_DIST_DIR: env(z.string().optional()),
     LOG_LEVEL: env(
       z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
@@ -185,6 +205,8 @@ export const envSchema = z
     RATE_LIMIT_TOKEN_PER_MINUTE: env(intSchema(1, 1_000_000).default(600)),
     RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES: env(intSchema(1, 1_000_000).default(30)),
     RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE: env(intSchema(1, 1_000_000).default(60)),
+    // The basemap (/map/*: tiles, styles, fonts, sprites): a fast pan asks for hundreds of tiles.
+    RATE_LIMIT_MAP_PER_MINUTE: env(intSchema(1, 1_000_000).default(3000)),
     // What this process runs (docs/architecture.md §3): `api` queues and processes nothing,
     // `worker` processes and serves no HTTP, `all` does both, as one container always did.
     PROCESSING_ROLE: env(z.enum(["api", "worker", "all"]).default("all")),

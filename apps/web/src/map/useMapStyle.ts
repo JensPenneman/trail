@@ -38,9 +38,15 @@ export function resolveMapStyleChoice(
   return rememberedChoice ?? preferred ?? "auto";
 }
 
+/** What the map says while the server has no basemap yet and draws a plain ground (§14). */
+export const basemapMissingNotice =
+  "Basemap not installed yet: the tracks are drawn on a plain background. Everything on the map is also listed on this page.";
+
 export interface MapStyle {
   /** The MapLibre style (a URL, or a document built here); null until the config has loaded. */
   style: string | StyleSpecification | null;
+  /** A line the map shows over itself, or null. */
+  notice: string | null;
   /** Whether Trail's lines and dots are drawn for a dark background (dark and satellite maps). */
   dark: boolean;
   /** What the style control shows as chosen. */
@@ -55,7 +61,10 @@ export interface MapStyle {
  * one last chosen on this browser, else the account's preference (Settings ›
  * Preferences; signed in only), else Auto, which follows the light or dark
  * setting of the system live. Satellite falls back to Auto on a server without
- * imagery, so an old link or choice never leaves the map blank.
+ * imagery, so an old link or choice never leaves the map blank. The light and
+ * dark styles are the server's own basemap (`/map/styles/…`) or another
+ * server's, as the config says; without a basemap yet, a plain ground and a
+ * notice.
  */
 export function useMapStyle(): MapStyle {
   const { data: config } = useConfig();
@@ -112,8 +121,10 @@ export function useMapStyle(): MapStyle {
         : dark
           ? styles.dark
           : styles.light;
+  const notice = styles?.basemap === "none" && choice !== "satellite" ? basemapMissingNotice : null;
   return {
     style,
+    notice,
     dark,
     choice,
     choices: imagery === null ? withoutImagery : mapStyleChoices,

@@ -26,6 +26,9 @@ const apiTokenSecret = /trl[ks]?_[A-Za-z0-9_-]{43}/;
 
 const redacted = "[redacted]";
 
+/* A basemap tile's path: its zoom, column and row are where someone looks on the map. */
+const tilePrefix = ["map", "tiles"];
+
 const decoded = (text: string): string => {
   try {
     return decodeURIComponent(text);
@@ -43,10 +46,10 @@ const isPayloadPath = (names: readonly string[]): boolean => {
 /**
  * A request URL fit for the logs: one-time link and invite tokens in the path,
  * device tokens in the query string, every value of an upload in the OsmAnd
- * format, and device tokens, API tokens and share link secrets anywhere become
- * `[redacted]`. They are found the way the routers read them — decoded and
- * case-insensitive — so no spelling of the URL (`/LINK/…`, `?%74oken=…`)
- * carries a secret into the log.
+ * format, a basemap tile's numbers, and device tokens, API tokens and share
+ * link secrets anywhere become `[redacted]`. They are found the way the
+ * routers read them — decoded and case-insensitive — so no spelling of the
+ * URL (`/LINK/…`, `?%74oken=…`) carries a secret into the log.
  */
 export function redactUrl(url: string): string {
   // A path (`//api/osmand?…` too) is a path, never a host: the request line has no host in it.
@@ -63,6 +66,10 @@ export function redactUrl(url: string): string {
   }
   for (const [index, segment] of segments.entries()) {
     if (apiTokenSecret.test(decoded(segment))) segments[index] = redacted;
+  }
+  if (tilePrefix.every((part, index) => names[index + 1] === part) && segments.length > 4) {
+    // `/map/tiles/<bundle>/[redacted]`: the bundle stays, the tile goes.
+    segments.splice(4, segments.length - 4, redacted);
   }
   const payload = isPayloadPath(names);
   const query = [...parsed.searchParams].map(([name, value]) => {

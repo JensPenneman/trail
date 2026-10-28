@@ -67,13 +67,22 @@ export function startJobs(ctx: AppContext): Jobs {
   // every MAP_DATA_REFRESH_DAYS (docs/design/self-hosted-maps.md §2.6).
   const { mapData } = ctx.config;
   if (mapData.regions.length > 0) {
+    const refresher = createMapDataRefresher({
+      config: ctx.config,
+      pool: ctx.pool,
+      logger: ctx.logger,
+    });
     jobs.push(
       startMapDataSchedule({
-        refresher: createMapDataRefresher({
-          config: ctx.config,
-          pool: ctx.pool,
-          logger: ctx.logger,
-        }),
+        refresher: {
+          regions: () => refresher.regions(),
+          refresh: async (region, signal) => {
+            const outcome = await refresher.refresh(region, signal);
+            // A build pulled or removed: the basemap switches now, not at its next look.
+            if (outcome.pulled !== null || outcome.removed.length > 0) await ctx.basemap.rescan();
+            return outcome;
+          },
+        },
         refreshDays: mapData.refreshDays,
         logger: ctx.logger.child({ component: "mapdata" }),
       }),

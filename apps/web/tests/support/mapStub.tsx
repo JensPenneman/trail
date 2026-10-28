@@ -20,6 +20,7 @@ export function MapStub(props: TrailMapProps) {
       data-heat={props.heat?.cells.length ?? 0}
       data-fit={props.fit?.key ?? ""}
       data-focus={props.focus?.key ?? ""}
+      data-notice={props.notice ?? ""}
     />
   );
 }

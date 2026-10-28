@@ -72,6 +72,7 @@ export async function createTestContext(
     ...(options.dataAccess === undefined ? {} : { dataAccess: options.dataAccess }),
   });
   await ctx.processingListener.start();
+  await ctx.basemap.start();
   const server = createServer(createApp(ctx));
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -91,6 +92,7 @@ export async function createTestContext(
       await ctx.processing.stop();
       await ctx.dataAccess.flush();
       ctx.dataAccess.stop();
+      await ctx.basemap.stop();
       await pool.end();
     },
   };

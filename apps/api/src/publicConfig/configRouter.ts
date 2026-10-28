@@ -1,12 +1,22 @@
 import { apiPaths } from "@trail/contracts/apiPaths";
 import type { PublicConfig } from "@trail/contracts/config";
 import express, { type Router } from "express";
+import type { Basemap } from "../basemap/basemap";
 import type { Config } from "../config/config";
 
-/** `GET /api/config` — public runtime configuration for the web app (no secrets). */
-export function configRouter(config: Config): Router {
+/** The self-hosted styles' paths (docs/design/self-hosted-maps.md §3.3). */
+const ownStyles = { light: "/map/styles/light.json", dark: "/map/styles/dark.json" } as const;
+
+/**
+ * `GET /api/config` — public runtime configuration for the web app (no
+ * secrets). The map's styles follow the basemap: Trail's own while it serves
+ * one, the external ones (`MAP_STYLE_LIGHT`, `MAP_STYLE_DARK`) for
+ * `MAP_BASEMAP=openfreemap` and as the fallback, the plain ground's paths
+ * otherwise.
+ */
+export function configRouter(config: Config, basemap: Pick<Basemap, "source">): Router {
   const router = express.Router();
-  const body: PublicConfig = {
+  const body: Omit<PublicConfig, "mapStyles"> = {
     appName: "Trail",
     version: config.build.version,
     commit: config.build.commit,
@@ -14,17 +24,22 @@ export function configRouter(config: Config): Router {
     publicUrl: config.publicUrl,
     ingestUrl: config.ingestUrl,
     ingestUrls: { ...config.ingestUrls },
-    mapStyles: {
-      light: config.mapStyles.light,
-      dark: config.mapStyles.dark,
-      ...(config.mapStyles.satellite === null ? {} : { satellite: config.mapStyles.satellite }),
-    },
     thresholds: { liveMinutes: config.liveWindowMinutes, staleHours: config.staleAfterHours },
     features: { alerts: config.alerts !== null },
   };
+  const satellite =
+    config.mapStyles.satellite === null ? {} : { satellite: config.mapStyles.satellite };
 
   router.get(apiPaths.config, (_req, res) => {
-    res.json(body);
+    const source = basemap.source();
+    const styles =
+      source === "external"
+        ? { light: config.mapStyles.light, dark: config.mapStyles.dark }
+        : ownStyles;
+    res.json({
+      ...body,
+      mapStyles: { ...styles, ...satellite, basemap: source },
+    } satisfies PublicConfig);
   });
 
   return router;

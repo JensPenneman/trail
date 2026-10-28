@@ -1,4 +1,7 @@
 import { sql } from "drizzle-orm";
+import { Basemap, type BasemapState } from "../../basemap/basemap";
+import { readMapAssets } from "../../basemap/mapAssets";
+import type { BasemapSettings } from "../../config/config";
 import { mapTables, partitionName } from "../../mapdata/buildPartitions";
 import { createMapDataRefresher } from "../../mapdata/createMapDataRefresher";
 import {
@@ -86,13 +89,55 @@ function buildLine(build: LocalBuild, imported: boolean): string {
   return `  ${build.name}: ${megabytes(build.bytes)}${shared}, pulled ${shortTime(build.pulledAt)} UTC${extract}${imported ? ", imported" : ""}\n    ${build.digest}`;
 }
 
+/** One line on what the map draws, as the server works it out from the same volume. */
+function basemapLine(state: BasemapState, settings: BasemapSettings): string {
+  const missing = state.assets
+    ? ""
+    : " The image has no map fonts or sprites (scripts/map-assets.mjs), which Trail's styles need.";
+  if (settings.mode === "openfreemap") {
+    return "Basemap: the external styles, MAP_STYLE_LIGHT and MAP_STYLE_DARK (MAP_BASEMAP=openfreemap)";
+  }
+  if (state.source === "self") {
+    const world =
+      state.world === null ? "no world overview yet" : `the world overview ${state.world}`;
+    return `Basemap: served by Trail from ${state.region} and ${world} (bundle ${state.bundle})`;
+  }
+  const waiting =
+    settings.region === null
+      ? "no region to draw (MAP_BASEMAP_REGION and MAP_DATA_REGIONS are empty)"
+      : state.bundle === null
+        ? `no basemap of ${settings.region} on the volume yet`
+        : `a basemap of ${settings.region} on the volume`;
+  const shown =
+    state.source === "external"
+      ? "the external styles, MAP_STYLE_LIGHT and MAP_STYLE_DARK (MAP_BASEMAP_FALLBACK=true)"
+      : 'a plain ground and "Basemap not installed yet" (MAP_BASEMAP_FALLBACK=false)';
+  return `Basemap: ${shown}: ${waiting}.${missing}`;
+}
+
+/** What the server's basemap would be now: the volume looked at once, every archive closed again. */
+async function readBasemapState(ctx: CliContext): Promise<BasemapState> {
+  const basemap = new Basemap({
+    settings: ctx.config.basemap,
+    dir: ctx.config.mapData.dir,
+    assets: readMapAssets(ctx.config.webDistDir),
+    logger: ctx.logger,
+  });
+  await basemap.rescan();
+  const state = basemap.state();
+  await basemap.stop();
+  return state;
+}
+
 /**
  * `trail map status` — the map data on the volume: every configured region
  * (and the world overview) with its builds, their digests (to compare with
  * the workflow's attestation), when they were pulled and whether the map
  * tables hold them, and the regions on the volume no longer configured;
- * then the map tables: every region's builds with their status, counts,
- * size and last error, and the Overpass cache. Asks the registry nothing.
+ * what the map draws, as the server works it out from the volume (it looks
+ * again every minute); then the map tables: every region's builds with
+ * their status, counts, size and last error, and the Overpass cache. Asks
+ * the registry nothing.
  */
 export async function mapStatusCommand(
   ctx: CliContext,
@@ -134,5 +179,6 @@ export async function mapStatusCommand(
   if (onVolume.length > 0) {
     console.log(`On the volume: ${megabytes(await volumeBytes(settings.dir))} in all`);
   }
+  console.log(basemapLine(await readBasemapState(ctx), ctx.config.basemap));
   await printMapTables(ctx);
 }
