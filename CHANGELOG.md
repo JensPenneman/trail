@@ -1,5 +1,84 @@
 # Changelog
 
+## [0.5.0](https://github.com/JensPenneman/trail/compare/v0.4.0...v0.5.0) (2026-10-28)
+
+
+### Features
+
+* a heatmap that reads at every zoom — squares, a key of counts and 24 m cells ([#51](https://github.com/JensPenneman/trail/issues/51)) ([c36c621](https://github.com/JensPenneman/trail/commit/c36c6214993de79258b37d1fb8dbbaa69524c325))
+* **api:** a stop's place in the tracks, its spread in the timeline ([e636c56](https://github.com/JensPenneman/trail/commit/e636c56a9f14cfd1781e93d103abf9a3c835a902))
+* **api:** heat cells at every level from 6 to 18 ([0583ad0](https://github.com/JensPenneman/trail/commit/0583ad0aacce58c39575e432cf68dc523d322dfc))
+* **api:** heat level 20, so the streets get cells of their size ([f3213a1](https://github.com/JensPenneman/trail/commit/f3213a1708049009f3cca00da82b5532443f2eaa))
+* **contracts:** a track segment's spread, a toggle's ending stop ([08ec5be](https://github.com/JensPenneman/trail/commit/08ec5be96badfb42173953c8c00390923277f794))
+* people as people on People, the proof of uploads on Devices ([#52](https://github.com/JensPenneman/trail/issues/52)) ([269dbda](https://github.com/JensPenneman/trail/commit/269dbda0793206f1b93a3590cd2ccfe7dab7daff))
+* phones with OwnTracks, Traccar Client, OsmAnd and GPSLogger ([1b28035](https://github.com/JensPenneman/trail/commit/1b280358dbe3fb0cb5fbecfe460857c68ab863e7))
+* phones with OwnTracks, Traccar Client, OsmAnd and GPSLogger ([#54](https://github.com/JensPenneman/trail/issues/54)) ([f472109](https://github.com/JensPenneman/trail/commit/f472109b912c0328e682a4eb4661c4eb276b9724))
+* **web:** nobody vanishes from the Transport map or the timeline ([3b15981](https://github.com/JensPenneman/trail/commit/3b159817d2fc3ebabddd29d9c4b759227bc732f6))
+* **web:** people as people on People, the proof of uploads on Devices ([f5d7c72](https://github.com/JensPenneman/trail/commit/f5d7c72b53e6f163e871e6cacc3b146dcaa996ca))
+* **web:** the heatmap as squares with a key of counts ([1b972ba](https://github.com/JensPenneman/trail/commit/1b972bad9abee9071147e0454c974bb4c2d54bab))
+
+
+### Bug Fixes
+
+* **api:** a preview without a token keeps its escapes ([000a10a](https://github.com/JensPenneman/trail/commit/000a10af7d7b3446d0fca813eec12f9783483a57))
+* **api:** a settings preset only while the device is set up for Overland ([7219a1d](https://github.com/JensPenneman/trail/commit/7219a1df705783d94ac1075a6daddf3273693a48))
+* **api:** a text without a token reaches the normalisers as it arrived ([76a24fa](https://github.com/JensPenneman/trail/commit/76a24fab9c0f3bf590b45bc7931395385b0f6af8))
+* **api:** check every device's heat levels at each start ([2caead1](https://github.com/JensPenneman/trail/commit/2caead1f2f6e0965429fcc1a9059cde291054702))
+* **api:** hold a device's heat levels against the highest total ([3d8ff5f](https://github.com/JensPenneman/trail/commit/3d8ff5fef4e3e88a97c577a981d8bcb045dce6aa))
+* **api:** no body decompressed or parsed before its token, one HTTPS rule for all ([1f2d8ca](https://github.com/JensPenneman/trail/commit/1f2d8ca9570f601faee8fdb84697b34886f7c54d))
+* **api:** no start with an https:// address and no trusted proxy ([3bb476a](https://github.com/JensPenneman/trail/commit/3bb476ac21c086967c6ea0314be7f189af3f9335))
+* **api:** stop the heat fill while it waits for a device's lock ([18e4fb4](https://github.com/JensPenneman/trail/commit/18e4fb494dcc9a0736864a7ec4c07a26d39dcd8f))
+* **api:** tables keyed by what a phone or a map sends find their own entries only ([6a8e6b6](https://github.com/JensPenneman/trail/commit/6a8e6b6008c1a3c38581d97c4347ab9f36b98a41))
+* **api:** the GeoJSON export keeps a phone's value where its column is empty ([048bf6f](https://github.com/JensPenneman/trail/commit/048bf6f29f3e806b514baa7540ee0881938e6db6))
+* **api:** the logs drop the OsmAnd format's values below its path too ([c2becd6](https://github.com/JensPenneman/trail/commit/c2becd6c04b1fab4c9e318731aab9d9e132255e5))
+* **api:** the logs drop the OsmAnd values of any path the endpoint's name starts ([c1579b3](https://github.com/JensPenneman/trail/commit/c1579b3e53814d6b9ec54ad69ea095c3049d48ce))
+* **api:** tokens redacted before a preview is cut, region actions storable after the cut ([9dfcdf2](https://github.com/JensPenneman/trail/commit/9dfcdf2c4da2ec957a6048d22422f2e880169571))
+* **api:** Traccar Client 9's JSON batches up to 1 MB on the OsmAnd endpoint ([63af681](https://github.com/JensPenneman/trail/commit/63af681535ff777c6d67fa02f133a21500172090))
+* **api:** trail recompute holds a device only for its heat cells ([a8f931e](https://github.com/JensPenneman/trail/commit/a8f931e1b773ba235c92db2ccf4eaba402f5e7ae))
+* **map:** a stop's own points and spread, connectors where segments do not meet ([70907d7](https://github.com/JensPenneman/trail/commit/70907d7d14368eb3024bdaaeaf380443733d557a))
+* OwnTracks' iPhone link sends a bearer header, and a battery-saving variant ([5eb4d23](https://github.com/JensPenneman/trail/commit/5eb4d23c4efe9ca1da082bfe7a82e4a2dc431492))
+* **processing:** a far fix, a walking reading and sparse points keep a stay whole ([9e9a7ef](https://github.com/JensPenneman/trail/commit/9e9a7ef673829a9249dad9e8e08ae2650748f516))
+* **processing:** a walking fix, a sparse fix and a far one keep a stay whole ([213c13b](https://github.com/JensPenneman/trail/commit/213c13bca6b64ce78909b2b8d32bff594298ab12))
+* **processing:** a window knows whether a stop came since the toggle began ([0f2e277](https://github.com/JensPenneman/trail/commit/0f2e2776319a2003d151ca5e39d6d6c568583a06))
+* **processing:** a window sees both ends of a gap, and forgets old visits ([25d73c7](https://github.com/JensPenneman/trail/commit/25d73c7038f578969209b6b24cb05573d0ad09e6))
+* **processing:** merged visit reports, kept tails, rides matched afresh ([5b8413a](https://github.com/JensPenneman/trail/commit/5b8413a8726ec836ecdc8734dd86c23a6273f310))
+* **processing:** one far fix joins two stays, a ride 400 m away does not ([0184199](https://github.com/JensPenneman/trail/commit/01841997b1a7b824f2c7b339999ac2f07359654e))
+* **processing:** read a cut part's points from one key range, nothing joined ([a8e6670](https://github.com/JensPenneman/trail/commit/a8e6670afa9c37994c7d4c99e39de0fc50097cbe))
+* **processing:** stays within cut-out travel, linear joins, lone points ([1e64215](https://github.com/JensPenneman/trail/commit/1e6421510497d4806144939eb4c2337e3a651799))
+* **processing:** stops end when the phone leaves, and none holds travel ([61c1e38](https://github.com/JensPenneman/trail/commit/61c1e389f851ca968f05b5cb5c3e9eb6b2e2a60f))
+* **processing:** window edges count their own and reach back over real gaps only ([29158a8](https://github.com/JensPenneman/trail/commit/29158a87a693e9e9a7c198bfe1dd05fe8f6c2ebc))
+* stops that end when the phone leaves, and nobody vanishes from the map ([#53](https://github.com/JensPenneman/trail/issues/53)) ([fd2e158](https://github.com/JensPenneman/trail/commit/fd2e1582c45d5fc910795f9076b1f2dec28bdfd5))
+* **tracks:** a segment's line starts at its first point ([043b005](https://github.com/JensPenneman/trail/commit/043b0057eb0c84d9f1a5d065cb2ac69c37dcb46e))
+* **transport:** a quick toggle ends at a move of another kind of travel ([0e4c982](https://github.com/JensPenneman/trail/commit/0e4c982045be9212f3027b6565524610833c1f43))
+* **transport:** a quick toggle runs until a stop of ten minutes or more ([caf0077](https://github.com/JensPenneman/trail/commit/caf0077ec5172c30c76587e08e500826c4189c16))
+* **transport:** a toggle's first move is its own, all its parts ([42b610f](https://github.com/JensPenneman/trail/commit/42b610f45801badb54c5148853be5c98f79b1f8a))
+* **web:** a small heatmap view keeps its busiest cell apart ([c512332](https://github.com/JensPenneman/trail/commit/c51233216e972d2e3dfa998df96eba4fb6b939e0))
+* **web:** drop History's camera move on another day, keep up with uploads ([3eaf040](https://github.com/JensPenneman/trail/commit/3eaf040120e3e6bb8f6dbc05f4debe708789ab6b))
+* **web:** heat squares stop growing past map zoom 15 ([71106af](https://github.com/JensPenneman/trail/commit/71106af65304314689f1cff55e93d0b120caf948))
+* **web:** honest coarse cards, one device's day, History's camera, two lines ([74ac3ad](https://github.com/JensPenneman/trail/commit/74ac3ade6c267ddb2a5577c73f739b4fb84e8a39))
+* **web:** opaque heat squares over every shape and under every name ([0c1e6e1](https://github.com/JensPenneman/trail/commit/0c1e6e1d38c93783e3782ecbc9211a8a95f50bef))
+
+
+### Documentation
+
+* a release's 300-minute gate, no bypass while it waits, the node's risks ([6227186](https://github.com/JensPenneman/trail/commit/6227186c7b25b39fb8b8eb1d515e64c528f298c9))
+* a toggle's end, a walk under one visit, stays a known departure vouches for ([60c13ca](https://github.com/JensPenneman/trail/commit/60c13ca12cecff8663eebf24ebc5cfa864963e87))
+* **api:** the failed-token budget is consulted after the lookup ([07b9bbb](https://github.com/JensPenneman/trail/commit/07b9bbb2e24489cb187bf19ec3aead273cf29221))
+* heat levels checked at every start, the squares' layer and colours ([5570743](https://github.com/JensPenneman/trail/commit/5570743fee6f4e13d1e523cbd4ec5f9e11650f06))
+* heat levels held against the highest, squares that stop growing ([06d1f01](https://github.com/JensPenneman/trail/commit/06d1f0103f5d9047380f9212287bea30345ec492))
+* People about people, Devices about what devices send ([868913e](https://github.com/JensPenneman/trail/commit/868913e9c07151b87906decfa745376638df07bb))
+* setting up a phone with every app, and each protocol's ingest ([63ea0bd](https://github.com/JensPenneman/trail/commit/63ea0bdfc9184acb04d19ec9813e6445322e4038))
+* stays kept within cut-out travel, windows reaching back over a gap ([4a66373](https://github.com/JensPenneman/trail/commit/4a6637390af0d6f32f0a850efdac3fee8a3f9c4e))
+* stops that end when the phone leaves, transfers, gaps, the map ([0d06d8e](https://github.com/JensPenneman/trail/commit/0d06d8e4a4317c41b0695cd17d22dbf6fc99fa3b))
+* the cards' two lines as measured, coarse shares, a day of one device ([706427b](https://github.com/JensPenneman/trail/commit/706427b356e7233c7a698b8b49988ddc75d88960))
+* the checks on the Launchway node, the release gate and the branch rules ([69461fd](https://github.com/JensPenneman/trail/commit/69461fdd908e5a645706cacf1a0baae376e653da))
+* the heatmap's levels, scale and squares in the architecture ([bdbd733](https://github.com/JensPenneman/trail/commit/bdbd7331da2c833bee2053b241cacb21d7da1295))
+* the iPhone's tracking choice and header in the dashboard and e2e sections ([3f69faa](https://github.com/JensPenneman/trail/commit/3f69faa08abebd279ea356c9355c3c001d59b5cb))
+* the review's fixes — HTTPS by the phones' address, bounded reads, the iPhone ([a670db7](https://github.com/JensPenneman/trail/commit/a670db7876e74f62e7a7ecbcdf6303e6dd4659d5))
+* the unit tests under a CPU quota, and the web project's pool ([f4b82a9](https://github.com/JensPenneman/trail/commit/f4b82a94bfbddaaed97bc003a66e60388beb962d))
+* when a walk is a move and when a stop's path, ends that do not meet ([fd48371](https://github.com/JensPenneman/trail/commit/fd48371d8cb72032504fb3b1a5ced010775eb6da))
+* which keys are left out of what a phone sends, as the code has them ([9c4eb8a](https://github.com/JensPenneman/trail/commit/9c4eb8a32a754458b4c31dea4644c8e74a5d95c7))
+
 ## [0.4.0](https://github.com/JensPenneman/trail/compare/v0.3.0...v0.4.0) (2026-10-27)
 
 
