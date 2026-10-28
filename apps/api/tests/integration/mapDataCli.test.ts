@@ -136,7 +136,8 @@ describe("trail map", () => {
       expect(await run("map", "status")).toBe(0);
       const text = output.join("\n");
       expect(text).toContain("Map data: monaco, world from ghcr.io/jenspenneman/trail-mapdata");
-      expect(text).toContain("The map tables are not part of this version");
+      // The refresh above ran without the loader; the tables are this version's, and empty.
+      expect(text).toContain("Map tables: no region builds yet");
       expect(text).toContain("monaco: 1 on the volume");
       expect(text).toContain(`  ${name}: 0.7 MB, pulled `);
       expect(text).toContain(", OSM data up to 2026-10-27 21:23 UTC");

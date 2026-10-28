@@ -245,10 +245,13 @@ describe("trail map import", () => {
     expect(all.pois).toHaveLength(manifest.counts.pois.features);
   });
 
-  it("lists the builds with trail map status", async () => {
+  it("lists the builds with trail map status, after the volume's", async () => {
     expect(await run("map", "status")).toBe(0);
-    const [table, cache] = output;
-    expect(JSON.parse(table ?? "[]")).toMatchObject([
+    // No MAP_DATA_REGIONS in the tests: the volume's part says so, the tables' follows.
+    expect(output[0]).toContain("No map regions configured (MAP_DATA_REGIONS is empty)");
+    const tables = output.indexOf("Map tables:");
+    expect(tables).toBeGreaterThan(0);
+    expect(JSON.parse(output[tables + 1] ?? "[]")).toMatchObject([
       {
         region: "monaco",
         status: "ready",
@@ -260,7 +263,7 @@ describe("trail map import", () => {
         error: "",
       },
     ]);
-    expect(cache).toMatch(/^Overpass cache: 0 tiles, 0 ways, \d+\.\d MB$/);
+    expect(output[tables + 2]).toMatch(/^Overpass cache: 0 tiles, 0 ways, \d+\.\d MB$/);
   });
 
   it("leaves a build that is ready as it is when it comes again", async () => {
@@ -747,7 +750,7 @@ describe("trail map import", () => {
 
   it("checks the arguments of trail map", async () => {
     expect(await run("map")).toBe(2);
-    expect(errors.join("\n")).toContain("map needs a command: import or status");
+    expect(errors.join("\n")).toContain("map needs a command: import, refresh or status");
     expect(await run("map", "frobnicate")).toBe(2);
     expect(await run("map", "import")).toBe(2);
     expect(await run("map", "import", "a", "b")).toBe(2);
