@@ -1,4 +1,5 @@
 import type { ChosenMode, TransportMode, WayKind } from "@trail/contracts/transport";
+import type { StopShape } from "./stayParts";
 
 /** A recorded point as the pipeline reads it from `locations`, oldest first. */
 export interface RawPoint {
@@ -71,12 +72,21 @@ export interface OverrideSpan {
   kind: "segment" | "toggle";
   mode: ChosenMode;
   from: number;
-  /** Null: open, until the first stop of `toggleEndingStopS` or more, or move of another kind of travel. */
+  /**
+   * Null: open, until the first stay of `toggleEndingStopS` or more that began
+   * after it, or move of another kind of travel after a stay that began after it.
+   */
   to: number | null;
-  /** That stop when it lies before the window (from stored segments); else null. */
+  /**
+   * Where stored segments before the window end a toggle (`endsToggleSql`):
+   * the start of the first that does — for a stay, of the part at which it has
+   * lasted `toggleEndingStopS`, its first part unless that one was shorter.
+   * Harmless: only parts of that stay lie between the two, no move the toggle
+   * could cover. Else null.
+   */
   endsBy: number | null;
   /**
-   * A toggle that began before the window: whether a stop of the device came
+   * A toggle that began before the window: whether a stay of the device began
    * between its start and the window's (stored segments) — then the window's
    * moves are no longer the toggle's own first move, and their kind of travel
    * counts.
@@ -84,6 +94,16 @@ export interface OverrideSpan {
   stoppedBefore: boolean;
   createdAt: number;
   source: "ui" | "api" | "mcp";
+}
+
+/**
+ * The stored stop the window begins in or right after (`loadStayBefore`), as
+ * the window leaves it: the earlier part of a stay the window's first stop
+ * may continue (`continuesStop`).
+ */
+export interface StayBefore extends StopShape {
+  /** When its stay began; null: at or before the earliest start of the window's toggles. */
+  stayStartT: number | null;
 }
 
 /** A stop or move over a range of the window's kept points (indices into the kept list). */

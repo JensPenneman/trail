@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { CacheStamp, DayStamp } from "@trail/contracts/cacheStamp";
 import type { DayStat } from "@trail/contracts/stats";
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { Database } from "../db/database";
 import { toIso } from "../db/toIso";
@@ -9,7 +9,7 @@ import { tripTouches } from "../history/tripTouches";
 import { visitTouches } from "../history/visitTouches";
 import { addDays } from "../lib/calendarDate";
 import { localDate } from "../lib/localDate";
-import { segmentOverlaps } from "../transport/segmentOverlaps";
+import { stayPartsSql } from "../processing/stayParts";
 
 /*
  * Versions of the recipes below: a change to what goes into a stamp, or to how
@@ -18,7 +18,7 @@ import { segmentOverlaps } from "../transport/segmentOverlaps";
  * — a copy in a browser costs one refetch.
  */
 const rawRecipe = 1;
-const processedRecipe = 1;
+const processedRecipe = 2;
 
 /** One device's local day as the stamp query reads it (text for every instant and sum). */
 export interface DayStampRow extends Record<string, unknown> {
@@ -38,14 +38,19 @@ export interface DayStampRow extends Record<string, unknown> {
   /** Trips touching the day, and the sum of their start times. */
   trips: number;
   trips_at: string | null;
-  /** Segments overlapping the day: count, newest write, versions, sums of their bounds. */
+  /**
+   * The stored segments of the stays overlapping the day — every part of a
+   * stay the timeline serves as one stop, wherever it lies (`stayPartsSql`) —
+   * their count, newest write, versions, sums of their bounds and points.
+   */
   segments: number;
   computed_at: string | null;
   min_version: number | null;
   max_version: number | null;
   starts: string | null;
   ends: string | null;
-  /** A window waiting for processing overlaps the day (`hasPendingWork`'s rule). */
+  points_of_parts: string | null;
+  /** A window waiting for processing overlaps the day, or a stay overlapping it. */
   pending: boolean;
 }
 
@@ -70,11 +75,13 @@ const value = (part: string | number | null): string => (part === null ? "-" : S
  * statistics (points, distance, first and last point), the visits and trips
  * touching the day, and on the owner's current day the device's counter and
  * newest point, which an upload moves at once, while the statistics follow
- * after their debounce. `processed` is how it was worked out: the segments
- * overlapping the day — their count, newest write (`computed_at`, which a pass
- * and a mode correction move), versions and the sums of their bounds (a pass
- * cuts a segment of a neighbouring day without rewriting it) — and whether a
- * window waits for processing; null while the day has no segment. Both carry
+ * after their debounce. `processed` is how it was worked out: the stored
+ * segments of the stays overlapping the day — every part of a stay served as
+ * one stop, also those on other days — their count, newest write
+ * (`computed_at`, which a pass and a mode correction move), versions and the
+ * sums of their bounds (a pass cuts a segment of a neighbouring day without
+ * rewriting it) and points — and whether a window waits for processing over
+ * the day or such a stay; null while the day has no segment. Both carry
  * the device, the day and the time zone, so they never stand for another day.
  */
 export function stampDay(row: DayStampRow, timezone: string): Omit<StampedDay, "stat"> {
@@ -102,6 +109,7 @@ export function stampDay(row: DayStampRow, timezone: string): Omit<StampedDay, "
     value(row.max_version),
     value(row.starts),
     value(row.ends),
+    value(row.points_of_parts),
     row.pending ? "pending" : "settled",
   ].join("|");
   return {
@@ -143,7 +151,7 @@ const statementNameOf = (text: string): string =>
  * `daily_stats`, `visits`, `trips`, `segments` and `processing_queue`, never
  * `locations` or `processed_points`. A row that spans days counts on every
  * day it touches, under the finders' own rules (`visitTouches`,
- * `tripTouches`, `segmentOverlaps`). Callers read the stamps before the data
+ * `tripTouches`; a segment on every day its stay overlaps, `stayPartsSql`). Callers read the stamps before the data
  * they stamp: an upload between the two is then in the data but not yet in
  * the stamps, and the next comparison fetches once more — never the other way
  * round, which would let a copy pass for newer than it is.
@@ -170,6 +178,9 @@ export async function loadStampedDays(
     )`;
   const dayFrom = sql`(c.day AT TIME ZONE ${timezone})`;
   const dayTo = sql`((c.day + interval '1 day') AT TIME ZONE ${timezone})`;
+  // A stay counts on a day its extent overlaps — `segmentOverlaps` of the stop the timeline serves.
+  const stayOverlaps = (alias: string, from: SQL, to: SQL) =>
+    sql`(${sql.raw(alias)}.stay_from < ${to} AND ${sql.raw(alias)}.stay_to > ${from})`;
   // One row per table row and day it counts on, every column of the others null: a union and
   // one aggregate rather than a join of six, which took Postgres longer to plan than to run.
   const statement = dialect.sqlToQuery(sql`
@@ -178,22 +189,24 @@ export async function loadStampedDays(
       FROM unnest(${ids}) AS device(id)
       CROSS JOIN unnest(${sql.param(sorted)}::date[]) AS day(date)
     ),
+    stay_parts AS (SELECT * FROM ${stayPartsSql(ids, spanFrom, spanTo)} parts),
     facts (device_id, date, points, distance_m, first_at, last_at, points_total, last_recorded_at,
-      visit, visit_at, trip, trip_at, segment, computed_at, version, start_at, end_at, pending) AS (
+      visit, visit_at, trip, trip_at, segment, computed_at, version, start_at, end_at, pending,
+      part_points) AS (
       SELECT ds.device_id, ds.date, ds.points, ds.distance_m, ds.first_at::text, ds.last_at::text,
         NULL::text, NULL::text, NULL::int, NULL::numeric, NULL::int, NULL::numeric, NULL::int,
-        NULL::timestamptz, NULL::int, NULL::numeric, NULL::numeric, NULL::boolean
+        NULL::timestamptz, NULL::int, NULL::numeric, NULL::numeric, NULL::boolean, NULL::int
       FROM daily_stats ds
       WHERE ds.device_id = ANY(${ids}) AND ds.date BETWEEN ${firstDate}::date AND ${lastDate}::date
       UNION ALL
       SELECT device.id, (now() AT TIME ZONE ${timezone})::date, NULL, NULL, NULL, NULL,
         device.points_total::text, device.last_recorded_at::text, NULL, NULL, NULL, NULL, NULL, NULL,
-        NULL, NULL, NULL, NULL
+        NULL, NULL, NULL, NULL, NULL
       FROM devices device
       WHERE device.id = ANY(${ids})
       UNION ALL
       SELECT v.device_id, c.day::date, NULL, NULL, NULL, NULL, NULL, NULL,
-        1, extract(epoch FROM v.recorded_at), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+        1, extract(epoch FROM v.recorded_at), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
       FROM visits v
       CROSS JOIN LATERAL ${candidateDays(
         "least(v.recorded_at, v.arrived_at)",
@@ -203,7 +216,7 @@ export async function loadStampedDays(
         AND ${visitTouches("v", dayFrom, dayTo)}
       UNION ALL
       SELECT t.device_id, c.day::date, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-        1, extract(epoch FROM t.started_at), NULL, NULL, NULL, NULL, NULL, NULL
+        1, extract(epoch FROM t.started_at), NULL, NULL, NULL, NULL, NULL, NULL, NULL
       FROM trips t
       CROSS JOIN LATERAL ${candidateDays("t.started_at", "t.ended_at")} AS c(day)
       WHERE t.device_id = ANY(${ids}) AND ${tripTouches("t", spanFrom, spanTo)}
@@ -211,19 +224,30 @@ export async function loadStampedDays(
       UNION ALL
       SELECT s.device_id, c.day::date, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
         1, s.computed_at, s.version, extract(epoch FROM s.started_at), extract(epoch FROM s.ended_at),
-        NULL
-      FROM segments s
-      CROSS JOIN LATERAL ${candidateDays("s.started_at", "s.ended_at")} AS c(day)
-      WHERE s.device_id = ANY(${ids}) AND ${segmentOverlaps("s", spanFrom, spanTo)}
-        AND ${segmentOverlaps("s", dayFrom, dayTo)}
+        NULL, s.point_count
+      FROM stay_parts s
+      CROSS JOIN LATERAL ${candidateDays("s.stay_from", "s.stay_to")} AS c(day)
+      WHERE ${stayOverlaps("s", spanFrom, spanTo)} AND ${stayOverlaps("s", dayFrom, dayTo)}
       UNION ALL
       SELECT q.device_id, c.day::date, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-        NULL, NULL, NULL, NULL, NULL, true
+        NULL, NULL, NULL, NULL, NULL, true, NULL
       FROM processing_queue q
       CROSS JOIN LATERAL ${candidateDays("q.from_at", "q.to_at")} AS c(day)
       WHERE q.device_id = ANY(${ids}) AND q.missing_tiles IS NULL
         AND q.from_at < ${spanTo} AND q.to_at > ${spanFrom}
         AND q.from_at < ${dayTo} AND q.to_at > ${dayFrom}
+      UNION ALL
+      -- A window over any part of a stay waits for the days the stay's stop is served on, too.
+      SELECT st.device_id, c.day::date, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, true, NULL
+      FROM (SELECT DISTINCT device_id, stay_from, stay_to FROM stay_parts) st
+      CROSS JOIN LATERAL ${candidateDays("st.stay_from", "st.stay_to")} AS c(day)
+      WHERE ${stayOverlaps("st", spanFrom, spanTo)} AND ${stayOverlaps("st", dayFrom, dayTo)}
+        AND EXISTS (
+          SELECT 1 FROM processing_queue q
+          WHERE q.device_id = st.device_id AND q.missing_tiles IS NULL
+            AND q.from_at < st.stay_to AND q.to_at > st.stay_from
+        )
     )
     SELECT d.device_id, d.date::text AS date,
       max(f.points) AS points, max(f.distance_m) AS distance_m, max(f.first_at) AS first_at,
@@ -234,6 +258,7 @@ export async function loadStampedDays(
       coalesce(sum(f.segment), 0)::int AS segments, max(f.computed_at)::text AS computed_at,
       min(f.version) AS min_version, max(f.version) AS max_version,
       sum(f.start_at)::text AS starts, sum(f.end_at)::text AS ends,
+      sum(f.part_points)::text AS points_of_parts,
       coalesce(bool_or(f.pending), false) AS pending
     FROM days d
     LEFT JOIN facts f ON f.device_id = d.device_id AND f.date = d.date

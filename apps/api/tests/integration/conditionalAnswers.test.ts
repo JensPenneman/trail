@@ -3,6 +3,7 @@ import type { DayStamp } from "@trail/contracts/cacheStamp";
 import { daysResponseSchema } from "@trail/contracts/stats";
 import { tracksResponseSchema } from "@trail/contracts/track";
 import { segmentResponseSchema, timelineResponseSchema } from "@trail/contracts/transport";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Agent } from "../support/authFlows";
 import { signUpWithCookie } from "../support/authFlows";
@@ -457,5 +458,69 @@ describe("the cost of a dashboard open", () => {
       "/api/v1/tracks 304": 3,
       "/api/v1/segments 304": 3,
     });
+  });
+});
+
+describe("a stay across days", () => {
+  it("moves the answers of every day it is served on when one of its parts changes", async () => {
+    // Monday to Wednesday at home, stored in three parts that meet; Monday's part ends that night.
+    const { device } = await createDevice(owner, { name: "At home" });
+    const part = async (from: string, to: string) =>
+      (
+        await t.ctx.db.execute<{ id: string }>(sql`
+          INSERT INTO segments (device_id, started_at, ended_at, kind, distance_m, duration_s,
+            point_count, start_lat, start_lon, end_lat, end_lon, centroid_lat, centroid_lon,
+            features, version)
+          VALUES (${device.id}, ${from}::timestamptz, ${to}::timestamptz, 'stop', 0,
+            extract(epoch FROM ${to}::timestamptz - ${from}::timestamptz)::integer, 10,
+            51.05, 3.72, 51.05, 3.72, 51.05, 3.72, '{"spreadM": 20}'::jsonb, 3)
+          RETURNING id
+        `)
+      ).rows[0]?.id ?? "";
+    const monday = await part("2026-10-12T08:00:00Z", "2026-10-12T21:00:00Z");
+    await part("2026-10-12T21:00:00Z", "2026-10-13T23:00:00Z");
+    await part("2026-10-13T23:00:00Z", "2026-10-14T16:00:00Z");
+    // Wednesday's timeline serves the stay from Monday; an overview of Wednesday reaches back over
+    // Tuesday only: neither holds Monday's part.
+    const wednesday = {
+      devices: device.id,
+      from: "2026-10-13T22:00:00.000Z",
+      to: "2026-10-14T22:00:00.000Z",
+    };
+    const timeline = (etag?: string) => {
+      const asked = owner.get(apiPaths.v1.segments.root).query(wednesday);
+      return etag === undefined ? asked : asked.set("If-None-Match", etag);
+    };
+    const overview = (etag?: string) => {
+      const asked = owner
+        .get(apiPaths.v1.insights.overview)
+        .query({ devices: device.id, from: "2026-10-14", to: "2026-10-14" });
+      return etag === undefined ? asked : asked.set("If-None-Match", etag);
+    };
+    const stampOf = (body: unknown) =>
+      (body as { stamps?: DayStamp[] }).stamps?.find((stamp) => stamp.date === "2026-10-14")
+        ?.processed;
+    const first = await timeline().expect(200);
+    expect(timelineResponseSchema.parse(first.body).items.map((item) => item.startedAt)).toEqual([
+      "2026-10-12T08:00:00.000Z",
+    ]);
+    const etag = first.headers["etag"] ?? "";
+    await timeline(etag).expect(304);
+    const summed = await overview().expect(200);
+    const summedTag = summed.headers["etag"] ?? "";
+    await overview(summedTag).expect(304);
+
+    // A pass works Monday's part out again: Wednesday's stop is not what it was.
+    await t.ctx.db.execute(sql`
+      UPDATE segments SET computed_at = now(), point_count = point_count + 5 WHERE id = ${monday}
+    `);
+    const changed = await timeline(etag).expect(200);
+    expect(changed.headers["etag"]).not.toBe(etag);
+    expect(stampOf(changed.body)).not.toBe(stampOf(first.body));
+    expect(timelineResponseSchema.parse(changed.body).items[0]?.pointCount).toBe(
+      (timelineResponseSchema.parse(first.body).items[0]?.pointCount ?? 0) + 5,
+    );
+    const resummed = await overview(summedTag).expect(200);
+    expect(resummed.headers["etag"]).not.toBe(summedTag);
   });
 });

@@ -1898,7 +1898,7 @@ parse them:
 | Stamp | Canonical string | Moves with |
 |---|---|---|
 | `raw` | `raw1`, device, date, zone; `daily_stats` (points, distance, first and last point); the visits touching the day (`visitTouches`, the finders' rule) — their count and the sum of their recorded times; the trips touching it (`tripTouches`) — count and sum of their starts; on the owner's current day the device's counter and newest point | an upload of the day's points (today at once, a past day once its statistics ran after their 10-s debounce), a deletion, a new visit or trip; never a re-sent upload of duplicates |
-| `processed` | `processed1`, device, date, zone; the segments overlapping the day (`segmentOverlaps`) — count, newest `computed_at`, lowest and highest version, the sums of their starts and ends; whether a waiting window (a queue row without missing tiles, as `hasPendingWork`) overlaps it. Null while the day has no segment | a window queued over the day and again once worked out (it rewrites its segments with a new `computed_at` and cuts a neighbour's, which moves the sums), a corrected mode (`setSegmentMode` and `clearSegmentMode` set `computed_at`), a new version of the inference |
+| `processed` | `processed2`, device, date, zone; the stored segments of the stays overlapping the day — every part of a stay the timeline serves as one stop (§17.6, `stayPartsSql`), also its parts on other days — count, newest `computed_at`, lowest and highest version, the sums of their starts, ends and points; whether a waiting window (a queue row without missing tiles, as `hasPendingWork`) overlaps the day or one of those stays. Null while the day has no segment | a window queued over the day and again once worked out (it rewrites its segments with a new `computed_at` and cuts a neighbour's, which moves the sums), a corrected mode (`setSegmentMode` and `clearSegmentMode` set `computed_at`), a new version of the inference |
 
 They are read in one statement (`loadStampedDays`): a range scan each of
 `daily_stats`, `visits`, `trips`, `segments` and `processing_queue` and the
@@ -3913,7 +3913,13 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   and so does the walk to the platform a train toggle was set at the
   entrance for. The toggle in force is the latest one with nothing that ends
   it since it began (`endsToggleSql`: the move's kind counts only with a stop
-  of the device between the toggle and it). The same mode again changes nothing (but a new
+  of the device between the toggle and it). A stop here is a stay, counted
+  from its first part (§17.6's rule, `processing/stayParts.ts`): bounded passes
+  leave a long stay as parts one after the other, and a part that continues
+  the stop before it is no new stop. A toggle set during a stay runs on
+  through the parts the passes leave of it until the device leaves, and a
+  stay that began after the toggle ends it once it has lasted ten minutes,
+  however the passes cut it. The same mode again changes nothing (but a new
   `until`); another mode ends the running toggle and starts a new one; `mode:
   null` ends it. `GET` on the same path answers the toggle in force and the
   current mode, which shares and links with details show too (§8.5).
@@ -3923,12 +3929,15 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   mode. Leftovers shorter than 90 s join the corrected part, so an override
   still fits after recomputation moved the segment by a few seconds; an
   override covering less than 90 s of a move, and not most of it, leaves it
-  alone. A toggle that began before the window gets the first stored stop of
-  ten minutes or more, or move of another kind of travel after a stop, after
-  it, which ends it, and whether any stop of the device came between it and
-  the window — a window that starts at the ride home after a short wait (an
-  upload half an hour into the ride) does not take that ride for the
-  toggle's own. The applied override is in
+  alone. A toggle that began before the window gets the first stored stay of
+  ten minutes or more that began after it, or move of another kind of travel
+  after any stay that began after it, which ends it, and whether a stay of the
+  device began between it and the window — a window that starts at the ride
+  home after a short wait (an upload half an hour into the ride) does not
+  take that ride for the toggle's own. The window's first stop, where it
+  continues the stored stop the window begins in or right after
+  (`loadStayBefore`), counts from that stay's start, and so does a stop of
+  the window that continues the one before it. The applied override is in
   `features.override`
   (`{ id, kind, source }`); `GET /api/v1/stats/modes` counts the corrected
   segments.
@@ -3961,6 +3970,35 @@ the same scope), with `pending` while points of the range wait for processing. `
 (`history:read`, local days, ≤ 400) gives distance, time and segments per day,
 device and mode. `/api/v1/locations` (owned by the token pull request) stays
 raw-only, and `/stats/days` is not extended.
+
+A stay is one stop wherever it is served (`transport/servedSegments.ts`, the
+rule in `processing/stayParts.ts`, which the quick toggle reads too, §17.5).
+Bounded passes (§17.4) work a long stay out a part at a time, so it is
+stored as stops of one device one after the other; read with `lag()` over the
+device's segments, consecutive stops are one where the next begins as the one
+before ends and within 300 m of where it ended (the parts of one stay share
+their boundary point, or follow a stop that lasted beyond its last point; a
+pass joins stops at one place within 300 m, §17.3), or, a short hole apart
+(not a travel gap: more than 30 minutes with ends more than 300 m apart), where
+their middles lie within the larger of their spreads or 100 m. The stop runs
+from the first part's start to the last part's end, under the first part's
+id, its points counted once (a point two parts share once, as each part
+counts its own up to `min(ended_at, lastPointT)`) and its middle weighed by
+them, its spread the largest. The parts are looked for up to two weeks
+beyond the range asked for: a stay longer than that is served — its start,
+duration and id — from its earliest part within them, and a device's `since`
+reaches back two weeks at most (walking the chain of parts back to its start
+with a bounded recursive query is a follow-up). The timeline (and the MCP
+`get_timeline`, `get_day_summary`), the inferred tracks — so the map and the
+timeline name the same stop — the current mode of a device (`since` is the
+stay's start; it reads the latest segment and coalesces only when that is a
+stop), Insights' count of stops and the stationary `segments` of the mode
+statistics read it; the stored segments stay as the passes left them, every
+pass repeatable. `get_visits` serves the visits iOS reported, one a stay
+already. The query reads the device's segments of the range and two weeks on
+either side, a window function and a grouping over them; its plan on a large
+history is to be measured (`EXPLAIN ANALYZE` on a restored dump, a one-day
+timeline and the device mode).
 
 The dashboard calls these with its session (`apps/web/src/transport/`):
 History and Live get the level `SegmentedControl` (Raw · Averaged · Mapped ·
