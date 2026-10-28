@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/JensPenneman/trail/compare/v0.5.0...v0.5.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **processing:** a waiting window keeps its queued bounds, the backfill its turn ([032d0fa](https://github.com/JensPenneman/trail/commit/032d0fac8a68c9f19ccf9696478afd7982be0c29))
+* **processing:** a waiting window keeps its queued bounds, the backfill its turn ([#58](https://github.com/JensPenneman/trail/issues/58)) ([db63cb0](https://github.com/JensPenneman/trail/commit/db63cb0a42f6ac89dbcb1cd7e8a6da64b946f126))
+
 ## [0.5.0](https://github.com/JensPenneman/trail/compare/v0.4.0...v0.5.0) (2026-10-28)
 
 
