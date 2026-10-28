@@ -4,6 +4,7 @@
   "extract": {
     "geofabrik": "europe/monaco",
     "url": "https://download.geofabrik.de/europe/monaco-261027.osm.pbf",
+    "mirror": null,
     "md5": "96a0ccbd03270fd91512acb0c597bf02",
     "sha256": "2082dd912178d897f66ab5929e834bec4d0fdb74636c3e9ffa89a7e95fd0cf32",
     "bytes": 702188,
@@ -15,8 +16,9 @@
     }
   },
   "build": {
-    "at": "2026-10-28T10:36:15Z",
-    "commit": "5219f0439e76b57e7062af3dba174043ea9fa321",
+    "id": "20261027",
+    "at": "2026-10-28T10:53:43Z",
+    "commit": "a09cf458144ed35b57b03a2c5c978b18b68ec0f7",
     "tools": {
       "osmium": "1.16.0",
       "libosmium": "2.20.0",

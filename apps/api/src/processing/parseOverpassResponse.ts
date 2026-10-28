@@ -1,20 +1,9 @@
 import { z } from "zod";
 import { classifyPoi } from "./classifyPoi";
 import { classifyWay } from "./classifyWay";
+import { keptWayTags } from "./keptWayTags";
 import type { OsmPoi } from "./mapData";
 import { type FetchedWay, type TileData, TileFetchError } from "./waySource";
-
-/** OSM keys Trail keeps of a way (docs/architecture.md §17.2). */
-const keptTags = [
-  "highway",
-  "railway",
-  "service",
-  "maxspeed",
-  "name",
-  "route",
-  "public_transport",
-  "oneway",
-] as const;
 
 /** Sane limits: anything beyond them is not a tile's worth of data. */
 const maxElements = 250_000;
@@ -106,7 +95,7 @@ export function parseOverpassResponse(text: string, bytes: number): TileData {
         );
       }
       const kept: Record<string, string> = {};
-      for (const key of keptTags) {
+      for (const key of keptWayTags) {
         const value = tags[key];
         if (value !== undefined) kept[key] = value;
       }

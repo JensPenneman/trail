@@ -21,6 +21,7 @@ docs
 # …except the API guide: the build embeds it in the OpenAPI document
 !docs/api.md
 tests
+tools
 coverage
 playwright-report
 test-results

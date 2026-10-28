@@ -9,6 +9,7 @@ import {
   type RequestAuth,
   type TokenPrincipal,
 } from "../auth/requestAuth";
+import { etagMatches } from "../cache/etagMatches";
 import type { AccessOwner } from "../dataAccess/accessRecord";
 import { inputResource } from "../dataAccess/inputResource";
 import { personActor, principalActor } from "../dataAccess/principalActor";
@@ -22,8 +23,12 @@ import type { V1TagName } from "./v1Tags";
 
 type HttpMethod = "get" | "post" | "put" | "patch" | "delete";
 
-/** What a handler may answer; errors are thrown as `HttpError`s instead. */
-export type SuccessStatus = 200 | 201 | 202 | 204;
+/**
+ * What a handler may answer; errors are thrown as `HttpError`s instead. `304`
+ * is the conditional answer of a GET (docs/architecture.md §8.9): no body,
+ * just the ETag.
+ */
+export type SuccessStatus = 200 | 201 | 202 | 204 | 304;
 
 /**
  * Who may call a route: anyone (`"public"`), any API token whatever its scopes
@@ -55,7 +60,10 @@ interface RouteRequest {
   readonly body?: z.ZodType;
 }
 
-/** The body schema of each success status; null for a status without a body (204). */
+/**
+ * The body schema of each success status; null for a status without a body
+ * (204, and 304, which a conditional GET lists beside its 200).
+ */
 type RouteResponses = { readonly [S in SuccessStatus]?: z.ZodType | null };
 
 /**
@@ -123,6 +131,12 @@ interface RouteInput<Spec extends RouteSpec> {
   query: RequestPart<Spec, "query">;
   body: RequestPart<Spec, "body">;
   /**
+   * The request's `If-None-Match`. A route that lists `304` reads its
+   * validator first and answers `{ status: 304, etag }` when this names the
+   * ETag (`etagMatches`), before the heavy read; see `RouteResult`.
+   */
+  ifNoneMatch: string | undefined;
+  /**
    * For what the spec does not cover (request headers, `req.log`). The response
    * is not the handler's to write: it returns the result instead.
    */
@@ -140,11 +154,24 @@ type ResultAccess<A> = A extends { readonly people: true }
   ? { owners: readonly AccessOwner[] }
   : { resource?: DataAccessResource };
 
+/**
+ * A conditional route (one that lists `304`) sends its ETag with every 200:
+ * the validator's, read before the data, or the body's own hash — a 200 whose
+ * ETag the request names goes out as a 304 all the same.
+ */
+type Conditional<R extends RouteResponses, S> = 304 extends keyof R
+  ? S extends 200
+    ? { etag: string }
+    : unknown
+  : unknown;
+
 /** One of the spec's success statuses with a body of its schema's input type (no body for null). */
 type RouteResult<R extends RouteResponses, A> = {
-  [S in keyof R & SuccessStatus]: (R[S] extends z.ZodType
-    ? { status: S; body: z.input<R[S]>; headers?: ResponseHeaders }
-    : { status: S; headers?: ResponseHeaders }) &
+  [S in keyof R & SuccessStatus]: (S extends 304
+    ? { status: 304; etag: string; headers?: ResponseHeaders }
+    : R[S] extends z.ZodType
+      ? { status: S; body: z.input<R[S]>; headers?: ResponseHeaders } & Conditional<R, S>
+      : { status: S; headers?: ResponseHeaders }) &
     ResultAccess<A>;
 }[keyof R & SuccessStatus];
 
@@ -169,6 +196,7 @@ interface UntypedInput {
   params: unknown;
   query: unknown;
   body: unknown;
+  ifNoneMatch: string | undefined;
   req: Request;
 }
 
@@ -176,6 +204,7 @@ interface UntypedResult {
   status: SuccessStatus;
   body?: unknown;
   headers?: ResponseHeaders;
+  etag?: string;
   owners?: readonly AccessOwner[];
   resource?: DataAccessResource;
 }
@@ -269,21 +298,35 @@ function validBody(schema: z.ZodType | undefined, req: Request): unknown {
   return result.data;
 }
 
+/** A 304: no body, the ETag the request named, the result's other headers. */
+function sendNotModified(res: Response, etag: string, headers: ResponseHeaders | undefined): 304 {
+  if (headers !== undefined) res.set(headers);
+  res.setHeader("ETag", etag);
+  res.status(304).end();
+  return 304;
+}
+
+/** Sends the result through its status's schema; returns the status that went out. */
 function send(
   spec: RouteSpec,
   ctx: AppContext,
   result: UntypedResult,
   req: Request,
   res: Response,
-): void {
+): SuccessStatus {
   const schema = spec.responses[result.status];
   if (schema === undefined) {
     throw new Error(`${spec.operationId} answered ${result.status}, which its spec does not list`);
   }
+  if (result.status === 304) {
+    if (result.etag === undefined)
+      throw new Error(`${spec.operationId} answered 304 without an ETag`);
+    return sendNotModified(res, result.etag, result.headers);
+  }
   if (schema === null) {
     if (result.headers !== undefined) res.set(result.headers);
     res.status(result.status).end();
-    return;
+    return result.status;
   }
   // Parsing the output drops whatever the schema does not name: nothing undocumented leaks out.
   const parsed = schema.safeParse(result.body);
@@ -297,9 +340,15 @@ function send(
     );
     throw new HttpError(500, "internal", "Something went wrong on the server.");
   }
+  if (result.etag !== undefined && etagMatches(req.get("if-none-match"), result.etag)) {
+    // The validator was the body itself: the client has it, the bytes stay here.
+    return sendNotModified(res, result.etag, result.headers);
+  }
   // Only now: an error answer must not carry the result's headers (an ETag, a max-age).
   if (result.headers !== undefined) res.set(result.headers);
+  if (result.etag !== undefined) res.setHeader("ETag", result.etag);
   res.status(result.status).json(parsed.data);
+  return result.status;
 }
 
 /**
@@ -314,12 +363,14 @@ function recordAccess(
   ctx: AppContext,
   input: UntypedInput,
   result: UntypedResult,
+  status: SuccessStatus,
 ): void {
   const { auth, req } = input;
   if (spec.access === false || typeof spec.auth === "string" || auth === null) return;
   try {
     const access = spec.access?.kind ?? (spec.method === "get" ? "read" : "write");
-    const facts = { action: spec.operationId, access, status: result.status };
+    // A 304 is a look like a 200: the same action and resource, its own status (§8.8).
+    const facts = { action: spec.operationId, access, status };
     if (spec.access?.people === true) {
       for (const owner of result.owners ?? []) {
         ctx.dataAccess.record({
@@ -383,6 +434,21 @@ function checkSpec(spec: RouteSpec): void {
   if (typeof spec.auth === "string" && spec.access !== undefined) {
     throw new Error(`${spec.operationId} has no scopes, so the data access log never counts it`);
   }
+  // A 304 stands for the 200 the client has: only a GET with a body of its own answers one.
+  if (spec.responses[304] !== undefined) {
+    if (
+      spec.method !== "get" ||
+      spec.responses[200] === undefined ||
+      spec.responses[200] === null
+    ) {
+      throw new Error(
+        `${spec.operationId} lists 304 without being a GET that answers 200 with a body`,
+      );
+    }
+    if (spec.responses[304] !== null) {
+      throw new Error(`${spec.operationId} gives 304 a body schema; a 304 has no body`);
+    }
+  }
 }
 
 /**
@@ -412,12 +478,13 @@ export function defineRoute<const Spec extends RouteSpec>(
         params: validParams(spec.request?.params, req),
         query: validQuery(spec.request?.query, req),
         body: validBody(spec.request?.body, req),
+        ifNoneMatch: req.get("if-none-match"),
         req,
       };
       const result = await run(input);
-      send(spec, ctx, result, req, res);
+      const status = send(spec, ctx, result, req, res);
       // Only an answer that went out is an access: a refusal or a failure threw before here.
-      recordAccess(spec, ctx, input, result);
+      recordAccess(spec, ctx, input, result, status);
     },
   };
 }

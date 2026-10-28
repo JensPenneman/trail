@@ -1,8 +1,17 @@
 import { parseArgs } from "node:util";
+import type { Pool } from "pg";
+import type { Config } from "../config/config";
 import { ConfigError } from "../config/loadConfig";
 import { ownEntry } from "../lib/ownEntry";
 import { type CliContext, openCliContext } from "./cliContext";
 import { inviteCommand } from "./commands/inviteCommand";
+import {
+  loadFleetCommand,
+  loadFleetDatabaseCheck,
+  loadFleetPreflight,
+  parseLoadFleetOptions,
+} from "./commands/loadFleetCommand";
+import { mapCommand } from "./commands/mapCommand";
 import { passkeyLinkCommand } from "./commands/passkeyLinkCommand";
 import { pruneCommand } from "./commands/pruneCommand";
 import { recomputeCommand } from "./commands/recomputeCommand";
@@ -12,8 +21,18 @@ import { workerCommand } from "./commands/workerCommand";
 import { usage } from "./usage";
 import { UsageError } from "./usageError";
 
+/**
+ * What a command runs, and what it checks first: the configuration before the
+ * database is opened, the database before it is migrated.
+ */
+interface CommandRun {
+  preflight?: (config: Config) => void;
+  beforeMigrations?: (pool: Pool) => Promise<void>;
+  run: (ctx: CliContext) => Promise<void>;
+}
+
 /** Parses a command's arguments (before any database work) and returns what to run. */
-type Command = (args: string[]) => (ctx: CliContext) => Promise<void>;
+type Command = (args: string[]) => ((ctx: CliContext) => Promise<void>) | CommandRun;
 
 const noOptions = (args: string[]) => parseArgs({ args, options: {} });
 
@@ -73,6 +92,24 @@ const commands: Readonly<Record<string, Command>> = {
     noOptions(args);
     return pruneCommand;
   },
+  map: mapCommand,
+  "load-fleet": (args) => {
+    const { values } = parseArgs({
+      args,
+      options: {
+        people: { type: "string" },
+        mix: { type: "string" },
+        shares: { type: "string" },
+        probe: { type: "boolean" },
+      },
+    });
+    const options = parseLoadFleetOptions(values, process.stdout.isTTY === true);
+    return {
+      preflight: loadFleetPreflight,
+      beforeMigrations: loadFleetDatabaseCheck,
+      run: (ctx) => loadFleetCommand(ctx, options),
+    };
+  },
 };
 
 const isArgumentError = (error: unknown): error is Error =>
@@ -114,8 +151,9 @@ export async function runCli(argv: readonly string[], entryUrl: string): Promise
 
   let ctx: CliContext | undefined;
   try {
-    const run = command(args);
-    ctx = await openCliContext(entryUrl);
+    const parsed = command(args);
+    const { run, ...checks }: CommandRun = typeof parsed === "function" ? { run: parsed } : parsed;
+    ctx = await openCliContext(entryUrl, checks);
     await run(ctx);
     return 0;
   } catch (error) {

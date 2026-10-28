@@ -1,6 +1,8 @@
 import type { TrackPoint } from "@trail/contracts/track";
 import type { AppContext } from "../appContext";
 import { publishDeviceLater } from "../devices/publishDevice";
+import { tripDays } from "../history/tripTouches";
+import { visitDays } from "../history/visitTouches";
 import { recoveredDeviceAlert } from "../jobs/alertMessages";
 import { localDate } from "../lib/localDate";
 import { publishPeopleLater } from "../sharing/publishPeopleLater";
@@ -22,12 +24,14 @@ const toTrackPoint = (point: IngestOutcome["inserted"][number]): TrackPoint => [
 /**
  * Step 5 of docs/architecture.md §6.2, after the commit and the response: live
  * events for the owner's dashboards and for the people the device is shared
- * with, the debounced daily-stats refresh for the touched days, the new
- * points' window in the processing queue, and the
+ * with, the debounced daily-stats refresh for the touched days — those of the
+ * new points, and those of new visits and trips, which are announced in the
+ * `days` event too — the new points' window in the processing queue, and the
  * recovery alert when the device had been reported silent.
  */
 export function afterIngest(ctx: AppContext, device: IngestDevice, outcome: IngestOutcome): void {
   const { counts, inserted } = outcome;
+  ctx.ingestMeter.record(counts);
   ctx.bus.publish(device.userId, {
     type: "ingest",
     deviceId: device.id,
@@ -42,13 +46,22 @@ export function afterIngest(ctx: AppContext, device: IngestDevice, outcome: Inge
 
   const first = inserted[0];
   const last = inserted.at(-1);
+  const days = new Set(inserted.map((point) => localDate(point.recordedAt, device.timezone)));
   if (first !== undefined && last !== undefined) {
-    const days = new Set(inserted.map((point) => localDate(point.recordedAt, device.timezone)));
     ctx.dailyStats.schedule(device.id, [...days]);
     ctx.background.run("processing queue", () =>
       ctx.processing.afterIngest(device.id, first.recordedAt, last.recordedAt),
     );
   }
+  // A new visit or trip changes the stamps of the days it touches, also without a point.
+  const touched = new Set<string>();
+  for (const visit of outcome.visits) {
+    for (const day of visitDays(visit, device.timezone)) if (!days.has(day)) touched.add(day);
+  }
+  for (const trip of outcome.trips) {
+    for (const day of tripDays(trip, device.timezone)) if (!days.has(day)) touched.add(day);
+  }
+  ctx.dailyStats.announce(device.id, [...touched]);
 
   const { alerts } = ctx;
   if (outcome.wasSilent && alerts !== null) {

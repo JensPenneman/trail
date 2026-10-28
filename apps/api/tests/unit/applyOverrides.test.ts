@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { OverrideSpan } from "../../src/processing/pipelineTypes";
+import type { OverrideSpan, StayBefore } from "../../src/processing/pipelineTypes";
 import { morning, motorwayDrive } from "../support/journeys";
 import { moves, processWorld } from "../support/processWorld";
 import {
@@ -9,6 +9,7 @@ import {
   pointAlong,
   stay,
   subPath,
+  toLonLat,
   travel,
   type Vertex,
 } from "../support/syntheticWorld";
@@ -25,6 +26,36 @@ const override = (
   source: "ui",
   ...fields,
 });
+
+/**
+ * A window that begins in a stay at the motorway's start, `stayS` long, then
+ * the drive away; and the stored part of a stay before it, at the same place,
+ * ending at the window's first point, from `startT` (its stay began at
+ * `stayStartT`, null: before the window's toggles).
+ */
+function leaving(stayS: number) {
+  const gate = pointAlong(motorwayLine, 500);
+  const waiting = stay(gate, { startT: morning, durationS: stayS, intervalS: 10, seed: 2 });
+  const drive = travel(subPath(motorwayLine, 500, 12_500), {
+    startT: lastT(waiting) + 1,
+    speedMs: 30,
+    intervalS: 1,
+    motion: ["driving"],
+    seed: 3,
+  });
+  const [lon, lat] = toLonLat(gate[0], gate[1]);
+  const here = { lat, lon };
+  const before = (startT: number, stayStartT: number | null): StayBefore => ({
+    startT,
+    endT: morning,
+    start: here,
+    end: here,
+    centroid: here,
+    spreadM: 20,
+    stayStartT,
+  });
+  return { points: concat(waiting, drive), before };
+}
 
 /** Two drives on the motorway with a stop between them, ten minutes long unless asked. */
 function twoDrives(stopS = 600) {
@@ -294,6 +325,42 @@ describe("applyOverrides", () => {
     expect(train(true)).toEqual([[null, "cycling"]]);
     // Still on the ride it was set on (no stop since): the toggle's own move, whatever it reads.
     expect(train(false)).toEqual([["train", "cycling"]]);
+  });
+
+  it("keeps a toggle set during a stay through the window's part of it, until the device leaves", () => {
+    const { points, before } = leaving(1200);
+    const modes = (stayBefore: StayBefore | null, stoppedBefore = false) =>
+      moves(
+        processWorld(points, {
+          overrides: [
+            override({ kind: "toggle", from: morning - 3600, mode: "train", stoppedBefore }),
+          ],
+          stayBefore,
+        }),
+      ).map((move) => move.modeUser);
+    // Set an hour before the window, in the stay's part stored before it: the drive is its own.
+    expect(modes(before(morning - 86_400, null))).toEqual(["train"]);
+    // Read alone, the window's twenty minutes would be a stay after the toggle, which ends it …
+    expect(modes(null)).toEqual([null]);
+    // … as they do where the stay began after the toggle.
+    expect(modes(before(morning - 1800, morning - 1800), true)).toEqual([null]);
+  });
+
+  it("counts a stay from its first part, however the passes cut it", () => {
+    // Four minutes stored before the window, seven more in it: eleven of a stay after the toggle.
+    const { points, before } = leaving(420);
+    const modes = (stayBefore: StayBefore | null, stoppedBefore: boolean) =>
+      moves(
+        processWorld(points, {
+          overrides: [
+            override({ kind: "toggle", from: morning - 3600, mode: "train", stoppedBefore }),
+          ],
+          stayBefore,
+        }),
+      ).map((move) => move.modeUser);
+    expect(modes(before(morning - 240, morning - 240), true)).toEqual([null]);
+    // Without its first part, seven minutes are a short stop, a change of trains: the toggle runs on.
+    expect(modes(null, false)).toEqual(["train"]);
   });
 
   it("ends the quick toggle at its until, or at a stop seen before this window", () => {

@@ -22,8 +22,16 @@
 #                   about 1.5 GB) (default: ~/.cache/trail-mapdata)
 #   --pbf FILE      an extract on disk instead of the download (with --poly)
 #   --poly FILE     its polygon
+#   --extract DATE  Geofabrik's extract of that day (yymmdd, e.g. 261027)
+#                   instead of the newest; Geofabrik keeps the last few days
+#                   and the first of every month
 #   --no-basemap    the ways and stops only: no Planetiler, no Java
 #   --heap SIZE     Planetiler's Java heap (default: the region's, e.g. 3g)
+#   --chunk-mib N   files larger than N MiB are published in chunks of N MiB
+#                   (default 1024), which the manifest lists
+#
+# The build's id is the day of the extract's data (yyyymmdd, UTC), from the
+# extract's replication timestamp: an extract without a timestamp is refused.
 #
 # The artefact:
 #   ways.opl.gz         one OPL line per way: its id, the tags Trail keeps, its
@@ -33,8 +41,9 @@
 #                       areas (osmium writes every area as a MultiPolygon)
 #   region.poly         the extract's polygon, as Geofabrik publishes it
 #   basemap.pmtiles     the vector tiles (OpenMapTiles schema, gzipped MVT)
-#   manifest.json       the region, its extract, the build, the tools, counts,
-#                       attribution, and every file's size and SHA-256
+#   manifest.json       the region, its extract, the build (its id, time,
+#                       commit and tools), counts, attribution, and every
+#                       file's size and SHA-256, with those of its chunks
 #   SHA256SUMS          the same checksums, for `sha256sum -c`
 # The world overview holds basemap.pmtiles, manifest.json and SHA256SUMS.
 set -euo pipefail
@@ -43,6 +52,10 @@ readonly planetiler_version=0.10.2
 readonly planetiler_sha256=f310bd0413e2e4512b27f4046d418664e8e1d3bf31603c2a70e23de06c167e4d
 readonly planetiler_url=https://github.com/onthegomap/planetiler/releases/download/v${planetiler_version}/planetiler.jar
 readonly geofabrik=https://download.geofabrik.de
+# The one mirror Geofabrik sends its biggest extracts to (Germany, Europe):
+# it serves their -latest file only, the bytes of the newest dated file on
+# Geofabrik, which serves the .md5 the mirror lacks (resolve_extract).
+readonly geofabrik_mirror=https://ftp5.gwdg.de/pub/misc/openstreetmap/download.geofabrik.de
 # The sources of Planetiler's OpenMapTiles profile, fetched by this script into
 # --cache and handed to Planetiler by path (it downloads nothing itself).
 # Natural Earth's package and the lake centrelines' release asset are fixed
@@ -68,7 +81,7 @@ die() {
 usage() { sed -n '/^# Usage:/,/^# The artefact:/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
 value() { [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value"; }
 
-region='' out='' work='' cache='' pbf='' poly='' basemap=true heap=''
+region='' out='' work='' cache='' pbf='' poly='' basemap=true heap='' extract='' chunk_mib=1024
 while (($# > 0)); do
   case $1 in
     --out) value "$@"; out=$2; shift ;;
@@ -77,6 +90,8 @@ while (($# > 0)); do
     --pbf) value "$@"; pbf=$2; shift ;;
     --poly) value "$@"; poly=$2; shift ;;
     --heap) value "$@"; heap=$2; shift ;;
+    --extract) value "$@"; extract=$2; shift ;;
+    --chunk-mib) value "$@"; chunk_mib=$2; shift ;;
     --no-basemap) basemap=false ;;
     -h | --help) usage; exit 0 ;;
     -*) die "unknown option $1 (see --help)" ;;
@@ -94,6 +109,15 @@ esac
 if { [ -n "$pbf" ] && [ -z "$poly" ]; } || { [ -z "$pbf" ] && [ -n "$poly" ]; }; then
   die "--pbf and --poly go together"
 fi
+case $extract in
+  '' | [0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+  *) die "--extract takes a day as yymmdd, e.g. 261027: $extract" ;;
+esac
+if [ -n "$extract" ] && [ -n "$pbf" ]; then die "--extract and --pbf exclude each other"; fi
+case $chunk_mib in
+  '' | *[!0-9]* | 0*) die "--chunk-mib takes a whole number of MiB: $chunk_mib" ;;
+esac
+readonly chunk_bytes=$((chunk_mib * 1048576))
 
 for tool in curl gzip jq osmium awk; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is missing"
@@ -178,42 +202,86 @@ days_ago() {
   date -u -d "@$then" +%y%m%d 2>/dev/null || date -u -r "$then" +%y%m%d
 }
 
-# The newest extract of the region, as a dated file on Geofabrik's own server
+# head_of URL: "<status> <size> <last-modified>" of a HEAD request (no redirect
+# followed), the time as the server wrote it
+head_of() {
+  curl --proto '=https' --tlsv1.2 -sS -I --max-redirs 0 "$1" 2>/dev/null | tr -d '\r' | awk '
+    NR == 1 { status = $2 }
+    tolower($1) == "content-length:" { size = $2 }
+    tolower($1) == "last-modified:" { sub(/^[^:]*:[ \t]*/, ""); modified = $0 }
+    END { printf "%s %s %s\n", (status == "" ? "000" : status), (size == "" ? "-" : size), modified }'
+}
+
+# Sets pbf_url, the extract's dated file on Geofabrik's own server
 # (europe/belgium-261027.osm.pbf), whose .md5 next to it cannot change while
-# the download runs. Geofabrik answers *-latest.osm.pbf with a redirect to that
-# file, except for its biggest extracts, which it sends to a mirror (Germany:
-# ftp5.gwdg.de); those are taken from Geofabrik by their date instead, so
-# nothing is downloaded from a host other than download.geofabrik.de.
+# the download runs; pbf_source, where its bytes come from; and pbf_mirror,
+# the mirror's URL when that is where. Geofabrik answers *-latest.osm.pbf with
+# a redirect to the dated file, except for its biggest extracts (Germany,
+# Europe), which it sends to the mirror's -latest file: that is downloaded
+# from the mirror, faster than Geofabrik serves it, and checked against the
+# .md5 of the dated file on Geofabrik with the same size and modification
+# time (the mirror's copy of it). Nothing else is downloaded from.
 resolve_extract() {
-  local latest=$geofabrik/$geofabrik_path-latest.osm.pbf answer code location day candidate
+  local latest=$geofabrik/$geofabrik_path-latest.osm.pbf answer code location day dated
+  local mirror_code mirror_size mirror_modified size modified name
+  pbf_mirror=''
+  if [ -n "$extract" ]; then
+    pbf_url=$geofabrik/$geofabrik_path-$extract.osm.pbf
+    pbf_source=$pbf_url
+    read -r code _ <<<"$(head_of "$pbf_url")"
+    [ "$code" = 200 ] || die "Geofabrik has no $pbf_url ($code): it keeps the last few days and the first of every month"
+    return
+  fi
   answer=$(curl --proto '=https' --tlsv1.2 -sS -I -o /dev/null -w '%{http_code} %{redirect_url}' "$latest") ||
     die "Geofabrik did not answer for $latest"
   code=${answer%% *}
   location=${answer#* }
   case $code in
     200)
-      printf '%s\n' "$latest"
+      pbf_url=$latest
+      pbf_source=$latest
       return
       ;;
-    301 | 302 | 303 | 307 | 308)
-      case $location in
-        "$geofabrik/$geofabrik_path-"[0-9][0-9][0-9][0-9][0-9][0-9].osm.pbf)
-          printf '%s\n' "$location"
-          return
-          ;;
-      esac
-      ;;
+    301 | 302 | 303 | 307 | 308) ;;
     *) die "Geofabrik answered $code for $latest" ;;
   esac
+  case $location in
+    "$geofabrik/$geofabrik_path-"[0-9][0-9][0-9][0-9][0-9][0-9].osm.pbf)
+      pbf_url=$location
+      pbf_source=$location
+      return
+      ;;
+  esac
+  name=$(basename -- "$geofabrik_path")
+  if ! [[ $location =~ ^${geofabrik_mirror//./\\.}/([a-z0-9-]+/)*${name}-latest\.osm\.pbf$ ]]; then
+    die "Geofabrik sent $latest to $location, which is not a host this script downloads from"
+  fi
+  read -r mirror_code mirror_size mirror_modified <<<"$(head_of "$location")"
+  [ "$mirror_code" = 200 ] || die "the mirror answered $mirror_code for $location"
   # an extract carries the date of its data and appears early the next day
-  for day in 1 2 3; do
-    candidate=$geofabrik/$geofabrik_path-$(days_ago "$day").osm.pbf
-    if [ "$(curl --proto '=https' --tlsv1.2 -sS -I -o /dev/null -w '%{http_code}' "$candidate")" = 200 ]; then
-      printf '%s\n' "$candidate"
+  for day in 0 1 2 3; do
+    dated=$geofabrik/$geofabrik_path-$(days_ago "$day").osm.pbf
+    read -r code size modified <<<"$(head_of "$dated")"
+    if [ "$code" = 200 ] && [ "$size" = "$mirror_size" ] && [ "$modified" = "$mirror_modified" ]; then
+      pbf_url=$dated
+      pbf_source=$location
+      pbf_mirror=$location
       return
     fi
   done
-  die "Geofabrik sent $latest to $location and has no dated extract of the last three days"
+  die "the mirror's $location ($mirror_size bytes, $mirror_modified) is none of Geofabrik's dated extracts of the last four days"
+}
+
+# download_extract: the extract from pbf_source into pbf_file, its .md5 from
+# Geofabrik into pbf_md5; false when the bytes do not match it
+download_extract() {
+  local listed
+  step download "${fetch[@]}" -o "$pbf_file" "$pbf_source"
+  listed=$("${fetch[@]}" "$pbf_url.md5")
+  pbf_md5=$(awk 'NR == 1 { print $1 }' <<<"$listed")
+  [ "$(awk 'NR == 1 { print $2 }' <<<"$listed")" = "$(basename -- "$pbf_url")" ] ||
+    die "$pbf_url.md5 names another file: $listed"
+  [ "$(md5_of "$pbf_file")" = "$pbf_md5" ]
 }
 
 # fetch_source URL [SHA-256]: the source in the cache, downloaded when it is
@@ -248,6 +316,8 @@ say "$region ($geofabrik_path) into $out"
 
 # 1. The extract and its polygon
 pbf_url=''
+pbf_source=''
+pbf_mirror=''
 pbf_md5=''
 if [ -n "$pbf" ]; then
   [ -f "$pbf" ] || die "no file $pbf"
@@ -255,12 +325,19 @@ if [ -n "$pbf" ]; then
   pbf_file=$(CDPATH='' cd -- "$(dirname -- "$pbf")" && pwd -P)/$(basename -- "$pbf")
   poly_file=$(CDPATH='' cd -- "$(dirname -- "$poly")" && pwd -P)/$(basename -- "$poly")
 else
-  pbf_url=$(resolve_extract)
+  resolve_extract
   pbf_file=$work/$(basename -- "$pbf_url")
   poly_file=$work/region.poly
-  step download "${fetch[@]}" -o "$pbf_file" "$pbf_url"
-  pbf_md5=$("${fetch[@]}" "$pbf_url.md5" | awk '{ print $1 }')
-  [ "$(md5_of "$pbf_file")" = "$pbf_md5" ] || die "$pbf_file does not match its .md5"
+  if ! download_extract; then
+    [ -n "$pbf_mirror" ] || die "$pbf_file does not match $pbf_url.md5"
+    # The mirror's -latest file changed to the next day's during the download:
+    # once more, against that day's .md5.
+    say "the mirror's file does not match $pbf_url.md5; once more"
+    rm -f "$pbf_file"
+    resolve_extract
+    pbf_file=$work/$(basename -- "$pbf_url")
+    download_extract || die "$pbf_file from the mirror does not match $pbf_url.md5"
+  fi
   "${fetch[@]}" -o "$poly_file" "$geofabrik/$geofabrik_path.poly"
 fi
 pbf_bytes=$(bytes_of "$pbf_file")
@@ -268,6 +345,12 @@ pbf_sha256=$(sha256_of "$pbf_file")
 # shellcheck disable=SC2016 # expanded by the inner shell
 step fileinfo sh -c 'osmium fileinfo --extended --json "$1" >"$2"' sh "$pbf_file" "$work/extract-info.json"
 extract_timestamp=$(jq -r '.header.option.osmosis_replication_timestamp // .data.timestamp.last // ""' "$work/extract-info.json")
+# The build's id: the day of the extract's data, in UTC
+case $extract_timestamp in
+  [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z) ;;
+  *) die "the extract carries no timestamp (osmosis_replication_timestamp, or its newest object's), so the build has no id: '$extract_timestamp'" ;;
+esac
+build_id=${extract_timestamp:0:4}${extract_timestamp:5:2}${extract_timestamp:8:2}
 extract_counts=$(jq -c '.data.count | { nodes, ways, relations }' "$work/extract-info.json")
 
 counts='{}'
@@ -413,11 +496,30 @@ if $basemap; then
   done
 fi
 
-# 5. Manifest and checksums
-jq -R -s 'split("\n") | map(select(length > 0) | split("\t")
-  | { name: .[0], mediaType: .[1], bytes: (.[2] | tonumber), sha256: .[3] })' "$files_tsv" >"$work/files.json"
+# 5. Manifest and checksums. A file larger than the chunk size is published
+#    in chunks, which publish.sh cuts with the same script: the manifest
+#    lists each one's size and SHA-256 with its file.
+chunks_tsv=$work/chunks.tsv
+: >"$chunks_tsv"
+while IFS=$'\t' read -r name _ bytes _; do
+  if [ "$bytes" -gt "$chunk_bytes" ]; then
+    rm -rf "$work/chunks"
+    "$here/chunks.sh" "$out/$name" "$chunk_bytes" "$work/chunks" |
+      awk -v file="$name" '{ print file "\t" $0 }' >>"$chunks_tsv"
+    rm -rf "$work/chunks"
+  fi
+done <"$files_tsv"
+jq -R -s --rawfile chunks "$chunks_tsv" '
+  ($chunks | split("\n") | map(select(length > 0) | split("\t")
+    | { file: .[0], name: .[1], bytes: (.[2] | tonumber), sha256: .[3] })) as $pieces
+  | split("\n") | map(select(length > 0) | split("\t")
+    | { name: .[0], mediaType: .[1], bytes: (.[2] | tonumber), sha256: .[3] }
+    | . as $file
+    | [$pieces[] | select(.file == $file.name) | { name, bytes, sha256 }] as $own
+    | if ($own | length) > 0 then . + { chunks: $own } else . end)' "$files_tsv" >"$work/files.json"
 jq -n \
   --arg region "$region" --arg path "$geofabrik_path" --arg url "$pbf_url" --arg md5 "$pbf_md5" \
+  --arg mirror "$pbf_mirror" --arg buildId "$build_id" \
   --arg sha256 "$pbf_sha256" --argjson bytes "$pbf_bytes" --arg timestamp "$extract_timestamp" \
   --argjson extractCounts "$extract_counts" --arg builtAt "$built_at" --arg commit "$commit" \
   --arg osmium "$osmium_version" --arg libosmium "$libosmium_version" \
@@ -430,6 +532,7 @@ jq -n \
     extract: {
       geofabrik: $path,
       url: (if $url == "" then null else $url end),
+      mirror: (if $mirror == "" then null else $mirror end),
       md5: (if $md5 == "" then null else $md5 end),
       sha256: $sha256,
       bytes: $bytes,
@@ -437,6 +540,7 @@ jq -n \
       counts: $extractCounts
     },
     build: {
+      id: $buildId,
       at: $builtAt,
       commit: $commit,
       tools: ({ osmium: $osmium, libosmium: $libosmium }
@@ -493,7 +597,7 @@ jq -R -s --arg region "$region" --arg os "$(uname -sm)" --argjson cpus "$cpus" -
     def duration: if . >= 60 then "\(. / 60 | floor) min \(. % 60 | round) s" else "\(. * 10 | round / 10) s" end;
     def mib: if . == null then "" else . / 1024 | round | tostring + " MiB" end;
     .manifest as $m
-    | "Extract `\($m.extract.url // "on disk" | split("/") | last)` (\($m.extract.geofabrik)), \($m.extract.bytes | mb), OSM data up to \($m.extract.timestamp // "unknown"): \($m.extract.counts.nodes) nodes, \($m.extract.counts.ways) ways, \($m.extract.counts.relations) relations.",
+    | "Build `\($m.build.id)` from the extract `\($m.extract.url // "on disk" | split("/") | last)` (\($m.extract.geofabrik)\(if $m.extract.mirror then ", downloaded from the mirror `\($m.extract.mirror | split("/")[2])`" else "" end)), \($m.extract.bytes | mb), OSM data up to \($m.extract.timestamp // "unknown"): \($m.extract.counts.nodes) nodes, \($m.extract.counts.ways) ways, \($m.extract.counts.relations) relations.",
       "",
       "Built \($m.build.at) on \(.machine.os), \(.machine.cpus) CPUs, \(.machine.ramKib / 1048576 | . * 10 | round / 10) GiB RAM, \(.machine.diskFreeKibAfter / 1048576 | round) GiB free afterwards; osmium-tool \($m.build.tools.osmium) (libosmium \($m.build.tools.libosmium))\(if $m.build.tools.planetiler then ", Planetiler \($m.build.tools.planetiler) on Java \($m.build.tools.java) with -Xmx\(.planetiler.heap) (at most \(.planetiler.heapUsedMaxMib) MiB of heap in use, \(.planetiler.heapLiveMaxMib) MiB live after a collection), temporary files at most \(.planetiler.tempPeakKib // 0 | . / 1024 | round) MiB" else "" end).",
       "",
@@ -503,7 +607,7 @@ jq -R -s --arg region "$region" --arg os "$(uname -sm)" --argjson cpus "$cpus" -
       "",
       "| File | Size | SHA-256 |",
       "|---|---:|---|",
-      ($m.files[] | "| `\(.name)` | \(.bytes | mb) (\(.bytes) B) | `\(.sha256)` |"),
+      ($m.files[] | "| `\(.name)` | \(.bytes | mb) (\(.bytes) B)\(if .chunks then ", \(.chunks | length) chunks" else "" end) | `\(.sha256)` |"),
       "",
       (if $m.counts.ways then
         "Kept \($m.counts.ways) ways with \($m.counts.wayNodeRefs) node references (\($m.counts.wayNodes) distinct nodes); \($m.counts.pois.features) stops and airports: \($m.counts.pois.kinds | to_entries | map("\(.key) \(.value)") | join(", ")); geometries \($m.counts.pois.geometries | to_entries | map("\(.key) \(.value)") | join(", "))."

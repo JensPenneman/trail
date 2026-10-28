@@ -1,9 +1,17 @@
 import { setImmediate as yieldToEvents } from "node:timers/promises";
 import type { Logger } from "pino";
 import type { Database } from "../db/database";
+import { sweepMapBuilds } from "../mapdata/sweepMapBuilds";
 import { enqueueBackfill, enqueueCatchUp } from "./backfill";
 import type { ProcessingConfig } from "./processingConfig";
-import { queuePriority, rearmWindows, retryWindows, takeNextWindow } from "./processingQueue";
+import {
+  livePassIntervalMs,
+  nextDueAt,
+  queuePriority,
+  rearmWindows,
+  retryWindows,
+  takeNextWindow,
+} from "./processingQueue";
 import { processingVersions } from "./processingVersion";
 import { processWindow } from "./processWindow";
 import type { TileFetcher } from "./tileFetcher";
@@ -70,7 +78,7 @@ export class ProcessingWorker {
     return this.#running !== null;
   }
 
-  /** Starts the timers and the boot-time backfill (the server; tests use `flush`). */
+  /** Starts the timers, the boot-time backfill and the map builds' sweep (the server; tests use `flush`). */
   start(): void {
     if (this.#started || this.#stopped) return;
     this.#started = true;
@@ -79,6 +87,7 @@ export class ProcessingWorker {
     this.#mapPass = setInterval(() => void this.#mapWaitPass(), mapPassMs);
     this.#mapPass.unref();
     void this.#backfill().then(() => this.notify(0));
+    void this.#sweepMapBuilds();
   }
 
   /** New work was queued: run soon. */
@@ -96,14 +105,17 @@ export class ProcessingWorker {
     this.#timer.unref();
   }
 
-  /** Processes everything ready now, fetching map tiles as needed, until nothing is left (tests, CLI). */
+  /**
+   * Processes everything ready now, fetching map tiles as needed, until nothing is left (tests,
+   * CLI); an upload's window does not wait for the device's pass interval here.
+   */
   async flush(): Promise<void> {
     clearTimeout(this.#timer);
     this.#timer = undefined;
     for (let round = 0; round < 20; round += 1) {
       await this.#running;
       await this.#fetching;
-      const processed = await this.#processReady();
+      const processed = await this.#processReady({ draining: true });
       const fetched = await this.#fetchTiles();
       if (processed === 0 && fetched === 0) return;
     }
@@ -134,15 +146,28 @@ export class ProcessingWorker {
     });
     await this.#running;
     this.#startFetching();
+    await this.#wakeWhenDue();
+  }
+
+  /** A window waiting for its device's pass interval runs when it is due, not at the next poll. */
+  async #wakeWhenDue(): Promise<void> {
+    const now = new Date();
+    const due = await nextDueAt(this.#db, now).catch(() => null);
+    if (due !== null && due.getTime() - now.getTime() < pollMs) {
+      this.notify(Math.max(0, due.getTime() - now.getTime()));
+    }
   }
 
   /** Processes ready windows one by one; returns how many passes ran. */
-  async #processReady(): Promise<number> {
+  async #processReady(options: { draining?: boolean } = {}): Promise<number> {
     let passes = 0;
     while (!this.#stopped) {
-      // A phone uploading every few minutes must not starve the backfill: they take turns.
-      const backfillFirst = this.#lastPriority === queuePriority.normal;
-      const rows = await takeNextWindow(this.#db, new Date(), { backfillFirst }).catch(
+      // A phone uploading every few minutes must not starve repair and the backfill: they take turns.
+      const othersFirst = this.#lastPriority === queuePriority.live;
+      const now = new Date();
+      const liveReadyBy =
+        options.draining === true ? new Date(now.getTime() + livePassIntervalMs) : now;
+      const rows = await takeNextWindow(this.#db, now, { othersFirst, liveReadyBy }).catch(
         (error: unknown) => {
           this.#logger.error({ err: error }, "processing queue could not be read");
           return [];
@@ -170,6 +195,8 @@ export class ProcessingWorker {
               segments: outcome.segments,
               missingTiles: outcome.missingTiles.length,
               reason: rows[0]?.reason,
+              priority: this.#lastPriority,
+              split: outcome.split,
               ms: Math.round(performance.now() - started),
             },
             "processing window done",
@@ -226,6 +253,15 @@ export class ProcessingWorker {
       this.#startFetching();
     } catch (error) {
       this.#logger.error({ err: error }, "processing map pass failed");
+    }
+  }
+
+  /** The tables of map builds a crash left behind (mapdata/sweepMapBuilds.ts). */
+  async #sweepMapBuilds(): Promise<void> {
+    try {
+      await sweepMapBuilds(this.#db, this.#logger);
+    } catch (error) {
+      this.#logger.error({ err: error }, "map build tables could not be swept");
     }
   }
 

@@ -84,7 +84,7 @@ date, which the artefact's manifest records.
 | `belgium` | 0.70 GB | 1.53 M | 10.8 M | 13 203 |
 | `netherlands` | 1.41 GB | 2.86 M | 18.1 M | 25 007 |
 | `benelux` (the three merged) | *2.15 GB* | *4.54 M* | *30.0 M* | 39 445 |
-| `germany` | 4.87 GB | 16.6 M | *about 105 M* | 165 776 |
+| `germany` | 4.87 GB | 16.6 M | 111 M | 165 776 |
 | `france` | 5.11 GB | 12.6 M | 123 M | 276 286 |
 | `europe` | 35.3 GB | *80–100 M* | *650–800 M* | — |
 
@@ -207,9 +207,9 @@ parsing and `COPY` at 58 500 ways a second, of which the parsing itself is
 `SET maintenance_work_mem = '512MB'` for the session; 5 s of
 `VACUUM ANALYZE`), plus the download of the artefact. Extrapolated by way
 count (*not measured*): Benelux about 2¼ min, Germany about 8 min, France
-about 6 min, Europe 40–50 min. A refresh takes three to four times as long
-as a first import as §2.6 describes it, which is one more reason for its
-partitions.
+about 6 min, Europe 40–50 min. A refresh takes as long as a first import:
+it loads a build of its own and swaps it in (§2.6); the loader of task 1
+imports Belgium in 16 s, refreshes it in 17 s.
 
 ### 2.3 What is extracted
 
@@ -248,34 +248,50 @@ query Trail has no other use for, at the price of the database image and
 every environment that runs tests. Changes to the tables (one migration,
 §8.3):
 
-- `osm_ways`: `source text not null` (`overpass`, or `region:<name>@<build>`,
-  the artefact's build id); `geometry bytea` instead of jsonb: big-endian
-  `int32` pairs of lon and lat in 1e-7 degrees — OSM's own precision, what
-  Overpass's JSON carries in 7 decimals — read with a `DataView`, 8 bytes a
-  vertex instead of about 22. `nodes bigint[]` and the kept `tags jsonb`
-  stay. An index on `(source)`.
-- `osm_tile_ways`: `source` joins the primary key `(z, x, y, way_id, source)`.
-  `loadMapData` already reads `DISTINCT`, so a way that two sources hold
-  (a border tile fetched from Overpass before the region arrived) is one
-  way.
-- `osm_pois`: `source`, and an index on it.
-- `osm_regions` (new): `name` (PK, `belgium`), `build_id`, `digest`,
-  `extract_timestamp`, `polygon jsonb` (the `.poly` rings), `bbox`, `status`
-  (`importing|ready|failed`), `error`, `way_count`, `poi_count`,
-  `imported_at`, `updated_at`.
+- `osm_ways`, `osm_tile_ways`, `osm_pois`: `source text not null`, and the
+  three **partitioned by list on it**. `overpass` is the cache's source, in
+  the partition `<table>_overpass` (never a default partition, which
+  `DETACH … CONCURRENTLY` refuses); a region's build is
+  `<region>@<yyyymmdd>-<first 8 hex of its digest>`, in partitions
+  `<table>_<region>_<yyyymmdd>_<digest8>` (dashes as underscores; a region
+  name of at most 31 characters keeps them within Postgres' 63) created at
+  the build's import. The keys end in `source`, as a partitioned table's
+  must: `osm_ways (id, source)`, `osm_tile_ways (z, x, y, way_id, source)` (a
+  tile is still a prefix lookup), `osm_pois (id, source)` with its index on
+  the tile. No index on `source` (the partitions prune), and no foreign key
+  from `osm_tile_ways` to `osm_ways`: a build's partitions come and go whole,
+  and the cache drops its orphans itself, so only its partition keeps an
+  index on `way_id`.
+- `osm_ways.geometry` is `bytea` instead of jsonb: big-endian `int32` pairs
+  of lon and lat in 1e-7 degrees — OSM's own precision, what Overpass's JSON
+  carries in 7 decimals, exact on the way back — read with a `DataView`, 8
+  bytes a vertex instead of about 22. node-postgres hands it over as hex,
+  which decodes in half the time of the JSON (an `int4[]` would take ten
+  times as long). `nodes bigint[]` and the kept `tags jsonb` stay.
+- `loadMapData` reads every serving source — the cache and each ready
+  build — in one statement; a way or stop two of them hold (a border tile
+  fetched from Overpass before the region arrived) comes once, from the
+  newer data (`fetched_at`, then the source).
+- `osm_regions` (new): one row per region and build — `id`, `name`
+  (`belgium`), `build_id` (yyyymmdd), `digest` (the OCI manifest's; the
+  SHA-256 of `manifest.json` for a hand import), unique together with the
+  name, `source` (unique), `status` (`importing|ready|failed`, at most one
+  `ready` a region), `error`, `extract_timestamp`, `built_at`, `polygon jsonb`
+  (the `.poly` rings as a GeoJSON MultiPolygon) with its bounding box,
+  `way_count`, `membership_count`, `poi_count`, `imported_at`, `created_at`,
+  `updated_at`.
 - `osm_tiles` stays what it is: the cache bookkeeping of the Overpass
   fallback. A region writes no rows into it; coverage comes from polygons
   (§2.5).
 
-Sizes, measured on a first import of Belgium with the loader prototype
-(§10): 329 B per way (`osm_ways`, 299 B of row and 30 B of primary key),
-166 B per membership row (`osm_tile_ways`, 77 B of row and 89 B of the two
-indexes: the text `source` in the primary key costs 34 B a row; a `smallint`
-source id would make it 132 B), 196 B per stop; Belgium's 1.53 M ways,
-1.73 M memberships (1.13 tiles a way) and 62 k stops take 0.80 GB.
-Extrapolated by way count from the extracts of §2.1: the Netherlands 1.5 GB,
-France 6.6 GB, Germany 8.7 GB, Europe about 45 GB. A refresh as §2.6
-describes it doubles that on disk (measured there). Today's cache tables
+Sizes, measured on Belgium with the loader of task 1: 849 MB of tables for
+its 1.53 M ways, 1.73 M memberships (1.13 tiles a way) and 62 k stops —
+`osm_ways` 557 MB (466 MB of rows, 90 MB of key: the text `source` in the
+key doubles it against the prototype's id alone), `osm_tile_ways` 279 MB
+(146 MB of rows, 133 MB of key), `osm_pois` 13 MB — and the same 849 MB
+after a refresh. The prototype's 0.80 GB (§10) had no `source` in the ways'
+key. Extrapolated by way count from the extracts of §2.1: the Netherlands
+1.6 GB, France 7 GB, Germany 9 GB, Europe about 48 GB. Today's cache tables
 hold a few thousand tiles, so the migration converts them in place (a
 statement at its end; the cache is rebuildable either way).
 
@@ -346,33 +362,31 @@ switched off". `availableLevel` keeps degrading to `averaged` as today.
 
 - Monthly, full replacement. The worker checks the registry tag of each
   region every `MAP_DATA_REFRESH_DAYS` days (and on `trail map refresh`);
-  a changed digest is downloaded and verified (§4.3), then imported under a
-  new source id `region:belgium@<build>` beside the old one. When the load
-  is complete, one transaction sets `osm_regions.build_id` to the new build
-  (and with it the region's source id), after which the old source's
-  membership and POI rows are
-  deleted and ways no membership row references any more are dropped (the
-  orphan rule of `saveTile`). Windows never see a half-imported region;
-  the price is twice a region's disk during the swap (§2.7).
-- Measured with the prototype on Belgium (§10), a refresh to identical
-  data takes 2 min 38 s: 22 s of `COPY` into staging tables, 33 s to upsert
-  the ways, 81 s to add the new memberships beside the old ones (a
-  five-column text key and the foreign key checked row by row), 6 s to
-  drop the old memberships and the orphans, 13 s of `VACUUM ANALYZE`. And
-  it does not give the space back: every way row is rewritten (its `source`
-  carries the build id, so no row is unchanged), every membership row is
-  new, and after the vacuum `osm_ways` is 2.0 times and `osm_tile_ways`
-  2.3 times their size after the first import (0.80 GB → 1.68 GB in all);
-  the next refresh reuses the freed pages (Monaco: 2.0 times after the
-  first refresh and after the second), so a region costs about twice its
-  import for good, not only during the swap. Task 1 should rather give
-  each build partitions of its own (the three tables partitioned by list
-  on `source` and keyed by source and id, a new build's partitions loaded
-  without indexes, indexed, then attached; the swap detaches and drops
-  the old build's partitions, which frees the space at once), or at least
-  keep the build id out of the rows that do not change
-  (`source = 'region:belgium'`, an upsert that skips unchanged ways with
-  `WHERE … IS DISTINCT FROM`, memberships replaced by difference).
+  a changed digest is downloaded and verified (§4.3), then imported as a
+  build of its own, under its source `<region>@<yyyymmdd>-<digest8>`. In
+  one transaction its three tables are created and loaded with one
+  `COPY … FREEZE` each (the rows frozen as they arrive, so no vacuum visits
+  them again), keyed, and swapped in: the three parents taken for a moment
+  (a reader's partitions are fixed when it is planned and its rows when it
+  runs, so the attach and the flip must not fall between the two), the
+  tables attached as the build's partitions, the build `ready` and the
+  region's previous build's row gone, all in one commit. Then the old
+  build's partitions are detached concurrently and dropped, which frees
+  their space at once. Windows never see a half-imported region, and a
+  reader sees the old build or the new one, whole; the price is the
+  region's tables twice during the import (§2.7). A failed import leaves
+  the build `failed` with its reason and the previous one serving; tables
+  of builds no ready row holds (a crash between the commit and the drop)
+  are swept under the import lock at the next import and at the worker's
+  start.
+- Measured on Belgium with the loader of task 1 on the development
+  container's Postgres: a first import in 16 s, a refresh to identical
+  data in 17 s, the tables 849 MB before and after it; under production's
+  `mem_limit` of 2 GB, 18 s, of which 1.7 s for the keys. The prototype's
+  refresh (§10), an upsert beside the old rows and a delete of them, took
+  2 min 38 s and left the tables at twice their size for good (0.80 →
+  1.68 GB): every way row was rewritten, since its `source` carries the
+  build id, and the next refresh only reused the freed pages.
 - No reprocessing after a refresh. The ways a move was matched to a month
   ago are still right; `processed_points.way_id` keeps pointing at OSM ids
   that may have changed, which nothing reads back. `trail reprocess
@@ -395,23 +409,25 @@ the registry) and in the database, from the measurements of §10:
 
 | Regions | One build's artefact | Database after an import | Peak during a refresh | Steady |
 |---|---|---|---|---|
-| `belgium` | 0.56 GB | 0.80 GB | 4.2 GB | 2.8 GB (1.9 GB with partitions) |
-| `benelux` | 1.51 GB | *2.4 GB* | *12 GB* | *8.0 GB (5.4 GB)* |
-| `belgium,germany` | *4.8 GB* | *9.5 GB* | *44 GB* | *30 GB (19 GB)* |
-| `europe` | *about 31 GB* | *about 45 GB* | *about 230 GB* | *about 160 GB (107 GB)* |
+| `belgium` | 0.56 GB | 0.85 GB | 4.2 GB | 1.9 GB |
+| `benelux` | 1.51 GB | *2.5 GB* | *12 GB* | *5.4 GB* |
+| `belgium,germany` | *4.8 GB* | *10 GB* | *44 GB* | *19 GB* |
+| `europe` | *about 31 GB* | *about 48 GB* | *about 230 GB* | *about 107 GB* |
 
 The volume keeps two builds (the old one serves open maps until the next
 refresh, §3.5) and holds a third while a new one downloads; the database
-holds the region's tables (twice their import size for good with the refresh
-of §2.6, once with partitions per build), and during a refresh a staging
-copy and up to 1 GB of write-ahead log besides. So Belgium: 1.1 GB on the
-volume and 1.7 GB of tables steady (0.8 GB with partitions); 1.7 GB and
-about 2.5 GB at the peak. *Italics* are extrapolated from Belgium's bytes
-per way. Europe does not fit this node with the refresh of §2.6 (about
-230 GB at the peak against 181 GB free) and fits it narrowly with partitions
-per build and the previous build deleted before a download (about 150 GB);
-it is supported on a bigger disk, not the default, and §9 says what it costs
-in time. RAM: the loader 300 MB in the worker (272 MB measured); the API's
+holds the region's tables once (each build has partitions of its own, and
+the old build's are dropped at the swap), and during a refresh the new
+build's tables beside the old and up to 1 GB of write-ahead log besides. So
+Belgium: 1.1 GB on the volume and 0.85 GB of tables steady; 1.7 GB and
+about 2.7 GB at the peak. The peak column is the prototype's, measured
+before the partitions; with them the database's share of it is about the
+old and the new build's tables and the log. *Italics* are extrapolated from Belgium's bytes
+per way. Europe fits this node narrowly, with the previous build deleted
+from the volume before a download (about 150 GB at the peak against 181 GB
+free; the prototype's refresh would have needed about 230 GB); it is
+supported on a bigger disk, not the default, and §9 says what it costs in
+time. RAM: the loader 300 MB in the worker (272 MB measured); the API's
 tile serving a few MB (the PMTiles directory cache, §3.4); Postgres
 unchanged at 2 GB (`shared_buffers` of the image's default serves the hot
 tiles; `osm_tile_ways` of Belgium is 287 MB).
@@ -479,7 +495,7 @@ per job), measured in task 0 (§10):
 | `belgium` | 6 min 47 s (7 min 49 s with the month's first download of the sources) | 3 GB / 2.0 GB | 2.8 GB | 427 MB |
 | `netherlands` | 7 min 1 s | 4 GB / 2.3 GB | 5.1 GB | 679 MB |
 | `benelux` (`osmium merge` first) | *15 min* | *4–5 GB* | *9 GB* | *1.14 GB* |
-| `germany` | cancelled after 36 min at the job's first limit of 2 h, 44 % of the tiles written (*about 55 min*) | 8 GB / 4.1 GB | at least 19.4 GB | *about 3 GB* |
+| `germany` | 23 min 55 s (task 2's build; the first was cancelled at the job's first limit of 2 h) | 8 GB / 3.7 GB | 19.4 GB | 3.13 GB |
 | `france` | 41 min 43 s | 8 GB / 4.2 GB | 20.6 GB | 3.47 GB |
 | `europe` | not on the runner | | | *about 22 GB* |
 
@@ -488,7 +504,7 @@ polygons, then the passes over the OSM data and the writing of the tiles:
 2 min 19 s and 3 min 43 s for Belgium, 2 min 21 s and 4 min 2 s for the
 Netherlands, the same time for an extract twice the size, so the map's
 detail counts more than the file's size; France takes 18 min and 21 min,
-Germany would have taken about 55 min in all. The basemap is half to three
+Germany takes 24 min in all. The basemap is half to three
 quarters of the extract's size (Belgium 427 MB for 0.70 GB, France 3.47 GB
 for 5.11 GB); the profile alone needs about 1.1 GB of heap (§10.2).
 *Italics* are extrapolated: Benelux from its three parts, Europe from the
@@ -653,20 +669,28 @@ and on dispatch with a region input, one job per region of a matrix read
 from `scripts/mapdata/regions.json` (`monaco`, `luxembourg`, `belgium`,
 `netherlands`, `germany`, `france`, `world`; `benelux` needs the
 `osmium merge` of task 2; the node's regions must be in it or come from a
-hand build). Its first version, from task 0, runs on dispatch, and on
-Monaco in pull requests that change the pipeline; it keeps what it builds
-as artefacts of the run for 14 days. Each job, on `ubuntu-24.04` (named
-rather than `ubuntu-latest`, so that the `osmium` package the manifests
-record changes on purpose):
+hand build). Since task 2 it runs on the 1st of every month and on
+dispatch (`region`: names or `all`; `extract`: a dated Geofabrik extract),
+and on Monaco in pull requests that change the pipeline; each region's
+build hands its artefact to the publishing job as an artefact of the run
+(7 days). Each build job, on `ubuntu-24.04` (named rather than
+`ubuntu-latest`, so that the `osmium` package the manifests record changes
+on purpose):
 
-1. downloads the region's PBF and `.poly` from Geofabrik (`curl` with a
-   pinned host, no redirects off it), checks the `.md5`, reads the extract's
-   timestamp with `osmium fileinfo -e`. It takes the dated file of the
+1. downloads the region's PBF and `.poly` (`curl`, HTTPS, no redirect
+   followed), checks the `.md5`, and reads the extract's timestamp with
+   `osmium fileinfo -e`, whose UTC day is the build id (`yyyymmdd`; an
+   extract without a timestamp is refused). It takes the dated file of the
    newest extract (`belgium-261027.osm.pbf`), whose `.md5` cannot change
-   during the download: `-latest` redirects to it, except for Germany and
-   Europe, which Geofabrik sends to a mirror and serves no `-latest` `.md5`
-   for, so the script looks for the dated file of the last three days on
-   `download.geofabrik.de` itself;
+   during the download: `-latest` redirects to it on `download.geofabrik.de`.
+   Germany and Europe Geofabrik sends to one mirror instead,
+   `ftp5.gwdg.de` (pinned in the script), which serves their `-latest` file
+   only and no checksum: the script downloads that file from the mirror and
+   checks it against the `.md5` of the dated file on Geofabrik with the same
+   size and `Last-Modified` (the mirror's copy of it; the last four days are
+   tried), and once more when the mirror rolled over to the next day during
+   the download. `--extract yymmdd` takes a dated file from Geofabrik
+   instead;
 2. runs the `osmium` steps of §2.2 (Ubuntu's `osmium-tool` package);
 3. runs Planetiler 0.10.2's release jar (its SHA-256 pinned in `build.sh`)
    on the runner image's Temurin 21 with `--osm_path` and the paths of its
@@ -674,30 +698,44 @@ record changes on purpose):
    itself: Natural Earth's package and the lake centrelines' release asset
    pinned by SHA-256, the water polygons (regenerated upstream every day)
    recorded in the manifest only; Planetiler downloads nothing;
-4. writes `manifest.json` and `SHA256SUMS`; from task 2 on it pushes the
-   artefact (§4.2) with `oras push` (ORAS 1.3, Apache-2.0), then signs it
-   with `actions/attest-build-provenance`, as the image gets (§13.2);
-5. (task 2) deletes versions older than the last three of the region.
+4. writes `manifest.json` (the build id, and the size and SHA-256 of every
+   file and of every chunk of a file over 1 GiB, cut by `chunks.sh`) and
+   `SHA256SUMS`; the publishing job pushes the artefact (§4.2) with
+   `scripts/mapdata/publish.sh` and `oras push` (ORAS 1.3.6, Apache-2.0, its
+   archive pinned by SHA-256), then attests it with `actions/attest` (build
+   provenance), as the image is (§13.2);
+5. the publishing job deletes the region's builds beyond the newest three,
+   with their attestations (`scripts/mapdata/retain.sh`).
 
-One build per region runs at a time (a `concurrency` group per region). The
-publishing of task 2 lives in a job of its own that never runs for
+One build of a region runs at a time, and one publication of a region (a
+`concurrency` group each, which cancels nothing in progress: one runs, the
+next waits, and a third run of the same region cancels the waiting one). The
+publishing lives in a job of its own that never runs for
 `pull_request` (dispatch and the schedule only), and only that job gets
 `packages: write`, `id-token: write` and `attestations: write`; the build
 jobs keep the read-only token, so a pull request, a fork's included, can
-build a region but never publish one.
+build a region but never publish one. A run on `main` (the schedule's, or a
+dispatch) publishes every region it built; a dispatch on another branch
+publishes only the test region (`"fixture": true` in `regions.json`:
+Monaco) and builds the others without publishing them, since `<region>` is
+the tag every server follows and a branch nobody reviewed must not move it
+(task 2's choice, like the image's `latest`, which only `main` gets). That
+rule guards against mistakes, not against a collaborator: the workflow and
+`regions.json` are read from the dispatched ref, so a branch can change
+both. The identity that can be enforced is the attestation's signer,
+`.github/workflows/mapdata.yml` at `refs/heads/main`, which servers do not
+verify yet (§4.3).
 
 Budget, measured (§10), whole jobs on the runner: Monaco 1 min, Luxembourg
-2½ min, Belgium 15 min, the Netherlands 18 min, France 1 h 45 min; Germany
-did not finish within the job's first limit of 2 h (70 min of download,
-10 min of osmium, Planetiler cancelled at 44 % of the tiles after 36 min:
-about 2 h 20 min in all), so the limit is now 4 h. Benelux *about 35 min*
-(its parts, extrapolated). The download from Geofabrik is a third to a
-half of each job: 2–3 MB/s for Belgium and the Netherlands, 1.7 and
-1.2 MB/s for France and Germany. Geofabrik sends its biggest extracts to a
-mirror (`ftp5.gwdg.de` for Germany) and the script takes the dated file from
-Geofabrik itself (step 1), which may be why; task 2 should try the mirror,
-checked against Geofabrik's `.md5`. All inside the runner's disk (84 GB
-free; France left 73 GB) and the 6 h limit. Europe (35 GB) is not built
+2½ min, Belgium 15 min, the Netherlands 18 min, France 1 h 45 min, Germany
+34 min. Germany's first build, which took its dated file from Geofabrik
+itself, ran into the job's first limit of 2 h (70 min of download alone);
+from the mirror (step 1) the 4.87 GB took 28 s, and the job's limit of
+4 h stays as a margin. Benelux *about 35 min* (its parts, extrapolated).
+The download from Geofabrik's own server is a third to a half of the other
+jobs: 2–3 MB/s for Belgium and the Netherlands, 1.7 MB/s for France. All
+inside the runner's disk (84 GB free; France left 73 GB, Germany 73 GB)
+and the 6 h limit. Europe (35 GB) is not built
 here: too long and too much disk (§3.1). `scripts/mapdata/build.sh` is the
 same script the workflow runs, for a machine with `osmium-tool`, Java and
 about 200 GB free (the extract, Planetiler's 140 GB of temporary files and
@@ -739,8 +777,9 @@ not used. Public packages cost nothing in storage or bandwidth.
 
 ### 4.3 How the node fetches and verifies
 
-The worker's registry client (`apps/api/src/mapdata/registry.ts`, about
-150 lines, `fetch` only): an anonymous token from `ghcr.io/token`, the
+The worker's registry client (`apps/api/src/mapdata/registry.ts` and the
+seven modules beside it that check and pull a build, about 1 500 lines with
+their comments, `fetch` only): an anonymous token from `ghcr.io/token`, the
 manifest by tag with the OCI media type, each blob by digest — GHCR
 answers blob requests with a redirect to
 `pkg-containers.githubusercontent.com`, the only redirect it follows —
@@ -750,6 +789,27 @@ the digest in the manifest and the manifest's own hash, then renamed into
 deletes the temporary files and keeps the old build. The digest the worker
 resolved is recorded in `osm_regions.digest`; `trail map status` shows it,
 and an operator can compare it with the workflow's attestation on GitHub.
+
+As built in task 2: the manifest's digest identifies a build, since the same
+extract can be built twice (the dated tag then moves to the rebuild), so a
+build's directory is `<yyyymmdd>-<first 8 hex of the digest>` and holds the
+registry's manifest itself as `oci-manifest.json` beside build.sh's files
+(no `SHA256SUMS`; `manifest.json` lists every file's and chunk's SHA-256).
+The manifest's annotations `com.jenspenneman.trail.mapdata.region` and
+`…build` let the client decide before it downloads anything: it pulls a
+build the volume lacks when it is not older than the newest there, and
+refuses a manifest over 256 KB, layers that are not the artefact's known
+files (whole or in consecutive chunks; no name from a manifest becomes a
+path) and more bytes than `MAP_DATA_MAX_GB` or the free space. With the
+loader's tables to ask, the volume keeps the build to serve and the one
+served before it; without, its two newest. The node verifies integrity —
+that every byte is what the manifest the registry served says, by digest —
+and not provenance: it does not fetch or check the Sigstore bundle of the
+build's attestation, so `gh attestation verify` by an operator is the only
+authenticity check today, and anyone who can push to the package can move
+`<region>` for every server. Verifying the bundle in the worker (the
+signer `.github/workflows/mapdata.yml@refs/heads/main`, the subject the
+build's digest) is a task of its own.
 Bandwidth, from the measured artefacts (§10): Belgium 0.56 GB a month and
 the world overview's 5 MB, Benelux 1.5 GB (Belgium, the Netherlands
 0.90 GB and Luxembourg 0.05 GB), Europe *about 31 GB* (extrapolated); a
@@ -947,6 +1007,7 @@ New variables (§4 of the architecture, `envSchema.ts`, `loadConfig.ts`,
 | `MAP_DATA_REGISTRY` | `ghcr.io/jenspenneman/trail-mapdata` | Where the artefacts come from; a mirror or a private registry (with the registry's credentials in `MAP_DATA_REGISTRY_TOKEN`) |
 | `MAP_DATA_DIR` | `/var/lib/trail/map` | The volume `trail-map`: read-write in the worker, read-only in the API |
 | `MAP_DATA_REFRESH_DAYS` | `30` | How often the worker looks for a newer build |
+| `MAP_DATA_MAX_GB` | `10` | The largest build the worker downloads (added in task 2; Europe needs about 31) |
 | `MAP_BASEMAP_REGION` | the first of `MAP_DATA_REGIONS` | Whose `basemap.pmtiles` the map draws |
 | `MAP_BASEMAP_FALLBACK` | `true` (phase 2), `false` (phase 3) | Serve `MAP_STYLE_LIGHT`/`DARK` while no bundle is active |
 | `MAP_CACHE_MB` | `256` | The worker's tile cache |
@@ -1034,7 +1095,8 @@ fixes first, so both lanes start after task 0.
   more than the node's 181 GB free; with partitions per build and the
   previous build deleted before a download, about 150 GB at the peak and
   107 GB steady. The first import takes 40–50 min, a refresh as designed
-  2½ h, and Geofabrik's download alone about 5 h from a runner; the
+  2½ h, and the download minutes from Geofabrik's mirror (Germany's
+  4.87 GB took 28 s, §10.2) rather than the 5 h from Geofabrik itself; the
   basemap cannot be built on a GitHub runner (about 5 h and 140 GB of
   temporary files). Recommendation: not now; and if Europe is wanted, build
   it by hand once a quarter and consider the Protomaps extract for its
@@ -1125,7 +1187,7 @@ measurement can be compared with them.
 | `luxembourg` | 47.8 MB | 612.0 k | 143.5 k | 1.15 M | 5 044 | 14.2 MB | 145 KB | 957 |
 | `belgium` | 698 MB | 11.48 M | 1.53 M | 10.75 M | 62 380 | 134 MB | 1.6 MB | 13 203 |
 | `netherlands` | 1.41 GB | 18.71 M | 2.86 M | 18.10 M | 44 530 | 217 MB | 1.1 MB | 25 007 |
-| `germany` (cancelled, §10.2) | 4.87 GB | 71.43 M | 16.63 M | *about 105 M* | — | — | — | 165 776 |
+| `germany` (task 2's build, §10.2) | 4.87 GB | 71.43 M | 16.63 M | 111.39 M | 428 790 | 1.38 GB | 12.0 MB | 165 776 |
 | `france` | 5.11 GB | 73.61 M | 12.58 M | 123.25 M | 260 386 | 1.44 GB | 7.0 MB | 276 286 |
 | `benelux` (*its parts*) | *2.15 GB* | *30.80 M* | *4.54 M* | *30.01 M* | *111 954* | *365 MB* | *2.8 MB* | 39 445 |
 | `europe` (*extrapolated*) | 35.3 GB | — | *80–100 M* | *650–800 M* | *1.8 M* | *8–10 GB* | *50 MB* | — |
@@ -1136,9 +1198,9 @@ are most of the rest; the estimate was 20 %), with 6–7 node references a way
 in Belgium and the Netherlands, 10 in France. Stops are mostly bus stops
 (Belgium: 60 014 of 62 380; 49 aerodromes, 43 of them areas). Covered tiles
 follow §2.5 on Geofabrik's polygons, which include territorial waters.
-Germany's build was cancelled after osmium had filtered its ways (16.63 M
-kept, 87.9 M distinct nodes) but before the files and counts were written,
-so its node references are estimated from its distinct nodes. *Italics* are
+Germany's first build was cancelled before its files and counts were
+written (§10.2); its row is task 2's build of the same extract (run
+40679475825), 87.9 M distinct nodes for its 111 M references. *Italics* are
 extrapolated: Benelux is the sum of its three parts (its own extract would
 hold the ways on their borders once), Europe scales the measured countries
 by its 35.3 GB extract, between France's 2.5 M kept ways a gigabyte and
@@ -1152,14 +1214,18 @@ Germany's 3.4 M.
 | `luxembourg` | 2 min 34 s | 29 s | 7 s | 1 min 4 s | `-Xmx2g`, 1.4 GB in use, 2.1 GB resident | 0.8 GB | 36.1 MB |
 | `belgium` | 15 min | 5 min 18 s | 1 min 15 s | 7 min 49 s | `-Xmx3g`, 2.0 GB in use, 4.7 GB resident | 2.8 GB | 427 MB |
 | `netherlands` | 17 min | 7 min 58 s | 1 min 24 s | 7 min 1 s | `-Xmx4g`, 2.3 GB in use, 6.5 GB resident | 5.1 GB | 679 MB |
-| `germany` | cancelled at the 2 h limit | 70 min 34 s | 10 min 24 s | cancelled after 36 min, 44 % of the tiles written (*about 55 min*) | `-Xmx8g`, 4.1 GB in use | at least 19.4 GB | *about 3 GB* |
+| `germany` | 34 min (the first build: cancelled at the 2 h limit) | 28 s from the mirror (70 min 34 s from Geofabrik) | 6 min 38 s | 23 min 55 s | `-Xmx8g`, 3.7 GB in use, 9.2 GB resident | 19.4 GB | 3.13 GB |
 | `france` | 1 h 45 min | 50 min | 9 min 40 s | 41 min | `-Xmx8g`, 4.2 GB in use, 9.0 GB resident | 20.6 GB | 3.47 GB |
 | `world` | 1 min 48 s | 1 s | — | 1 min 18 s | `-Xmx3g`, 1.3 GB in use, 2.2 GB resident | 0.8 GB | 5.3 MB |
 
-The download is Geofabrik's, at 1.2–3 MB/s from the runner; osmium is the
-five steps of §2.2 together (`tags-filter` takes 2 GB whatever the region:
-17 s for Belgium, 2 min for France and Germany); Germany's job ran into the
-first version's limit of two hours, now four. Planetiler's time includes
+The download is Geofabrik's, at 1.2–3 MB/s from the runner, except
+Germany's from the mirror at about 175 MB/s (task 2's build, run
+40679475825, which publishes nothing from a branch); osmium is the five
+steps of §2.2 together (`tags-filter` takes 2 GB whatever the region: 17 s
+for Belgium, 1 min 19 s to 2 min for France and Germany); Germany's first
+job ran into the first version's limit of two hours, now four, and the
+build of task 2 wrote `ways.opl.gz` in 2 chunks and `basemap.pmtiles` in 3,
+an artefact of 4.5 GB. Planetiler's time includes
 reading Natural Earth and the water polygons (25–30 s, from the Actions
 cache; the first run of a month fetches them in about a minute) and, for
 Belgium, that first fetch. Its memory is the `-Xmx` given, the most heap in
@@ -1217,8 +1283,11 @@ reused the freed space. Monaco itself imports in 0.3 s.
    Geofabrik itself (§4.1). Downloads run at 1.2–3 MB/s from the runner,
    so the big countries' jobs are long: France 1 h 45 min (50 min of
    download), Germany cancelled at the first version's limit of 2 h
-   (70 min of download); the limit is now 4 h, and task 2 should try the
-   mirror (§4.1). Europe would spend about 5 h on its download alone.
+   (70 min of download); the limit is now 4 h. Task 2 takes Germany's and
+   Europe's file from the mirror, checked against the dated `.md5` on
+   Geofabrik: 28 s for Germany, whose job then took 34 min (§4.1); Europe's
+   35 GB would take minutes too, which leaves its Planetiler run as what
+   no runner can do.
 6. **osmium.** OPL carries way-node coordinates only with
    `locations_on_ways=true`; `tags-filter` with its referenced objects
    needs 1.3–2 GB of memory for any region; areas from `osmium export`

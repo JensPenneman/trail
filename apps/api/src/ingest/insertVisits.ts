@@ -1,14 +1,31 @@
 import { sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
+import { toIso } from "../db/toIso";
 import type { NormalisedVisit } from "./normalisedRecords";
 
-/** Stores visits, skipping re-sent ones; returns how many were new. */
+/** A visit this upload stored: the times that decide which days it touches. */
+export interface InsertedVisit {
+  recordedAt: Date;
+  arrivedAt: Date | null;
+  departedAt: Date | null;
+}
+
+interface InsertedVisitRow extends Record<string, unknown> {
+  recorded_at: string;
+  arrived_at: string | null;
+  departed_at: string | null;
+}
+
+const atOrNull = (value: string | null): Date | null =>
+  value === null ? null : new Date(toIso(value));
+
+/** Stores visits, skipping re-sent ones; returns the new ones. */
 export async function insertVisits(
   tx: Executor,
   deviceId: string,
   visits: readonly NormalisedVisit[],
-): Promise<number> {
-  if (visits.length === 0) return 0;
+): Promise<InsertedVisit[]> {
+  if (visits.length === 0) return [];
   const rows = JSON.stringify(
     visits.map((visit) => ({
       recorded_at: visit.recordedAt.toISOString(),
@@ -20,7 +37,7 @@ export async function insertVisits(
       extra: visit.extra,
     })),
   );
-  const result = await tx.execute(sql`
+  const result = await tx.execute<InsertedVisitRow>(sql`
     INSERT INTO visits (device_id, recorded_at, arrived_at, departed_at, lat, lon, horizontal_accuracy, extra)
     SELECT ${deviceId}::uuid, r.recorded_at, r.arrived_at, r.departed_at, r.lat, r.lon,
       r.horizontal_accuracy, r.extra
@@ -29,6 +46,11 @@ export async function insertVisits(
       lat double precision, lon double precision, horizontal_accuracy real, extra jsonb
     )
     ON CONFLICT (device_id, recorded_at) DO NOTHING
+    RETURNING recorded_at::text, arrived_at::text, departed_at::text
   `);
-  return result.rowCount ?? 0;
+  return result.rows.map((row) => ({
+    recordedAt: new Date(toIso(row.recorded_at)),
+    arrivedAt: atOrNull(row.arrived_at),
+    departedAt: atOrNull(row.departed_at),
+  }));
 }

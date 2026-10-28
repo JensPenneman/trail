@@ -7,6 +7,7 @@ import type { EventBus } from "./events/eventBus";
 import type { ProcessingListener } from "./events/processingListener";
 import type { AlertSender } from "./jobs/alert";
 import type { BackgroundTasks } from "./lib/backgroundTasks";
+import type { IngestMeter } from "./load/ingestMeter";
 import type { ProcessingService } from "./processing/processingService";
 import type { SharingState } from "./sharing/sharingState";
 import type { DailyStatsScheduler } from "./stats/dailyStatsScheduler";
@@ -21,6 +22,8 @@ export interface AppContext {
   bus: EventBus;
   dailyStats: DailyStatsScheduler;
   background: BackgroundTasks;
+  /** Accepted uploads per minute, for the load line (docs/perf/README.md). */
+  ingestMeter: IngestMeter;
   /** Null when no ntfy topic is configured. */
   alerts: AlertSender | null;
   /** Resolves API tokens for `/api/v1`: the `api_tokens` table, or a stand-in in tests. */

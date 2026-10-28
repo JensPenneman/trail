@@ -28,6 +28,10 @@ export function testEnvironment(overrides: Record<string, string> = {}): NodeJS.
     RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE: "100000",
     // Tests never reach Overpass: map data comes from a fixture way source when a test wants it.
     PROCESSING_OVERPASS_URL: "",
+    // Nor the map data registry: a test that pulls points a refresher at a fake registry.
+    MAP_DATA_REGIONS: "",
+    // A worker process a test starts opens no port unless the test gives it one.
+    PROCESSING_METRICS_PORT: "0",
     ...overrides,
   };
 }

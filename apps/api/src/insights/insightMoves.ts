@@ -1,6 +1,7 @@
 import type { TransportMode, WayKind } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
+import { servedSegments } from "../transport/servedSegments";
 
 /** A move as Insights reads it from `segments`: times, distance and a few features, no positions. */
 export interface InsightMove {
@@ -79,7 +80,7 @@ export async function loadInsightMoves(
   }));
 }
 
-/** How many stops of `deviceIds` started in each of the ranges. */
+/** How many stops of `deviceIds` started in each of the ranges — a stay one stop (`servedSegments`). */
 export async function countStops(
   db: Executor,
   deviceIds: readonly string[],
@@ -88,11 +89,13 @@ export async function countStops(
   if (deviceIds.length === 0) return ranges.map(() => 0);
   const counts: number[] = [];
   for (const range of ranges) {
+    const from = new Date(range.startMs);
+    const to = new Date(range.endMs);
     const result = await db.execute<{ stops: number }>(sql`
-      SELECT count(*)::int AS stops FROM segments
-      WHERE device_id = ANY(${sql.param(deviceIds)}::uuid[]) AND kind = 'stop'
-        AND started_at >= ${new Date(range.startMs).toISOString()}::timestamptz
-        AND started_at < ${new Date(range.endMs).toISOString()}::timestamptz
+      SELECT count(*)::int AS stops FROM ${servedSegments(deviceIds, { from, to })}
+      WHERE s.kind = 'stop'
+        AND s.started_at >= ${from.toISOString()}::timestamptz
+        AND s.started_at < ${to.toISOString()}::timestamptz
     `);
     counts.push(result.rows[0]?.stops ?? 0);
   }

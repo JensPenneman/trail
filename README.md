@@ -104,13 +104,14 @@ and every pull request gets a preview deployment of its own.
 flowchart LR
   phone["Phones<br/>Overland, OwnTracks, Traccar Client, OsmAnd, GPSLogger"]
   browser["Browser<br/>passkeys"]
-  ci["GitHub Actions<br/>image build, releases"]
-  ghcr["GHCR<br/>ghcr.io/jenspenneman/trail"]
+  ci["GitHub Actions<br/>image build, map data, releases"]
+  ghcr["GHCR<br/>ghcr.io/jenspenneman/trail,<br/>trail-mapdata"]
   releases["GitHub releases<br/>and pull requests"]
 
   subgraph server["Home server: Launchway"]
     edge["Launchway edge<br/>HTTPS"]
     app["app<br/>API, ingest, dashboard"]
+    worker["worker<br/>processing, map data"]
     db[("db<br/>PostgreSQL 18")]
     backup["backup<br/>daily pg_dump"]
     checks["checks<br/>lint, tests, end-to-end"]
@@ -122,19 +123,23 @@ flowchart LR
   browser -->|HTTPS| edge
   edge --> app
   app --> db
+  worker --> db
   backup --> db
   backup --> folder
-  ci -->|"push image"| ghcr
+  ci -->|"push image,<br/>monthly map data"| ghcr
   ci -->|"publish draft release<br/>after the checks"| releases
   releases -->|"webhooks: deploy, check"| server
   checks -->|"commit statuses"| releases
-  ghcr -->|pull| app
+  ghcr -->|"pull image,<br/>map data"| app
 ```
 
 Previews run the same stack as separate projects with their own host name
 and database, without `backup`. The API (Express 5) serves the
 ingest endpoints, the JSON API and the built single-page app from one
-container on port 8080; PostgreSQL is reachable only on an internal network.
+container on port 8080; a second container of the same image, the worker,
+works out how the devices travelled, with CPUs and memory of its own, so
+processing never slows the API down. PostgreSQL is reachable only on an
+internal network.
 The specification, including the data model, the HTTP API and the security
 model, is [docs/architecture.md](docs/architecture.md).
 
@@ -150,14 +155,16 @@ npm run dev
 ```
 
 `npm run dev` starts PostgreSQL from `compose.yaml` (host port 54329), the API
-with reload on port 8787 and Vite on <http://localhost:5173>. Values in `.env`
-take precedence over variables exported by your shell. To test with a real
+with reload on port 8787, the processing worker with reload (its liveness
+probe on port 8788) and Vite on <http://localhost:5173> — the API and the
+worker in separate processes, as in production. Values in `.env` take
+precedence over variables exported by your shell. To test with a real
 phone on the same Wi-Fi, set `INGEST_BASE_URL` to the Mac's LAN address (see
 `.env.example`).
 
 | Script | What it does |
 |---|---|
-| `npm run dev` | database, API and web app with reload |
+| `npm run dev` | database, API, processing worker and web app with reload |
 | `npm run devc -- <arguments>` | `scripts/devc.sh`: [the development container](#develop-in-a-container) |
 | `npm run build` | production build: `apps/web/dist` and `apps/api/dist` |
 | `npm start` | runs the built server (`apps/api/dist/main.mjs`) |
@@ -165,9 +172,11 @@ phone on the same Wi-Fi, set `INGEST_BASE_URL` to the Mac's LAN address (see
 | `npm run lint` / `npm run lint:fix` | Biome lint and format check / with fixes |
 | `npm run format` | Biome format |
 | `npm run typecheck` | TypeScript in every workspace |
-| `npm test` | unit tests of every workspace |
+| `npm test` | unit tests of every workspace and of the load harness |
 | `npm run test:integration` | API tests against PostgreSQL (`TEST_DATABASE_URL`) |
 | `npm run test:e2e` | Playwright against the built server (`E2E_DATABASE_URL`; run `npm run build` first) |
+| `npm run test:load` | the load harness's own tests (also part of `npm test`) |
+| `npm run load -- fleet-10` | a load test on the capped stack, its report in `docs/perf/` ([docs/perf/README.md](docs/perf/README.md)) |
 | `npm run knip` | unused files, exports and dependencies |
 | `npm run check` | lint, typecheck, knip and unit tests |
 | `npm run db:generate -w @trail/api` | a new SQL migration from the Drizzle schema |
@@ -262,8 +271,9 @@ later). The image stays for the next `up`.
 
 ## Production
 
-[deploy/compose.yaml](deploy/compose.yaml) runs the app, PostgreSQL and a
-backup job; Launchway deploys it and serves it over HTTPS. Its variables are
+[deploy/compose.yaml](deploy/compose.yaml) runs the app, the processing
+worker, PostgreSQL and a backup job; Launchway deploys it and serves it over
+HTTPS. Its variables are
 in [deploy/.env.example](deploy/.env.example), and
 [deploy/compose.dev.yaml](deploy/compose.dev.yaml) runs the same stack locally
 from the working tree. The runbook, from the Launchway settings to previews,
@@ -366,8 +376,9 @@ apps/api/            Express API, ingest of the tracking apps, CLI (Node LTS, Ty
 apps/web/            React single-page app, served by the API in production
 packages/contracts/  zod schemas and types of the HTTP API
 deploy/              compose stack for Launchway, .env example, local run
-docs/                architecture (the specification), API and sharing guides, operations, phone setup, transport modes
+docs/                architecture (the specification), API and sharing guides, operations, phone setup, transport modes, load-test reports
 scripts/             development, build, hook and release scripts
+tools/load/          load tests: k6 scenarios, SSE probe, collector, reports (docs/perf/)
 tests/e2e/           Playwright end-to-end tests
 .devcontainer/       development container (scripts/devc.sh)
 compose.yaml         development database

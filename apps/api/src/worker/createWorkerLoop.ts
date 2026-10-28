@@ -64,5 +64,6 @@ export function createWorkerLoop(input: {
     processing,
     version: config.build.version,
     pollReady: input.pollReady,
+    stall: settings.testStall,
   });
 }

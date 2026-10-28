@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ConfigError, loadConfig } from "../../src/config/loadConfig";
 import { parseTrustProxy } from "../../src/config/parseTrustProxy";
@@ -59,14 +60,45 @@ describe("loadConfig", () => {
       },
       processing: {
         role: "all",
+        metricsPort: 8081,
+        testStall: false,
         enabled: true,
         overpassUrl: "https://overpass-api.de/api/interpreter",
         overpassDailyBytes: 300_000_000,
         osmTtlDays: 90,
         maxAccuracyM: 150,
         stopMinS: 180,
+        passMaxPoints: 60_000,
+        passMaxSpanHours: 36,
       },
+      mapData: {
+        regions: ["belgium"],
+        registry: { host: "ghcr.io", repository: "jenspenneman/trail-mapdata" },
+        credentials: null,
+        dir: "/var/lib/trail/map",
+        refreshDays: 30,
+        maxBytes: 10_000_000_000,
+      },
+      loadTest: false,
+      launchwayEnvironment: null,
     });
+  });
+
+  it("reads the load-test switch and Launchway's environment name for `trail load-fleet`", () => {
+    const config = loadConfig(
+      { ...minimal, LOAD_TEST: "true", LAUNCHWAY_ENVIRONMENT: " preview " },
+      defaults,
+    );
+    expect(config).toMatchObject({ loadTest: true, launchwayEnvironment: "preview" });
+    expect(
+      loadConfig({ ...minimal, LOAD_TEST: "", LAUNCHWAY_ENVIRONMENT: "" }, defaults),
+    ).toMatchObject({ loadTest: false, launchwayEnvironment: null });
+    expect(issuesOf({ ...minimal, LOAD_TEST: "1" })).toEqual(["LOAD_TEST: Use true or false"]);
+    // Only compared, never limited: a long value never keeps the app from starting.
+    expect(
+      loadConfig({ ...minimal, LAUNCHWAY_ENVIRONMENT: "x".repeat(500) }, defaults)
+        .launchwayEnvironment,
+    ).toHaveLength(500);
   });
 
   it("switches mapping off with an empty Overpass URL, and processing off altogether", () => {
@@ -88,23 +120,40 @@ describe("loadConfig", () => {
         PROCESSING_OSM_TTL_DAYS: "30",
         PROCESSING_MAX_ACCURACY_M: "100",
         PROCESSING_STOP_MIN_S: "300",
+        PROCESSING_PASS_MAX_POINTS: "20000",
+        PROCESSING_PASS_MAX_SPAN_HOURS: "12",
       },
       defaults,
     );
     expect(custom.processing).toEqual({
       role: "all",
+      metricsPort: 8081,
+      testStall: false,
       enabled: false,
       overpassUrl: "http://overpass.lan/api/interpreter",
       overpassDailyBytes: 50_000_000,
       osmTtlDays: 30,
       maxAccuracyM: 100,
       stopMinS: 300,
+      passMaxPoints: 20_000,
+      passMaxSpanHours: 12,
     });
     expect(
       issuesOf({ ...minimal, PROCESSING_ENABLED: "yes", PROCESSING_OVERPASS_URL: "ftp://x" }),
     ).toEqual([
       "PROCESSING_ENABLED: Use true or false",
       expect.stringMatching(/^PROCESSING_OVERPASS_URL: /),
+    ]);
+    // A pass reads at least a thousand points and spans at least an hour.
+    expect(
+      issuesOf({
+        ...minimal,
+        PROCESSING_PASS_MAX_POINTS: "999",
+        PROCESSING_PASS_MAX_SPAN_HOURS: "0",
+      }),
+    ).toEqual([
+      expect.stringMatching(/^PROCESSING_PASS_MAX_POINTS: /),
+      expect.stringMatching(/^PROCESSING_PASS_MAX_SPAN_HOURS: /),
     ]);
   });
 
@@ -117,6 +166,24 @@ describe("loadConfig", () => {
     }
     expect(issuesOf({ ...minimal, PROCESSING_ROLE: "both" })).toEqual([
       expect.stringMatching(/^PROCESSING_ROLE: /),
+    ]);
+  });
+
+  it("reads the worker's liveness port and the stall of its health check test", () => {
+    const set = loadConfig(
+      { ...minimal, PROCESSING_METRICS_PORT: "9100", PROCESSING_TEST_STALL: "true" },
+      defaults,
+    ).processing;
+    expect(set).toMatchObject({ metricsPort: 9100, testStall: true });
+    expect(
+      loadConfig({ ...minimal, PROCESSING_METRICS_PORT: "0", PROCESSING_TEST_STALL: "" }, defaults)
+        .processing,
+    ).toMatchObject({ metricsPort: 0, testStall: false });
+    expect(
+      issuesOf({ ...minimal, PROCESSING_METRICS_PORT: "65536", PROCESSING_TEST_STALL: "1" }),
+    ).toEqual([
+      expect.stringMatching(/^PROCESSING_METRICS_PORT: /),
+      "PROCESSING_TEST_STALL: Use true or false",
     ]);
   });
 
@@ -309,6 +376,70 @@ describe("loadConfig", () => {
     expect(
       issuesOf({ ...minimal, NODE_ENV: "production", DATABASE_URL: "postgres://db/other" }),
     ).toEqual([]);
+  });
+});
+
+describe("map data configuration", () => {
+  it("takes no region when MAP_DATA_REGIONS is set but empty, and lists without repeats", () => {
+    expect(loadConfig({ ...minimal, MAP_DATA_REGIONS: "" }, defaults).mapData.regions).toEqual([]);
+    expect(loadConfig({ ...minimal, MAP_DATA_REGIONS: "  " }, defaults).mapData.regions).toEqual(
+      [],
+    );
+    expect(
+      loadConfig(
+        { ...minimal, MAP_DATA_REGIONS: "Belgium, netherlands ,belgium,luxembourg" },
+        defaults,
+      ).mapData.regions,
+    ).toEqual(["belgium", "netherlands", "luxembourg"]);
+  });
+
+  it("refuses regions that are no region's name, and the world overview", () => {
+    expect(issuesOf({ ...minimal, MAP_DATA_REGIONS: "belgium,../etc" })).toEqual([
+      'MAP_DATA_REGIONS: "../etc" is not a region: lowercase letters, digits and dashes, as scripts/mapdata/regions.json names them',
+    ]);
+    expect(issuesOf({ ...minimal, MAP_DATA_REGIONS: "world" })).toEqual([
+      "MAP_DATA_REGIONS: world is the world overview, which comes with every region: list countries only",
+    ]);
+  });
+
+  it("reads another registry, and refuses a URL or a tag", () => {
+    expect(
+      loadConfig(
+        { ...minimal, MAP_DATA_REGISTRY: "registry.example.com:5000/maps/trail" },
+        defaults,
+      ).mapData.registry,
+    ).toEqual({ host: "registry.example.com:5000", repository: "maps/trail" });
+    for (const value of [
+      "https://ghcr.io/jenspenneman/trail-mapdata",
+      "ghcr.io/x/trail-mapdata:belgium",
+    ]) {
+      expect(issuesOf({ ...minimal, MAP_DATA_REGISTRY: value })).toEqual([
+        "MAP_DATA_REGISTRY: Use a registry host and repository like ghcr.io/jenspenneman/trail-mapdata (no https://, no tag)",
+      ]);
+    }
+  });
+
+  it("keeps the registry token out of every message", () => {
+    const config = loadConfig({ ...minimal, MAP_DATA_REGISTRY_TOKEN: "jens:ghp_s3cret" }, defaults);
+    expect(config.mapData.credentials?.username).toBe("jens");
+    expect(JSON.stringify(config)).not.toContain("ghp_s3cret");
+    const issues = issuesOf({ ...minimal, MAP_DATA_REGISTRY_TOKEN: "ghp_s3cret without a user" });
+    expect(issues).toEqual([
+      "MAP_DATA_REGISTRY_TOKEN: Use <user>:<token> (printable characters, no spaces)",
+    ]);
+  });
+
+  it("resolves the directory and checks the numbers", () => {
+    expect(loadConfig({ ...minimal, MAP_DATA_DIR: "map-data" }, defaults).mapData.dir).toBe(
+      resolve(process.cwd(), "map-data"),
+    );
+    const config = loadConfig(
+      { ...minimal, MAP_DATA_REFRESH_DAYS: "7", MAP_DATA_MAX_GB: "40" },
+      defaults,
+    );
+    expect(config.mapData).toMatchObject({ refreshDays: 7, maxBytes: 40_000_000_000 });
+    expect(issuesOf({ ...minimal, MAP_DATA_REFRESH_DAYS: "0" })).toHaveLength(1);
+    expect(issuesOf({ ...minimal, MAP_DATA_MAX_GB: "1001" })).toHaveLength(1);
   });
 });
 

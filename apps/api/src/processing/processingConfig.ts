@@ -8,9 +8,16 @@
  * `mapping` to the mapped level, `stops` and the rest to the inferred level —
  * stops are found before map matching, but a window worked out again from the
  * inferred level matches afresh every move with a point of a former stop, so
- * a change to them needs the inferred level alone.
+ * a change to them needs the inferred level alone. `passes` belongs to no
+ * level: it bounds how much one pass works out, not what is worked out.
  */
 export interface ProcessingConfig {
+  readonly passes: {
+    /** A pass reads at most this many raw points (PROCESSING_PASS_MAX_POINTS): a bigger job is split first … */
+    readonly maxPoints: number;
+    /** … and its points span at most this long (PROCESSING_PASS_MAX_SPAN_HOURS). */
+    readonly maxSpanS: number;
+  };
   readonly averaging: {
     /** Points less accurate than this are dropped (PROCESSING_MAX_ACCURACY_M). */
     readonly maxAccuracyM: number;
@@ -185,6 +192,10 @@ export interface ScoringThresholds {
 }
 
 export const defaultProcessingConfig: ProcessingConfig = {
+  passes: {
+    maxPoints: 60_000,
+    maxSpanS: 36 * 3600,
+  },
   averaging: {
     maxAccuracyM: 150,
     spikeSpeedMs: 90,
@@ -306,9 +317,19 @@ export function processingConfigWith(settings: {
   maxAccuracyM: number;
   stopMinS: number;
   osmTtlDays: number;
+  passMaxPoints?: number;
+  passMaxSpanHours?: number;
 }): ProcessingConfig {
+  const { passes } = defaultProcessingConfig;
   return {
     ...defaultProcessingConfig,
+    passes: {
+      maxPoints: settings.passMaxPoints ?? passes.maxPoints,
+      maxSpanS:
+        settings.passMaxSpanHours === undefined
+          ? passes.maxSpanS
+          : settings.passMaxSpanHours * 3600,
+    },
     averaging: { ...defaultProcessingConfig.averaging, maxAccuracyM: settings.maxAccuracyM },
     stops: { ...defaultProcessingConfig.stops, minDurationS: settings.stopMinS },
     mapping: { ...defaultProcessingConfig.mapping, tileMaxAgeDays: settings.osmTtlDays },

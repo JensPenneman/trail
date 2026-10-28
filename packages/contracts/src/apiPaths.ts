@@ -5,6 +5,8 @@ export const apiPaths = {
   config: "/api/config",
   health: "/api/health",
   healthLive: "/api/health/live",
+  /** For a monitor of the processing worker: 503 when no worker beat for 90 s. */
+  healthProcessing: "/api/health/processing",
   /** The ingest endpoints (docs/architecture.md §6), authenticated by a device token. */
   overland: "/api/overland",
   owntracks: "/api/owntracks",
