@@ -42,9 +42,11 @@ export interface OverrideContext {
 
 /**
  * Where an override applies: a segment override its span; a toggle until the
- * first stop of `toggleEndingStopS` or more, or the first part of a move the
- * inference reads as another kind of travel (`familyOf`), that starts after
- * it — a change of trains does not end it, cycling home from the station does.
+ * first stop of `toggleEndingStopS` or more, or a move after a stop that
+ * followed it that the inference reads as another kind of travel (`familyOf`).
+ * The first move it reaches is its own, all its parts, whatever the inference
+ * reads in them (a ride partly read as a car, the walk to the platform) — a
+ * change of trains does not end it, cycling home from the station does.
  */
 function effectiveSpan(
   override: OverrideSpan,
@@ -54,17 +56,20 @@ function effectiveSpan(
   if (override.kind === "toggle") {
     if (override.endsBy !== null) to = Math.min(to, override.endsBy);
     const family = familyOf(override.mode);
+    // Whether a stop came since the toggle began: only moves after one can end it by kind.
+    let afterStop = false;
     for (const segment of segments) {
       if (segment.startT <= override.from) continue;
       const inferred = segment.kind === "move" ? familyOf(segment.part.verdict.mode) : null;
       const ends =
         segment.kind === "stop"
           ? segment.endT - segment.startT >= toggleEndingStopS
-          : family !== null && inferred !== null && inferred !== family;
+          : afterStop && family !== null && inferred !== null && inferred !== family;
       if (ends) {
         to = Math.min(to, segment.startT);
         break;
       }
+      if (segment.kind === "stop") afterStop = true;
     }
   }
   return to > override.from ? { from: override.from, to } : null;

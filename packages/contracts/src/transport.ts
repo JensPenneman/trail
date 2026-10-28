@@ -315,15 +315,16 @@ export type LevelTracksResponse = z.infer<typeof levelTracksResponseSchema>;
 
 /**
  * A quick toggle runs until its `until`, the first stop at least this long
- * (seconds), or the first move Trail reads as another kind of travel (on
- * foot, by bike, by vehicle), whichever comes first: a change of trains or a
- * wait at the lights does not end it, cycling home from the station does
+ * (seconds), or — after a stop — a move Trail reads as another kind of
+ * travel (on foot, by bike, by vehicle), whichever comes first: a change of
+ * trains or a wait at the lights does not end it, cycling home from the
+ * station does, and the ride it was set for is its own all the way
  * (docs/architecture.md §17.5).
  */
 export const toggleEndingStopS = 600;
 
 /** What ends a toggle besides its `until`, as the API's descriptions say it. */
-const endingStop = `the first stop of ${toggleEndingStopS / 60} minutes or more, or the first move Trail reads as another kind of travel (on foot, by bike, by vehicle)`;
+const endingStop = `the first stop of ${toggleEndingStopS / 60} minutes or more, or — after a stop — a move Trail reads as another kind of travel (on foot, by bike, by vehicle)`;
 
 /** A person's correction of the transport mode. */
 export const modeOverrideSchema = z

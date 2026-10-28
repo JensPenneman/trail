@@ -100,10 +100,11 @@ sure, especially between a car and a train.
 - **From now on**: your own card, **Me**, on the People page has a row
   *Now: Walk · Bike · Car · Bus · Train · Tram · Metro · Other · Auto*. Tap
   the mode you are switching to — getting on a train, say — and it holds
-  until you stop for 10 minutes or more, or Trail sees you travel another
-  way (on foot, by bike, in a vehicle): changing trains does not end it,
-  cycling home from the station does. Set it once you are on board: a ride
-  Trail reads as another way of travelling ends it.
+  until you stop for 10 minutes or more, or — after a stop — Trail sees you
+  travel another way (on foot, by bike, in a vehicle): changing trains does
+  not end it, cycling home from the station does. The ride you set it for is
+  yours all the way, whatever Trail reads in it: a stretch read as a car
+  stays your bike ride, and the walk to the platform takes your train.
   Auto hands it back to Trail; Other has every mode.
   It sets the phone that reported last, which the row names; a second
   device (a tracker in the car, say) is not changed, and its own page under

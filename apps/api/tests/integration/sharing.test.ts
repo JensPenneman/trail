@@ -685,6 +685,7 @@ describe("what a shared device is doing", () => {
         "toggle ended",
         "toggle through a short stop",
         "toggle ended by a bike",
+        "toggle over a misread ride",
       ].map(async (name) => (await createDevice(owner.agent, { name: `Mode ${name}` })).device.id),
     );
     const [
@@ -697,6 +698,7 @@ describe("what a shared device is doing", () => {
       ended = "",
       through = "",
       cycled = "",
+      misread = "",
     ] = ids;
     const segment = (
       deviceId: string,
@@ -740,6 +742,10 @@ describe("what a shared device is doing", () => {
     await segment(cycled, "move", [40, 20], "train");
     await segment(cycled, "stop", [20, 15], null);
     await segment(cycled, "move", [15, 2], "cycling");
+    // A bike set at the shed, the ride read as a car from its middle on: no stop since, still hers.
+    await toggle(misread, 40, "cycling");
+    await segment(misread, "move", [39, 30], "cycling");
+    await segment(misread, "move", [30, 2], "car");
 
     const now = new Date();
     const options = { now, recentMs: t.ctx.config.liveWindowMinutes * 60_000 };
@@ -752,11 +758,14 @@ describe("what a shared device is doing", () => {
       [ended]: "stationary",
       [through]: "train",
       [cycled]: "cycling",
+      [misread]: "cycling",
     });
     // A window after them sees where each toggle ended: at the bike ride, at none.
     const later = { from: new Date(now.getTime() + 60_000), to: new Date(now.getTime() + 120_000) };
     const [endedByRide] = await loadOverrides(t.ctx.db, cycled, later.from, later.to);
     const [runningOn] = await loadOverrides(t.ctx.db, through, later.from, later.to);
+    const [ownRide] = await loadOverrides(t.ctx.db, misread, later.from, later.to);
+    expect(ownRide?.endsBy).toBeNull();
     expect(Math.abs((endedByRide?.endsBy ?? 0) - (now.getTime() / 1000 - 15 * 60))).toBeLessThan(
       30,
     );

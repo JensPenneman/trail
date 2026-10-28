@@ -3357,13 +3357,17 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
 - `POST /api/v1/devices/{id}/mode { mode, until? }` is the quick toggle: a
   `toggle` override from now until `until`, the first detected stop of ten
   minutes or more (`toggleEndingStopS`: changing trains or waiting at the
-  lights does not end it), or the first part of a move starting after it
-  that the inference reads as another kind of travel than the toggle's — on
-  foot, by bike or by vehicle, the families `splitMove` cuts between (cycling
-  home from the station ends a train toggle; a part it was set during, or a
-  move without a kind, `stationary` or `unknown`, does not) — whichever comes
-  first; the toggle in force is the latest one with neither since it began
-  (`endsToggleSql`). The same mode again changes nothing (but a new
+  lights does not end it), or — after a stop that followed it — a move the
+  inference reads as another kind of travel than the toggle's: on foot, by
+  bike or by vehicle, the families `splitMove` cuts between (cycling home
+  from the station ends a train toggle; a move without a kind, `stationary`
+  or `unknown`, does not), whichever comes first. The first move a toggle
+  reaches is its own, all its parts, whatever the inference reads in them: a
+  ride read as a car for a stretch, or all the way, takes the toggle's bike,
+  and so does the walk to the platform a train toggle was set at the
+  entrance for. The toggle in force is the latest one with nothing that ends
+  it since it began (`endsToggleSql`: the move's kind counts only with a stop
+  of the device between the toggle and it). The same mode again changes nothing (but a new
   `until`); another mode ends the running toggle and starts a new one; `mode:
   null` ends it. `GET` on the same path answers the toggle in force and the
   current mode, which shares and links with details show too (§8.5).
@@ -3374,10 +3378,8 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   still fits after recomputation moved the segment by a few seconds; an
   override covering less than 90 s of a move, and not most of it, leaves it
   alone. A toggle that began before the window gets the first stored stop of
-  ten minutes or more, or move of another kind of travel, after it, which
-  ends it. A toggle set before boarding ends at a ride the inference reads
-  as another kind of travel (a tram read as a bike): set it once aboard, or
-  correct the ride. The applied override is in
+  ten minutes or more, or move of another kind of travel after a stop, after
+  it, which ends it. The applied override is in
   `features.override`
   (`{ id, kind, source }`); `GET /api/v1/stats/modes` counts the corrected
   segments.

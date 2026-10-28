@@ -35,7 +35,8 @@ function familySql(mode: SQL): SQL {
  * Whether stored segment `segment` (an alias of `segments`) ends quick toggle
  * `toggle` (an alias of `mode_overrides`) when it starts after the toggle
  * began (docs/architecture.md §17.5): a stop of `toggleEndingStopS` or more,
- * or a move the inference reads as another kind of travel than the toggle's.
+ * or a move the inference reads as another kind of travel than the toggle's
+ * after a stop that followed the toggle — the first move it reaches is its own.
  */
 export function endsToggleSql(segment: string, toggle: string): SQL {
   const s = sql.raw(segment);
@@ -43,5 +44,10 @@ export function endsToggleSql(segment: string, toggle: string): SQL {
   return sql`((${s}.kind = 'stop'
       AND ${s}.ended_at - ${s}.started_at >= make_interval(secs => ${toggleEndingStopS}))
     OR (${s}.kind = 'move'
-      AND ${familySql(sql`${s}.mode_inferred`)} <> ${familySql(sql`${o}.mode`)}))`;
+      AND ${familySql(sql`${s}.mode_inferred`)} <> ${familySql(sql`${o}.mode`)}
+      AND EXISTS (
+        SELECT 1 FROM segments toggle_stop
+        WHERE toggle_stop.device_id = ${s}.device_id AND toggle_stop.kind = 'stop'
+          AND toggle_stop.started_at > ${o}.from_at AND toggle_stop.started_at < ${s}.started_at
+      )))`;
 }

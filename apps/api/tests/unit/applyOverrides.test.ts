@@ -193,6 +193,84 @@ describe("applyOverrides", () => {
     ]);
   });
 
+  it("gives the quick toggle the first move it reaches, all of it, whatever the inference reads", () => {
+    const user = (
+      points: Parameters<typeof processWorld>[0],
+      from: number,
+      mode: "cycling" | "train",
+    ) =>
+      moves(processWorld(points, { overrides: [override({ kind: "toggle", from, mode })] })).map(
+        (move) => [move.modeUser, move.modeInferred],
+      );
+    // A bike ride whose middle stretch reads as a car: set at the shed, or a minute after setting off.
+    const shed = pointAlong(motorwayLine, 500);
+    const atShed = stay(shed, { startT: morning, durationS: 300, intervalS: 5, seed: 2 });
+    const out = travel(subPath(motorwayLine, 500, 3500), {
+      startT: lastT(atShed) + 1,
+      speedMs: 5,
+      intervalS: 2,
+      motion: ["cycling"],
+      seed: 3,
+    });
+    const fast = travel(subPath(motorwayLine, 3500, 7700), {
+      startT: lastT(out) + 2,
+      speedMs: 14,
+      intervalS: 2,
+      motion: [],
+      seed: 4,
+    });
+    const on = travel(subPath(motorwayLine, 7700, 10_700), {
+      startT: lastT(fast) + 2,
+      speedMs: 5,
+      intervalS: 2,
+      motion: ["cycling"],
+      seed: 5,
+    });
+    const ride = concat(atShed, out, fast, on);
+    const corrected = [
+      ["cycling", "cycling"],
+      ["cycling", "car"],
+      ["cycling", "cycling"],
+    ];
+    expect(user(ride, morning + 240, "cycling")).toEqual(corrected);
+    expect(user(ride, lastT(atShed) + 60, "cycling")).toEqual(corrected);
+    // A ride read as a car all the way.
+    const car = travel(subPath(motorwayLine, 500, 8900), {
+      startT: lastT(atShed) + 1,
+      speedMs: 14,
+      intervalS: 2,
+      motion: [],
+      seed: 9,
+    });
+    expect(user(concat(atShed, car), morning + 240, "cycling")).toEqual([["cycling", "car"]]);
+    // A train set at the station's entrance: three minutes to the platform, four there, the train.
+    const platform: Vertex = [shed[0], shed[1] - 250];
+    const walk = travel([shed, platform], {
+      startT: lastT(atShed) + 1,
+      speedMs: 1.4,
+      intervalS: 2,
+      motion: ["walking"],
+      seed: 6,
+    });
+    const waiting = stay(platform, {
+      startT: lastT(walk) + 1,
+      durationS: 240,
+      intervalS: 5,
+      seed: 7,
+    });
+    const train = travel([platform, ...subPath(motorwayLine, 600, 13_500)], {
+      startT: lastT(waiting) + 1,
+      speedMs: 30,
+      intervalS: 1,
+      motion: ["driving"],
+      seed: 8,
+    });
+    expect(user(concat(atShed, walk, waiting, train), morning + 280, "train")).toEqual([
+      ["train", "walking"],
+      ["train", "car"],
+    ]);
+  });
+
   it("ends the quick toggle at its until, or at a stop seen before this window", () => {
     const points = twoDrives();
     const until = override({

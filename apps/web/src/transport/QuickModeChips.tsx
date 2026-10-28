@@ -8,7 +8,7 @@ import { ModePicker } from "./ModePicker";
 import { quickModes, transportModeInfo } from "./transportModes";
 import "./QuickModeChips.css";
 
-/** A toggle runs until a stop of this many minutes or more (`toggleEndingStopS`), or another kind of travel. */
+/** A toggle runs until a stop of this many minutes or more (`toggleEndingStopS`), or another kind of travel after a stop. */
 export const toggleMinutes = toggleEndingStopS / 60;
 
 interface QuickModeChipsProps {
@@ -23,10 +23,11 @@ interface QuickModeChipsProps {
 /**
  * The quick toggle (docs/architecture.md §17.5), on the Me card for the
  * device that reported last and on each device's page: one tap says how you
- * travel from now on — until a stop of ten minutes or more, or a move Trail
- * reads as another kind of travel (on foot, by bike, by vehicle), so a change of
- * trains does not end it — and Auto hands it back to the inference. "Other"
- * opens every mode.
+ * travel from now on — until a stop of ten minutes or more, or a move after a
+ * stop that Trail reads as another kind of travel (on foot, by bike, by
+ * vehicle), so a change of trains does not end it and the ride it was set for
+ * is its own — and Auto hands it back to the inference. "Other" opens every
+ * mode.
  */
 export function QuickModeChips({
   deviceId,
@@ -104,7 +105,7 @@ export function QuickModeChips({
         open={otherOpen}
         onClose={() => setOtherOpen(false)}
         title={dialogTitle ?? `How is ${deviceName} travelling?`}
-        description={`From now until a stop of ${toggleMinutes} minutes or more, or another kind of travel.`}
+        description={`From now until a stop of ${toggleMinutes} minutes or more, or another kind of travel after a stop.`}
       >
         <ModePicker
           label="Mode from now on"

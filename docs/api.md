@@ -269,9 +269,10 @@ People (and agents) can put a mode right, with `locations:write` and
   again. `DELETE` on the same path hands the move back to the inference.
 - `POST /api/v1/devices/{id}/mode` with `{ "mode": "train" }` says how the
   device travels from now on — until `until`, if given, the first detected
-  stop of 10 minutes or more, or the first move Trail reads as another kind of
-  travel (on foot, by bike, by vehicle), whichever comes first: changing
-  trains does not end it, cycling home from the station does. The same mode
+  stop of 10 minutes or more, or — after a stop — a move Trail reads as
+  another kind of travel (on foot, by bike, by vehicle), whichever comes
+  first: changing trains does not end it, cycling home from the station
+  does, and the ride it was set for is its own all the way. The same mode
   again changes nothing;
   `{ "mode": null }` ends it. `GET` on the same path tells the mode now.
 
