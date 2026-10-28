@@ -953,7 +953,7 @@ describe("the edges of a window", () => {
       INSERT INTO mode_overrides (device_id, kind, from_at, mode, source)
       VALUES (${device.id}, 'toggle', to_timestamp(${start + 30}), 'train', 'ui')
     `);
-    // The first upload ends half an hour into the ride; the next one's window starts at the ride.
+    // The first upload ends half an hour into the ride …
     const rideStart = lastT(wait);
     const cut = rideStart + 31 * 60;
     await upload(
@@ -965,11 +965,43 @@ describe("the edges of a window", () => {
       ),
     );
     await t.ctx.processing.flush();
+    const computedAt = async () =>
+      (
+        await t.ctx.db.execute<{ kind: string; from: number; computed: number }>(sql`
+          SELECT kind, extract(epoch FROM started_at)::float8 AS from,
+            extract(epoch FROM computed_at)::float8 AS computed
+          FROM segments WHERE device_id = ${device.id} ORDER BY started_at
+        `)
+      ).rows;
+    const stopFirst = (await computedAt()).find((segment) => segment.kind === "stop");
+    // … and the next one's window starts at the ride: worked out once, as when its tiles are in
+    // (a window waiting for tiles runs again from its start, which touches the station's stop).
     await upload(
       device.token,
       ride.filter((point) => point.t >= cut),
     );
-    await t.ctx.processing.flush();
+    const second = await takeDeviceWindows(
+      t.ctx.db,
+      device.id,
+      new Date(cut * 1000),
+      new Date((lastT(ride) + 1) * 1000),
+    );
+    expect(second.length).toBeGreaterThan(0);
+    await processWindow(t.ctx.db, second, {
+      config: t.ctx.processing.config,
+      mapping: true,
+      now: new Date(),
+    });
+    // The window held the ride, not the station's stop.
+    const after = await computedAt();
+    const stopAfter = after.find((segment) => segment.kind === "stop");
+    expect(stopAfter?.computed).toBe(stopFirst?.computed);
+    const rideParts = after.filter(
+      (segment) => segment.kind === "move" && segment.from >= rideStart,
+    );
+    expect(Math.max(...rideParts.map((part) => part.computed))).toBeGreaterThan(
+      stopFirst?.computed ?? 0,
+    );
     const moves = (
       await t.ctx.db.execute<{ from: number; mode_user: string | null; mode_inferred: string }>(sql`
         SELECT extract(epoch FROM started_at)::float8 AS from, mode_user, mode_inferred
@@ -983,17 +1015,7 @@ describe("the edges of a window", () => {
     expect(rode.length).toBeGreaterThan(0);
     expect(rode.map((move) => move.mode_user)).toEqual(rode.map(() => null));
     expect(rode.map((move) => move.mode_inferred)).toContain("cycling");
-    // The second window began at the ride: the station's stop is still the first window's.
-    const passes = (
-      await t.ctx.db.execute<{ kind: string; computed: number }>(sql`
-        SELECT kind, extract(epoch FROM computed_at)::float8 AS computed FROM segments
-        WHERE device_id = ${device.id} AND started_at >= to_timestamp(${lastT(drive) - 60})
-        ORDER BY started_at
-      `)
-    ).rows;
-    const [waited, ...riding] = passes;
-    expect(waited?.kind).toBe("stop");
-    for (const part of riding) expect(part.computed).toBeGreaterThan(waited?.computed ?? 0);
+    await t.ctx.processing.flush();
   });
 
   it("keeps the levels of the point a window shares with a segment that began before it", async () => {
