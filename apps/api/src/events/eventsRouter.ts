@@ -1,27 +1,59 @@
+import { randomInt } from "node:crypto";
 import { apiPaths } from "@trail/contracts/apiPaths";
-import express, { type Router } from "express";
+import { eventsQuerySchema } from "@trail/contracts/events";
+import express, { type Request, type Router } from "express";
 import type { AppContext } from "../appContext";
 import { requireSession } from "../auth/requestAuth";
 import { HttpError } from "../http/httpError";
+import { processingVersions } from "../processing/processingVersion";
 import { formatServerEvent } from "./formatServerEvent";
-import { isSessionActive } from "./isSessionActive";
 
 const maxStreamsPerUser = 10;
-/** Proxies and tunnels drop idle streams after ~100 s. */
-const pingIntervalMs = 20_000;
+/**
+ * Every open stream of the process. Past it a new one is told to come back
+ * at a random moment 10–30 s later, so a crowd that reconnects at once (a
+ * restart) spreads out instead of piling up.
+ */
+const maxStreams = 5_000;
 /** A client that stopped reading is cut off instead of buffering events forever. */
 const maxBufferedBytes = 1_000_000;
 
 /**
+ * Where a stream that comes back resumes: the browser's own reconnect sends
+ * the id it saw last as `Last-Event-ID`, which is newer than an `after` the
+ * page put in the URL when it opened the stream; a page that opens a new one
+ * itself can only use `?after=`. Undefined for a fresh stream; an id that
+ * fails the contract stands for one the server does not know (a resync,
+ * never a 400).
+ */
+function resumeFrom(req: Request): string | undefined {
+  const header = req.get("last-event-id");
+  const given = header !== undefined && header !== "" ? header : req.query["after"];
+  if (given === undefined) return undefined;
+  const parsed = eventsQuerySchema.safeParse({ after: given });
+  return parsed.success ? parsed.data.after : "";
+}
+
+/**
  * `GET /api/events` — the user's live events as Server-Sent Events
- * (docs/architecture.md §9). The session is re-checked with every ping, so a
- * revoked or expired session stops receiving data.
+ * (docs/architecture.md §9). Every event has an id; a stream that comes back
+ * with the last one it saw gets what it missed, or `resync` when that is
+ * gone. The bus pings every stream and re-checks their sessions together, so
+ * a revoked or expired session stops receiving data.
  */
 export function eventsRouter(ctx: AppContext): Router {
   const router = express.Router();
 
   router.get(apiPaths.events, (req, res) => {
     const { user, sessionId } = requireSession(req);
+    if (ctx.bus.streamCount() >= maxStreams) {
+      res.setHeader("Retry-After", String(randomInt(10, 31)));
+      throw new HttpError(
+        503,
+        "unavailable",
+        "Too many live connections are open on this server. Retry in a moment.",
+      );
+    }
     if (ctx.bus.connectionCount(user.id) >= maxStreamsPerUser) {
       throw new HttpError(
         429,
@@ -29,6 +61,7 @@ export function eventsRouter(ctx: AppContext): Router {
         "Too many live connections are open. Close a tab and retry.",
       );
     }
+    const after = resumeFrom(req);
     res.status(200);
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
@@ -38,12 +71,10 @@ export function eventsRouter(ctx: AppContext): Router {
     req.socket.setNoDelay(true);
 
     let closed = false;
-    let ping: NodeJS.Timeout | undefined;
     let unsubscribe = (): void => {};
     const close = () => {
       if (closed) return;
       closed = true;
-      clearInterval(ping);
       unsubscribe();
       res.end();
     };
@@ -56,27 +87,31 @@ export function eventsRouter(ctx: AppContext): Router {
       res.write(chunk);
     };
 
-    unsubscribe = ctx.bus.subscribe(user.id, {
-      sessionId,
-      send: (event) => write(formatServerEvent(event)),
-      close,
-    });
+    const subscription = ctx.bus.subscribe(
+      user.id,
+      {
+        sessionId,
+        send: (_event, message) => write(message),
+        ping: () => write(": ping\n\n"),
+        close,
+      },
+      after,
+    );
+    unsubscribe = subscription.unsubscribe;
     res.on("close", close);
-    write("retry: 5000\n\n");
-    write(formatServerEvent({ type: "hello", serverTime: new Date().toISOString() }));
-
-    ping = setInterval(() => {
-      write(": ping\n\n");
-      isSessionActive(ctx.db, sessionId)
-        .then((active) => {
-          if (active) return;
-          write(formatServerEvent({ type: "session-ended" }));
-          close();
-        })
-        .catch((error: unknown) => {
-          ctx.logger.warn({ err: error }, "could not re-check the session of a live stream");
-        });
-    }, pingIntervalMs);
+    // Per stream, so the browsers' own reconnects after a restart do not come back together.
+    write(`retry: ${randomInt(3_000, 8_001)}\n\n`);
+    write(
+      formatServerEvent(
+        { type: "hello", serverTime: new Date().toISOString(), versions: processingVersions },
+        subscription.position,
+      ),
+    );
+    if (subscription.missed === null) {
+      write(formatServerEvent({ type: "resync" }, subscription.position));
+    } else {
+      for (const message of subscription.missed) write(message);
+    }
   });
 
   return router;

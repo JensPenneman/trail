@@ -6,7 +6,7 @@ import { hasPendingWork } from "../processing/processingQueue";
 import { buildModeInsights } from "./buildModeInsights";
 import { loadInsightMoves } from "./insightMoves";
 import { bucketFor } from "./insightsPeriod";
-import { insightsScope } from "./insightsScope";
+import { type InsightsScope, insightsScope } from "./insightsScope";
 
 /** `GET /api/v1/insights/modes/{mode}` */
 export async function loadModeInsights(
@@ -18,8 +18,9 @@ export async function loadModeInsights(
     to?: string | undefined;
     devices?: readonly string[] | undefined;
   },
+  given?: InsightsScope,
 ): Promise<InsightsMode> {
-  const scope = await insightsScope(db, access, query);
+  const scope = given ?? (await insightsScope(db, access, query));
   const range = { startMs: scope.start.getTime(), endMs: scope.end.getTime() };
   const moves = await loadInsightMoves(db, scope.deviceIds, range, mode);
   return buildModeInsights({

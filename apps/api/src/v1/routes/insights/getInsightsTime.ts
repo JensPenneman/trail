@@ -1,6 +1,7 @@
 import { insightsModeFilterQuerySchema, insightsTimeSchema } from "@trail/contracts/insights";
 import { loadTimeInsights } from "../../../insights/loadTimeInsights";
 import { defineRoute } from "../../defineRoute";
+import { answerInsights } from "./answerInsights";
 
 /** `GET /api/v1/insights/time` */
 export const getInsightsTime = defineRoute(
@@ -16,10 +17,16 @@ export const getInsightsTime = defineRoute(
     request: { query: insightsModeFilterQuerySchema },
     // A device in `devices` that is unknown, foreign or outside the token is a 404.
     errors: [404],
-    responses: { 200: insightsTimeSchema },
+    responses: { 200: insightsTimeSchema, 304: null },
   },
-  async ({ ctx, auth, query }) => ({
-    status: 200,
-    body: await loadTimeInsights(ctx.db, auth, query),
-  }),
+  ({ ctx, auth, query, ifNoneMatch }) =>
+    answerInsights({
+      ctx,
+      auth,
+      ifNoneMatch,
+      operationId: "getInsightsTime",
+      asked: query,
+      query,
+      load: (scope) => loadTimeInsights(ctx.db, auth, query, scope),
+    }),
 );
