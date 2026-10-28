@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { copyFile, link, mkdir, open, readFile, rename, rm, stat, statfs } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, open, readFile, rename, rm, statfs } from "node:fs/promises";
 import { join } from "node:path";
 import type { Logger } from "pino";
 import {
@@ -122,7 +122,9 @@ async function reuseFile(
       listed = false;
     }
     const candidate = join(build.dir, file.name);
-    if (!listed || (await stat(candidate).catch(() => null))?.size !== file.bytes) continue;
+    // A regular file of that size only: a link is never followed out of the build.
+    const found = listed ? await lstat(candidate).catch(() => null) : null;
+    if (found === null || !found.isFile() || found.size !== file.bytes) continue;
     await link(candidate, path).catch(() => copyFile(candidate, path));
     if ((await sha256Of(path, options.signal)) === sha256) return true;
     await rm(path, { force: true });

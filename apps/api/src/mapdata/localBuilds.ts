@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { constants } from "node:fs";
 import { lstat, open, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { isBuildId } from "./artefactLayout";
@@ -21,6 +22,8 @@ export interface LocalBuild {
   pulledAt: Date;
   /** Its files together. */
   bytes: number;
+  /** Of them, in files another build links too (a rebuild's unchanged files): on the volume once. */
+  sharedBytes: number;
   /** The extract's time from its manifest.json, or null when it does not say. */
   extractTimestamp: string | null;
 }
@@ -48,7 +51,8 @@ export const downloadPrefix = (region: string): string => `${region}@`;
 async function readSmallFile(path: string, max: number): Promise<Buffer | null> {
   let handle: Awaited<ReturnType<typeof open>> | null = null;
   try {
-    handle = await open(path, "r");
+    // Never through a link: a build's files are its own.
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     const { size } = await handle.stat();
     if (size > max) return null;
     const buffer = Buffer.alloc(size);
@@ -91,14 +95,16 @@ async function readBuild(root: string, region: string, name: string): Promise<Lo
     extractTimestamp = null;
   }
   let bytes = 0;
+  let sharedBytes = 0;
   let pulledAt = new Date(0);
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const stats = await lstat(join(dir, entry.name));
     bytes += stats.size;
+    if (stats.nlink > 1) sharedBytes += stats.size;
     if (entry.name === ociManifestFile) pulledAt = stats.mtime;
   }
-  return { region, buildId, digest, name, dir, pulledAt, bytes, extractTimestamp };
+  return { region, buildId, digest, name, dir, pulledAt, bytes, sharedBytes, extractTimestamp };
 }
 
 /**
@@ -120,6 +126,25 @@ export async function listLocalBuilds(root: string, region: string): Promise<Loc
   return builds.sort(
     (a, b) => b.buildId.localeCompare(a.buildId) || b.pulledAt.getTime() - a.pulledAt.getTime(),
   );
+}
+
+/** What the builds take on the volume, every file counted once however many builds link it. */
+export async function volumeBytes(root: string): Promise<number> {
+  const seen = new Set<string>();
+  let bytes = 0;
+  for (const region of await listLocalRegions(root)) {
+    for (const build of await listLocalBuilds(root, region)) {
+      for (const entry of await readdir(build.dir, { withFileTypes: true })) {
+        if (!entry.isFile()) continue;
+        const stats = await lstat(join(build.dir, entry.name));
+        const key = `${stats.dev}:${stats.ino}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        bytes += stats.size;
+      }
+    }
+  }
+  return bytes;
 }
 
 /**

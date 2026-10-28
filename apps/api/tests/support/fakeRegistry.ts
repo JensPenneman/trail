@@ -166,7 +166,7 @@ export interface RecordedRequest {
 
 /** Ways a blob request goes wrong, for `times` requests (default: every one). */
 export interface BlobFault {
-  kind: "corrupt" | "truncate" | "stall" | "overlong" | "ignore-range" | "status";
+  kind: "corrupt" | "truncate" | "stall" | "overlong" | "ignore-range" | "bad-range" | "status";
   /** truncate, stall: the bytes sent before the connection is cut, or goes quiet. */
   after?: number;
   status?: number;
@@ -205,6 +205,12 @@ export class FakeRegistry {
   realm: string | null = null;
   /** Where blobs are redirected (default: the blob host); `direct` serves them from the registry. */
   blobRedirect: string | "direct" | null = null;
+  /** What the registry asks for: a token from its token service, or Basic credentials on every request. */
+  challenge: "bearer" | "basic" = "bearer";
+  /** The digest it announces for a manifest, when not the manifest's own. */
+  announcedDigest: string | null = null;
+  /** Blobs the registry answers 404 for, as GHCR does for a digest it does not hold. */
+  readonly missingBlobs = new Set<string>();
   readonly #servers: Server[] = [];
 
   constructor(repository = "jenspenneman/trail-mapdata") {
@@ -237,6 +243,11 @@ export class FakeRegistry {
     );
   }
 
+  /** Forgets every token it issued, as an expiry would: the next request is challenged again. */
+  expireTokens(): void {
+    this.tokens.length = 0;
+  }
+
   /** Publishes an artefact under `tag` (by default `<region>`). */
   publish(artefact: FakeArtefact, tag = artefact.region): void {
     this.tags.set(tag, artefact);
@@ -252,7 +263,22 @@ export class FakeRegistry {
     });
   }
 
+  #basicHeader(): string | null {
+    return this.credentials === null
+      ? null
+      : `Basic ${Buffer.from(`${this.credentials.username}:${this.credentials.password}`).toString("base64")}`;
+  }
+
   #challenge(response: ServerResponse): void {
+    if (this.challenge === "basic") {
+      response
+        .writeHead(401, {
+          "content-type": "application/json",
+          "www-authenticate": 'Basic realm="fake"',
+        })
+        .end('{"errors":[{"code":"UNAUTHORIZED"}]}');
+      return;
+    }
     const realm = this.realm ?? `http://${this.host}/token`;
     response
       .writeHead(401, {
@@ -264,6 +290,7 @@ export class FakeRegistry {
 
   #authorized(request: IncomingMessage): boolean {
     const header = request.headers.authorization ?? "";
+    if (this.challenge === "basic") return header !== "" && header === this.#basicHeader();
     return this.tokens.some((token) => header === `Bearer ${token}`);
   }
 
@@ -273,10 +300,7 @@ export class FakeRegistry {
     if (url.pathname === "/token") {
       const scope = url.searchParams.get("scope");
       const basic = request.headers.authorization ?? "";
-      const expected =
-        this.credentials === null
-          ? null
-          : `Basic ${Buffer.from(`${this.credentials.username}:${this.credentials.password}`).toString("base64")}`;
+      const expected = this.#basicHeader();
       if (
         scope !== `repository:${this.repository}:pull` ||
         (expected !== null && basic !== expected)
@@ -322,12 +346,18 @@ export class FakeRegistry {
         .writeHead(200, {
           "content-type": ociManifestMediaType,
           "content-length": artefact.manifest.length,
-          "docker-content-digest": artefact.digest,
+          "docker-content-digest": this.announcedDigest ?? artefact.digest,
         })
         .end(artefact.manifest);
       return;
     }
     if (kind === "blobs" && reference !== undefined) {
+      if (this.missingBlobs.has(reference)) {
+        response
+          .writeHead(404, { "content-type": "application/json" })
+          .end('{"errors":[{"code":"BLOB_UNKNOWN","message":"blob unknown to registry"}]}');
+        return;
+      }
       if (this.blobRedirect === "direct") {
         this.#serveBlob(reference, request, response);
         return;
@@ -395,6 +425,10 @@ export class FakeRegistry {
       "accept-ranges": "bytes",
     };
     if (start > 0) headers["content-range"] = `bytes ${start}-${blob.length - 1}/${blob.length}`;
+    if (start > 0 && fault?.kind === "bad-range") {
+      // A server that answers a range with another part of the blob than asked for.
+      headers["content-range"] = `bytes 0-${body.length - 1}/${blob.length}`;
+    }
     response.writeHead(start > 0 ? 206 : 200, headers);
     if (fault?.kind === "truncate") {
       response.write(body.subarray(0, fault.after ?? Math.floor(body.length / 2)), () => {

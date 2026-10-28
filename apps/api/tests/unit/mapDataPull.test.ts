@@ -1,4 +1,14 @@
-import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  lstat,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
@@ -8,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createLogger } from "../../src/logging/createLogger";
 import { readArtefactLayout } from "../../src/mapdata/artefactLayout";
 import type { BlobSource } from "../../src/mapdata/downloadBlob";
-import { listLocalBuilds } from "../../src/mapdata/localBuilds";
+import { listLocalBuilds, volumeBytes } from "../../src/mapdata/localBuilds";
 import { pullBuild } from "../../src/mapdata/pullBuild";
 import { RegistryClient } from "../../src/mapdata/registry";
 import {
@@ -216,6 +226,20 @@ describe("pulling a build from the registry", () => {
     expect(downloadedBytes).toBeGreaterThan(ways.length);
   });
 
+  it("links no file through a symbolic link, and downloads it instead", async () => {
+    fake.publish(monaco());
+    const original = await pull("monaco");
+    // The right bytes, but behind a link to outside the build.
+    const outside = join(root, "outside.opl.gz");
+    await copyFile(join(original.dir, "ways.opl.gz"), outside);
+    await rm(join(original.dir, "ways.opl.gz"));
+    await symlink(outside, join(original.dir, "ways.opl.gz"));
+    fake.publish(monaco({ builtAt: "2026-10-28T12:00:00Z" }));
+    const { build, downloadedBytes } = await pulled("monaco");
+    expect((await lstat(join(build.dir, "ways.opl.gz"))).isFile()).toBe(true);
+    expect(downloadedBytes).toBeGreaterThan((await fixtureFile("ways.opl.gz")).length);
+  });
+
   it("downloads nothing for a build it holds already", async () => {
     fake.publish(monaco());
     const first = await pull("monaco");
@@ -246,6 +270,11 @@ describe("pulling a build from the registry", () => {
         (await stat(join(original.dir, name))).ino,
       );
     }
+    // The linked files are on the volume once, and the builds say so.
+    expect(second.sharedBytes).toBe(
+      second.bytes - rebuild.trailManifest.length - rebuild.manifest.length,
+    );
+    expect(await volumeBytes(root)).toBe(original.bytes + second.bytes - second.sharedBytes);
     expect((await listLocalBuilds(root, "monaco")).map((build) => build.digest)).toEqual([
       rebuild.digest,
       first.digest,
@@ -430,6 +459,89 @@ describe("refusing what is not right, keeping the build already there", () => {
       .resolve("monaco", never)
       .catch((caught: unknown) => caught);
     expect(error).toMatchObject({ reason: "status", status: 503, retryable: true });
+  });
+});
+
+describe("the registry's other answers", () => {
+  it("refuses a manifest whose bytes are not the digest the registry announces", async () => {
+    fake.publish(monaco());
+    fake.announcedDigest = `sha256:${"0".repeat(64)}`;
+    expect(await refusal(clientFor().resolve("monaco", never))).toBe("digest");
+  });
+
+  it("asks for a new token when the old one expires during a pull", async () => {
+    fake.publish(monaco());
+    const client = clientFor();
+    let calls = 0;
+    const build = await pull("monaco", {
+      client,
+      source: {
+        openBlob: (digest, options) => {
+          calls += 1;
+          if (calls === 3) fake.expireTokens();
+          return client.openBlob(digest, options);
+        },
+      },
+    });
+    expect(await readFile(join(build.dir, "basemap.pmtiles"))).toEqual(
+      await fixtureFile("basemap.pmtiles"),
+    );
+    const tokens = fake.requests.filter(
+      (request) => request.server === "registry" && request.path.startsWith("/token?"),
+    );
+    expect(tokens).toHaveLength(2);
+  });
+
+  it("pulls from a registry that asks for Basic credentials, and sends them nowhere else", async () => {
+    fake.challenge = "basic";
+    fake.credentials = { username: "jens", password: "s3cret-basic" };
+    fake.publish(monaco());
+    expect(await refusal(clientFor().resolve("monaco", never))).toBe("denied");
+    const credentials = parseRegistryCredentials("jens:s3cret-basic");
+    const build = await pull("monaco", { client: clientFor({ credentials }) });
+    expect(await readFile(join(build.dir, "ways.opl.gz"))).toEqual(
+      await fixtureFile("ways.opl.gz"),
+    );
+    const basic = `Basic ${Buffer.from("jens:s3cret-basic").toString("base64")}`;
+    expect(fake.requests.some((request) => request.authorization === basic)).toBe(true);
+    for (const request of fake.requests) {
+      if (request.authorization === basic) expect(request.server).toBe("registry");
+    }
+    expect(fake.requests.some((request) => request.path.startsWith("/token"))).toBe(false);
+  });
+
+  it("answers a blob the registry does not hold with not_found, and keeps nothing", async () => {
+    const artefact = monaco();
+    fake.publish(artefact);
+    const poly = artefact.layers.find((layer) => layer.title === "region.poly");
+    fake.missingBlobs.add(poly?.digest ?? "");
+    expect(await refusal(pull("monaco"))).toBe("not_found");
+    expect(await downloadsLeft()).toEqual([]);
+    expect(await listLocalBuilds(root, "monaco")).toEqual([]);
+  });
+
+  it("refuses a resumed download that starts at another place than asked for", async () => {
+    const artefact = monaco();
+    fake.publish(artefact);
+    const digest = artefact.layers.find((layer) => layer.title === "basemap.pmtiles")?.digest ?? "";
+    fake.blobFaults.set(digest, { kind: "truncate", after: 200_000, times: 1 });
+    const client = clientFor();
+    let calls = 0;
+    const attempt = pull("monaco", {
+      client,
+      source: {
+        openBlob: (requested, options) => {
+          calls += requested === digest ? 1 : 0;
+          if (requested === digest && calls === 2) {
+            fake.blobFaults.set(requested, { kind: "bad-range", times: 1 });
+          }
+          return client.openBlob(requested, options);
+        },
+      },
+    });
+    expect(await refusal(attempt)).toBe("malformed");
+    expect(calls).toBe(2);
+    expect(await downloadsLeft()).toEqual([]);
   });
 });
 

@@ -1,5 +1,10 @@
 import { createMapDataRefresher } from "../../mapdata/createMapDataRefresher";
-import { type LocalBuild, listLocalBuilds, listLocalRegions } from "../../mapdata/localBuilds";
+import {
+  type LocalBuild,
+  listLocalBuilds,
+  listLocalRegions,
+  volumeBytes,
+} from "../../mapdata/localBuilds";
 import type { MapDataRefresher } from "../../mapdata/mapDataRefresher";
 import type { CliContext } from "../cliContext";
 
@@ -13,7 +18,11 @@ function buildLine(build: LocalBuild, imported: boolean): string {
     build.extractTimestamp === null
       ? ""
       : `, OSM data up to ${shortTime(build.extractTimestamp)} UTC`;
-  return `  ${build.name}: ${megabytes(build.bytes)}, pulled ${shortTime(build.pulledAt)} UTC${extract}${imported ? ", imported" : ""}\n    ${build.digest}`;
+  const shared =
+    build.sharedBytes > 0
+      ? ` (${megabytes(build.sharedBytes)} of it shared with another build)`
+      : "";
+  return `  ${build.name}: ${megabytes(build.bytes)}${shared}, pulled ${shortTime(build.pulledAt)} UTC${extract}${imported ? ", imported" : ""}\n    ${build.digest}`;
 }
 
 /**
@@ -59,5 +68,8 @@ export async function mapStatusCommand(
       );
       console.log(buildLine(build, imported));
     }
+  }
+  if (onVolume.length > 0) {
+    console.log(`On the volume: ${megabytes(await volumeBytes(settings.dir))} in all`);
   }
 }
