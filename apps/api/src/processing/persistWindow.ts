@@ -31,7 +31,6 @@ interface PiecePointRow extends Record<string, unknown> {
   lon_map: number | null;
   path_map: [number, number][] | null;
   speed_avg: number | null;
-  horizontal_accuracy: number | null;
 }
 
 /**
@@ -51,15 +50,17 @@ async function workOutPiece(
   const lastPointT = features["lastPointT"];
   const ownEnd =
     piece.kind === "stop" && typeof lastPointT === "number" ? Math.min(endT, lastPointT) : endT;
+  // One range of the primary key, nothing joined: a part of a stale stop can hold days of points.
   const rows = await tx.execute<PiecePointRow>(sql`
     SELECT extract(epoch FROM p.recorded_at)::float8 AS t, p.lat_avg, p.lon_avg, p.lat_map,
-      p.lon_map, p.path_map, p.speed_avg, l.horizontal_accuracy
+      p.lon_map, p.path_map, p.speed_avg
     FROM processed_points p
-    JOIN locations l ON l.device_id = p.device_id AND l.recorded_at = p.recorded_at
     WHERE p.device_id = ${deviceId} AND p.kept
-      AND p.recorded_at >= ${piece.started_at}::timestamptz AND p.recorded_at <= to_timestamp(${ownEnd})
+      AND p.recorded_at >= ${piece.started_at}::timestamptz
+      AND p.recorded_at <= ${new Date(ownEnd * 1000).toISOString()}::timestamptz
     ORDER BY p.recorded_at
   `);
+  // The processed points keep no accuracy: the part's middle weighs them alike.
   const points = rows.rows.map(
     (row): PiecePoint => ({
       t: Math.round(row.t),
@@ -69,7 +70,7 @@ async function workOutPiece(
       lonMap: row.lon_map,
       pathMap: row.path_map,
       speed: row.speed_avg,
-      accuracy: row.horizontal_accuracy ?? options.config.averaging.defaultAccuracyM,
+      accuracy: options.config.averaging.defaultAccuracyM,
     }),
   );
   const values = pieceValues(piece.kind, points, { startT, endT }, features);
