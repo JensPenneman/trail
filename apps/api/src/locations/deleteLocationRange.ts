@@ -26,12 +26,13 @@ const reprocessMarginMs = 30 * 60_000;
  * processing (`queueProcessing`) together with all of those segments' time,
  * so that a long stop reaching far beyond it leaves no hole, under the
  * device's processing lock so no window in progress writes them back. Returns
- * the number of deleted records of all kinds.
+ * the number of deleted records of all kinds and the days whose statistics
+ * were summed up again (for the `days` event).
  */
 export async function deleteLocationRange(
   db: Database,
   input: { deviceId: string; timezone: string; from: Date; to: Date; queueProcessing: boolean },
-): Promise<number> {
+): Promise<{ deleted: number; days: string[] }> {
   const { deviceId, timezone } = input;
   const from = input.from.toISOString();
   const to = input.to.toISOString();
@@ -76,6 +77,7 @@ export async function deleteLocationRange(
       }
     }
 
+    let recomputed: string[] = [];
     if (deletedPoints > 0) {
       await rebuildHeatCells(tx, deviceId);
 
@@ -114,13 +116,13 @@ export async function deleteLocationRange(
           AND date BETWEEN ${localDate(input.from, timezone)}::date
             AND ${localDate(input.to, timezone)}::date
       `);
-      await recomputeDailyStats(
-        tx,
-        deviceId,
-        timezone,
-        days.rows.map((row) => row.date),
-      );
+      recomputed = days.rows.map((row) => row.date);
+      await recomputeDailyStats(tx, deviceId, timezone, recomputed);
     }
-    return deletedPoints + (visits.rowCount ?? 0) + (trips.rowCount ?? 0) + (events.rowCount ?? 0);
+    return {
+      deleted:
+        deletedPoints + (visits.rowCount ?? 0) + (trips.rowCount ?? 0) + (events.rowCount ?? 0),
+      days: recomputed,
+    };
   });
 }
