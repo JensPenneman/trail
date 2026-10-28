@@ -1,0 +1,15 @@
+{
+  "monaco": { "geofabrik": "europe/monaco", "heap": "1g" },
+  "luxembourg": { "geofabrik": "europe/luxembourg", "heap": "2g" },
+  "belgium": { "geofabrik": "europe/belgium", "heap": "3g" },
+  "netherlands": { "geofabrik": "europe/netherlands", "heap": "4g" },
+  "germany": { "geofabrik": "europe/germany", "heap": "8g" },
+  "france": { "geofabrik": "europe/france", "heap": "8g" },
+  "world": {
+    "geofabrik": "europe/monaco",
+    "heap": "3g",
+    "matching": false,
+    "bounds": "world",
+    "maxzoom": 6
+  }
+}
