@@ -19,14 +19,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
 import { countStops } from "../../src/insights/insightMoves";
 import type { RawPoint } from "../../src/processing/pipelineTypes";
+import { enqueueWindow, takeDeviceWindows } from "../../src/processing/processingQueue";
+import { processWindow } from "../../src/processing/processWindow";
 import { loadOverrides, loadStayBefore } from "../../src/processing/windowData";
+import { loadCurrentModes } from "../../src/sharing/currentModes";
 import { createApiToken } from "../support/apiTokenFlows";
 import { type Agent, signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
 import { morning } from "../support/journeys";
 import { connectMcp } from "../support/mcpClient";
 import { uploadJourney, uploadVisits } from "../support/overlandPoints";
-import { assertSegmentInvariants, processingFingerprint } from "../support/processingInvariants";
+import {
+  assertIdempotent,
+  assertSegmentInvariants,
+  processingFingerprint,
+} from "../support/processingInvariants";
 import { resetDatabase } from "../support/resetDatabase";
 import { concat, lastT, stay, toLonLat, travel, type Vertex } from "../support/syntheticWorld";
 import { createTestContext, type TestContext } from "../support/testContext";
@@ -496,19 +503,48 @@ describe("stops of one stay", () => {
   });
 });
 
+/** Stores recorded points as a pass would have left them: at `x` metres east of `at`, kept unless not. */
+async function storedPoints(
+  deviceId: string,
+  at: Vertex,
+  points: readonly { t: number; x: number; kept: boolean }[],
+): Promise<void> {
+  for (const point of points) {
+    const [lon, lat] = toLonLat(at[0] + point.x, at[1]);
+    await t.ctx.db.execute(sql`
+      INSERT INTO locations (device_id, recorded_at, lat, lon)
+      VALUES (${deviceId}, to_timestamp(${point.t}), ${lat}, ${lon})
+    `);
+    await t.ctx.db.execute(sql`
+      INSERT INTO processed_points (device_id, recorded_at, kept, lat_avg, lon_avg, version)
+      VALUES (${deviceId}, to_timestamp(${point.t}), ${point.kept}, ${lat}, ${lon}, 1)
+    `);
+  }
+}
+
 describe("a quick toggle across the parts of a stay", () => {
   it("runs on through the parts of the stay it was set in, and a stay after it ends it", async () => {
     const now = Math.floor(Date.now() / 1000);
     const h = 3600;
-    // A day at home stored in two parts, the bike set during the first: the second does not end it.
+    // A day at home stored in three parts, the bike set during the second: the third does not end
+    // it, wherever its stay is read — the device's mode, the shares' activity, the next pass.
     const setAtHome = await newDevice("Set at home");
     await segment(setAtHome.id, "stop", now - 30 * h, now - 6 * h, home);
-    await segment(setAtHome.id, "stop", now - 6 * h, now - 50 * 60, [home[0] + 40, home[1]]);
-    await toggle(setAtHome.id, now - 8 * h, "cycling");
+    await segment(setAtHome.id, "stop", now - 6 * h, now - 3 * h, [home[0] + 40, home[1]]);
+    await segment(setAtHome.id, "stop", now - 3 * h, now - 50 * 60, [home[0] + 20, home[1]]);
+    await toggle(setAtHome.id, now - 4 * h, "cycling");
+    const shared = async () =>
+      (
+        await loadCurrentModes(t.ctx.db, [setAtHome.id], {
+          now: new Date(),
+          recentMs: 15 * 60_000,
+        })
+      ).get(setAtHome.id);
     expect(await deviceMode(setAtHome.id)).toMatchObject({
       override: { mode: "cycling" },
       current: { mode: "cycling", setByUser: true },
     });
+    expect(await shared()).toBe("cycling");
     // The window of the ride after it: the toggle's own first move, whatever the inference reads.
     const [read] = await loadOverrides(
       t.ctx.db,
@@ -524,7 +560,7 @@ describe("a quick toggle across the parts of a stay", () => {
         new Date((now - 50 * 60) * 1000),
         new Date((read?.from ?? 0) * 1000),
       ),
-    ).toMatchObject({ startT: now - 6 * h, endT: now - 50 * 60, stayStartT: null });
+    ).toMatchObject({ startT: now - 3 * h, endT: now - 50 * 60, stayStartT: null });
     // Off by car, read as a car: still the toggle's first move, so the toggle runs on …
     const ride = await segment(setAtHome.id, "move", now - 50 * 60, now - 30 * 60, home, {
       end: work,
@@ -534,9 +570,11 @@ describe("a quick toggle across the parts of a stay", () => {
       override: { mode: "cycling" },
       current: { mode: "cycling", segmentId: ride },
     });
+    expect(await shared()).toBe("cycling");
     // … until the stay at work, which began after it.
     await segment(setAtHome.id, "stop", now - 30 * 60, now - 60, work);
     expect((await deviceMode(setAtHome.id)).override).toBeNull();
+    expect(await shared()).toBe("stationary");
 
     // The train set on the way, five minutes at work stored apart from the rest of the stay: the
     // stay began after the toggle and lasts ten minutes and more, which ends it.
@@ -561,6 +599,43 @@ describe("a quick toggle across the parts of a stay", () => {
         new Date((ended?.from ?? 0) * 1000),
       ),
     ).toMatchObject({ startT: now - 2 * h, endT: now - 2 * h + 300, stayStartT: now - 2 * h });
+  });
+
+  it("read the stored stop a window cuts as the window leaves it", async () => {
+    // Two hours at home stored as one stop whose phone last spoke at 90 minutes: points of its own
+    // every ten minutes, a spike at 85 dropped, and at 100 the point the next move starts at.
+    const device = await newDevice("Cut by a window");
+    const start = morning - 326 * 86_400;
+    const at = (minutes: number) => start + minutes * 60;
+    await segment(device.id, "stop", start, at(120), home, { lastPointT: at(90) });
+    await storedPoints(
+      device.id,
+      home,
+      [0, 10, 20, 30, 40, 50, 60, 70, 80, 85, 90, 100].map((minute) => ({
+        t: at(minute),
+        x: minute,
+        kept: minute !== 85,
+      })),
+    );
+    /** The stop as a window from `minute` on leaves it, and the point its end should be. */
+    const cutAt = async (minute: number, pointAt: number) => {
+      const before = await loadStayBefore(
+        t.ctx.db,
+        device.id,
+        new Date(at(minute) * 1000),
+        new Date((start - 3600) * 1000),
+      );
+      const [lon, lat] = toLonLat(home[0] + pointAt, home[1]);
+      expect(before, `cut at ${minute}`).toMatchObject({ startT: start, endT: at(minute) });
+      expect(before?.end.lat, `cut at ${minute}`).toBeCloseTo(lat, 9);
+      expect(before?.end.lon, `cut at ${minute}`).toBeCloseTo(lon, 9);
+      return before;
+    };
+    // Its end, as the part the window leaves will count it (`persistWindow`): the last point of its
+    // own up to the window's start — not the next move's at 100, not the dropped one at 85.
+    expect((await cutAt(105, 90))?.stayStartT).toBe(start);
+    await cutAt(87, 80);
+    await cutAt(70, 70);
   });
 
   it("keeps a toggle set during a three-day stay until the device leaves, for the ride", {
@@ -613,5 +688,30 @@ describe("a quick toggle across the parts of a stay", () => {
     expect(rides.map((ride) => ride.mode_user)).toEqual(rides.map(() => "train"));
     expect((await deviceMode(device.id)).override).toBeNull();
     await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
+    // I6: the ride's window, run again on what its pass wrote, gives the toggle the same moves.
+    const ride = {
+      from: new Date(((toWork[0]?.t ?? 0) - 1800) * 1000),
+      to: new Date((lastT(atWork) + 1800) * 1000),
+    };
+    await assertIdempotent(
+      t.ctx.db,
+      device.id,
+      { from: new Date((lastPart - 3 * 3600) * 1000), to: ride.to },
+      async () => {
+        await enqueueWindow(t.ctx.db, {
+          deviceId: device.id,
+          ...ride,
+          reason: "reprocess",
+          fromLevel: "averaged",
+        });
+        const rows = await takeDeviceWindows(t.ctx.db, device.id, ride.from, ride.to);
+        expect(rows.length).toBeGreaterThan(0);
+        await processWindow(t.ctx.db, rows, {
+          config: t.ctx.processing.config,
+          mapping: false,
+          now: new Date(),
+        });
+      },
+    );
   });
 });

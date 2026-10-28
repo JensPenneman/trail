@@ -3690,12 +3690,12 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   alone. A toggle that began before the window gets the first stored stay of
   ten minutes or more that began after it, or move of another kind of travel
   after any stay that began after it, which ends it, and whether a stay of the
-  device began between it and the window — a window that starts at the ride home after a short wait
-  (an upload half an hour into the ride) does not take that ride for the
-  toggle's own. The window's first stop, where it continues the stored stop
-  the window begins in or right after (`loadStayBefore`), counts from that
-  stay's start, and so does a stop of the window that continues the one before
-  it. The applied override is in
+  device began between it and the window — a window that starts at the ride
+  home after a short wait (an upload half an hour into the ride) does not
+  take that ride for the toggle's own. The window's first stop, where it
+  continues the stored stop the window begins in or right after
+  (`loadStayBefore`), counts from that stay's start, and so does a stop of
+  the window that continues the one before it. The applied override is in
   `features.override`
   (`{ id, kind, source }`); `GET /api/v1/stats/modes` counts the corrected
   segments.

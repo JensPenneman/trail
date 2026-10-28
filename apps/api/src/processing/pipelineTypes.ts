@@ -72,9 +72,18 @@ export interface OverrideSpan {
   kind: "segment" | "toggle";
   mode: ChosenMode;
   from: number;
-  /** Null: open, until the first stop of `toggleEndingStopS` or more, or move of another kind of travel. */
+  /**
+   * Null: open, until the first stay of `toggleEndingStopS` or more that began
+   * after it, or move of another kind of travel after a stay that began after it.
+   */
   to: number | null;
-  /** That stop when it lies before the window (from stored segments); else null. */
+  /**
+   * Where stored segments before the window end a toggle (`endsToggleSql`):
+   * the start of the first that does — for a stay, of the part at which it has
+   * lasted `toggleEndingStopS`, its first part unless that one was shorter.
+   * Harmless: only parts of that stay lie between the two, no move the toggle
+   * could cover. Else null.
+   */
   endsBy: number | null;
   /**
    * A toggle that began before the window: whether a stay of the device began
