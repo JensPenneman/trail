@@ -1,4 +1,3 @@
-import type { Server } from "node:http";
 import type { Logger } from "pino";
 import type { Config } from "../config/config";
 import { createPool } from "../db/createPool";
@@ -6,7 +5,7 @@ import { createDatabase } from "../db/database";
 import { runMigrations } from "../db/runMigrations";
 import { waitForDatabase } from "../db/waitForDatabase";
 import { createWorkerLoop } from "./createWorkerLoop";
-import { closeLivenessServer, startLivenessServer } from "./livenessServer";
+import { type LivenessProbe, startLivenessServer } from "./livenessServer";
 import type { WorkerLoop } from "./workerLoop";
 
 /** A pass's statements are cut off after two minutes, as the server's are. */
@@ -24,10 +23,11 @@ export interface StartedWorker {
  * The worker process (docs/architecture.md §3), without an HTTP server: it
  * waits for the database, applies pending migrations under the same lock as
  * the server (whichever starts first migrates; the other finds nothing to
- * do), opens its liveness probe on PROCESSING_METRICS_PORT (`/health/live`,
- * its container's health check; first, so a port in use fails the start
- * before any work) and starts the loop — the passes, the map tiles, the
- * backfill and the 15-minute pass, with a heartbeat every 15 seconds.
+ * do) and starts the loop — the passes, the map tiles, the backfill and the
+ * 15-minute pass, with a heartbeat every 15 seconds. Its liveness probe on
+ * PROCESSING_METRICS_PORT (`/health/live`, its container's health check)
+ * opens first: a port in use fails the start before any work, and the probe
+ * says `starting` until the loop beats, so a long migration fails no check.
  */
 export async function startWorker(input: {
   config: Config;
@@ -35,6 +35,9 @@ export async function startWorker(input: {
   migrationsFolder: string;
 }): Promise<StartedWorker> {
   const { config, logger } = input;
+  const { metricsPort } = config.processing;
+  const probe: LivenessProbe | null =
+    metricsPort > 0 ? await startLivenessServer({ port: metricsPort, host: config.host }) : null;
   const pool = createPool(config.databaseUrl, logger, {
     statementTimeoutMs,
     max: poolSize,
@@ -45,28 +48,20 @@ export async function startWorker(input: {
     await runMigrations(pool, input.migrationsFolder);
   } catch (error) {
     await pool.end();
+    await probe?.close();
     throw error;
   }
   logger.info("database migrations applied");
   const loop = createWorkerLoop({ config, logger, db: createDatabase(pool), pollReady: true });
-  const { metricsPort } = config.processing;
-  let liveness: Server | null = null;
-  if (metricsPort > 0) {
-    try {
-      liveness = await startLivenessServer({ port: metricsPort, host: config.host, loop });
-    } catch (error) {
-      await pool.end();
-      throw error;
-    }
-  }
   await loop.start();
+  probe?.watch(loop);
   logger.info(
     {
       worker: loop.id,
       version: config.build.version,
       commit: config.build.commit,
       processing: config.processing.enabled,
-      livenessPort: liveness === null ? null : metricsPort,
+      livenessPort: probe?.port ?? null,
     },
     "Trail worker started",
   );
@@ -77,7 +72,7 @@ export async function startWorker(input: {
     loop,
     async stop() {
       await loop.stop();
-      if (liveness !== null) await closeLivenessServer(liveness);
+      await probe?.close();
       await pool.end();
     },
   };

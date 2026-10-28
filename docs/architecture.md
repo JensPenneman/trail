@@ -225,7 +225,11 @@ one path: `GET /health/live` answers 200 `{status: "ok", heartbeatAgeS}`
 while the last heartbeat it wrote is under 90 s old, and 503 `{status:
 "stalled"}` after that or before its first — the worker container's health
 check, so a loop that stopped beating turns the container unhealthy. Role
-`all` opens no such port (the API's `/api/health/live` is its probe).
+`all` opens no such port (the API's `/api/health/live` is its probe). Both
+probes open before the database is awaited and migrated and answer 200
+`{status: "starting"}` until then, so a long migration fails no health check
+(nor Launchway's `up --wait`); the server's other routes, `/api/health`
+included, answer 503 `unavailable` meanwhile, so readiness is unchanged.
 `PROCESSING_TEST_STALL=true`, for tests of that health check only, makes a
 worker beat once and then stand still: no heartbeat, no pass.
 `/api/health` carries a processing summary (§8), `processing: {worker,
@@ -935,7 +939,7 @@ public, versioned one is `/api/v1` (§8.3).
 | Method & path | Auth | Contract |
 |---|---|---|
 | `GET /api/config` | — | `config.ts` `PublicConfig` |
-| `GET /api/health`, `GET /api/health/processing`, `GET /api/health/live` | — | `health.ts`: `{status, db, version, commit, uptimeS, processing: {worker, lastSeenS, queued}}` (§3); `/api/health` 503 only when the DB is down, `/processing` also while no worker beat for 90 s; `/live` `{status, version, commit, uptimeS}` never touches the DB |
+| `GET /api/health`, `GET /api/health/processing`, `GET /api/health/live` | — | `health.ts`: `{status, db, version, commit, uptimeS, processing: {worker, lastSeenS, queued}}` (§3); `/api/health` 503 only when the DB is down, `/processing` also while no worker beat for 90 s; `/live` `{status: ok\|starting, version, commit, uptimeS}` never touches the DB (`starting` while the server migrates, §3) |
 | `POST /api/overland`, `GET /api/overland` | device token | §6, §6.4 |
 | `POST /api/owntracks` | device token | §6, §6.5 |
 | `GET /api/osmand`, `POST /api/osmand` | device token | §6, §6.6 |
@@ -1999,7 +2003,7 @@ the image, so `docker compose exec app trail <command>`):
   connections, the server's logging (stdout, `LOG_LEVEL`), a heartbeat, until
   SIGTERM or SIGINT; then it takes no new window, lets the one in progress
   commit, writes its last heartbeat and exits 0. A window not committed within
-  80 s is left to the database, which rolls it back as the process exits (1).
+  50 s is left to the database, which rolls it back as the process exits (1).
   Its liveness probe answers on `PROCESSING_METRICS_PORT` (§3); a port in use
   fails the start. Exit 1 also on an invalid configuration, in role `api` (a
   process that must not process) and when it cannot start.
@@ -2229,12 +2233,15 @@ is in the history at `3e560ee`.
 
 **The worker service.** `worker` runs the image of `app` as `trail worker`
 (role `worker`, §3) with the same environment list (one YAML anchor, so both
-validate the same configuration), `stop_grace_period: 90s` (a pass commits
-within 80 s or is rolled back, §11), its health check on `/health/live` at
+validate the same configuration), `stop_grace_period: 60s` — the 60 s
+Launchway gives any container, as `up` and `down --timeout 60` override the
+grace period — within which a pass commits in 50 s or is rolled back (§11),
+its health check on `/health/live` at
 port 8081, the project's `default` network for Overpass and `backend` for the
 database, no published port and no proxy network. Every service has explicit
 caps: `app` 1 CPU and 1 GiB (heap 640 MB), `worker` 2 CPUs and 1 GiB (heap
-768 MB), `db` 2 CPUs and 2 GiB, `backup` 512 MiB. Consequences, in the manner
+768 MB), `db` 2 CPUs and 2 GiB, `backup` 512 MiB, with `memswap_limit` equal
+to `mem_limit` (no swap on top, which WSL would otherwise add). Consequences, in the manner
 of Launchway's ADR 0020:
 
 - Launchway deploys the service with the release; nothing is configured on
@@ -2958,8 +2965,10 @@ security ones too.
   the levels a device's totals call for rebuilding (those below the highest,
   level 18 included),
   token hashing, config parsing, the processing channel's messages, the
-  worker's liveness probe (live under 90 s, 503 after and before the first
-  beat, nothing else served), presets, share
+  worker's liveness probe (`starting` until it watches the loop, live under
+  90 s, 503 after that or without a beat, nothing else served), the server's
+  answers while it starts (`/api/health/live` `starting`, the rest 503),
+  presets, share
   durations across DST and skipped midnights, the sharing grids — one per
   owner, fixed, within the cell around the position, area cells made of whole
   approximate cells, whole at the antimeridian, and a property test that no
@@ -3668,7 +3677,7 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   (`trail reprocess` included), and from the API itself after a correction;
   an open dashboard refetches.
 - Shutdown stops the worker: a window in progress finishes its transaction
-  (`trail worker` waits up to 80 s for it, §11), map downloads are aborted.
+  (`trail worker` waits up to 50 s for it, §11), map downloads are aborted.
 
 ### 17.5 Overrides (the person wins)
 

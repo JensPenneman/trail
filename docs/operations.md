@@ -57,6 +57,9 @@ the node's:
 | `db` | 2 | 2 GB | — |
 | `backup` | — | 512 MB | — |
 
+Swap is capped at the same values (`memswap_limit`), so WSL does not double
+them. The caps add up to 4.5 GB in production and 4 GB more for each preview:
+the node's WSL memory must be 12 GB before the first release with the worker.
 The heap stays well under each container's limit, so a heap that runs out
 fails with an error in the log before the kernel would OOM-kill the
 container; a server that needs more raises a limit and its heap together.
@@ -518,9 +521,10 @@ worker writes a heartbeat every 15 seconds to `processing_workers` (rows of
 stopped workers go after an hour), and each finished window reaches the open
 dashboards through Postgres (`NOTIFY` on `trail_processing`) whichever
 process worked it out. On SIGTERM the worker takes no new window and lets the
-one in progress commit (up to 80 s, within the container's 90 s to stop; past
-that it exits and the database rolls the window back, to be worked out
-again). Without Compose the image runs as one process in role `all` (the
+one in progress commit (up to 50 s, within the 60 s Launchway gives a
+container to stop with `up` and `down --timeout 60`, which override
+`stop_grace_period`; past that it exits and the database rolls the window
+back, to be worked out again). Without Compose the image runs as one process in role `all` (the
 default), the API and the worker together.
 
 **Is it working?** `/api/health` answers 200 while the API and the database
@@ -539,8 +543,10 @@ database's clock, `down` after that, and `none` with `PROCESSING_ENABLED=false`;
 down**: point an uptime monitor of the worker there, and keep the API's on
 `/api/health`. The container checks itself as well: the worker answers
 `/health/live` on port 8081 inside the container (published nowhere, only the
-project's own containers reach it) with 200 while its last heartbeat is under
-90 seconds old, so a worker whose loop is stuck turns *unhealthy*:
+project's own containers reach it) with 200 `starting` while it migrates,
+then 200 while its last heartbeat is under 90 seconds old, so a worker whose
+loop is stuck turns *unhealthy* (the app's `/api/health/live` says `starting`
+the same way, so a long migration fails no health check):
 
 ```sh
 docker ps --filter name=launchway-trail-worker                         # healthy
@@ -551,8 +557,8 @@ docker restart launchway-trail-worker-1                                # the wor
 
 Restarting the worker leaves the API alone: uploads keep arriving and their
 work waits in the queue, which the new worker takes up within seconds. The
-restart lets the pass in progress commit first (the container has 90 s to
-stop). Docker does not restart an unhealthy worker on its own: restart it,
+restart lets the pass in progress commit first (`docker restart` gives the
+container its `stop_grace_period`, 60 s). Docker does not restart an unhealthy worker on its own: restart it,
 and read its log for the cause.
 
 **Map data and Overpass.** Map data comes from the public Overpass instance

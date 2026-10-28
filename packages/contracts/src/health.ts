@@ -18,9 +18,13 @@ export const processingHealthSchema = z.object({
 });
 export type ProcessingHealth = z.infer<typeof processingHealthSchema>;
 
-/** `GET /api/health/live`: the process only, never the database (the container's health check). */
+/**
+ * `GET /api/health/live`: the process only, never the database (the
+ * container's health check); `starting` while the server waits for the
+ * database and runs the migrations.
+ */
 export const liveHealthSchema = z.object({
-  status: z.literal("ok"),
+  status: z.enum(["ok", "starting"]),
   version: z.string(),
   commit: z.string(),
   uptimeS: z.number().int().nonnegative(),
