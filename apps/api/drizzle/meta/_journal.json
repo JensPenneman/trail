@@ -64,6 +64,13 @@
       "when": 1793174749064,
       "tag": "0008_processing_workers",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793194345337,
+      "tag": "0009_map_regions",
+      "breakpoints": true
     }
   ]
 }

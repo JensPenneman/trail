@@ -9,6 +9,7 @@ import { defaultProcessingConfig } from "../../src/processing/processingConfig";
 import { WayGraph } from "../../src/processing/wayGraph";
 import { WayIndex } from "../../src/processing/wayIndex";
 import { morning, motorwayDrive } from "../support/journeys";
+import { throughOsmWays } from "../support/storedMap";
 import {
   distanceToLine,
   motorwayLine,
@@ -21,9 +22,9 @@ import {
 
 const classes: readonly WayClass[] = ["rail", "tram", "street", "ferry"];
 
-function match(points: readonly RawPoint[], map: MapData) {
+function match(points: readonly RawPoint[], map: MapData, stored: (map: MapData) => MapData) {
   const kept = keptPoints(points, averagePoints(points, defaultProcessingConfig.averaging));
-  const index = new WayIndex(map, LocalProjection.around(kept));
+  const index = new WayIndex(stored(map), LocalProjection.around(kept));
   const graphs = Object.fromEntries(
     classes.map((name) => [name, new WayGraph(index, name)]),
   ) as Record<WayClass, WayGraph>;
@@ -56,9 +57,12 @@ function way(
   };
 }
 
-describe("matchToWays", () => {
+describe.each([
+  ["as Overpass sends it", (map: MapData) => map],
+  ["after the compact geometry of osm_ways", throughOsmWays],
+])("matchToWays, map data %s", (_, stored) => {
   it("snaps a drive to the motorway, within a few metres of the noise", () => {
-    const { mapped } = match(motorwayDrive(), worldMap());
+    const { mapped } = match(motorwayDrive(), worldMap(), stored);
     expect(mapped.every((point) => point.wayKind === "motorway")).toBe(true);
     for (const point of mapped) {
       expect(point.snapM ?? 99).toBeLessThan(15);
@@ -76,7 +80,7 @@ describe("matchToWays", () => {
       ],
       { startT: morning, speedMs: 1.4, intervalS: 2 },
     );
-    const { kept, mapped } = match(field, worldMap());
+    const { kept, mapped } = match(field, worldMap(), stored);
     for (const [position, point] of mapped.entries()) {
       expect(point.wayKind).toBe("other");
       expect(point.wayId).toBeNull();
@@ -115,7 +119,7 @@ describe("matchToWays", () => {
       noiseM: 4,
       accuracy: 10,
     });
-    const { mapped } = match(train, map);
+    const { mapped } = match(train, map, stored);
     expect(mapped.map((point) => point.wayKind)).toEqual(mapped.map(() => "rail"));
   });
 
@@ -161,6 +165,7 @@ describe("matchToWays", () => {
     const { mapped } = match(
       [point(morning, startLat, startLon), point(morning + 200, endLat, endLon)],
       map,
+      stored,
     );
     const corner = mapped[1]?.path ?? [];
     // The line runs along both streets through the corner at (800, 0), not diagonally.
@@ -170,7 +175,7 @@ describe("matchToWays", () => {
 
   it("gives every point of a move a place, and the first one no path", () => {
     const points = motorwayDrive().slice(0, 120);
-    const { mapped } = match(points, worldMap());
+    const { mapped } = match(points, worldMap(), stored);
     expect(mapped).toHaveLength(points.length);
     expect(mapped[0]?.path).toBeNull();
   });

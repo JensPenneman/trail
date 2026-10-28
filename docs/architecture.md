@@ -442,10 +442,46 @@ are kept 30 days for the record, then pruned.
 
 **Processing** (§17.2): the derived, rebuildable `processed_points` (cascading
 from `locations`), `segments`, `processing_queue`, `processing_state` and the
-OpenStreetMap cache (`osm_tiles`, `osm_ways`, `osm_tile_ways`, `osm_pois`);
-the workers' heartbeats (`processing_workers`); and `mode_overrides`, the
-transport modes people set — user data, kept when everything else is
-rebuilt.
+map data (`osm_tiles`, `osm_ways`, `osm_tile_ways`, `osm_pois`,
+`osm_regions`, below); the workers' heartbeats (`processing_workers`); and
+`mode_overrides`, the transport modes people set — user data, kept when
+everything else is rebuilt.
+
+**Map data** (§17.3) — OpenStreetMap's ways and stops, derived and
+rebuildable (the Overpass cache fetches again, a region is imported again),
+no user data. `osm_ways`, `osm_tile_ways` and `osm_pois` hold their rows per
+**source**: `overpass`, the tiles fetched from Overpass, or a region's build,
+`<region>@<yyyymmdd>-<first 8 hex of its digest>`. The three are partitioned
+by list on `source`, by hand in their migration (drizzle-kit writes no
+partitions; the migration says which of the statements it generates to leave
+out when it is generated again): the cache is the partition
+`<table>_overpass`, never a default partition (`DETACH … CONCURRENTLY`
+refuses a table that has one), and every region build gets partitions of its
+own, `<table>_<region>_<yyyymmdd>_<digest8>` (dashes as underscores), at its
+import. A refresh attaches the new build's partitions and detaches and drops
+the old build's, which frees the space at once: deleting the old rows instead
+left the tables at twice their size for good
+(docs/design/self-hosted-maps.md §2.6). `osm_ways` — PK `(id, source)`,
+`kind`, the kept `tags`, `nodes` bigint[], `geometry` bytea: big-endian int32
+pairs of longitude and latitude in 1e-7 degrees, OSM's own precision, 8
+bytes a vertex (a coordinate of up to 7 decimals comes back exactly), the
+bounding box, `fetched_at` (when Overpass sent it; for a region, its
+extract's timestamp). `osm_tile_ways` — PK `(z, x, y, way_id, source)`, so a
+tile is a prefix lookup; no foreign key (a build's partitions come and go
+whole); only the cache's partition has an index on `way_id`, for dropping the
+ways no tile holds any more. `osm_pois` — PK `(id, source)`, `kind`, `lat`,
+`lon`, `name`, the z14 tile it lies in (indexed), `fetched_at`.
+**osm_regions** — the imported regions' builds, one row per region and build:
+`id`, `name` (Geofabrik's, `belgium`: lowercase letters, digits and dashes, at
+most 31 characters, so that the partitions' names fit Postgres' 63),
+`build_id` (`yyyymmdd`, the extract's UTC day), `digest` (the OCI manifest's
+for a pulled build, the SHA-256 of `manifest.json` for a hand import; unique
+with the name), `source` (unique), `status` `importing|ready|failed` (at most
+one `ready` build a region), `error`, `extract_timestamp`, `built_at`,
+`polygon` (GeoJSON MultiPolygon from `region.poly`) with its bounding box,
+`way_count`, `membership_count`, `poi_count`, `imported_at`, `created_at`,
+`updated_at`. A region writes nothing into `osm_tiles`, the cache's
+bookkeeping.
 
 **shares** — one person's location shared with another (§8.5): `id`,
 `owner_user_id` → users (cascade), `recipient_email` (lower-case, checked),
@@ -2156,7 +2192,8 @@ runs in the worker (§3) — or in the API's process too, in role `all`.
   idle in a worker process, every minute for retries and every 15 minutes for
   windows waiting on map data and lost windows; the boot-time backfill when a
   level's algorithms changed version; map tiles fetched alongside, within the
-  daily budget; its heartbeat every 15 s.
+  daily budget; its heartbeat every 15 s; at its start, the sweep of the
+  map build tables a crashed import left (§17.3).
 - map data (only with `MAP_DATA_REGIONS`; docs/design/self-hosted-maps.md
   §2.6, §4.3), in the API's process (roles `all` and `api`; `trail worker`
   runs none yet) — a look at the registry 2–5 minutes after the start, then
@@ -2164,8 +2201,8 @@ runs in the worker (§3) — or in the API's process too, in role `all`.
   region and the world overview, one at a time under the region's advisory
   lock (which `trail map refresh` takes too): a build the volume lacks and
   that is no older than its newest is pulled and verified (§12), then
-  imported by the loader of the design's task 1 once it is wired in
-  (`createMapDataRefresher`); the volume keeps the build to serve and the
+  imported and swapped in by the loader (`importRegion`, §17.3) unless the
+  map tables hold it already; the volume keeps the build to serve and the
   one served before it. A failure keeps what serves and is tried again after
   15 minutes, doubling up to a day; log lines `map region pulled`, `…
   imported`, `… up to date`, `map region refresh failed` and `map region
@@ -2209,6 +2246,11 @@ the image, so `docker compose exec app trail <command>`):
   database holds no passkey and no account outside `load.invalid`, checked
   before the CLI migrates it and again under the sign-up lock in the
   transaction that writes the fleet.
+- `map import <dir>` — import a region's map data from a build's directory
+  (`manifest.json`, `ways.opl.gz`, `pois.geojsonseq.gz`, `region.poly`;
+  §17.3) and swap it in for the region's previous build; a build that is
+  ready already is left as it is, and a failed one leaves the previous build
+  serving. Progress on stderr, the counts on stdout
 - `map refresh [<region>]` — look at the registry now, for every region of
   `MAP_DATA_REGIONS` and the world overview or for one of them, as the app
   does on its schedule (§10): pull a newer build, import it; exit 1 when a
@@ -2219,7 +2261,9 @@ the image, so `docker compose exec app trail <command>`):
   the extract's time, whether the map tables hold them and how much of a
   rebuild is linked from the build before it, the regions on the volume no
   longer configured, and the volume's total with every file counted once;
-  asks the registry nothing
+  then the map tables: every region's builds (status, build, extract,
+  imported, ways, stops, size on disk, digest, the last error) and the
+  Overpass cache; asks the registry nothing
 - `help` / `--help`
 
 Every command applies pending migrations first (same advisory lock as the
@@ -3737,13 +3781,16 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   `attempts`, `next_at`, `enqueued_at` (the version a finished pass compares
   against), `missing_tiles` (jsonb `["z/x/y", …]`: the window waits for map
   data), `last_error`.
-- Map cache: **osm_tiles** PK `(z, x, y)` with `status` `ok|failed`,
-  `fetched_at`, `way_count`, `poi_count`, `bytes`, `failures`, `retry_at`;
-  **osm_ways** (`id` = OSM way id, `kind`, the kept `tags`, `nodes` bigint[],
-  `geometry` jsonb `[[lon, lat], …]`, bounding box, `fetched_at`);
-  **osm_tile_ways** `(z, x, y, way_id)`; **osm_pois** (`id` `n…|w…|r…`,
+- Map data (§5): **osm_tiles** PK `(z, x, y)` with `status` `ok|failed`,
+  `fetched_at`, `way_count`, `poi_count`, `bytes`, `failures`, `retry_at`
+  (the Overpass cache's tiles); **osm_ways** (`id` = OSM way id, `source`,
+  `kind`, the kept `tags`, `nodes` bigint[], `geometry` bytea of int32 pairs
+  in 1e-7 degrees, bounding box, `fetched_at`); **osm_tile_ways**
+  `(z, x, y, way_id, source)`; **osm_pois** (`id` `n…|w…|r…`, `source`,
   `kind` `station|halt|tram_stop|subway_station|bus_stop|ferry_terminal|aerodrome`,
-  `lat`, `lon`, `name`, the tile it came with).
+  `lat`, `lon`, `name`, the tile it lies in); the three partitioned by
+  `source`: `overpass`, and a source per imported region build, whose builds
+  **osm_regions** lists.
 - **processing_state** — key/value: `backfill` holds the versions the history
   was backfilled for, `{ "versions": { "averaged": 1, "mapped": 1, "inferred": 3 } }`
   (`{ "version": n }`, from before the levels had versions of their own, means
@@ -3920,8 +3967,51 @@ soon as its tiles are all there. A failed tile is tried again after 10
 minutes, four times longer each time, at most a day later. A cached tile older
 than `PROCESSING_OSM_TTL_DAYS` (90) keeps serving and is fetched again when a
 window needs it: the window waits for it and is worked out again once it is
-fresh (a failed refresh keeps the old data). A self-hosted extract can
-implement the same interface.
+fresh (a failed refresh keeps the old data).
+
+**Regions.** Besides the cache, the map tables hold the regions imported from
+map data artefacts (`trail map import <dir>`; docs/design/self-hosted-maps.md
+§2.2): a build's directory with `manifest.json`, `ways.opl.gz` (osmium's OPL,
+a way a line: its id, the kept tags, its nodes with their positions),
+`pois.geojsonseq.gz` (the stops and airports; an area becomes the centre of
+the bounding box over all its rings, as Overpass's `out center`) and
+`region.poly`. The loader (`apps/api/src/mapdata/`) opens only those names,
+regular files and no links, checks each against the manifest's size and
+SHA-256 (and again over the bytes it reads), and reads them as streams:
+lines of at most 1 MB, a way of at most 10 000 nodes and 10 000 tiles, a file
+unpacking to at most 20 times its size; a line it cannot read is dropped and
+counted, while counts that differ from the manifest's, ways out of id order
+or a stop twice stop the import. It classifies with `classifyWay` and
+`classifyPoi` — the same kinds as from Overpass, so the mapped level's
+version stays — computes each way's z14 tiles from its segments, and writes
+into the build's own tables, created in the import's transaction, with one
+`COPY … FREEZE` a table, streamed with backpressure: the ways file is read
+twice, for the ways and then for their tiles, since a connection runs one
+COPY at a time, and one COPY a batch would leave the pages each COPY reserves
+empty (Postgres bypasses the free space map for a table created in the same
+transaction: a third of `osm_tile_ways`, measured). The rows arrive frozen,
+so no vacuum visits them again. Then it keys the tables and, in the same
+transaction, takes the three parents for a moment, attaches the build's
+tables as the partitions of its source, makes the build `ready` and deletes
+the row of the region's previous build. That is one commit, and the parents
+are taken for it because a reader's partitions are fixed when it is planned,
+its rows when it runs: so a reader sees the old build or the new one, whole.
+The old build's partitions are detached concurrently and dropped after the
+commit. One import runs at a time (an advisory lock); a failed one leaves the
+build `failed` with its reason and the previous build serving; tables of
+builds no row references any more (a crash between the commit and the drop)
+are swept at the next import and at the processing worker's start. Belgium
+(1.53 M ways, 1.73 M tile memberships, 62 380 stops) imports in 16 s on the
+development container's Postgres into 0.85 GB of tables, and a refresh takes
+as long and leaves the same 0.85 GB; Monaco takes a fifth of a second.
+
+`loadMapData` reads every source that serves — the cache and each region's
+ready build — in one statement, so in one moment; a way or stop that two
+sources hold comes once, from the one with the newer data (`fetched_at`, then
+the source). Which tiles a window may use is still the cache's alone
+(`cachedTiles`): the coverage of the regions, which makes their tiles
+available without a fetch, and the fallback to Overpass outside them come
+with docs/design/self-hosted-maps.md §2.5.
 
 **Features** of a move (`moveSeries`, `extractFeatures`), from its intervals:
 time-weighted median, p85 and p98 (top) speed — the points' own speeds for

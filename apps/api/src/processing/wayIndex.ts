@@ -1,4 +1,5 @@
 import { type WayKind, wayKinds } from "@trail/contracts/transport";
+import { forEachCell } from "./gridCells";
 import type { LocalProjection } from "./localProjection";
 import { type MapData, type WayClass, wayClassOf } from "./mapData";
 import { projectOntoSegment } from "./segmentGeometry";
@@ -39,50 +40,6 @@ const cellSizeM = 100;
 /** Segments per way stay far below this (OSM allows 2000 nodes per way). */
 const segmentSlots = 4096;
 const cellKey = (cx: number, cy: number): number => (cx + 1_048_576) * 2_097_152 + (cy + 1_048_576);
-
-/** Visits every grid cell the segment a–b passes through (Amanatides & Woo). */
-function forEachCell(
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-  visit: (cx: number, cy: number) => void,
-): void {
-  let cx = Math.floor(ax / cellSizeM);
-  let cy = Math.floor(ay / cellSizeM);
-  const dx = bx - ax;
-  const dy = by - ay;
-  const stepX = Math.sign(dx);
-  const stepY = Math.sign(dy);
-  const deltaX = stepX === 0 ? Number.POSITIVE_INFINITY : cellSizeM / Math.abs(dx);
-  const deltaY = stepY === 0 ? Number.POSITIVE_INFINITY : cellSizeM / Math.abs(dy);
-  let maxX =
-    stepX > 0
-      ? ((cx + 1) * cellSizeM - ax) / dx
-      : stepX < 0
-        ? (cx * cellSizeM - ax) / dx
-        : Number.POSITIVE_INFINITY;
-  let maxY =
-    stepY > 0
-      ? ((cy + 1) * cellSizeM - ay) / dy
-      : stepY < 0
-        ? (cy * cellSizeM - ay) / dy
-        : Number.POSITIVE_INFINITY;
-  visit(cx, cy);
-  while (Math.min(maxX, maxY) <= 1) {
-    if (maxX < maxY) {
-      cx += stepX;
-      maxX += deltaX;
-    } else {
-      cy += stepY;
-      maxY += deltaY;
-    }
-    visit(cx, cy);
-  }
-  const endX = Math.floor(bx / cellSizeM);
-  const endY = Math.floor(by / cellSizeM);
-  if (endX !== cx || endY !== cy) visit(endX, endY);
-}
 
 /**
  * The ways of a window in projected metres, with a 100 m grid over their
@@ -140,6 +97,7 @@ export class WayIndex {
           way.ys[segment] ?? 0,
           way.xs[segment + 1] ?? 0,
           way.ys[segment + 1] ?? 0,
+          cellSizeM,
           (cx, cy) => {
             const key = cellKey(cx, cy);
             let list = this.#cells.get(key);
