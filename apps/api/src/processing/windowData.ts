@@ -2,7 +2,15 @@ import type { ChosenMode } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
 import { toIso } from "../db/toIso";
-import type { ManualTrip, MappedPoint, OverrideSpan, RawPoint, VisitSpan } from "./pipelineTypes";
+import type {
+  ManualTrip,
+  MappedPoint,
+  OverrideSpan,
+  RawPoint,
+  StayBefore,
+  VisitSpan,
+} from "./pipelineTypes";
+import { continuesBeforeSql, stayStartedAfterSql } from "./stayParts";
 import { endsToggleSql } from "./travelFamily";
 
 /** Rows per round trip when reading a window's points. */
@@ -386,10 +394,11 @@ interface OverrideRow extends Record<string, unknown> {
 /**
  * The corrections in force for the window. A toggle that began before it gets
  * the start of the first stored segment before the window that ends it — a
- * stop of `toggleEndingStopS` or more, or a move of another kind of travel
- * after a stop (`endsToggleSql`) — and whether any stop came between it and
- * the window: a window that starts at the ride home after a short wait must
- * not take that ride for the toggle's own.
+ * stay of `toggleEndingStopS` or more that began after it, or a move of
+ * another kind of travel after one (`endsToggleSql`) — and whether a stay
+ * began between it and the window: a window that starts at the ride home after
+ * a short wait must not take that ride for the toggle's own, and the parts the
+ * passes left of the stay it was set in are no such stay.
  */
 export async function loadOverrides(
   db: Executor,
@@ -405,7 +414,8 @@ export async function loadOverrides(
           AND ${endsToggleSql("s", "o")}) AS ends_by,
       (o.kind = 'toggle' AND EXISTS (SELECT 1 FROM segments s
         WHERE s.device_id = o.device_id AND s.kind = 'stop'
-          AND s.started_at > o.from_at AND s.started_at < ${from.toISOString()}::timestamptz))
+          AND s.started_at > o.from_at AND s.started_at < ${from.toISOString()}::timestamptz
+          AND NOT ${continuesBeforeSql("s")}))
         AS stopped_before
     FROM mode_overrides o
     WHERE o.device_id = ${deviceId} AND o.revoked_at IS NULL
@@ -424,6 +434,70 @@ export async function loadOverrides(
     createdAt: Date.parse(toIso(row.created_at)) / 1000,
     source: row.source,
   }));
+}
+
+interface StayBeforeRow extends Record<string, unknown> {
+  started_at: string;
+  ended_at: string;
+  start_lat: number;
+  start_lon: number;
+  end_lat: number;
+  end_lon: number;
+  centroid_lat: number;
+  centroid_lon: number;
+  spread_m: number | null;
+  stay_started_at: string | null;
+}
+
+/**
+ * The stored stop the window begins in or right after — an earlier part of a
+ * stay its first stop may continue (docs/architecture.md §17.5) — as the
+ * window leaves it: ending at the window's start at the latest, where its last
+ * point of its own up to there. With when its stay began, if that was after
+ * `since` (the earliest start of the window's toggles): a toggle set during
+ * the stay is not ended by the window's part of it.
+ */
+export async function loadStayBefore(
+  db: Executor,
+  deviceId: string,
+  from: Date,
+  since: Date,
+): Promise<StayBefore | null> {
+  const at = from.toISOString();
+  const result = await db.execute<StayBeforeRow>(sql`
+    SELECT b.started_at::text, least(b.ended_at, ${at}::timestamptz)::text AS ended_at,
+      b.start_lat, b.start_lon, coalesce(p.lat_avg, b.end_lat) AS end_lat,
+      coalesce(p.lon_avg, b.end_lon) AS end_lon, b.centroid_lat, b.centroid_lon,
+      (b.features->>'spreadM')::float8 AS spread_m,
+      ${stayStartedAfterSql("b", sql`${since.toISOString()}::timestamptz`)}::text AS stay_started_at
+    FROM (
+      SELECT * FROM segments
+      WHERE device_id = ${deviceId} AND started_at < ${at}::timestamptz
+      ORDER BY started_at DESC
+      LIMIT 1
+    ) b
+    LEFT JOIN LATERAL (
+      SELECT q.lat_avg, q.lon_avg FROM processed_points q
+      WHERE b.ended_at > ${at}::timestamptz AND q.device_id = b.device_id AND q.kept
+        AND q.recorded_at >= b.started_at AND q.recorded_at <= ${at}::timestamptz
+        AND (b.features->>'lastPointT' IS NULL
+          OR q.recorded_at <= to_timestamp((b.features->>'lastPointT')::float8))
+      ORDER BY q.recorded_at DESC
+      LIMIT 1
+    ) p ON true
+    WHERE b.kind = 'stop'
+  `);
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  return {
+    startT: epoch(row.started_at),
+    endT: epoch(row.ended_at),
+    start: { lat: row.start_lat, lon: row.start_lon },
+    end: { lat: row.end_lat, lon: row.end_lon },
+    centroid: { lat: row.centroid_lat, lon: row.centroid_lon },
+    spreadM: row.spread_m,
+    stayStartT: row.stay_started_at === null ? null : epoch(row.stay_started_at),
+  };
 }
 
 interface StoredRow extends Record<string, unknown> {

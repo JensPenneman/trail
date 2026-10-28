@@ -22,6 +22,7 @@ import {
   extendWindow,
   loadOverrides,
   loadRawPoints,
+  loadStayBefore,
   loadStoredMapping,
   loadTrips,
   loadVisits,
@@ -103,6 +104,17 @@ export async function processWindow(
     const visits = await loadVisits(tx, deviceId, window.from, window.to);
     const trips = await loadTrips(tx, deviceId, window.from, window.to, now);
     const overrides = await loadOverrides(tx, deviceId, window.from, window.to);
+    // A toggle set during a stay the window continues: where that stay began.
+    const toggles = overrides.filter((override) => override.kind === "toggle");
+    const stayBefore =
+      toggles.length === 0
+        ? null
+        : await loadStayBefore(
+            tx,
+            deviceId,
+            window.from,
+            new Date(Math.min(...toggles.map((toggle) => toggle.from)) * 1000),
+          );
     const plan = planWindow(raw, visits, config);
     const { available, stale } = options.mapping
       ? await cachedTiles(tx, plan.tiles, staleBefore(config.mapping.tileMaxAgeDays, now))
@@ -122,7 +134,7 @@ export async function processWindow(
     const result = inferWindow(
       plan,
       mappings,
-      { trips, overrides, mapping: options.mapping, available },
+      { trips, overrides, mapping: options.mapping, available, stayBefore },
       config,
     );
 

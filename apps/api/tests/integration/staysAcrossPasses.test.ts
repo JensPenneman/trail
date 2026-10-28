@@ -11,6 +11,7 @@ import {
   levelTracksResponseSchema,
   modeStatsResponseSchema,
   type Segment,
+  type TransportMode,
   timelineResponseSchema,
 } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
@@ -18,6 +19,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
 import { countStops } from "../../src/insights/insightMoves";
 import type { RawPoint } from "../../src/processing/pipelineTypes";
+import { loadOverrides, loadStayBefore } from "../../src/processing/windowData";
 import { createApiToken } from "../support/apiTokenFlows";
 import { type Agent, signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
@@ -123,37 +125,58 @@ const localDate = (epochSeconds: number) =>
     new Date(epochSeconds * 1000),
   );
 
-describe("stops of one stay", () => {
-  /**
-   * Inserts a stored segment as a pass would leave it: ten points of its own around `at`, from
-   * `start` to `end` (both `at` unless given), a stop's spread 20 m and its last point at its end.
-   */
-  async function segment(
-    deviceId: string,
-    kind: "stop" | "move",
-    from: number,
-    to: number,
-    at: Vertex,
-    options: { start?: Vertex; end?: Vertex; spreadM?: number; lastPointT?: number } = {},
-  ) {
-    const [lon, lat] = toLonLat(at[0], at[1]);
-    const [startLon, startLat] = toLonLat(...(options.start ?? at));
-    const [endLon, endLat] = toLonLat(...(options.end ?? at));
-    const features =
-      kind === "stop"
-        ? { spreadM: options.spreadM ?? 20, lastPointT: options.lastPointT ?? to }
-        : {};
-    await t.ctx.db.execute(sql`
-      INSERT INTO segments (device_id, started_at, ended_at, kind, mode, mode_inferred, distance_m,
-        duration_s, point_count, start_lat, start_lon, end_lat, end_lon, centroid_lat, centroid_lon,
-        features, version)
-      VALUES (${deviceId}, to_timestamp(${from}), to_timestamp(${to}), ${kind},
-        ${kind === "move" ? "walking" : null}, ${kind === "move" ? "walking" : null}, 0, ${to - from},
-        10, ${startLat}, ${startLon}, ${endLat}, ${endLon}, ${lat}, ${lon},
-        ${JSON.stringify(features)}::jsonb, 3)
-    `);
-  }
+/**
+ * Inserts a stored segment as a pass would leave it: ten points of its own around `at`, from
+ * `start` to `end` (both `at` unless given), a stop's spread 20 m and its last point at its end,
+ * a move read as a walk unless asked. Answers its id.
+ */
+async function segment(
+  deviceId: string,
+  kind: "stop" | "move",
+  from: number,
+  to: number,
+  at: Vertex,
+  options: {
+    start?: Vertex;
+    end?: Vertex;
+    spreadM?: number;
+    lastPointT?: number;
+    mode?: TransportMode;
+  } = {},
+): Promise<string> {
+  const [lon, lat] = toLonLat(at[0], at[1]);
+  const [startLon, startLat] = toLonLat(...(options.start ?? at));
+  const [endLon, endLat] = toLonLat(...(options.end ?? at));
+  const features =
+    kind === "stop" ? { spreadM: options.spreadM ?? 20, lastPointT: options.lastPointT ?? to } : {};
+  const mode = kind === "move" ? (options.mode ?? "walking") : null;
+  const inserted = await t.ctx.db.execute<{ id: string }>(sql`
+    INSERT INTO segments (device_id, started_at, ended_at, kind, mode, mode_inferred, distance_m,
+      duration_s, point_count, start_lat, start_lon, end_lat, end_lon, centroid_lat, centroid_lon,
+      features, version)
+    VALUES (${deviceId}, to_timestamp(${from}), to_timestamp(${to}), ${kind}, ${mode}, ${mode}, 0,
+      ${to - from}, 10, ${startLat}, ${startLon}, ${endLat}, ${endLon}, ${lat}, ${lon},
+      ${JSON.stringify(features)}::jsonb, 3)
+    RETURNING id
+  `);
+  return inserted.rows[0]?.id ?? "";
+}
 
+/** Sets the quick toggle of a device from `from` on, as `POST /devices/{id}/mode` would have. */
+async function toggle(deviceId: string, from: number, mode: TransportMode): Promise<void> {
+  await t.ctx.db.execute(sql`
+    INSERT INTO mode_overrides (device_id, kind, from_at, mode, source)
+    VALUES (${deviceId}, 'toggle', to_timestamp(${from}), ${mode}, 'ui')
+  `);
+}
+
+/** A device's mode now, as the owner sees it. */
+const deviceMode = async (deviceId: string) =>
+  deviceModeResponseSchema.parse(
+    (await owner.get(apiPaths.v1.devices.mode(deviceId)).expect(200)).body,
+  ).mode;
+
+describe("stops of one stay", () => {
   it("are one stop when they meet at one place, two across a move, a jump or travel", async () => {
     const device = await newDevice("Hand-made stays");
     const start = morning - 320 * 86_400;
@@ -469,6 +492,126 @@ describe("stops of one stay", () => {
       expect(mcp.items.filter((item) => item.kind === "stop")).toHaveLength(2);
     }
     expect((await storedStops(device.id)).length).toBeGreaterThan(2);
+    await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
+  });
+});
+
+describe("a quick toggle across the parts of a stay", () => {
+  it("runs on through the parts of the stay it was set in, and a stay after it ends it", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const h = 3600;
+    // A day at home stored in two parts, the bike set during the first: the second does not end it.
+    const setAtHome = await newDevice("Set at home");
+    await segment(setAtHome.id, "stop", now - 30 * h, now - 6 * h, home);
+    await segment(setAtHome.id, "stop", now - 6 * h, now - 50 * 60, [home[0] + 40, home[1]]);
+    await toggle(setAtHome.id, now - 8 * h, "cycling");
+    expect(await deviceMode(setAtHome.id)).toMatchObject({
+      override: { mode: "cycling" },
+      current: { mode: "cycling", setByUser: true },
+    });
+    // The window of the ride after it: the toggle's own first move, whatever the inference reads.
+    const [read] = await loadOverrides(
+      t.ctx.db,
+      setAtHome.id,
+      new Date((now - 50 * 60) * 1000),
+      new Date(now * 1000),
+    );
+    expect(read).toMatchObject({ endsBy: null, stoppedBefore: false });
+    expect(
+      await loadStayBefore(
+        t.ctx.db,
+        setAtHome.id,
+        new Date((now - 50 * 60) * 1000),
+        new Date((read?.from ?? 0) * 1000),
+      ),
+    ).toMatchObject({ startT: now - 6 * h, endT: now - 50 * 60, stayStartT: null });
+    // Off by car, read as a car: still the toggle's first move, so the toggle runs on …
+    const ride = await segment(setAtHome.id, "move", now - 50 * 60, now - 30 * 60, home, {
+      end: work,
+      mode: "car",
+    });
+    expect(await deviceMode(setAtHome.id)).toMatchObject({
+      override: { mode: "cycling" },
+      current: { mode: "cycling", segmentId: ride },
+    });
+    // … until the stay at work, which began after it.
+    await segment(setAtHome.id, "stop", now - 30 * 60, now - 60, work);
+    expect((await deviceMode(setAtHome.id)).override).toBeNull();
+
+    // The train set on the way, five minutes at work stored apart from the rest of the stay: the
+    // stay began after the toggle and lasts ten minutes and more, which ends it.
+    const off = await newDevice("Set on the way");
+    await segment(off.id, "move", now - 3 * h, now - 2 * h, home, { end: work, mode: "car" });
+    await toggle(off.id, now - 2.5 * h, "train");
+    await segment(off.id, "stop", now - 2 * h, now - 2 * h + 300, work);
+    await segment(off.id, "stop", now - 2 * h + 300, now - 60, [work[0] + 40, work[1]]);
+    expect((await deviceMode(off.id)).override).toBeNull();
+    const [ended] = await loadOverrides(
+      t.ctx.db,
+      off.id,
+      new Date(now * 1000),
+      new Date((now + 60) * 1000),
+    );
+    expect(ended).toMatchObject({ endsBy: now - 2 * h + 300, stoppedBefore: true });
+    expect(
+      await loadStayBefore(
+        t.ctx.db,
+        off.id,
+        new Date((now - 2 * h + 300) * 1000),
+        new Date((ended?.from ?? 0) * 1000),
+      ),
+    ).toMatchObject({ startT: now - 2 * h, endT: now - 2 * h + 300, stayStartT: now - 2 * h });
+  });
+
+  it("keeps a toggle set during a three-day stay until the device leaves, for the ride", {
+    timeout: 300_000,
+  }, async () => {
+    // Three days at home up to two hours ago, a point a minute: worked out in parts.
+    const device = await newDevice("Toggle at home for days");
+    const now = Math.floor(Date.now() / 1000);
+    const days = stay(home, {
+      startT: now - 3 * 86_400,
+      durationS: 3 * 86_400 - 2 * 3600,
+      intervalS: 60,
+      seed: 131,
+    });
+    await upload(device.token, days);
+    await t.ctx.processing.flush();
+    const parts = await storedStops(device.id);
+    expect(parts.length).toBeGreaterThan(1);
+    // The train set an hour before the last part began: the parts after it are the same stay.
+    const lastPart = Date.parse(parts.at(-1)?.from ?? "") / 1000;
+    await toggle(device.id, lastPart - 3600, "train");
+    expect(await deviceMode(device.id)).toMatchObject({
+      override: { mode: "train" },
+      current: { mode: "train", setByUser: true },
+    });
+
+    // Leaving: the ride (read as a bike) is the toggle's, the stay at work ends it.
+    const toWork = travel([home, work], {
+      startT: lastT(days) + 60,
+      speedMs: 5,
+      intervalS: 2,
+      motion: ["cycling"],
+      seed: 132,
+    });
+    const atWork = stay(work, {
+      startT: lastT(toWork) + 2,
+      durationS: 1200,
+      intervalS: 30,
+      seed: 133,
+    });
+    await upload(device.token, concat(toWork, atWork));
+    await t.ctx.processing.flush();
+    const rides = (
+      await t.ctx.db.execute<{ mode_user: string | null; mode_inferred: string | null }>(sql`
+        SELECT mode_user, mode_inferred FROM segments
+        WHERE device_id = ${device.id} AND kind = 'move' ORDER BY started_at
+      `)
+    ).rows;
+    expect(rides.length).toBeGreaterThan(0);
+    expect(rides.map((ride) => ride.mode_user)).toEqual(rides.map(() => "train"));
+    expect((await deviceMode(device.id)).override).toBeNull();
     await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
   });
 });

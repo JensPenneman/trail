@@ -1,4 +1,5 @@
 import type { ChosenMode, TransportMode, WayKind } from "@trail/contracts/transport";
+import type { StopShape } from "./stayParts";
 
 /** A recorded point as the pipeline reads it from `locations`, oldest first. */
 export interface RawPoint {
@@ -76,7 +77,7 @@ export interface OverrideSpan {
   /** That stop when it lies before the window (from stored segments); else null. */
   endsBy: number | null;
   /**
-   * A toggle that began before the window: whether a stop of the device came
+   * A toggle that began before the window: whether a stay of the device began
    * between its start and the window's (stored segments) — then the window's
    * moves are no longer the toggle's own first move, and their kind of travel
    * counts.
@@ -84,6 +85,16 @@ export interface OverrideSpan {
   stoppedBefore: boolean;
   createdAt: number;
   source: "ui" | "api" | "mcp";
+}
+
+/**
+ * The stored stop the window begins in or right after (`loadStayBefore`), as
+ * the window leaves it: the earlier part of a stay the window's first stop
+ * may continue (`continuesStop`).
+ */
+export interface StayBefore extends StopShape {
+  /** When its stay began; null: at or before the earliest start of the window's toggles. */
+  stayStartT: number | null;
 }
 
 /** A stop or move over a range of the window's kept points (indices into the kept list). */
