@@ -17,7 +17,7 @@
 #   --out DIR       the artefact (default: mapdata/<region>)
 #   --work DIR      downloads, intermediate files, logs, summary.md and
 #                   build-stats.json (default: <cache>/work/<region>)
-#   --cache DIR     the Planetiler jar and the sources Planetiler downloads
+#   --cache DIR     the Planetiler jar and the sources of its profile
 #                   (Natural Earth, the OSM water polygons, lake centrelines;
 #                   about 1.5 GB) (default: ~/.cache/trail-mapdata)
 #   --pbf FILE      an extract on disk instead of the download (with --poly)
@@ -29,7 +29,8 @@
 #   ways.opl.gz         one OPL line per way: its id, the tags Trail keeps, its
 #                       node ids with their coordinates
 #   pois.geojsonseq.gz  the stops and airports, a GeoJSON text sequence:
-#                       points, and polygons for aerodromes mapped as areas
+#                       points, and MultiPolygons for aerodromes mapped as
+#                       areas (osmium writes every area as a MultiPolygon)
 #   region.poly         the extract's polygon, as Geofabrik publishes it
 #   basemap.pmtiles     the vector tiles (OpenMapTiles schema, gzipped MVT)
 #   manifest.json       the region, its extract, the build, the tools, counts,
@@ -42,11 +43,18 @@ readonly planetiler_version=0.10.2
 readonly planetiler_sha256=f310bd0413e2e4512b27f4046d418664e8e1d3bf31603c2a70e23de06c167e4d
 readonly planetiler_url=https://github.com/onthegomap/planetiler/releases/download/v${planetiler_version}/planetiler.jar
 readonly geofabrik=https://download.geofabrik.de
-# The sources of Planetiler's OpenMapTiles profile, as Planetiler 0.10.2 names
-# them; downloaded by Planetiler into --cache once, recorded in the manifest
+# The sources of Planetiler's OpenMapTiles profile, fetched by this script into
+# --cache and handed to Planetiler by path (it downloads nothing itself).
+# Natural Earth's package and the lake centrelines' release asset are fixed
+# files, pinned by SHA-256 (the checksums of their first download, on 28
+# October 2026; Natural Earth's package dates from May 2022). The OSM water
+# polygons are regenerated upstream every day, so they can only be recorded
+# in the manifest; the cached copy is fetched again after 30 days.
 readonly natural_earth_url=https://naciscdn.org/naturalearth/packages/natural_earth_vector.sqlite.zip
-readonly water_polygons_url=https://osmdata.openstreetmap.de/download/water-polygons-split-3857.zip
+readonly natural_earth_sha256=375da61836d4779dffa8b87887bc4faa94dac77745ba0ee3914bd7cbedf40a02
 readonly lake_centerlines_url=https://github.com/acalcutt/osm-lakelines/releases/download/v12/lake_centerline.shp.zip
+readonly lake_centerlines_sha256=6c900507c88fc9f5b5a386f90fd0a42d0495e8755a03d075538fb9a6801a3192
+readonly water_polygons_url=https://osmdata.openstreetmap.de/download/water-polygons-split-3857.zip
 
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 readonly here
@@ -208,6 +216,29 @@ resolve_extract() {
   die "Geofabrik sent $latest to $location and has no dated extract of the last three days"
 }
 
+# fetch_source URL [SHA-256]: the source in the cache, downloaded when it is
+# missing, does not match its pin, or (unpinned) is older than 30 days
+fetch_source() {
+  local url=$1 pin=${2:-} file
+  file=$cache/sources/$(basename -- "$url")
+  if [ -f "$file" ]; then
+    if [ -n "$pin" ] && [ "$(sha256_of "$file")" = "$pin" ]; then return; fi
+    if [ -z "$pin" ] && [ -z "$(find "$file" -mtime +30 2>/dev/null)" ]; then return; fi
+  fi
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 -o "$file.part" "$url" ||
+    die "could not download $url"
+  if [ -n "$pin" ] && [ "$(sha256_of "$file.part")" != "$pin" ]; then
+    rm -f "$file.part"
+    die "$url does not match its pinned SHA-256"
+  fi
+  mv "$file.part" "$file"
+}
+fetch_sources() {
+  fetch_source "$natural_earth_url" "$natural_earth_sha256"
+  fetch_source "$lake_centerlines_url" "$lake_centerlines_sha256"
+  fetch_source "$water_polygons_url"
+}
+
 built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 commit=${GITHUB_SHA:-$(git -C "$here" rev-parse HEAD 2>/dev/null || echo unknown)}
 osmium_version=$(osmium --version | awk 'NR == 1 { print $NF }')
@@ -255,11 +286,16 @@ if $matching; then
     w/railway=rail,light_rail,tram,subway,narrow_gauge,funicular \
     w/route=ferry
   step locations osmium add-locations-to-ways --overwrite -o "$work/ways-located.osm.pbf" "$work/ways.osm.pbf"
+  # pipefail: a failing osmium must fail the step, not leave gzip's exit 0 and
+  # a truncated file with a valid checksum
   # shellcheck disable=SC2016 # expanded by the inner shell
-  step opl sh -c 'osmium cat -t way -f opl,add_metadata=false,locations_on_ways=true -o - "$1" | awk -v stats="$2" -f "$3" | gzip -6n >"$4"' \
-    sh "$work/ways-located.osm.pbf" "$work/opl-counts.tsv" "$here/keep-tags.awk" "$out/ways.opl.gz"
+  step opl bash -o pipefail -c 'osmium cat -t way -f opl,add_metadata=false,locations_on_ways=true -o - "$1" | awk -v stats="$2" -f "$3" | gzip -6n >"$4"' \
+    bash "$work/ways-located.osm.pbf" "$work/opl-counts.tsv" "$here/keep-tags.awk" "$out/ways.opl.gz"
   read -r opl_ways opl_refs <"$work/opl-counts.tsv"
   osmium fileinfo --extended --json "$work/ways.osm.pbf" >"$work/ways-info.json"
+  filtered_ways=$(jq '.data.count.ways' "$work/ways-info.json")
+  [ "$opl_ways" = "$filtered_ways" ] ||
+    die "ways.opl.gz holds $opl_ways ways, the filtered extract $filtered_ways"
   way_nodes=$(jq '.data.count.nodes' "$work/ways-info.json")
 
   # 3. The stops and airports of classifyPoi.ts: nodes, and aerodromes mapped
@@ -268,8 +304,8 @@ if $matching; then
   step filter-pois osmium tags-filter --overwrite --remove-tags -o "$work/pois.osm.pbf" "$pbf_file" \
     n/railway=station,halt,tram_stop n/highway=bus_stop n/amenity=ferry_terminal nwr/aeroway=aerodrome
   # shellcheck disable=SC2016 # expanded by the inner shell
-  step export-pois sh -c 'osmium export --overwrite -c "$1" -f geojsonseq --geometry-types=point,polygon --add-unique-id=type_id -o - "$2" | gzip -6n >"$3"' \
-    sh "$here/pois-export.json" "$work/pois.osm.pbf" "$out/pois.geojsonseq.gz"
+  step export-pois bash -o pipefail -c 'osmium export --overwrite -c "$1" -f geojsonseq --geometry-types=point,polygon --add-unique-id=type_id -o - "$2" | gzip -6n >"$3"' \
+    bash "$here/pois-export.json" "$work/pois.osm.pbf" "$out/pois.geojsonseq.gz"
   # (the record separators of the sequence taken out, for jq)
   pois=$(gzip -dc "$out/pois.geojsonseq.gz" | tr -d '\036' | jq -c -s '
     def kind: .properties as $p
@@ -311,13 +347,20 @@ if $basemap; then
     mv "$jar.part" "$jar"
   fi
   mkdir -p "$cache/sources"
+  # a shell function, so timed here rather than by `step`
+  say sources
+  started=$SECONDS
+  fetch_sources
+  printf '%s\t%s\t\n' sources "$((SECONDS - started))" >>"$stats"
+  natural_earth_file=$cache/sources/$(basename -- "$natural_earth_url")
+  lake_centerlines_file=$cache/sources/$(basename -- "$lake_centerlines_url")
+  water_polygons_file=$cache/sources/$(basename -- "$water_polygons_url")
   tmp=$work/planetiler-tmp
   rm -rf "$tmp"
   mkdir -p "$tmp"
   args=(-Xmx"$heap" -jar "$jar"
-    --osm_path="$pbf_file" --download --download_dir="$cache/sources"
-    --natural_earth_url="$natural_earth_url" --water_polygons_url="$water_polygons_url"
-    --lake_centerlines_url="$lake_centerlines_url"
+    --osm_path="$pbf_file" --natural_earth_path="$natural_earth_file"
+    --water_polygons_path="$water_polygons_file" --lake_centerlines_path="$lake_centerlines_file"
     --output="$out/basemap.pmtiles" --force
     --tmpdir="$tmp" --output_layerstats=true --color=false)
   if [ -n "$bounds" ]; then args+=(--bounds="$bounds"); fi
@@ -360,11 +403,13 @@ if $basemap; then
     if [ -f "$layerstats" ]; then mv "$layerstats" "$work/"; fi
   done
   add_file basemap.pmtiles application/vnd.trail.mapdata.basemap.v1
-  for url in "$natural_earth_url" "$water_polygons_url" "$lake_centerlines_url"; do
-    source=$cache/sources/$(basename -- "$url")
-    [ -f "$source" ] || die "Planetiler left no $source"
-    sources=$(jq -c --arg url "$url" --argjson bytes "$(bytes_of "$source")" --arg sha256 "$(sha256_of "$source")" \
-      '. + [{ url: $url, bytes: $bytes, sha256: $sha256 }]' <<<"$sources")
+  for source in "$natural_earth_url $natural_earth_sha256" "$lake_centerlines_url $lake_centerlines_sha256" \
+    "$water_polygons_url"; do
+    read -r url pin <<<"$source"
+    file=$cache/sources/$(basename -- "$url")
+    sources=$(jq -c --arg url "$url" --argjson bytes "$(bytes_of "$file")" --arg sha256 "$(sha256_of "$file")" \
+      --argjson pinned "$([ -n "${pin:-}" ] && echo true || echo false)" \
+      '. + [{ url: $url, bytes: $bytes, sha256: $sha256, pinned: $pinned }]' <<<"$sources")
   done
 fi
 
