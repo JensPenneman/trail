@@ -39,7 +39,14 @@ export function environmentRefusals(
  * test's own.
  */
 export function loadFleetRefusals(conditions: LoadFleetConditions): string[] {
-  const refusals = environmentRefusals(conditions);
+  return [...environmentRefusals(conditions), ...databaseRefusals(conditions)];
+}
+
+/** The conditions that need the database: nobody real has an account in it. */
+export function databaseRefusals(
+  conditions: Pick<LoadFleetConditions, "passkeys" | "otherAccounts">,
+): string[] {
+  const refusals: string[] = [];
   if (conditions.passkeys > 0) {
     refusals.push(
       `the database holds ${conditions.passkeys === 1 ? "a passkey" : `${conditions.passkeys} passkeys`} (someone has signed in here)`,

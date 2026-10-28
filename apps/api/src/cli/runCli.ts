@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import type { Pool } from "pg";
 import type { Config } from "../config/config";
 import { ConfigError } from "../config/loadConfig";
 import { ownEntry } from "../lib/ownEntry";
@@ -6,6 +7,7 @@ import { type CliContext, openCliContext } from "./cliContext";
 import { inviteCommand } from "./commands/inviteCommand";
 import {
   loadFleetCommand,
+  loadFleetDatabaseCheck,
   loadFleetPreflight,
   parseLoadFleetOptions,
 } from "./commands/loadFleetCommand";
@@ -18,9 +20,13 @@ import { workerCommand } from "./commands/workerCommand";
 import { usage } from "./usage";
 import { UsageError } from "./usageError";
 
-/** What a command runs, and what it checks of the configuration before the database is opened. */
+/**
+ * What a command runs, and what it checks first: the configuration before the
+ * database is opened, the database before it is migrated.
+ */
 interface CommandRun {
   preflight?: (config: Config) => void;
+  beforeMigrations?: (pool: Pool) => Promise<void>;
   run: (ctx: CliContext) => Promise<void>;
 }
 
@@ -96,7 +102,11 @@ const commands: Readonly<Record<string, Command>> = {
       },
     });
     const options = parseLoadFleetOptions(values, process.stdout.isTTY === true);
-    return { preflight: loadFleetPreflight, run: (ctx) => loadFleetCommand(ctx, options) };
+    return {
+      preflight: loadFleetPreflight,
+      beforeMigrations: loadFleetDatabaseCheck,
+      run: (ctx) => loadFleetCommand(ctx, options),
+    };
   },
 };
 
@@ -140,8 +150,8 @@ export async function runCli(argv: readonly string[], entryUrl: string): Promise
   let ctx: CliContext | undefined;
   try {
     const parsed = command(args);
-    const { preflight, run } = typeof parsed === "function" ? { run: parsed } : parsed;
-    ctx = await openCliContext(entryUrl, preflight);
+    const { run, ...checks }: CommandRun = typeof parsed === "function" ? { run: parsed } : parsed;
+    ctx = await openCliContext(entryUrl, checks);
     await run(ctx);
     return 0;
   } catch (error) {

@@ -1,3 +1,4 @@
+import type { Pool } from "pg";
 import { destination } from "pino";
 import type { Config } from "../config/config";
 import { loadConfig } from "../config/loadConfig";
@@ -17,16 +18,20 @@ export interface CliContext {
  * Configuration and a small pool for one command. Pending migrations are
  * applied first (under the same lock as the server), so commands also work
  * before the server has ever started; a command's `preflight` sees the
- * configuration before that and may refuse. Logs go to stderr: stdout is the
- * output.
+ * configuration before the database is opened and its `beforeMigrations` the
+ * database before it is migrated, and either may refuse. Logs go to stderr:
+ * stdout is the output.
  */
 export async function openCliContext(
   entryUrl: string,
-  preflight?: (config: Config) => void,
+  checks: {
+    preflight?: ((config: Config) => void) | undefined;
+    beforeMigrations?: ((pool: Pool) => Promise<void>) | undefined;
+  } = {},
 ): Promise<CliContext> {
   const paths = runtimePaths(entryUrl);
   const config = loadConfig(process.env, { webDistDir: paths.webDistDir });
-  preflight?.(config);
+  checks.preflight?.(config);
   const verbose = config.logLevel === "debug" || config.logLevel === "trace";
   const logger = createLogger({
     level: verbose ? config.logLevel : "warn",
@@ -34,6 +39,7 @@ export async function openCliContext(
   });
   const pool = createPool(config.databaseUrl, logger, { statementTimeoutMs: 0, max: 2 });
   try {
+    await checks.beforeMigrations?.(pool);
     await runMigrations(pool, paths.migrationsFolder);
   } catch (error) {
     await pool.end();

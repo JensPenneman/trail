@@ -1989,7 +1989,8 @@ the image, so `docker compose exec app trail <command>`):
   counts only. Refused (exit 1) unless `LOAD_TEST=true`, `LAUNCHWAY_ENVIRONMENT`
   is not `production` — both checked before the database is opened — and the
   database holds no passkey and no account outside `load.invalid`, checked
-  under the sign-up lock in the transaction that writes the fleet.
+  before the CLI migrates it and again under the sign-up lock in the
+  transaction that writes the fleet.
 - `help` / `--help`
 
 Every command applies pending migrations first (same advisory lock as the

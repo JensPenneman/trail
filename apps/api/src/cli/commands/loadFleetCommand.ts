@@ -1,7 +1,9 @@
+import type { Pool } from "pg";
 import type { Config } from "../../config/config";
 import { createLoadFleet, LoadFleetRefused } from "../../load/createLoadFleet";
+import { existingAccounts } from "../../load/existingAccounts";
 import { type FleetMix, isFleetMix } from "../../load/fleetProfiles";
-import { environmentRefusals } from "../../load/loadFleetRefusals";
+import { databaseRefusals, environmentRefusals } from "../../load/loadFleetRefusals";
 import type { CliContext } from "../cliContext";
 import { UsageError } from "../usageError";
 
@@ -47,6 +49,15 @@ export function parseLoadFleetOptions(
 /** Refuses before the database is opened (and migrated) when the environment forbids a load test. */
 export function loadFleetPreflight(config: Config): void {
   const refusals = environmentRefusals(config);
+  if (refusals.length > 0) throw new LoadFleetRefused(refusals);
+}
+
+/**
+ * Refuses before the CLI migrates the database when it holds someone's account
+ * already: a wrong DATABASE_URL is never migrated by a load test.
+ */
+export async function loadFleetDatabaseCheck(pool: Pool): Promise<void> {
+  const refusals = databaseRefusals(await existingAccounts(pool));
   if (refusals.length > 0) throw new LoadFleetRefused(refusals);
 }
 

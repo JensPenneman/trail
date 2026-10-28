@@ -213,4 +213,19 @@ describe("trail load-fleet", () => {
     expect(output).toEqual([]);
     expect(await counts()).toEqual(before);
   });
+
+  it("refuses a database that holds someone's account before it migrates it", async () => {
+    // Without its journal every migration would run again and fail: a refusal that comes
+    // first says that the CLI never touched the schema.
+    await t.ctx.db.execute(sql`ALTER TABLE drizzle.__drizzle_migrations RENAME TO journal_aside`);
+    try {
+      expect(await run({ LOAD_TEST: "true" }, "--people", "10")).toBe(1);
+      expect(errors.join("\n")).toContain(
+        "trail load-fleet: refused: the database holds a passkey",
+      );
+      expect(errors.join("\n")).not.toContain("already exists");
+    } finally {
+      await t.ctx.db.execute(sql`ALTER TABLE drizzle.journal_aside RENAME TO __drizzle_migrations`);
+    }
+  });
 });
