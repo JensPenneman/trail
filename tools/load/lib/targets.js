@@ -113,7 +113,11 @@ export const serverTargets = {
 };
 
 /**
- * k6 thresholds of the ingest by batch class, scaled by the calibration.
+ * What k6 keeps of the ingest's latencies, by phase and batch class: its own
+ * `http_req_duration`, the COMMIT and the hop included. §3 defines §3.1's
+ * targets server-side, as `ingest_log.duration_ms` records them, so the
+ * report gates on that column and shows these beside it, tracked: a
+ * threshold that always holds is what makes k6 keep a tag's percentiles.
  * @param {string} phase
  * @returns {Record<string, string[]>}
  */
@@ -121,35 +125,9 @@ export function ingestThresholds(phase) {
   /** @type {Record<string, string[]>} */
   const thresholds = {};
   for (const target of ingestTargets) {
-    const scale = (/** @type {number} */ value) => Math.round(value / calibration.latency);
     thresholds[`http_req_duration{phase:${phase},kind:ingest,batch:${target.batch}}`] = [
-      `p(50)<=${scale(target.p50)}`,
-      `p(95)<=${scale(target.p95)}`,
-      `p(99)<=${scale(target.p99)}`,
+      "p(95)>=0",
     ];
-  }
-  return thresholds;
-}
-
-/**
- * k6 thresholds of the backlog flush (§2.3): the 500 row of §3.1 is the
- * flush's own; the other classes' percentiles are kept and reported, since
- * every phone sends at once there and §3.1 names no other row for it.
- * @returns {Record<string, string[]>}
- */
-export function backlogThresholds() {
-  /** @type {Record<string, string[]>} */
-  const thresholds = {};
-  for (const target of ingestTargets) {
-    const key = `http_req_duration{phase:backlog,kind:ingest,batch:${target.batch}}`;
-    thresholds[key] =
-      target.batch === "400-699"
-        ? [
-            `p(50)<=${Math.round(target.p50 / calibration.latency)}`,
-            `p(95)<=${Math.round(target.p95 / calibration.latency)}`,
-            `p(99)<=${Math.round(target.p99 / calibration.latency)}`,
-          ]
-        : ["p(95)>=0"];
   }
   return thresholds;
 }

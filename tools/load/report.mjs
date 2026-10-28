@@ -126,53 +126,68 @@ export function targetRows(context) {
       gate: true,
     });
   }
-  for (const target of ingestTargets) {
-    const values = metric(day, `http_req_duration{phase:day,kind:ingest,batch:${target.batch}}`);
-    const samples = values?.["count"] ?? 0;
+  // §3.1's targets are server-side (§3: what ingest_log.duration_ms records,
+  // which production checks every day): they gate. k6's durations add the
+  // COMMIT, the response and the hop; they are tracked beside them.
+  const serverClasses = (/** @type {"day" | "backlog"} */ phase) =>
+    context.checks?.ingestLog?.[phase]?.designClasses ?? [];
+  /**
+   * The gated server-side rows and the tracked k6 row of one batch class.
+   * @param {(typeof ingestTargets)[number]} target
+   * @param {"day" | "backlog"} phase
+   * @param {string} label
+   */
+  const ingestRows = (target, phase, label) => {
     const scaled = (/** @type {number} */ limit) => limit / calibration.latency;
-    for (const [stat, limit] of /** @type {const} */ ([
-      ["p(50)", target.p50],
-      ["p(95)", target.p95],
-      ["p(99)", target.p99],
-    ])) {
+    const server = serverClasses(phase).find(
+      (/** @type {any} */ entry) => entry.batch === target.batch,
+    );
+    const percentiles = /** @type {const} */ ([
+      ["p50", target.p50],
+      ["p95", target.p95],
+      ["p99", target.p99],
+    ]);
+    for (const [stat, limit] of percentiles) {
       rows.push(
         row(
           "3.1",
-          `upload of ${target.label}, ${stat.replace("p(", "p").replace(")", "")} ≤ ${show(scaled(limit))} ms`,
-          samples > 0 ? values?.[stat] : null,
+          `${label}, ${stat} ≤ ${show(scaled(limit))} ms (server side)`,
+          server === undefined ? null : Number(server[stat]),
           (value) => value <= scaled(limit),
-          ` ms (n ${show(samples)})`,
+          ` ms (n ${show(server?.n ?? 0)})`,
           true,
           1,
         ),
       );
     }
-  }
-  // The flush's own row of §3.1 (500 points), as backlog.js holds it.
+    const k6 = metric(
+      summaryOf(phase),
+      `http_req_duration{phase:${phase},kind:ingest,batch:${target.batch}}`,
+    );
+    const samples = k6?.["count"] ?? 0;
+    const k6Values = percentiles.map(([stat]) => k6?.[`p(${stat.slice(1)})`] ?? Number.NaN);
+    rows.push({
+      section: "3.1",
+      target: `${label} as k6 sees it (the COMMIT and the hop included), p50 / p95 / p99 ≤ ${percentiles.map(([, limit]) => show(scaled(limit))).join(" / ")} ms`,
+      measured:
+        samples > 0
+          ? `${k6Values.map((value) => show(value, 1)).join(" / ")} ms (n ${show(samples)})`
+          : "—",
+      verdict:
+        samples === 0
+          ? "no samples"
+          : k6Values.every((value, index) => value <= scaled(percentiles[index]?.[1] ?? 0))
+            ? "pass"
+            : "FAIL",
+      gate: false,
+    });
+  };
+  const summaryOf = (/** @type {"day" | "backlog"} */ phase) => (phase === "day" ? day : backlog);
+  for (const target of ingestTargets) ingestRows(target, "day", `upload of ${target.label}`);
+  // The flush's own row of §3.1 (500 points).
   const flushTarget = ingestTargets.find((target) => target.batch === "400-699");
-  const backlogLarge = metric(
-    backlog,
-    "http_req_duration{phase:backlog,kind:ingest,batch:400-699}",
-  );
   if (flushTarget !== undefined) {
-    for (const [stat, limit] of /** @type {const} */ ([
-      ["p(50)", flushTarget.p50],
-      ["p(95)", flushTarget.p95],
-      ["p(99)", flushTarget.p99],
-    ])) {
-      const scaled = limit / calibration.latency;
-      rows.push(
-        row(
-          "3.1",
-          `backlog flush, batches of 400–699 points, ${stat.replace("p(", "p").replace(")", "")} ≤ ${show(scaled)} ms`,
-          (backlogLarge?.["count"] ?? 0) > 0 ? backlogLarge?.[stat] : null,
-          (value) => value <= scaled,
-          ` ms (n ${show(backlogLarge?.["count"] ?? 0)})`,
-          true,
-          1,
-        ),
-      );
-    }
+    ingestRows(flushTarget, "backlog", "backlog flush, batches of 400–699 points");
   }
   rows.push(
     row(
@@ -685,7 +700,7 @@ export function renderReport(context) {
   lines.push("## Targets");
   lines.push("");
   lines.push(
-    `Gated: what milestone 1 holds a run to. Tracked: reported now, held to the target once the work that moves it has landed (docs/perf/README.md, "Gates"). Latency targets are the node's divided by the calibration factor (${calibration.latency} until a node run exists).`,
+    `Gated: what milestone 1 holds a run to. Tracked: reported now, held to the target once the work that moves it has landed (docs/perf/README.md, "Gates"). The upload targets of §3.1 are server-side, as \`ingest_log.duration_ms\` records them; k6's own durations, which add the COMMIT, the response and the hop, are tracked beside them. Latency targets are the node's divided by the calibration factor (${calibration.latency} until a node run exists).`,
   );
   lines.push("");
   lines.push(
@@ -771,7 +786,7 @@ export function renderReport(context) {
   lines.push("## Ingest, client side (k6)");
   lines.push("");
   lines.push(
-    "`http_req_duration` of the uploads by batch class: what the phone waits for, the network hop and the COMMIT included.",
+    "`http_req_duration` of the uploads by batch class: what the phone waits for, the network hop and the COMMIT included. Tracked: §3.1 gates on the server side (below).",
   );
   lines.push("");
   const ingestBody = [];
@@ -880,7 +895,7 @@ export function renderReport(context) {
   const designClasses = checks?.ingestLog?.day?.designClasses ?? [];
   if (designClasses.length > 0) {
     lines.push(
-      "The same column in §3.1's classes, against its targets — §3 defines them server-side, as production can check them every day; the gates above are k6's, which add the COMMIT and the hop:",
+      "The same column in §3.1's classes, against its targets — the gates: §3 defines them server-side, as production can check them every day; k6's durations above add the COMMIT, the response and the hop:",
     );
     lines.push("");
     lines.push(

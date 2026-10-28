@@ -40,12 +40,11 @@ describe("the targets", () => {
     );
   });
 
-  it("become k6 thresholds by phase, endpoint and batch", () => {
-    const thresholds = ingestThresholds("day");
-    assert.deepEqual(thresholds["http_req_duration{phase:day,kind:ingest,batch:1}"], [
-      "p(50)<=12",
-      "p(95)<=40",
-      "p(99)<=100",
+  it("keep k6's ingest percentiles by phase and batch, without gating on them", () => {
+    // §3.1 is gated server-side by the report; k6 only keeps its own durations.
+    const thresholds = ingestThresholds("backlog");
+    assert.deepEqual(thresholds["http_req_duration{phase:backlog,kind:ingest,batch:400-699}"], [
+      "p(95)>=0",
     ]);
     assert.equal(Object.keys(thresholds).length, ingestTargets.length);
     const dashboard = dashboardThresholds();

@@ -4,7 +4,8 @@
  * app does — Overland its batches back to back, the one-point apps a message
  * at a time, in order — retrying by its app's rules when the per-device
  * limits answer 429 or 503. The drain time is the slowest phone's; the
- * thresholds hold the latencies, the limits' share (≤ 2 %) and the loss.
+ * thresholds hold the limits' share (≤ 2 %) and the loss, the report the
+ * flush's latencies (server side, §3.1's 500 row).
  */
 import exec from "k6/execution";
 import { Trend } from "k6/metrics";
@@ -12,7 +13,7 @@ import { requestsOf, sendUploads } from "./k6/ingest.js";
 import { config, phones, routeList, shape } from "./k6/run.js";
 import { summaryWriter } from "./k6/summary.js";
 import { planBacklog } from "./lib/schedule.js";
-import { backlogThresholds, errorBudget } from "./lib/targets.js";
+import { errorBudget, ingestThresholds } from "./lib/targets.js";
 
 const backlog = config.backlog || {};
 const seconds = Math.round((backlog.hours || 8) * 3600);
@@ -31,7 +32,7 @@ export const options = {
     },
   },
   thresholds: {
-    ...backlogThresholds(),
+    ...ingestThresholds("backlog"),
     "ingest_failed{phase:backlog}": [`rate<=${errorBudget.failed}`],
     "ingest_throttled{phase:backlog}": [`rate<=${errorBudget.throttledBacklog}`],
     points_dropped: ["count==0"],

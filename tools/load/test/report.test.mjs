@@ -35,7 +35,9 @@ const trend = (/** @type {number} */ count, /** @type {number} */ p95) => ({
   },
 });
 
-function context(/** @type {{ batchOneP95?: number }} */ options = {}) {
+function context(
+  /** @type {{ batchOneP95?: number, serverOne?: { p50: number, p95: number, p99: number } }} */ options = {},
+) {
   return {
     run: {
       scenario: "fleet-10",
@@ -120,7 +122,20 @@ function context(/** @type {{ batchOneP95?: number }} */ options = {}) {
     },
     checks: {
       stored: { total: 3600 + 100, history: 0 },
-      ingestLog: { day: { classes: [], byProfile: [] } },
+      ingestLog: {
+        day: {
+          classes: [],
+          byProfile: [],
+          designClasses: [
+            { batch: "1", n: 124, ...(options.serverOne ?? { p50: 5, p95: 9, p99: 14 }) },
+            { batch: "2-99", n: 31, p50: 9, p95: 17, p99: 26 },
+          ],
+        },
+        backlog: {
+          classes: [],
+          designClasses: [{ batch: "400-699", n: 26, p50: 30, p95: 60, p99: 90 }],
+        },
+      },
     },
     csvRows: [
       { app_cpu: "0.05", db_cpu: "0.1", k6_cpu: "0.2", app_mem_mb: "170", db_mem_mb: "200" },
@@ -138,7 +153,27 @@ describe("the report", () => {
     assert.match(markdown, /\*\*PASS\*\*/);
     assert.ok(
       rows.some(
-        (r) => r.target.startsWith("upload of 1 point, p95 ≤ 40 ms") && r.verdict === "pass",
+        (r) =>
+          r.target === "upload of 1 point, p95 ≤ 40 ms (server side)" &&
+          r.measured === "9.0 ms (n 124)" &&
+          r.verdict === "pass" &&
+          r.gate,
+      ),
+    );
+    // k6's own durations are shown beside, tracked.
+    assert.ok(
+      rows.some(
+        (r) =>
+          r.target.startsWith("upload of 1 point as k6 sees it") &&
+          r.measured === "4.5 / 9.0 / 13.5 ms (n 120)" &&
+          !r.gate,
+      ),
+    );
+    assert.ok(
+      rows.some(
+        (r) =>
+          r.target === "backlog flush, batches of 400–699 points, p50 ≤ 100 ms (server side)" &&
+          r.verdict === "pass",
       ),
     );
     assert.ok(
@@ -174,15 +209,28 @@ describe("the report", () => {
     );
   });
 
-  it("fails when a gated target is missed, and says which", () => {
-    const { markdown, failedGates } = renderReport(context({ batchOneP95: 55 }));
+  it("fails when a gated target is missed, and says which — the server side, not k6's", () => {
+    // k6 slower than the targets, the server within them: tracked, the run holds.
+    const slowClient = renderReport(context({ batchOneP95: 55 }));
+    assert.equal(slowClient.failedGates.length, 0);
+    assert.ok(
+      slowClient.rows.some(
+        (r) => r.target.startsWith("upload of 1 point as k6 sees it") && r.verdict === "FAIL",
+      ),
+    );
+    const { markdown, failedGates } = renderReport(
+      context({ serverOne: { p50: 20, p95: 55, p99: 80 } }),
+    );
     assert.deepEqual(
       failedGates.map((r) => r.target),
-      ["upload of 1 point, p50 ≤ 12 ms", "upload of 1 point, p95 ≤ 40 ms"],
+      [
+        "upload of 1 point, p50 ≤ 12 ms (server side)",
+        "upload of 1 point, p95 ≤ 40 ms (server side)",
+      ],
     );
     assert.match(
       markdown,
-      /\*\*FAIL\*\* — 2 gated targets missed: upload of 1 point, p50 ≤ 12 ms; upload of 1 point, p95 ≤ 40 ms/,
+      /\*\*FAIL\*\* — 2 gated targets missed: upload of 1 point, p50 ≤ 12 ms \(server side\); upload of 1 point, p95 ≤ 40 ms \(server side\)/,
     );
   });
 

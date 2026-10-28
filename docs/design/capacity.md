@@ -727,12 +727,16 @@ tools/load/
 Three sources, one collector:
 
 - **k6**: per endpoint and batch-size tag, `http_req_duration` percentiles,
-  `http_req_failed`, data-loss and retry counters, iteration rates; thresholds
-  in the scripts, for example
-  `'http_req_duration{endpoint:overland,batch:500}': ['p(95)<250', 'p(99)<500']`,
-  `'http_req_failed{endpoint:ingest}': ['rate<0.0001']`,
-  `'dropped_points': ['count==0']`. A run exits non-zero when a threshold
-  fails.
+  `http_req_failed`, data-loss and retry counters, iteration rates and how
+  late the generator runs behind its schedule; thresholds in the scripts for
+  what only the client sees, for example `'ingest_failed{phase:day}':
+  ['rate<=0.0001']`, `'points_dropped': ['count==0']`,
+  `'dropped_iterations': ['count==0']`, and the dashboard's p95s. The upload
+  latencies of §3.1 are server-side (§3): the report gates them on
+  `ingest_log.duration_ms` in §3.1's batch classes, and shows k6's
+  `http_req_duration` of the same classes beside them, tracked — it adds the
+  COMMIT, the response and the hop. A run exits non-zero when a threshold or
+  a gate of the report fails.
 - **The app's load line**: the API and the worker log `load` once a minute
   at `info` — event-loop p50/p99 (`perf_hooks.monitorEventLoopDelay`), pool
   waiting and idle, open streams, background tasks pending, uploads and

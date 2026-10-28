@@ -283,7 +283,9 @@ async function databaseChecks(stack, window, historyRows) {
         GROUP BY floor(extract(epoch FROM received_at) / 10)) w)
     )`);
   const backlog = await stack.json(
-    `SELECT json_build_object('classes', (${classes(window.backlog.from, window.backlog.to)}))`,
+    `SELECT json_build_object(
+      'classes', (${classes(window.backlog.from, window.backlog.to)}),
+      'designClasses', (${classes(window.backlog.from, window.backlog.to, designClasses)}))`,
   );
   const seconds = Math.max(1, (window.day.to - window.day.from) / 1000);
   /** @type {Record<string, number>[]} */
@@ -312,7 +314,7 @@ async function databaseChecks(stack, window, historyRows) {
           worst10sUploads: Number(day.worst10s ?? 0),
         },
       },
-      backlog: { classes: backlog.classes },
+      backlog: { classes: backlog.classes, designClasses: backlog.designClasses },
     },
   };
 }
