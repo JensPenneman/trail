@@ -29,7 +29,7 @@ design), and a load test that validates the numbers of §6 at 1000 devices.
 | Source of the ways | Geofabrik regional extracts (`belgium` by default, a configurable list), refreshed monthly by full replacement |
 | Who turns an extract into Trail's tables | `osmium-tool` filters it to the ways and stops Trail keeps, in GitHub Actions or by hand; a Node loader in the worker streams the result into Postgres. No native tool in the runtime image |
 | Where the ways live | The existing `osm_ways`, `osm_tile_ways`, `osm_pois` tables, with a `source` per row and a compact geometry column; the z14 tile index stays the key. No PostGIS |
-| What "covered" means | A z14 tile whose four corners lie inside an imported region's polygon. Outside: Overpass when configured, else the move stays unmapped and the API and UI say why |
+| What "covered" means | A z14 tile each of whose four corners lies inside the polygon of a ready region, any of them (the union, so that neighbouring regions cover their shared border, §2.5). Outside: Overpass when configured, else the move stays unmapped and the API and UI say why |
 | Basemap | Vector tiles in the OpenMapTiles schema, built with Planetiler from the same extract into one PMTiles file per region, plus a world overview at z0–6 for the map abroad, so the current OpenFreeMap styles keep working with their source URL swapped |
 | Fonts and sprites | Fetched at image build time with pinned checksums and shipped in the image; the styles are vendored in the repository |
 | Serving | The API serves `/map/*`: styles, tiles read from the PMTiles file, fonts, sprites; public, cacheable, same origin, so the CSP's map origins become `'self'` |
@@ -150,7 +150,8 @@ osmium add-locations-to-ways ways.osm.pbf -o ways-located.osm.pbf
 # the tags Trail reads (keptTags of parseOverpassResponse.ts)
 osmium cat -t way -f opl,add_metadata=false,locations_on_ways=true ways-located.osm.pbf \
   | awk -f keep-tags.awk | gzip -6n > ways.opl.gz
-# the stops and airports (classifyPoi.ts): points, and aerodromes mapped as areas
+# the stops and airports (classifyPoi.ts): points, and aerodromes mapped as
+# areas, which osmium writes as MultiPolygon features (every area is one)
 osmium tags-filter --remove-tags "$pbf" -o pois.osm.pbf \
   n/railway=station,halt,tram_stop n/highway=bus_stop n/amenity=ferry_terminal nwr/aeroway=aerodrome
 # pois-export.json: areas only for aeroway=aerodrome, no linestrings, the
@@ -184,11 +185,14 @@ bounding box and the z14 tiles its segments pass through (`forEachCell` of
 `wayIndex.ts` in tile space), and writes batches of 5 000 rows with
 `COPY … FROM STDIN` (`pg-copy-streams` 7.x, MIT, pure JavaScript; today's
 `jsonb_to_recordset` inserts are three to five times slower at this volume).
-`pois.geojsonseq.gz` goes the same way: a point keeps its position, an
-aerodrome polygon becomes the centre of its bounding box (what Overpass's
-`out center` gives, rather than the polygon's centroid, so that the mapped
-level does not change), and the id is `n…`, `w…` or `r…` from `@type` and
-`@id` (large airports are often multipolygon relations).
+`pois.geojsonseq.gz` goes the same way: a `Point` keeps its position; an
+aerodrome mapped as an area is a `MultiPolygon` (osmium writes every area as
+one, a closed way included: Belgium has 43 of them beside 62 337 points) and
+becomes the centre of the bounding box over all its rings (what Overpass's
+`out center` gives, rather than the centroid, so that the mapped level does
+not change); the parser accepts a `Polygon` the same way. The id is `n…`,
+`w…` or `r…` from `@type` and `@id` (large airports are often multipolygon
+relations).
 
 Memory: the loader holds one batch and the region's polygon; the tile
 membership of a way is computed from its own geometry, so nothing
@@ -235,7 +239,7 @@ Three options for "the ways within this area":
 
 | Option | Query | Cost | Verdict |
 |---|---|---|---|
-| **Tile index** (today's `osm_tile_ways`): membership rows per z14 tile, computed at import | PK lookups per tile, as `loadMapData` does now | 2 M rows for Belgium, 110 M for Europe (110 B each) | keeps `planPieces`, `pieceMaxTiles`, `missing_tiles`, `FixtureWaySource` and every test as they are |
+| **Tile index** (today's `osm_tile_ways`): membership rows per z14 tile, computed at import | PK lookups per tile, as `loadMapData` does now | 1.73 M rows for Belgium at 166 B each, measured (§10); *90–115 M* for Europe | keeps `planPieces`, `pieceMaxTiles`, `missing_tiles`, `FixtureWaySource` and every test as they are |
 | Plain Postgres `box` column with a GiST index (built in, no extension) | `bbox && box(...)` per piece | one index, long ways over-selected | fewer rows, but every caller changes and the fetcher's tile bookkeeping stays anyway |
 | PostGIS 3.6 (`postgis/postgis:18-3.6-alpine`), `geometry(LineString)`, `ST_Intersects` | one spatial query per piece | a new database image, `CREATE EXTENSION` in a migration, PostGIS in the dev container and the test databases, bigger dumps, a second thing to upgrade with Postgres majors | real geometry Trail does not need: it reads whole ways by area and does the rest in memory (`wayIndex.ts` has its own 100 m grid) |
 
@@ -451,7 +455,7 @@ error, it is a `none` the window records as `outside_regions`.
 
 | | Planetiler → OpenMapTiles schema PMTiles | Protomaps basemap PMTiles |
 |---|---|---|
-| Build | Planetiler 0.10.2 (Apache-2.0, Java 21 or later; the workflow runs Temurin 25) with its bundled `planetiler-openmaptiles` profile (Apache-2.0; the schema is OpenMapTiles 3.16, CC-BY 4.0): one run per region, `--output=basemap.pmtiles`, z0–14 by default | none: `pmtiles extract https://build.protomaps.com/<date>.pmtiles --bbox=…` (go-pmtiles 1.2x, BSD-3) pulls the region's tiles from their daily planet build with range requests |
+| Build | Planetiler 0.10.2 (Apache-2.0, Java 21 or later; the workflow runs the runner image's Temurin 21) with its bundled `planetiler-openmaptiles` profile (Apache-2.0; the schema is OpenMapTiles 3.16, CC-BY 4.0): one run per region, `--output=basemap.pmtiles`, z0–14 by default | none: `pmtiles extract https://build.protomaps.com/<date>.pmtiles --bbox=…` (go-pmtiles 1.2x, BSD-3) pulls the region's tiles from their daily planet build with range requests |
 | Belgium | measured: 7 min 49 s on the runner (1 min of it the first download of the sources), `-Xmx3g` of which 2.0 GB in use, 427 MB | 3 min, no RAM, 250 MB (maxzoom 15); not measured |
 | Europe | not measured; extrapolated from France about 5 h on 4 vCPU, 8–16 GB of heap and 140 GB of temporary files, so not on a GitHub runner | about an hour, bandwidth-bound, 13 GB; not measured |
 | Styles | the current ones: OpenFreeMap's `liberty` and `dark` work unchanged with their source pointed at Trail — and the same style serves the OpenFreeMap fallback | `@protomaps/basemaps` (BSD-3) flavours `light` and `dark`: a different look, a second style set for the fallback, the heat and track layer placement tests redone |
@@ -517,19 +521,22 @@ Two measures:
   OSM input (the `admin_level=2` boundaries and the
   `place=country|state|city` nodes of the planet, which neither Geofabrik
   offers nor the runner's 84 GB of disk can cut from a 96 GB planet file
-  next to its own output) or the Protomaps planet build at z0–6 (§9). The
-  tile router answers from the region archive when it has the tile, else
-  from the world archive, else 204 — with one change task 0 found: from z0
-  to z4 the world archive answers first. A region archive covers the
-  extract's bounding box at every zoom, so it has the tiles 0/0/0, 2/2/1 and
-  4/8/5 for Belgium, but Planetiler keeps in them only the features that
-  touch that box: Belgium's z0 tile has Belgium's borders and label and no
-  other country's, the world archive's has them all. From z5 the region's
-  tiles are the better ones (at z5–6 they carry Belgium's OSM borders,
-  motorways and city names, which the overview lacks), so the simplest form
-  is to build region archives with `--minzoom=5` and keep the rule as it is.
-  The fallback flag of §3.5 is for whoever wants OpenFreeMap's detail
-  everywhere.
+  next to its own output) or the Protomaps planet build at z0–6 (§9).
+
+  **The tile router's rule** (decided here; §3.3 and §9 refer to it): a tile
+  of z ≤ 4 comes from the world archive (from the region archive while a
+  node has no world archive yet); a tile of z ≥ 5 from the region archive,
+  else the world archive, else 204. Task 0 found why the low zooms must not
+  come from the region: a region archive covers the extract's bounding box
+  at every zoom, so it has the tiles 0/0/0, 2/2/1 and 4/8/5 for Belgium, but
+  Planetiler keeps in them only the features that touch that box (Belgium's
+  z0 tile has Belgium's borders and label and no other country's; the world
+  archive's has them all). From z5 the region's tiles are the better ones:
+  at z5–6 they carry Belgium's OSM borders, motorways and city names, which
+  the overview lacks. Region archives keep their z0–4 tiles, so that each
+  stays usable on its own; that costs at most 341 duplicate tiles per
+  archive. The fallback flag of §3.5 is for whoever wants OpenFreeMap's
+  detail everywhere.
 - the styles' second source, `ne2_shaded` — Natural Earth II shaded relief
   as raster tiles from OpenFreeMap, drawn under everything at the world
   zooms — is removed from the vendored styles with its one layer. The
@@ -591,7 +598,7 @@ compressed; glyphs and sprites hardly compress).
 | Route | Answer | Caching |
 |---|---|---|
 | `GET /map/styles/light.json`, `dark.json` | the vendored style rendered for the active bundle and asset hash; without a bundle, a 404 or the fallback (§3.5) | `Cache-Control: no-cache`, ETag of build + hash |
-| `GET /map/tiles/<build>/{z}/{x}/{y}.pbf` | the tile read from `basemap.pmtiles` with the `pmtiles` package 4.x (BSD-3; a `Source` over `fs.promises.FileHandle.read`, its directory cache sized to about 10 MB); `Content-Type: application/x-protobuf`, `Content-Encoding: gzip` passed through as Planetiler wrote it; 204 for a tile the archive has none of; 404 for a build that is not active | `public, max-age=31536000, immutable` (the build id is in the path) |
+| `GET /map/tiles/<build>/{z}/{x}/{y}.pbf` | the tile read from `basemap.pmtiles` with the `pmtiles` package 4.x (BSD-3; a `Source` over `fs.promises.FileHandle.read`, its directory cache sized to about 10 MB); `Content-Type: application/x-protobuf`, `Content-Encoding: gzip` passed through as Planetiler wrote it; z ≤ 4 from the world archive, z ≥ 5 from the region archive, else the world archive, else 204 (the rule of §3.1); 404 for a build that is not active | `public, max-age=31536000, immutable` (the build id is in the path) |
 | `GET /map/assets/<hash>/fonts/{stack}/{range}.pbf`, `…/sprites/ofm(.json|.png|@2x.png|@2x.json)` | static files of the image | immutable, as `/assets/*` |
 | `GET /api/config` | `mapStyles.light` and `.dark` become the paths above (the contract allows a path, not only a URL) | as today |
 
@@ -661,14 +668,23 @@ record changes on purpose):
    for, so the script looks for the dated file of the last three days on
    `download.geofabrik.de` itself;
 2. runs the `osmium` steps of §2.2 (Ubuntu's `osmium-tool` package);
-3. runs Planetiler 0.10.2's release jar (its SHA-256 pinned in
-   `build.sh`) on Temurin 25.0.5+8 (pinned in the workflow) with
-   `--osm_path`, and Natural Earth, the water polygons and the lake
-   centrelines from a monthly Actions cache;
+3. runs Planetiler 0.10.2's release jar (its SHA-256 pinned in `build.sh`)
+   on the runner image's Temurin 21 with `--osm_path` and the paths of its
+   three sources, which `build.sh` fetches into a monthly Actions cache
+   itself: Natural Earth's package and the lake centrelines' release asset
+   pinned by SHA-256, the water polygons (regenerated upstream every day)
+   recorded in the manifest only; Planetiler downloads nothing;
 4. writes `manifest.json` and `SHA256SUMS`; from task 2 on it pushes the
    artefact (§4.2) with `oras push` (ORAS 1.3, Apache-2.0), then signs it
    with `actions/attest-build-provenance`, as the image gets (§13.2);
 5. (task 2) deletes versions older than the last three of the region.
+
+One build per region runs at a time (a `concurrency` group per region). The
+publishing of task 2 lives in a job of its own that never runs for
+`pull_request` (dispatch and the schedule only), and only that job gets
+`packages: write`, `id-token: write` and `attestations: write`; the build
+jobs keep the read-only token, so a pull request, a fork's included, can
+build a region but never publish one.
 
 Budget, measured (§10), whole jobs on the runner: Monaco 1 min, Luxembourg
 2½ min, Belgium 15 min, the Netherlands 18 min, France 1 h 45 min; Germany
@@ -749,23 +765,24 @@ region set the workflow cannot build, which a hand build covers.
 
 - **Fixture**: `apps/api/tests/fixtures/mapdata/monaco/` holds the files of
   the Monaco artefact the workflow built in task 0, committed as built
-  (670 KB: `ways.opl.gz` 241 KB with 3 677 ways and 20 535 node
-  references, `pois.geojsonseq.gz` 3 KB with 117 bus stops, the station and
-  the cruise terminal, `region.poly`, `basemap.pmtiles` 421 KB with 246
-  tiles at z0–14, `manifest.json`, `SHA256SUMS`), with its ODbL notice in a
-  README. Monaco has a railway station, bus stops, a ferry terminal, no
-  tram and no aerodrome; the aerodrome centroid is tested on a hand-made
-  polygon. Its polygon follows the land border, so of the six z14 tiles
-  that hold its streets only one, 14/8530/5974, has all four corners
-  inside (§2.5): a test journey that is to map without a network stays in
-  that tile (lon 7.4268–7.4487, lat 43.7253–43.7390), and one that crosses
-  into the other five checks `outside_regions`. 36 tiles are covered in
-  all; the other 35 are sea.
+  (670 KB: `ways.opl.gz` 241 KB with 3 677 ways and 20 535 node references,
+  `pois.geojsonseq.gz` 3 KB with 117 bus stops, the station and the cruise
+  terminal, `region.poly`, `basemap.pmtiles` 421 KB with 246 tiles at z0–14,
+  `manifest.json`, `SHA256SUMS`), with its ODbL notice in a README. Monaco
+  has a railway station, bus stops, a ferry terminal, no tram and no
+  aerodrome; the aerodrome's centre is tested on a hand-made `MultiPolygon`
+  feature, the shape osmium writes for every area. Its polygon follows the
+  land border, so of the six z14 tiles that hold its streets only one,
+  14/8530/5974, has all four corners inside (§2.5): a test journey that is
+  to map without a network stays in that tile (lon 7.4268–7.4487, lat
+  43.7235–43.7394), and one that crosses into the other five checks
+  `outside_regions`. 36 tiles are covered in all; the other 35 are sea.
 - **Unit**: the OPL and GeoJSON-seq parsers on hand-made lines and on the
   fixture (counts, kinds, a known way's node ids and geometry, the
-  aerodrome centroid), the tile membership of a way against
-  `tileCover.ts`, the polygon test with corners on the border, the
-  composite source's states, the geometry encoding round trip.
+  aerodrome's centre over all rings of a `MultiPolygon`), the tile
+  membership of a way against `tileCover.ts`, the polygon test with corners
+  on the border, the composite source's states, the geometry encoding round
+  trip.
 - **Integration**: `trail map import <dir>` on the fixture into
   `trail_test` (rows, sources, the swap, orphan deletion, a second import
   with a changed file), a journey through Monaco's streets built with
@@ -872,12 +889,16 @@ windows processed meanwhile.
 - **Supply chain.** Geofabrik is reached by the workflow only, over HTTPS
   with the host pinned, the `.md5` checked (an integrity check, not a
   signature: Geofabrik signs nothing). What the workflow produces is
-  attested; the node pulls by tag, verifies every blob's SHA-256 against
-  the manifest and the manifest's digest, follows one known redirect, and
-  refuses anything else. The build-time downloads (Natural Earth, water
-  polygons, the fonts and sprites) are pinned by URL and checksum in the
-  repository. The GPL tool runs at build time as a process; nothing of it
-  is linked or shipped.
+  attested; the node pulls by tag, verifies every blob's SHA-256 against the
+  manifest and the manifest's digest, follows one known redirect, and
+  refuses anything else. The build-time downloads are pinned by URL and
+  SHA-256 in the repository where the file is fixed: the Planetiler jar,
+  Natural Earth's package and the lake centrelines' release asset
+  (`scripts/mapdata/build.sh`, which checks them before Planetiler runs),
+  and the fonts and sprites (`scripts/map-assets.json`, task 4). The OSM
+  water polygons are regenerated upstream every day, so their URL is fixed
+  and their SHA-256 is recorded in each manifest, not pinned. The GPL tool
+  runs at build time as a process; nothing of it is linked or shipped.
 - **Parsing untrusted bytes.** The loader and the tile router treat the
   files as data: bounded line length (1 MB), bounded nodes per way (10 000,
   as `parseOverpassResponse`), a tile capped at 2 MB, the PMTiles header
@@ -994,7 +1015,7 @@ most, and the house rules of §2 throughout.
 | # | Task | Done when | Lane |
 |---|---|---|---|
 | 0 | **Measure.** Build the Belgium and Monaco artefacts by hand with `scripts/mapdata/build.sh` (first version); run Planetiler for Belgium on the Mac and in a throwaway workflow run; time the loader prototype on the node. Fill the tables of §2.1, §2.7, §3.1 with measured values. **Done** (§10): the script and the first version of the workflow built Monaco, Luxembourg, Belgium, the Netherlands, France and the world overview on GitHub's runner (Germany ran into the job's first time limit); Planetiler did not run on the Mac, which other agents' containers kept busy, and the loader prototype was timed there against a throwaway Postgres limited like production's (2 CPUs, 2 GB) rather than on the node | the numbers in this document are replaced by measured ones in its pull request; the Monaco fixture is committed | A (no container needed) |
-| 1 | **Tables and loader.** The migration of §8.3 (phase 1), `loadWays`, `loadPois`, the geometry codec, `trail map import <dir>`, the source swap and orphan deletion | the fixture imports in under 5 s in the integration suite; counts, kinds, a known way and the aerodrome centroid match; a second import swaps without a gap; `loadMapData` reads both sources; the conversion statement round-trips today's cache | A |
+| 1 | **Tables and loader.** The migration of §8.3 (phase 1), `loadWays`, `loadPois`, the geometry codec, `trail map import <dir>`, the source swap and orphan deletion | the fixture imports in under 5 s in the integration suite; counts, kinds, a known way and the aerodrome's bounding-box centre match; a second import swaps without a gap; `loadMapData` reads both sources; the conversion statement round-trips today's cache | A |
 | 2 | **Workflow and registry.** `mapdata.yml` with the matrix, `oras push`, attestation, retention; the registry client with digest checks and the fake registry tests; `trail map refresh`, `status`; the refresh schedule in the worker | a dispatch run publishes `belgium`; the worker pulls it into the volume and imports it; a wrong digest and a truncated blob are refused and leave the old build; status shows the digest | B |
 | 3 | **Coverage and the fallback.** `coverage.ts`, `RegionWaySource`, `CompositeWaySource`, `tileAvailability`, the queue's filters, the re-arm after an import, the reasons in features, the contracts (`map` on moves, `/api/v1/map/coverage`), the UI wording | a Monaco journey maps without a network; a move outside is unmapped with `outside_regions` and the dialog and Insights say so; with the fixture Overpass source it waits and completes; the first import re-arms waiting windows; the OpenAPI snapshot is refreshed on purpose | A, after 1 |
 | 4 | **Basemap serving.** Vendored styles, `map-assets.mjs` with pinned checksums, the Dockerfile layer, `map_bundles`, the tile router, the config contract and `useMapStyle` on paths, the CSP change, `MAP_BASEMAP_FALLBACK`, the e2e fixture bundle and the suite on real tiles | the map draws Monaco from the app's origin with every other origin refused; tiles answer with the headers of §3.3; the heat placement tests import the vendored styles; a server without a bundle shows the fallback or the plain style and its notice; axe green | B, after 2 |
@@ -1079,7 +1100,8 @@ measurement can be compared with them.
 - **Builds**: `scripts/mapdata/build.sh` in the first version of the Map
   data workflow, on GitHub's `ubuntu-24.04` runner (4 vCPU, 15.6 GiB, 84 GB
   free disk), with osmium-tool 1.16.0 (libosmium 2.20.0, Ubuntu's package),
-  Planetiler 0.10.2 on Temurin 25.0.5+8, from Geofabrik's extracts of
+  Planetiler 0.10.2 on Temurin 25.0.5+8 (the workflow has used the runner
+  image's Temurin 21 since), from Geofabrik's extracts of
   27 October 2026 (OSM data up to 21:24 UTC), on 28 October 2026: runs
   40650464005 (Belgium and the world overview), 40652475332 (Luxembourg,
   the Netherlands, France), 40653352974 (Germany, cancelled at the job's
