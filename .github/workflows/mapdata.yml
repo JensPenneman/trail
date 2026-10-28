@@ -72,7 +72,9 @@ jobs:
     # Ubuntu 24.04 by name: its osmium-tool package is the one the manifests
     # record, until the pipeline moves on on purpose
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    # Measured: Belgium 15 min, France 1 h 45 min; Germany did not finish in
+    # two hours (70 min of it the download from Geofabrik)
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
