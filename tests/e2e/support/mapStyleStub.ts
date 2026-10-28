@@ -26,11 +26,13 @@ const isTileOf = (tiles: string, url: string): boolean =>
   new URL(url).origin === new URL(tiles.replace(/\{[xyz]\}/g, "0")).origin;
 
 /**
- * Keeps the suite off the internet: the configured map styles (GET /api/config)
- * are answered with a plain background, satellite imagery with plain tiles,
- * and every other request to another origin is refused — an unexpected
- * third-party request then fails the test through the console guard. The
- * app's own data layers still render on the map.
+ * Keeps the suite off the internet: the suite's server draws its own basemap
+ * (the Monaco fixture's, from its own origin, which this leaves alone); map
+ * styles the config names on another server — the external styles of a
+ * server without a basemap — are answered with a plain background, satellite
+ * imagery with plain tiles, and every other request to another origin is
+ * refused — an unexpected third-party request then fails the test through
+ * the console guard. The app's own data layers still render on the map.
  */
 export async function stubMapStyles(context: BrowserContext, appOrigin: string): Promise<void> {
   const response = await context.request.get("/api/config");

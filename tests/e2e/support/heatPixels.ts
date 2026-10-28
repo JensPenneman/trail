@@ -2,10 +2,11 @@ import type { Page } from "@playwright/test";
 
 /**
  * How many pixels of the map wear the heatmap's colours: what WebGL drew,
- * not what the page handed to MapLibre. The suite's map styles are a plain
- * grey ground (mapStyleStub), and the Heat view draws nothing else, so a pink
- * or purple pixel — red and blue above green — is a heatmap square. The
- * screenshot is decoded in a blank page of the same browser.
+ * not what the page handed to MapLibre. The suite's basemap has tiles of
+ * Monaco only, so where the tests' points are the map is the style's plain
+ * ground, and the Heat view draws nothing else there: a pink or purple pixel
+ * — red and blue above green — is a heatmap square. The screenshot is
+ * decoded in a blank page of the same browser.
  */
 export async function heatPixels(page: Page): Promise<number> {
   const png = await page.locator(".maplibregl-canvas").screenshot();
