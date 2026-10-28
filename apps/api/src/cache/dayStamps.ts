@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import type { CacheStamp, DayStamp } from "@trail/contracts/cacheStamp";
 import type { DayStat } from "@trail/contracts/stats";
 import { sql } from "drizzle-orm";
-import type { Executor } from "../db/database";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { Database } from "../db/database";
 import { toIso } from "../db/toIso";
 import { tripTouches } from "../history/tripTouches";
 import { visitTouches } from "../history/visitTouches";
@@ -123,8 +124,14 @@ export function localDaysOf(range: { from: Date; to: Date }, timezone: string): 
   return days;
 }
 
-const dayFrom = sql.raw("d.day_from");
-const dayTo = sql.raw("d.day_to");
+const dialect = new PgDialect();
+/**
+ * The statement is prepared by name on each connection — its text is the same
+ * every time, only the parameters change — so it is parsed once per
+ * connection rather than with every request: a third of its cost, and the
+ * stamps are most of what a 304 reads.
+ */
+const statementName = "trail_day_stamps_1";
 
 /**
  * The stamps of `dates` (local days in `timezone`) of `deviceIds`, by date then
@@ -138,7 +145,7 @@ const dayTo = sql.raw("d.day_to");
  * round, which would let a copy pass for newer than it is.
  */
 export async function loadStampedDays(
-  db: Executor,
+  db: Database,
   input: { deviceIds: readonly string[]; timezone: string; dates: readonly string[] },
 ): Promise<StampedDay[]> {
   const { deviceIds, timezone, dates } = input;
@@ -150,82 +157,90 @@ export async function loadStampedDays(
   // The span of the asked days as instants: what each table is scanned for.
   const spanFrom = sql`(${firstDate}::date::timestamp AT TIME ZONE ${timezone})`;
   const spanTo = sql`((${lastDate}::date + 1)::timestamp AT TIME ZONE ${timezone})`;
-  // The local days a row from `fromAt` to `toAt` may touch, within the span; the rule decides.
+  // The local days a row from `fromAt` to `toAt` may touch, within the span (`c.day`, a local
+  // midnight); the row's own rule then decides, between `dayFrom` and `dayTo`.
   const candidateDays = (fromAt: string, toAt: string) => sql`generate_series(
       greatest((${sql.raw(fromAt)} AT TIME ZONE ${timezone})::date, ${firstDate}::date)::timestamp,
       least((${sql.raw(toAt)} AT TIME ZONE ${timezone})::date, ${lastDate}::date)::timestamp,
       interval '1 day'
     )`;
-  const result = await db.execute<DayStampRow>(sql`
+  const dayFrom = sql`(c.day AT TIME ZONE ${timezone})`;
+  const dayTo = sql`((c.day + interval '1 day') AT TIME ZONE ${timezone})`;
+  // One row per table row and day it counts on, every column of the others null: a union and
+  // one aggregate rather than a join of six, which took Postgres longer to plan than to run.
+  const statement = dialect.sqlToQuery(sql`
     WITH days AS (
-      SELECT device.id AS device_id, day.date,
-        day.date::timestamp AT TIME ZONE ${timezone} AS day_from,
-        (day.date + 1)::timestamp AT TIME ZONE ${timezone} AS day_to
+      SELECT device.id AS device_id, day.date
       FROM unnest(${ids}) AS device(id)
       CROSS JOIN unnest(${sql.param(sorted)}::date[]) AS day(date)
     ),
-    visit_days AS (
-      SELECT d.device_id, d.date, count(*)::int AS n,
-        sum(extract(epoch FROM v.recorded_at))::text AS at
+    facts (device_id, date, points, distance_m, first_at, last_at, points_total, last_recorded_at,
+      visit, visit_at, trip, trip_at, segment, computed_at, version, start_at, end_at, pending) AS (
+      SELECT ds.device_id, ds.date, ds.points, ds.distance_m, ds.first_at::text, ds.last_at::text,
+        NULL::text, NULL::text, NULL::int, NULL::numeric, NULL::int, NULL::numeric, NULL::int,
+        NULL::timestamptz, NULL::int, NULL::numeric, NULL::numeric, NULL::boolean
+      FROM daily_stats ds
+      WHERE ds.device_id = ANY(${ids}) AND ds.date BETWEEN ${firstDate}::date AND ${lastDate}::date
+      UNION ALL
+      SELECT device.id, (now() AT TIME ZONE ${timezone})::date, NULL, NULL, NULL, NULL,
+        device.points_total::text, device.last_recorded_at::text, NULL, NULL, NULL, NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL
+      FROM devices device
+      WHERE device.id = ANY(${ids})
+      UNION ALL
+      SELECT v.device_id, c.day::date, NULL, NULL, NULL, NULL, NULL, NULL,
+        1, extract(epoch FROM v.recorded_at), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
       FROM visits v
       CROSS JOIN LATERAL ${candidateDays(
         "least(v.recorded_at, v.arrived_at)",
         "greatest(v.recorded_at, v.departed_at)",
       )} AS c(day)
-      JOIN days d ON d.device_id = v.device_id AND d.date = c.day::date
-        AND ${visitTouches("v", dayFrom, dayTo)}
       WHERE v.device_id = ANY(${ids}) AND ${visitTouches("v", spanFrom, spanTo)}
-      GROUP BY d.device_id, d.date
-    ),
-    trip_days AS (
-      SELECT d.device_id, d.date, count(*)::int AS n,
-        sum(extract(epoch FROM t.started_at))::text AS at
+        AND ${visitTouches("v", dayFrom, dayTo)}
+      UNION ALL
+      SELECT t.device_id, c.day::date, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        1, extract(epoch FROM t.started_at), NULL, NULL, NULL, NULL, NULL, NULL
       FROM trips t
       CROSS JOIN LATERAL ${candidateDays("t.started_at", "t.ended_at")} AS c(day)
-      JOIN days d ON d.device_id = t.device_id AND d.date = c.day::date
-        AND ${tripTouches("t", dayFrom, dayTo)}
       WHERE t.device_id = ANY(${ids}) AND ${tripTouches("t", spanFrom, spanTo)}
-      GROUP BY d.device_id, d.date
-    ),
-    segment_days AS (
-      SELECT d.device_id, d.date, count(*)::int AS n, max(s.computed_at)::text AS computed_at,
-        min(s.version)::int AS min_version, max(s.version)::int AS max_version,
-        sum(extract(epoch FROM s.started_at))::text AS starts,
-        sum(extract(epoch FROM s.ended_at))::text AS ends
+        AND ${tripTouches("t", dayFrom, dayTo)}
+      UNION ALL
+      SELECT s.device_id, c.day::date, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        1, s.computed_at, s.version, extract(epoch FROM s.started_at), extract(epoch FROM s.ended_at),
+        NULL
       FROM segments s
       CROSS JOIN LATERAL ${candidateDays("s.started_at", "s.ended_at")} AS c(day)
-      JOIN days d ON d.device_id = s.device_id AND d.date = c.day::date
-        AND ${segmentOverlaps("s", dayFrom, dayTo)}
       WHERE s.device_id = ANY(${ids}) AND ${segmentOverlaps("s", spanFrom, spanTo)}
-      GROUP BY d.device_id, d.date
-    ),
-    pending_days AS (
-      SELECT DISTINCT d.device_id, d.date
+        AND ${segmentOverlaps("s", dayFrom, dayTo)}
+      UNION ALL
+      SELECT q.device_id, c.day::date, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, true
       FROM processing_queue q
       CROSS JOIN LATERAL ${candidateDays("q.from_at", "q.to_at")} AS c(day)
-      JOIN days d ON d.device_id = q.device_id AND d.date = c.day::date
-        AND q.from_at < d.day_to AND q.to_at > d.day_from
       WHERE q.device_id = ANY(${ids}) AND q.missing_tiles IS NULL
         AND q.from_at < ${spanTo} AND q.to_at > ${spanFrom}
+        AND q.from_at < ${dayTo} AND q.to_at > ${dayFrom}
     )
     SELECT d.device_id, d.date::text AS date,
-      ds.points, ds.distance_m, ds.first_at::text AS first_at, ds.last_at::text AS last_at,
-      device.points_total::text AS points_total, device.last_recorded_at::text AS last_recorded_at,
-      coalesce(vd.n, 0) AS visits, vd.at AS visits_at,
-      coalesce(td.n, 0) AS trips, td.at AS trips_at,
-      coalesce(sd.n, 0) AS segments, sd.computed_at, sd.min_version, sd.max_version, sd.starts,
-      sd.ends,
-      pd.device_id IS NOT NULL AS pending
+      max(f.points) AS points, max(f.distance_m) AS distance_m, max(f.first_at) AS first_at,
+      max(f.last_at) AS last_at, max(f.points_total) AS points_total,
+      max(f.last_recorded_at) AS last_recorded_at,
+      coalesce(sum(f.visit), 0)::int AS visits, sum(f.visit_at)::text AS visits_at,
+      coalesce(sum(f.trip), 0)::int AS trips, sum(f.trip_at)::text AS trips_at,
+      coalesce(sum(f.segment), 0)::int AS segments, max(f.computed_at)::text AS computed_at,
+      min(f.version) AS min_version, max(f.version) AS max_version,
+      sum(f.start_at)::text AS starts, sum(f.end_at)::text AS ends,
+      coalesce(bool_or(f.pending), false) AS pending
     FROM days d
-    LEFT JOIN daily_stats ds ON ds.device_id = d.device_id AND ds.date = d.date
-    LEFT JOIN devices device ON device.id = d.device_id
-      AND d.date = (now() AT TIME ZONE ${timezone})::date
-    LEFT JOIN visit_days vd ON vd.device_id = d.device_id AND vd.date = d.date
-    LEFT JOIN trip_days td ON td.device_id = d.device_id AND td.date = d.date
-    LEFT JOIN segment_days sd ON sd.device_id = d.device_id AND sd.date = d.date
-    LEFT JOIN pending_days pd ON pd.device_id = d.device_id AND pd.date = d.date
+    LEFT JOIN facts f ON f.device_id = d.device_id AND f.date = d.date
+    GROUP BY d.device_id, d.date
     ORDER BY d.date, d.device_id
   `);
+  const result = await db.$client.query<DayStampRow>({
+    name: statementName,
+    text: statement.sql,
+    values: statement.params,
+  });
   return result.rows.map((row) => ({
     ...stampDay(row, timezone),
     stat:

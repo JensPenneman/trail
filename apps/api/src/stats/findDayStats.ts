@@ -1,6 +1,6 @@
 import type { DayStat } from "@trail/contracts/stats";
 import { loadStampedDays } from "../cache/dayStamps";
-import type { Executor } from "../db/database";
+import type { Database } from "../db/database";
 import type { DeviceAccess } from "../devices/deviceAccess";
 import { resolveDeviceIds } from "../devices/resolveDeviceIds";
 import { addDays } from "../lib/calendarDate";
@@ -13,7 +13,7 @@ import { addDays } from "../lib/calendarDate";
  * so they describe the same instant (docs/architecture.md §8.9).
  */
 export async function findDayStats(
-  db: Executor,
+  db: Database,
   access: DeviceAccess & { user: { timezone: string } },
   query: { from: string; to: string; deviceIds?: readonly string[] | undefined },
 ): Promise<DayStat[]> {

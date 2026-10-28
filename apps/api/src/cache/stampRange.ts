@@ -1,4 +1,4 @@
-import type { Executor } from "../db/database";
+import type { Database } from "../db/database";
 import type { DeviceAccess } from "../devices/deviceAccess";
 import { resolveDeviceIds } from "../devices/resolveDeviceIds";
 import { loadStampedDays, localDaysOf, type StampedDay } from "./dayStamps";
@@ -10,7 +10,7 @@ import { loadStampedDays, localDaysOf, type StampedDay } from "./dayStamps";
  * data would be). Called before the data is read (docs/architecture.md §8.9).
  */
 export async function stampRange(
-  db: Executor,
+  db: Database,
   access: DeviceAccess & { user: { timezone: string } },
   range: { deviceIds?: readonly string[] | undefined; from: Date; to: Date },
 ): Promise<{ deviceIds: string[]; days: StampedDay[] }> {
