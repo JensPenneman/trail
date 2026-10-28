@@ -162,25 +162,48 @@ trap cleanup EXIT
 # curl for Geofabrik: HTTPS only, no redirect followed
 fetch=(curl --proto '=https' --tlsv1.2 -fsS -L --max-redirs 0 --retry 3 --retry-delay 10)
 
-# The newest extract of the region: Geofabrik answers *-latest.osm.pbf with a
-# redirect to the dated file of the day (europe/belgium-261027.osm.pbf), whose
-# .md5 next to it cannot change while the download runs.
+# yymmdd of N days ago, in UTC (GNU date, then BSD date)
+days_ago() {
+  local then=$(($(date +%s) - $1 * 86400))
+  date -u -d "@$then" +%y%m%d 2>/dev/null || date -u -r "$then" +%y%m%d
+}
+
+# The newest extract of the region, as a dated file on Geofabrik's own server
+# (europe/belgium-261027.osm.pbf), whose .md5 next to it cannot change while
+# the download runs. Geofabrik answers *-latest.osm.pbf with a redirect to that
+# file, except for its biggest extracts, which it sends to a mirror (Germany:
+# ftp5.gwdg.de); those are taken from Geofabrik by their date instead, so
+# nothing is downloaded from a host other than download.geofabrik.de.
 resolve_extract() {
-  local latest=$geofabrik/$geofabrik_path-latest.osm.pbf answer code location
+  local latest=$geofabrik/$geofabrik_path-latest.osm.pbf answer code location day candidate
   answer=$(curl --proto '=https' --tlsv1.2 -sS -I -o /dev/null -w '%{http_code} %{redirect_url}' "$latest") ||
     die "Geofabrik did not answer for $latest"
   code=${answer%% *}
   location=${answer#* }
   case $code in
-    200) printf '%s\n' "$latest" ;;
+    200)
+      printf '%s\n' "$latest"
+      return
+      ;;
     301 | 302 | 303 | 307 | 308)
       case $location in
-        "$geofabrik/$geofabrik_path-"[0-9][0-9][0-9][0-9][0-9][0-9].osm.pbf) printf '%s\n' "$location" ;;
-        *) die "Geofabrik sent $latest to $location, which is not one of its dated extracts" ;;
+        "$geofabrik/$geofabrik_path-"[0-9][0-9][0-9][0-9][0-9][0-9].osm.pbf)
+          printf '%s\n' "$location"
+          return
+          ;;
       esac
       ;;
     *) die "Geofabrik answered $code for $latest" ;;
   esac
+  # an extract carries the date of its data and appears early the next day
+  for day in 1 2 3; do
+    candidate=$geofabrik/$geofabrik_path-$(days_ago "$day").osm.pbf
+    if [ "$(curl --proto '=https' --tlsv1.2 -sS -I -o /dev/null -w '%{http_code}' "$candidate")" = 200 ]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+  die "Geofabrik sent $latest to $location and has no dated extract of the last three days"
 }
 
 built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -441,9 +464,12 @@ jq -R -s --arg region "$region" --arg os "$(uname -sm)" --argjson cpus "$cpus" -
   ' "$work/build-stats.json"
   if [ -f "$logs/planetiler.log" ]; then
     printf '\n<details><summary>Planetiler</summary>\n\n```\n'
-    # the data errors, stage timings and sizes Planetiler prints at the end
-    awk 'index($0, "- ----------------------------------------") { n++ } /Acknowledgments/ { exit } n >= 1' \
-      "$logs/planetiler.log" | sed 's/^[0-9:]* [A-Z]* \[[^]]*\] - //; s/^[0-9:]* [A-Z]* - //'
+    # the data errors, stage timings and sizes Planetiler prints at the end,
+    # without the terminal codes its logger writes even with --color=false
+    esc=$(printf '\033')
+    sed "s/${esc}\[[0-9;]*m//g" "$logs/planetiler.log" |
+      awk 'index($0, "- ----------------------------------------") { n++ } /Acknowledgments/ { exit } n >= 1' |
+      sed 's/^[0-9:]* [A-Z]* \[[^]]*\] - //; s/^[0-9:]* [A-Z]* - //'
     printf '```\n\n</details>\n'
   fi
 } >"$work/summary.md"
