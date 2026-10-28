@@ -147,3 +147,23 @@ updates:
       compose:
         patterns: ["*"]
     open-pull-requests-limit: 3
+
+  # tools/load/compose.load.yaml: k6, the load harness's runner, pinned by
+  # digest. A release can change what the scenarios may use, so its update
+  # waits for a person who runs `npm run load -- fleet-10` on it first
+  # (docs/perf/README.md); dependabot-auto-merge.yml leaves the group alone.
+  - package-ecosystem: docker-compose
+    directory: /tools/load
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Brussels
+    commit-message:
+      prefix: "chore(docker)"
+    cooldown:
+      default-days: 14
+    groups:
+      k6:
+        patterns: ["grafana/k6"]
+    open-pull-requests-limit: 1

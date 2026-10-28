@@ -1,0 +1,65 @@
+# The Mac's capped stack for load tests (docs/perf/README.md): the production
+# Compose file with the node's limits, plus k6 in a container of its own on the
+# same network, no edge. tools/load/run.mjs starts it as project trail-load,
+#
+#   docker compose --project-name trail-load --env-file <run>/compose.env \
+#     --file deploy/compose.yaml --file tools/load/compose.load.yaml up --detach --wait app db
+#
+# and removes it, its volume included, with `down --volumes`. Paths are relative
+# to deploy/, the folder of the first file.
+
+services:
+  app:
+    # The image of the commit under test, built by run.mjs (docker build -t trail-load:<commit>)
+    image: ${TRAIL_IMAGE:?run.mjs sets TRAIL_IMAGE}
+    pull_policy: never
+    # Named like the development containers: the Mac runs at most two Trail stacks at a time, and
+    # their count (docker ps --format '{{.Names}}' | grep -c '^trail-.*-dev-1$') must see this one.
+    # The fixed name also keeps a second load stack from starting beside it.
+    container_name: trail-load-dev-1
+    # The node's limits (docs/design/capacity.md §1): one CPU and 1 GiB (mem_limit as in production)
+    cpus: 1
+    ports:
+      # The SSE probe on the host reaches the app here, nobody else
+      - "127.0.0.1:${TRAIL_LOAD_PORT:-18787}:8080"
+    environment:
+      PUBLIC_URL: http://localhost:${TRAIL_LOAD_PORT:-18787}
+      # `trail load-fleet` refuses without it; no Launchway here, so not production either
+      LOAD_TEST: "true"
+      # Never the public Overpass instance from a load test: no map data, the mapped level
+      # degrades to averaged (until the map-data stream's extract lands)
+      PROCESSING_OVERPASS_URL: ""
+      LOG_LEVEL: info
+
+  db:
+    # 2 GiB as in production; two CPUs, the plan's (§4.6), so that the Mac keeps room for the rest
+    cpus: 2
+    # pg_stat_statements and I/O timing for the report; production gets them with §4.6
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=top
+      - -c
+      - track_io_timing=on
+
+  k6:
+    # Grafana k6 (AGPL-3.0) from its official image, pinned by digest, never vendored
+    image: grafana/k6:2.2.0@sha256:9bd01d6941fca969cb61bb57d2da5ee9b385fe2aa8881df3798c196564d6ace6
+    profiles: ["k6"]
+    networks: [default]
+    environment:
+      LOAD_CONFIG: /out/config.json
+      # k6 reports anonymous usage to Grafana unless told not to
+      K6_NO_USAGE_REPORT: "true"
+    volumes:
+      - ../tools/load:/load:ro
+      - ${TRAILLOAD_RUN_DIR:?run.mjs sets TRAILLOAD_RUN_DIR}:/out
+    cpus: 2
+    mem_limit: 1g
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
