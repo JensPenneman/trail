@@ -604,9 +604,11 @@ downloads; the database holds the imported region's tables besides.
 | `belgium,netherlands,luxembourg` | 1.5 GB | 3.0 GB | 4.5 GB |
 | `europe` (`MAP_DATA_MAX_GB=40`) | about 31 GB | about 62 GB | about 93 GB |
 
-`docker system df -v | grep trail-map` shows the volume's size. A build
-larger than `MAP_DATA_MAX_GB` (10) or than the free space is refused before
-anything is downloaded.
+`trail map status` ends with what the builds take on the volume (a rebuild
+of the same extract links the files it shares with the build before it, so
+those count once); `docker system df -v | grep trail-map` shows the
+volume's size as Docker sees it. A build larger than `MAP_DATA_MAX_GB` (10)
+or than the free space is refused before anything is downloaded.
 
 **Changing the regions.** Set `MAP_DATA_REGIONS` in Launchway (comma-separated
 names of `scripts/mapdata/regions.json`; empty: none) and redeploy: a new
@@ -631,12 +633,17 @@ gh attestation verify oci://ghcr.io/jenspenneman/trail-mapdata@<digest> -R JensP
 
 `--source-ref` insists on a build of `main`, which is where every region but
 the test region comes from; the attestation names the workflow and the commit.
+The server itself checks only that every byte is what the registry's
+manifest says (integrity), not who built it: this command is the only check
+of a build's origin for now.
 
 **The workflow.** Actions › Map data. It runs on the 1st of every month at
 04:00 UTC; `gh workflow run mapdata.yml -f region=belgium` builds and
 publishes now (from `main`; from another branch it publishes Monaco only, the
-test region, and builds the others without publishing them). Each run keeps
-the newest three builds of a region in the package. Should its last step warn
+test region, and builds the others without publishing them). One build and
+one publication of a region run at a time: a second run waits, a third
+cancels the waiting one. Each run keeps the newest three builds of a region
+in the package. Should its last step warn
 that old builds could not be deleted, the package's settings (Manage Actions
 access) must give the repository the Admin role.
 

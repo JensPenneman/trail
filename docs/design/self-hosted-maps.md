@@ -84,7 +84,7 @@ date, which the artefact's manifest records.
 | `belgium` | 0.70 GB | 1.53 M | 10.8 M | 13 203 |
 | `netherlands` | 1.41 GB | 2.86 M | 18.1 M | 25 007 |
 | `benelux` (the three merged) | *2.15 GB* | *4.54 M* | *30.0 M* | 39 445 |
-| `germany` | 4.87 GB | 16.6 M | *about 105 M* | 165 776 |
+| `germany` | 4.87 GB | 16.6 M | 111 M | 165 776 |
 | `france` | 5.11 GB | 12.6 M | 123 M | 276 286 |
 | `europe` | 35.3 GB | *80–100 M* | *650–800 M* | — |
 
@@ -479,7 +479,7 @@ per job), measured in task 0 (§10):
 | `belgium` | 6 min 47 s (7 min 49 s with the month's first download of the sources) | 3 GB / 2.0 GB | 2.8 GB | 427 MB |
 | `netherlands` | 7 min 1 s | 4 GB / 2.3 GB | 5.1 GB | 679 MB |
 | `benelux` (`osmium merge` first) | *15 min* | *4–5 GB* | *9 GB* | *1.14 GB* |
-| `germany` | cancelled after 36 min at the job's first limit of 2 h, 44 % of the tiles written (*about 55 min*) | 8 GB / 4.1 GB | at least 19.4 GB | *about 3 GB* |
+| `germany` | 23 min 55 s (task 2's build; the first was cancelled at the job's first limit of 2 h) | 8 GB / 3.7 GB | 19.4 GB | 3.13 GB |
 | `france` | 41 min 43 s | 8 GB / 4.2 GB | 20.6 GB | 3.47 GB |
 | `europe` | not on the runner | | | *about 22 GB* |
 
@@ -488,7 +488,7 @@ polygons, then the passes over the OSM data and the writing of the tiles:
 2 min 19 s and 3 min 43 s for Belgium, 2 min 21 s and 4 min 2 s for the
 Netherlands, the same time for an extract twice the size, so the map's
 detail counts more than the file's size; France takes 18 min and 21 min,
-Germany would have taken about 55 min in all. The basemap is half to three
+Germany takes 24 min in all. The basemap is half to three
 quarters of the extract's size (Belgium 427 MB for 0.70 GB, France 3.47 GB
 for 5.11 GB); the profile alone needs about 1.1 GB of heap (§10.2).
 *Italics* are extrapolated: Benelux from its three parts, Europe from the
@@ -653,20 +653,28 @@ and on dispatch with a region input, one job per region of a matrix read
 from `scripts/mapdata/regions.json` (`monaco`, `luxembourg`, `belgium`,
 `netherlands`, `germany`, `france`, `world`; `benelux` needs the
 `osmium merge` of task 2; the node's regions must be in it or come from a
-hand build). Its first version, from task 0, runs on dispatch, and on
-Monaco in pull requests that change the pipeline; it keeps what it builds
-as artefacts of the run for 14 days. Each job, on `ubuntu-24.04` (named
-rather than `ubuntu-latest`, so that the `osmium` package the manifests
-record changes on purpose):
+hand build). Since task 2 it runs on the 1st of every month and on
+dispatch (`region`: names or `all`; `extract`: a dated Geofabrik extract),
+and on Monaco in pull requests that change the pipeline; each region's
+build hands its artefact to the publishing job as an artefact of the run
+(7 days). Each build job, on `ubuntu-24.04` (named rather than
+`ubuntu-latest`, so that the `osmium` package the manifests record changes
+on purpose):
 
-1. downloads the region's PBF and `.poly` from Geofabrik (`curl` with a
-   pinned host, no redirects off it), checks the `.md5`, reads the extract's
-   timestamp with `osmium fileinfo -e`. It takes the dated file of the
+1. downloads the region's PBF and `.poly` (`curl`, HTTPS, no redirect
+   followed), checks the `.md5`, and reads the extract's timestamp with
+   `osmium fileinfo -e`, whose UTC day is the build id (`yyyymmdd`; an
+   extract without a timestamp is refused). It takes the dated file of the
    newest extract (`belgium-261027.osm.pbf`), whose `.md5` cannot change
-   during the download: `-latest` redirects to it, except for Germany and
-   Europe, which Geofabrik sends to a mirror and serves no `-latest` `.md5`
-   for, so the script looks for the dated file of the last three days on
-   `download.geofabrik.de` itself;
+   during the download: `-latest` redirects to it on `download.geofabrik.de`.
+   Germany and Europe Geofabrik sends to one mirror instead,
+   `ftp5.gwdg.de` (pinned in the script), which serves their `-latest` file
+   only and no checksum: the script downloads that file from the mirror and
+   checks it against the `.md5` of the dated file on Geofabrik with the same
+   size and `Last-Modified` (the mirror's copy of it; the last four days are
+   tried), and once more when the mirror rolled over to the next day during
+   the download. `--extract yymmdd` takes a dated file from Geofabrik
+   instead;
 2. runs the `osmium` steps of §2.2 (Ubuntu's `osmium-tool` package);
 3. runs Planetiler 0.10.2's release jar (its SHA-256 pinned in `build.sh`)
    on the runner image's Temurin 21 with `--osm_path` and the paths of its
@@ -674,13 +682,19 @@ record changes on purpose):
    itself: Natural Earth's package and the lake centrelines' release asset
    pinned by SHA-256, the water polygons (regenerated upstream every day)
    recorded in the manifest only; Planetiler downloads nothing;
-4. writes `manifest.json` and `SHA256SUMS`; from task 2 on it pushes the
-   artefact (§4.2) with `oras push` (ORAS 1.3, Apache-2.0), then signs it
-   with `actions/attest-build-provenance`, as the image gets (§13.2);
-5. (task 2) deletes versions older than the last three of the region.
+4. writes `manifest.json` (the build id, and the size and SHA-256 of every
+   file and of every chunk of a file over 1 GiB, cut by `chunks.sh`) and
+   `SHA256SUMS`; the publishing job pushes the artefact (§4.2) with
+   `scripts/mapdata/publish.sh` and `oras push` (ORAS 1.3.6, Apache-2.0, its
+   archive pinned by SHA-256), then attests it with `actions/attest` (build
+   provenance), as the image is (§13.2);
+5. the publishing job deletes the region's builds beyond the newest three,
+   with their attestations (`scripts/mapdata/retain.sh`).
 
-One build per region runs at a time (a `concurrency` group per region). The
-publishing of task 2 lives in a job of its own that never runs for
+One build of a region runs at a time, and one publication of a region (a
+`concurrency` group each, which cancels nothing in progress: one runs, the
+next waits, and a third run of the same region cancels the waiting one). The
+publishing lives in a job of its own that never runs for
 `pull_request` (dispatch and the schedule only), and only that job gets
 `packages: write`, `id-token: write` and `attestations: write`; the build
 jobs keep the read-only token, so a pull request, a fork's included, can
@@ -689,20 +703,23 @@ dispatch) publishes every region it built; a dispatch on another branch
 publishes only the test region (`"fixture": true` in `regions.json`:
 Monaco) and builds the others without publishing them, since `<region>` is
 the tag every server follows and a branch nobody reviewed must not move it
-(task 2's choice, like the image's `latest`, which only `main` gets).
+(task 2's choice, like the image's `latest`, which only `main` gets). That
+rule guards against mistakes, not against a collaborator: the workflow and
+`regions.json` are read from the dispatched ref, so a branch can change
+both. The identity that can be enforced is the attestation's signer,
+`.github/workflows/mapdata.yml` at `refs/heads/main`, which servers do not
+verify yet (§4.3).
 
 Budget, measured (§10), whole jobs on the runner: Monaco 1 min, Luxembourg
-2½ min, Belgium 15 min, the Netherlands 18 min, France 1 h 45 min; Germany
-did not finish within the job's first limit of 2 h (70 min of download,
-10 min of osmium, Planetiler cancelled at 44 % of the tiles after 36 min:
-about 2 h 20 min in all), so the limit is now 4 h. Benelux *about 35 min*
-(its parts, extrapolated). The download from Geofabrik is a third to a
-half of each job: 2–3 MB/s for Belgium and the Netherlands, 1.7 and
-1.2 MB/s for France and Germany. Geofabrik sends its biggest extracts to a
-mirror (`ftp5.gwdg.de` for Germany) and the script takes the dated file from
-Geofabrik itself (step 1), which may be why; task 2 should try the mirror,
-checked against Geofabrik's `.md5`. All inside the runner's disk (84 GB
-free; France left 73 GB) and the 6 h limit. Europe (35 GB) is not built
+2½ min, Belgium 15 min, the Netherlands 18 min, France 1 h 45 min, Germany
+34 min. Germany's first build, which took its dated file from Geofabrik
+itself, ran into the job's first limit of 2 h (70 min of download alone);
+from the mirror (step 1) the 4.87 GB took 28 s, and the job's limit of
+4 h stays as a margin. Benelux *about 35 min* (its parts, extrapolated).
+The download from Geofabrik's own server is a third to a half of the other
+jobs: 2–3 MB/s for Belgium and the Netherlands, 1.7 MB/s for France. All
+inside the runner's disk (84 GB free; France left 73 GB, Germany 73 GB)
+and the 6 h limit. Europe (35 GB) is not built
 here: too long and too much disk (§3.1). `scripts/mapdata/build.sh` is the
 same script the workflow runs, for a machine with `osmium-tool`, Java and
 about 200 GB free (the extract, Planetiler's 140 GB of temporary files and
@@ -744,8 +761,9 @@ not used. Public packages cost nothing in storage or bandwidth.
 
 ### 4.3 How the node fetches and verifies
 
-The worker's registry client (`apps/api/src/mapdata/registry.ts`, about
-150 lines, `fetch` only): an anonymous token from `ghcr.io/token`, the
+The worker's registry client (`apps/api/src/mapdata/registry.ts` and the
+seven modules beside it that check and pull a build, about 1 500 lines with
+their comments, `fetch` only): an anonymous token from `ghcr.io/token`, the
 manifest by tag with the OCI media type, each blob by digest — GHCR
 answers blob requests with a redirect to
 `pkg-containers.githubusercontent.com`, the only redirect it follows —
@@ -768,7 +786,14 @@ refuses a manifest over 256 KB, layers that are not the artefact's known
 files (whole or in consecutive chunks; no name from a manifest becomes a
 path) and more bytes than `MAP_DATA_MAX_GB` or the free space. With the
 loader's tables to ask, the volume keeps the build to serve and the one
-served before it; without, its two newest.
+served before it; without, its two newest. The node verifies integrity —
+that every byte is what the manifest the registry served says, by digest —
+and not provenance: it does not fetch or check the Sigstore bundle of the
+build's attestation, so `gh attestation verify` by an operator is the only
+authenticity check today, and anyone who can push to the package can move
+`<region>` for every server. Verifying the bundle in the worker (the
+signer `.github/workflows/mapdata.yml@refs/heads/main`, the subject the
+build's digest) is a task of its own.
 Bandwidth, from the measured artefacts (§10): Belgium 0.56 GB a month and
 the world overview's 5 MB, Benelux 1.5 GB (Belgium, the Netherlands
 0.90 GB and Luxembourg 0.05 GB), Europe *about 31 GB* (extrapolated); a
@@ -1054,7 +1079,8 @@ fixes first, so both lanes start after task 0.
   more than the node's 181 GB free; with partitions per build and the
   previous build deleted before a download, about 150 GB at the peak and
   107 GB steady. The first import takes 40–50 min, a refresh as designed
-  2½ h, and Geofabrik's download alone about 5 h from a runner; the
+  2½ h, and the download minutes from Geofabrik's mirror (Germany's
+  4.87 GB took 28 s, §10.2) rather than the 5 h from Geofabrik itself; the
   basemap cannot be built on a GitHub runner (about 5 h and 140 GB of
   temporary files). Recommendation: not now; and if Europe is wanted, build
   it by hand once a quarter and consider the Protomaps extract for its
@@ -1145,7 +1171,7 @@ measurement can be compared with them.
 | `luxembourg` | 47.8 MB | 612.0 k | 143.5 k | 1.15 M | 5 044 | 14.2 MB | 145 KB | 957 |
 | `belgium` | 698 MB | 11.48 M | 1.53 M | 10.75 M | 62 380 | 134 MB | 1.6 MB | 13 203 |
 | `netherlands` | 1.41 GB | 18.71 M | 2.86 M | 18.10 M | 44 530 | 217 MB | 1.1 MB | 25 007 |
-| `germany` (cancelled, §10.2) | 4.87 GB | 71.43 M | 16.63 M | *about 105 M* | — | — | — | 165 776 |
+| `germany` (task 2's build, §10.2) | 4.87 GB | 71.43 M | 16.63 M | 111.39 M | 428 790 | 1.38 GB | 12.0 MB | 165 776 |
 | `france` | 5.11 GB | 73.61 M | 12.58 M | 123.25 M | 260 386 | 1.44 GB | 7.0 MB | 276 286 |
 | `benelux` (*its parts*) | *2.15 GB* | *30.80 M* | *4.54 M* | *30.01 M* | *111 954* | *365 MB* | *2.8 MB* | 39 445 |
 | `europe` (*extrapolated*) | 35.3 GB | — | *80–100 M* | *650–800 M* | *1.8 M* | *8–10 GB* | *50 MB* | — |
@@ -1156,9 +1182,9 @@ are most of the rest; the estimate was 20 %), with 6–7 node references a way
 in Belgium and the Netherlands, 10 in France. Stops are mostly bus stops
 (Belgium: 60 014 of 62 380; 49 aerodromes, 43 of them areas). Covered tiles
 follow §2.5 on Geofabrik's polygons, which include territorial waters.
-Germany's build was cancelled after osmium had filtered its ways (16.63 M
-kept, 87.9 M distinct nodes) but before the files and counts were written,
-so its node references are estimated from its distinct nodes. *Italics* are
+Germany's first build was cancelled before its files and counts were
+written (§10.2); its row is task 2's build of the same extract (run
+40679475825), 87.9 M distinct nodes for its 111 M references. *Italics* are
 extrapolated: Benelux is the sum of its three parts (its own extract would
 hold the ways on their borders once), Europe scales the measured countries
 by its 35.3 GB extract, between France's 2.5 M kept ways a gigabyte and
@@ -1172,14 +1198,18 @@ Germany's 3.4 M.
 | `luxembourg` | 2 min 34 s | 29 s | 7 s | 1 min 4 s | `-Xmx2g`, 1.4 GB in use, 2.1 GB resident | 0.8 GB | 36.1 MB |
 | `belgium` | 15 min | 5 min 18 s | 1 min 15 s | 7 min 49 s | `-Xmx3g`, 2.0 GB in use, 4.7 GB resident | 2.8 GB | 427 MB |
 | `netherlands` | 17 min | 7 min 58 s | 1 min 24 s | 7 min 1 s | `-Xmx4g`, 2.3 GB in use, 6.5 GB resident | 5.1 GB | 679 MB |
-| `germany` | cancelled at the 2 h limit | 70 min 34 s | 10 min 24 s | cancelled after 36 min, 44 % of the tiles written (*about 55 min*) | `-Xmx8g`, 4.1 GB in use | at least 19.4 GB | *about 3 GB* |
+| `germany` | 34 min (the first build: cancelled at the 2 h limit) | 28 s from the mirror (70 min 34 s from Geofabrik) | 6 min 38 s | 23 min 55 s | `-Xmx8g`, 3.7 GB in use, 9.2 GB resident | 19.4 GB | 3.13 GB |
 | `france` | 1 h 45 min | 50 min | 9 min 40 s | 41 min | `-Xmx8g`, 4.2 GB in use, 9.0 GB resident | 20.6 GB | 3.47 GB |
 | `world` | 1 min 48 s | 1 s | — | 1 min 18 s | `-Xmx3g`, 1.3 GB in use, 2.2 GB resident | 0.8 GB | 5.3 MB |
 
-The download is Geofabrik's, at 1.2–3 MB/s from the runner; osmium is the
-five steps of §2.2 together (`tags-filter` takes 2 GB whatever the region:
-17 s for Belgium, 2 min for France and Germany); Germany's job ran into the
-first version's limit of two hours, now four. Planetiler's time includes
+The download is Geofabrik's, at 1.2–3 MB/s from the runner, except
+Germany's from the mirror at about 175 MB/s (task 2's build, run
+40679475825, which publishes nothing from a branch); osmium is the five
+steps of §2.2 together (`tags-filter` takes 2 GB whatever the region: 17 s
+for Belgium, 1 min 19 s to 2 min for France and Germany); Germany's first
+job ran into the first version's limit of two hours, now four, and the
+build of task 2 wrote `ways.opl.gz` in 2 chunks and `basemap.pmtiles` in 3,
+an artefact of 4.5 GB. Planetiler's time includes
 reading Natural Earth and the water polygons (25–30 s, from the Actions
 cache; the first run of a month fetches them in about a minute) and, for
 Belgium, that first fetch. Its memory is the `-Xmx` given, the most heap in
@@ -1237,8 +1267,11 @@ reused the freed space. Monaco itself imports in 0.3 s.
    Geofabrik itself (§4.1). Downloads run at 1.2–3 MB/s from the runner,
    so the big countries' jobs are long: France 1 h 45 min (50 min of
    download), Germany cancelled at the first version's limit of 2 h
-   (70 min of download); the limit is now 4 h, and task 2 should try the
-   mirror (§4.1). Europe would spend about 5 h on its download alone.
+   (70 min of download); the limit is now 4 h. Task 2 takes Germany's and
+   Europe's file from the mirror, checked against the dated `.md5` on
+   Geofabrik: 28 s for Germany, whose job then took 34 min (§4.1); Europe's
+   35 GB would take minutes too, which leaves its Planetiler run as what
+   no runner can do.
 6. **osmium.** OPL carries way-node coordinates only with
    `locations_on_ways=true`; `tags-filter` with its referenced objects
    needs 1.3–2 GB of memory for any region; areas from `osmium export`

@@ -1997,8 +1997,10 @@ the image, so `docker compose exec app trail <command>`):
   under way
 - `map status` — each region's builds on the volume with their digests (to
   compare with the workflow's attestation, §13.2), when they were pulled,
-  the extract's time and whether the map tables hold them, and the regions on
-  the volume no longer configured; asks the registry nothing
+  the extract's time, whether the map tables hold them and how much of a
+  rebuild is linked from the build before it, the regions on the volume no
+  longer configured, and the volume's total with every file counted once;
+  asks the registry nothing
 - `help` / `--help`
 
 Every command applies pending migrations first (same advisory lock as the
@@ -2228,7 +2230,12 @@ manifest beside the build as `oci-manifest.json`, the map tables record the
 digest, and `trail map status` shows it, to compare with
 `gh attestation verify oci://ghcr.io/jenspenneman/trail-mapdata@<digest> -R
 JensPenneman/trail --source-ref refs/heads/main` (the attestation names the
-workflow, the ref and the commit).
+workflow, the ref and the commit). The server verifies integrity, not
+provenance: every byte it pulls matches the digests of the manifest the
+registry served, but it fetches no Sigstore bundle and checks no signer, so
+an operator's `gh attestation verify` is the only check of who built a
+build today, and anyone who can push to the package can move `<region>` for
+every server (verifying the bundle in the worker is a task of its own).
 
 Releases: release-please (`release-please-config.json`, `release-type: node`,
 `"draft": true`) keeps a release pull request open; `scripts/release.sh`
@@ -2925,12 +2932,17 @@ through `scripts/mapdata/publish.sh`, which checks the layers against the
 manifest before the push and the registry's manifest and tags after it,
 attests it as the image is attested, and runs `scripts/mapdata/retain.sh`,
 which deletes the region's builds beyond the newest three with their
-attestations (a failure there warns; the build is published). A run on
+attestations (a failure there warns; the build is published). Each group
+cancels nothing in progress: one build or publication of a region runs, the
+next waits, and a third run of the region cancels the waiting one. A run on
 `main` publishes every region it built; a run on another branch only the
 test region (`"fixture": true` in `regions.json`, Monaco), so that a branch
-nobody reviewed never moves a tag the servers follow. The builds keep the
-read-only token: a pull request, a fork's included, can build a region but
-never publish one.
+nobody reviewed does not move a tag the servers follow by mistake — a guard,
+not a control, since the workflow and `regions.json` come from the
+dispatched ref; the attestation names that ref, which is what
+`--source-ref refs/heads/main` checks (§13.2). The builds keep the read-only
+token: a pull request, a fork's included, can build a region but never
+publish one.
 
 **Branch rules of `main`.** The ruleset "main protection" requires a pull
 request (merge commits only) and, up to date with `main`, the status checks
