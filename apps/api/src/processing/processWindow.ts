@@ -55,8 +55,8 @@ const levels: readonly FromLevel[] = ["averaged", "mapped", "inferred"];
  * window waiting for tiles keeps as it was — the points, visits, trips and
  * overrides are read, the pipeline runs with the cached map data loaded a
  * piece at a time, the results replace the window's derived rows and the
- * queue rows are done. After a pass of new data, an upload queued meanwhile
- * waits for the device's pass interval.
+ * queue rows are done. An upload queued meanwhile waits for the device's pass
+ * interval.
  * A window queued from the inferred level keeps each move's mapped points as
  * stored by the current mapped version, so only the inference runs again (a
  * move without them is matched).
@@ -156,7 +156,7 @@ export async function processWindow(
     if (waitFor.length > 0) {
       await awaitTiles(tx, { deviceId, ...queued, fromLevel, priority }, waitFor);
     }
-    if (live) await deferLiveWindows(tx, deviceId);
+    await deferLiveWindows(tx, deviceId);
     return {
       deviceId,
       userId: owner.userId,

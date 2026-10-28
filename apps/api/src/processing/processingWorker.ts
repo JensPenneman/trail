@@ -150,12 +150,12 @@ export class ProcessingWorker {
   async #processReady(options: { draining?: boolean } = {}): Promise<number> {
     let passes = 0;
     while (!this.#stopped) {
-      // A phone uploading every few minutes must not starve the backfill: they take turns.
-      const backfillFirst = this.#lastPriority === queuePriority.live;
+      // A phone uploading every few minutes must not starve repair and the backfill: they take turns.
+      const othersFirst = this.#lastPriority === queuePriority.live;
       const now = new Date();
       const liveReadyBy =
         options.draining === true ? new Date(now.getTime() + livePassIntervalMs) : now;
-      const rows = await takeNextWindow(this.#db, now, { backfillFirst, liveReadyBy }).catch(
+      const rows = await takeNextWindow(this.#db, now, { othersFirst, liveReadyBy }).catch(
         (error: unknown) => {
           this.#logger.error({ err: error }, "processing queue could not be read");
           return [];

@@ -1,3 +1,4 @@
+import { apiPaths } from "@trail/contracts/apiPaths";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { toIso } from "../../src/db/toIso";
@@ -8,6 +9,7 @@ import {
   enqueueWindow,
   livePassIntervalMs,
   queuePriority,
+  retryWindows,
   takeDeviceWindows,
   takeNextWindow,
 } from "../../src/processing/processingQueue";
@@ -15,7 +17,7 @@ import { processingVersions } from "../../src/processing/processingVersion";
 import { processWindow } from "../../src/processing/processWindow";
 import { planWindow, type WindowResult } from "../../src/processing/runPipeline";
 import { parseTileKey } from "../../src/processing/tileCover";
-import { extendWindow } from "../../src/processing/windowData";
+import { extendWindow, seamPoints } from "../../src/processing/windowData";
 import { type Agent, signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
 import { FixtureWaySource } from "../support/fixtureWaySource";
@@ -30,6 +32,7 @@ import {
 import { resetDatabase } from "../support/resetDatabase";
 import { concat, lastT, stay, toXY, travel, type Vertex } from "../support/syntheticWorld";
 import { createTestContext, type TestContext } from "../support/testContext";
+import { testOrigin } from "../support/testEnvironment";
 
 /*
  * Processing in bounded passes (docs/architecture.md §17.4): a job too big
@@ -340,11 +343,13 @@ describe("a job too big for one pass", () => {
       );
       const passes = [first, ...(await runner.drain())];
 
-      // Each split at the longest gap that leaves a newest part within the budget, and half of it.
+      // Each split at the longest gap that leaves a newest part within the budget (less the points
+      // kept for the window's seams), and half of it.
       for (const pass of passes.filter((entry) => entry.outcome.split)) {
         const part = rowsSpan(pass);
-        const earliest = await pointFromEnd(device.id, part, budget, context);
-        const halfway = await pointFromEnd(device.id, part, budget / 2, context);
+        const capacity = budget - seamPoints;
+        const earliest = await pointFromEnd(device.id, part, capacity, context);
+        const halfway = await pointFromEnd(device.id, part, Math.ceil(capacity / 2), context);
         const before = await pointBefore(device.id, earliest, context);
         const [longest] = (await gapsIn(device.id, { from: before, to: part.to }, context)).filter(
           (gap) => gap.ends >= earliest && gap.ends <= halfway,
@@ -420,7 +425,9 @@ describe("a job too big for one pass", () => {
     const passes = await runner.drain();
     // 21 601 points: the newest 20 000 first, at a point boundary; the rest after, repair as queued.
     expect(passes.map((pass) => pass.outcome.split)).toEqual([true, false]);
-    expect(passes[0]?.outcome.queued.from).toEqual(await pointFromEnd(device.id, job, budget));
+    expect(passes[0]?.outcome.queued.from).toEqual(
+      await pointFromEnd(device.id, job, budget - seamPoints),
+    );
     expect(passes[1]?.rows.map((row) => [row.reason, row.priority])).toEqual([
       ["delete", queuePriority.repair],
     ]);
@@ -551,16 +558,16 @@ describe("a window's growth within the budget", () => {
     // With room: the whole ride.
     expect(await grow(budget)).toEqual(ridden);
     // Room for the rest of the ride after the window, not before it: forward first …
-    expect(await grow(queued + forward)).toEqual({ from: firstPoint, to: ridden.to });
+    expect(await grow(queued + forward + seamPoints)).toEqual({ from: firstPoint, to: ridden.to });
     // … and room for the window alone: the ride cut at its first and last point.
-    expect(await grow(queued)).toEqual({ from: firstPoint, to: lastPoint });
+    expect(await grow(queued + seamPoints)).toEqual({ from: firstPoint, to: lastPoint });
 
     // Worked out so: the ride in three parts that meet, each counting its own.
     const config = t.ctx.processing.config;
     await enqueueWindow(t.ctx.db, { deviceId: device.id, ...inside, reason: "reprocess" });
     const rows = await takeDeviceWindows(t.ctx.db, device.id, inside.from, inside.to);
     const outcome = await processWindow(t.ctx.db, rows, {
-      config: { ...config, passes: { ...config.passes, maxPoints: queued } },
+      config: { ...config, passes: { ...config.passes, maxPoints: queued + seamPoints } },
       mapping: true,
       now: new Date(),
     });
@@ -625,12 +632,124 @@ describe("a window's growth within the budget", () => {
       sql`SELECT kind FROM segments WHERE device_id = ${device.id}`,
     );
     expect(stops.rows).toEqual([{ kind: "stop" }]);
-    // A window over the morning, with room for the morning and one point more.
+    // A window over the morning, with room for the morning and its seams only.
     const window = { from: at(dawn[0]?.t ?? 0), to: at(lastT(dawn)) };
-    const room = (await pointsIn(device.id, window)) + 1;
+    const room = (await pointsIn(device.id, window)) + seamPoints;
     expect(
       await extendWindow(t.ctx.db, device.id, window, { gapSplitS: 1800, maxPoints: room }),
     ).toEqual({ from: at(lastT(evening)), to: window.to });
+  });
+});
+
+describe("the seams of a pass at its budget", () => {
+  /** The pass runner of the default context, the budget and the segment invariants checked. */
+  const runnerFor = (deviceId: string) =>
+    new PassRunner({
+      db: t.ctx.db,
+      config: t.ctx.processing.config,
+      mapping: false,
+      after: async (pass) => {
+        await expectWithinBudget(deviceId, pass);
+        await assertSegmentInvariants(t.ctx.db, deviceId);
+      },
+    });
+  /** As many points as a pass takes on at most, every four seconds at home. */
+  const dawnAt = (startT: number, seed: number) =>
+    stay(home, { startT, durationS: (budget - seamPoints - 1) * 4, intervalS: 4, seed });
+
+  it("steps back across the gap of a split at the budget's very boundary", {
+    timeout: 120_000,
+  }, async () => {
+    // Ten minutes in the evening, two hours without a point, then exactly what a pass takes on.
+    const device = await newDevice("A night at the budget's edge");
+    const start = morning - 270 * 86_400;
+    const evening = stay(home, { startT: start, durationS: 600, intervalS: 10, seed: 91 });
+    const dawn = dawnAt(lastT(evening) + 7200, 92);
+    await upload(device.token, concat(evening, dawn));
+    await t.ctx.db.execute(sql`DELETE FROM processing_queue WHERE device_id = ${device.id}`);
+    await enqueueWindow(t.ctx.db, {
+      deviceId: device.id,
+      from: at(start),
+      to: at(lastT(dawn)),
+      reason: "delete",
+    });
+    const passes = await runnerFor(device.id).drain(5);
+    // Split at the night, the newer part's pass with the evening's last point all the same …
+    expect(passes.map((pass) => pass.outcome.split)).toEqual([true, false]);
+    expect(passes[0]?.outcome.queued.from).toEqual(at(dawn[0]?.t ?? 0));
+    expect(passes[0]?.outcome.from).toEqual(at(lastT(evening)));
+    expect(passes[0]?.outcome.points).toBe(budget - seamPoints + 1);
+    // … so the night is worked out with both its ends: a stop over it that meets the evening's.
+    await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
+  });
+
+  it("takes an older part of one point into the newer pass", { timeout: 120_000 }, async () => {
+    // One point, two hours without one, then exactly what a pass takes on.
+    const device = await newDevice("One point before the night");
+    const start = morning - 272 * 86_400;
+    const lone = stay(home, { startT: start, durationS: 0, intervalS: 10, seed: 93 });
+    const dawn = dawnAt(start + 7200, 94);
+    await upload(device.token, concat(lone, dawn));
+    await t.ctx.db.execute(sql`DELETE FROM processing_queue WHERE device_id = ${device.id}`);
+    await enqueueWindow(t.ctx.db, {
+      deviceId: device.id,
+      from: at(start - 600),
+      to: at(lastT(dawn)),
+      reason: "delete",
+    });
+    const passes = await runnerFor(device.id).drain(5);
+    expect(passes.map((pass) => [pass.outcome.split, pass.outcome.points])).toEqual([
+      [false, budget - seamPoints + 1],
+    ]);
+    expect(passes[0]?.outcome.from).toEqual(at(start));
+    const left = await t.ctx.db.execute(
+      sql`SELECT 1 FROM processing_queue WHERE device_id = ${device.id}`,
+    );
+    expect(left.rows).toEqual([]);
+    await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
+  });
+
+  it("steps forward to the first point after a day's edge, where the next day's stop begins", async () => {
+    // Two hours at home, a point every ten seconds, none at the edge of the day between them.
+    const device = await newDevice("A day's edge at the budget");
+    const edge = morning - 274 * 86_400;
+    const stayed = stay(home, { startT: edge - 3595, durationS: 7200, intervalS: 10, seed: 95 });
+    await upload(device.token, stayed);
+    await t.ctx.db.execute(sql`DELETE FROM processing_queue WHERE device_id = ${device.id}`);
+    const config = t.ctx.processing.config;
+    const pass = async (range: Range, maxPoints: number) => {
+      await enqueueWindow(t.ctx.db, { deviceId: device.id, ...range, reason: "reprocess" });
+      const rows = await takeDeviceWindows(t.ctx.db, device.id, range.from, range.to);
+      return processWindow(t.ctx.db, rows, {
+        config: { ...config, passes: { ...config.passes, maxPoints } },
+        mapping: false,
+        now: new Date(),
+      });
+    };
+    // The later day first, as the backfill goes; its stop begins at its first point.
+    await pass({ from: at(edge), to: at(lastT(stayed)) }, budget);
+    // The earlier day with room for its own points only: it cannot take the later stop in, …
+    const earlier = { from: at(stayed[0]?.t ?? 0), to: at(edge) };
+    const outcome = await pass(earlier, (await pointsIn(device.id, earlier)) + seamPoints);
+    // … but steps to its first point, so the two stops meet there.
+    expect(outcome?.to).toEqual(at(edge + 5));
+    await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
+  });
+});
+
+describe("a retried window", () => {
+  it("is ready again to the millisecond, as every window", async () => {
+    const device = await newDevice("Failed once");
+    const range = { from: at(morning - 276 * 86_400), to: at(morning - 276 * 86_400 + 3600) };
+    await enqueueWindow(t.ctx.db, { deviceId: device.id, ...range, reason: "delete" });
+    const rows = await takeDeviceWindows(t.ctx.db, device.id, range.from, range.to);
+    await retryWindows(t.ctx.db, rows, "failed for the test");
+    const retried = await t.ctx.db.execute<{ attempts: number; later: boolean }>(sql`
+      SELECT attempts, next_at > now() AS later FROM processing_queue WHERE device_id = ${device.id}
+    `);
+    expect(retried.rows).toEqual([{ attempts: 1, later: true }]);
+    await assertQueueInvariants(t.ctx.db, { deviceId: device.id });
+    await t.ctx.db.execute(sql`DELETE FROM processing_queue WHERE device_id = ${device.id}`);
   });
 });
 
@@ -663,7 +782,7 @@ describe("a device's live passes", () => {
     expect(left.rows).toEqual([]);
   });
 
-  it("make the device's other live windows wait the interval after a pass, and nothing else", async () => {
+  it("make the device's other live windows wait the interval after each of its passes, and nothing else", async () => {
     const device = await newDevice("Two uploads at once");
     const start = morning - 240 * 86_400;
     await upload(device.token, motorwayDrive(start));
@@ -694,6 +813,20 @@ describe("a device's live passes", () => {
     expect(later).toBeGreaterThanOrEqual(started + livePassIntervalMs);
     expect(later).toBeLessThanOrEqual(ended + livePassIntervalMs);
     expect(await nextAt(queuePriority.repair)).toEqual([repairBefore]);
+    // A pass of other work of the device ends: its live windows wait again, from that end.
+    const repair = await takeDeviceWindows(t.ctx.db, device.id, deleted.from, deleted.to);
+    expect(repair.map((row) => row.reason)).toEqual(["delete"]);
+    const repairStarted = Date.now();
+    await processWindow(t.ctx.db, repair, {
+      config: t.ctx.processing.config,
+      mapping: true,
+      now: new Date(),
+    });
+    const repairEnded = Date.now();
+    for (const next of await nextAt(queuePriority.live)) {
+      expect(next).toBeGreaterThanOrEqual(repairStarted + livePassIntervalMs);
+      expect(next).toBeLessThanOrEqual(repairEnded + livePassIntervalMs);
+    }
     await t.ctx.processing.flush();
   });
 });
@@ -712,11 +845,11 @@ describe("the order of the work", () => {
     await enqueueWindow(t.ctx.db, { deviceId: devices.backfill.id, from, to, reason: "backfill" });
     await enqueueWindow(t.ctx.db, { deviceId: devices.repair.id, from, to, reason: "split" });
     await enqueueWindow(t.ctx.db, { deviceId: devices.live.id, from, to, reason: "ingest" });
-    const order = async (backfillFirst: boolean) => {
+    const order = async (othersFirst: boolean) => {
       const taken: number[] = [];
       const seen = new Set<string>();
       for (;;) {
-        const rows = await takeNextWindow(t.ctx.db, new Date(), { backfillFirst });
+        const rows = await takeNextWindow(t.ctx.db, new Date(), { othersFirst });
         const [row] = rows;
         if (row === undefined || seen.has(row.deviceId)) break;
         seen.add(row.deviceId);
@@ -736,9 +869,10 @@ describe("the order of the work", () => {
       queuePriority.repair,
       queuePriority.backfill,
     ]);
+    // The others' turn: repair before the backfill, so a correction never waits for a whole run.
     expect(await order(true)).toEqual([
-      queuePriority.backfill,
       queuePriority.repair,
+      queuePriority.backfill,
       queuePriority.live,
     ]);
     await t.ctx.db.execute(sql`DELETE FROM processing_queue`);
@@ -894,14 +1028,35 @@ describe("twenty live uploads after a stale multi-day stop", () => {
         ]);
         expect(live.outcome.queued).toEqual(queued);
         lastLive = live;
-        // Then the backfill's turn, while there is backfill.
+        // Then the others' turn: the correction the person made after the first upload at once,
+        // before the backfill that runs meanwhile; else the backfill, while there is backfill.
         const turn = await runner.next((rows) =>
           rows.every((row) => row.priority !== queuePriority.live),
         );
-        if (turn !== null) {
+        if (index === 1) {
+          expect(turn?.rows.map((row) => row.reason)).toContain("override");
+        } else if (turn !== null) {
           expect(turn.rows.map((row) => row.priority)).toContain(queuePriority.backfill);
         }
         remaining.push(await stalePoints());
+        if (index === 0) {
+          // The commute's mode put right and reset: its span is queued for the inference, repair.
+          const commuted = await t.ctx.db.execute<{ id: string }>(sql`
+            SELECT id FROM segments WHERE device_id = ${device.id} AND kind = 'move'
+            ORDER BY started_at LIMIT 1
+          `);
+          const move = commuted.rows[0]?.id ?? "";
+          await owner
+            .put(apiPaths.v1.segments.mode(move))
+            .set("Origin", testOrigin)
+            .send({ mode: "train" })
+            .expect(200);
+          await owner.delete(apiPaths.v1.segments.mode(move)).set("Origin", testOrigin).expect(200);
+          const queued = await t.ctx.db.execute<{ priority: number }>(sql`
+            SELECT priority FROM processing_queue WHERE device_id = ${device.id} AND reason = 'override'
+          `);
+          expect(queued.rows).toEqual([{ priority: queuePriority.repair }]);
+        }
       }
     } finally {
       fixture.failing.clear();

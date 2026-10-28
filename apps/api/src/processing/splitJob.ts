@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
 import { toIso } from "../db/toIso";
+import { maxExtensionMs, seamPoints } from "./windowData";
 
 /** The most one pass works out (`ProcessingConfig.passes`). */
 interface PassBudget {
@@ -38,8 +39,9 @@ async function pointsIn(
 
 /**
  * Where the newest part of the span that fits the budget can start at the
- * earliest: the `maxPoints`-th point from the end, or the first point within
- * `maxSpanS` of the last, whichever is later. Null when the whole span fits.
+ * earliest: the point from the end that leaves the window the points it keeps
+ * for its seams (`seamPoints`), or the first point within `maxSpanS` of the
+ * last, whichever is later. Null when the whole span fits.
  */
 async function budgetStart(
   tx: Executor,
@@ -49,15 +51,16 @@ async function budgetStart(
   budget: PassBudget,
 ): Promise<Date | null> {
   const { count, first, last } = points;
+  const capacity = budget.maxPoints - seamPoints;
   const starts: Date[] = [];
-  if (count > budget.maxPoints) {
+  if (count > capacity) {
     const result = await tx.execute<{ at: string }>(sql`
       SELECT recorded_at::text AS at FROM locations
       WHERE device_id = ${deviceId}
         AND recorded_at >= ${span.from.toISOString()}::timestamptz
         AND recorded_at <= ${span.to.toISOString()}::timestamptz
       ORDER BY recorded_at DESC
-      OFFSET ${budget.maxPoints - 1} LIMIT 1
+      OFFSET ${capacity - 1} LIMIT 1
     `);
     const row = result.rows[0];
     if (row !== undefined) starts.push(instant(row.at));
@@ -156,9 +159,10 @@ async function splitPoint(
  * newer part's pass reaches back over it to see both its ends — else at the
  * budget's point boundary, where the point at the split is the newer part's
  * first and the older part's last, so that the parts meet. Either way the
- * older part holds fewer points than the job: every split makes headway.
- * Counting is one range of the primary key; the gaps are looked for in the
- * newest part only.
+ * older part holds fewer points than the job: every split makes headway. An
+ * older part of the one point before the gap is no part: the newer part's
+ * pass takes it in with its step back across the gap. Counting is one range
+ * of the primary key; the gaps are looked for in the newest part only.
  */
 export async function splitJob(
   tx: Executor,
@@ -173,5 +177,12 @@ export async function splitJob(
   // Two points further apart than a pass may span, the first at the job's start: no split leaves
   // an older part of its own, and two points are no work.
   if (before === null && at >= points.last) return { span, older: null };
-  return { span: { from: at, to: span.to }, older: { from: span.from, to: before ?? at } };
+  const newer = { from: at, to: span.to };
+  // The job's first point alone before the gap: the newer pass steps back to it (two days at most).
+  const alone =
+    before !== null &&
+    points.first !== null &&
+    before.getTime() === points.first.getTime() &&
+    at.getTime() - before.getTime() <= maxExtensionMs;
+  return { span: newer, older: alone ? null : { from: span.from, to: before ?? at } };
 }

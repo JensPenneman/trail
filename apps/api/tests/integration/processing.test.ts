@@ -1301,7 +1301,7 @@ describe("live uploads while windows wait for map tiles", () => {
     });
     const live = await takeNextWindow(t.ctx.db, new Date());
     expect(live.map((row) => row.from)).toEqual([at(20)]);
-    const backfill = await takeNextWindow(t.ctx.db, new Date(), { backfillFirst: true });
+    const backfill = await takeNextWindow(t.ctx.db, new Date(), { othersFirst: true });
     expect(backfill.map((row) => row.from)).toEqual([at(-48)]);
     await t.ctx.db.execute(sql`DELETE FROM processing_queue WHERE device_id = ${device.id}`);
   });
