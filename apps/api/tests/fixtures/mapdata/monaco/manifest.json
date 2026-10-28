@@ -1,0 +1,109 @@
+{
+  "mediaType": "application/vnd.trail.mapdata.manifest.v1+json",
+  "region": "monaco",
+  "extract": {
+    "geofabrik": "europe/monaco",
+    "url": "https://download.geofabrik.de/europe/monaco-261027.osm.pbf",
+    "md5": "96a0ccbd03270fd91512acb0c597bf02",
+    "sha256": "2082dd912178d897f66ab5929e834bec4d0fdb74636c3e9ffa89a7e95fd0cf32",
+    "bytes": 702188,
+    "timestamp": "2026-10-27T21:23:59Z",
+    "counts": {
+      "nodes": 41752,
+      "ways": 6261,
+      "relations": 349
+    }
+  },
+  "build": {
+    "at": "2026-10-28T07:49:10Z",
+    "commit": "56a82c745787a2aa8e1b529a1897cdec8f909bcb",
+    "tools": {
+      "osmium": "1.16.0",
+      "libosmium": "2.20.0",
+      "planetiler": "0.10.2",
+      "java": "25.0.5+8-LTS"
+    }
+  },
+  "basemap": {
+    "schema": "openmaptiles",
+    "bounds": "extract",
+    "maxzoom": 14,
+    "sources": [
+      {
+        "url": "https://naciscdn.org/naturalearth/packages/natural_earth_vector.sqlite.zip",
+        "bytes": 434210731,
+        "sha256": "375da61836d4779dffa8b87887bc4faa94dac77745ba0ee3914bd7cbedf40a02"
+      },
+      {
+        "url": "https://osmdata.openstreetmap.de/download/water-polygons-split-3857.zip",
+        "bytes": 931820911,
+        "sha256": "4b4227ef9a9413c30709a751242af3d4cbcb87c15abda27dc9ff8282572f5584"
+      },
+      {
+        "url": "https://github.com/acalcutt/osm-lakelines/releases/download/v12/lake_centerline.shp.zip",
+        "bytes": 80906805,
+        "sha256": "6c900507c88fc9f5b5a386f90fd0a42d0495e8755a03d075538fb9a6801a3192"
+      }
+    ]
+  },
+  "counts": {
+    "ways": 3677,
+    "wayNodeRefs": 20535,
+    "wayNodes": 15241,
+    "pois": {
+      "features": 119,
+      "kinds": {
+        "bus_stop": 117,
+        "ferry_terminal": 1,
+        "station": 1
+      },
+      "geometries": {
+        "Point": 119
+      }
+    }
+  },
+  "attribution": "© OpenMapTiles © OpenStreetMap contributors",
+  "licences": [
+    {
+      "applies": "OpenStreetMap data",
+      "name": "ODbL-1.0",
+      "url": "https://www.openstreetmap.org/copyright"
+    },
+    {
+      "applies": "OpenMapTiles schema",
+      "name": "CC-BY-4.0",
+      "url": "https://github.com/openmaptiles/openmaptiles/blob/master/LICENSE.md"
+    },
+    {
+      "applies": "Natural Earth",
+      "name": "public domain",
+      "url": "https://www.naturalearthdata.com/about/terms-of-use/"
+    }
+  ],
+  "files": [
+    {
+      "name": "ways.opl.gz",
+      "mediaType": "application/vnd.trail.mapdata.ways.v1+gzip",
+      "bytes": 240517,
+      "sha256": "938805824369f4c5b62331d8840a7c6a46139efc0753445ddaebca706ccec6fd"
+    },
+    {
+      "name": "pois.geojsonseq.gz",
+      "mediaType": "application/vnd.trail.mapdata.pois.v1+gzip",
+      "bytes": 3306,
+      "sha256": "8dc17a37a94833dee3e963ac8574592f02d3be257778a78fd504fbad3408d1d5"
+    },
+    {
+      "name": "region.poly",
+      "mediaType": "application/vnd.trail.mapdata.poly.v1",
+      "bytes": 635,
+      "sha256": "4b382cbe0add3661ebb37fd59bbd030523543ad88638b2a01ae41abe32124289"
+    },
+    {
+      "name": "basemap.pmtiles",
+      "mediaType": "application/vnd.trail.mapdata.basemap.v1",
+      "bytes": 421415,
+      "sha256": "0562f586c601d7fccdef10c880b43b21b684209cc67cd37378a625e5c687af04"
+    }
+  ]
+}
