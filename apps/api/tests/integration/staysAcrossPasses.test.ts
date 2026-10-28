@@ -7,6 +7,7 @@ import {
   getVisitsOutputSchema,
 } from "@trail/contracts/mcp";
 import {
+  deviceModeResponseSchema,
   levelTracksResponseSchema,
   modeStatsResponseSchema,
   type Segment,
@@ -15,6 +16,7 @@ import {
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
+import { countStops } from "../../src/insights/insightMoves";
 import type { RawPoint } from "../../src/processing/pipelineTypes";
 import { createApiToken } from "../support/apiTokenFlows";
 import { type Agent, signUpWithCookie } from "../support/authFlows";
@@ -122,25 +124,33 @@ const localDate = (epochSeconds: number) =>
   );
 
 describe("stops of one stay", () => {
-  /** Inserts a stored segment as a pass would leave it. */
+  /**
+   * Inserts a stored segment as a pass would leave it: ten points of its own around `at`, from
+   * `start` to `end` (both `at` unless given), a stop's spread 20 m and its last point at its end.
+   */
   async function segment(
     deviceId: string,
     kind: "stop" | "move",
     from: number,
     to: number,
     at: Vertex,
-    toward: Vertex = at,
+    options: { start?: Vertex; end?: Vertex; spreadM?: number; lastPointT?: number } = {},
   ) {
     const [lon, lat] = toLonLat(at[0], at[1]);
-    const [endLon, endLat] = toLonLat(toward[0], toward[1]);
+    const [startLon, startLat] = toLonLat(...(options.start ?? at));
+    const [endLon, endLat] = toLonLat(...(options.end ?? at));
+    const features =
+      kind === "stop"
+        ? { spreadM: options.spreadM ?? 20, lastPointT: options.lastPointT ?? to }
+        : {};
     await t.ctx.db.execute(sql`
       INSERT INTO segments (device_id, started_at, ended_at, kind, mode, mode_inferred, distance_m,
         duration_s, point_count, start_lat, start_lon, end_lat, end_lon, centroid_lat, centroid_lon,
         features, version)
       VALUES (${deviceId}, to_timestamp(${from}), to_timestamp(${to}), ${kind},
         ${kind === "move" ? "walking" : null}, ${kind === "move" ? "walking" : null}, 0, ${to - from},
-        10, ${lat}, ${lon}, ${endLat}, ${endLon}, ${lat}, ${lon},
-        ${JSON.stringify(kind === "stop" ? { spreadM: 20, lastPointT: to } : {})}::jsonb, 3)
+        10, ${startLat}, ${startLon}, ${endLat}, ${endLon}, ${lat}, ${lon},
+        ${JSON.stringify(features)}::jsonb, 3)
     `);
   }
 
@@ -152,7 +162,7 @@ describe("stops of one stay", () => {
     await segment(device.id, "stop", start, start + 30 * h, home);
     await segment(device.id, "stop", start + 30 * h, start + 50 * h, [home[0] + 40, home[1]]);
     // A walk away and back: the stop after it is another stop.
-    await segment(device.id, "move", start + 50 * h, start + 51 * h, home, home);
+    await segment(device.id, "move", start + 50 * h, start + 51 * h, home);
     await segment(device.id, "stop", start + 51 * h, start + 52 * h, home);
     // Right after it, 500 m on: another place.
     await segment(device.id, "stop", start + 52 * h, start + 53 * h, [home[0] + 500, home[1]]);
@@ -169,6 +179,89 @@ describe("stops of one stay", () => {
     // The stay under its first part's id, its points counted once at the shared one.
     const [first] = await storedStops(device.id);
     expect(served[0]).toMatchObject({ id: first?.id, durationS: 50 * h, pointCount: 19 });
+  });
+
+  it("are one where they meet, or a short hole apart at one place, as the pipeline would", async () => {
+    const device = await newDevice("Stays of every shape");
+    const h = 3600;
+    type Options = Parameters<typeof segment>[5];
+    /** Two stops of a case at a place of its own, 2 km and a day from the case before. */
+    const cases: {
+      name: string;
+      first?: Options;
+      second: Options & { at: number; after?: number };
+      served: number;
+      points?: number;
+    }[] = [
+      // Middles 120 m apart: one stay where they meet at the point they share …
+      {
+        name: "meet, 120 m",
+        first: { end: [60, 0] },
+        second: { at: 120, start: [60, 0] },
+        served: 1,
+        points: 19,
+      },
+      // … two a ten-minute hole apart: not one place …
+      { name: "hole, 120 m", second: { at: 120, after: 600 }, served: 2 },
+      // … but one at 90 m, and one 140 m apart where they spread 150 m.
+      { name: "hole, 90 m", second: { at: 90, after: 600 }, served: 1, points: 20 },
+      {
+        name: "hole, 140 m, spread 150 m",
+        first: { spreadM: 150 },
+        second: { at: 140, after: 600, spreadM: 150 },
+        served: 1,
+        points: 20,
+      },
+      // A stop that lasted beyond its last point (a gap the phone lay still through), the next
+      // where it ended, 200 m from its middle: one stay, the point at the seam not the first's own.
+      {
+        name: "after a still gap, 200 m",
+        first: { end: [200, 0], lastPointT: 1200 },
+        second: { at: 200 },
+        served: 1,
+        points: 20,
+      },
+      // Where the next begins 400 m from where the one before ended: two.
+      { name: "meet, jumped 400 m", second: { at: 400 }, served: 2 },
+    ];
+    for (const [index, entry] of cases.entries()) {
+      const begin = morning - 322 * 86_400 + index * 86_400;
+      const place: Vertex = [index * 2000, -5000];
+      const offset = ([x, y]: readonly [number, number]): Vertex => [place[0] + x, place[1] + y];
+      const first = entry.first ?? {};
+      await segment(device.id, "stop", begin, begin + h, place, {
+        ...first,
+        ...(first.end === undefined ? {} : { end: offset(first.end) }),
+        ...(first.lastPointT === undefined ? {} : { lastPointT: begin + first.lastPointT }),
+      });
+      const next = begin + h + (entry.second.after ?? 0);
+      const { at, after, ...second } = entry.second;
+      await segment(device.id, "stop", next, next + h, offset([at, 0]), {
+        ...second,
+        ...(second.start === undefined ? {} : { start: offset(second.start) }),
+      });
+      const served = await timeline(device.id, iso(begin - 60), iso(next + h + 60));
+      expect(served.length, entry.name).toBe(entry.served);
+      if (entry.points !== undefined) expect(served[0]?.pointCount, entry.name).toBe(entry.points);
+    }
+  });
+
+  it("count a stay that began before a period in the period it began", async () => {
+    const device = await newDevice("A stay across a period's start");
+    const day = Math.floor((morning - 324 * 86_400) / 86_400) * 86_400;
+    const h = 3600;
+    // Two parts of one stay: from ten in the evening to six the next evening, across midnight.
+    await segment(device.id, "stop", day - 2 * h, day + 10 * h, home);
+    await segment(device.id, "stop", day + 10 * h, day + 18 * h, home);
+    const counts = await countStops(
+      t.ctx.db,
+      [device.id],
+      [
+        { startMs: day * 1000, endMs: (day + 86_400) * 1000 },
+        { startMs: (day - 86_400) * 1000, endMs: day * 1000 },
+      ],
+    );
+    expect(counts).toEqual([0, 1]);
   });
 
   it("are one stop everywhere a three-day stay uploaded at once is served", {
@@ -216,9 +309,14 @@ describe("stops of one stay", () => {
     expect(one?.durationS).toBe(
       (Date.parse(one?.endedAt ?? "") - Date.parse(one?.startedAt ?? "")) / 1000,
     );
-    const parts = stops.reduce((sum, part) => sum + part.points, 0);
-    expect(one?.pointCount).toBeGreaterThanOrEqual(parts - (stops.length - 1));
-    expect(one?.pointCount).toBeLessThanOrEqual(parts);
+    // Its points each once: what the parts hold of their own, a point two of them share once.
+    const own = await t.ctx.db.execute<{ count: number }>(sql`
+      SELECT count(*)::int AS count FROM processed_points
+      WHERE device_id = ${device.id} AND kept
+        AND recorded_at >= ${one?.startedAt ?? ""}::timestamptz
+        AND recorded_at <= ${one?.endedAt ?? ""}::timestamptz
+    `);
+    expect(one?.pointCount).toBe(own.rows[0]?.count);
     // A page at a time, every stay once.
     const paged = await timeline(device.id, from, to, 1);
     expect(paged.map((item) => item.id)).toEqual(served.map((item) => item.id));
@@ -289,6 +387,33 @@ describe("stops of one stay", () => {
         to: new Date((lastT(away) + 3600) * 1000),
       }),
     ).toEqual(before);
+  });
+
+  it("are the device's current mode since the stay began, under the stay's id", {
+    timeout: 300_000,
+  }, async () => {
+    // Three days at home up to a minute ago, a point every minute: worked out in parts.
+    const device = await newDevice("Home for three days now");
+    const now = Math.floor(Date.now() / 1000);
+    const days = stay(home, {
+      startT: now - 3 * 86_400,
+      durationS: 3 * 86_400 - 60,
+      intervalS: 60,
+      seed: 121,
+    });
+    await upload(device.token, days);
+    await t.ctx.processing.flush();
+    const stops = await storedStops(device.id);
+    expect(stops.length).toBeGreaterThan(1);
+    const answer = deviceModeResponseSchema.parse(
+      (await owner.get(apiPaths.v1.devices.mode(device.id)).expect(200)).body,
+    );
+    expect(answer.mode.current).toEqual({
+      mode: "stationary",
+      setByUser: false,
+      since: new Date(stops[0]?.from ?? "").toISOString(),
+      segmentId: stops[0]?.id,
+    });
   });
 
   it("are one stop through 0.5.1's live uploads after days at home", {

@@ -265,7 +265,13 @@ page of up to `limit` (500 by default, at most 1000) at a time. `pending` is
 true while points of the range still wait for processing — ask again a little
 later. Transport modes: `stationary`, `walking`, `running`, `cycling`, `car`,
 `bus`, `tram`, `metro`, `train`, `boat`, `plane` and `unknown`. `mode` is the
-one that counts: a person's choice (`modeUser`), else the inferred one.
+one that counts: a person's choice (`modeUser`), else the inferred one. A stay
+is one stop, however many passes of the processing worked it out, under the
+id of its first part, here, in the inferred tracks, in a device's current mode
+and in the counts of Insights and the mode statistics; its parts are looked
+for two weeks beyond the range asked, so a stay longer than that starts — and
+is named — from its earliest part within them, and a device's `since` reaches
+back two weeks at most.
 
 People (and agents) can put a mode right, with `locations:write` and
 `locations:read` together (the answers carry the segment or the current mode):

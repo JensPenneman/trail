@@ -12,9 +12,13 @@ import { type SQL, sql } from "drizzle-orm";
 
 /** A recording gap longer than this … */
 const travelGapS = 1800;
-/** … whose ends lie farther apart than this is travel (§17.3): the stops on either side are two. */
+/**
+ * … whose ends lie farther apart than this is travel (§17.3): the stops on
+ * either side are two. Stops that meet are one stay unless the phone was this
+ * far away when the next began (§17.3's pause: no stay holds such a jump).
+ */
 const travelGapM = 300;
-/** Stops whose middles lie within the larger of their spreads, or within this, are one place. */
+/** Stops a short hole apart are one place when their middles lie within their spread, or this. */
 const samePlaceM = 100;
 /** The parts of a stay are looked for this far beyond the range asked for. */
 const stayReachMs = 14 * 86_400_000;
@@ -27,12 +31,16 @@ const metres = (lat1: string, lon1: string, lat2: string, lon2: string): SQL =>
 /**
  * The segments of `deviceIds` around `[from, to)` as they are served, a
  * subquery aliased `s` with the columns of `SegmentRow` (`servedColumns`):
- * consecutive stops of a device with no travel gap between them and their
- * middles close are one stop — from the first part's start to the last
- * part's end, under the first part's id, its points counted once and its
- * middle weighed by them — and every other segment as it is stored. The
- * parts of a stay are found up to two weeks beyond the range; the caller
- * keeps what overlaps the range, orders and pages.
+ * consecutive stops of a device are one stop where the next begins as the one
+ * before ends within 300 m of where it ended — the parts of one stay, which
+ * share their boundary point or follow a stop that lasted beyond its last
+ * point — or, a short hole apart (no travel gap), where their middles lie
+ * within the larger of their spreads or 100 m. One stop runs from the first
+ * part's start to the last part's end, under the first part's id, its points
+ * counted once (a point two parts share, once) and its middle weighed by
+ * them; every other segment as it is stored. The parts of a stay are found
+ * up to two weeks beyond the range (a longer stay is served from its earliest
+ * part within them); the caller keeps what overlaps the range, orders and pages.
  */
 export function servedSegments(deviceIds: readonly string[], range: { from: Date; to: Date }): SQL {
   const from = new Date(range.from.getTime() - stayReachMs).toISOString();
@@ -47,24 +55,31 @@ export function servedSegments(deviceIds: readonly string[], range: { from: Date
         lag(p.kind) OVER w AS before_kind, lag(p.ended_at) OVER w AS before_end,
         lag(p.end_lat) OVER w AS before_end_lat, lag(p.end_lon) OVER w AS before_end_lon,
         lag(p.centroid_lat) OVER w AS before_lat, lag(p.centroid_lon) OVER w AS before_lon,
-        lag((p.features->>'spreadM')::float8) OVER w AS before_spread
+        lag((p.features->>'spreadM')::float8) OVER w AS before_spread,
+        lag((p.features->>'lastPointT')::float8) OVER w AS before_last_point_t
       FROM segments p
       WHERE p.device_id = ANY(${sql.param(deviceIds)}::uuid[])
         AND p.started_at < ${to}::timestamptz AND p.ended_at > ${from}::timestamptz
       WINDOW w AS (PARTITION BY p.device_id ORDER BY p.started_at)
     ), marked AS (
       SELECT *,
-        coalesce(kind = 'stop' AND before_kind = 'stop'
-          AND NOT (started_at - before_end > ${travelGapS}::integer * interval '1 second'
-            AND ${metres("before_end_lat", "before_end_lon", "start_lat", "start_lon")} > ${travelGapM})
-          AND ${metres("before_lat", "before_lon", "centroid_lat", "centroid_lon")}
-            <= greatest(coalesce(before_spread, 0), coalesce(spread_m, 0), ${samePlaceM}),
-          false) AS continues
+        coalesce(kind = 'stop' AND before_kind = 'stop' AND (
+          (started_at = before_end
+            AND ${metres("before_end_lat", "before_end_lon", "start_lat", "start_lon")} <= ${travelGapM})
+          OR (NOT (started_at - before_end > ${travelGapS}::integer * interval '1 second'
+              AND ${metres("before_end_lat", "before_end_lon", "start_lat", "start_lon")} > ${travelGapM})
+            AND ${metres("before_lat", "before_lon", "centroid_lat", "centroid_lon")}
+              <= greatest(coalesce(before_spread, 0), coalesce(spread_m, 0), ${samePlaceM}))
+        ), false) AS continues
       FROM parts
     ), stays AS (
       SELECT *,
         count(*) FILTER (WHERE NOT continues) OVER (PARTITION BY device_id ORDER BY started_at) AS stay,
-        (continues AND started_at = before_end) AS shares_point
+        -- The point at the boundary is the earlier part's own (and counted by it) unless that part
+        -- lasted beyond its last point: counted once.
+        (continues AND started_at = before_end
+          AND (before_last_point_t IS NULL OR before_last_point_t >= extract(epoch FROM before_end)))
+          AS shares_point
       FROM marked
     )
     SELECT (array_agg(id ORDER BY started_at))[1] AS id, device_id, min(kind) AS kind,
