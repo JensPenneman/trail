@@ -74,6 +74,16 @@ export function overlandBatch(timeZone: string, now = Date.now()): OverlandBatch
 }
 
 /**
+ * `batch` moved back, when it reaches ahead of `now` (shortly after midnight),
+ * to end 90 seconds ago: for a test that needs nothing recorded after now — a
+ * quick toggle set now ends at a ride of another kind recorded after it.
+ */
+export function pastBatch(batch: OverlandBatch, now = Date.now()): OverlandBatch {
+  const latest = Math.max(...instants(batch));
+  return latest <= now - 90_000 ? batch : (shifted(batch, now - 90_000 - latest) as OverlandBatch);
+}
+
+/**
  * `batch` with every time in it `deltaMs` later: the phone's next upload. Two
  * calls of `overlandBatch` do not make one: until today has room for the whole
  * fixture, both start it at the same time after midnight.

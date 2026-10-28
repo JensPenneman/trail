@@ -11,6 +11,7 @@ import {
   type OverlandBatch,
   type OverlandFeature,
   overlandBatch,
+  pastBatch,
   startOfToday,
 } from "./support/overlandBatch";
 import { postOverland } from "./support/postOverland";
@@ -227,7 +228,12 @@ test("the quick toggle on the Me card says how you travel from now on", async ({
   page,
   account,
 }) => {
-  const commuter = await uploadedDevice(page, "Commuter", overlandBatch(account.timezone));
+  // Nothing recorded after the toggle: a ride of another kind after it would end it.
+  const commuter = await uploadedDevice(
+    page,
+    "Commuter",
+    pastBatch(overlandBatch(account.timezone)),
+  );
   await page.goto("/");
   const me = page.getByRole("region", { name: "Me", exact: true });
   const chips = me.getByRole("group", { name: "Now:" });
