@@ -9,11 +9,8 @@ const fixture = (): Record<string, unknown> =>
   JSON.parse(readFileSync(`${monacoDir}/manifest.json`, "utf8")) as Record<string, unknown>;
 
 describe("readManifest", () => {
-  it("reads the fixture's region, extract, counts and files; without build.id, the extract's day", () => {
-    const json = fixture();
-    // The manifests from before build.sh wrote a build id (the first copy of this fixture)
-    json["build"] = { ...(json["build"] as object), id: undefined };
-    const manifest = readManifest(json);
+  it("reads the fixture's region, extract, build id, counts and files", () => {
+    const manifest = readManifest(fixture());
     expect(manifest).toMatchObject({
       region: "monaco",
       buildId: "20261027",
@@ -22,6 +19,12 @@ describe("readManifest", () => {
     });
     expect(manifest.files.ways.bytes).toBe(240517);
     expect(manifest.files.ways.sha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("refuses a manifest without build.id: build.sh names every build", () => {
+    const json = fixture();
+    json["build"] = { ...(json["build"] as object), id: undefined };
+    expect(() => readManifest(json)).toThrow("manifest.json has no build id (build.id)");
   });
 
   it("takes build.id when the manifest has one", () => {

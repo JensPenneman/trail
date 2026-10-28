@@ -63,15 +63,12 @@ function instant(value: string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-/** `yyyymmdd` of an instant, in UTC. */
-const utcDay = (date: Date): string => date.toISOString().slice(0, 10).replaceAll("-", "");
-
 /**
  * The parts of manifest.json the import needs (scripts/mapdata/build.sh
  * writes it), checked: a region name, the extract's timestamp, the build id
- * (`build.id`, or the UTC day of the extract for a manifest from before
- * build.sh wrote one), the counts and the three data files with their sizes
- * and SHA-256. The world overview, a basemap only, is refused.
+ * (`build.id`, the extract's UTC day as build.sh names the build), the
+ * counts and the three data files with their sizes and SHA-256. The world
+ * overview, a basemap only, is refused.
  */
 export function readManifest(json: unknown): MapManifest {
   const parsed = manifestSchema.safeParse(json);
@@ -92,7 +89,8 @@ export function readManifest(json: unknown): MapManifest {
   if (extractTimestamp === null) {
     throw new MapDataError("manifest.json has no extract timestamp (extract.timestamp)");
   }
-  const buildId = manifest.build?.id ?? utcDay(extractTimestamp);
+  const buildId = manifest.build?.id;
+  if (buildId === undefined) throw new MapDataError("manifest.json has no build id (build.id)");
   const day = /^(\d{4})(\d{2})(\d{2})$/.exec(buildId);
   if (day === null || instant(`${day[1]}-${day[2]}-${day[3]}T00:00:00Z`) === null) {
     throw new MapDataError("manifest.json has a build id that is no day (build.id, yyyymmdd)");
