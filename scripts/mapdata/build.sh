@@ -129,6 +129,8 @@ else
   md5_of() { command md5 -q "$1"; }
 fi
 bytes_of() { wc -c <"$1" | tr -d ' '; }
+# the escape character, to take terminal codes out of Planetiler's log
+esc=$(printf '\033')
 if /usr/bin/time --version 2>&1 | grep -q GNU; then gnu_time=true; else gnu_time=false; fi
 
 # step NAME COMMAND...: runs COMMAND with its output in logs/NAME.log and
@@ -339,8 +341,8 @@ if $basemap; then
   sampler=''
   temp_peak_kib=$(cat "$logs/planetiler-temp-peak-kib" 2>/dev/null || echo 0)
   # the most heap in use and the most left after a collection, from the
-  # progress lines ("heap: 1.2G/3G ... postGC: 800M")
-  read -r heap_used_mib heap_live_mib < <(awk '
+  # progress lines ("heap: 1.2G/3G ... postGC: 800M"), terminal codes removed
+  read -r heap_used_mib heap_live_mib < <(sed "s/${esc}\[[0-9;]*m//g" "$logs/planetiler.log" | awk '
     function mib(value, number, unit) {
       number = value + 0
       unit = substr(value, length(value))
@@ -352,7 +354,7 @@ if $basemap; then
     }
     match($0, /heap: [0-9.]+[kMGT]?\//) { used = mib(substr($0, RSTART + 6, RLENGTH - 7)); if (used > heap) heap = used }
     match($0, /postGC: [0-9.]+[kMGT]?/) { live = mib(substr($0, RSTART + 8, RLENGTH - 8)); if (live > post) post = live }
-    END { printf "%d %d\n", heap, post }' "$logs/planetiler.log")
+    END { printf "%d %d\n", heap, post }')
   rm -rf "$tmp"
   for layerstats in "$out"/*.layerstats.tsv.gz; do
     if [ -f "$layerstats" ]; then mv "$layerstats" "$work/"; fi
@@ -466,7 +468,6 @@ jq -R -s --arg region "$region" --arg os "$(uname -sm)" --argjson cpus "$cpus" -
     printf '\n<details><summary>Planetiler</summary>\n\n```\n'
     # the data errors, stage timings and sizes Planetiler prints at the end,
     # without the terminal codes its logger writes even with --color=false
-    esc=$(printf '\033')
     sed "s/${esc}\[[0-9;]*m//g" "$logs/planetiler.log" |
       awk 'index($0, "- ----------------------------------------") { n++ } /Acknowledgments/ { exit } n >= 1' |
       sed 's/^[0-9:]* [A-Z]* \[[^]]*\] - //; s/^[0-9:]* [A-Z]* - //'
