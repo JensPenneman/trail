@@ -128,9 +128,12 @@ Every change, besides:
 
 ```
 Vite dev server :5173  ──/api proxy──▶  API (tsx watch) :8787  ──▶  Postgres :54329 (compose.yaml)
+                                        worker (tsx watch) ──────┘  (/health/live :8788)
 ```
 
-`npm run dev` (scripts/dev.mjs) starts Postgres, the API and Vite, loading
+`npm run dev` (scripts/dev.mjs) starts Postgres, the API in role `api`, the
+processing worker in role `worker` (`src/worker.ts`) and Vite — the roles of
+the production containers, set by the script whatever `.env` says — loading
 `.env` **with precedence over the shell** (the author's shell exports
 unrelated `DATABASE_URL`/`NODE_ENV`/`AUTH_SECRET`; they must never leak in).
 Databases: `trail` (dev), `trail_test` (API integration tests), `trail_e2e`
@@ -161,17 +164,23 @@ that breaks it fails the checks of its commit.
 ```
 Phones (tracking apps) ─┐
 Browser ────────────────┴─▶ Launchway edge (HTTPS, 10.210.0.2 on its proxy network) ─▶ app :8080 ──▶ db (postgres:18-alpine)
+                                                                                     worker ──┤ (trail worker; Overpass)
                                                                                      backup ──┘ (pg_dump → host folder)
 GitHub release published ─▶ Launchway deploys deploy/compose.yaml with image sha-<commit>
 Pull request (same repository) ─▶ preview project launchway-trail-pr-<n>, own host name and volume
 ```
 
 `deploy/compose.yaml` services: `app` (GHCR image `sha-<commit>` of the
-deployed commit, `pull_policy: always`), `db`, and `backup` (profile
-`production`). Networks: the project's `default` (app; the way out, for ntfy and map data)
-and `backend` (app, db, backup; `internal`, no route out); Launchway attaches
-`app` to its proxy network itself. No host port is published. See §13 and the
-runbook `docs/operations.md`.
+deployed commit, `pull_policy: always`; role `api`), `worker` (the same image
+running `trail worker`, role `worker`), `db`, and `backup` (profile
+`production`). Each has its caps — `app` 1 CPU and 1 GiB (V8 heap 640 MB),
+`worker` 2 CPUs and 1 GiB (heap 768 MB), `db` 2 CPUs and 2 GiB, `backup`
+512 MiB — so processing never takes the API's CPU or memory. Networks: the
+project's `default` (app and worker; the way out, for ntfy and map data) and
+`backend` (app, worker, db, backup; `internal`, no route out); Launchway
+attaches `app` to its proxy network itself. No host port is published; the
+worker's liveness port is reachable on the project's networks only. See §13
+and the runbook `docs/operations.md`.
 
 ### Processing roles
 
@@ -180,8 +189,8 @@ One image, two roles, chosen by `PROCESSING_ROLE`:
 | Role | Entry | Runs |
 |---|---|---|
 | `api` | `apps/api/dist/main.mjs` (the image's `CMD`) | HTTP, ingest, the SSE streams and the jobs of §10; it queues processing and runs no pass, no map download, no backfill |
-| `worker` | `trail worker` (`dist/cli.mjs worker`; `apps/api/src/worker.ts` in development, `npm run dev:worker -w @trail/api`); the server's entry in this role does the same | The processing worker of §17.4 — passes, map tiles, the backfill at the start, the 15-minute pass — and its heartbeat; no HTTP server |
-| `all` (default) | `main.mjs` | Both in one process: a single container, `npm run dev`, the tests and the end-to-end suite's server, any install that never set the variable |
+| `worker` | `trail worker` (`dist/cli.mjs worker`; `apps/api/src/worker.ts` in development, `npm run dev:worker -w @trail/api`); the server's entry in this role does the same | The processing worker of §17.4 — passes, map tiles, the backfill at the start, the 15-minute pass — its heartbeat and its liveness probe on `PROCESSING_METRICS_PORT`; no HTTP server |
+| `all` (default) | `main.mjs` | Both in one process: a single container, the tests and the end-to-end suite's server, any install that never set the variable |
 
 Postgres is the only coordination, so a worker needs no address of the API's
 and the API none of the worker's:
@@ -207,8 +216,31 @@ whichever starts first migrates, the other finds nothing to do, and neither
 needs the other to be up. On SIGTERM the worker takes no new window and lets
 the one in progress commit (§11). One worker works the queue out at a time:
 two would take the same windows and work each out twice, as the queue has no
-claims yet. `deploy/compose.yaml` fixes `app` at `PROCESSING_ROLE: all` (not
-taken from `.env`).
+claims yet. `deploy/compose.yaml` fixes the roles, not taken from `.env`:
+`app` is `api` and `worker` is `worker`; `npm run dev` does the same.
+
+**Liveness and health.** A worker process (role `worker`) listens on
+`PROCESSING_METRICS_PORT` (8081 in Compose; 0 = none) on `HOST`, and serves
+one path: `GET /health/live` answers 200 `{status: "ok", heartbeatAgeS}`
+while the last heartbeat it wrote is under 90 s old, and 503 `{status:
+"stalled"}` after that or before its first — the worker container's health
+check, so a loop that stopped beating turns the container unhealthy. Role
+`all` opens no such port (the API's `/api/health/live` is its probe).
+`PROCESSING_TEST_STALL=true`, for tests of that health check only, makes a
+worker beat once and then stand still: no heartbeat, no pass.
+`/api/health` carries a processing summary (§8), `processing: {worker,
+lastSeenS, queued}`, read in one statement under the route's per-IP limiter:
+`worker` is `up` while the newest `last_seen_at` of `processing_workers` is
+under 90 s old against the database's own `now()` — the clock that wrote it;
+`started_at` is a worker's clock and plays no part — `down` after that or
+without any row (rows go an hour after a worker's last beat), and `none` with
+`PROCESSING_ENABLED=false`; `lastSeenS` is that age in whole seconds (null
+without a heartbeat) and `queued` the windows in `processing_queue`, counted
+up to 10 000 so the statement costs the same however long the queue. Counts
+only: a heartbeat's id names a host and a process and never leaves the table.
+`/api/health` stays 200 when the worker is down, so the edge and an uptime
+monitor see the API's truth; `/api/health/processing` answers the same body
+with 503 while the worker is down, for a monitor of the worker.
 
 ## 4. Configuration (API environment)
 
@@ -249,7 +281,9 @@ All configuration is environment variables, validated at boot with zod
 | `RATE_LIMIT_TOKEN_PER_MINUTE` | `600` | `/api/v1` and `/mcp` requests with a valid API token, per token, both together (§8.3, §8.6) |
 | `RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES` | `30` | `/api/v1` and `/mcp` requests with an invalid API token, per IP |
 | `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE` | `60` | The public share endpoint (`/api/public/share`), per IP (§8.5) |
-| `PROCESSING_ROLE` | `all` | What this process runs (§3): `api` serves and queues processing, `worker` processes and serves no HTTP (`trail worker`), `all` both |
+| `PROCESSING_ROLE` | `all` | What this process runs (§3): `api` serves and queues processing, `worker` processes and serves no HTTP (`trail worker`), `all` both. `deploy/compose.yaml` and `npm run dev` fix it per service |
+| `PROCESSING_METRICS_PORT` | `8081` | A worker process's own port (role `worker`), on `HOST`: `GET /health/live`, its container's health check (§3); `0` = none. Role `all` opens none |
+| `PROCESSING_TEST_STALL` | `false` | Tests of that health check only: the worker beats once and then stands still (no heartbeat, no pass). Passed by `deploy/compose.dev.yaml` alone, never in production |
 | `PROCESSING_ENABLED` | `true` | Location processing (§17); `false` queues and processes nothing |
 | `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Map data for the mapped level; set but empty: none (§17.3) |
 | `PROCESSING_OVERPASS_DAILY_MB` | `300` | Map download budget per UTC day |
@@ -901,7 +935,7 @@ public, versioned one is `/api/v1` (§8.3).
 | Method & path | Auth | Contract |
 |---|---|---|
 | `GET /api/config` | — | `config.ts` `PublicConfig` |
-| `GET /api/health`, `GET /api/health/live` | — | `{status, db?, version, commit, uptimeS}`; 503 when the DB is down (`/live` never touches the DB) |
+| `GET /api/health`, `GET /api/health/processing`, `GET /api/health/live` | — | `health.ts`: `{status, db, version, commit, uptimeS, processing: {worker, lastSeenS, queued}}` (§3); `/api/health` 503 only when the DB is down, `/processing` also while no worker beat for 90 s; `/live` `{status, version, commit, uptimeS}` never touches the DB |
 | `POST /api/overland`, `GET /api/overland` | device token | §6, §6.4 |
 | `POST /api/owntracks` | device token | §6, §6.5 |
 | `GET /api/osmand`, `POST /api/osmand` | device token | §6, §6.6 |
@@ -1966,8 +2000,9 @@ the image, so `docker compose exec app trail <command>`):
   SIGTERM or SIGINT; then it takes no new window, lets the one in progress
   commit, writes its last heartbeat and exits 0. A window not committed within
   80 s is left to the database, which rolls it back as the process exits (1).
-  Exit 1 also on an invalid configuration, in role `api` (a process that must
-  not process) and when it cannot start.
+  Its liveness probe answers on `PROCESSING_METRICS_PORT` (§3); a port in use
+  fails the start. Exit 1 also on an invalid configuration, in role `api` (a
+  process that must not process) and when it cannot start.
 - `help` / `--help`
 
 Every command applies pending migrations first (same advisory lock as the
@@ -2141,7 +2176,10 @@ dependencies must stay pure JavaScript; the build fails on a `.node` addon),
 `apps/api/dist` (with the API guide and the reference bundle the API build
 copies next to the server, §8.3), `apps/api/drizzle`, `apps/web/dist`, the CLI wrapper
 `/usr/local/bin/trail` (also the worker's entry, `trail worker`, §3); `USER 1000:1000` (`node`); `EXPOSE 8080`;
-`HEALTHCHECK` on `/api/health/live` (busybox `wget`); OCI labels
+`HEALTHCHECK` for both roles (busybox `wget`): `/api/health/live` on
+`PORT`, or else a worker's `/health/live` on `PROCESSING_METRICS_PORT`
+(`deploy/compose.yaml` gives each service its own half; a worker with the
+port at 0 has no probe); OCI labels
 (`org.opencontainers.image.source` links the GHCR package to the repo);
 build args `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` → env (CI sets the
 package.json or tag version, the 7-character commit that matches the
@@ -2184,9 +2222,44 @@ trusted in Launchway for both. A preview sets neither: no backup, no host
 mounts, and a database volume of its own project (`<project>_trail-db`),
 removed with the preview. The app migrates the database on boot. Rollback =
 redeploy an older release. `deploy/compose.dev.yaml` builds the working tree
-for a local run (`TRAIL_IMAGE`). The former standalone stack (Watchtower,
-Cloudflare Tunnel or Caddy on a Windows laptop) is in the history at
-`3e560ee`.
+for a local run (`TRAIL_IMAGE`; the worker takes the image `app` builds and
+is the only service that receives `PROCESSING_TEST_STALL`). The former
+standalone stack (Watchtower, Cloudflare Tunnel or Caddy on a Windows laptop)
+is in the history at `3e560ee`.
+
+**The worker service.** `worker` runs the image of `app` as `trail worker`
+(role `worker`, §3) with the same environment list (one YAML anchor, so both
+validate the same configuration), `stop_grace_period: 90s` (a pass commits
+within 80 s or is rolled back, §11), its health check on `/health/live` at
+port 8081, the project's `default` network for Overpass and `backend` for the
+database, no published port and no proxy network. Every service has explicit
+caps: `app` 1 CPU and 1 GiB (heap 640 MB), `worker` 2 CPUs and 1 GiB (heap
+768 MB), `db` 2 CPUs and 2 GiB, `backup` 512 MiB. Consequences, in the manner
+of Launchway's ADR 0020:
+
+- Launchway deploys the service with the release; nothing is configured on
+  its side. Every preview gets a worker too, which idles on its empty
+  database (an indexed look at the queue every 2 s). The edge routes `app`
+  only.
+- Launchway's Compose policy checks the file and passes it on as it is (its
+  override only labels the services and attaches routed ones to the proxy
+  network), so `cpus`, `mem_limit` and, later, `deploy.replicas` reach
+  Docker: `docker inspect` of a preview's containers shows them
+  (`HostConfig.NanoCpus`, `HostConfig.Memory`).
+- A deploy recreates both containers from one image in one `docker compose
+  up`, so there is no order to keep between them: whichever starts first
+  migrates. For the seconds of the switch an old `app` and a new `worker`, or
+  the reverse, may run side by side: migrations only add, the per-device
+  locks keep their passes apart, and at worst a window is worked out twice.
+- Rollback redeploys an older release with its own `compose.yaml`. One from
+  before the worker service has none, so Launchway's `up --remove-orphans`
+  removes the `worker` container and that release's `app` processes in its
+  own process again. Only the newer file with an older image (a run by hand)
+  leaves a `worker` whose image does not know `trail worker`: it exits 2 and
+  restarts in a loop, harmlessly — that image's `app` ignores
+  `PROCESSING_ROLE` and processes itself — until the image matches again.
+- One worker only, until the queue has claims (§3); a replica count comes
+  with them.
 
 ### 13.4 Backups
 
@@ -2884,7 +2957,9 @@ security ones too.
   RDP, distance, tile math and the heatmap's levels, whole-cell windows and
   the levels a device's totals call for rebuilding (those below the highest,
   level 18 included),
-  token hashing, config parsing, the processing channel's messages, presets, share
+  token hashing, config parsing, the processing channel's messages, the
+  worker's liveness probe (live under 90 s, 503 after and before the first
+  beat, nothing else served), presets, share
   durations across DST and skipped midnights, the sharing grids — one per
   owner, fixed, within the cell around the position, area cells made of whole
   approximate cells, whole at the antimeridian, and a property test that no
@@ -2980,8 +3055,16 @@ security ones too.
   terminated and announces what it missed, and heartbeats are written, read
   and pruned. `workerProcess.test.ts` runs the entries as processes: `trail
   worker` lets a pass held in the middle of its transaction commit after
-  SIGTERM, then exits 0; the server's entry serves no HTTP in role `worker` and
-  starts no worker in role `api`.
+  SIGTERM, then exits 0, and with `PROCESSING_TEST_STALL` beats once, takes
+  no ready window and writes no last beat; the server's entry serves no HTTP
+  in role `worker` but its liveness probe, and starts no worker in role `api`.
+  `processingHealth.test.ts` reads `/api/health` and `/api/health/processing`
+  beside workers that beat: down (and 200, the processing route 503) before
+  any heartbeat, up with the queue counted, down once the newest beat is 90 s
+  old by the database's clock whatever `started_at` says, the newest of
+  several workers, `none` with processing off, 503 without a summary when the
+  database is down, at most 10 000 queued windows counted, and no worker id,
+  host name or process id in either answer.
   The MCP server is driven by the SDK's own client over Streamable HTTP
   (`tests/support/mcpClient.ts`), in both protocol eras: `mcp.test.ts` the
   transport (JSON answers, tools/list per scope, the unknown-tool answer,
@@ -3289,7 +3372,8 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   `last_seen_at` (the database's clock, refreshed every 15 s and at the stop),
   `version` (the release), `job_id` (the job it runs; null until jobs have ids),
   `passes` and `points` (since its start). No user data; rows unseen for an
-  hour are pruned (§10).
+  hour are pruned (§10). `/api/health` reads the newest `last_seen_at`
+  against the database's `now()` (§3); no route serves a row's id.
 
 ### 17.3 Algorithms
 
@@ -3687,6 +3771,7 @@ current mode.
 | Variable | Default | Meaning |
 |---|---|---|
 | `PROCESSING_ROLE` | `all` | `api`: this process queues and processes nothing; `worker`: it processes and serves no HTTP; `all`: both (§3) |
+| `PROCESSING_METRICS_PORT` | `8081` | A worker process's liveness probe, `/health/live` (§3); `0` = none |
 | `PROCESSING_ENABLED` | `true` | `false`: nothing is queued or processed; the derived tables stay as they are |
 | `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Overpass interpreter for map data; set but empty: no map data (mapped degrades to averaged) |
 | `PROCESSING_OVERPASS_DAILY_MB` | `300` | Map download budget per UTC day |

@@ -23,22 +23,22 @@ unless noted.
 
 | Service | Image | Production | Preview |
 |---|---|---|---|
-| `app` | `ghcr.io/jenspenneman/trail:sha-<commit>` | API, the phones' ingest and the dashboard on port 8080, and the processing worker (`PROCESSING_ROLE` unset: `all`) | the same, for the pull request's head commit |
+| `app` | `ghcr.io/jenspenneman/trail:sha-<commit>` | API, the phones' ingest and the dashboard on port 8080 (`PROCESSING_ROLE: api`: it queues the processing) | the same, for the pull request's head commit |
+| `worker` | the same image, as `trail worker` | the processing worker (`PROCESSING_ROLE: worker`): the averaged, mapped and inferred levels, map data, the backfill; no HTTP server | the same; it idles on the empty database |
 | `db` | `postgres:18-alpine` | the database, in the volume `TRAIL_DB_VOLUME` | the database, in a volume of the preview's own project |
 | `backup` | `postgres:18-alpine` | daily `pg_dump` into `BACKUP_DIR` (profile `production`) | not started |
 
-The image has a second role: `trail worker` runs the processing worker
-without an HTTP server, and `PROCESSING_ROLE=api` keeps a container from
-processing, so the work can leave the API's container for one of its own
-([Processing](#processing)). `deploy/compose.yaml` runs no such container
-yet: it fixes `app` at `PROCESSING_ROLE: all`.
+`deploy/compose.yaml` fixes each container's role; `.env` cannot change it
+([Processing](#processing)).
 
 Launchway names the Compose projects `launchway-trail` (production) and
 `launchway-trail-pr-<number>` (previews); the containers are
-`<project>-<service>-1`, for example `launchway-trail-app-1`. It attaches `app`
-to its proxy network, where its edge forwards the route to port 8080; no host
-port is published. `db` and `backup` sit on an internal network without a
-route out.
+`<project>-<service>-1`, for example `launchway-trail-app-1` and
+`launchway-trail-worker-1`. It attaches `app` to its proxy network, where its
+edge forwards the route to port 8080; no host port is published. `worker`
+publishes nothing and the edge never reaches it; it joins the project's
+default network for Overpass. `db` and `backup` sit on an internal network
+without a route out.
 
 The app's image is never built on the server: GitHub Actions builds every
 commit and publishes its image as `sha-<first 7 characters of the commit>`
@@ -46,14 +46,22 @@ commit and publishes its image as `sha-<first 7 characters of the commit>`
 `main` and every pull request, in the development container
 ([Checks](#checks)).
 
-`app` may use 1 GB (`mem_limit`) and its V8 heap at most 640 MB of it
-(`NODE_OPTIONS=--max-old-space-size=640`): a processing backfill holds up to
-~250 MB per piece, and the cap keeps the heap well under the container's
-limit, so the kernel never OOM-kills the app in the middle of one. A server
-that needs more raises both together in `deploy/compose.yaml`. Commands run
-with `docker exec … trail` are a second Node process under the same 1 GB,
-with a heap of their own: start a long `trail reprocess` when the worker is
-not backfilling.
+Every container has explicit caps in `deploy/compose.yaml`, so processing
+can never take the API's CPU or memory, and no container can take all of
+the node's:
+
+| Service | CPUs | Memory (`mem_limit`) | V8 heap (`NODE_OPTIONS`) |
+|---|---|---|---|
+| `app` | 1 | 1 GB | 640 MB |
+| `worker` | 2 | 1 GB | 768 MB: a pass holds up to ~250 MB of map data per piece |
+| `db` | 2 | 2 GB | — |
+| `backup` | — | 512 MB | — |
+
+The heap stays well under each container's limit, so a heap that runs out
+fails with an error in the log before the kernel would OOM-kill the
+container; a server that needs more raises a limit and its heap together.
+Commands run with `docker exec … trail` are a second Node process under the
+same limit, with a heap of their own ([Processing](#processing)).
 
 ## The app in Launchway
 
@@ -147,8 +155,8 @@ On a server without Trail:
    sets the app up ([trackers.md](trackers.md)).
 
 ```sh
-curl -i https://trail.jenspenneman.com/api/health      # 200: app and database are up
-docker ps --filter name=launchway-trail-                # app and db healthy, backup up
+curl -i https://trail.jenspenneman.com/api/health      # 200: app and database are up; "processing" says the worker is up
+docker ps --filter name=launchway-trail-                # app, worker and db healthy, backup up
 ```
 
 ## Releases
@@ -363,10 +371,13 @@ runs the checks and can merge.
 ## Rollback
 
 Redeploy an older release in Launchway (the app's deployments list): it pulls
-that release's `sha-<commit>` image again. Migrations only move forward, so an
-older image runs against the newer schema; when that does not work, restore
-the dump made before the update ([Backups](#backups)). Back on the newer
-release, run `trail recompute` ([Heatmap](#heatmap)): an older release keeps
+that release's `sha-<commit>` image again, with that release's
+`compose.yaml`. Migrations only move forward, so an older image runs against
+the newer schema; when that does not work, restore the dump made before the
+update ([Backups](#backups)). A release from before the `worker` service has
+none: Launchway removes the `worker` container (`up --remove-orphans`) and
+that release's `app` processes in its own process, as it did then. Back on
+the newer release, run `trail recompute` ([Heatmap](#heatmap)): an older release keeps
 fewer sizes of the heatmap. The server also rebuilds the sizes it finds out of
 step at every start.
 
@@ -495,20 +506,54 @@ release that changes the algorithms it works through the whole history again,
 newest days first, while new uploads keep going first.
 
 **Where the worker runs** (`PROCESSING_ROLE`, [architecture.md
-§3](architecture.md#3-runtime-topology)): in the app's own process by default
-(`all`). In a container of its own it is one worker, the same image running
-`trail worker` (role `worker`, no HTTP server), next to an app in role `api`,
-which still takes the uploads and queues their work but works nothing out —
-without a worker, the queue only grows. Run exactly one: a second worker, or a
-worker next to an app in role `all`, would take the same windows and work
-each out twice (the queue has no claims yet). Both start in any order: whichever
-starts first applies the migrations. The worker writes a heartbeat every 15
-seconds to `processing_workers` (rows of stopped workers go after an hour),
-and each finished window reaches the open dashboards through Postgres
-(`NOTIFY` on `trail_processing`) whichever process worked it out. On SIGTERM
-the worker takes no new window and lets the one in progress commit (up to 80
-s; past that it exits and the database rolls the window back, to be worked
-out again).
+§3](architecture.md#3-runtime-topology)): in the `worker` container,
+`launchway-trail-worker-1` — the app's image running `trail worker` (role
+`worker`, no HTTP server) with CPUs and memory of its own — next to `app` in
+role `api`, which takes the uploads and queues their work but works nothing
+out: without a worker, the queue only grows, and `/api/health` says so. Run
+exactly one: a second worker, or a worker next to an app in role `all`, would
+take the same windows and work each out twice (the queue has no claims yet).
+Both start in any order: whichever starts first applies the migrations. The
+worker writes a heartbeat every 15 seconds to `processing_workers` (rows of
+stopped workers go after an hour), and each finished window reaches the open
+dashboards through Postgres (`NOTIFY` on `trail_processing`) whichever
+process worked it out. On SIGTERM the worker takes no new window and lets the
+one in progress commit (up to 80 s, within the container's 90 s to stop; past
+that it exits and the database rolls the window back, to be worked out
+again). Without Compose the image runs as one process in role `all` (the
+default), the API and the worker together.
+
+**Is it working?** `/api/health` answers 200 while the API and the database
+are up, whatever the worker does, and says how the worker is:
+
+```sh
+curl -s https://trail.jenspenneman.com/api/health
+# {"status":"ok","db":"ok",…,"processing":{"worker":"up","lastSeenS":7,"queued":0}}
+```
+
+`worker` is `up` while the newest heartbeat is under 90 seconds old, by the
+database's clock, `down` after that, and `none` with `PROCESSING_ENABLED=false`;
+`lastSeenS` is the age of that heartbeat and `queued` the windows waiting
+(counted up to 10 000). The answer never names a worker, host or process.
+`/api/health/processing` gives the same answer with **503 while the worker is
+down**: point an uptime monitor of the worker there, and keep the API's on
+`/api/health`. The container checks itself as well: the worker answers
+`/health/live` on port 8081 inside the container (published nowhere, only the
+project's own containers reach it) with 200 while its last heartbeat is under
+90 seconds old, so a worker whose loop is stuck turns *unhealthy*:
+
+```sh
+docker ps --filter name=launchway-trail-worker                         # healthy
+docker exec launchway-trail-worker-1 wget -qO- http://127.0.0.1:8081/health/live
+docker logs -f launchway-trail-worker-1                                # passes, map tiles, the backfill
+docker restart launchway-trail-worker-1                                # the worker alone
+```
+
+Restarting the worker leaves the API alone: uploads keep arriving and their
+work waits in the queue, which the new worker takes up within seconds. The
+restart lets the pass in progress commit first (the container has 90 s to
+stop). Docker does not restart an unhealthy worker on its own: restart it,
+and read its log for the cause.
 
 **Map data and Overpass.** Map data comes from the public Overpass instance
 at `https://overpass-api.de/api/interpreter` (`PROCESSING_OVERPASS_URL`), one
@@ -535,7 +580,7 @@ interface is there for it).
 
 | Setting | Effect |
 |---|---|
-| `PROCESSING_ROLE=api` / `worker` | This container only queues (the app) / only processes (`trail worker`); unset (`all`): both |
+| `PROCESSING_ROLE` | Not a setting here: `compose.yaml` fixes `app` at `api` (only queues) and `worker` at `worker` (only processes); without Compose, unset (`all`) runs both in one process |
 | `PROCESSING_ENABLED=false` | Nothing is queued or processed; what was worked out stays as it is |
 | `PROCESSING_OVERPASS_URL=` (empty) | No map data: stops, moves and modes are still worked out, without map evidence |
 | `PROCESSING_OVERPASS_DAILY_MB=100` | A smaller daily download budget |
@@ -551,14 +596,16 @@ docker exec launchway-trail-app-1 trail reprocess --from-level inferred         
 ```
 
 It works through the range in day windows and prints a line per device;
-tiles it lacks are left to the server, which fetches them politely
+tiles it lacks are left to the worker, which fetches them politely
 afterwards. The modes people set are kept through every reprocessing. It does
 the work itself, in the command's own process, whatever role the container
-has: in an app in role `api` too.
+has: in an app in role `api` too. Run it in `app`, as above: in `worker` it
+would share that container's 1 GB with the worker's own heap.
 
-The log tells what the worker does: `Trail worker started` (in a container of
-its own), `processing window done` (device, range, points, segments, missing
-tiles, milliseconds), `map tile stored` (ways, stops, bytes, milliseconds),
+The worker's log (`docker logs launchway-trail-worker-1`) tells what it
+does: `Trail worker started` (with its liveness port), `processing window
+done` (device, range, points, segments, missing tiles, milliseconds), `map
+tile stored` (ways, stops, bytes, milliseconds),
 `processing backfill queued` (days), and warnings when a tile fails (with the
 kind of failure; it is tried again later), the daily budget is spent or a
 heartbeat could not be written. The API warns `processing events: connection
@@ -644,6 +691,7 @@ Launchway shows each service's logs; on the server:
 
 ```sh
 docker logs -f launchway-trail-app-1     # the app logs JSON lines (pino)
+docker logs -f launchway-trail-worker-1  # the processing worker, the same way
 docker logs --since 1h launchway-trail-app-1 2>&1 | grep '"level":50'   # errors
 docker logs launchway-trail-app-1 2>&1 | grep '"msg":"API token'      # API tokens created, changed, rolled, revoked
 ```
@@ -655,14 +703,25 @@ default level; the API token lines carry the token's and the user's id only.
 ## Local run
 
 `deploy/compose.dev.yaml` builds the working tree into an image and runs the
-stack on `http://localhost:8080`, like a preview (no backup, a volume of its
-own). Its header lists the four variables `deploy/.env` needs; then, in
-`deploy/`:
+stack — `app`, `worker` and `db`, with the caps of production — on
+`http://localhost:8080`, like a preview (no backup, a volume of its own). Its
+header lists the four variables `deploy/.env` needs; then, in `deploy/`:
 
 ```sh
 docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 E2E_BASE_URL=http://localhost:8080 npm run test:e2e   # from the repository root, on a fresh database
 docker compose -f compose.yaml -f compose.dev.yaml down -v
+```
+
+To see the worker's health check fail, start a worker whose loop stands
+still after its first heartbeat (`PROCESSING_TEST_STALL`, which only this
+file passes on):
+
+```sh
+PROCESSING_TEST_STALL=true docker compose -f compose.yaml -f compose.dev.yaml up -d worker
+curl -s http://localhost:8080/api/health          # "worker":"down" 90 s later, still 200
+docker compose -f compose.yaml -f compose.dev.yaml ps worker   # unhealthy after about 3 minutes
+docker compose -f compose.yaml -f compose.dev.yaml up -d worker   # a normal worker again
 ```
 
 Day-to-day development uses `npm run dev` instead (README).
@@ -683,6 +742,9 @@ Day-to-day development uses `npm run dev` instead (README).
 | Compose warns that volume `trail-db` "was not created by Docker Compose" | Expected: the volume was created by hand, which keeps `down -v` away from it. |
 | `app` keeps restarting; its log says "Invalid configuration" | A value is invalid; the log names it. Fix it in Launchway and redeploy. |
 | `/api/health` answers 503 | The database is down: `docker logs launchway-trail-db-1`. |
+| `/api/health` says `"worker":"down"` (and `/api/health/processing` 503) | No worker beat for 90 s: `docker ps --filter name=launchway-trail-worker` and `docker logs launchway-trail-worker-1`. `docker restart launchway-trail-worker-1` is safe; uploads wait in the queue meanwhile (`queued`). |
+| `worker` is *unhealthy* | Its loop stopped writing heartbeats: the database refused them (the log says "worker heartbeat could not be written") or the process is stuck. Restart it; Docker does not on its own. |
+| `worker` restarts in a loop with `trail: unknown command "worker"` | The newer `compose.yaml` runs with an image from before the worker (a run by hand). Harmless: that image's `app` processes by itself. Deploy a release, or the older release with its own `compose.yaml`. |
 | Requests all share one client address, or the session cookie is not `Secure` | `TRUST_PROXY` does not name Launchway's edge address. |
 | `app` will not start: "TRUST_PROXY: PUBLIC_URL is https://, but Trail serves plain HTTP and trusts no proxy …" | Trail serves plain HTTP, so only a trusted proxy can say a phone's upload came over HTTPS; without one every upload would be refused. Set `TRUST_PROXY` to the proxy that terminates TLS (Launchway's edge, `10.210.0.2`, is the compose default). |
 | Phones get 403 "Uploads need HTTPS" while the dashboard works; the log says "a proxy that TRUST_PROXY does not trust says they came over HTTPS" | `TRUST_PROXY` names another proxy than the one in front of Trail: the log line shows the address it came from. |
