@@ -851,6 +851,36 @@ export function renderReport(context) {
   );
   lines.push("");
 
+  const designClasses = checks?.ingestLog?.day?.designClasses ?? [];
+  if (designClasses.length > 0) {
+    lines.push(
+      "The same column in §3.1's classes, against its targets — §3 defines them server-side, as production can check them every day; the gates above are k6's, which add the COMMIT and the hop:",
+    );
+    lines.push("");
+    lines.push(
+      table(
+        ["Batch", "Uploads", "p50 ms", "p95 ms", "p99 ms", "Target p50 / p95 / p99"],
+        ingestTargets
+          .map((target) => ({
+            target,
+            measured: designClasses.find(
+              (/** @type {any} */ entry) => entry.batch === target.batch,
+            ),
+          }))
+          .filter(({ measured }) => measured !== undefined)
+          .map(({ target, measured }) => [
+            target.label,
+            show(measured.n),
+            show(measured.p50, 1),
+            show(measured.p95, 1),
+            show(measured.p99, 1),
+            `${target.p50} / ${target.p95} / ${target.p99}`,
+          ]),
+      ),
+    );
+    lines.push("");
+  }
+
   lines.push("## Dashboard (k6)");
   lines.push("");
   lines.push(

@@ -229,6 +229,13 @@ async function measureFsync(stack) {
   };
 }
 
+/** Production's classes of records per upload (M0)… */
+const productionClasses = `CASE WHEN records < 10 THEN '<10' WHEN records < 100 THEN '10–99'
+  WHEN records < 500 THEN '100–499' ELSE '500+' END`;
+/** … and those of the design's §3.1, as lib/targets.js names them. */
+const designClasses = `CASE WHEN records <= 1 THEN '1' WHEN records < 100 THEN '2-99'
+  WHEN records < 400 THEN '100-399' WHEN records < 700 THEN '400-699' ELSE '700-plus' END`;
+
 /**
  * The run's own record from the database: what was stored and the ingest log's latencies and rates.
  * @param {LoadStack} stack
@@ -239,10 +246,9 @@ async function databaseChecks(stack, window, historyRows) {
   const iso = (/** @type {number} */ ms) => `'${new Date(ms).toISOString()}'::timestamptz`;
   const probe = `'${window.probeDevice}'::uuid`;
   /** @param {number} from @param {number} to */
-  const classes = (from, to) => `
+  const classes = (from, to, by = productionClasses) => `
     SELECT coalesce(json_agg(c ORDER BY c.lo), '[]'::json) FROM (
-      SELECT CASE WHEN records < 10 THEN '<10' WHEN records < 100 THEN '10–99'
-        WHEN records < 500 THEN '100–499' ELSE '500+' END AS batch,
+      SELECT ${by} AS batch,
         min(records) AS lo, count(*) AS n,
         percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms) AS p50,
         percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95,
@@ -258,6 +264,7 @@ async function databaseChecks(stack, window, historyRows) {
   const day = await stack.json(`
     SELECT json_build_object(
       'classes', (${classes(window.day.from, window.day.to)}),
+      'designClasses', (${classes(window.day.from, window.day.to, designClasses)}),
       'byProfile', (SELECT coalesce(json_agg(p), '[]'::json) FROM (
         SELECT d.name AS profile, count(*) AS uploads, sum(l.locations) AS points, sum(l.records) AS records
         FROM ingest_log l JOIN devices d ON d.id = l.device_id
@@ -289,6 +296,7 @@ async function databaseChecks(stack, window, historyRows) {
     ingestLog: {
       day: {
         classes: day.classes,
+        designClasses: day.designClasses,
         byProfile: (day.byProfile ?? []).map((/** @type {any} */ p) => ({
           profile: p.profile,
           uploads: Number(p.uploads),

@@ -247,6 +247,13 @@ for both the k6 scripts and the report:
 | processing queue age, throughput, backfill | p95 ≤ 5 min quiet, ≤ 15 at the peak, never > 1 h; ≥ 1 500 points/s; ≥ 600 device-days/h | §3.2 (tracked until the worker's contract) |
 | CPU, Postgres, WAL, disk, amplification | §3.3, §5.2 | tracked |
 
+**Client side and server side.** §3 defines the ingest targets server-side,
+as `ingest_log.duration_ms` records them in production every day; §6.3 has k6
+hold them on its own `http_req_duration`. The gates are k6's, the stricter of
+the two: what the phone waits for, the COMMIT, the response and the hop
+included, while `duration_ms` ends before the COMMIT. Every report shows the
+server side as well, in §3.1's classes and in production's.
+
 A batch is held to the row of the next larger size §3.1 names. The
 day-statistics and activity requests and the access log have no target in
 §3.2: their percentiles are reported, not judged. The dashboard's failed
