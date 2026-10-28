@@ -4,20 +4,40 @@
 # OpenMapTiles schema, built with Planetiler; the region `world` is the world
 # overview (z0–6). scripts/mapdata/build.sh does the work, here and by hand.
 #
-# This first version keeps what it builds as artefacts of the run, for 14
-# days. Publishing to GHCR with an attestation, the monthly schedule and the
-# retention of older builds come with the registry client (the design's
-# task 2).
+# On the 1st of every month every region of scripts/mapdata/regions.json is
+# built and published to GHCR as an OCI artefact (scripts/mapdata/publish.sh):
+# ghcr.io/jenspenneman/trail-mapdata:<region>, the tag the servers follow, and
+# :<region>-<yyyymmdd>, the day of the extract's data. Every push gets a build
+# provenance attestation, as the image does, and the newest three builds of a
+# region are kept (scripts/mapdata/retain.sh). A dispatch builds the regions
+# it names; a run on main publishes them, a run on another branch only the
+# test region (`"fixture": true` in regions.json, Monaco), so that a branch
+# nobody reviewed never moves a tag the servers pull. A pull request that
+# changes the pipeline builds Monaco and publishes nothing.
+#
+# Publishing is a job of its own, the only one with `packages`, `id-token` and
+# `attestations: write` and one that never runs for a pull request: the
+# builds, which run osmium and Planetiler on downloaded data, keep the
+# read-only token, and a pull request, a fork's included, can build a region
+# but never publish one.
 name: Map data
 
 on:
+  schedule:
+    # The 1st of every month at 04:00 UTC: the extracts of the month's last day
+    - cron: "0 4 1 * *"
   workflow_dispatch:
     inputs:
       region:
-        description: Regions of scripts/mapdata/regions.json, apart by spaces or commas (world is the world overview)
+        description: Regions of scripts/mapdata/regions.json, apart by spaces or commas, or all (world is the world overview)
         type: string
         required: true
         default: monaco
+      extract:
+        description: Geofabrik's extract of this day (yymmdd, e.g. 261027) instead of the newest
+        type: string
+        required: false
+        default: ""
   # A change to the pipeline builds Monaco, the region of the test fixture, so
   # that a broken build shows in its pull request rather than in a monthly run.
   pull_request:
@@ -32,40 +52,85 @@ defaults:
   run:
     shell: bash
 
+env:
+  REPOSITORY: ghcr.io/jenspenneman/trail-mapdata
+  # Builds of a region kept in the package; the servers keep two on their volume
+  KEEP_BUILDS: "3"
+  # ORAS (Apache-2.0), pinned with the SHA-256 of its release archive
+  ORAS_VERSION: "1.3.6"
+  ORAS_SHA256: 66fb0ad7206f3f6fa77ed5b552049d364ccf4b50b1684554f731f76302b52ca0
+
 jobs:
   regions:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.regions.outputs.matrix }}
+      publish: ${{ steps.regions.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - id: regions
         env:
-          REGIONS: ${{ inputs.region || 'monaco' }}
+          EVENT: ${{ github.event_name }}
+          REGIONS: ${{ inputs.region }}
+          EXTRACT: ${{ inputs.extract }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          read -ra names <<<"${REGIONS//,/ }"
-          list='[]'
-          for name in "${names[@]}"; do
-            case $name in
-              *[!a-z0-9-]* | -*)
-                echo "::error title=Map data::A region is lowercase letters, digits and dashes."
-                exit 1
-                ;;
-            esac
-            if ! jq -e --arg name "$name" 'has($name)' scripts/mapdata/regions.json >/dev/null; then
-              echo "::error title=Map data::$name is not a region of scripts/mapdata/regions.json."
+          case $EVENT in
+            schedule) REGIONS=all ;;
+            pull_request) REGIONS=monaco ;;
+          esac
+          case ${EXTRACT:-} in
+            '' | [0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+            *)
+              echo "::error title=Map data::An extract is a day as yymmdd, e.g. 261027."
               exit 1
-            fi
-            list=$(jq -c --arg name "$name" '. + [$name] | unique' <<<"$list")
-          done
+              ;;
+          esac
+          if [ "${REGIONS:-}" = all ]; then
+            list=$(jq -c 'keys' scripts/mapdata/regions.json)
+          else
+            read -ra names <<<"${REGIONS//,/ }"
+            list='[]'
+            for name in "${names[@]}"; do
+              case $name in
+                *[!a-z0-9-]* | -*)
+                  echo "::error title=Map data::A region is lowercase letters, digits and dashes."
+                  exit 1
+                  ;;
+              esac
+              if ! jq -e --arg name "$name" 'has($name)' scripts/mapdata/regions.json >/dev/null; then
+                echo "::error title=Map data::$name is not a region of scripts/mapdata/regions.json."
+                exit 1
+              fi
+              list=$(jq -c --arg name "$name" '. + [$name] | unique' <<<"$list")
+            done
+          fi
           if [ "$list" = '[]' ]; then
             echo "::error title=Map data::No region to build."
             exit 1
           fi
-          echo "matrix=$list" >>"$GITHUB_OUTPUT"
+          # What this run may publish: nothing for a pull request, every region
+          # on the default branch (where the schedule always runs), the test
+          # region on any other branch.
+          if [ "$EVENT" = pull_request ]; then
+            publish='[]'
+          elif [ "$EVENT" = schedule ] || [ "$GITHUB_REF" = "refs/heads/${DEFAULT_BRANCH:-main}" ]; then
+            publish=$list
+          else
+            publish=$(jq -c --slurpfile regions scripts/mapdata/regions.json \
+              '[.[] | select($regions[0][.].fixture == true)]' <<<"$list")
+            held=$(jq -r --argjson publish "$publish" '. - $publish | join(", ")' <<<"$list")
+            if [ -n "$held" ]; then
+              echo "::notice title=Map data::Built, not published: $held. A run on $GITHUB_REF_NAME publishes the test region only; real regions are published from $DEFAULT_BRANCH."
+            fi
+          fi
+          {
+            echo "matrix=$list"
+            echo "publish=$publish"
+          } >>"$GITHUB_OUTPUT"
 
   build:
     needs: regions
@@ -75,8 +140,8 @@ jobs:
     # Measured: Belgium 15 min, France 1 h 45 min; Germany did not finish in
     # two hours (70 min of it the download from Geofabrik)
     timeout-minutes: 240
-    # One build of a region at a time, whichever run or ref started it (the
-    # publishing of task 2 writes one tag per region); a newer run waits.
+    # One build of a region at a time, whichever run or ref started it; a
+    # newer run waits.
     concurrency:
       group: mapdata-${{ matrix.region }}
       cancel-in-progress: false
@@ -86,6 +151,7 @@ jobs:
         region: ${{ fromJSON(needs.regions.outputs.matrix) }}
     env:
       REGION: ${{ matrix.region }}
+      EXTRACT: ${{ inputs.extract }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -120,19 +186,22 @@ jobs:
           path: ~/.cache/trail-mapdata
           key: mapdata-sources-${{ steps.month.outputs.month }}
       - name: Build
-        run: scripts/mapdata/build.sh --out "$RUNNER_TEMP/mapdata/$REGION" --work "$RUNNER_TEMP/work/$REGION" "$REGION"
+        run: |
+          scripts/mapdata/build.sh --out "$RUNNER_TEMP/mapdata/$REGION" --work "$RUNNER_TEMP/work/$REGION" \
+            ${EXTRACT:+--extract "$EXTRACT"} "$REGION"
       - name: Job summary
         if: always()
         run: |
           if [ -f "$RUNNER_TEMP/work/$REGION/summary.md" ]; then
             cat "$RUNNER_TEMP/work/$REGION/summary.md" >>"$GITHUB_STEP_SUMMARY"
           fi
+      # The hand-over to the publishing job, and a copy to look at
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mapdata-${{ matrix.region }}
           path: ${{ runner.temp }}/mapdata/${{ matrix.region }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
           # gzip and PMTiles, compressed already
           compression-level: 0
       # The logs, timings and Planetiler's tile statistics of the build
@@ -148,3 +217,94 @@ jobs:
             ${{ runner.temp }}/work/${{ matrix.region }}/*.layerstats.tsv.gz
           if-no-files-found: warn
           retention-days: 14
+
+  # Pushes each built region, attests it and deletes its old builds. Never for
+  # a pull request; a region whose build failed is skipped, and so is the
+  # rest of its job.
+  publish:
+    needs: [regions, build]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.regions.result == 'success' && needs.regions.outputs.publish != '[]' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    # One publication of a region at a time: its tags, its retention
+    concurrency:
+      group: mapdata-publish-${{ matrix.region }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        region: ${{ fromJSON(needs.regions.outputs.publish) }}
+    env:
+      REGION: ${{ matrix.region }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: artefact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: mapdata-${{ matrix.region }}
+          path: ${{ runner.temp }}/mapdata/${{ matrix.region }}
+      - name: No build to publish
+        if: steps.artefact.outcome != 'success'
+        run: |
+          printf '### Not published: %s\n\nIts build did not finish (see the build job of %s).\n\n' "$REGION" "$REGION" >>"$GITHUB_STEP_SUMMARY"
+          echo "::warning title=Map data::$REGION was not published: its build did not finish."
+      - name: Install ORAS
+        if: steps.artefact.outcome == 'success'
+        run: |
+          archive=$RUNNER_TEMP/oras.tar.gz
+          curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 -o "$archive" \
+            "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          echo "$ORAS_SHA256  $archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/oras"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/oras" oras
+          echo "$RUNNER_TEMP/oras" >>"$GITHUB_PATH"
+          "$RUNNER_TEMP/oras/oras" version
+      # ORAS and the attestation's push read the credentials Docker's login stores
+      - if: steps.artefact.outcome == 'success'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: publish
+        if: steps.artefact.outcome == 'success'
+        run: |
+          scripts/mapdata/publish.sh --repository "$REPOSITORY" --stage "$RUNNER_TEMP/stage/$REGION" \
+            --outputs "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY" "$RUNNER_TEMP/mapdata/$REGION"
+      # GitHub artifact attestations need a public repository (or GitHub
+      # Enterprise Cloud), as for the image (ci.yml)
+      - id: repo
+        if: steps.publish.outcome == 'success'
+        run: echo "visibility=$(gh api "repos/$GITHUB_REPOSITORY" --jq .visibility)" >>"$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - if: steps.publish.outcome == 'success' && steps.repo.outputs.visibility == 'public'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.REPOSITORY }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+          # storage records exist for organisation-owned repositories only
+          create-storage-record: false
+      # Housekeeping: a failure warns and keeps the run green, since the build
+      # is published; the package's versions then wait for the next run.
+      - name: Delete old builds
+        if: steps.publish.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS: ${{ steps.publish.outputs.previous }}
+        run: |
+          if ! scripts/mapdata/retain.sh --region "$REGION" --keep "$KEEP_BUILDS" \
+            ${PREVIOUS:+--also "$PREVIOUS"} --summary "$GITHUB_STEP_SUMMARY"; then
+            echo "::warning title=Map data::The old builds of $REGION could not all be deleted (the package's Actions access must give this repository the Admin role)."
+            exit 1
+          fi
