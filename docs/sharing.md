@@ -110,6 +110,20 @@ person: the same spot every time, never their exact position. Each person has
 one grid for all their devices, shares and links, so putting several of them
 together tells no more than one.
 
+## What stays on your device
+
+To open at once, Trail keeps a copy of your own data in your browser: your
+devices, your tracks and timeline of the days you looked at, the calendar,
+Insights (**Settings › Preferences › Keep a copy of your data on this
+device**, on unless you turn it off there; turn it off on a shared
+computer). It never keeps anything of the people who share with you — their
+positions, their tracks, the shares in either direction, your public links,
+a link's page — nor your access log: those live in the open page only and are
+gone when it closes, so a share that ended or became coarser while your
+browser was closed never shows anything it no longer allows. Signing out
+deletes the copy, and so does another account signing in on the same
+browser.
+
 ## Public links
 
 In **Settings › Public links**, **Make a public link**: a label for the page

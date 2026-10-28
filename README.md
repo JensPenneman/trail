@@ -35,6 +35,14 @@ and every pull request gets a preview deployment of its own.
   map, alone or together, as far as their share allows, on a light, dark or
   (where the server has imagery) satellite map. Everything it shows is in its
   address, so a view can be bookmarked or shared.
+- **Opens at once, also offline**: the browser keeps a copy of your own data
+  and paints your map, your day and your devices from it before the server
+  has answered, then asks only whether anything changed — an unchanged answer
+  is a `304`, a past day whose stamps still match is not asked for at all —
+  and resumes the live stream where it left off. Installable as an app whose
+  shell opens without a network, read-only until it is back. Other people's
+  data never reaches the disk; signing out deletes the copy, and on a shared
+  computer you can keep none.
 - **How you travelled**: tracks in four levels — raw, averaged (noise
   smoothed), mapped onto OpenStreetMap roads and railways, and transport:
   stops and moves, each move with its mode (walking, cycling, car, bus, tram,
@@ -65,8 +73,9 @@ and every pull request gets a preview deployment of its own.
 - **Settings** in the style of the iPhone's: groups of rows with search
   (one's devices found by name), a page for every part (and for each device,
   passkey, share, public link and API token), the list beside the page on wide
-  screens, and preferences the account takes to every browser — the map's
-  style and the level of its tracks.
+  screens, preferences the account takes to every browser — the map's
+  style and the level of its tracks — and whether this browser keeps a copy
+  of your data, with its size and what it did.
 - **Public API**: a versioned JSON API under `/api/v1` for scripts, apps and
   agents — devices, positions, every recorded point, visits, trips, daily
   statistics, activity and the heatmap — described in OpenAPI 3.1 and
