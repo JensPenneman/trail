@@ -90,7 +90,7 @@
   },
   "overrides": [
     {
-      "includes": ["scripts/**", "apps/api/src/cli/**", "deploy/**"],
+      "includes": ["scripts/**", "tools/**", "apps/api/src/cli/**", "deploy/**"],
       "linter": {
         "rules": {
           "suspicious": { "noConsole": "off" }

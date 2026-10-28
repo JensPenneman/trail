@@ -112,5 +112,7 @@ export function loadConfig(
       maxAccuracyM: env.PROCESSING_MAX_ACCURACY_M,
       stopMinS: env.PROCESSING_STOP_MIN_S,
     },
+    loadTest: env.LOAD_TEST,
+    launchwayEnvironment: env.LAUNCHWAY_ENVIRONMENT ?? null,
   };
 }

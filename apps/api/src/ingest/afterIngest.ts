@@ -28,6 +28,7 @@ const toTrackPoint = (point: IngestOutcome["inserted"][number]): TrackPoint => [
  */
 export function afterIngest(ctx: AppContext, device: IngestDevice, outcome: IngestOutcome): void {
   const { counts, inserted } = outcome;
+  ctx.ingestMeter.record(counts);
   ctx.bus.publish(device.userId, {
     type: "ingest",
     deviceId: device.id,

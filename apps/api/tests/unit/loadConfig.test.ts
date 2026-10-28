@@ -66,7 +66,26 @@ describe("loadConfig", () => {
         maxAccuracyM: 150,
         stopMinS: 180,
       },
+      loadTest: false,
+      launchwayEnvironment: null,
     });
+  });
+
+  it("reads the load-test switch and Launchway's environment name for `trail load-fleet`", () => {
+    const config = loadConfig(
+      { ...minimal, LOAD_TEST: "true", LAUNCHWAY_ENVIRONMENT: " preview " },
+      defaults,
+    );
+    expect(config).toMatchObject({ loadTest: true, launchwayEnvironment: "preview" });
+    expect(
+      loadConfig({ ...minimal, LOAD_TEST: "", LAUNCHWAY_ENVIRONMENT: "" }, defaults),
+    ).toMatchObject({ loadTest: false, launchwayEnvironment: null });
+    expect(issuesOf({ ...minimal, LOAD_TEST: "1" })).toEqual(["LOAD_TEST: Use true or false"]);
+    // Only compared, never limited: a long value never keeps the app from starting.
+    expect(
+      loadConfig({ ...minimal, LAUNCHWAY_ENVIRONMENT: "x".repeat(500) }, defaults)
+        .launchwayEnvironment,
+    ).toHaveLength(500);
   });
 
   it("switches mapping off with an empty Overpass URL, and processing off altogether", () => {

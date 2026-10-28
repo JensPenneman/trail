@@ -2,6 +2,7 @@ import type { AppContext } from "../appContext";
 import { fillHeatLevels } from "../heatmap/fillHeatLevels";
 import { checkSilentDevices } from "./checkSilentDevices";
 import { intervalJob } from "./intervalJob";
+import { loadLineJob } from "./loadLineJob";
 import { oneOffJob } from "./oneOffJob";
 import { pruneExpiredData } from "./pruneExpiredData";
 
@@ -39,6 +40,7 @@ export function startJobs(ctx: AppContext): Jobs {
         }
       },
     }),
+    loadLineJob(ctx),
   ];
   if (alerts !== null) {
     jobs.push(

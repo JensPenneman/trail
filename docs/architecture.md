@@ -27,8 +27,9 @@ trail/
 ├── packages/
 │   └── contracts/      zod schemas + types = the HTTP contract (imported by both)
 ├── deploy/             production compose stack, env example, Windows docs/scripts
-├── docs/               this file, the public API guide (api.md), operations and user docs
+├── docs/               this file, the public API guide (api.md), operations and user docs, load-test reports (perf/)
 ├── scripts/            repo tooling (dev, build, hooks, db init)
+├── tools/load/         the load-test harness: k6 scenarios, SSE probe, collector, reports (docs/perf/README.md)
 ├── tests/e2e/          Playwright end-to-end suite (whole stack)
 ├── .devcontainer/      development container (scripts/devc.sh, §3), where the node's checks run (§15)
 ├── compose.yaml        development services (Postgres)
@@ -256,6 +257,8 @@ All configuration is environment variables, validated at boot with zod
 | `PROCESSING_OSM_TTL_DAYS` | `90` | Map tiles are refreshed after this many days |
 | `PROCESSING_MAX_ACCURACY_M` | `150` | Less accurate points are dropped from the averaged level on |
 | `PROCESSING_STOP_MIN_S` | `180` | The shortest stop |
+| `LOAD_TEST` | `false` | `true` lets `trail load-fleet` create a load test's synthetic people (§11, docs/perf/README.md); previews only |
+| `LAUNCHWAY_ENVIRONMENT` | unset | Set by Launchway (`production` or `preview`), never by hand; `trail load-fleet` runs only where it is `preview` or unset |
 | `NODE_ENV` | `development` | `production` in the image (see below) |
 
 Development safety: when `NODE_ENV !== "production"` the API refuses to start
@@ -1939,6 +1942,13 @@ runs in the worker (§3) — or in the API's process too, in role `all`.
 - once, 5 s after the start — the heat levels of every device whose totals
   disagree are rebuilt from its points (`fillHeatLevels`, §8.2). A shutdown
   does not wait for it: it is cancelled and rolls back.
+- every minute — the API's `load` log line at `info` (docs/perf/README.md): the
+  minute's event-loop delay (p50, p99, max), the pool (connections, idle,
+  waiting), open SSE streams, background tasks, device-days waiting for their
+  daily statistics, the minute's uploads, points, duplicates and rejects, RSS
+  and heap, and the processing queue (rows, new windows ready, how long the
+  oldest of those has waited since it was queued; one small aggregate).
+  Numbers only, for `docker logs` and the load harness; no endpoint.
 - the processing worker (§17.4), in the worker's process (role `worker`) or
   the API's (`all`) — 3 s after new work in its own process, every 2 s while
   idle in a worker process, every minute for retries and every 15 minutes for
@@ -1968,6 +1978,20 @@ the image, so `docker compose exec app trail <command>`):
   80 s is left to the database, which rolls it back as the process exits (1).
   Exit 1 also on an invalid configuration, in role `api` (a process that must
   not process) and when it cannot start.
+- `load-fleet --people <n> [--mix default|steered] [--shares <0-1>] [--probe]`
+  — the synthetic people of a load test (docs/perf/README.md): an account per
+  person at `load.invalid`, one phone each with its device token, one session
+  each, shares among them (`--shares`, 0.3: a person in three shares with the
+  next two), the SSE probe's own person with `--probe`; the profiles of
+  docs/design/capacity.md §2.2 (`apps/api/src/load/fleetProfiles.ts`) in the
+  mix's shares, ten phones one of each. The fleet's ids and secrets go to
+  stdout as one JSON document (refused into a terminal: exit 2); stderr gets
+  counts only. Refused (exit 1) unless `LOAD_TEST=true`, `LAUNCHWAY_ENVIRONMENT`
+  is `preview` or unset (fail closed: `production` and any other name are
+  refused) — both checked before the database is opened — and the
+  database holds no passkey and no account outside `load.invalid`, checked
+  before the CLI migrates it and again under the sign-up lock in the
+  transaction that writes the fleet.
 - `help` / `--help`
 
 Every command applies pending migrations first (same advisory lock as the
@@ -2125,7 +2149,15 @@ codes: 0 success, 1 failure (including invalid configuration), 2 wrong usage
 - Postgres is not published outside the Docker network in production.
 - The app container receives an explicit list of its own variables (§4), not
   the whole `deploy/.env`: Launchway's and the backup's variables never reach
-  it.
+  it — but `LAUNCHWAY_ENVIRONMENT`, the deployment's kind, on which `trail
+  load-fleet` refuses anywhere but in a preview.
+- Load tests never share a database with real people: `trail load-fleet`
+  (§11) refuses without `LOAD_TEST=true`, in a deployment Launchway calls
+  anything but a preview, and in a database that holds a passkey or an
+  account outside `load.invalid`; the harness
+  (`tools/load/`) drives only the stack it started, redacts tokens, sessions,
+  addresses and positions from every line of output it shows, and refuses to
+  write a report that would hold any (docs/perf/README.md, "Safety").
 
 ## 13. Deployment
 
@@ -3036,6 +3068,25 @@ security ones too.
   and remembered names, the retention, the account's deletion and the
   shutdown's last write. The migration-upgrade test fingerprints its rows and
   the visitor key.
+- The load harness (`tools/load/test`, `node --test`, part of `npm test`):
+  the profiles equal `trail load-fleet`'s and give §2.2's day; a thousand
+  phones played over a day send what docs/design/capacity.md §2.3 computes
+  (points and requests a day, the morning peak and the night, the worst ten
+  seconds, an eight-hour backlog) and a compressed day the same rates; a
+  phone's points are the same whenever asked for, on whole seconds, one a
+  second at most; the encoders send the fields and units of
+  `trackerSamples.ts` and the Overland fixture, the token where each app
+  puts it; routes from the fixture and from a file; the targets as k6
+  thresholds; the redaction of tokens, sessions, addresses and positions;
+  the collector's rates and its reading of the app's log (numbers only); the
+  report (every target, the verdict, the index) and its refusal to hold a
+  secret; the SSE probe's lags against a fake server. In the API,
+  `loadFleet.test.ts` (unit) allocates the profiles and checks every refusal
+  condition alone, and `loadFleet.test.ts` (integration) runs `trail
+  load-fleet` refused without each condition, then creates a fleet whose
+  phones upload through all three protocols, whose sessions sign in and whose
+  shares show, with no secret on stderr; `loadLine.test.ts` (both) holds the
+  load line to numbers and counts an upload.
 - `apps/web/tests` — Vitest + Testing Library (jsdom). Pages render through
   `renderPage` with the API answered by `mockApi` and the map replaced by a
   stub that shows what it was handed; the People page's tests also check

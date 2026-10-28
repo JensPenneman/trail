@@ -727,17 +727,25 @@ tools/load/
 Three sources, one collector:
 
 - **k6**: per endpoint and batch-size tag, `http_req_duration` percentiles,
-  `http_req_failed`, data-loss and retry counters, iteration rates; thresholds
-  in the scripts, for example
-  `'http_req_duration{endpoint:overland,batch:500}': ['p(95)<250', 'p(99)<500']`,
-  `'http_req_failed{endpoint:ingest}': ['rate<0.0001']`,
-  `'dropped_points': ['count==0']`. A run exits non-zero when a threshold
-  fails.
+  `http_req_failed`, data-loss and retry counters, iteration rates and how
+  late the generator runs behind its schedule; thresholds in the scripts for
+  what only the client sees, for example `'ingest_failed{phase:day}':
+  ['rate<=0.0001']`, `'points_dropped': ['count==0']`,
+  `'dropped_iterations': ['count==0']`, and the dashboard's p95s. The upload
+  latencies of §3.1 are server-side (§3): the report gates them on
+  `ingest_log.duration_ms` in §3.1's batch classes, and shows k6's
+  `http_req_duration` of the same classes beside them, tracked — it adds the
+  COMMIT, the response and the hop. A run exits non-zero when a threshold or
+  a gate of the report fails.
 - **The app's load line**: the API and the worker log `load` once a minute
   at `info` — event-loop p50/p99 (`perf_hooks.monitorEventLoopDelay`), pool
   waiting and idle, open streams, background tasks pending, uploads and
   points in the minute, RSS and heap, and for the worker the queue's age
-  (oldest `next_at` of a ready `ingest` row), passes, points and rows written.
+  (how long the oldest ready new-data row has waited since it was queued, its
+  `enqueued_at` — not its `next_at`, which a deliberate delay before the pass
+  would hide), passes, points and rows written. The SSE probe measures the
+  same age end to end, from an upload to the `segments` event of the window
+  that covers it, and the report holds §3.2's queue-age target to that.
   No metrics endpoint and no new threat model: the line is for `docker logs`,
   and the collector parses it. (A `/metrics` for Prometheus — `prom-client`,
   Apache-2.0 — is a later step if a Grafana appears; the line's fields are
@@ -842,7 +850,7 @@ and documentation:
 | T3 statistics and rollup | A, after T1 | T2's queue contract | `daily_stats` incremental with the anchor columns, equal to a rebuild to the metre on the journeys; `device_hours` maintained by the ingest statement, the activity chart equal to today's for the fixture; `ingest_log` retention a variable |
 | T4 storage parameters | B, after T2 | — | a migration with the per-table parameters; `deploy/compose.yaml` with the `command:`; `docs/operations.md`; the M2 soak shows HOT ≥ 90 % on `devices` and `heat_cells` |
 | T5 partitioning | A, after T3 | T2 (no foreign key) | migration-upgrade test green, the two-phase move on 10 000 rows in a test, the partition job tested across a year boundary and with a 1990 timestamp, an empty default partition asserted |
-| T6 routes from the extract, the backlog and dashboard scenarios, calibration | B, after T4 | the map-data stream's reader | `routes.json` reproducible from a seed; the `fleet-1000` run on the Mac and the preview run on the node, both reported |
+| T6 routes from the extract, the backlog and dashboard scenarios, calibration | B, after T4 | the map-data stream's reader | `routes.json` reproducible from a seed; the `fleet-1000` run on the Mac and the preview run on the node, both reported; the phones' generator on time at `fleet-1000` (`slot_lateness_ms` p99 ≤ 1 s), or its slots taken from the wall clock with their state shared between k6's virtual users, so that a late start neither sends a slot twice nor skips one; the backlog's flushers (200 at most, five phones each at `fleet-1000`) raised if the flush needs every phone at once |
 | T7 archive and restore | A, after T5 | — | a month archived, verified, dropped and restored in a test; export over an archived month byte-equal to export before it; account deletion rewrites the file |
 | T8 incremental backups | B, after T6 | — | the sidecar takes a full and an incremental on the Mac stack, `pg_verifybackup` passes, a restore drill script in the runbook, retention tested with faked dates |
 | T9 per-session limit, cluster job, History locality | either, last | the browser-cache stream | History day p95 within target on M3's data with the cache; the covering key only with a measured need |
