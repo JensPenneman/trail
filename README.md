@@ -8,9 +8,10 @@ points to Trail; people sign in with passkeys to see where their devices are,
 where they have been, and that data keeps arriving.
 
 It runs as a small Docker Compose stack on a home server, deployed by
-Launchway, the owner's self-hosted deployment platform: CI publishes an image
-to GHCR after the tests pass, every published release goes to production, and
-every pull request gets a preview deployment of its own.
+Launchway, the owner's self-hosted deployment platform, which also runs its
+tests: GitHub Actions publishes an image of every commit to GHCR, a release is
+published and goes to production once the tests of its commit have passed,
+and every pull request gets a preview deployment of its own.
 
 ## Features
 
@@ -93,7 +94,7 @@ every pull request gets a preview deployment of its own.
 flowchart LR
   phone["Phones<br/>Overland, OwnTracks, Traccar Client, OsmAnd, GPSLogger"]
   browser["Browser<br/>passkeys"]
-  ci["GitHub Actions<br/>tests, image build"]
+  ci["GitHub Actions<br/>image build, releases"]
   ghcr["GHCR<br/>ghcr.io/jenspenneman/trail"]
   releases["GitHub releases<br/>and pull requests"]
 
@@ -102,6 +103,7 @@ flowchart LR
     app["app<br/>API, ingest, dashboard"]
     db[("db<br/>PostgreSQL 18")]
     backup["backup<br/>daily pg_dump"]
+    checks["checks<br/>lint, tests, end-to-end"]
   end
 
   folder[("backup folder")]
@@ -113,8 +115,9 @@ flowchart LR
   backup --> db
   backup --> folder
   ci -->|"push image"| ghcr
-  ci -->|"publish draft release"| releases
-  releases -->|"webhook: deploy"| server
+  ci -->|"publish draft release<br/>after the checks"| releases
+  releases -->|"webhooks: deploy, check"| server
+  checks -->|"commit statuses"| releases
   ghcr -->|pull| app
 ```
 
@@ -189,9 +192,10 @@ and the unit tests before a push.
 
 `.devcontainer/` holds a development container: Node LTS, Chromium for the
 end-to-end tests and a PostgreSQL of its own, so every check runs inside
-Docker and several git worktrees can run theirs side by side. It needs Docker
-with the Compose plugin; `scripts/devc.sh` drives it from anywhere in a
-worktree.
+Docker and several git worktrees can run theirs side by side. Launchway runs
+the checks of pushes and pull requests in the same container on its node
+([Checks on Launchway](#checks-on-launchway)). It needs Docker with the
+Compose plugin; `scripts/devc.sh` drives it from anywhere in a worktree.
 
 ```sh
 scripts/devc.sh up          # build the image when needed, start, npm ci
@@ -216,8 +220,8 @@ scripts/devc.sh npm run build && scripts/devc.sh npm run test:e2e
 Playwright runs one worker per suite in the container (`E2E_WORKERS=1`). Its
 browser draws the maps in software, a CPU's worth, and with more workers the
 suites of three worktrees at once overload Docker Desktop's 8 CPUs until
-tests time out. A suite takes about two minutes alone, as on CI, and about
-four with two others beside it; when it runs alone,
+tests time out. A suite takes about two minutes alone and about four with
+two others beside it; when it runs alone,
 `E2E_WORKERS=4 scripts/devc.sh npm run test:e2e` finishes in under one.
 
 `scripts/devc.sh shell` opens a shell, `scripts/devc.sh ps` lists the
@@ -257,21 +261,43 @@ backups and troubleshooting: [docs/operations.md](docs/operations.md).
 
 ### Releases, previews and rollback
 
-Every push to a branch of this repository runs lint, type checks, unit,
-integration and end-to-end tests; when they pass, CI builds the image for
-amd64 and arm64 with provenance and an SBOM and pushes it as
-`sha-<short commit>` (`main` also as `latest`). A pull request's preview runs
-that image.
+GitHub Actions builds the image of every push to a branch of this repository
+for amd64 and arm64, with provenance and an SBOM, and pushes it as
+`sha-<short commit>` (`main` also as `latest`) within minutes, without waiting
+for the tests. A pull request's preview runs that image.
 
 release-please keeps a release pull request open with the next version and
 its changelog. `scripts/release.sh` publishes it as a signed commit and tag
-and a draft GitHub release; CI on the tag publishes the version's images and
-then the release, and Launchway deploys it. To roll back, redeploy an older
-release in Launchway. Dependabot keeps npm packages, GitHub Actions and the
-Node base image current and merges minor and patch updates, security fixes
-among them, once CI is green; majors, Biome and TypeScript are merged by hand
-([SECURITY.md](SECURITY.md#dependencies)). See
+and a draft GitHub release; CI on the tag publishes the version's images and,
+once the Launchway node's checks of the release commit have passed, the
+release, and Launchway deploys it. To roll back, redeploy an older release in
+Launchway. Dependabot keeps npm packages, GitHub Actions and the Node base
+image current and merges minor and patch updates, security fixes among them,
+once the required checks pass; majors, Biome and TypeScript are merged by
+hand ([SECURITY.md](SECURITY.md#dependencies)). See
 [Releases](docs/operations.md#releases).
+
+### Checks on Launchway
+
+Lint, type checks, knip, unit, integration and end-to-end tests run on the
+Launchway node, in the development container of `.devcontainer/`, for every
+push to `main` and every pull request into it. Every check starts from a
+fresh Compose project with empty module volumes, so its command begins with
+`npm ci --no-audit --no-fund`, and reports to GitHub as a commit status:
+
+| Status | Command |
+|---|---|
+| `launchway/quality` | `npm run check` |
+| `launchway/integration` | `npm run test:integration` |
+| `launchway/e2e` | `npm run build && npm run test:e2e` |
+
+With the image build (`image`, GitHub Actions) they are the checks that the
+branch rules of `main` require. A failed check's log is in Launchway (Trail →
+Checks; the status's Details link on GitHub opens the run). The node runs one
+check at a time, so a commit's three take about 25 minutes once their turn
+comes. Pull requests from forks get no checks: a maintainer pushes their
+branch to this repository and opens the pull request from there, which runs
+them. More in [docs/operations.md](docs/operations.md#checks).
 
 ## Phones
 

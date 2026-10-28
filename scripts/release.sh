@@ -11,10 +11,11 @@
 #      with -x, makes the maintainer its author and verifies its signature;
 #   3. creates the signed tag vX.Y.Z and pushes main and the tag atomically;
 #   4. creates the GitHub release as a draft, with the version's CHANGELOG.md
-#      section as notes. The tag push starts CI, which tests the tag, publishes
-#      its images and only then publishes the draft, so Launchway deploys the
-#      release once its image exists. The script dispatches CI on the tag
-#      itself when no run shows up;
+#      section as notes. The tag push starts CI, which publishes the tag's
+#      images and, once the Launchway node's checks of the release commit (run
+#      for the push of main) have passed, the draft, so Launchway deploys the
+#      release once its image exists and its checks are green. The script
+#      dispatches CI on the tag itself when no run shows up;
 #   5. closes the release pull request with a comment and deletes its branch.
 #
 # It asks before it changes anything and again before it pushes; --yes
@@ -215,8 +216,9 @@ git push --atomic "$remote" "refs/heads/$branch:refs/heads/$branch" "refs/tags/$
 stage=pushed
 
 say "Creating the draft release"
-# A draft: CI publishes it once the images of the tag exist (ci.yml, job
-# `release`), and publishing is what makes Launchway deploy it.
+# A draft: CI publishes it once the images of the tag exist and the node's
+# checks of its commit have passed (ci.yml, job `release`), and publishing is
+# what makes Launchway deploy it.
 release_url=$(gh release create "$tag" --repo "$repo" --verify-tag --draft --title "$tag" --notes-file "$notes_file")
 echo "  $release_url"
 

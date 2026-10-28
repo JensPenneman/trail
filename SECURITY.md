@@ -118,7 +118,9 @@ yourself: location data is personal data.
 - **Supply chain**: GitHub Actions pinned to commit SHAs; the base image
   pinned by digest; images built in CI only, with BuildKit provenance and an
   SBOM, and a signed GitHub build provenance attestation when the repository
-  is public; Dependabot updates for npm, Actions and Docker
+  is public; a release published only once the Launchway node's checks of its
+  commit have passed, as reported by the Launchway GitHub App and no one else;
+  Dependabot updates for npm, Actions and Docker
   ([Dependencies](#dependencies)).
 
 ## Sharing: who sees what

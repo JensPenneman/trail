@@ -6,7 +6,7 @@
 # like .nvmrc and the production image, and Dependabot moves the pinned
 # digest. Debian is named rather than floating, so the browsers' system
 # packages always resolve against a release Playwright supports.
-# mcr.microsoft.com/playwright, the image of CI's e2e job, was the other
+# mcr.microsoft.com/playwright, Playwright's own image, was the other
 # option: its Node is the major Playwright chose when it built the image, not
 # the current LTS, and it carries Firefox and WebKit, which the suite never
 # starts here: 937 MB compressed for arm64, against 329 MB for this image.

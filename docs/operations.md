@@ -10,10 +10,14 @@ deploys `deploy/compose.yaml` from this repository in two ways:
   deployment of its own, with its own host name and an empty database, so a
   change can be tried before it is merged ([Previews](#previews)).
 
+It also runs the tests of every push to `main` and every pull request on its
+node and reports them to GitHub, where the branch rules require them
+([Checks](#checks)).
+
 The architecture behind it is in [architecture.md](architecture.md) (sections
-3 and 13); phone setup is in [trackers.md](trackers.md) (Overland's own guide:
-[overland.md](overland.md)). Commands run on the
-Launchway server unless noted.
+3, 13 and 15); phone setup is in [trackers.md](trackers.md) (Overland's own
+guide: [overland.md](overland.md)). Commands run on the Launchway server
+unless noted.
 
 ## What runs
 
@@ -30,8 +34,11 @@ to its proxy network, where its edge forwards the route to port 8080; no host
 port is published. `db` and `backup` sit on an internal network without a
 route out.
 
-Nothing is built on the server: CI builds and tests every commit and publishes
-its image as `sha-<first 7 characters of the commit>` ([Images](#images)).
+The app's image is never built on the server: GitHub Actions builds every
+commit and publishes its image as `sha-<first 7 characters of the commit>`
+([Images](#images)). The server runs the tests instead, for every push to
+`main` and every pull request, in the development container
+([Checks](#checks)).
 
 `app` may use 1 GB (`mem_limit`) and its V8 heap at most 640 MB of it
 (`NODE_OPTIONS=--max-old-space-size=640`): a processing backfill holds up to
@@ -50,8 +57,9 @@ not backfilling.
 | Compose file | `deploy/compose.yaml` (only this one) |
 | Route | `trail.jenspenneman.com` → service `app`, port 8080. Unprotected (phones upload without a browser session) and uncompressed (compression would buffer the `/api/events` stream) |
 | Trusted | on: production bind-mounts `BACKUP_DIR` and uses a volume it did not create (`TRAIL_DB_VOLUME`); Launchway's Compose policy refuses both otherwise |
-| Deploy releases automatically | on: a published release is deployed. Drafts are ignored, which is why CI publishes the draft only once the images exist |
+| Deploy releases automatically | on: a published release is deployed. Drafts are ignored, which is why CI publishes the draft only once the images exist and the checks have passed |
 | Previews | on, for pull requests from branches of this repository |
+| Checks | on: `quality`, `integration` and `e2e` in `.devcontainer/compose.yaml`, for `main` ([Checks](#checks)) |
 
 ### Production variables
 
@@ -161,12 +169,29 @@ and that neither the tag nor a release exists yet. Then it:
    (dispatching CI on the tag itself if none starts);
 4. closes the release pull request with a comment and deletes its branch.
 
-CI on the tag runs every test, publishes the images (`X.Y.Z`, `X.Y`,
-`sha-<commit>`) and then **publishes the draft** (job `release`). Launchway
-deploys on that `published` event, so the image always exists by then. If the
-script stops before the push, it moves `main` back and deletes the tag; after
-the push, it prints the commands that are left. It needs git with commit
-signing, an authenticated GitHub CLI and Node.js.
+CI on the tag publishes the images (`X.Y.Z`, `X.Y`, `sha-<commit>`), waits
+until the node's [checks](#checks) have passed on the tag's commit and then
+**publishes the draft** (job `release`). Launchway deploys on that `published`
+event, so by then the image exists and the checks are green. They are the
+checks of the push of `main` (the tag's commit is its head), so a release
+takes about as long as they do. If the script stops before the push, it moves
+`main` back and deletes the tag; after the push, it prints the commands that
+are left. It needs git with commit signing, an authenticated GitHub CLI and
+Node.js.
+
+**The release gate.** The `release` job lists the statuses of the tag's
+commit every minute, for up to 90 minutes, and counts only those of the
+Launchway GitHub App; its log shows the three checks' states at every turn.
+It publishes the draft once all three are *success*. A *failure* or an
+*error* stops it at once, and so do 90 minutes without all three: the release
+stays a draft and nothing is deployed, while the version's images exist
+already (they are pushed before the gate). Then:
+
+- a check failed on the code: fix it on `main` and release the next version;
+- a check could not run or did not finish (the node was down, a newer push to
+  `main` superseded it): **Re-run** it on Launchway's Checks tab, or **Run
+  checks** with the tag as the ref, and once it has passed re-run the job
+  with the command its log ends with, `gh run rerun <run id> --failed`.
 
 When the release pull request is not one commit on top of `main`,
 release-please has not processed the latest push yet: wait for the Release
@@ -176,15 +201,20 @@ Two fallbacks keep a release from getting stuck:
 
 - **Merged on GitHub** (not the normal path): release-please creates the draft
   release itself (`"draft": true` in `release-please-config.json`); its
-  workflow creates the tag and starts CI on it, which publishes the draft.
+  workflow creates the tag and starts CI on it, which publishes the draft once
+  the checks of the merge commit have passed.
 - **A tag pushed by hand** without a release: CI creates and publishes the
-  release once the images exist, with the `CHANGELOG.md` section (or
-  generated notes) as text.
+  release once the images exist and the checks have passed, with the
+  `CHANGELOG.md` section (or generated notes) as text. A commit that was
+  neither pushed to `main` nor part of a pull request into it has no checks:
+  **Run checks** with the tag as the ref.
 
 Optional: a pull request opened with `GITHUB_TOKEN` starts no workflows, which
 does not matter for a release pull request that is never merged. A
 fine-grained token with `contents` and `pull-requests` write access in the
-`RELEASE_PLEASE_TOKEN` secret makes CI run on it anyway.
+`RELEASE_PLEASE_TOKEN` secret makes GitHub Actions run on it anyway. The
+node's checks run on it either way: they follow Launchway's webhook, not
+workflows.
 
 ## Previews
 
@@ -193,10 +223,11 @@ deploys its head commit as the Compose project `launchway-trail-pr-<number>`
 on a host name of its own, and redeploys it on every push. Pull requests from
 forks get no preview, and CI never publishes their images.
 
-- **Image.** CI publishes `sha-<commit>` for every push to a branch of this
-  repository once all tests pass, roughly a quarter of an hour after the push.
-  Launchway retries the pull for up to an hour, so a preview appears when its
-  image does. A failing test means no image and no preview.
+- **Image.** GitHub Actions publishes `sha-<commit>` for every push to a
+  branch of this repository a few minutes after the push, without waiting for
+  the [checks](#checks). Launchway retries the pull for up to an hour, so a
+  preview appears when its image does, also for a commit whose checks fail;
+  the pull request's statuses tell.
 - **Database.** Empty, in a volume of the preview's project, removed with the
   preview. Migrations run on boot as in production.
 - **A migration regenerated after a rebase.** Drizzle applies only the
@@ -226,15 +257,15 @@ address without any setting ([Preview variables](#preview-variables)).
 
 ## Images
 
-CI (`.github/workflows/ci.yml`) runs lint, type checks, unit, integration and
-end-to-end tests, then builds `ghcr.io/jenspenneman/trail` for amd64 and arm64
-with provenance and an SBOM:
+GitHub Actions (`.github/workflows/ci.yml`, job `image`) builds
+`ghcr.io/jenspenneman/trail` for amd64 and arm64 with provenance and an SBOM,
+for every commit and without waiting for the [checks](#checks):
 
 | Trigger | Tags published |
 |---|---|
 | push to any branch of this repository | `sha-<commit>`, the branch name (`/` becomes `-`) |
 | push to `main` | the above and `latest` |
-| tag `vX.Y.Z` | `sha-<commit>`, `X.Y.Z`, `X.Y`; then the draft release is published |
+| tag `vX.Y.Z` | `sha-<commit>`, `X.Y.Z`, `X.Y`; then, once the checks have passed, the draft release is published |
 | weekly schedule (Monday 03:00 UTC) | `main`, `latest` and `sha-<commit>` of `main`, rebuilt on the current base image |
 | pull request | nothing: build only (forks never publish) |
 
@@ -249,6 +280,68 @@ curl -s https://trail.jenspenneman.com/api/config   # version, commit, builtAt
 ```
 
 The commit is the short SHA of the image's `sha-<commit>` tag.
+
+## Checks
+
+The Launchway node runs Trail's tests for every push to `main` and every pull
+request into `main` from a branch of this repository, Dependabot's included:
+in the development container of `.devcontainer/compose.yaml` (service `dev`
+and its `db`), as a fresh Compose project with empty module volumes for every
+check ([architecture.md](architecture.md) §15). The Launchway GitHub App
+(`launchway-for-jenspenneman-com`) reports each one to GitHub as a commit
+status:
+
+| Status | Command | Timeout | Usually |
+|---|---|---|---|
+| `launchway/quality` | `npm ci --no-audit --no-fund && npm run check` | 25 min | 2½ min |
+| `launchway/integration` | `npm ci --no-audit --no-fund && npm run test:integration` | 20 min | 3–4 min |
+| `launchway/e2e` | `npm ci --no-audit --no-fund && npm run build && npm run test:e2e` | 60 min | 15–17 min |
+
+They are set up in Launchway, Trail → Settings → Checks: checks on, Compose
+files `.devcontainer/compose.yaml`, branches `main`, *Skip bots* off
+(Dependabot's pull requests need them to merge), and the three checks above
+in the service `dev`. The node runs one check at a time, oldest first across
+its apps, so a commit's three take about 25 minutes once their turn comes. A
+newer push to a branch cancels the queued checks of its older commits; they
+report *error*, "Superseded by a newer commit".
+
+**Branch rules.** The ruleset "main protection" requires these status
+checks, up to date with `main`:
+
+- `launchway/quality`, `launchway/integration` and `launchway/e2e`, each with
+  the Launchway GitHub App as its source, so that no workflow or token can
+  report them in its place;
+- `image`, from GitHub Actions ([Images](#images)).
+
+**A failed check.** The status's *Details* link on GitHub opens its run in
+Launchway: Trail → **Checks** lists every run with its log, streamed while it
+runs and kept for 30 days. Nothing else outlives the run. Playwright's HTML
+report and traces go with the run's volumes, so the log (its `list` reporter)
+is what remains; for a closer look, run the suite in the development
+container (`scripts/devc.sh npm run build && scripts/devc.sh npm run
+test:e2e`), which leaves `playwright-report/` in the worktree.
+
+**Running checks again.** A push to `main` or to the branch of a pull request
+runs them for its new commit. To run a commit's checks again, open its run on
+the Checks tab and **Re-run** it, or use **Run checks** with a branch, a tag
+or a commit. Pushing a commit that has run once already starts nothing,
+unless its checks never started (superseded, a full queue, the node offline).
+
+**When the node is down**, the statuses of new commits stay *pending*, or
+never appear for pushes that Launchway did not receive, and no pull request
+can merge. (When only the node's agent is down, its queued checks end with
+*error* after 10 minutes.) GitHub keeps building and publishing the images,
+so they are there when the node is back, but a release's gate gives up after
+90 minutes and leaves the release a draft ([Releases](#releases)). Once the
+node is back, **Re-run** the checks that ended with *error*, use **Run
+checks** (or push again) for commits without a status, and re-run a release
+job that failed.
+
+**Pull requests from forks** get no checks, and no preview: their code would
+run on the node. A maintainer reads the change first, then pushes its branch
+to this repository (`git fetch <fork URL> <branch>:<branch>`, then
+`git push origin <branch>`) and opens the pull request from there; that one
+runs the checks and can merge.
 
 ## Rollback
 
@@ -272,7 +365,7 @@ are kept like recorded data.
 | Event | The data |
 |---|---|
 | A deployment (release, rollback), container recreated | stays: it lives in the `trail-db` volume, not in a container |
-| Database migration on boot | runs in one transaction under a lock; a failure rolls back and the app refuses to start, data untouched. CI upgrades a database of the first release, with data, to every new release before an image ships |
+| Database migration on boot | runs in one transaction under a lock; a failure rolls back and the app refuses to start, data untouched. The `integration` check upgrades a database of the first release, with data, to every new release, and a release is published only once it has passed |
 | Postgres update (18.x) | happens when the server pulls a newer `postgres:18-alpine`; the data directory stays compatible within Postgres 18 |
 | `docker compose down -v` in the production project | stays: Compose only removes volumes it created, and `trail-db` was created by hand |
 | A preview is removed | only the preview's own volume goes |
@@ -539,8 +632,11 @@ Day-to-day development uses `npm run dev` instead (README).
 
 | Symptom | Cause and fix |
 |---|---|
-| The deployment fails at the pull of `sha-<commit>` | CI has not published that commit yet (tests still running or failed). Launchway retries for an hour; check the commit's CI run. |
-| A release was tagged but nothing deployed | The release is still a draft: CI publishes it after the images. Check the tag's CI run, job `release`. |
+| The deployment fails at the pull of `sha-<commit>` | GitHub Actions has not published that commit's image yet (job `image` still running, or failed). Launchway retries for an hour; check the commit's CI run. |
+| A release was tagged but nothing deployed | The release is still a draft: CI publishes it after the images and the checks. Check the tag's CI run, job `release`: its log shows the checks it waits for, or why it stopped ([Releases](#releases)). |
+| A pull request's `launchway/*` statuses stay *pending* | The node runs one check at a time and others are ahead, or it is down ([Checks](#checks)). |
+| A `launchway/*` status is *error* | The check could not run: the description names why (superseded, the image build, the node offline, a full queue). **Re-run** it on the Checks tab once the cause is gone. |
+| A pull request has no `launchway/*` statuses | It comes from a fork ([Checks](#checks)), or Launchway missed the push: **Run checks** for its branch on the Checks tab. |
 | `required variable POSTGRES_PASSWORD is missing a value` | Set it in Launchway (production and previews). |
 | `required variable LAUNCHWAY_COMMIT_SHA_SHORT is missing` | Outside Launchway: a local run sets `TRAIL_IMAGE` ([Local run](#local-run)). |
 | `backup` does not start: "bind source path does not exist" | `BACKUP_DIR` is unset or the folder does not exist; create it, absolute path. |

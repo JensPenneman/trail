@@ -31,7 +31,7 @@ if (!/^postgres(ql)?:$/.test(url?.protocol ?? "") || !e2eDatabaseName.test(name)
   );
 }
 
-/** The CI service container may still be starting; a local database may be down. */
+/** A database container may still be starting; a local database may be down. */
 async function connect() {
   for (let attempt = 1; ; attempt += 1) {
     const client = new pg.Client({ connectionString, connectionTimeoutMillis: 5_000 });
