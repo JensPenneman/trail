@@ -4,11 +4,13 @@ The files of a Trail map data artefact for Monaco, as `scripts/mapdata/build.sh
 monaco` writes them (docs/design/self-hosted-maps.md, §2.2, §3.1 and §4.4),
 kept here so that the loader, the coverage rules, the tile router and the
 end-to-end suite have real OpenStreetMap data and real tiles without a
-network. Built on 28 October 2026 (07:49 UTC) by the Map data workflow
-(`.github/workflows/mapdata.yml`, run 40652466713,
-https://github.com/JensPenneman/trail/actions/runs/40652466713) at commit
-56a82c7, from Geofabrik's extract `monaco-261027.osm.pbf` (OSM data up to
-2026-10-27T21:23:59Z).
+network. Built on 28 October 2026 (10:36 UTC) by the Map data workflow
+(`.github/workflows/mapdata.yml`, run 40673177968,
+https://github.com/JensPenneman/trail/actions/runs/40673177968) at commit
+5219f04, from Geofabrik's extract `monaco-261027.osm.pbf` (OSM data up to
+2026-10-27T21:23:59Z). The data files are the same, byte for byte, as those
+of the first build (run 40652466713); only the manifest's build time,
+commit and Java differ.
 
 | File | Contents | Bytes |
 |---|---|---:|
@@ -16,7 +18,7 @@ https://github.com/JensPenneman/trail/actions/runs/40652466713) at commit
 | `pois.geojsonseq.gz` | 119 stops: 117 bus stops, the railway station Monaco - Monte Carlo and the cruise terminal (`amenity=ferry_terminal`); no aerodrome | 3 306 |
 | `region.poly` | Geofabrik's polygon of the extract (Monaco's land border and its waters) | 635 |
 | `basemap.pmtiles` | vector tiles z0–14, OpenMapTiles schema 3.16.0, gzipped MVT, 246 tiles over the extract's bounding box | 421 415 |
-| `manifest.json` | the region, the extract, the build, the tools, the counts, attribution, licences, and every file's size and SHA-256 | 3 211 |
+| `manifest.json` | the region, the extract, the build, the tools, the counts, attribution, licences, and every file's size and SHA-256 (Planetiler's sources marked `pinned` or not) | 3 287 |
 | `SHA256SUMS` | the checksums, for `sha256sum -c SHA256SUMS` | |
 
 Facts the tests can rely on:

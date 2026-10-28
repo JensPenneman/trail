@@ -1105,7 +1105,9 @@ measurement can be compared with them.
   27 October 2026 (OSM data up to 21:24 UTC), on 28 October 2026: runs
   40650464005 (Belgium and the world overview), 40652475332 (Luxembourg,
   the Netherlands, France), 40653352974 (Germany, cancelled at the job's
-  first limit of two hours) and 40652466713 (Monaco, the fixture of §4.4).
+  first limit of two hours) and 40652466713 (Monaco); the fixture of §4.4
+  comes from run 40673177968 of the final script, the same files byte for
+  byte with a new manifest.
 - **Loader**: a prototype of §2.2 (Node 24, `pg-copy-streams` 7.0, the
   app's `classifyWay` and `classifyPoi`, batches of 5 000 rows, `COPY` into
   the tables of §2.4, then the keys and indexes with `maintenance_work_mem`
