@@ -126,6 +126,8 @@ const statusTexts: Readonly<Record<number, string>> = {
   201: "Created",
   202: "Accepted",
   204: "Done",
+  // A revalidation the server confirmed: the copy this browser kept was current, still a look.
+  304: "Unchanged",
 };
 
 /** Everything a line says, opened: who, through what, what, when, how often, which data, the answer. */

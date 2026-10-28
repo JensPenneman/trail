@@ -2,6 +2,7 @@ import { onlineManager, QueryClient } from "@tanstack/react-query";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import { deviceListResponseSchema } from "@trail/contracts/device";
 import { tracksResponseSchema } from "@trail/contracts/track";
+import { deviceModeResponseSchema } from "@trail/contracts/transport";
 import { afterEach, describe, expect, it } from "vitest";
 import { ApiError } from "../src/api/ApiError";
 import { apiFetch } from "../src/api/apiFetch";
@@ -125,11 +126,8 @@ describe("cachedFetch", () => {
     await cachedFetch(
       context(client, key),
       apiPaths.v1.devices.mode(ids.phone),
-      deviceListResponseSchema.or(
-        // any schema: only the request is looked at
-        tracksResponseSchema,
-      ),
-    ).catch(() => undefined);
+      deviceModeResponseSchema,
+    );
     expect(calls[0]?.headers?.["if-none-match"]).toBeUndefined();
   });
 

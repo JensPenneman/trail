@@ -1,5 +1,6 @@
 import { QueryClient, QueryObserver, type QueryObserverOptions } from "@tanstack/react-query";
 import { apiPaths } from "@trail/contracts/apiPaths";
+import { publicConfigSchema } from "@trail/contracts/config";
 import { deviceListResponseSchema } from "@trail/contracts/device";
 import { peopleResponseSchema } from "@trail/contracts/person";
 import { tracksResponseSchema } from "@trail/contracts/track";
@@ -210,14 +211,7 @@ describe("the persister over the store", () => {
     await client.fetchQuery({
       queryKey: queryKeys.config,
       queryFn: ({ queryKey, signal }) =>
-        cachedFetch(
-          { client, queryKey, signal },
-          apiPaths.config,
-          deviceListResponseSchema.or(
-            // the config's own schema is the contract's; any passes the fixture here
-            tracksResponseSchema,
-          ),
-        ).catch(() => config),
+        cachedFetch({ client, queryKey, signal }, apiPaths.config, publicConfigSchema),
     });
     await settle(30);
     expect(await store.list()).toEqual([]);
