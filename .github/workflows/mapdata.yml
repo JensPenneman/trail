@@ -75,6 +75,11 @@ jobs:
     # Measured: Belgium 15 min, France 1 h 45 min; Germany did not finish in
     # two hours (70 min of it the download from Geofabrik)
     timeout-minutes: 240
+    # One build of a region at a time, whichever run or ref started it (the
+    # publishing of task 2 writes one tag per region); a newer run waits.
+    concurrency:
+      group: mapdata-${{ matrix.region }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -91,17 +96,25 @@ jobs:
           sudo apt-get install -y -q --no-install-recommends osmium-tool time
           osmium --version
           df -h "$RUNNER_TEMP"
-      # Planetiler needs Java 21 or later; Temurin of the current LTS, pinned
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: "25.0.5+8"
+      # Planetiler needs Java 21 or later: the runner image's own Temurin 21,
+      # which comes with the image rather than as one more download
+      - name: Use the runner's Temurin 21
+        run: |
+          if [ -z "${JAVA_HOME_21_X64:-}" ] || [ ! -x "$JAVA_HOME_21_X64/bin/java" ]; then
+            echo "::error title=Map data::This runner image has no Temurin 21 (JAVA_HOME_21_X64)."
+            exit 1
+          fi
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >>"$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >>"$GITHUB_PATH"
+          "$JAVA_HOME_21_X64/bin/java" -version
       - id: month
         run: echo "month=$(date -u +%Y-%m)" >>"$GITHUB_OUTPUT"
-      # The Planetiler jar and the sources Planetiler downloads (Natural Earth,
-      # the OSM water polygons, lake centrelines; about 1.5 GB), fetched once a
-      # month rather than in every run. No restore-keys: a new month fetches
-      # them afresh instead of keeping an old copy for ever.
+      # The Planetiler jar and the sources of its profile (Natural Earth, the
+      # OSM water polygons, lake centrelines; about 1.5 GB), fetched once a
+      # month rather than in every run; build.sh checks the jar, Natural
+      # Earth and the lake centrelines against their pinned SHA-256. No
+      # restore-keys: a new month fetches them afresh instead of keeping an
+      # old copy for ever.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/trail-mapdata
