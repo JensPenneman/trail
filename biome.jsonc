@@ -6,7 +6,15 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/package-lock.json", "!**/drizzle/meta", "!**/__snapshots__"]
+    // the map data fixture stays byte for byte what the workflow built (its
+    // SHA256SUMS and manifest cover the files)
+    "includes": [
+      "**",
+      "!**/package-lock.json",
+      "!**/drizzle/meta",
+      "!**/__snapshots__",
+      "!**/tests/fixtures/mapdata"
+    ]
   },
   "formatter": {
     "enabled": true,
