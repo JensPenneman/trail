@@ -14,3 +14,4 @@ deploy/.env
 deploy/backups/
 deploy/secrets/
 /mapdata/
+/.map-data/

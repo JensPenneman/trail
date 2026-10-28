@@ -11,6 +11,7 @@ import {
   loadFleetPreflight,
   parseLoadFleetOptions,
 } from "./commands/loadFleetCommand";
+import { mapCommand } from "./commands/mapCommand";
 import { passkeyLinkCommand } from "./commands/passkeyLinkCommand";
 import { pruneCommand } from "./commands/pruneCommand";
 import { recomputeCommand } from "./commands/recomputeCommand";
@@ -91,6 +92,7 @@ const commands: Readonly<Record<string, Command>> = {
     noOptions(args);
     return pruneCommand;
   },
+  map: mapCommand,
   "load-fleet": (args) => {
     const { values } = parseArgs({
       args,

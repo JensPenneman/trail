@@ -1,6 +1,9 @@
 import { timeZoneSchema } from "@trail/contracts/datetime";
 import { emailSchema } from "@trail/contracts/email";
 import { z } from "zod";
+import { isRegionName, worldRegion } from "../mapdata/regionName";
+import { parseRegistryCredentials } from "../mapdata/registryCredentials";
+import { parseRegistryReference } from "../mapdata/registryReference";
 import { databaseName } from "./databaseName";
 import { normaliseOrigin } from "./normaliseOrigin";
 import { parseTrustProxy, trustsNoProxy } from "./parseTrustProxy";
@@ -72,6 +75,58 @@ const overpassUrlSchema = z
   .transform((value) =>
     value === undefined ? "https://overpass-api.de/api/interpreter" : value === "" ? null : value,
   );
+
+/*
+ * Unset: Belgium. Set but empty: no region at all (map matching uses its
+ * fallbacks only), which is why this one does not go through `env` either.
+ */
+const mapDataRegionsSchema = z
+  .preprocess((value) => (typeof value === "string" ? value : undefined), z.string().optional())
+  .transform((value, context) => {
+    if (value === undefined) return ["belgium"];
+    const names = [...new Set(splitList(value.toLowerCase()))];
+    for (const name of names) {
+      if (!isRegionName(name)) {
+        context.addIssue({
+          code: "custom",
+          message: `"${name}" is not a region: lowercase letters, digits and dashes, as scripts/mapdata/regions.json names them`,
+        });
+      } else if (name === worldRegion) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "world is the world overview, which comes with every region: list countries only",
+        });
+      }
+    }
+    return names;
+  });
+
+const registrySchema = z.string().transform((value, context) => {
+  const reference = parseRegistryReference(value);
+  if (reference === null) {
+    context.addIssue({
+      code: "custom",
+      message:
+        "Use a registry host and repository like ghcr.io/jenspenneman/trail-mapdata (no https://, no tag)",
+    });
+    return z.NEVER;
+  }
+  return reference;
+});
+
+const registryTokenSchema = z.string().transform((value, context) => {
+  const credentials = parseRegistryCredentials(value);
+  if (credentials === null) {
+    // The value itself is a secret: the message never repeats it.
+    context.addIssue({
+      code: "custom",
+      message: "Use <user>:<token> (printable characters, no spaces)",
+    });
+    return z.NEVER;
+  }
+  return credentials;
+});
 
 export const envSchema = z
   .object({
@@ -145,6 +200,14 @@ export const envSchema = z
     PROCESSING_OSM_TTL_DAYS: env(intSchema(1, 3650).default(90)),
     PROCESSING_MAX_ACCURACY_M: env(intSchema(10, 5000).default(150)),
     PROCESSING_STOP_MIN_S: env(intSchema(30, 7200).default(180)),
+    MAP_DATA_REGIONS: mapDataRegionsSchema,
+    MAP_DATA_REGISTRY: env(
+      registrySchema.default({ host: "ghcr.io", repository: "jenspenneman/trail-mapdata" }),
+    ),
+    MAP_DATA_REGISTRY_TOKEN: env(registryTokenSchema.optional()),
+    MAP_DATA_DIR: env(z.string().default("/var/lib/trail/map")),
+    MAP_DATA_REFRESH_DAYS: env(intSchema(1, 365).default(30)),
+    MAP_DATA_MAX_GB: env(intSchema(1, 1000).default(10)),
     // A pass works out at most this many points, spanning at most this long; bigger work is
     // split first (docs/architecture.md §17.4). A very large value restores unbounded passes.
     PROCESSING_PASS_MAX_POINTS: env(intSchema(1000, 100_000_000).default(60_000)),

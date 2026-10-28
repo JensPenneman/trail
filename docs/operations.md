@@ -38,7 +38,8 @@ Launchway names the Compose projects `launchway-trail` (production) and
 edge forwards the route to port 8080; no host port is published. `worker`
 publishes nothing and the edge never reaches it; it joins the project's
 default network for Overpass. `db` and `backup` sit on an internal network
-without a route out.
+without a route out. `app` keeps the map data of its regions in
+the volume `<project>_trail-map` ([Map data](#map-data)).
 
 The app's image is never built on the server: GitHub Actions builds every
 commit and publishes its image as `sha-<first 7 characters of the commit>`
@@ -626,6 +627,110 @@ events listened to again` with the number of devices it caught up on. Which
 tile — a place someone has been — is logged at
 `LOG_LEVEL=debug` only, like coordinates.
 
+## Map data
+
+Trail keeps the roads, railways and stops of the regions in
+`MAP_DATA_REGIONS` (Belgium by default) on the server itself, so that map
+matching inside them needs no Overpass and tells no one where anyone was
+(docs/design/self-hosted-maps.md). The Map data workflow builds every region
+on the 1st of the month from Geofabrik's extract of OpenStreetMap and
+publishes it to `ghcr.io/jenspenneman/trail-mapdata`, a public package, so
+the server pulls it anonymously. The app pulls each region's newest build
+into the volume `trail-map`, checks every file against its SHA-256 and hands
+it to the map tables' loader, which comes with the design's task 1: until a
+version has it, the builds wait on the volume and `trail map status` says so.
+
+**What runs.** A few minutes after every start, and then every
+`MAP_DATA_REFRESH_DAYS` (30) days, the app asks the registry for the newest
+build of each region and of the world overview (the basemap's low zooms; it
+comes with any region and is never imported). A build the volume lacks is
+pulled — only when it is not older than the newest there — then imported;
+the volume keeps it and the build served before, which open maps use until
+the next refresh. A failure keeps what serves, and the region is tried again
+after 15 minutes, then 30, doubling up to a day.
+
+```sh
+docker exec launchway-trail-app-1 trail map status            # each region's builds, digests, imported or not
+docker exec launchway-trail-app-1 trail map refresh           # ask the registry now, every region
+docker exec launchway-trail-app-1 trail map refresh belgium   # one region
+```
+
+**Disk.** The volume holds two builds of a region, and a third while one
+downloads; the database holds the imported region's tables besides.
+
+| Regions | One build | Volume, usually | Volume while a build downloads |
+|---|---:|---:|---:|
+| `belgium` | 0.56 GB | 1.1 GB | 1.7 GB |
+| `belgium,netherlands,luxembourg` | 1.5 GB | 3.0 GB | 4.5 GB |
+| `europe` (`MAP_DATA_MAX_GB=40`) | about 31 GB | about 62 GB | about 93 GB |
+
+`trail map status` ends with what the builds take on the volume (a rebuild
+of the same extract links the files it shares with the build before it, so
+those count once); `docker system df -v | grep trail-map` shows the
+volume's size as Docker sees it. A build larger than `MAP_DATA_MAX_GB` (10)
+or than the free space is refused before anything is downloaded.
+
+**Changing the regions.** Set `MAP_DATA_REGIONS` in Launchway (comma-separated
+names of `scripts/mapdata/regions.json`; empty: none) and redeploy: a new
+region is pulled a few minutes after the start. A region taken off the list is
+not deleted: `trail map status` marks it "not in MAP_DATA_REGIONS", and its
+directory on the volume can go by hand
+(`docker exec launchway-trail-app-1 rm -rf /var/lib/trail/map/regions/<region>`).
+
+**After a restore.** The map tables come back as the dump had them; the first
+refresh after the start finds the build on the volume and imports it again,
+without downloading it (`trail map refresh` does it at once).
+
+**Checking a build.** `trail map status` shows each build's digest, the
+SHA-256 of the manifest the registry served (kept as `oci-manifest.json` in
+the build's directory). The workflow signed a build provenance attestation
+for it, which anyone can check:
+
+```sh
+gh attestation verify oci://ghcr.io/jenspenneman/trail-mapdata@<digest> -R JensPenneman/trail \
+  --source-ref refs/heads/main
+```
+
+`--source-ref` insists on a build of `main`, which is where every region but
+the test region comes from; the attestation names the workflow and the commit.
+The server itself checks only that every byte is what the registry's
+manifest says (integrity), not who built it: this command is the only check
+of a build's origin for now.
+
+**The workflow.** Actions › Map data. It runs on the 1st of every month at
+04:00 UTC; `gh workflow run mapdata.yml -f region=belgium` builds and
+publishes now (from `main`; from another branch it publishes Monaco only, the
+test region, and builds the others without publishing them). One build and
+one publication of a region run at a time: a second run waits, a third
+cancels the waiting one. Each run keeps the newest three builds of a region
+in the package. Should its last step warn
+that old builds could not be deleted, the package's settings (Manage Actions
+access) must give the repository the Admin role.
+
+**A region built by hand** (Europe, which no runner can build, or a server
+without a route out): `scripts/mapdata/build.sh <region>` on a machine with
+osmium-tool, Java 21 and the disk, then copy the directory to the server and
+import it with `trail map import <dir>` (task 1), or publish it to the
+registry: `oras login ghcr.io`, `scripts/mapdata/publish.sh <dir>`.
+
+**Another registry.** `MAP_DATA_REGISTRY=registry.example.com/trail-mapdata`
+takes the artefacts from a mirror or a private registry, over HTTPS, from
+that host only (a redirect elsewhere is refused); a private one needs
+`MAP_DATA_REGISTRY_TOKEN=<user>:<token>` (for a private GHCR package a
+classic token with `read:packages`).
+
+**Previews** pull their regions at every deployment, into a volume of their
+own that goes with the preview: Belgium is 0.56 GB and a minute. Set
+`MAP_DATA_REGIONS=luxembourg` (51 MB), or empty, for previews where that
+hurts.
+
+The log tells what happened, per region: `map data refresh scheduled`, `map
+region pulled` (build, digest, bytes, seconds), `map region imported` (ways,
+stops), `map region up to date`, and warnings `map region refresh failed`
+with the stage and the reason, `map region import failed`, and `map region
+data is old` when a region's data is older than three refresh periods (the
+refresh keeps failing).
+
 ## Heatmap
 
 The heatmap is counted as the points arrive: every upload adds its points to
@@ -707,6 +812,7 @@ docker logs -f launchway-trail-app-1     # the app logs JSON lines (pino)
 docker logs -f launchway-trail-worker-1  # the processing worker, the same way
 docker logs --since 1h launchway-trail-app-1 2>&1 | grep '"level":50'   # errors
 docker logs launchway-trail-app-1 2>&1 | grep '"msg":"API token'      # API tokens created, changed, rolled, revoked
+docker logs launchway-trail-app-1 2>&1 | grep '"msg":"map region'     # map data pulled, imported, failed
 ```
 
 Every container keeps at most 5 files of 10 MB of logs. Device and API tokens,
@@ -787,6 +893,13 @@ Day-to-day development uses `npm run dev` instead (README).
 | The mapped level shows averaged lines | No map data for that area yet: the tiles wait for the daily budget (log: "daily map download budget spent") or failed (log: "map tile could not be fetched"; tried again later). `PROCESSING_OVERPASS_URL` empty switches map data off altogether. |
 | The map's style control has no Satellite | `MAP_STYLE_SATELLITE` is unset, or the app refused it at boot (the log names the variable). |
 | Satellite stays blank or shows only some tiles | The browser console names the refused host: add it to `MAP_CONNECT_SRC`. Otherwise the provider refuses the key (usage limit, or the key is restricted to other origins). |
+| "map region refresh failed", reason `unreachable` or `timeout` | The registry did not answer; tried again after 15 minutes, doubling up to a day. The old build serves on. |
+| "map region refresh failed", reason `denied` | The package is private, or `MAP_DATA_REGISTRY_TOKEN` is wrong or may not read it ([Map data](#map-data)). |
+| "map region refresh failed", reason `not_found` | The registry has no build of that region: is it a name of `scripts/mapdata/regions.json`, and has the workflow published it? |
+| "map region refresh failed", reason `digest`, `truncated` or `malformed` | A download that did not check out: deleted, the old build serves on, tried again later. If it keeps happening, the build in the registry is broken: run the workflow for the region again. |
+| "map region refresh failed", reason `too_large` or `disk` | The build is larger than `MAP_DATA_MAX_GB` or the free space, or the volume is not writable. |
+| "map region import failed" | The loader refused the build (the log says why); the build it replaced serves on. |
+| "map region data is old" | The region's refresh has failed for three periods: the lines above say why. |
 | Stops, moves or modes are missing for new points | The worker runs a few seconds after an upload; `PROCESSING_ENABLED=false` switches it off. A failed window is retried with backoff (log: "processing window failed"). |
 
 ## Appendix: standalone (legacy)

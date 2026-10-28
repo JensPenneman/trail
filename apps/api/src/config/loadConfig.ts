@@ -116,6 +116,14 @@ export function loadConfig(
       passMaxPoints: env.PROCESSING_PASS_MAX_POINTS,
       passMaxSpanHours: env.PROCESSING_PASS_MAX_SPAN_HOURS,
     },
+    mapData: {
+      regions: env.MAP_DATA_REGIONS,
+      registry: env.MAP_DATA_REGISTRY,
+      credentials: env.MAP_DATA_REGISTRY_TOKEN ?? null,
+      dir: resolve(process.cwd(), env.MAP_DATA_DIR),
+      refreshDays: env.MAP_DATA_REFRESH_DAYS,
+      maxBytes: env.MAP_DATA_MAX_GB * 1_000_000_000,
+    },
     loadTest: env.LOAD_TEST,
     launchwayEnvironment: env.LAUNCHWAY_ENVIRONMENT ?? null,
   };

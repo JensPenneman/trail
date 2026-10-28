@@ -79,6 +79,14 @@ x-app-environment: &app-environment
   PROCESSING_STOP_MIN_S:
   PROCESSING_PASS_MAX_POINTS:
   PROCESSING_PASS_MAX_SPAN_HOURS:
+  # map data from the registry (docs/operations.md, "Map data"), which `app`
+  # pulls into trail-map; an empty MAP_DATA_REGIONS (set in .env) means none,
+  # an unset one Belgium. MAP_DATA_DIR stays the image's default, the mount.
+  MAP_DATA_REGIONS:
+  MAP_DATA_REGISTRY:
+  MAP_DATA_REGISTRY_TOKEN:
+  MAP_DATA_REFRESH_DAYS:
+  MAP_DATA_MAX_GB:
   # `trail load-fleet` only (docs/perf/README.md): a preview's load test sets
   # LOAD_TEST=true, and Launchway's name of the deployment (production or
   # preview) makes the command refuse anywhere but in a preview. Launchway
@@ -119,11 +127,15 @@ services:
       # heap, so a heap fails in the log before the kernel would OOM-kill the
       # container.
       NODE_OPTIONS: --max-old-space-size=640
-    # default: the way out (ntfy alerts); backend: the database
+    # default: the way out (ntfy alerts, map data from the registry); backend:
+    # the database
     networks: [default, backend]
     read_only: true
     tmpfs:
       - /tmp
+    volumes:
+      # the regions' map data, pulled from the registry and rebuildable from it
+      - trail-map:/var/lib/trail/map
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     # Explicit CPU caps (docs/operations.md, "What runs"): without one, a
@@ -281,6 +293,10 @@ volumes:
   # volume of their own project, removed with the preview.
   trail-db:
     name: ${TRAIL_DB_VOLUME:-${COMPOSE_PROJECT_NAME}_trail-db}
+  # The map data of MAP_DATA_REGIONS (docs/operations.md, "Map data"): the
+  # project's own, in production and in every preview, and nothing that a
+  # backup needs, since the next refresh pulls it again.
+  trail-map:
 
 configs:
   backup-script:
