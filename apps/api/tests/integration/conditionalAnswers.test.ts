@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import type { DayStamp } from "@trail/contracts/cacheStamp";
 import { daysResponseSchema } from "@trail/contracts/stats";
@@ -32,6 +34,13 @@ let otherEmail = "";
 let deviceToken = "";
 let deviceId = "";
 let watch: StatementWatch;
+/**
+ * The request a statement came from: the app handles every request inside its
+ * tag, so a statement that something else sends meanwhile (a timer, the end of
+ * an earlier request's work) is not counted against the request being measured.
+ */
+const requestTag = new AsyncLocalStorage<string>();
+let measuring: string | undefined;
 
 /** 26 October 2026 in Brussels (UTC+1 since the 25th). */
 const drivingDay = { from: "2026-10-25T23:00:00.000Z", to: "2026-10-26T23:00:00.000Z" };
@@ -42,7 +51,20 @@ const etagShape = /^W\/"[A-Za-z0-9_-]{22}"$/;
 beforeAll(async () => {
   await resetDatabase();
   t = await createTestContext({ waySource: new FixtureWaySource() });
-  watch = watchStatements(t.ctx.pool);
+  watch = watchStatements(t.ctx.pool, { origin: () => requestTag.getStore() });
+  const handlers = t.app.listeners("request") as ((
+    req: IncomingMessage,
+    res: ServerResponse,
+  ) => void)[];
+  t.app.removeAllListeners("request");
+  t.app.on("request", (req: IncomingMessage, res: ServerResponse) => {
+    const tag = measuring;
+    const handle = () => {
+      for (const handler of handlers) handler(req, res);
+    };
+    if (tag === undefined) handle();
+    else requestTag.run(tag, handle);
+  });
   ({ agent: owner } = await signUpWithCookie(t.app, "first@example.com"));
   otherEmail = "other@allowed.test";
   ({ agent: other } = await signUpWithCookie(t.app, otherEmail));
@@ -419,19 +441,32 @@ describe("the cost of a dashboard open", () => {
     { path: apiPaths.v1.segments.root, query: drivingDay },
   ];
 
-  /** Statements per request, the access log's batched writes aside (they run later, in the background). */
-  async function measure(etags: Map<string, string>): Promise<Record<string, number>> {
+  /**
+   * Statements per request: those the request sent, the access log's batched
+   * writes aside (they run later, in the background). `texts` keeps them for
+   * the message of a count that does not match.
+   */
+  async function measure(
+    etags: Map<string, string>,
+    texts: Record<string, string[]>,
+  ): Promise<Record<string, number>> {
     const counts: Record<string, number> = {};
-    for (const request of open) {
+    for (const [index, request] of open.entries()) {
       await t.ctx.dataAccess.flush();
       watch.reset();
+      const tag = `${index} ${request.path}`;
+      measuring = tag;
       const etag = etags.get(request.path + JSON.stringify(request.query ?? {}));
       const pending = owner.get(request.path).query(request.query ?? {});
       const response = await (etag === undefined ? pending : pending.set("If-None-Match", etag));
+      measuring = undefined;
       etags.set(request.path + JSON.stringify(request.query ?? {}), response.headers["etag"] ?? "");
-      counts[`${request.path} ${response.status}`] = watch.texts.filter(
-        (text) => !text.includes("data_access_events"),
-      ).length;
+      const own = watch.statements.filter(
+        (statement) => statement.origin === tag && !statement.text.includes("data_access_events"),
+      );
+      const key = `${request.path} ${response.status}`;
+      counts[key] = own.length;
+      texts[key] = own.map((statement) => statement.text.replace(/\s+/g, " ").trim().slice(0, 120));
     }
     return counts;
   }
@@ -439,19 +474,20 @@ describe("the cost of a dashboard open", () => {
   it("is a few statements per request once nothing changed", async () => {
     await settle();
     const etags = new Map<string, string>();
-    const cold = await measure(etags);
-    const warm = await measure(etags);
+    const texts: Record<string, string[]> = {};
+    const cold = await measure(etags, texts);
+    const warm = await measure(etags, texts);
     // Every request reads its session first. Cold, each then reads its validator (the
     // devices' rows, the stamps of the day) and the data; warm, the validator answers it:
     // no points, no day of counting, no segments.
-    expect(cold).toEqual({
+    expect(cold, JSON.stringify(texts, null, 1)).toEqual({
       "/api/devices 200": 3,
       "/api/v1/people 200": 2,
       "/api/tracks 200": 4,
       "/api/v1/tracks 200": 7,
       "/api/v1/segments 200": 6,
     });
-    expect(warm).toEqual({
+    expect(warm, JSON.stringify(texts, null, 1)).toEqual({
       "/api/devices 304": 2,
       "/api/v1/people 304": 2,
       "/api/tracks 304": 3,
