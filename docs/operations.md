@@ -23,9 +23,15 @@ unless noted.
 
 | Service | Image | Production | Preview |
 |---|---|---|---|
-| `app` | `ghcr.io/jenspenneman/trail:sha-<commit>` | API, the phones' ingest and the dashboard on port 8080 | the same, for the pull request's head commit |
+| `app` | `ghcr.io/jenspenneman/trail:sha-<commit>` | API, the phones' ingest and the dashboard on port 8080, and the processing worker (`PROCESSING_ROLE` unset: `all`) | the same, for the pull request's head commit |
 | `db` | `postgres:18-alpine` | the database, in the volume `TRAIL_DB_VOLUME` | the database, in a volume of the preview's own project |
 | `backup` | `postgres:18-alpine` | daily `pg_dump` into `BACKUP_DIR` (profile `production`) | not started |
+
+The image has a second role: `trail worker` runs the processing worker
+without an HTTP server, and `PROCESSING_ROLE=api` keeps a container from
+processing, so the work can leave the API's container for one of its own
+([Processing](#processing)). `deploy/compose.yaml` runs no such container
+yet: `app` keeps the default, `all`.
 
 Launchway names the Compose projects `launchway-trail` (production) and
 `launchway-trail-pr-<number>` (previews); the containers are
@@ -483,9 +489,23 @@ for the details): the averaged level (outliers dropped, noise smoothed), the
 mapped one (snapped to roads and railways from OpenStreetMap), and the
 inferred one — stops and moves, each move with its transport mode. All of it
 lives in tables of its own and can be rebuilt; the recorded points are never
-changed. One worker in the app does the work a few seconds after each upload;
-after a release that changes the algorithms it works through the whole history
-again, newest days first, while new uploads keep going first.
+changed. One worker does the work a few seconds after each upload; after a
+release that changes the algorithms it works through the whole history again,
+newest days first, while new uploads keep going first.
+
+**Where the worker runs** (`PROCESSING_ROLE`, [architecture.md
+§3](architecture.md#3-runtime-topology)): in the app's own process by default
+(`all`). In a container of its own it is the same image running `trail worker`
+(role `worker`, no HTTP server), next to an app with `PROCESSING_ROLE=api`,
+which still takes the uploads and queues their work but works nothing out —
+without a worker, the queue only grows. Both start in any order: whichever
+starts first applies the migrations. The worker writes a heartbeat every 15
+seconds to `processing_workers` (rows of stopped workers go after an hour),
+and each finished window reaches the open dashboards through Postgres
+(`NOTIFY` on `trail_processing`) whichever process worked it out. On SIGTERM
+the worker takes no new window and lets the one in progress commit (up to 80
+s; past that it exits and the database rolls the window back, to be worked
+out again).
 
 **Map data and Overpass.** Map data comes from the public Overpass instance
 at `https://overpass-api.de/api/interpreter` (`PROCESSING_OVERPASS_URL`), one
@@ -512,6 +532,7 @@ interface is there for it).
 
 | Setting | Effect |
 |---|---|
+| `PROCESSING_ROLE=api` / `worker` | This container only queues (the app) / only processes (`trail worker`); unset (`all`): both |
 | `PROCESSING_ENABLED=false` | Nothing is queued or processed; what was worked out stays as it is |
 | `PROCESSING_OVERPASS_URL=` (empty) | No map data: stops, moves and modes are still worked out, without map evidence |
 | `PROCESSING_OVERPASS_DAILY_MB=100` | A smaller daily download budget |
@@ -530,11 +551,14 @@ It works through the range in day windows and prints a line per device;
 tiles it lacks are left to the server, which fetches them politely
 afterwards. The modes people set are kept through every reprocessing.
 
-The log tells what the worker does: `processing window done` (device, range,
-points, segments, missing tiles, milliseconds), `map tile stored` (ways,
-stops, bytes, milliseconds), `processing backfill queued` (days), and warnings
-when a tile fails (with the kind of failure; it is tried again later) or the
-daily budget is spent. Which tile — a place someone has been — is logged at
+The log tells what the worker does: `Trail worker started` (in a container of
+its own), `processing window done` (device, range, points, segments, missing
+tiles, milliseconds), `map tile stored` (ways, stops, bytes, milliseconds),
+`processing backfill queued` (days), and warnings when a tile fails (with the
+kind of failure; it is tried again later), the daily budget is spent or a
+heartbeat could not be written. The API warns `processing events: connection
+lost; reconnecting` when its listening connection broke, and says `processing
+events listened to again` with the number of devices it caught up on. Which tile — a place someone has been — is logged at
 `LOG_LEVEL=debug` only, like coordinates.
 
 ## Heatmap

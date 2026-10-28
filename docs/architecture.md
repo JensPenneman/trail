@@ -173,6 +173,41 @@ and `backend` (app, db, backup; `internal`, no route out); Launchway attaches
 `app` to its proxy network itself. No host port is published. See §13 and the
 runbook `docs/operations.md`.
 
+### Processing roles
+
+One image, two roles, chosen by `PROCESSING_ROLE`:
+
+| Role | Entry | Runs |
+|---|---|---|
+| `api` | `apps/api/dist/main.mjs` (the image's `CMD`) | HTTP, ingest, the SSE streams and the jobs of §10; it queues processing and runs no pass, no map download, no backfill |
+| `worker` | `trail worker` (`dist/cli.mjs worker`; `apps/api/src/worker.ts` in development, `npm run dev:worker -w @trail/api`); the server's entry in this role does the same | The processing worker of §17.4 — passes, map tiles, the backfill at the start, the 15-minute pass — and its heartbeat; no HTTP server |
+| `all` (default) | `main.mjs` | Both in one process: a single container, `npm run dev`, the tests and the end-to-end suite's server, any install that never set the variable |
+
+Postgres is the only coordination, so a worker needs no address of the API's
+and the API none of the worker's:
+
+- **The queue is the table** `processing_queue` (§17.2). The API writes it, the
+  worker reads it: every two seconds while it has nothing to do (an upload in
+  another process cannot wake it), every minute for retries, every 15 minutes
+  for the map pass. In role `all` an upload wakes the worker of its process
+  3 s later, as before.
+- **Per-device advisory locks** (`deviceLock.ts`) are the cluster's: a pass in
+  the worker and a deletion or a corrected mode in the API exclude each other
+  across processes.
+- **`segments` events cross with `NOTIFY`**: the pass ends with
+  `pg_notify('trail_processing', …)` inside its transaction, and the API's
+  listener republishes the message on its bus (§9) — in role `all` too, so
+  there is one path.
+- **Heartbeats**: each worker writes its row of `processing_workers` at the
+  start, every 15 s and at its stop; the API reads them (§17.2) and the hourly
+  prune removes rows unseen for an hour.
+
+Both entries wait for the database and migrate under the same advisory lock:
+whichever starts first migrates, the other finds nothing to do, and neither
+needs the other to be up. On SIGTERM the worker takes no new window and lets
+the one in progress commit (§11). `deploy/compose.yaml` runs `app` in the
+default role so far.
+
 ## 4. Configuration (API environment)
 
 All configuration is environment variables, validated at boot with zod
@@ -212,6 +247,7 @@ All configuration is environment variables, validated at boot with zod
 | `RATE_LIMIT_TOKEN_PER_MINUTE` | `600` | `/api/v1` and `/mcp` requests with a valid API token, per token, both together (§8.3, §8.6) |
 | `RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES` | `30` | `/api/v1` and `/mcp` requests with an invalid API token, per IP |
 | `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE` | `60` | The public share endpoint (`/api/public/share`), per IP (§8.5) |
+| `PROCESSING_ROLE` | `all` | What this process runs (§3): `api` serves and queues processing, `worker` processes and serves no HTTP (`trail worker`), `all` both |
 | `PROCESSING_ENABLED` | `true` | Location processing (§17); `false` queues and processes nothing |
 | `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Map data for the mapped level; set but empty: none (§17.3) |
 | `PROCESSING_OVERPASS_DAILY_MB` | `300` | Map download budget per UTC day |
@@ -354,8 +390,9 @@ are kept 30 days for the record, then pruned.
 **Processing** (§17.2): the derived, rebuildable `processed_points` (cascading
 from `locations`), `segments`, `processing_queue`, `processing_state` and the
 OpenStreetMap cache (`osm_tiles`, `osm_ways`, `osm_tile_ways`, `osm_pois`);
-and `mode_overrides`, the transport modes people set — user data, kept when
-everything else is rebuilt.
+the workers' heartbeats (`processing_workers`); and `mode_overrides`, the
+transport modes people set — user data, kept when everything else is
+rebuilt.
 
 **shares** — one person's location shared with another (§8.5): `id`,
 `owner_user_id` → users (cascade), `recipient_email` (lower-case, checked),
@@ -1840,7 +1877,20 @@ replaces device cache entries from `device` events and appends
 `ingest.points` to today's track. `segments { deviceId, from, to }` follows when processing finished a
 window of a device's history, or a person corrected a mode (§17.4): the
 dashboard refetches the tracks at their level, the timeline and the current
-mode.
+mode. A corrected mode is the API's own doing and goes on the bus at once. A
+pass, in whichever process it ran (§3), ends with
+`pg_notify('trail_processing', '{"t":"segments","u":<user>,"d":<device>,"from":…,"to":…}')`
+in its transaction, so the message (about 160 bytes) leaves with the commit
+and never after a rollback; the API's listener (`events/processingListener.ts`,
+a connection of its own outside the pool) republishes it on the bus, and
+leaves alone any message it does not know. A lost connection is opened again
+after 1 s, then twice as long after each failure up to 30 s, and a check
+every 30 s (10 s to answer) finds one that died silently. Listening again, it
+publishes a `segments` event for every device whose segments were worked out
+(`computed_at`) since ten minutes before the connection last answered — a
+pass's segments carry the start of its transaction, which may lie that far
+before its commit — so a dashboard that stayed open still refetches what it
+missed.
 
 Sharing (§8.5) adds two events. `person` (`{ userId, device }`, the device as
 the stream user's share shows it) follows every upload of a shared device, to
@@ -1859,6 +1909,9 @@ events and refetches people and shares on `share` events.
 
 ## 10. Background jobs (in-process, single instance)
 
+All of them run in the API's process except the processing worker, which
+runs in the worker (§3) — or in the API's process too, in role `all`.
+
 - every 5 min (only when `ALERT_NTFY_URL` is set) — silent-device check:
   alerts-enabled devices whose `last_seen_at` is older than
   `STALE_AFTER_HOURS` and not yet alerted → ntfy message ("<device> (<owner>)
@@ -1872,8 +1925,9 @@ events and refetches people and shares on `share` events.
   > 30 days), API tokens (revoked/expired > 30 days) and stopped or ended
   shares and share links (> 30 days); prune `ingest_log` (> 90 d) and the
   hours of the data access log older than `DATA_ACCESS_RETENTION_DAYS` (365 d;
-  a log, not recorded data). Recorded data — locations, visits, trips,
-  events, rejects — is never pruned.
+  a log, not recorded data), and the heartbeats of workers unseen for an hour.
+  Recorded data — locations, visits, trips, events, rejects — is never
+  pruned.
 - every 2 s while accesses wait — the data access log's write (§8.8), in one
   statement per 500 rows; a failed write is tried again with the next.
 - debounced (10 s) — daily-stats recomputation per touched (device, day), in
@@ -1883,10 +1937,12 @@ events and refetches people and shares on `share` events.
 - once, 5 s after the start — the heat levels of every device whose totals
   disagree are rebuilt from its points (`fillHeatLevels`, §8.2). A shutdown
   does not wait for it: it is cancelled and rolls back.
-- the processing worker (§17.4) — 3 s after new work, every minute for
-  retries and every 15 minutes for windows waiting on map data and lost
-  windows; the boot-time backfill when a level's algorithms changed version;
-  map tiles fetched alongside, within the daily budget.
+- the processing worker (§17.4), in the worker's process (role `worker`) or
+  the API's (`all`) — 3 s after new work in its own process, every 2 s while
+  idle in a worker process, every minute for retries and every 15 minutes for
+  windows waiting on map data and lost windows; the boot-time backfill when a
+  level's algorithms changed version; map tiles fetched alongside, within the
+  daily budget; its heartbeat every 15 s.
 Jobs must never crash the process; failures are logged. Runs never overlap.
 
 ## 11. CLI
@@ -1902,12 +1958,20 @@ the image, so `docker compose exec app trail <command>`):
 - `reprocess [--device <id>] [--from <iso> --to <iso>] [--from-level averaged|mapped|inferred]`
   — work out the processed levels again (§17.4)
 - `prune` — run the retention cleanup now
+- `worker` — the processing worker in the foreground (§3), the worker
+  container's command. A service rather than a command: its own pool of five
+  connections, the server's logging (stdout, `LOG_LEVEL`), a heartbeat, until
+  SIGTERM or SIGINT; then it takes no new window, lets the one in progress
+  commit, writes its last heartbeat and exits 0. A window not committed within
+  80 s is left to the database, which rolls it back as the process exits (1).
+  Exit 1 also on an invalid configuration, in role `api` (a process that must
+  not process) and when it cannot start.
 - `help` / `--help`
 
 Every command applies pending migrations first (same advisory lock as the
-server). Output on stdout, logs on stderr. Exit codes: 0 success, 1 failure
-(including invalid configuration), 2 wrong usage (unknown command or option,
-invalid value).
+server). Output on stdout, logs on stderr (`worker`: logs on stdout). Exit
+codes: 0 success, 1 failure (including invalid configuration), 2 wrong usage
+(unknown command or option, invalid value).
 
 ## 12. Security
 
@@ -2074,7 +2138,7 @@ production `node_modules` of the API only (`npm ci --omit=dev --workspace
 dependencies must stay pure JavaScript; the build fails on a `.node` addon),
 `apps/api/dist` (with the API guide and the reference bundle the API build
 copies next to the server, §8.3), `apps/api/drizzle`, `apps/web/dist`, the CLI wrapper
-`/usr/local/bin/trail`; `USER 1000:1000` (`node`); `EXPOSE 8080`;
+`/usr/local/bin/trail` (also the worker's entry, `trail worker`, §3); `USER 1000:1000` (`node`); `EXPOSE 8080`;
 `HEALTHCHECK` on `/api/health/live` (busybox `wget`); OCI labels
 (`org.opencontainers.image.source` links the GHCR package to the repo);
 build args `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` → env (CI sets the
@@ -2761,7 +2825,7 @@ security ones too.
   RDP, distance, tile math and the heatmap's levels, whole-cell windows and
   the levels a device's totals call for rebuilding (those below the highest,
   level 18 included),
-  token hashing, config parsing, presets, share
+  token hashing, config parsing, the processing channel's messages, presets, share
   durations across DST and skipped midnights, the sharing grids — one per
   owner, fixed, within the cell around the position, area cells made of whole
   approximate cells, whole at the antimeridian, and a property test that no
@@ -2850,6 +2914,15 @@ security ones too.
   of map data as in one, ready times by the worker's clock, a deleted range
   repaired, the backfill across a restart, the v1 routes with sessions and
   tokens, `trail reprocess`, and a log that names tiles only at debug level.
+  `processingTopology.test.ts` holds an API in role `api` and a worker
+  (`createWorkerContext()`: the worker's side without the HTTP app) on one
+  database: the API queues and works nothing out, the worker's pass reaches the
+  API's stream through `NOTIFY`, the listener comes back after its backend is
+  terminated and announces what it missed, and heartbeats are written, read
+  and pruned. `workerProcess.test.ts` runs the entries as processes: `trail
+  worker` lets a pass held in the middle of its transaction commit after
+  SIGTERM, then exits 0; the server's entry serves no HTTP in role `worker` and
+  starts no worker in role `api`.
   The MCP server is driven by the SDK's own client over Streamable HTTP
   (`tests/support/mcpClient.ts`), in both protocol eras: `mcp.test.ts` the
   transport (JSON answers, tools/list per scope, the unknown-tool answer,
@@ -3136,6 +3209,12 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   was backfilled for, `{ "versions": { "averaged": 1, "mapped": 1, "inferred": 3 } }`
   (`{ "version": n }`, from before the levels had versions of their own, means
   n for every level).
+- **processing_workers** — one row per worker process (§3), its heartbeat:
+  `id` (host, process id, start time and a random tag), `started_at`,
+  `last_seen_at` (the database's clock, refreshed every 15 s and at the stop),
+  `version` (the release), `job_id` (the job it runs; null until jobs have ids),
+  `passes` and `points` (since its start). No user data; rows unseen for an
+  hour are pruned (§10).
 
 ### 17.3 Algorithms
 
@@ -3362,10 +3441,12 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   (a long stop reaching far beyond the range leaves no hole), in its
   transaction, under the device's processing lock; deleting a device
   cascades. A time-zone change needs nothing (segments are UTC).
-- One in-process worker (`ProcessingWorker`, the daily-statistics scheduler's
-  pattern, reading the table) wakes 3 s after new work, every minute for
-  retries and on a 15-minute pass. It takes the next ready window — new data
-  oldest first, then the backfill newest day first, and after a pass of new
+- One worker (`ProcessingWorker`, the daily-statistics scheduler's pattern,
+  reading the table), in the worker process or in the API's in role `all`
+  (§3), wakes 3 s after new work queued in its own process, every 2 s while
+  idle in a worker process, every minute for retries and on a 15-minute
+  pass. It takes the next ready window — new data oldest first, then the
+  backfill newest day first, and after a pass of new
   data a ready backfill window gets the next turn, so a phone uploading every
   few minutes never starves the backfill — with every ready window of the
   device that overlaps it (not one waiting for map tiles or a retry: it would
@@ -3424,9 +3505,11 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   them itself with the map data already cached; tiles still missing are left
   to the server's fetcher.
 - When a window is done, the owner's streams get `segments { deviceId, from,
-  to }` (§9), and so after a correction; an open dashboard refetches.
-- Shutdown stops the worker: a window in progress finishes its transaction,
-  map downloads are aborted.
+  to }` through the processing channel (§9), whichever process worked it out
+  (`trail reprocess` included), and from the API itself after a correction;
+  an open dashboard refetches.
+- Shutdown stops the worker: a window in progress finishes its transaction
+  (`trail worker` waits up to 80 s for it, §11), map downloads are aborted.
 
 ### 17.5 Overrides (the person wins)
 
@@ -3528,6 +3611,7 @@ current mode.
 
 | Variable | Default | Meaning |
 |---|---|---|
+| `PROCESSING_ROLE` | `all` | `api`: this process queues and processes nothing; `worker`: it processes and serves no HTTP; `all`: both (§3) |
 | `PROCESSING_ENABLED` | `true` | `false`: nothing is queued or processed; the derived tables stay as they are |
 | `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Overpass interpreter for map data; set but empty: no map data (mapped degrades to averaged) |
 | `PROCESSING_OVERPASS_DAILY_MB` | `300` | Map download budget per UTC day |
