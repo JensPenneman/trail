@@ -15,6 +15,22 @@
   );
 }
 
+.mode-swatch--dotted {
+  background:
+    radial-gradient(circle, var(--mode-color) 0.15rem, transparent 0.17rem) 0 50% / 0.5rem 100%
+    repeat-x;
+  height: 0.375rem;
+}
+
+.mode-swatch--gap {
+  height: 0.125rem;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--mode-color) 0 0.35rem,
+    transparent 0.35rem 0.6rem
+  );
+}
+
 @media (forced-colors: active) {
   .mode-swatch {
     forced-color-adjust: none;

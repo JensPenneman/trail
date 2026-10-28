@@ -1,6 +1,6 @@
 import type { DeviceSummary } from "@trail/contracts/device";
 import { useId } from "react";
-import { QuickModeChips } from "../../transport/QuickModeChips";
+import { QuickModeChips, toggleMinutes } from "../../transport/QuickModeChips";
 
 /**
  * The quick toggle for this device: the Me card's applies to the device that
@@ -16,7 +16,8 @@ export function TravelModeSection({ device }: { device: DeviceSummary }) {
           Travelling now
         </h2>
         <p className="section__description">
-          How this device travels from now until its next stop; Auto leaves it to Trail.
+          How this device travels from now until it stops for {toggleMinutes} minutes or more or
+          travels another way; Auto leaves it to Trail.
         </p>
       </div>
       <div className="card">

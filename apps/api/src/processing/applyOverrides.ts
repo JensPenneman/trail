@@ -1,13 +1,16 @@
-import type { ChosenMode } from "@trail/contracts/transport";
+import { type ChosenMode, toggleEndingStopS } from "@trail/contracts/transport";
 import type { OverrideSpan } from "./pipelineTypes";
 import type { ProcessingConfig } from "./processingConfig";
 import type { ScoredPart } from "./splitMoves";
+import { familyOf } from "./travelFamily";
 
 /** A stop of the window, by kept-point indices. */
 interface DraftStop {
   kind: "stop";
   first: number;
   last: number;
+  /** Its last point of its own (`Span.ownLast`): `last`, or the point before it. */
+  ownLast: number;
   startT: number;
   endT: number;
 }
@@ -37,7 +40,14 @@ export interface OverrideContext {
   overrides: ProcessingConfig["overrides"];
 }
 
-/** Where an override applies: a segment override its span, a toggle until the next stop. */
+/**
+ * Where an override applies: a segment override its span; a toggle until the
+ * first stop of `toggleEndingStopS` or more, or a move after a stop that
+ * followed it that the inference reads as another kind of travel (`familyOf`).
+ * The first move it reaches is its own, all its parts, whatever the inference
+ * reads in them (a ride partly read as a car, the walk to the platform) — a
+ * change of trains does not end it, cycling home from the station does.
+ */
 function effectiveSpan(
   override: OverrideSpan,
   segments: readonly Draft[],
@@ -45,11 +55,22 @@ function effectiveSpan(
   let to = override.to ?? Number.POSITIVE_INFINITY;
   if (override.kind === "toggle") {
     if (override.endsBy !== null) to = Math.min(to, override.endsBy);
+    const family = familyOf(override.mode);
+    // Whether a stop came since the toggle began — before this window too: only moves after
+    // one can end it by kind.
+    let afterStop = override.stoppedBefore;
     for (const segment of segments) {
-      if (segment.kind === "stop" && segment.startT > override.from) {
+      if (segment.startT <= override.from) continue;
+      const inferred = segment.kind === "move" ? familyOf(segment.part.verdict.mode) : null;
+      const ends =
+        segment.kind === "stop"
+          ? segment.endT - segment.startT >= toggleEndingStopS
+          : afterStop && family !== null && inferred !== null && inferred !== family;
+      if (ends) {
         to = Math.min(to, segment.startT);
         break;
       }
+      if (segment.kind === "stop") afterStop = true;
     }
   }
   return to > override.from ? { from: override.from, to } : null;

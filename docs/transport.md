@@ -21,6 +21,12 @@ options on a phone):
   it.
 - **Transport**: your day as stops and moves, each move coloured by how you
   travelled, with a legend. A dashed outline marks a move Trail is unsure of.
+  A stop is a dot where you were; when you moved around within it without
+  walking anywhere — along the platform, about the house — those points are
+  drawn as a dotted line. Where your phone recorded nothing for a while and
+  you were somewhere else afterwards — or it woke up a little farther on,
+  already riding — a thin dashed line joins the two places, so you never
+  vanish from the map. The legend explains both when they are on the map.
 
 Trail remembers your choice on each browser, and the address of the page
 keeps it, so a link shows the same view. When part of a track is not worked
@@ -54,6 +60,32 @@ it is gives the confidence. Below 60 % the move is marked as unsure; below
 back (walk to the station, take the train, walk to the office) is cut into
 its parts; a pause of three minutes or more is a stop.
 
+## Stops
+
+A stop is a place you stayed: three minutes or more in one spot, or a visit
+your iPhone reported. A stop ends when you leave. Your iPhone reports a visit
+when you arrive and again when you leave; Trail puts the two together, and
+when the second report never comes, the stop still ends as you set off — it
+never swallows the journey after it. A short step outside (to the car and
+back) stays part of the stop, and so does a moment your phone placed you a
+few hundred metres off, as it does indoors now and then; going out for lunch
+makes the morning and the afternoon two stops, with the walk between them.
+Until your iPhone reports that you left, though, a visit next door can count
+as part of the stop at home.
+
+A real walk between two places you waited at — from the bike shed to the
+platform: half a minute or more at walking pace — is a move of its own, so
+the Timeline reads stop, walk, stop, however close together they are —
+unless your iPhone reported one visit for both places: then the walk stays
+inside that stop, drawn as its dotted line. Shuffling along the platform, or
+a step or two, is no walk: it stays part of the stop, and the map draws it
+as the stop's dotted line. When your phone
+recorded nothing for half an hour or more but was back where it had been,
+Trail counts that time as a stop, so the day has no hole. When it was
+somewhere else afterwards, the Timeline shows a quiet "No data" row with how
+long the phone was silent. A stop's details say how long you stayed and,
+when you moved around within it, how far.
+
 Without map data — when it is switched off on your server, or not fetched yet
 for an area — Trail decides on speed, motion and pauses alone and is less
 sure, especially between a car and a train.
@@ -68,7 +100,12 @@ sure, especially between a car and a train.
 - **From now on**: your own card, **Me**, on the People page has a row
   *Now: Walk · Bike · Car · Bus · Train · Tram · Metro · Other · Auto*. Tap
   the mode you are switching to — getting on a train, say — and it holds
-  until your next stop. Auto hands it back to Trail; Other has every mode.
+  until you stop for 10 minutes or more, or — after a stop — Trail sees you
+  travel another way (on foot, by bike, in a vehicle): changing trains does
+  not end it, cycling home from the station does. The ride you set it for is
+  yours all the way, whatever Trail reads in it: a stretch read as a car
+  stays your bike ride, and the walk to the platform takes your train.
+  Auto hands it back to Trail; Other has every mode.
   It sets the phone that reported last, which the row names; a second
   device (a tracker in the car, say) is not changed, and its own page under
   **Devices** has the same row, for it.

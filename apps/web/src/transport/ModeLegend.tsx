@@ -10,10 +10,17 @@ interface ModeLegendProps {
   modes: ReadonlySet<TransportMode>;
   /** Whether a move to review is on the map. */
   review: boolean;
+  /** Whether a stop is drawn with the path within it. */
+  stopPaths?: boolean;
+  /** Whether a recording gap is bridged on the map. */
+  gaps?: boolean;
 }
 
-/** What the colours on the map mean: the modes shown, and the dashed outline. */
-export function ModeLegend({ modes, review }: ModeLegendProps) {
+/**
+ * What the lines on the map mean: the modes shown, the dashed outline, the
+ * dotted path within a stop and the connector across a gap in the recording.
+ */
+export function ModeLegend({ modes, review, stopPaths = false, gaps = false }: ModeLegendProps) {
   const headingId = useId();
   if (modes.size === 0) return null;
   return (
@@ -34,6 +41,18 @@ export function ModeLegend({ modes, review }: ModeLegendProps) {
           <li className="mode-legend__item">
             <ModeSwatch mode="unknown" dashed />
             Unsure: worth a look
+          </li>
+        ) : null}
+        {stopPaths ? (
+          <li className="mode-legend__item">
+            <ModeSwatch mode="stationary" dotted />
+            Moved within a stop
+          </li>
+        ) : null}
+        {gaps ? (
+          <li className="mode-legend__item">
+            <ModeSwatch mode="unknown" gap />
+            No data: a gap in the recording
           </li>
         ) : null}
       </PlainList>

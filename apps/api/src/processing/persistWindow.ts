@@ -1,6 +1,10 @@
 import { sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
+import { toIso } from "../db/toIso";
+import { type PiecePoint, pieceValues } from "./pieceValues";
 import type { RawPoint } from "./pipelineTypes";
+import type { ProcessingConfig } from "./processingConfig";
+import { enqueueWindow, queuePriority } from "./processingQueue";
 import type { ProcessingVersions } from "./processingVersion";
 import type { WindowResult } from "./runPipeline";
 
@@ -9,13 +13,105 @@ const chunkSize = 5000;
 
 const iso = (epochSeconds: number): string => new Date(epochSeconds * 1000).toISOString();
 
+/** A stored segment cut at a window's edge: the part that stays. */
+interface PieceRow extends Record<string, unknown> {
+  id: string;
+  kind: "stop" | "move";
+  started_at: string;
+  ended_at: string;
+  version: number;
+  features: Record<string, unknown> | null;
+}
+
+interface PiecePointRow extends Record<string, unknown> {
+  t: number;
+  lat_avg: number;
+  lon_avg: number;
+  lat_map: number | null;
+  lon_map: number | null;
+  path_map: [number, number][] | null;
+  speed_avg: number | null;
+}
+
+/**
+ * The part of a stored segment a window cut off works out what it holds of
+ * its own (`pieceValues`) — its points, a stop's own only — and, left by
+ * another version of the inference, is queued to be worked out again.
+ */
+async function workOutPiece(
+  tx: Executor,
+  deviceId: string,
+  piece: PieceRow,
+  options: { versions: ProcessingVersions; config: ProcessingConfig },
+): Promise<void> {
+  const features = piece.features ?? {};
+  const startT = Date.parse(toIso(piece.started_at)) / 1000;
+  const endT = Date.parse(toIso(piece.ended_at)) / 1000;
+  const lastPointT = features["lastPointT"];
+  const ownEnd =
+    piece.kind === "stop" && typeof lastPointT === "number" ? Math.min(endT, lastPointT) : endT;
+  // One range of the primary key, nothing joined: a part of a stale stop can hold days of points.
+  const rows = await tx.execute<PiecePointRow>(sql`
+    SELECT extract(epoch FROM p.recorded_at)::float8 AS t, p.lat_avg, p.lon_avg, p.lat_map,
+      p.lon_map, p.path_map, p.speed_avg
+    FROM processed_points p
+    WHERE p.device_id = ${deviceId} AND p.kept
+      AND p.recorded_at >= ${piece.started_at}::timestamptz
+      AND p.recorded_at <= ${new Date(ownEnd * 1000).toISOString()}::timestamptz
+    ORDER BY p.recorded_at
+  `);
+  // The processed points keep no accuracy: the part's middle weighs them alike.
+  const points = rows.rows.map(
+    (row): PiecePoint => ({
+      t: Math.round(row.t),
+      latAvg: row.lat_avg,
+      lonAvg: row.lon_avg,
+      latMap: row.lat_map,
+      lonMap: row.lon_map,
+      pathMap: row.path_map,
+      speed: row.speed_avg,
+      accuracy: options.config.averaging.defaultAccuracyM,
+    }),
+  );
+  const values = pieceValues(piece.kind, points, { startT, endT }, features);
+  await tx.execute(sql`
+    UPDATE segments SET point_count = ${values.pointCount}, distance_m = ${values.distanceM},
+      start_lat = coalesce(${values.start?.lat ?? null}::float8, start_lat),
+      start_lon = coalesce(${values.start?.lon ?? null}::float8, start_lon),
+      end_lat = coalesce(${values.end?.lat ?? null}::float8, end_lat),
+      end_lon = coalesce(${values.end?.lon ?? null}::float8, end_lon),
+      centroid_lat = coalesce(${values.centroid?.lat ?? null}::float8, centroid_lat),
+      centroid_lon = coalesce(${values.centroid?.lon ?? null}::float8, centroid_lon),
+      features = ${JSON.stringify(values.features)}::jsonb
+    WHERE id = ${piece.id}
+  `);
+  if (piece.version !== options.versions.inferred) {
+    await enqueueWindow(tx, {
+      deviceId,
+      from: new Date(startT * 1000),
+      to: new Date(endT * 1000),
+      reason: "backfill",
+      fromLevel: "inferred",
+      priority: queuePriority.backfill,
+    });
+  }
+}
+
 /**
  * Writes a processed window (docs/architecture.md §17.2) — its points' averaged
  * and mapped levels and its stops and moves — in the caller's transaction.
  * Points deleted meanwhile are skipped; segments keep their ids where their
- * start stays; a segment that began before the window ends at its start.
- * A point records the mapped level's version (it holds the averaged and mapped
- * levels), a segment the inferred level's.
+ * start stays. The window has grown to whole segments, but at most two days
+ * out (§17.4): a segment that began before it ends at its start, and the part
+ * of one that reaches beyond its end stays, starting at the end, so no time
+ * is lost from the timeline. Each part counts what it holds of its own (its
+ * points, distance, ends and middle) and keeps its mode until a window over it
+ * works it out again; a part left by another version of the inference is
+ * queued for that. The point the window shares with a segment that
+ * began before it keeps its stored levels: that segment was worked out with it
+ * (a move's mapping is not overwritten by a stop's, nor taken for a stop's
+ * later). A point records the mapped level's version (it holds the averaged
+ * and mapped levels), a segment the inferred level's.
  */
 export async function persistWindow(
   tx: Executor,
@@ -26,9 +122,12 @@ export async function persistWindow(
     raw: readonly RawPoint[];
     result: WindowResult;
     versions: ProcessingVersions;
+    config: ProcessingConfig;
   },
 ): Promise<void> {
   const { deviceId, raw, result, versions } = input;
+  // The point the window shares with a segment that began before it is that segment's too.
+  const firstAt = iso(raw[0]?.t ?? 0);
   const rows = raw.map((point, index) => {
     const averaged = result.averaged[index];
     const mapped = result.mapped[index] ?? null;
@@ -67,6 +166,15 @@ export async function persistWindow(
         speed_avg = excluded.speed_avg, lat_map = excluded.lat_map, lon_map = excluded.lon_map,
         way_id = excluded.way_id, way_kind = excluded.way_kind, snap_m = excluded.snap_m,
         path_map = excluded.path_map, version = excluded.version, processed_at = excluded.processed_at
+      WHERE NOT (
+        processed_points.recorded_at = ${firstAt}::timestamptz
+        AND processed_points.version = ${versions.mapped}
+        AND EXISTS (
+          SELECT 1 FROM segments s
+          WHERE s.device_id = ${deviceId}::uuid AND s.started_at < ${input.from.toISOString()}::timestamptz
+            AND s.ended_at = processed_points.recorded_at
+        )
+      )
     `);
   }
 
@@ -93,11 +201,28 @@ export async function persistWindow(
     centroid_lon: segment.centroid.lon,
     features: segment.features,
   }));
-  await tx.execute(sql`
+  const tails = await tx.execute<PieceRow>(sql`
+    INSERT INTO segments (device_id, started_at, ended_at, kind, mode, mode_inferred, mode_user,
+      confidence, review, distance_m, duration_s, max_speed, point_count, start_lat, start_lon, end_lat,
+      end_lon, centroid_lat, centroid_lon, features, version, computed_at)
+    SELECT device_id, ${to}::timestamptz, ended_at, kind, mode, mode_inferred, mode_user, confidence,
+      review, distance_m, extract(epoch FROM ended_at - ${to}::timestamptz)::integer, max_speed,
+      point_count, start_lat, start_lon, end_lat, end_lon, centroid_lat, centroid_lon, features, version,
+      computed_at
+    FROM segments
+    WHERE device_id = ${deviceId} AND started_at < ${to}::timestamptz AND ended_at > ${to}::timestamptz
+    ON CONFLICT (device_id, started_at) DO NOTHING
+    RETURNING id, kind, started_at::text, ended_at::text, version, features
+  `);
+  const heads = await tx.execute<PieceRow>(sql`
     UPDATE segments SET ended_at = ${from}::timestamptz,
       duration_s = extract(epoch FROM ${from}::timestamptz - started_at)::integer
     WHERE device_id = ${deviceId} AND started_at < ${from}::timestamptz AND ended_at > ${from}::timestamptz
+    RETURNING id, kind, started_at::text, ended_at::text, version, features
   `);
+  for (const piece of [...heads.rows, ...tails.rows]) {
+    await workOutPiece(tx, deviceId, piece, input);
+  }
   await tx.execute(sql`
     DELETE FROM segments
     WHERE device_id = ${deviceId}

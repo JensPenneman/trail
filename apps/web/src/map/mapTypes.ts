@@ -43,18 +43,28 @@ export interface MapViewState {
   zoom: number;
 }
 
-/** A stop or move of the Transport level, coloured by its mode. */
+/**
+ * A stop or move of the Transport level, coloured by its mode — or a `gap`:
+ * the connector across a recording gap between two of a device's segments.
+ */
 export interface MapTransportSegment {
-  /** The segment's id; pieces outside the timeline get a key of their own. */
+  /** The segment's id; pieces outside the timeline and connectors get a key of their own. */
   id: string;
-  /** Whether clicking it opens the segment (pieces of plain track do not). */
+  /** Whether clicking it opens the segment (pieces of plain track and connectors do not). */
   selectable: boolean;
-  kind: "stop" | "move" | "track";
+  kind: "stop" | "move" | "track" | "gap";
   color: string;
   /** Unsure inference nobody has confirmed: drawn with a dashed outline. */
   review: boolean;
-  /** `[lon, lat]`; a stop is drawn as a dot at its first point. */
+  /**
+   * `[lon, lat]`: a move's line; a stop's points, drawn dotted when they spread
+   * (the walk within a station); a connector's two ends.
+   */
   line: readonly (readonly [number, number])[];
+  /** A stop's place, where its dot goes (else its first point); null for the others. */
+  place: readonly [number, number] | null;
+  /** How far apart a stop's points lie, metres (the API's `spreadM`); null for the others. */
+  spreadM: number | null;
 }
 
 /** The heatmap's cells as the API sends them and the scale that colours them. */

@@ -1,13 +1,14 @@
 import { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ProcessingLevel } from "@trail/contracts/transport";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../src/api/queryKeys";
 import { applyServerEvent } from "../src/live/applyServerEvent";
 import { createLiveStore } from "../src/live/createLiveStore";
 import { DevicePage } from "../src/pages/device/DevicePage";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
-import { automatic, car, ids, timeline, user } from "./support/fixtures";
+import { automatic, car, ids, levelTracks, timeline, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
@@ -81,6 +82,136 @@ describe("the Transport level on History", () => {
     expect(api.calls.filter((call) => call.method === "PUT").at(-1)?.body).toEqual({
       mode: "train",
     });
+  });
+});
+
+describe("continuity at the Transport level", () => {
+  /** The fixture's day, with the phone silent for 42 minutes after the train and a walk after. */
+  function withGap(from: string) {
+    const [stop, train] = timeline(from);
+    if (stop === undefined || train === undefined) throw new Error("no timeline in the fixture");
+    const resumed = Date.parse(train.endedAt) + 42 * 60_000;
+    const walk = {
+      ...train,
+      id: "019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d47",
+      mode: "walking" as const,
+      modeInferred: "walking" as const,
+      needsReview: false,
+      startedAt: new Date(resumed).toISOString(),
+      endedAt: new Date(resumed + 600_000).toISOString(),
+      durationS: 600,
+      distanceM: 800,
+    };
+    return [{ ...stop, spreadM: 120 }, train, walk];
+  }
+
+  it("says when the phone recorded nothing between two segments, and how long", async () => {
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/segments": ({ url }: { url: URL }) => ({
+        status: 200,
+        body: {
+          items: withGap(url.searchParams.get("from") ?? new Date().toISOString()),
+          nextCursor: null,
+          pending: false,
+        },
+      }),
+    });
+    renderPage(<PeoplePage />, { url: "/?view=history", user });
+    const list = screen.getByRole("region", { name: "Timeline" });
+    expect(await within(list).findByText(/^No data · 42 min/)).toBeInTheDocument();
+    // Between the train and the walk (with their times), and nowhere else.
+    const rows = [...list.querySelectorAll("li")].map((row) => row.textContent ?? "");
+    expect(rows.findIndex((row) => row.startsWith("No data"))).toBe(2);
+    expect(rows.filter((row) => row.startsWith("No data"))).toHaveLength(1);
+    expect(rows[2]).toMatch(/07:38 – 08:20$/);
+  });
+
+  it("says so on Live too, in the day under the Me card", async () => {
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/segments": ({ url }: { url: URL }) => ({
+        status: 200,
+        body: {
+          items: withGap(url.searchParams.get("from") ?? new Date().toISOString()),
+          nextCursor: null,
+          pending: false,
+        },
+      }),
+    });
+    renderPage(<PeoplePage />, { user });
+    const list = await screen.findByRole("region", { name: "Timeline" });
+    expect(await within(list).findByText(/^No data · 42 min/)).toBeInTheDocument();
+    const rows = [...list.querySelectorAll("li")].map((row) => row.textContent ?? "");
+    expect(rows.filter((row) => row.startsWith("No data"))).toHaveLength(1);
+  });
+
+  it("tells in a stop's details how far one moved within it", async () => {
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/segments": ({ url }: { url: URL }) => ({
+        status: 200,
+        body: {
+          items: withGap(url.searchParams.get("from") ?? new Date().toISOString()),
+          nextCursor: null,
+          pending: false,
+        },
+      }),
+    });
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: "/?view=history", user });
+    await person.click(await screen.findByRole("button", { name: /Details of the stop/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Stop" });
+    expect(within(dialog).getByText("Moved within")).toBeInTheDocument();
+    expect(within(dialog).getByText("120 m")).toBeInTheDocument();
+    expect(within(dialog).getByText("Duration")).toBeInTheDocument();
+  });
+
+  it("explains the dotted path within a stop and the connector across a gap", async () => {
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/tracks": ({ url }: { url: URL }) => {
+        const response = levelTracks(
+          url.searchParams.get("from") ?? new Date().toISOString(),
+          url.searchParams.get("to") ?? new Date().toISOString(),
+          (url.searchParams.get("level") ?? "raw") as ProcessingLevel,
+        );
+        if (response.level !== "inferred") return { status: 200, body: response };
+        const [stop, move] = response.segments;
+        if (stop === undefined || move === undefined) return { status: 200, body: response };
+        const end = move.points.at(-1) ?? [0, 0, 0];
+        // The stop spreads 120 m, ending where the move starts; the phone resumes 700 m on,
+        // an hour after the move.
+        const [lon = 0, lat = 0, t = 0] = stop.points[0] ?? [];
+        const spread = {
+          ...stop,
+          spreadM: 120,
+          points: [
+            [lon + 0.0017, lat, t - 60],
+            [lon, lat, t],
+          ] as [number, number, number][],
+        };
+        const later = {
+          ...move,
+          id: "019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d46",
+          points: [
+            [end[0], end[1] + 0.0063, end[2] + 3600],
+            [end[0], end[1] + 0.01, end[2] + 3900],
+          ] as [number, number, number][],
+        };
+        return { status: 200, body: { ...response, segments: [spread, move, later] } };
+      },
+    });
+    renderPage(<PeoplePage />, { url: "/?view=history", user });
+    // The map is handed the connector too: the stop, two moves and the gap between them.
+    await waitFor(() =>
+      expect(document.querySelector("[data-transport]")).toHaveAttribute("data-transport", "4"),
+    );
+    const legend = screen.getByText("Moved within a stop").closest("section");
+    expect(legend).toHaveAccessibleName("Map legend");
+    expect(
+      within(legend as HTMLElement).getByText("No data: a gap in the recording"),
+    ).toBeInTheDocument();
   });
 });
 

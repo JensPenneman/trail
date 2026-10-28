@@ -245,11 +245,15 @@ areas without map data averaged — and `availableLevel` names the level every
 point reached, each segment's `level` its own. Points are `[lon, lat, t]`:
 WGS84 degrees and epoch seconds (the way's shape between two mapped points
 carries interpolated times). At `inferred` the segments are the timeline's
-stops and moves with their modes; at the other levels they are pieces of
-track, split where the recording paused for more than ten minutes.
+stops and moves with their modes — a stop with its place (`centroid`) and its
+points, where the device went within it — and consecutive segments share
+their boundary point, except across a recording gap; at the other levels they
+are pieces of track, split where the recording paused for more than ten
+minutes.
 
 `GET /api/v1/segments?from=…&to=…` is the timeline itself: stops (with their
-place, `centroid`, and duration) and moves (with `mode`, `modeInferred`,
+place, `centroid`, their duration and `spreadM`, how far apart their points
+lie) and moves (with `mode`, `modeInferred`,
 `modeUser`, `confidence`, `needsReview`, distance, duration and speeds), a
 page of up to `limit` (500 by default, at most 1000) at a time. `pending` is
 true while points of the range still wait for processing — ask again a little
@@ -264,8 +268,12 @@ People (and agents) can put a mode right, with `locations:write` and
   mode; it wins over the inference, also when the history is worked out
   again. `DELETE` on the same path hands the move back to the inference.
 - `POST /api/v1/devices/{id}/mode` with `{ "mode": "train" }` says how the
-  device travels from now on — until `until`, if given, or the next detected
-  stop, whichever comes first. The same mode again changes nothing;
+  device travels from now on — until `until`, if given, the first detected
+  stop of 10 minutes or more, or — after a stop — a move Trail reads as
+  another kind of travel (on foot, by bike, by vehicle), whichever comes
+  first: changing trains does not end it, cycling home from the station
+  does, and the ride it was set for is its own all the way. The same mode
+  again changes nothing;
   `{ "mode": null }` ends it. `GET` on the same path tells the mode now.
 
 `GET /api/v1/stats/modes?from=2026-10-01&to=2026-10-31` (`history:read`, local

@@ -94,7 +94,7 @@ every scope in its row. Anything that can yield coordinates needs
 | `get_day_summary({ date, device? })` | `history:read` | One device's day in figures: distance and time per mode, stops, moves, first and last movement. No places. |
 | `get_visits({ from, to, device? })` | `locations:read` | The places iOS saw the phones stay at (Overland's visits), with arrival, departure and duration. |
 | `get_trips({ from, to, device? })` | `history:read` | Trips recorded with Overland's trip recorder: mode, times, distance, speed, steps. No coordinates. |
-| `set_transport_mode({ mode, device?, until? })` | `locations:read`, `locations:write` | Tells Trail how a device travels from now on, until `until` or the next stop; `mode: null` ends it. Recorded with the source `mcp`. Its answer is the mode now, which is location data, hence both scopes. |
+| `set_transport_mode({ mode, device?, until? })` | `locations:read`, `locations:write` | Tells Trail how a device travels from now on, until `until`, the first stop of 10 minutes or more, or — after a stop — a move of another kind of travel (on foot, by bike, by vehicle); `mode: null` ends it. Recorded with the source `mcp`. Its answer is the mode now, which is location data, hence both scopes. |
 | `get_people` | `people:read` | The people who share their location with you, as each chose: name, precision and until when, and per shared device its newest position at that precision, how old it is, and battery and mode only where they share details; the distance from your own newest position needs `locations:read` too. |
 
 `device` takes a device's id (from `list_devices`) or its name as

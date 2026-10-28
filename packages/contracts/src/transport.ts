@@ -167,11 +167,16 @@ export const segmentSchema = z
     start: coordinateSchema.meta({ description: "Where the segment starts." }),
     end: coordinateSchema.meta({ description: "Where the segment ends." }),
     centroid: coordinateSchema.meta({ description: "The middle of its points: a stop's place." }),
+    spreadM: z.number().nonnegative().nullable().meta({
+      description:
+        "For a stop: how far apart its points lie, in metres — the walk within a station, say. Null for a move, and for a stop worked out before Trail kept it.",
+      example: 120,
+    }),
   })
   .meta({
     id: "Segment",
     description:
-      "A stop or a move. Stops and moves follow each other without overlap; a gap in the recording leaves a gap between them.",
+      "A stop or a move. Stops and moves follow each other without overlap. A recording gap the phone lay still through is a stop; a gap with travel leaves a gap between them.",
   });
 export type Segment = z.infer<typeof segmentSchema>;
 
@@ -267,11 +272,22 @@ export const levelTrackSegmentSchema = z
     confidence: z.number().min(0).max(1).nullable(),
     needsReview: z.boolean(),
     startedAt: instant("Time of its first point."),
-    endedAt: instant("Time of its last point."),
+    endedAt: instant(
+      "Time of its last point. A stop can end later, when the phone left: its points are its own, and the point the phone resumed at is the next move's.",
+    ),
     distanceM: z
       .number()
       .nonnegative()
       .meta({ description: "Distance in metres.", example: 31_240 }),
+    centroid: coordinateSchema.nullable().meta({
+      description:
+        "For a stop: its place, the middle of its points (`points` are where the device went within it). Null for moves and pieces of track.",
+    }),
+    spreadM: z.number().nonnegative().nullable().meta({
+      description:
+        "For a stop: how far apart its points lie, in metres (the timeline segment's `spreadM`); the map draws its path when it is over 25 m. Null for moves, pieces of track and stops worked out before Trail kept it.",
+      example: 60,
+    }),
     points: z.array(levelPointSchema),
   })
   .meta({ id: "TrackSegment", description: "A drawable piece of a device's track." });
@@ -297,22 +313,37 @@ export const levelTracksResponseSchema = z
   .meta({ id: "Tracks", description: "Tracks at a level of calculation." });
 export type LevelTracksResponse = z.infer<typeof levelTracksResponseSchema>;
 
+/**
+ * A quick toggle runs until its `until`, the first stop at least this long
+ * (seconds), or — after a stop — a move Trail reads as another kind of
+ * travel (on foot, by bike, by vehicle), whichever comes first: a change of
+ * trains or a wait at the lights does not end it, cycling home from the
+ * station does, and the ride it was set for is its own all the way
+ * (docs/architecture.md §17.5).
+ */
+export const toggleEndingStopS = 600;
+
+/** What ends a toggle besides its `until`, as the API's descriptions say it. */
+const endingStop = `the first stop of ${toggleEndingStopS / 60} minutes or more, or — after a stop — a move Trail reads as another kind of travel (on foot, by bike, by vehicle)`;
+
 /** A person's correction of the transport mode. */
 export const modeOverrideSchema = z
   .object({
     id: z.uuid().meta({ description: "The override's id." }),
     deviceId,
     kind: z.enum(["segment", "toggle"]).meta({
-      description:
-        "`segment`: set for one segment's time. `toggle`: set from a moment on, until `until` or the next stop.",
+      description: `\`segment\`: set for one segment's time. \`toggle\`: set from a moment on, until \`until\`, ${endingStop}.`,
       example: "toggle",
     }),
     mode: chosenModeSchema,
     from: instant("Where it starts."),
-    until: z.iso.datetime().nullable().meta({
-      description: "Where it ends at the latest; null: at the next stop.",
-      example: null,
-    }),
+    until: z.iso
+      .datetime()
+      .nullable()
+      .meta({
+        description: `Where it ends at the latest; null: at ${endingStop}.`,
+        example: null,
+      }),
     source: z.enum(modeOverrideSources).meta({
       description: "`ui` (the dashboard), `api` (an API token) or `mcp` (an agent).",
       example: "ui",
@@ -341,10 +372,13 @@ export const setDeviceModeRequestSchema = z
     mode: chosenModeSchema.nullable().meta({
       description: "The mode from now on; null ends the mode set before and inference takes over.",
     }),
-    until: z.iso.datetime({ offset: true }).optional().meta({
-      description: "End it at this time at the latest (it always ends at the next stop).",
-      example: "2026-10-26T10:30:00Z",
-    }),
+    until: z.iso
+      .datetime({ offset: true })
+      .optional()
+      .meta({
+        description: `End it at this time at the latest (it always ends at ${endingStop}).`,
+        example: "2026-10-26T10:30:00Z",
+      }),
   })
   .meta({ id: "SetDeviceModeRequest", description: "Set the transport mode from now on." });
 export type SetDeviceModeRequest = z.input<typeof setDeviceModeRequestSchema>;

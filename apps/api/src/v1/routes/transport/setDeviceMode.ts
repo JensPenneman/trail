@@ -12,7 +12,7 @@ export const setDeviceMode = defineRoute(
     operationId: "setDeviceMode",
     summary: "Set the mode from now on",
     description:
-      "The quick toggle: from now on the device travels by `mode`, until `until` or the next detected stop, whichever comes first. It is idempotent — the same mode again changes nothing — another mode ends the running one and starts anew, and `mode: null` ends it, so inference takes over again.",
+      "The quick toggle: from now on the device travels by `mode`, until `until`, the first detected stop of 10 minutes or more, or — after a stop — a move Trail reads as another kind of travel (on foot, by bike, by vehicle), whichever comes first: changing trains does not end it, cycling home from the station does, and the ride it was set for is its own all the way. It is idempotent — the same mode again changes nothing — another mode ends the running one and starts anew, and `mode: null` ends it, so inference takes over again.",
     tags: ["Timeline"],
     // The answer carries the segment or the current mode: location data.
     auth: { scopes: ["locations:read", "locations:write"], all: true },

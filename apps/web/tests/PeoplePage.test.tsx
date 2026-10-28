@@ -53,7 +53,7 @@ describe("the People page's list", () => {
     renderPage(<PeoplePage />, { user });
     const chips = await within(meCard()).findByRole("group", { name: "Now:" });
     expect(chips).toHaveAccessibleDescription(
-      "Until your next stop, for iPhone 16: the device that reported last. Your other devices are not changed.",
+      "Until you stop for 10 minutes or more or travel another way, for iPhone 16: the device that reported last. Your other devices are not changed.",
     );
     expect(await within(chips).findByRole("button", { name: "Auto", pressed: true })).toBeEnabled();
   });

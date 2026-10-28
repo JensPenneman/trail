@@ -19,10 +19,10 @@ const fixture = new URL("../../../apps/api/tests/fixtures/overland-batch.json", 
 const timestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/;
 
 /** Around a daylight saving change the day starts an hour off; this margin absorbs that. */
-const dayStartMarginMs = 90 * 60_000;
+export const dayStartMarginMs = 90 * 60_000;
 
 /** Midnight of today in `timeZone`, give or take the hour a DST change moves it. */
-function startOfToday(now: number, timeZone: string): number {
+export function startOfToday(now: number, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone,
     hour: "numeric",
@@ -71,6 +71,16 @@ export function overlandBatch(timeZone: string, now = Date.now()): OverlandBatch
   const endingNow = now - 90_000 - latest;
   const delta = earliest + endingNow >= dayStart ? endingNow : dayStart - earliest;
   return shifted(recorded, delta) as OverlandBatch;
+}
+
+/**
+ * `batch` moved back, when it reaches ahead of `now` (shortly after midnight),
+ * to end 90 seconds ago: for a test that needs nothing recorded after now — a
+ * quick toggle set now ends at a ride of another kind recorded after it.
+ */
+export function pastBatch(batch: OverlandBatch, now = Date.now()): OverlandBatch {
+  const latest = Math.max(...instants(batch));
+  return latest <= now - 90_000 ? batch : (shifted(batch, now - 90_000 - latest) as OverlandBatch);
 }
 
 /**

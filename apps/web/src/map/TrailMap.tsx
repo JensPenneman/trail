@@ -40,7 +40,7 @@ export interface TrailMapProps {
   /** Whether the basemap is dark: Trail's lines and dots are drawn to stand out on it. */
   dark: boolean;
   tracks?: readonly MapTrack[];
-  /** Stops and moves in the colours of their modes (the Transport level). */
+  /** Stops and moves in the colours of their modes, and connectors across gaps (the Transport level). */
   transport?: readonly MapTransportSegment[];
   /** The segment drawn wider, e.g. the one its dialog is open for. */
   selectedSegmentId?: string | null;
@@ -277,9 +277,11 @@ export function TrailMap({
 
   useEffect(() => {
     if (map !== null && styleVersion > 0 && styleReady.current) {
-      const { lines, stops } = transportFeatures(transport ?? []);
+      const { lines, stops, stopPaths, gaps } = transportFeatures(transport ?? []);
       setSourceData(map, trailSources.transport, lines);
       setSourceData(map, trailSources.transportStops, stops);
+      setSourceData(map, trailSources.transportStopPaths, stopPaths);
+      setSourceData(map, trailSources.transportGaps, gaps);
     }
   }, [map, styleVersion, transport]);
 

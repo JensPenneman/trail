@@ -2,6 +2,7 @@ import type { ChosenMode, TransportMode } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import type { Config } from "../config/config";
 import type { Executor } from "../db/database";
+import { endsToggleSql } from "../processing/travelFamily";
 
 interface CurrentModeRow extends Record<string, unknown> {
   device_id: string;
@@ -43,7 +44,7 @@ export async function loadCurrentModes(
         AND (o.to_at IS NULL OR o.to_at > ${now}::timestamptz)
         AND NOT EXISTS (
           SELECT 1 FROM segments x
-          WHERE x.device_id = o.device_id AND x.kind = 'stop' AND x.started_at > o.from_at
+          WHERE x.device_id = o.device_id AND x.started_at > o.from_at AND ${endsToggleSql("x", "o")}
         )
       ORDER BY o.created_at DESC
       LIMIT 1

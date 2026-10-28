@@ -8,6 +8,7 @@ import {
   deskJitter,
   ferryCrossing,
   flight,
+  morning,
   motorwayDrive,
   sparseTrain,
   tramRide,
@@ -16,11 +17,15 @@ import {
 } from "../support/journeys";
 import { moves, processWorld, stops } from "../support/processWorld";
 import {
+  concat,
   distanceToLine,
+  lastT,
   pathLength,
   railLine,
+  stay,
   subPath,
   toXY,
+  travel,
   worldMap,
 } from "../support/syntheticWorld";
 
@@ -149,6 +154,59 @@ describe("splitting a move where the mode changes", () => {
     // The parts share their boundary points: no gap in the timeline.
     expect(walk?.endT).toBe(train?.startT);
     expect(train?.endT).toBe(walkAgain?.startT);
+  });
+});
+
+describe("a stop's spread", () => {
+  it("keeps how far apart a stop's points lie: a walk within it, or none", () => {
+    // Five minutes on the platform, a slow minute and a half 60 m along it, five more minutes.
+    const first = stay([0, 12], { startT: morning, durationS: 300, intervalS: 2, noiseM: 2 });
+    const along = travel(
+      [
+        [0, 12],
+        [60, 12],
+      ],
+      { startT: lastT(first) + 2, speedMs: 0.45, intervalS: 2 },
+    );
+    const second = stay([60, 12], {
+      startT: lastT(along) + 2,
+      durationS: 300,
+      intervalS: 2,
+      noiseM: 2,
+    });
+    const [platform] = stops(processWorld(concat(first, along, second)));
+    expect(platform?.features["spreadM"]).toBeGreaterThan(45);
+    expect(platform?.features["spreadM"]).toBeLessThan(75);
+    const [desk] = stops(processWorld(deskJitter()));
+    expect(desk?.features).toEqual({ spreadM: 0, lastPointT: desk?.endT });
+  });
+
+  it("leaves out where the phone woke up or resumed, riding 150 m on", () => {
+    const ride = (startT: number) =>
+      travel(
+        [
+          [-600, -250],
+          [-600, 2000],
+        ],
+        { startT, speedMs: 5, intervalS: 2, motion: ["cycling"] },
+      );
+    // A still night the phone recorded nothing through, and a ten-minute pause.
+    const evening = stay([-600, -400], { startT: morning, durationS: 900, intervalS: 10 });
+    const night = processWorld(concat(evening, ride(lastT(evening) + 8 * 3600)));
+    const desk = stay([-600, -400], { startT: morning, durationS: 1800, intervalS: 10 });
+    const pause = processWorld(concat(desk, ride(lastT(desk) + 600)));
+    for (const [result, before] of [
+      [night, evening],
+      [pause, desk],
+    ] as const) {
+      const [stop] = stops(result);
+      const [move] = moves(result);
+      expect(stop?.features["spreadM"]).toBeLessThan(25);
+      // It lasted until the phone left, after its last point; the ride starts where it woke up.
+      expect(stop?.features["lastPointT"]).toBe(lastT(before));
+      expect(stop?.endT).toBe(move?.startT);
+      expect(stop?.endT).toBeGreaterThan(lastT(before));
+    }
   });
 });
 

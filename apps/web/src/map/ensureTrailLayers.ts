@@ -12,12 +12,18 @@ export const trailSources = {
   tracks: "trail-tracks",
   transport: "trail-transport",
   transportStops: "trail-transport-stops",
+  transportStopPaths: "trail-transport-stop-paths",
+  transportGaps: "trail-transport-gaps",
   visits: "trail-visits",
   cursors: "trail-cursors",
 } as const;
 
 /** The layers a click opens a segment from. */
-export const transportLayers = ["trail-transport-line", "trail-transport-stops"] as const;
+export const transportLayers = [
+  "trail-transport-line",
+  "trail-transport-stop-paths",
+  "trail-transport-stops",
+] as const;
 
 const empty: GeoJSONSourceSpecification = {
   type: "geojson",
@@ -116,8 +122,25 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
   }
   map.setPaintProperty("trail-track-casing", "line-color", casing);
 
-  // Transport: lines in their mode's colour on a casing, a dashed outline over moves to review,
-  // the selected segment drawn wider, and stops as dots.
+  // Transport: thin dashed connectors across recording gaps under everything, lines in their
+  // mode's colour on a casing, a dashed outline over moves to review, the selected segment drawn
+  // wider, the path within a stop dotted in the stop's colour, and stops as dots.
+  if (map.getLayer("trail-transport-gaps") === undefined) {
+    map.addLayer(
+      {
+        id: "trail-transport-gaps",
+        type: "line",
+        source: trailSources.transportGaps,
+        layout: { "line-join": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1.25, 14, 2, 18, 3],
+          "line-dasharray": [3, 2.5],
+        },
+      },
+      firstLabel,
+    );
+  }
   if (map.getLayer("trail-transport-casing") === undefined) {
     map.addLayer(
       {
@@ -176,6 +199,24 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
   }
   map.setPaintProperty("trail-transport-casing", "line-color", casing);
   map.setPaintProperty("trail-transport-review", "line-color", dark ? "#f2f0ed" : "#1d1b19");
+
+  if (map.getLayer("trail-transport-stop-paths") === undefined) {
+    map.addLayer(
+      {
+        id: "trail-transport-stop-paths",
+        type: "line",
+        source: trailSources.transportStopPaths,
+        // Dashes of length 0 with round caps: dots, two line widths apart.
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 2.5, 14, 4, 18, 6],
+          "line-dasharray": [0, 2],
+        },
+      },
+      firstLabel,
+    );
+  }
 
   if (map.getLayer("trail-transport-stops") === undefined) {
     map.addLayer({

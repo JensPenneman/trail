@@ -1,6 +1,7 @@
 import type { ChosenMode, Segment } from "@trail/contracts/transport";
 import { useState } from "react";
 import { useFormatter } from "../format/useFormatter";
+import { visibleGapM } from "../map/lineGeometry";
 import { useSegmentModeChange } from "../queries/useSegmentModeChange";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
@@ -22,7 +23,8 @@ interface SegmentDialogProps {
 /**
  * A stop or move up close (docs/architecture.md §17.6): its mode with icon,
  * how sure the inference is, speeds, distance and time, and the way to put
- * the mode right — or back to what was detected.
+ * the mode right — or back to what was detected. A stop says how long it
+ * lasted, where it was and, when it spread, how far one moved within it.
  */
 export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogProps) {
   const format = useFormatter();
@@ -101,10 +103,18 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
               </div>
             </>
           ) : (
-            <div>
-              <dt>Place</dt>
-              <dd>{format.coordinates(segment.centroid.lat, segment.centroid.lon)}</dd>
-            </div>
+            <>
+              {segment.spreadM !== null && segment.spreadM > visibleGapM ? (
+                <div>
+                  <dt>Moved within</dt>
+                  <dd>{format.distance(segment.spreadM)}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt>Place</dt>
+                <dd>{format.coordinates(segment.centroid.lat, segment.centroid.lon)}</dd>
+              </div>
+            </>
           )}
         </dl>
 

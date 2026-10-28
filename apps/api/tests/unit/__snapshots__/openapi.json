@@ -1192,7 +1192,7 @@
       "post": {
         "operationId": "setDeviceMode",
         "summary": "Set the mode from now on",
-        "description": "The quick toggle: from now on the device travels by `mode`, until `until` or the next detected stop, whichever comes first. It is idempotent — the same mode again changes nothing — another mode ends the running one and starts anew, and `mode: null` ends it, so inference takes over again.\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
+        "description": "The quick toggle: from now on the device travels by `mode`, until `until`, the first detected stop of 10 minutes or more, or — after a stop — a move Trail reads as another kind of travel (on foot, by bike, by vehicle), whichever comes first: changing trains does not end it, cycling home from the station does, and the ride it was set for is its own all the way. It is idempotent — the same mode again changes nothing — another mode ends the running one and starts anew, and `mode: null` ends it, so inference takes over again.\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
         "tags": [
           "Timeline"
         ],
@@ -3508,7 +3508,7 @@
             "description": "The mode from now on; null ends the mode set before and inference takes over."
           },
           "until": {
-            "description": "End it at this time at the latest (it always ends at the next stop).",
+            "description": "End it at this time at the latest (it always ends at the first stop of 10 minutes or more, or — after a stop — a move Trail reads as another kind of travel (on foot, by bike, by vehicle)).",
             "example": "2026-10-26T10:30:00Z",
             "type": "string",
             "format": "date-time"
@@ -4669,7 +4669,7 @@
           "endedAt": {
             "type": "string",
             "format": "date-time",
-            "description": "Time of its last point.",
+            "description": "Time of its last point. A stop can end later, when the phone left: its points are its own, and the point the phone resumed at is the next move's.",
             "example": "2026-10-26T08:41:07.000Z"
           },
           "distanceM": {
@@ -4677,6 +4677,30 @@
             "minimum": 0,
             "description": "Distance in metres.",
             "example": 31240
+          },
+          "centroid": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Coordinate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a stop: its place, the middle of its points (`points` are where the device went within it). Null for moves and pieces of track."
+          },
+          "spreadM": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a stop: how far apart its points lie, in metres (the timeline segment's `spreadM`); the map draws its path when it is over 25 m. Null for moves, pieces of track and stops worked out before Trail kept it.",
+            "example": 60
           },
           "points": {
             "type": "array",
@@ -4698,10 +4722,33 @@
           "startedAt",
           "endedAt",
           "distanceM",
+          "centroid",
+          "spreadM",
           "points"
         ],
         "additionalProperties": false,
         "description": "A drawable piece of a device's track."
+      },
+      "Coordinate": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "description": "Latitude in degrees (WGS84).",
+            "example": 51.0362
+          },
+          "lon": {
+            "type": "number",
+            "description": "Longitude in degrees (WGS84).",
+            "example": 3.7104
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "additionalProperties": false,
+        "description": "A position in WGS84 degrees."
       },
       "LevelPoint": {
         "type": "array",
@@ -4903,6 +4950,19 @@
           "centroid": {
             "description": "The middle of its points: a stop's place.",
             "$ref": "#/components/schemas/Coordinate"
+          },
+          "spreadM": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a stop: how far apart its points lie, in metres — the walk within a station, say. Null for a move, and for a stop worked out before Trail kept it.",
+            "example": 120
           }
         },
         "required": [
@@ -4923,31 +4983,11 @@
           "pointCount",
           "start",
           "end",
-          "centroid"
+          "centroid",
+          "spreadM"
         ],
         "additionalProperties": false,
-        "description": "A stop or a move. Stops and moves follow each other without overlap; a gap in the recording leaves a gap between them."
-      },
-      "Coordinate": {
-        "type": "object",
-        "properties": {
-          "lat": {
-            "type": "number",
-            "description": "Latitude in degrees (WGS84).",
-            "example": 51.0362
-          },
-          "lon": {
-            "type": "number",
-            "description": "Longitude in degrees (WGS84).",
-            "example": 3.7104
-          }
-        },
-        "required": [
-          "lat",
-          "lon"
-        ],
-        "additionalProperties": false,
-        "description": "A position in WGS84 degrees."
+        "description": "A stop or a move. Stops and moves follow each other without overlap. A recording gap the phone lay still through is a stop; a gap with travel leaves a gap between them."
       },
       "DeviceMode": {
         "type": "object",
@@ -5037,7 +5077,7 @@
               "segment",
               "toggle"
             ],
-            "description": "`segment`: set for one segment's time. `toggle`: set from a moment on, until `until` or the next stop.",
+            "description": "`segment`: set for one segment's time. `toggle`: set from a moment on, until `until`, the first stop of 10 minutes or more, or — after a stop — a move Trail reads as another kind of travel (on foot, by bike, by vehicle).",
             "example": "toggle"
           },
           "mode": {
@@ -5059,7 +5099,7 @@
                 "type": "null"
               }
             ],
-            "description": "Where it ends at the latest; null: at the next stop.",
+            "description": "Where it ends at the latest; null: at the first stop of 10 minutes or more, or — after a stop — a move Trail reads as another kind of travel (on foot, by bike, by vehicle).",
             "example": null
           },
           "source": {

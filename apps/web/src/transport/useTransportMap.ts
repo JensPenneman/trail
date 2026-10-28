@@ -2,6 +2,7 @@ import type { ProcessingLevel, TransportMode } from "@trail/contracts/transport"
 import { useMemo } from "react";
 import type { RangeParams } from "../api/queryKeys";
 import type { MapTrack, MapTransportSegment } from "../map/mapTypes";
+import { showsPath } from "../map/transportFeatures";
 import { useLevelTracks } from "../queries/useLevelTracks";
 import { levelTracksToMap } from "./levelTracksToMap";
 import { modePalette } from "./modePalette";
@@ -13,6 +14,10 @@ export interface TransportMap {
   modes: ReadonlySet<TransportMode>;
   /** A move to review is on the map. */
   review: boolean;
+  /** A stop is drawn with the path within it (dotted). */
+  stopPaths: boolean;
+  /** A recording gap is bridged with a connector (dashed). */
+  gaps: boolean;
   /** The level every point shown reached; null while the level's tracks load. */
   available: ProcessingLevel | null;
   /** The level's tracks are loading or belong to the previous range. */
@@ -47,6 +52,8 @@ export function useTransportMap(
         transport: [],
         modes: new Set<TransportMode>(),
         review: false,
+        stopPaths: false,
+        gaps: false,
         available: level === "raw" ? "raw" : null,
         pending,
         fetching: levelTracks.isFetching,
@@ -65,6 +72,8 @@ export function useTransportMap(
       ...layers,
       modes: data.level === "inferred" ? modes : new Set<TransportMode>(),
       review: data.level === "inferred" && review,
+      stopPaths: layers.transport.some(showsPath),
+      gaps: layers.transport.some((segment) => segment.kind === "gap"),
       available: data.availableLevel,
       pending,
       fetching: levelTracks.isFetching,

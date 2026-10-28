@@ -70,7 +70,7 @@ export async function processWindow(
       .limit(1);
     if (owner === undefined) return null;
 
-    const window = await extendWindow(tx, deviceId, span.from, span.to);
+    const window = await extendWindow(tx, deviceId, span, config.stops.gapSplitS);
     const raw = await loadRawPoints(tx, deviceId, window.from, window.to);
     const visits = await loadVisits(tx, deviceId, window.from, window.to);
     const trips = await loadTrips(tx, deviceId, window.from, window.to, now);
@@ -105,6 +105,7 @@ export async function processWindow(
       raw: plan.raw,
       result,
       versions: processingVersions,
+      config,
     });
     await finishWindows(tx, rows);
     // Missing tiles, and old ones (they served this pass): the window is done again once they are here.

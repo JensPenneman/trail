@@ -48,8 +48,10 @@ export interface MappedPoint {
 /** An iOS visit (CLVisit) as stops use it. */
 export interface VisitSpan {
   arrivedAt: number;
-  /** Null while the visit is still open. */
+  /** Null while the visit is still open (or its departure was never reported). */
   departedAt: number | null;
+  /** Without a departure: the next visit's arrival, by which this one was over (else none). */
+  endsBy?: number | null;
   lat: number;
   lon: number;
   accuracy: number | null;
@@ -69,10 +71,17 @@ export interface OverrideSpan {
   kind: "segment" | "toggle";
   mode: ChosenMode;
   from: number;
-  /** Null: open, until the next stop. */
+  /** Null: open, until the first stop of `toggleEndingStopS` or more, or move of another kind of travel. */
   to: number | null;
-  /** A toggle's next stop when it lies before the window (from stored segments); else null. */
+  /** That stop when it lies before the window (from stored segments); else null. */
   endsBy: number | null;
+  /**
+   * A toggle that began before the window: whether a stop of the device came
+   * between its start and the window's (stored segments) — then the window's
+   * moves are no longer the toggle's own first move, and their kind of travel
+   * counts.
+   */
+  stoppedBefore: boolean;
   createdAt: number;
   source: "ui" | "api" | "mcp";
 }
@@ -80,9 +89,18 @@ export interface OverrideSpan {
 /** A stop or move over a range of the window's kept points (indices into the kept list). */
 export interface Span {
   kind: "stop" | "move";
-  /** First and last kept point (inclusive). A move shares its end points with the stops beside it. */
+  /**
+   * First and last kept point (inclusive). A move shares its end points with
+   * the stops beside it, unless the stop lasted beyond its last point.
+   */
   first: number;
   last: number;
+  /**
+   * A stop's last point of its own when `last` is a later one: the point the
+   * phone resumed or woke up at, which no move starts at, so the stop takes
+   * it — it only says when the phone had left.
+   */
+  ownLast?: number;
   startT: number;
   endT: number;
 }
@@ -176,6 +194,11 @@ export interface InferredSegment {
   confidence: number | null;
   averageSpeedMs: number | null;
   maxSpeedMs: number | null;
-  /** `segments.features`: what the mode was judged on, the scores, the override that applies. */
+  /**
+   * `segments.features`: of a move what the mode was judged on, the scores and
+   * the override that applies; of a stop how far apart its points lie
+   * (`spreadM`) and when its last point of its own was recorded
+   * (`lastPointT`, epoch seconds: a stop can last until after it).
+   */
   features: Record<string, unknown>;
 }

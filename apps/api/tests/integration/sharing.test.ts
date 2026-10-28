@@ -21,6 +21,7 @@ import pg from "pg";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { signupLockKey } from "../../src/auth/signupLock";
+import { loadOverrides } from "../../src/processing/windowData";
 import { resolveAccessibleDevices } from "../../src/sharing/accessibleDevices";
 import { loadCurrentModes } from "../../src/sharing/currentModes";
 import { haversineM } from "../../src/tracks/haversine";
@@ -674,9 +675,18 @@ describe("what a shared device is doing", () => {
 
   it("is what location processing tells the owner, for many devices in one query", async () => {
     const ids = await Promise.all(
-      ["nothing", "bus", "corrected", "stop", "old", "toggle", "toggle ended"].map(
-        async (name) => (await createDevice(owner.agent, { name: `Mode ${name}` })).device.id,
-      ),
+      [
+        "nothing",
+        "bus",
+        "corrected",
+        "stop",
+        "old",
+        "toggle",
+        "toggle ended",
+        "toggle through a short stop",
+        "toggle ended by a bike",
+        "toggle over a misread ride",
+      ].map(async (name) => (await createDevice(owner.agent, { name: `Mode ${name}` })).device.id),
     );
     const [
       nothing = "",
@@ -686,6 +696,9 @@ describe("what a shared device is doing", () => {
       old = "",
       toggled = "",
       ended = "",
+      through = "",
+      cycled = "",
+      misread = "",
     ] = ids;
     const segment = (
       deviceId: string,
@@ -719,6 +732,20 @@ describe("what a shared device is doing", () => {
     await toggle(ended, 40, "train");
     await segment(ended, "move", [40, 20], "train");
     await segment(ended, "stop", [20, 5], null);
+    // Five minutes on a platform, changing trains: the toggle runs on.
+    await toggle(through, 40, "train");
+    await segment(through, "move", [40, 20], "train");
+    await segment(through, "stop", [20, 15], null);
+    await segment(through, "move", [15, 2], "train");
+    // Off the train, five minutes there, then home by bike: another kind of travel ends it.
+    await toggle(cycled, 40, "train");
+    await segment(cycled, "move", [40, 20], "train");
+    await segment(cycled, "stop", [20, 15], null);
+    await segment(cycled, "move", [15, 2], "cycling");
+    // A bike set at the shed, the ride read as a car from its middle on: no stop since, still hers.
+    await toggle(misread, 40, "cycling");
+    await segment(misread, "move", [39, 30], "cycling");
+    await segment(misread, "move", [30, 2], "car");
 
     const now = new Date();
     const options = { now, recentMs: t.ctx.config.liveWindowMinutes * 60_000 };
@@ -729,7 +756,20 @@ describe("what a shared device is doing", () => {
       [standing]: "stationary",
       [toggled]: "cycling",
       [ended]: "stationary",
+      [through]: "train",
+      [cycled]: "cycling",
+      [misread]: "cycling",
     });
+    // A window after them sees where each toggle ended: at the bike ride, at none.
+    const later = { from: new Date(now.getTime() + 60_000), to: new Date(now.getTime() + 120_000) };
+    const [endedByRide] = await loadOverrides(t.ctx.db, cycled, later.from, later.to);
+    const [runningOn] = await loadOverrides(t.ctx.db, through, later.from, later.to);
+    const [ownRide] = await loadOverrides(t.ctx.db, misread, later.from, later.to);
+    expect(ownRide?.endsBy).toBeNull();
+    expect(Math.abs((endedByRide?.endsBy ?? 0) - (now.getTime() / 1000 - 15 * 60))).toBeLessThan(
+      30,
+    );
+    expect(runningOn?.endsBy).toBeNull();
     expect(modes.has(nothing)).toBe(false);
     expect(modes.has(old)).toBe(false);
     const owners = await tokenPrincipal(t.ctx.db, owner.email, { scopes: ["locations:read"] });

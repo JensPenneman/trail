@@ -179,6 +179,7 @@ export function timeline(from: string): Segment[] {
       start: { lat: 50.98452, lon: 3.52683 },
       end: { lat: 50.98452, lon: 3.52683 },
       centroid: { lat: 50.98452, lon: 3.52683 },
+      spreadM: 12,
     },
     {
       id: ids.train,
@@ -199,6 +200,7 @@ export function timeline(from: string): Segment[] {
       start: { lat: 50.98452, lon: 3.52683 },
       end: { lat: 51.0362, lon: 3.7104 },
       centroid: { lat: 51.01, lon: 3.62 },
+      spreadM: null,
     },
   ];
 }
@@ -226,6 +228,8 @@ export function levelTracks(from: string, to: string, level: ProcessingLevel): L
           startedAt: segment.startedAt,
           endedAt: segment.endedAt,
           distanceM: segment.distanceM,
+          centroid: segment.kind === "stop" ? segment.centroid : null,
+          spreadM: segment.kind === "stop" ? segment.spreadM : null,
           points: segment.kind === "stop" ? [points[0] ?? [0, 0, 0]] : points,
         }))
       : [
@@ -242,6 +246,8 @@ export function levelTracks(from: string, to: string, level: ProcessingLevel): L
             startedAt: new Date(start * 1000).toISOString(),
             endedAt: new Date((start + 2280) * 1000).toISOString(),
             distanceM: 31_240,
+            centroid: null,
+            spreadM: null,
             points,
           },
         ];

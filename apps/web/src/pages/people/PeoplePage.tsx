@@ -344,7 +344,12 @@ export function PeoplePage() {
             ) : null}
           </MapOptions>
           {transport !== null && level === "inferred" ? (
-            <ModeLegend modes={transport.modes} review={transport.review} />
+            <ModeLegend
+              modes={transport.modes}
+              review={transport.review}
+              stopPaths={transport.stopPaths}
+              gaps={transport.gaps}
+            />
           ) : null}
         </div>
 

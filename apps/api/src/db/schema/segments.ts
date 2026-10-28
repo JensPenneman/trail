@@ -51,7 +51,7 @@ export const segments = pgTable(
     endLon: doublePrecision("end_lon").notNull(),
     centroidLat: doublePrecision("centroid_lat").notNull(),
     centroidLon: doublePrecision("centroid_lon").notNull(),
-    /** What the mode was judged on, the scores, and the override that applies. */
+    /** A move's: what the mode was judged on, the scores, and the override that applies; a stop's: `spreadM`. */
     features: jsonb("features").$type<Record<string, unknown>>().notNull(),
     version: smallint("version").notNull(),
     computedAt: timestamptz("computed_at").notNull().defaultNow(),

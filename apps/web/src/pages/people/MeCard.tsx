@@ -8,7 +8,7 @@ import { describeMe } from "../../people/describeMe";
 import { latestOwnDevice } from "../../people/latestOwnDevice";
 import { PersonSummary } from "../../people/PersonSummary";
 import { useDeviceMode } from "../../queries/useDeviceMode";
-import { QuickModeChips } from "../../transport/QuickModeChips";
+import { QuickModeChips, toggleMinutes } from "../../transport/QuickModeChips";
 import { Button } from "../../ui/Button";
 import { DisclosureButton } from "../../ui/DisclosureButton";
 import { DisclosureContent } from "../../ui/DisclosureContent";
@@ -117,8 +117,8 @@ export function MeCard({ name, devices, now, thresholds, shown, onShowOnMap }: M
           deviceName={latest.name}
           description={
             list.length > 1
-              ? `Until your next stop, for ${latest.name}: the device that reported last. Your other devices are not changed.`
-              : `Until your next stop, for ${latest.name}.`
+              ? `Until you stop for ${toggleMinutes} minutes or more or travel another way, for ${latest.name}: the device that reported last. Your other devices are not changed.`
+              : `Until you stop for ${toggleMinutes} minutes or more or travel another way, for ${latest.name}.`
           }
           dialogTitle="How are you travelling?"
         />
