@@ -130,6 +130,9 @@ export const envSchema = z
     RATE_LIMIT_TOKEN_PER_MINUTE: env(intSchema(1, 1_000_000).default(600)),
     RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES: env(intSchema(1, 1_000_000).default(30)),
     RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE: env(intSchema(1, 1_000_000).default(60)),
+    // What this process runs (docs/architecture.md §3): `api` queues and processes nothing,
+    // `worker` processes and serves no HTTP, `all` does both, as one container always did.
+    PROCESSING_ROLE: env(z.enum(["api", "worker", "all"]).default("all")),
     PROCESSING_ENABLED: env(booleanSchema.default(true)),
     PROCESSING_OVERPASS_URL: overpassUrlSchema,
     PROCESSING_OVERPASS_DAILY_MB: env(intSchema(1, 100_000).default(300)),

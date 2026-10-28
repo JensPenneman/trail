@@ -12,6 +12,7 @@ const lines: readonly (readonly [keyof PruneResult, string])[] = [
   ["shareLinks", "old share links"],
   ["ingestLog", "upload log (> 90 days)"],
   ["dataAccessEvents", "data access log"],
+  ["processingWorkers", "workers gone (> 1 hour)"],
 ];
 
 /** `trail prune` — the hourly retention cleanup, now. */

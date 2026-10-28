@@ -7,30 +7,21 @@ import { tableAccessStore } from "./dataAccess/accessStore";
 import { type DataAccessOptions, DataAccessRecorder } from "./dataAccess/dataAccessRecorder";
 import { createDatabase } from "./db/database";
 import { EventBus } from "./events/eventBus";
+import { ProcessingListener } from "./events/processingListener";
 import type { AlertSender } from "./jobs/alert";
 import { createNtfySender } from "./jobs/createNtfySender";
 import { BackgroundTasks } from "./lib/backgroundTasks";
-import { OverpassWaySource, overpassUserAgent } from "./processing/overpassWaySource";
 import { processingConfigWith } from "./processing/processingConfig";
 import { ProcessingService } from "./processing/processingService";
 import type { WaySource } from "./processing/waySource";
 import { SharingState } from "./sharing/sharingState";
 import { DailyStatsScheduler } from "./stats/dailyStatsScheduler";
 import type { ApiTokenVerifier } from "./v1/apiTokens";
-
-/** The map data source the configuration asks for: Overpass, or none when mapping is off. */
-function configuredWaySource(config: Config, logger: Logger): WaySource | null {
-  const url = config.processing.overpassUrl;
-  if (url === null) return null;
-  return new OverpassWaySource({
-    url,
-    userAgent: overpassUserAgent(config.build.version),
-    logger: logger.child({ component: "overpass" }),
-  });
-}
+import { createWorkerLoop } from "./worker/createWorkerLoop";
 
 /**
- * Wires the shared services; tests may inject an alert sender, a token
+ * Wires the shared services of the API; in role `all` the processing worker
+ * too (docs/architecture.md §3). Tests may inject an alert sender, a token
  * verifier, a map data source, the stats and processing debounces and the
  * data access log's limits.
  */
@@ -55,6 +46,19 @@ export function createAppContext(input: {
         ? null
         : createNtfySender(config.alerts);
   const background = new BackgroundTasks(logger);
+  const settings = config.processing;
+  // Role `all` works the queue out in this process; in role `api` a worker process does.
+  const worker =
+    settings.role === "all" && settings.enabled
+      ? createWorkerLoop({
+          config,
+          logger,
+          db,
+          pollReady: false,
+          ...(input.waySource === undefined ? {} : { waySource: input.waySource }),
+          ...(input.processingDelayMs === undefined ? {} : { delayMs: input.processingDelayMs }),
+        })
+      : null;
   return {
     config,
     logger,
@@ -68,13 +72,14 @@ export function createAppContext(input: {
     processing: new ProcessingService({
       db,
       logger: logger.child({ component: "processing" }),
+      config: processingConfigWith(settings),
+      enabled: settings.enabled,
+      worker,
+    }),
+    processingListener: new ProcessingListener({
+      connectionString: config.databaseUrl,
       bus,
-      config: processingConfigWith(config.processing),
-      enabled: config.processing.enabled,
-      waySource:
-        input.waySource !== undefined ? input.waySource : configuredWaySource(config, logger),
-      dailyBytes: config.processing.overpassDailyBytes,
-      ...(input.processingDelayMs === undefined ? {} : { delayMs: input.processingDelayMs }),
+      logger: logger.child({ component: "processing-events" }),
     }),
     sharing: new SharingState(db),
     dataAccess: new DataAccessRecorder(

@@ -14,6 +14,8 @@ Commands:
                                            (all history by default; mapped: map matching on;
                                            inferred: stops, moves and modes only)
   prune                                    Delete expired sessions, links, invites and old logs now
+  worker                                   Run the processing worker in the foreground until SIGTERM
+                                           (the worker service's command; logs on stdout)
   help                                     Show this help
 
 Configuration comes from the same environment as the server (DATABASE_URL, PUBLIC_URL, …).

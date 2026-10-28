@@ -56,6 +56,8 @@ export function e2eServerEnvironment(databaseUrl: string): Record<string, string
     RATE_LIMIT_TOKEN_PER_MINUTE: "100000",
     RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES: "100000",
     RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE: "100000",
+    // One server for the suite: it queues and works out what the tests upload.
+    PROCESSING_ROLE: "all",
     PROCESSING_ENABLED: "",
     // Empty here is not the default but "no map data": the suite never reaches Overpass, so the
     // mapped level degrades to averaged, as it does on a server without map data.

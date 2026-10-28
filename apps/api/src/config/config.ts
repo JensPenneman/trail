@@ -37,8 +37,15 @@ interface BuildInfo {
   builtAt: string | null;
 }
 
+/**
+ * What a process runs of processing (docs/architecture.md §3): `api` serves
+ * and queues work, `worker` works the queue out (`trail worker`), `all` both.
+ */
+type ProcessingRole = "api" | "worker" | "all";
+
 /** Location processing (docs/architecture.md §17.7). */
 interface ProcessingSettings {
+  role: ProcessingRole;
   enabled: boolean;
   /** Overpass interpreter for map data; null when mapping is switched off. */
   overpassUrl: string | null;

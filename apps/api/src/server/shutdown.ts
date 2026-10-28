@@ -9,10 +9,11 @@ const inFlightTimeoutMs = 10_000;
 const cleanupTimeoutMs = 2_000;
 
 /**
- * Graceful stop: no new connections, live streams ended, jobs and processing
- * stopped, in-flight requests finished (at most 10 s, then connections are
- * cut), pending statistics and data access rows flushed, background work
- * drained — and what it recorded flushed too — pool closed.
+ * Graceful stop: no new connections, live streams ended and the processing
+ * channel let go, jobs and processing stopped, in-flight requests finished
+ * (at most 10 s, then connections are cut), pending statistics and data
+ * access rows flushed, background work drained — and what it recorded
+ * flushed too — pool closed.
  */
 export async function shutdown(input: {
   server: Server;
@@ -25,6 +26,8 @@ export async function shutdown(input: {
   });
   ctx.bus.disconnectAll();
   server.closeIdleConnections();
+  // Nobody listens any more: the channel's connection goes first (it is not the pool's).
+  const listener = ctx.processingListener.stop();
   await jobs.stop();
   // A window in progress finishes its transaction; map downloads are cut off.
   const processing = ctx.processing.stop();
@@ -39,6 +42,7 @@ export async function shutdown(input: {
   }
 
   await Promise.race([processing, sleep(cleanupTimeoutMs)]);
+  await listener;
   await Promise.race([
     Promise.all([ctx.dailyStats.flush(), ctx.dataAccess.flush()]),
     sleep(cleanupTimeoutMs),

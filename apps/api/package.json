@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/main.ts",
+    "dev:worker": "tsx watch --clear-screen=false src/worker.ts",
     "build": "tsdown",
     "start": "node --enable-source-maps dist/main.mjs",
     "typecheck": "tsc -p tsconfig.json",

@@ -24,10 +24,13 @@ export interface TestContext {
 
 /**
  * The real app wired to the test database, with an alert recorder and manual
- * flushes of the daily statistics and the processing queue. It listens on
- * 127.0.0.1 itself: supertest would listen on the `::` wildcard and then
- * connect to 127.0.0.1:<port>, and on macOS another local process may hold
- * that port on 127.0.0.1 and receive the request instead.
+ * flushes of the daily statistics and the processing queue: in role `all`
+ * unless `env` sets another (`PROCESSING_ROLE: "api"` beside a worker
+ * context, `workerContext.ts`). Passes reach its bus through the processing
+ * channel, listened to before it resolves. It listens on 127.0.0.1 itself:
+ * supertest would listen on the `::` wildcard and then connect to
+ * 127.0.0.1:<port>, and on macOS another local process may hold that port on
+ * 127.0.0.1 and receive the request instead.
  */
 export async function createTestContext(
   options: {
@@ -68,6 +71,7 @@ export async function createTestContext(
     waySource: options.waySource ?? null,
     ...(options.dataAccess === undefined ? {} : { dataAccess: options.dataAccess }),
   });
+  await ctx.processingListener.start();
   const server = createServer(createApp(ctx));
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -79,6 +83,7 @@ export async function createTestContext(
     alerts,
     async close() {
       ctx.bus.disconnectAll();
+      await ctx.processingListener.stop();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       ctx.dailyStats.stop();

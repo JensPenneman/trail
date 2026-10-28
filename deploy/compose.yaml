@@ -82,6 +82,10 @@ services:
       RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE:
       # location processing; an empty PROCESSING_OVERPASS_URL (set in .env)
       # means no map data, an unset one the public Overpass instance
+      # What this container runs, fixed here and not taken from .env
+      # (docs/architecture.md section 3): all = the API and the processing
+      # worker in one process.
+      PROCESSING_ROLE: all
       PROCESSING_ENABLED:
       PROCESSING_OVERPASS_URL:
       PROCESSING_OVERPASS_DAILY_MB:

@@ -5,6 +5,8 @@ export interface PoolOptions {
   /** Per-statement limit; 0 disables it (CLI maintenance commands). */
   statementTimeoutMs: number;
   max?: number;
+  /** How the connections show in `pg_stat_activity`: `trail` (the API) unless set. */
+  applicationName?: string;
 }
 
 /**
@@ -22,7 +24,7 @@ export function createPool(
     max: options.max ?? 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
-    application_name: "trail",
+    application_name: options.applicationName ?? "trail",
     options: "-c TimeZone=UTC",
     ...(options.statementTimeoutMs > 0 ? { statement_timeout: options.statementTimeoutMs } : {}),
     idle_in_transaction_session_timeout: 60_000,

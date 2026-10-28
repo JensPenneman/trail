@@ -8,6 +8,7 @@ import { pruneCommand } from "./commands/pruneCommand";
 import { recomputeCommand } from "./commands/recomputeCommand";
 import { parseReprocessOptions, reprocessCommand } from "./commands/reprocessCommand";
 import { usersCommand } from "./commands/usersCommand";
+import { workerCommand } from "./commands/workerCommand";
 import { usage } from "./usage";
 import { UsageError } from "./usageError";
 
@@ -93,6 +94,17 @@ export async function runCli(argv: readonly string[], entryUrl: string): Promise
   if (name === undefined) {
     console.error(usage);
     return 2;
+  }
+  // A service, not a command: it opens its own pool and logs as the server does.
+  if (name === "worker") {
+    try {
+      noOptions(args);
+    } catch (error) {
+      if (!isArgumentError(error)) throw error;
+      console.error(`trail worker: ${error.message}\n\n${usage}`);
+      return 2;
+    }
+    return workerCommand(entryUrl);
   }
   const command = ownEntry(commands, name);
   if (command === undefined) {

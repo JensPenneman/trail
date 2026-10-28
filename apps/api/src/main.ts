@@ -12,6 +12,7 @@ import { createLogger } from "./logging/createLogger";
 import { runtimePaths } from "./runtimePaths";
 import { listen } from "./server/listen";
 import { shutdown } from "./server/shutdown";
+import { runWorker } from "./worker/runWorker";
 
 process.setSourceMapsEnabled(true);
 
@@ -28,6 +29,8 @@ async function start(config: Config, logger: Logger): Promise<void> {
   logger.info("database migrations applied");
 
   const ctx = createAppContext({ config, logger, pool });
+  // Before the first stream connects: what a pass finishes from now on reaches it.
+  await ctx.processingListener.start();
   const server = await listen(createApp(ctx), config.port, config.host);
   const jobs = startJobs(ctx);
   ctx.processing.start();
@@ -39,6 +42,7 @@ async function start(config: Config, logger: Logger): Promise<void> {
       ingestUrl: config.ingestUrl,
       version: config.build.version,
       commit: config.build.commit,
+      processingRole: config.processing.role,
     },
     "Trail API listening",
   );
@@ -90,7 +94,19 @@ try {
 }
 
 const logger = createLogger({ level: config.logLevel, pretty: config.nodeEnv === "development" });
-start(config, logger).catch((error: unknown) => {
-  logger.fatal({ err: error }, "startup failed");
-  process.exit(1);
-});
+if (config.processing.role === "worker") {
+  // This entry in the worker's role runs the worker, as `trail worker` does: no HTTP server.
+  const { migrationsFolder } = runtimePaths(import.meta.url);
+  runWorker({ config, logger, migrationsFolder }).then(
+    (code) => process.exit(code),
+    (error: unknown) => {
+      logger.fatal({ err: error }, "worker failed");
+      process.exit(1);
+    },
+  );
+} else {
+  start(config, logger).catch((error: unknown) => {
+    logger.fatal({ err: error }, "startup failed");
+    process.exit(1);
+  });
+}
