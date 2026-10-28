@@ -230,6 +230,8 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
     clearTimeout(sweepTimer);
     clearInterval(hourly);
     hourly = undefined;
+    for (const timer of inPlace.values()) clearTimeout(timer);
+    inPlace.clear();
     if (client !== null) cacheValidators.clear(client);
     stats.reset();
     notify();
@@ -354,6 +356,24 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
     sizes.set(entry.key, entry.bytes);
     if (total() > softBudgetBytes) scheduleSweep(touchDelayMs);
     askPersistence();
+  };
+
+  /** Changes made in place, written once they settled (an upload's points come in bursts). */
+  const inPlace = new Map<string, ReturnType<typeof setTimeout>>();
+  const persistSoon = (queryKey: readonly unknown[]) => {
+    if (!on || owner === null) return;
+    const id = JSON.stringify(queryKey);
+    clearTimeout(inPlace.get(id));
+    inPlace.set(
+      id,
+      setTimeout(() => {
+        inPlace.delete(id);
+        const query = client?.getQueryCache().find({ queryKey, exact: true });
+        if (query?.state.data !== undefined) {
+          void write([...query.queryKey], query.state.data, query.state.dataUpdatedAt);
+        }
+      }, touchDelayMs),
+    );
   };
 
   /** Binds the store to an account: someone else's copy goes first, an old zone's days go. */
@@ -568,7 +588,18 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
       unsubscribeSession?.();
       const cache = attached.getQueryCache();
       unsubscribeSession = cache.subscribe((event) => {
-        if (event.type !== "updated" || event.query.queryKey[0] !== "session") return;
+        if (event.type !== "updated") return;
+        // A change made in place (an event, a mutation's answer) is kept too, so a reload
+        // shows what this page last showed; a restored copy is still asked for again.
+        if (
+          event.action.type === "success" &&
+          event.action.manual === true &&
+          policyOf(event.query.queryKey) !== null
+        ) {
+          persistSoon(event.query.queryKey);
+          return;
+        }
+        if (event.query.queryKey[0] !== "session") return;
         const data = event.query.state.data as SessionUser | null | undefined;
         if (data === undefined) return;
         // Signed out, the session lost, or the probe found none: nothing stays.
@@ -666,6 +697,7 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
       return () => listeners.delete(listener);
     },
     dispose() {
+      for (const timer of inPlace.values()) clearTimeout(timer);
       clearTimeout(touchTimer);
       clearTimeout(sweepTimer);
       clearInterval(hourly);

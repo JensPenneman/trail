@@ -2877,18 +2877,22 @@ memory only.
   (`@tanstack/query-persist-client-core`), given to the policy's resources
   only (`attachBrowserCache`, `setQueryDefaults`), over the store
   (`BrowserCache.storage`): it restores a stored answer on a query's first
-  fetch with the answer's own `dataUpdatedAt`, so freshness behaves as if it
-  had just arrived then and a stale copy is revalidated at once, and hands
-  every new answer to the store. An answer the store already holds (a
-  restore, a `304`, matching stamps) is written as a touch — its times and
-  ETag — not as a new body. Entries never expire there: the TTLs count from
+  fetch with the answer's own `dataUpdatedAt` (so the freshness line says
+  how old it is) and asks for it again at once (`refetchOnRestore:
+  "always"`: a copy of another page load is never taken as current; a `304`
+  when unchanged, nothing at all for a settled day), and hands every new
+  answer to the store, as it does a change made in place (an event, a
+  mutation's answer), a second after it settled. An answer the store already
+  holds (a restore, a `304`, matching stamps) is written as a touch — its
+  times and ETag — not as a new body. Entries never expire there: the TTLs count from
   when an entry was last shown.
 - **The warm set** — the account's settings and devices, today's tracks,
   levels and timeline, the calendar's current month and the mode of the
   device that reported last — is read by `prepare()` in `main.tsx` while the
   probe is on its way, and put into the query cache (`restoreWarmSet`) once
   the probe named its owner and before its answer reaches the route guard,
-  so the first paint after a `200` is the page with its data; a read slower
+  so the first paint after a `200` is the page with its data, marked stale so
+  that it is asked for again as its page shows it; a read slower
   than 300 ms is not waited for, and the rest is restored as its page asks.
   `performance.mark("trail:first-data")` marks the moment.
 - **Packing** (`pointCodec.ts`): the points of tracks and level tracks and

@@ -88,17 +88,35 @@ describe("the persister over the store", () => {
     unsubscribe();
   });
 
-  it("asks nothing for a stored answer that is still fresh", async () => {
+  it("asks again for a restored answer however fresh, the copy of another page load", async () => {
     const answer = { devices: [device()] };
     const { client } = await setup((store) =>
-      seedEntry(store, { user, queryKey: queryKeys.devices, answer, fetchedAt: Date.now() - 5000 }),
+      seedEntry(store, {
+        user,
+        queryKey: queryKeys.devices,
+        answer,
+        fetchedAt: Date.now() - 5000,
+        etag: 'W/"d1"',
+      }),
     );
-    const { calls } = mockApi({ "GET /api/devices": { status: 200, body: { devices: [] } } });
+    const { calls } = mockApi({
+      "GET /api/devices": { status: 200, body: { devices: [] }, etag: 'W/"d1"' },
+    });
     const { observer, unsubscribe } = watch(client, devicesOptions(client));
     await expect.poll(() => observer.getCurrentResult().data).toEqual(answer);
-    await settle(50);
-    expect(calls).toHaveLength(0);
+    await expect.poll(() => calls[0]?.status).toBe(304);
+    expect(calls[0]?.headers?.["if-none-match"]).toBe('W/"d1"');
+    expect(observer.getCurrentResult().data).toEqual(answer);
     unsubscribe();
+  });
+
+  it("keeps a change made in place, so that a reload shows what the page last showed", async () => {
+    const { client, store } = await setup();
+    client.setQueryData(queryKeys.devices, { devices: [device({ name: "Added here" })] });
+    // Written once the change settled, a second later.
+    await expect
+      .poll(async () => (await store.list()).map((entry) => entry.resource), { timeout: 5000 })
+      .toEqual(["devices"]);
   });
 
   it("never lets a settled past day go stale while the digest's stamps match it", async () => {

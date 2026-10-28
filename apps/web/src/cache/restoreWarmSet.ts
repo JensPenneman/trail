@@ -35,8 +35,8 @@ function latestDevice(devices: DeviceListResponse | undefined): string | null {
  * account's devices and settings, today's tracks, levels and timeline, the
  * calendar's current month and the mode of the device that reported last —
  * each checked like any answer (decodeEntry), with the time it was fetched,
- * so that freshness and `staleTime` behave as if it had just arrived then and
- * the pages revalidate at once. An answer already in the cache that is as new
+ * so that freshness says how old it is, and marked stale: the pages show it at
+ * once and ask for it again. An answer already in the cache that is as new
  * or newer stays. Runs only once the session probe named the owner.
  */
 export function restoreWarmSet(
@@ -70,6 +70,8 @@ export function restoreWarmSet(
     const existing = client.getQueryState(queryKey);
     if (existing?.data !== undefined && existing.dataUpdatedAt >= entry.fetchedAt) continue;
     client.setQueryData(queryKey, answer, { updatedAt: entry.fetchedAt });
+    // From another page load: shown at once, asked for again as soon as a page shows it.
+    client.getQueryCache().find({ queryKey, exact: true })?.invalidate();
     cacheValidators.set(client, queryKey, entry.etag);
     result.answers.set(entry.key, answer);
     result.restored += 1;
