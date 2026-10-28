@@ -2144,26 +2144,28 @@ vector styles, light/dark and optional satellite imagery from `/api/config`),
 `uqr` for QR codes. Plain CSS with custom properties (LCH colours with sRGB
 fallbacks), system font stack, no web fonts, no third-party scripts, CSP-clean.
 
-Navigation (`PrimaryNav`, one landmark): **People · Devices · Insights ·
-Settings**, in the header on wide screens and as a tab bar along the bottom
-edge on phones (the same element, restyled); the current item carries
+Navigation (`PrimaryNav`, one landmark): **People · Insights · Settings**,
+in the header on wide screens and as a tab bar along the bottom edge on
+phones (the same element, restyled); the current item carries
 `aria-current="page"` on every address below it. Settings leads to
 `/settings`: the list of Settings on phones, its first page beside the list
-on wide screens.
+on wide screens. The devices live in Settings (Settings › Devices, below), so
+Settings is the current item on their pages too.
 
 | Route | Page |
 |---|---|
 | `/login`, `/invite/:token`, `/link/:token` | sign-in and sign-up (public) |
 | `/s` | a public link; its secret is the fragment, `/s#trls_…` (public) |
 | `/` | **People**, the home page: the map with Live, History and Heat, and the people list (signed in) |
-| `/devices`, `/devices/:id` | Devices, one device |
 | `/insights`, `/insights/transport/:mode`, `/insights/time`, `/insights/roads` | Insights: the overview, a transport mode's page, when you travel, roads |
 | `/settings` | Settings: on phones the list with search; on wide screens the first page (Profile) beside the list. An anchor of the single page of 0.2 (`/settings#tokens`, `#browsers`, …) opens its page (`settingsPathFor`) |
-| `/settings/profile`, `…/passkeys`, `…/browsers`, `…/sharing`, `…/links`, `…/privacy/viewers`, `…/privacy/access-log`, `…/data`, `…/tokens`, `…/mcp`, `…/preferences`, `…/notifications`, `…/about`, `…/accounts` | a page of Settings each; `…/accounts` for administrators only, everyone else lands on `/settings` |
-| `/settings/passkeys/:id`, `…/sharing/:shareId`, `…/links/:id`, `…/tokens/:id`, `…/privacy/viewers/:actor` | the page of one passkey, share, public link, API token or viewer — an actor of the access log, its actor id (§8.8) as base64url |
+| `/settings/profile`, `…/devices`, `…/passkeys`, `…/browsers`, `…/sharing`, `…/links`, `…/privacy/viewers`, `…/privacy/access-log`, `…/data`, `…/tokens`, `…/mcp`, `…/preferences`, `…/notifications`, `…/about`, `…/accounts` | a page of Settings each; `…/accounts` for administrators only, everyone else lands on `/settings`; `/settings/devices?add=1` opens Add device |
+| `/settings/devices/:deviceId`, `…/passkeys/:id`, `…/sharing/:shareId`, `…/links/:id`, `…/tokens/:id`, `…/privacy/viewers/:actor` | the page of one device, passkey, share, public link, API token or viewer — an actor of the access log, its actor id (§8.8) as base64url |
+| `/settings/devices/:deviceId/uploads`, `…/points`, `…/tracking`, `…/setup` | a device's uploads, raw points, tracking settings (Overland's presets; for another app the page says that only Overland takes them) and setup: the pages of its parts, a level below its own |
 | `/settings/people` | Accounts' address of 0.3: redirects (replacing the entry) to `/settings/accounts` |
 | `/history?…`, `/explore?…` | redirect (replacing the entry) to `/?view=history&…` and `/?view=heat&…`, every parameter kept (`legacyMapPath`) |
 | `/people?…` | redirect (replacing the entry) to `/?…`, every parameter kept (`legacyPeoplePath`): People had an address of its own before it took in the map |
+| `/devices?…`, `/devices/:id?…` | redirect (replacing the entry) to `/settings/devices?…` and `/settings/devices/:id?…`, the query and the anchor kept (`legacyDevicesPath`, rendered rather than in a loader, whose request has no anchor): Devices had a tab of its own before it moved into Settings, and links, bookmarks and the guides keep working |
 | anything else | 404 |
 
 `isSignedInPath` lists the signed-in paths, those of Settings taken from its
@@ -2209,7 +2211,7 @@ count among them, since they lead to signed-in pages.
     sits right under the Me card (a region "Your day so far"): today's
     timeline of stops and moves (`DayTimeline`, the one History has), whose
     Details open the move's dialog and move the camera to it. That the phones
-    keep sending — status, uploads, activity — is the Devices page's.
+    keep sending — status, uploads, activity — is Settings › Devices'.
   - **History** — pick a day (prev/next, calendar with days that have data
     from `/api/stats/days`) or a range ≤ 93 days; tracks per device at a
     level (Raw · Averaged · Mapped · Transport, §17.6), stops and moves in
@@ -2307,12 +2309,13 @@ count among them, since they lead to signed-in pages.
   devices are not changed." —
   another
   device is set on its own page); with no device yet "Connect your first
-  phone", and while no device has uploaded "Waiting for the first upload"
-  with the way to its setup. Its Details: each device by name, linked to its
-  page, with when it last reported a position ("Waiting for the first
-  upload" before it did), battery, that position with its accuracy,
-  movement ("Last reported movement" once it is not live) and trip, and the
-  way to the Devices page. Then "Sharing with you": a card per person (`PersonCard`),
+  phone" (Add a device: `/settings/devices?add=1`), and while no device has
+  uploaded "Waiting for the first upload" with the way to its setup (the
+  device's Setup page). Its Details: each device by name, linked to its
+  page in Settings › Devices, with when it last reported a position ("Waiting
+  for the first upload" before it did), battery, that position with its
+  accuracy, movement ("Last reported movement" once it is not live) and trip,
+  and the way to Settings › Devices. Then "Sharing with you": a card per person (`PersonCard`),
   each as their initials in their colour (`personPalette`, a second ring
   beside the device colours, assigned in the order they started sharing),
   the line about them from the device that reported last (`primaryDevice`;
@@ -2367,47 +2370,6 @@ count among them, since they lead to signed-in pages.
   (a `share` event refetches the people) is never asked for what it allowed
   before, and they are not cached once off screen (`gcTime` 0); `person`
   events refetch them.
-- **Devices** — the proof that data still comes in, which People leaves out:
-  under the title how many devices are live and the latest upload of any ("1
-  of 2 devices live · last upload 2 min ago", ticking); a card per device
-  (`DeviceCard`, the name leading to its page): status badge
-  (`deviceStatus()`: Live, Idle, Silent, No data yet, with what each means),
-  its app, Device ID and points in total, last upload ("2 min ago", ticking;
-  "Waiting for the first upload" with the app to open and the way to its
-  setup), the Overland trip
-  in progress, battery, movement ("Last seen …" once it is not live), points
-  today, the distance today (from the day's sums, `/api/stats/days`, not
-  from its whole track; asked for every 10 s while uploads come in, until a
-  minute after the last, since the server sums a day up 10 s after the first
-  upload of a run and again for the ones after that pass), the last position
-  with its accuracy and time, and the 48 h activity sparkline (points per
-  hour and a tick per hour with uploads, its numbers in a table); then
-  **Uploads**, the feed of every upload of every device, newest first (the
-  ingest logs merged with those the event stream announces while the page is
-  open, marked New); "How it works". The "Add device" flow: name and the
-  app on the phone (Overland · OwnTracks · Traccar Client · OsmAnd · GPSLogger,
-  each with its platforms and a line on what Trail gets from it; the device
-  key only for Overland and OwnTracks), then what that app needs
-  (`CredentialsView`, one component per app in `devices/setup/`): Overland's
-  QR of `overland://setup` and "Open in Overland"; OwnTracks' configuration
-  link per platform (an iPhone · Android switch, on an iPhone Move ·
-  Significant changes with what each costs in battery, "Allow external
-  configuration" first) with URL, user name, device ID, tracker ID and the
-  token — the iPhone's *HTTP Headers* line, Android's password; Traccar Client's `org.traccar.client://` link with server URL and device
-  identifier (and a word that it is the token); OsmAnd's web address and
-  GPSLogger's URL, header and method to copy — every value with a copy button,
-  the settings Trail recommends for that app (`recommendedSettings.ts`, the
-  numbers from the same contracts as the links), then "Waiting for the first
-  upload…" with what to check in that app, which turns into a success state
-  via SSE. Device page: status, overview (last upload and position, movement,
-  altitude, battery, trip, points, the app, Device ID, token, added),
-  **Activity** (the same sparkline), **Travelling now** (the quick toggle for
-  this device: the Me card's sets the device that reported last), remote
-  settings presets (Overland only), alerts toggle, ingest log, raw points
-  (paginated), Setup (the app, its connection without the token, its
-  recommended settings), rotate token — optionally to another app, which
-  keeps the history — re-showing the setup, rename, delete (type the name to
-  confirm).
 - **Insights** (`pages/insights/`) — how the signed-in person travelled,
   from the operations of §8.7, on four pages that share a heading, a
   navigation of their own (Overview · When you travel · Roads; a mode's page
@@ -2496,35 +2458,47 @@ count among them, since they lead to signed-in pages.
   groups Account · Privacy & data · Developer · App · Admin, and each row's
   id, path, label, icon and tile colour, keywords for search, `adminOnly`,
   the parts of its page that search lists on their own (with their heading's
-  id) and the pages of its items (`/settings/tokens/:tokenId`). The routes
-  (`settingsRoutes.tsx`, a chunk per page), `isSignedInPath`, the old anchors
-  (`settingsPathFor`, own keys only) and the search index are built from it.
-  `useSettingsTree` adds what the person sees: the administrators' group for
-  administrators only, and the value on the right of a row from the lists
-  the pages load anyway (one cache) — the display name; the number of
-  passkeys, browsers, people shared with, working links ("3 active") and
-  active tokens; how many people, links and tokens looked in the last 30
-  days (the summary Who viewed you and Insights' card load too); whether
-  alerts are on; the version.
+  id, or the query the page takes: Add device is `/settings/devices?add=1`),
+  the pages of its items (`/settings/tokens/:tokenId`), whether search finds
+  the items by name (`searchable`: the devices) and the pages of the parts of
+  an item (`/settings/devices/:deviceId/uploads`, each with its title and
+  line). The routes (`settingsRoutes.tsx`, a chunk per page),
+  `isSignedInPath`, the old anchors (`settingsPathFor`, own keys only), the
+  search index and the devices' addresses (`devicePaths.ts`, every link to a
+  device's pages) are built from it. `useSettingsTree` adds what the person
+  sees: the administrators' group for administrators only, the value on the
+  right of a row from the lists the pages load anyway (one cache) — the
+  display name; the number of devices, passkeys, browsers, people shared
+  with, working links ("3 active") and active tokens; how many people, links
+  and tokens looked in the last 30 days (the summary Who viewed you and
+  Insights' card load too); whether alerts are on; the version — and to
+  search one's devices, by name, app and device ID ("Account › Devices",
+  leading to the device's page).
 
   The frame (`SettingsShell`): on phones (below 64rem) the list — the search
   field, then the groups as inset cards of rows — is the page at `/settings`,
   and every other page has the screen to itself under a bar with the way back
   and the page's title, which starts large and moves into the bar once it
-  scrolls under it; going deeper slides the new page in from the right,
-  coming back from the left, with no motion under `prefers-reduced-motion`.
+  scrolls under it; going deeper — the root, a page, an item's page, a part
+  of an item (`settingsPlaceOf`, levels 0 to 3) — slides the new page in from
+  the right, coming back from the left, with no motion under
+  `prefers-reduced-motion`.
   On wide screens the list stands beside the page (as in the Mac's System
   Settings), marks the row of the page on screen (`aria-current`), scrolls by
   itself and keeps its search while pages change; `/settings` opens the first
   page there. The components: `SettingsGroup` (a titled card of rows, of
   label/value facts or of a form, with small print below; a list is named by
-  its title), `SettingsRow` (an icon tile, the label, a second line and the
-  value, then a chevron — or a switch, a choice, an action, an arrow for a
-  page outside the app; a row's link is named by its label and described by
-  the rest), `SettingsPage` (a region named by its h1, the bar, the title and
-  description) and `SettingsSearch`. Every page has the document title
-  "<page> · Settings" ("<item> · <page> · Settings" one level deeper) and
-  takes focus when it opens; coming back up, focus returns to the row of the
+  its title; also an ordered list, the uploads newest first, and a group of
+  cards, a device each), `SettingsRow` (an icon tile, the label, a second
+  line and the value, then a chevron — or a switch, a choice, an action, an
+  arrow for a page outside the app; a row's link is named by its label and
+  described by the rest; `useSettingsLink` gives it, and a device's card,
+  where it was opened from and the focus on the way back), `SettingsPage` (a
+  region named by its h1, the bar, the title and description; for the part
+  of an item the way back is the item's page, by the item's name) and
+  `SettingsSearch`. Every page has the document title "<page> · Settings"
+  ("<item> · <page> · Settings" one level deeper, "<part> · <item> · <page> ·
+  Settings" for the part of an item) and takes focus when it opens; coming back up, focus returns to the row of the
   page that was left, and an address with `#part` focuses that part's
   heading. The way back goes back in the history when the page was opened
   from the one above it (a row puts its address in the location's state),
@@ -2534,7 +2508,8 @@ count among them, since they lead to signed-in pages.
   matches first) and shows each with where it is ("Privacy & data › Your
   data"); Enter opens the first.
 
-  The pages: **Profile** (name, time zone); **Passkeys** (the list, adding
+  The pages: **Profile** (name, time zone); **Devices** (below);
+  **Passkeys** (the list, adding
   one here, a one-time link with a QR code for another device or address)
   and a passkey's page (where it is kept, synced or not, its address, added,
   last used; rename, delete — never the last); **Browsers** (the signed-in
@@ -2630,6 +2605,71 @@ count among them, since they lead to signed-in pages.
   Saving the map style or the level forgets this browser's own choice of it,
   so the browser follows the account again. A public link's page has no
   session and uses the built-in defaults.
+- **Devices**, in Settings (`/settings/devices`, `pages/devices/`: the row
+  after Profile in the Account group, with the number of devices) — the proof
+  that data still comes in, which People leaves out: under the title how many
+  devices are live and the latest upload of any ("1 of 2 devices live · last
+  upload 2 min ago", ticking); **Add device**, an action row; then **Your
+  devices**, a card per device (`DeviceCard`, in a group of cards, its name an
+  h3: the head — colour, name, status, a chevron — leads to the device's page
+  as a row of Settings does, carrying where it was opened from, and takes the
+  focus again on the way back, unless the device is going away): status badge
+  (`deviceStatus()`: Live, Idle, Silent, No data yet, with what each means),
+  its app, Device ID and points in total, last upload ("2 min ago", ticking;
+  "Waiting for the first upload" with the app to open and "Setup details",
+  the device's Setup page), the Overland trip
+  in progress, battery, movement ("Last seen …" once it is not live), points
+  today, the distance today (from the day's sums, `/api/stats/days`, not
+  from its whole track; asked for every 10 s while uploads come in, until a
+  minute after the last, since the server sums a day up 10 s after the first
+  upload of a run and again for the ones after that pass), the last position
+  with its accuracy and time, and the 48 h activity sparkline (points per
+  hour and a tick per hour with uploads, its numbers in a table); then
+  **Uploads** (an ordered group, `#uploads`), the feed of every upload of
+  every device, newest first (the ingest logs merged with those the event
+  stream announces while the page is open, marked New); "How it works". The
+  "Add device" flow (`?add=1`, a dialog): name and the
+  app on the phone (Overland · OwnTracks · Traccar Client · OsmAnd · GPSLogger,
+  each with its platforms and a line on what Trail gets from it; the device
+  key only for Overland and OwnTracks), then what that app needs
+  (`CredentialsView`, one component per app in `devices/setup/`): Overland's
+  QR of `overland://setup` and "Open in Overland"; OwnTracks' configuration
+  link per platform (an iPhone · Android switch, on an iPhone Move ·
+  Significant changes with what each costs in battery, "Allow external
+  configuration" first) with URL, user name, device ID, tracker ID and the
+  token — the iPhone's *HTTP Headers* line, Android's password; Traccar Client's `org.traccar.client://` link with server URL and device
+  identifier (and a word that it is the token); OsmAnd's web address and
+  GPSLogger's URL, header and method to copy — every value with a copy button,
+  the settings Trail recommends for that app (`recommendedSettings.ts`, the
+  numbers from the same contracts as the links), then "Waiting for the first
+  upload…" with what to check in that app, which turns into a success state
+  via SSE, and "Open device page".
+
+  **A device's page** (`/settings/devices/:deviceId`, `pages/device/`), in
+  the groups of the iPhone's Settings: under its name its colour, status and
+  last upload; **Overview** (facts: last upload and position, movement,
+  altitude, battery, trip, points, the app, Device ID, token, added);
+  **Activity** (the same sparkline); **Travelling now** (the quick toggle for
+  this device: the Me card's sets the device that reported last); **Alerts**
+  (its switch, as Notifications has it); **What it sent**: Uploads, Raw points
+  (its total on the right) and History (its tracks on the People page's
+  History); **The phone**: Tracking settings (Overland only; "Queued" while a
+  preset waits) and Setup; then Rename; Issue new
+  token — optionally to another app, which keeps the history — re-showing the
+  setup; and Delete device (type the name to confirm), which goes back in the
+  history to the list when the page was opened from it, so Back never leads to
+  the gone device, and otherwise leaves the list in its place; focus goes to
+  the list's title. A level deeper, a page each (`DevicePartPage`: its title
+  and line from the tree, the way back named after the device, the document
+  title "<part> · <device> · Devices · Settings"): **Uploads** (the ingest
+  log, the latest 10 or all 50), **Raw points** (paginated, and "New points
+  arrived" once the device uploaded after the list was loaded), **Tracking
+  settings** (Overland's presets, queued for its next upload and delivered
+  once; another app's address says that only Overland takes them) and
+  **Setup** (for OwnTracks the phone it runs on and how an iPhone tracks; the
+  connection without the token; the settings Trail recommends). A device that
+  does not exist — deleted, here or in another tab, or someone else's — has a
+  page that says so at each of its addresses.
 - **Public link** (`/s#<secret>`) — no session, no navigation: the label, a map
   of the shared devices (with the route for history links), how fresh each
   position is, details when included, the expiry, a refresh every 15 s, and a
@@ -2925,16 +2965,25 @@ security ones too.
   `mapSearchUpdates`, `resolveMapSelection`, `viewsFor` and `shownView`), the
   selection of a card (`selectionShowing`, `everyoneToggled`), the line about
   one's own sharing (`sharingSummary`), the old addresses (`legacyMapPath`,
-  `legacyPeoplePath`, and the redirects through the app's own route table),
-  Settings' tree (groups, paths, levels, administrators' rows), its search
-  index and row values, the old anchors (`settingsPathFor`),
+  `legacyPeoplePath`, `legacyDevicesPath`, and the redirects through the
+  app's own route table — the Devices page's rendered, its query and anchor
+  kept and its entry replaced), Settings' tree (groups, paths, levels down to
+  the parts of an item, administrators' rows, the devices' addresses), its
+  search index (one's devices by name, app and device ID) and row values, the
+  old anchors (`settingsPathFor`),
   `isSignedInPath`, the precedence of the map's defaults, the heatmap's
   scale, classes and squares (`heatHelpers.test.ts`) and where its layer
   goes in OpenFreeMap's two styles, their layers as served
   (`heatLayers.test.ts`: over every shape, under every name, Trail's lines
   where they were) have unit tests of their own; Settings itself renders through its real routes
   (`renderSettings`, phone or wide screen) for the list, search, going
-  deeper and back with focus, and every page. The charts' helpers (scales,
+  deeper and back with focus, and every page — Settings › Devices among them:
+  its cards, each the way to its device and back with the focus on it, a
+  device's page and the pages of its parts (a level deeper and back, the
+  sidebar's row marked), a tracking page for an app that takes no presets, a
+  device that does not exist, and deleting one opened from the list (back in
+  the history, focus on the list's title) or by its address (the list in its
+  place, nothing asked for the gone device). The charts' helpers (scales,
   nice ticks, bands, tick thinning, the heat grid's bins, summaries, tooltip
   placement) and components (named and described figures, marks with their
   values as descriptions, one tab stop and the arrow keys, tooltips by
@@ -2967,13 +3016,16 @@ security ones too.
   suite's server has satellite imagery from a host of its own, whose tiles
   the stub answers, so the CSP's map origins are checked too), other
   third-party requests refused. The Overland fixture is shifted to today.
-  Scenarios: sign-up and refusal, device setup and the live upload (on the
-  Devices page: status, points, battery, trip, activity and the upload feed;
-  on People the Me card), setting up OwnTracks (its links for both platforms
+  Scenarios: sign-up and refusal, device setup and the live upload (in
+  Settings › Devices: status, points, battery, trip, activity and the upload
+  feed; on People the Me card), setting up OwnTracks (its links for both platforms
   and both ways an iPhone tracks decoded, the first uploads with Android's
   Basic and the iPhone's bearer header over the suite's http:// address, the
-  device page), ingest log and raw points, remote settings, token
-  rotation, History and its scrubber,
+  device page and its setup), a device's page and the pages of its parts a
+  level deeper (its uploads and raw points, remote settings, its setup, back
+  with the focus on the row), token rotation, renaming, deleting (from the
+  list: back in the history, Back not to the gone device), History and its
+  scrubber,
   the heatmap (its squares on the map, found by their colours in a
   screenshot of the canvas, its key and the busiest places), sign-in by email,
   passkey button and autofill, invitations and
@@ -3003,11 +3055,14 @@ security ones too.
   by an upload; sharing back and stopping from a card's Details; a deep link
   to someone alone), Settings (the list with its values and search, on phones
   a page of its own and beside the page on wide screens, every page and the
-  page of each kind of item, going deeper and back by address and through
-  the history, the old anchors and addresses, the preferences the map opens
-  with, the administrators' page), the navigation (a tab bar on phones, the
-  current item, focus on the new page's heading, `/people` leading home with
-  its parameters), Insights (a walk and a drive worked out by the server
+  page of each kind of item — a device's and its four parts too —, a device
+  found by its name, going deeper and back by address and through the
+  history, the old anchors and addresses, the preferences the map opens
+  with, the administrators' page), the navigation (People · Insights ·
+  Settings, a tab bar on phones, the current item — Settings on the devices'
+  pages —, focus on the new page's heading, `/people` leading home with its
+  parameters, `/devices?add=1` and a device's old address leading into
+  Settings in place of the old entry), Insights (a walk and a drive worked out by the server
   without map data: the overview and its numbers, another period in the
   address, a chart by keyboard — one tab stop, arrow keys, the tooltip and
   Escape —, a mode's page from the table and its link to the move on the

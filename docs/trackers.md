@@ -12,12 +12,14 @@ five apps, on iPhones and on Android phones:
 | [GPSLogger](https://gpslogger.app) | Android | a URL and a header to paste | [below](#gpslogger) |
 
 All five are free. Each phone is a *device* in Trail with its own access
-token: Devices › Add device, give it a name and choose the app. Trail then
-shows exactly what that app needs — a setup code where the app takes one,
-every value with a copy button, and the settings Trail recommends — and waits
-for the first upload. The token is shown once; Trail keeps only its hash.
-"Issue new token" on the device's page shows the setup again with a new token,
-and can move the device to another app without losing its history.
+token: Settings › Devices › Add device, give it a name and choose the app.
+Trail then shows exactly what that app needs — a setup code where the app
+takes one, every value with a copy button, and the settings Trail recommends —
+and waits for the first upload. The token is shown once; Trail keeps only its
+hash. "Issue new token" on the device's page shows the setup again with a new
+token, and can move the device to another app without losing its history; the
+page's **Setup**, a level deeper, shows how the app is connected and the
+settings Trail recommends for it, without the token.
 
 ## Which app
 
@@ -53,7 +55,7 @@ Play, F-Droid), in its **HTTP mode**: every point is one request to
 HTTP Basic on Android (any user name), in an `Authorization: Bearer` header on
 an iPhone.
 
-1. In Trail: Devices › Add device, choose **OwnTracks**.
+1. In Trail: Settings › Devices › Add device, choose **OwnTracks**.
 2. On the phone, let OwnTracks take a configuration link:
    - iPhone: OwnTracks › Settings › **Allow external configuration** on.
    - Android: OwnTracks 2.6 and later ask for it too: Preferences › Remote
@@ -141,7 +143,7 @@ curl -u phone:trl_... -H 'Content-Type: application/json' -d '{"_type":"status"}
 Android (Google Play) sends Traccar's *OsmAnd format* to `<Trail>/api/osmand`:
 one point per request, buffered while the phone is offline.
 
-1. In Trail: Devices › Add device, choose **Traccar Client**.
+1. In Trail: Settings › Devices › Add device, choose **Traccar Client**.
 2. Scan the setup code with the camera, or with Traccar Client's own scanner
    (Settings, the code icon at the top), or tap **Open in Traccar Client** on
    the phone. Traccar Client asks *Apply new configuration?*: OK. The link
@@ -181,7 +183,8 @@ stored as an `alarm` event, and a stationary heartbeat without a fix as a
 tracking* in the OsmAnd format, from Android only — OsmAnd for iPhone has no
 online tracking — and only while it records a trip.
 
-1. In Trail: Devices › Add device, choose **OsmAnd**, and copy the web address.
+1. In Trail: Settings › Devices › Add device, choose **OsmAnd**, and copy the
+   web address.
 2. In OsmAnd: Menu › Plugins › **Trip recording** on. In its settings turn
    **Online tracking** on and paste the address as its **Web address**.
 3. Start recording a trip.
@@ -208,7 +211,7 @@ off.
 [GPSLogger](https://gpslogger.app) for Android (F-Droid, GitHub releases)
 sends every point it logs to a custom URL.
 
-1. In Trail: Devices › Add device, choose **GPSLogger**.
+1. In Trail: Settings › Devices › Add device, choose **GPSLogger**.
 2. In GPSLogger: Logging details › **Log to custom URL** on, then enter the URL,
    the HTTP header and the method Trail shows:
 
