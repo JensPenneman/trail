@@ -95,8 +95,8 @@ and every pull request gets a preview deployment of its own.
 flowchart LR
   phone["Phones<br/>Overland, OwnTracks, Traccar Client, OsmAnd, GPSLogger"]
   browser["Browser<br/>passkeys"]
-  ci["GitHub Actions<br/>image build, releases"]
-  ghcr["GHCR<br/>ghcr.io/jenspenneman/trail"]
+  ci["GitHub Actions<br/>image build, map data, releases"]
+  ghcr["GHCR<br/>ghcr.io/jenspenneman/trail,<br/>trail-mapdata"]
   releases["GitHub releases<br/>and pull requests"]
 
   subgraph server["Home server: Launchway"]
@@ -115,11 +115,11 @@ flowchart LR
   app --> db
   backup --> db
   backup --> folder
-  ci -->|"push image"| ghcr
+  ci -->|"push image,<br/>monthly map data"| ghcr
   ci -->|"publish draft release<br/>after the checks"| releases
   releases -->|"webhooks: deploy, check"| server
   checks -->|"commit statuses"| releases
-  ghcr -->|pull| app
+  ghcr -->|"pull image,<br/>map data"| app
 ```
 
 Previews run the same stack as separate projects with their own host name

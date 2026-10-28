@@ -168,7 +168,9 @@ Pull request (same repository) ─▶ preview project launchway-trail-pr-<n>, ow
 
 `deploy/compose.yaml` services: `app` (GHCR image `sha-<commit>` of the
 deployed commit, `pull_policy: always`), `db`, and `backup` (profile
-`production`). Networks: the project's `default` (app; the way out, for ntfy and map data)
+`production`). Volumes: the database's, and `trail-map` (`app`'s map data
+from the registry, §4, of each project and rebuildable from the registry, so
+no backup takes it). Networks: the project's `default` (app; the way out, for ntfy and map data)
 and `backend` (app, db, backup; `internal`, no route out); Launchway attaches
 `app` to its proxy network itself. No host port is published. See §13 and the
 runbook `docs/operations.md`.
@@ -256,6 +258,12 @@ All configuration is environment variables, validated at boot with zod
 | `PROCESSING_OSM_TTL_DAYS` | `90` | Map tiles are refreshed after this many days |
 | `PROCESSING_MAX_ACCURACY_M` | `150` | Less accurate points are dropped from the averaged level on |
 | `PROCESSING_STOP_MIN_S` | `180` | The shortest stop |
+| `MAP_DATA_REGIONS` | `belgium` | The regions whose map data the server keeps (names of `scripts/mapdata/regions.json`), comma-separated; set but empty: none. The world overview comes with any region (§10) |
+| `MAP_DATA_REGISTRY` | `ghcr.io/jenspenneman/trail-mapdata` | Where the map data artefacts come from (§13.2): a registry host and a repository, no scheme and no tag; always HTTPS |
+| `MAP_DATA_REGISTRY_TOKEN` | empty (anonymous) | `<user>:<token>` for a private registry or package, sent to its token service only (GHCR: a classic token with `read:packages`) |
+| `MAP_DATA_DIR` | `/var/lib/trail/map` | The volume `trail-map`: builds in `regions/<region>/<yyyymmdd>-<first 8 hex of the digest>/`, downloads under way in `tmp/` |
+| `MAP_DATA_REFRESH_DAYS` | `30` | How often the worker looks for a newer build (§10) |
+| `MAP_DATA_MAX_GB` | `10` | The largest build, all its files together, the worker downloads (Europe: about 31) |
 | `NODE_ENV` | `development` | `production` in the image (see below) |
 
 Development safety: when `NODE_ENV !== "production"` the API refuses to start
@@ -1945,6 +1953,20 @@ runs in the worker (§3) — or in the API's process too, in role `all`.
   windows waiting on map data and lost windows; the boot-time backfill when a
   level's algorithms changed version; map tiles fetched alongside, within the
   daily budget; its heartbeat every 15 s.
+- map data (only with `MAP_DATA_REGIONS`; docs/design/self-hosted-maps.md
+  §2.6, §4.3), in the API's process (roles `all` and `api`; `trail worker`
+  runs none yet) — a look at the registry 2–5 minutes after the start, then
+  every `MAP_DATA_REFRESH_DAYS` days and up to six hours more, for each
+  region and the world overview, one at a time under the region's advisory
+  lock (which `trail map refresh` takes too): a build the volume lacks and
+  that is no older than its newest is pulled and verified (§12), then
+  imported by the loader of the design's task 1 once it is wired in
+  (`createMapDataRefresher`); the volume keeps the build to serve and the
+  one served before it. A failure keeps what serves and is tried again after
+  15 minutes, doubling up to a day; log lines `map region pulled`, `…
+  imported`, `… up to date`, `map region refresh failed` and `map region
+  import failed` with the reason, `map region data is old` past three
+  periods.
 Jobs must never crash the process; failures are logged. Runs never overlap.
 
 ## 11. CLI
@@ -1968,6 +1990,15 @@ the image, so `docker compose exec app trail <command>`):
   80 s is left to the database, which rolls it back as the process exits (1).
   Exit 1 also on an invalid configuration, in role `api` (a process that must
   not process) and when it cannot start.
+- `map refresh [<region>]` — look at the registry now, for every region of
+  `MAP_DATA_REGIONS` and the world overview or for one of them, as the
+  worker does (§10): pull a newer build, import it; exit 1 when a region
+  failed or another process was refreshing it. Ctrl-C deletes the download
+  under way
+- `map status` — each region's builds on the volume with their digests (to
+  compare with the workflow's attestation, §13.2), when they were pulled,
+  the extract's time and whether the map tables hold them, and the regions on
+  the volume no longer configured; asks the registry nothing
 - `help` / `--help`
 
 Every command applies pending migrations first (same advisory lock as the
@@ -2061,8 +2092,8 @@ codes: 0 success, 1 failure (including invalid configuration), 2 wrong usage
   password) are never stored, and no ingest answer carries data: Overland's
   `ok` (and `set`), OwnTracks' `[]`, the OsmAnd format's empty `200`. A token
   works at its own app's endpoint only (403 elsewhere).
-- Map data (§17.3) is the only outbound request besides ntfy: tile bounding
-  boxes posted to `PROCESSING_OVERPASS_URL` without credentials or cookies,
+- Map data (§17.3) is the only outbound request besides ntfy and the map
+  data registry (below): tile bounding boxes posted to `PROCESSING_OVERPASS_URL` without credentials or cookies,
   without redirects, with a capped answer parsed strictly, and a User-Agent
   that names the software (`Trail/<version>
   (+https://github.com/JensPenneman/trail)`), not the instance. The tiles
@@ -2071,6 +2102,25 @@ codes: 0 success, 1 failure (including invalid configuration), 2 wrong usage
   IP address — not the tracks or who the user is; a self-hosted Overpass or an
   empty `PROCESSING_OVERPASS_URL` keeps that at home, and a local extract
   behind the `WaySource` interface is a possible later step.
+- The map data registry (`MAP_DATA_REGISTRY`, §13.2) gets a manifest and a
+  few blobs per region and refresh period, which tell it (GHCR: GitHub)
+  which regions the server keeps, and nothing about anyone's positions. The
+  client (`apps/api/src/mapdata/registry.ts`, `fetch` only) speaks HTTPS to
+  two hosts only: the registry, for its API and its token service, and for
+  GHCR `pkg-containers.githubusercontent.com`, the one host its blob
+  downloads redirect to, followed once and without the registry's token;
+  any other redirect or token service is refused, and proxy variables count
+  only when `NODE_USE_ENV_PROXY` says so. Before a byte of a build is
+  fetched it checks the manifest: at most 256 KB, the region's and a build
+  id in its annotations, only the artefact's known files as layers, whole or
+  in consecutive chunks (no name from a manifest ever becomes a path), and
+  no more than `MAP_DATA_MAX_GB` and the free space. Every blob is hashed as
+  it streams in and refused unless it has its size and digest; chunks are
+  put together and checked against `manifest.json`; a download is renamed
+  into place only complete, and a failure deletes it and leaves every build
+  on the volume as it was. `MAP_DATA_REGISTRY_TOKEN` goes to the token
+  service only, as Basic credentials, and prints as `[redacted]`; tokens and
+  the signed blob URLs are never logged.
 - pino-http redacts `authorization`, `cookie`, `referer`, `set-cookie`, token
   query params and the `X-Share-Secret` header; coordinates, map tile keys and
   OSM ids are never logged above `debug` (the processing log keeps counts,
@@ -2160,6 +2210,25 @@ the repository is public (GitHub offers those on private repositories only
 with Enterprise Cloud). Base-image patches arrive as Dependabot digest updates
 of the Dockerfile, auto-merged once the required checks pass; the weekly
 scheduled run (Monday 03:00 UTC) rebuilds and republishes `main`.
+
+Map data (`.github/workflows/mapdata.yml`, §15;
+docs/design/self-hosted-maps.md §4.2): `ghcr.io/jenspenneman/trail-mapdata`,
+a public package of OCI artefacts pushed with ORAS, one per region and build,
+tagged `<region>` (what the servers follow) and `<region>-<yyyymmdd>` (the
+day of the extract's data; a rebuild of the same extract moves it). The
+manifest's annotations name the region and the build; each file is a layer
+titled with its name (`manifest.json`, `ways.opl.gz`, `pois.geojsonseq.gz`,
+`region.poly`, `basemap.pmtiles`; a file over 1 GiB in chunks of 1 GiB,
+`<name>.000` …), and `manifest.json` lists every file's and chunk's size and
+SHA-256. Each push gets a signed GitHub build provenance attestation, as the
+image does; GHCR has no referrers API, so the attestation sits under the tag
+`sha256-<hex of the build's digest>`. The newest three builds of a region
+stay. The manifest's digest identifies a build: a server keeps the
+manifest beside the build as `oci-manifest.json`, the map tables record the
+digest, and `trail map status` shows it, to compare with
+`gh attestation verify oci://ghcr.io/jenspenneman/trail-mapdata@<digest> -R
+JensPenneman/trail --source-ref refs/heads/main` (the attestation names the
+workflow, the ref and the commit).
 
 Releases: release-please (`release-please-config.json`, `release-type: node`,
 `"draft": true`) keeps a release pull request open; `scripts/release.sh`
@@ -2828,23 +2897,40 @@ tags, pull requests, Monday 03:00 UTC, manual runs):
 GitHub Actions cancels its superseded runs of pull requests and other
 branches; its runs on `main` and tags always finish. Actions pinned by commit
 SHA; per-job least-privilege permissions (`packages`, `id-token`,
-`attestations` write only in `image`; `statuses: read` only in
+`attestations` write only in `image` and in the map data's `publish`;
+`statuses: read` only in
 `release-gate`; `contents: write` only in `release`, which runs for a
 minute).
 The weekly run only rebuilds the image: no tests run on a schedule.
 
-**Map data** (`.github/workflows/mapdata.yml`; first version, from task 0 of
-`docs/design/self-hosted-maps.md`): on dispatch with a `region` input (one
-job per region of `scripts/mapdata/regions.json`, one build per region at a
-time), and on Monaco for pull requests that change it or `scripts/mapdata/`,
-it runs `scripts/mapdata/build.sh` on `ubuntu-24.04` with Ubuntu's
+**Map data** (`.github/workflows/mapdata.yml`,
+`docs/design/self-hosted-maps.md` §4): on the 1st of every month (04:00 UTC)
+for every region of `scripts/mapdata/regions.json`, on dispatch for the
+regions named (`region`, or `all`; `extract` takes Geofabrik's extract of a
+given day), and on Monaco for pull requests that change it or
+`scripts/mapdata/`. Job `build`, one per region and one build of a region at
+a time, runs `scripts/mapdata/build.sh` on `ubuntu-24.04` with Ubuntu's
 osmium-tool and Planetiler 0.10.2 (its jar pinned by SHA-256) on the runner
-image's Temurin 21. The script fetches Planetiler's sources into a monthly
-Actions cache (Natural Earth and the lake centrelines pinned by SHA-256, the
-daily water polygons recorded only) and keeps the files of each region as
-artefacts of the run for 14 days; a job may take 4 hours. Read-only token;
-nothing is published yet: the GHCR push of the design's task 2 comes in a
-job of its own that never runs for pull requests.
+image's Temurin 21. The script takes the extract from Geofabrik (Germany's
+and Europe's from the one mirror Geofabrik sends them to, checked against
+the `.md5` of the dated file on Geofabrik with the same size and time),
+fetches Planetiler's sources into a monthly Actions cache (Natural Earth and
+the lake centrelines pinned by SHA-256, the daily water polygons recorded
+only), and writes the manifest with the build id and the SHA-256 of every
+file and chunk; the job hands the artefact on as an artefact of the run (7
+days) and may take 4 hours. Job `publish`, the only one with `packages`,
+`id-token` and `attestations: write`, one per region at a time and never for
+a pull request, pushes it with ORAS 1.3.6 (its archive pinned by SHA-256)
+through `scripts/mapdata/publish.sh`, which checks the layers against the
+manifest before the push and the registry's manifest and tags after it,
+attests it as the image is attested, and runs `scripts/mapdata/retain.sh`,
+which deletes the region's builds beyond the newest three with their
+attestations (a failure there warns; the build is published). A run on
+`main` publishes every region it built; a run on another branch only the
+test region (`"fixture": true` in `regions.json`, Monaco), so that a branch
+nobody reviewed never moves a tag the servers follow. The builds keep the
+read-only token: a pull request, a fork's included, can build a region but
+never publish one.
 
 **Branch rules of `main`.** The ruleset "main protection" requires a pull
 request (merge commits only) and, up to date with `main`, the status checks
@@ -2929,7 +3015,22 @@ security ones too.
   values only, useless without the server's key), resources from validated
   input (never a viewport or a name), and that every v1 path with an `{id}`
   names what it stands for; `defineRoute.test.ts` and `mcpServer.test.ts`
-  what the route registry and the tool runner record, and when not.
+  what the route registry and the tool runner record, and when not. The map
+  data client (`mapDataPull.test.ts`) pulls the Monaco fixture from a
+  registry in the test that plays GHCR (below): the files byte for byte,
+  chunks put together, the redirect without the token, a download resumed
+  where it broke off or started over when the range is ignored, and the
+  refusals that leave the build already there — a wrong digest, a blob that
+  keeps ending early or comes too long, a build over the cap or the free
+  space, a manifest over 256 KB, an unknown region, a busy registry,
+  foreign artefacts, file names that leave the directory, chunks with a gap,
+  a manifest.json of another build, a private package without or with the
+  wrong token, a redirect or token service on another host, proxy
+  variables, and no token, credential or signed URL in a log line at trace
+  level. `mapDataLayout.test.ts` reads the manifest the workflow published
+  (`trail-mapdata:monaco-20261027`, byte for byte) against the fixture's
+  manifest.json; `mapDataSchedule.test.ts` runs the schedule on a clock of
+  its own.
 - `apps/api/tests/integration` — supertest against the real app and the
   `trail_test` database (`TEST_DATABASE_URL`), including passkey ceremonies
   with a software authenticator (ES256, `none` attestation, CBOR via
@@ -3035,7 +3136,16 @@ security ones too.
   series by channel adding up, current
   and remembered names, the retention, the account's deletion and the
   shutdown's last write. The migration-upgrade test fingerprints its rows and
-  the visitor key.
+  the visitor key. The map data refresh (`mapDataRefresh.test.ts`) runs
+  against a registry in the test that plays GHCR (`tests/support/fakeRegistry.ts`:
+  a token service, manifests, a 307 to a blob host with a signed query, Range
+  requests, faults on demand) with the Postgres advisory lock and a loader
+  in memory: a first pull and import, nothing the next time, a rebuild, the
+  builds the volume keeps while imports fail, a wrong blob that leaves the
+  old build serving, the import after a restore with the registry away, an
+  older build in the registry, an unknown region, another process holding
+  the lock, a stop that deletes the download, and data three periods old;
+  `mapDataCli.test.ts` `trail map refresh` and `status`.
 - `apps/web/tests` — Vitest + Testing Library (jsdom). Pages render through
   `renderPage` with the API answered by `mockApi` and the map replaced by a
   stub that shows what it was handed; the People page's tests also check

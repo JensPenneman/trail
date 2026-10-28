@@ -684,7 +684,12 @@ publishing of task 2 lives in a job of its own that never runs for
 `pull_request` (dispatch and the schedule only), and only that job gets
 `packages: write`, `id-token: write` and `attestations: write`; the build
 jobs keep the read-only token, so a pull request, a fork's included, can
-build a region but never publish one.
+build a region but never publish one. A run on `main` (the schedule's, or a
+dispatch) publishes every region it built; a dispatch on another branch
+publishes only the test region (`"fixture": true` in `regions.json`:
+Monaco) and builds the others without publishing them, since `<region>` is
+the tag every server follows and a branch nobody reviewed must not move it
+(task 2's choice, like the image's `latest`, which only `main` gets).
 
 Budget, measured (§10), whole jobs on the runner: Monaco 1 min, Luxembourg
 2½ min, Belgium 15 min, the Netherlands 18 min, France 1 h 45 min; Germany
@@ -750,6 +755,20 @@ the digest in the manifest and the manifest's own hash, then renamed into
 deletes the temporary files and keeps the old build. The digest the worker
 resolved is recorded in `osm_regions.digest`; `trail map status` shows it,
 and an operator can compare it with the workflow's attestation on GitHub.
+
+As built in task 2: the manifest's digest identifies a build, since the same
+extract can be built twice (the dated tag then moves to the rebuild), so a
+build's directory is `<yyyymmdd>-<first 8 hex of the digest>` and holds the
+registry's manifest itself as `oci-manifest.json` beside build.sh's files
+(no `SHA256SUMS`; `manifest.json` lists every file's and chunk's SHA-256).
+The manifest's annotations `com.jenspenneman.trail.mapdata.region` and
+`…build` let the client decide before it downloads anything: it pulls a
+build the volume lacks when it is not older than the newest there, and
+refuses a manifest over 256 KB, layers that are not the artefact's known
+files (whole or in consecutive chunks; no name from a manifest becomes a
+path) and more bytes than `MAP_DATA_MAX_GB` or the free space. With the
+loader's tables to ask, the volume keeps the build to serve and the one
+served before it; without, its two newest.
 Bandwidth, from the measured artefacts (§10): Belgium 0.56 GB a month and
 the world overview's 5 MB, Benelux 1.5 GB (Belgium, the Netherlands
 0.90 GB and Luxembourg 0.05 GB), Europe *about 31 GB* (extrapolated); a
@@ -947,6 +966,7 @@ New variables (§4 of the architecture, `envSchema.ts`, `loadConfig.ts`,
 | `MAP_DATA_REGISTRY` | `ghcr.io/jenspenneman/trail-mapdata` | Where the artefacts come from; a mirror or a private registry (with the registry's credentials in `MAP_DATA_REGISTRY_TOKEN`) |
 | `MAP_DATA_DIR` | `/var/lib/trail/map` | The volume `trail-map`: read-write in the worker, read-only in the API |
 | `MAP_DATA_REFRESH_DAYS` | `30` | How often the worker looks for a newer build |
+| `MAP_DATA_MAX_GB` | `10` | The largest build the worker downloads (added in task 2; Europe needs about 31) |
 | `MAP_BASEMAP_REGION` | the first of `MAP_DATA_REGIONS` | Whose `basemap.pmtiles` the map draws |
 | `MAP_BASEMAP_FALLBACK` | `true` (phase 2), `false` (phase 3) | Serve `MAP_STYLE_LIGHT`/`DARK` while no bundle is active |
 | `MAP_CACHE_MB` | `256` | The worker's tile cache |
