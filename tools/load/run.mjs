@@ -133,9 +133,10 @@ async function refuseRemoteDocker(env) {
         allowFailure: true,
       })
     ).stdout.trim();
+  // The address is not repeated: a DOCKER_HOST may carry a user name or a password.
   if (!/^(unix|npipe):\/\//.test(host)) {
     throw new Error(
-      `the Docker daemon is at ${host || "an unknown address"}: a load test runs on this machine only`,
+      "the Docker daemon (DOCKER_HOST or the current context) is not a local socket: a load test runs on this machine only",
     );
   }
 }
