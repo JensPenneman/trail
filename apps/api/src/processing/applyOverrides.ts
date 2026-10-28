@@ -56,8 +56,9 @@ function effectiveSpan(
   if (override.kind === "toggle") {
     if (override.endsBy !== null) to = Math.min(to, override.endsBy);
     const family = familyOf(override.mode);
-    // Whether a stop came since the toggle began: only moves after one can end it by kind.
-    let afterStop = false;
+    // Whether a stop came since the toggle began — before this window too: only moves after
+    // one can end it by kind.
+    let afterStop = override.stoppedBefore;
     for (const segment of segments) {
       if (segment.startT <= override.from) continue;
       const inferred = segment.kind === "move" ? familyOf(segment.part.verdict.mode) : null;

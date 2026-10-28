@@ -20,6 +20,7 @@ const override = (
   kind: "segment",
   to: null,
   endsBy: null,
+  stoppedBefore: false,
   createdAt: 0,
   source: "ui",
   ...fields,
@@ -269,6 +270,30 @@ describe("applyOverrides", () => {
       ["train", "walking"],
       ["train", "car"],
     ]);
+  });
+
+  it("knows across windows whether a stop came since the toggle began", () => {
+    // A window that starts at the ride home: the train toggle began before it.
+    const start = pointAlong(motorwayLine, 500);
+    const ride = travel([start, [start[0], start[1] + 3000]], {
+      startT: morning,
+      speedMs: 5,
+      intervalS: 2,
+      motion: ["cycling"],
+      seed: 8,
+    });
+    const train = (stoppedBefore: boolean) =>
+      moves(
+        processWorld(ride, {
+          overrides: [
+            override({ kind: "toggle", from: morning - 1800, mode: "train", stoppedBefore }),
+          ],
+        }),
+      ).map((move) => [move.modeUser, move.modeInferred]);
+    // After five minutes at the station (a stop the window does not hold): the bike ends it.
+    expect(train(true)).toEqual([[null, "cycling"]]);
+    // Still on the ride it was set on (no stop since): the toggle's own move, whatever it reads.
+    expect(train(false)).toEqual([["train", "cycling"]]);
   });
 
   it("ends the quick toggle at its until, or at a stop seen before this window", () => {

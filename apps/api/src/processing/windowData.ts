@@ -214,13 +214,16 @@ interface OverrideRow extends Record<string, unknown> {
   created_at: string;
   source: "ui" | "api" | "mcp";
   ends_by: string | null;
+  stopped_before: boolean;
 }
 
 /**
  * The corrections in force for the window. A toggle that began before it gets
  * the start of the first stored segment before the window that ends it — a
  * stop of `toggleEndingStopS` or more, or a move of another kind of travel
- * (`endsToggleSql`).
+ * after a stop (`endsToggleSql`) — and whether any stop came between it and
+ * the window: a window that starts at the ride home after a short wait must
+ * not take that ride for the toggle's own.
  */
 export async function loadOverrides(
   db: Executor,
@@ -233,7 +236,11 @@ export async function loadOverrides(
       (SELECT min(s.started_at)::text FROM segments s
         WHERE o.kind = 'toggle' AND s.device_id = o.device_id
           AND s.started_at > o.from_at AND s.started_at < ${from.toISOString()}::timestamptz
-          AND ${endsToggleSql("s", "o")}) AS ends_by
+          AND ${endsToggleSql("s", "o")}) AS ends_by,
+      (o.kind = 'toggle' AND EXISTS (SELECT 1 FROM segments s
+        WHERE s.device_id = o.device_id AND s.kind = 'stop'
+          AND s.started_at > o.from_at AND s.started_at < ${from.toISOString()}::timestamptz))
+        AS stopped_before
     FROM mode_overrides o
     WHERE o.device_id = ${deviceId} AND o.revoked_at IS NULL
       AND o.from_at <= ${to.toISOString()}::timestamptz
@@ -247,6 +254,7 @@ export async function loadOverrides(
     from: Date.parse(toIso(row.from_at)) / 1000,
     to: row.to_at === null ? null : Date.parse(toIso(row.to_at)) / 1000,
     endsBy: row.ends_by === null ? null : Date.parse(toIso(row.ends_by)) / 1000,
+    stoppedBefore: row.stopped_before,
     createdAt: Date.parse(toIso(row.created_at)) / 1000,
     source: row.source,
   }));

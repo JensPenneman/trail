@@ -3386,7 +3386,10 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   override covering less than 90 s of a move, and not most of it, leaves it
   alone. A toggle that began before the window gets the first stored stop of
   ten minutes or more, or move of another kind of travel after a stop, after
-  it, which ends it. The applied override is in
+  it, which ends it, and whether any stop of the device came between it and
+  the window — a window that starts at the ride home after a short wait (an
+  upload half an hour into the ride) does not take that ride for the
+  toggle's own. The applied override is in
   `features.override`
   (`{ id, kind, source }`); `GET /api/v1/stats/modes` counts the corrected
   segments.

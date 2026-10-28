@@ -75,6 +75,13 @@ export interface OverrideSpan {
   to: number | null;
   /** That stop when it lies before the window (from stored segments); else null. */
   endsBy: number | null;
+  /**
+   * A toggle that began before the window: whether a stop of the device came
+   * between its start and the window's (stored segments) — then the window's
+   * moves are no longer the toggle's own first move, and their kind of travel
+   * counts.
+   */
+  stoppedBefore: boolean;
   createdAt: number;
   source: "ui" | "api" | "mcp";
 }

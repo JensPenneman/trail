@@ -29,6 +29,8 @@ import {
   concat,
   distanceToLine,
   lastT,
+  motorwayLine,
+  pointAlong,
   railLine,
   stay,
   toXY,
@@ -929,6 +931,69 @@ describe("the edges of a window", () => {
     // Two hours: the window takes in the stop before them.
     const night = await reachedFor("Slept", 7200);
     expect(night.from).toBe(night.start);
+  });
+
+  it("ends a toggle at the ride home after a short stop, the ride in a window of its own", {
+    timeout: 120_000,
+  }, async () => {
+    // Twenty minutes by car — set as the train — five at the station, then forty by bike.
+    const device = await newDevice("Ride home");
+    const start = morning - 80 * 86_400;
+    const drive = motorwayDrive(start);
+    const station = pointAlong(motorwayLine, 36_500);
+    const wait = stay(station, { startT: lastT(drive) + 1, durationS: 300, intervalS: 5, seed: 4 });
+    const ride = travel([station, [station[0], station[1] + 12_000]], {
+      startT: lastT(wait) + 1,
+      speedMs: 5,
+      intervalS: 2,
+      motion: ["cycling"],
+      seed: 8,
+    });
+    await t.ctx.db.execute(sql`
+      INSERT INTO mode_overrides (device_id, kind, from_at, mode, source)
+      VALUES (${device.id}, 'toggle', to_timestamp(${start + 30}), 'train', 'ui')
+    `);
+    // The first upload ends half an hour into the ride; the next one's window starts at the ride.
+    const rideStart = lastT(wait);
+    const cut = rideStart + 31 * 60;
+    await upload(
+      device.token,
+      concat(
+        drive,
+        wait,
+        ride.filter((point) => point.t < cut),
+      ),
+    );
+    await t.ctx.processing.flush();
+    await upload(
+      device.token,
+      ride.filter((point) => point.t >= cut),
+    );
+    await t.ctx.processing.flush();
+    const moves = (
+      await t.ctx.db.execute<{ from: number; mode_user: string | null; mode_inferred: string }>(sql`
+        SELECT extract(epoch FROM started_at)::float8 AS from, mode_user, mode_inferred
+        FROM segments WHERE device_id = ${device.id} AND kind = 'move' ORDER BY started_at
+      `)
+    ).rows;
+    const drove = moves.filter((move) => move.from < rideStart);
+    const rode = moves.filter((move) => move.from >= rideStart);
+    expect(drove.at(-1)?.mode_user).toBe("train");
+    // The ride is no part of the toggle's first move: the stop came between, in an earlier window.
+    expect(rode.length).toBeGreaterThan(0);
+    expect(rode.map((move) => move.mode_user)).toEqual(rode.map(() => null));
+    expect(rode.map((move) => move.mode_inferred)).toContain("cycling");
+    // The second window began at the ride: the station's stop is still the first window's.
+    const passes = (
+      await t.ctx.db.execute<{ kind: string; computed: number }>(sql`
+        SELECT kind, extract(epoch FROM computed_at)::float8 AS computed FROM segments
+        WHERE device_id = ${device.id} AND started_at >= to_timestamp(${lastT(drive) - 60})
+        ORDER BY started_at
+      `)
+    ).rows;
+    const [waited, ...riding] = passes;
+    expect(waited?.kind).toBe("stop");
+    for (const part of riding) expect(part.computed).toBeGreaterThan(waited?.computed ?? 0);
   });
 
   it("keeps the levels of the point a window shares with a segment that began before it", async () => {
