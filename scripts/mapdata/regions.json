@@ -1,5 +1,5 @@
 {
-  "monaco": { "geofabrik": "europe/monaco", "heap": "1g" },
+  "monaco": { "geofabrik": "europe/monaco", "heap": "2g" },
   "luxembourg": { "geofabrik": "europe/luxembourg", "heap": "2g" },
   "belgium": { "geofabrik": "europe/belgium", "heap": "3g" },
   "netherlands": { "geofabrik": "europe/netherlands", "heap": "4g" },

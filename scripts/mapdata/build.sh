@@ -42,6 +42,11 @@ readonly planetiler_version=0.10.2
 readonly planetiler_sha256=f310bd0413e2e4512b27f4046d418664e8e1d3bf31603c2a70e23de06c167e4d
 readonly planetiler_url=https://github.com/onthegomap/planetiler/releases/download/v${planetiler_version}/planetiler.jar
 readonly geofabrik=https://download.geofabrik.de
+# The sources of Planetiler's OpenMapTiles profile, as Planetiler 0.10.2 names
+# them; downloaded by Planetiler into --cache once, recorded in the manifest
+readonly natural_earth_url=https://naciscdn.org/naturalearth/packages/natural_earth_vector.sqlite.zip
+readonly water_polygons_url=https://osmdata.openstreetmap.de/download/water-polygons-split-3857.zip
+readonly lake_centerlines_url=https://github.com/acalcutt/osm-lakelines/releases/download/v12/lake_centerline.shp.zip
 
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 readonly here
@@ -266,6 +271,8 @@ fi
 sources='[]'
 java_version=''
 temp_peak_kib=''
+heap_used_mib=''
+heap_live_mib=''
 if $basemap; then
   command -v java >/dev/null 2>&1 || die "java is missing (Java 21 or later; or --no-basemap)"
   java_major=$(java -XshowSettings:properties -version 2>&1 | awk -F' = ' '/java.specification.version/ { print $2 }')
@@ -284,8 +291,10 @@ if $basemap; then
   mkdir -p "$tmp"
   args=(-Xmx"$heap" -jar "$jar"
     --osm_path="$pbf_file" --download --download_dir="$cache/sources"
+    --natural_earth_url="$natural_earth_url" --water_polygons_url="$water_polygons_url"
+    --lake_centerlines_url="$lake_centerlines_url"
     --output="$out/basemap.pmtiles" --force
-    --tmpdir="$tmp" --output_layerstats=true)
+    --tmpdir="$tmp" --output_layerstats=true --color=false)
   if [ -n "$bounds" ]; then args+=(--bounds="$bounds"); fi
   if [ -n "$maxzoom" ]; then args+=(--maxzoom="$maxzoom"); fi
   # the temporary files' peak size, sampled every two seconds
@@ -306,16 +315,31 @@ if $basemap; then
   wait "$sampler" 2>/dev/null || true
   sampler=''
   temp_peak_kib=$(cat "$logs/planetiler-temp-peak-kib" 2>/dev/null || echo 0)
+  # the most heap in use and the most left after a collection, from the
+  # progress lines ("heap: 1.2G/3G ... postGC: 800M")
+  read -r heap_used_mib heap_live_mib < <(awk '
+    function mib(value, number, unit) {
+      number = value + 0
+      unit = substr(value, length(value))
+      if (unit == "k") return number / 1024
+      if (unit == "M") return number
+      if (unit == "G") return number * 1024
+      if (unit == "T") return number * 1048576
+      return number / 1048576
+    }
+    match($0, /heap: [0-9.]+[kMGT]?\//) { used = mib(substr($0, RSTART + 6, RLENGTH - 7)); if (used > heap) heap = used }
+    match($0, /postGC: [0-9.]+[kMGT]?/) { live = mib(substr($0, RSTART + 8, RLENGTH - 8)); if (live > post) post = live }
+    END { printf "%d %d\n", heap, post }' "$logs/planetiler.log")
   rm -rf "$tmp"
   for layerstats in "$out"/*.layerstats.tsv.gz; do
     if [ -f "$layerstats" ]; then mv "$layerstats" "$work/"; fi
   done
   add_file basemap.pmtiles application/vnd.trail.mapdata.basemap.v1
-  for source in "$cache"/sources/*; do
-    if [ -f "$source" ]; then
-      sources=$(jq -c --arg name "$(basename -- "$source")" --argjson bytes "$(bytes_of "$source")" \
-        --arg sha256 "$(sha256_of "$source")" '. + [{ name: $name, bytes: $bytes, sha256: $sha256 }]' <<<"$sources")
-    fi
+  for url in "$natural_earth_url" "$water_polygons_url" "$lake_centerlines_url"; do
+    source=$cache/sources/$(basename -- "$url")
+    [ -f "$source" ] || die "Planetiler left no $source"
+    sources=$(jq -c --arg url "$url" --argjson bytes "$(bytes_of "$source")" --arg sha256 "$(sha256_of "$source")" \
+      '. + [{ url: $url, bytes: $bytes, sha256: $sha256 }]' <<<"$sources")
   done
 fi
 
@@ -380,10 +404,14 @@ esac
 disk_free_kib=$(df -Pk "$work" | awk 'NR == 2 { print $4 }')
 jq -R -s --arg region "$region" --arg os "$(uname -sm)" --argjson cpus "$cpus" --argjson ramKib "$ram_kib" \
   --argjson diskFreeKib "$disk_free_kib" --arg heap "$heap" --arg tempPeakKib "$temp_peak_kib" \
+  --arg heapUsedMib "$heap_used_mib" --arg heapLiveMib "$heap_live_mib" \
   --slurpfile manifest "$out/manifest.json" '
   { region: $region,
     machine: { os: $os, cpus: $cpus, ramKib: $ramKib, diskFreeKibAfter: $diskFreeKib },
-    planetiler: { heap: $heap, tempPeakKib: (if $tempPeakKib == "" then null else ($tempPeakKib | tonumber) end) },
+    planetiler: { heap: $heap,
+      tempPeakKib: (if $tempPeakKib == "" then null else ($tempPeakKib | tonumber) end),
+      heapUsedMaxMib: (if $heapUsedMib == "" then null else ($heapUsedMib | tonumber) end),
+      heapLiveMaxMib: (if $heapLiveMib == "" then null else ($heapLiveMib | tonumber) end) },
     steps: (split("\n") | map(select(length > 0) | split("\t")
       | { name: .[0], seconds: (.[1] | tonumber), peakRssKib: (if .[2] == "" then null else (.[2] | tonumber) end) })),
     manifest: $manifest[0] }' "$stats" >"$work/build-stats.json"
@@ -397,7 +425,7 @@ jq -R -s --arg region "$region" --arg os "$(uname -sm)" --argjson cpus "$cpus" -
     .manifest as $m
     | "Extract `\($m.extract.url // "on disk" | split("/") | last)` (\($m.extract.geofabrik)), \($m.extract.bytes | mb), OSM data up to \($m.extract.timestamp // "unknown"): \($m.extract.counts.nodes) nodes, \($m.extract.counts.ways) ways, \($m.extract.counts.relations) relations.",
       "",
-      "Built \($m.build.at) on \(.machine.os), \(.machine.cpus) CPUs, \(.machine.ramKib / 1048576 | . * 10 | round / 10) GiB RAM, \(.machine.diskFreeKibAfter / 1048576 | round) GiB free afterwards; osmium-tool \($m.build.tools.osmium) (libosmium \($m.build.tools.libosmium))\(if $m.build.tools.planetiler then ", Planetiler \($m.build.tools.planetiler) on Java \($m.build.tools.java), heap \(.planetiler.heap), temporary files at most \(.planetiler.tempPeakKib // 0 | . / 1024 | round) MiB" else "" end).",
+      "Built \($m.build.at) on \(.machine.os), \(.machine.cpus) CPUs, \(.machine.ramKib / 1048576 | . * 10 | round / 10) GiB RAM, \(.machine.diskFreeKibAfter / 1048576 | round) GiB free afterwards; osmium-tool \($m.build.tools.osmium) (libosmium \($m.build.tools.libosmium))\(if $m.build.tools.planetiler then ", Planetiler \($m.build.tools.planetiler) on Java \($m.build.tools.java) with -Xmx\(.planetiler.heap) (at most \(.planetiler.heapUsedMaxMib) MiB of heap in use, \(.planetiler.heapLiveMaxMib) MiB live after a collection), temporary files at most \(.planetiler.tempPeakKib // 0 | . / 1024 | round) MiB" else "" end).",
       "",
       "| Step | Time | Peak memory |",
       "|---|---:|---:|",
@@ -413,8 +441,9 @@ jq -R -s --arg region "$region" --arg os "$(uname -sm)" --argjson cpus "$cpus" -
   ' "$work/build-stats.json"
   if [ -f "$logs/planetiler.log" ]; then
     printf '\n<details><summary>Planetiler</summary>\n\n```\n'
-    # the stage timings and sizes Planetiler prints at the end
-    awk '/^-+$/ { n++ } n >= 1' "$logs/planetiler.log" | sed -n '1,80p' | sed 's/^[0-9:. -]*[A-Z]* *\[[^]]*\] *- //'
+    # the data errors, stage timings and sizes Planetiler prints at the end
+    awk 'index($0, "- ----------------------------------------") { n++ } /Acknowledgments/ { exit } n >= 1' \
+      "$logs/planetiler.log" | sed 's/^[0-9:]* [A-Z]* \[[^]]*\] - //; s/^[0-9:]* [A-Z]* - //'
     printf '```\n\n</details>\n'
   fi
 } >"$work/summary.md"
