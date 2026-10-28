@@ -1,6 +1,8 @@
 # Development container: Node LTS, Chromium for Playwright and a PostgreSQL of
 # its own, so that every check of the repository, the end-to-end suite
-# included, runs inside Docker (README, "Develop in a container"). Start it
+# included, runs inside Docker (README, "Develop in a container"). The
+# Launchway node runs the checks of pushes and pull requests in it as well, a
+# fresh project per check (docs/operations.md, "Checks"). Start it
 # with scripts/devc.sh, which names the project after the worktree's branch:
 # several worktrees run side by side, each with its own database, modules and
 # browsers. Nothing is published on the host, since ports are what would
@@ -20,7 +22,7 @@ services:
     # `docker compose exec` session are reaped
     init: true
     command: ["sleep", "infinity"]
-    # .env.example and the test databases of ci.yml, on the db service
+    # the databases of .env.example and of the test suites, on the db service
     environment:
       DATABASE_URL: postgres://trail:trail@db:5432/trail
       TEST_DATABASE_URL: postgres://trail:trail@db:5432/trail_test

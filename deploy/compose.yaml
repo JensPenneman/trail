@@ -28,9 +28,10 @@ x-logging: &logging
 
 services:
   app:
-    # The image CI built and tested for the deployed commit; nothing is built
-    # on the server. CI publishes sha-<commit> for every push to a branch of
-    # this repository and for version tags, after all tests pass. Until the
+    # The image CI built for the deployed commit; nothing is built on the
+    # server. CI publishes sha-<commit> for every push to a branch of this
+    # repository and for version tags while the Launchway node runs the
+    # tests, and publishes a release only once they have passed. Until the
     # image exists the pull fails, and Launchway retries it. TRAIL_IMAGE
     # replaces it for local runs (compose.dev.yaml); Launchway leaves it unset.
     image: ${TRAIL_IMAGE:-ghcr.io/jenspenneman/trail:sha-${LAUNCHWAY_COMMIT_SHA_SHORT:?Launchway sets LAUNCHWAY_COMMIT_SHA_SHORT; local runs set TRAIL_IMAGE}}

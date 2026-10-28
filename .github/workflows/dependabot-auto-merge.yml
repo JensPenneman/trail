@@ -14,14 +14,15 @@ jobs:
     steps:
       - uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
         id: meta
-      # Auto-merge waits for the required checks, so whatever is enabled here
-      # lands on green CI only: minor and patch updates and digest bumps,
-      # security updates (the `security` groups of dependabot.yml) among them,
-      # except the Biome and TypeScript groups, whose releases change what the
-      # checks accept, so they are merged by hand. Majors wait for a human,
-      # a security fix that needs one too (and with it the rest of its group),
-      # and so does a new Postgres major. One that fails CI is fixed, not left
-      # open (SECURITY.md).
+      # Auto-merge waits for the required checks of the branch rules (the
+      # Launchway node's commit statuses and the image build), so whatever is
+      # enabled here lands on green checks only: minor and patch updates and
+      # digest bumps, security updates (the `security` groups of
+      # dependabot.yml) among them, except the Biome and TypeScript groups,
+      # whose releases change what the checks accept, so they are merged by
+      # hand. Majors wait for a human, a security fix that needs one too (and
+      # with it the rest of its group), and so does a new Postgres major. One
+      # that fails a check is fixed, not left open (SECURITY.md).
       - if: >-
           steps.meta.outputs.update-type != 'version-update:semver-major' &&
           steps.meta.outputs.dependency-group != 'biome' &&

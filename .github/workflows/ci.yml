@@ -1,14 +1,21 @@
+# What has to run on GitHub: the image of every commit, which previews and
+# releases pull as sha-<short>, and publishing releases. Lint, type checks,
+# knip, unit, integration and end-to-end tests run on the Launchway node, in
+# the development container, and report to GitHub as the commit statuses
+# launchway/quality, launchway/integration and launchway/e2e
+# (docs/architecture.md §15).
 name: CI
 
 on:
   push:
-    # Every branch of this repository: each pushed commit that passes gets its
+    # Every branch of this repository: each pushed commit gets its
     # sha-<short> image, which pull-request previews on Launchway pull.
     branches: ["**"]
     tags: ["v*"]
   pull_request:
   schedule:
-    # Monday 03:00 UTC: run the whole pipeline on main and republish the image
+    # Monday 03:00 UTC: rebuild main's image on the current base images and
+    # publish it again
     - cron: "0 3 * * 1"
   workflow_dispatch:
 
@@ -23,128 +30,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.ref_type == 'branch' && github.ref != 'refs/heads/main') }}
 
 jobs:
-  quality:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        id: node
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: cache
-        with:
-          path: node_modules
-          key: modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ steps.node.outputs.node-version }}
-      - if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run knip
-      # The workspaces directly: through the root `test` script (itself an
-      # `npm run --workspaces`) npm would swallow the --coverage flag.
-      - run: npm run test --workspaces --if-present -- --coverage
-
-  integration:
-    needs: quality
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: trail
-          POSTGRES_PASSWORD: trail
-          POSTGRES_DB: trail_test
-          POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U trail -d trail_test"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 30
-    env:
-      TEST_DATABASE_URL: postgres://trail:trail@localhost:5432/trail_test
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        id: node
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: cache
-        with:
-          path: node_modules
-          key: modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ steps.node.outputs.node-version }}
-      - if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
-      - run: npm run test:integration
-
-  versions:
-    # The Playwright container tag must match the installed @playwright/test
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      playwright: ${{ steps.pw.outputs.version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - id: pw
-        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")" >> "$GITHUB_OUTPUT"
-
-  e2e:
-    needs: [integration, versions]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    container:
-      image: mcr.microsoft.com/playwright:v${{ needs.versions.outputs.playwright }}-noble
-    services:
-      # reachable as host `postgres` from the job container
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: trail
-          POSTGRES_PASSWORD: trail
-          POSTGRES_DB: trail_e2e
-          POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8
-        options: >-
-          --health-cmd "pg_isready -U trail -d trail_e2e"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 30
-    env:
-      E2E_DATABASE_URL: postgres://trail:trail@postgres:5432/trail_e2e
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        id: node
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      # Own key namespace: these modules are installed inside the Playwright
-      # container, not on the runner image the other jobs use.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: cache
-        with:
-          path: node_modules
-          key: modules-playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ steps.node.outputs.node-version }}
-      - if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
-      # playwright.config.ts starts the built server itself
-      - run: npm run build
-      - run: npm run test:e2e
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
-        with:
-          name: playwright-report
-          path: playwright-report
-          retention-days: 7
-
+  # Built while the node runs the checks, without waiting for them: a preview
+  # gets its image within minutes, a commit whose checks fail included, and a
+  # release is published only once its checks have passed (`release-gate`).
   image:
-    needs: [quality, integration, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -232,73 +121,120 @@ jobs:
           # storage records exist for organisation-owned repositories only
           create-storage-record: false
 
-  # Whether a push or a pull request changes what the development
-  # container's image is made of: .devcontainer/, the lockfile (Playwright and
-  # with it the browser in the image) or this workflow. Tags, the schedule and
-  # manual runs leave the image alone.
-  changes:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_type == 'branch')
+  # The release gate: the newest status of each check that the Launchway app
+  # reported on the tag's commit, every POLL_SECONDS for up to WAIT_MINUTES.
+  # The node runs one check at a time, oldest first, so the release commit's
+  # checks may wait behind those of other commits, the release pull
+  # request's among them. A status of the same name from anyone else counts
+  # for nothing, as in the branch rules. A failure or an error ends the wait
+  # at once, since the node never runs a check again by itself
+  # (docs/operations.md, "Checks"). A job of its own, so that the token that
+  # may write releases lives for the minute of `release`, not for the wait.
+  release-gate:
+    if: github.event_name != 'pull_request' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      devcontainer: ${{ steps.diff.outputs.devcontainer }}
+    # the wait (WAIT_MINUTES) and a few minutes more
+    timeout-minutes: 320
+    permissions:
+      statuses: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # a pull request's merge commit and its first parent, the base
-          fetch-depth: 2
-      - id: diff
+      - name: Wait for the checks of the Launchway node
+        timeout-minutes: 305
         env:
-          EVENT: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          CHECKS: launchway/quality launchway/integration launchway/e2e
+          CHECKS_APP: "launchway-for-jenspenneman-com[bot]"
+          POLL_SECONDS: "60"
+          WAIT_MINUTES: "300"
         run: |
-          # A pull request against the base it merges into; a push against
-          # what the branch pointed to before, or against main for a new
-          # branch (and a force push whose old commit cannot be fetched).
-          if [ "$EVENT" = pull_request ]; then
-            base=HEAD^1
-          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] &&
-            git fetch --quiet --no-tags --depth=1 origin "$BEFORE"; then
-            base=$BEFORE
-          else
-            git fetch --quiet --no-tags --depth=1 origin main
-            base=FETCH_HEAD
+          total=0
+          for _ in $CHECKS; do total=$((total + 1)); done
+          if [ "$total" -eq 0 ]; then
+            echo "::error title=Launchway checks::CHECKS names no check."
+            exit 1
           fi
-          if git diff --quiet "$base" HEAD -- .devcontainer package-lock.json .github/workflows/ci.yml; then
-            echo "devcontainer=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "devcontainer=true" >> "$GITHUB_OUTPUT"
-          fi
-
-  # The development container's image (scripts/devc.sh), built and thrown
-  # away: a Dockerfile, Node or Playwright update that breaks it fails here,
-  # not at the next `scripts/devc.sh up`. Not a required check: nothing ships
-  # it, and it runs for some changes only.
-  devcontainer:
-    needs: changes
-    if: needs.changes.outputs.devcontainer == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: .devcontainer/Dockerfile
-          # no image to push or load: the build is the test
-          outputs: type=cacheonly
-          # a scope of its own, apart from the image job's; a cache that
-          # cannot be written fails nothing
-          cache-from: type=gha,scope=devcontainer
-          cache-to: type=gha,scope=devcontainer,mode=max,ignore-error=true
+          start=$(date +%s)
+          deadline=$((start + WAIT_MINUTES * 60))
+          refused=0
+          errors=$(mktemp)
+          echo "Waiting for $CHECKS on $TAG ($SHA), as reported by $CHECKS_APP: every $POLL_SECONDS s, at most $WAIT_MINUTES min."
+          while :; do
+            elapsed="$((($(date +%s) - start) / 60)) min"
+            if ! pages=$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$SHA/statuses?per_page=100" 2>"$errors"); then
+              refused=$((refused + 1))
+              echo "[$elapsed] GitHub did not list the statuses ($refused in a row): $(tr '\n' ' ' <"$errors")"
+              if [ "$refused" -ge 5 ]; then
+                echo "::error title=Launchway checks::GitHub did not list the statuses of $SHA five times in a row."
+                exit 1
+              fi
+            else
+              refused=0
+              # One line per check: its name, its newest state ("missing"
+              # before the first status), description and link, apart by
+              # \x1f. Control characters and line breaks are taken out of
+              # what the statuses say, so no status can add a line of its own
+              # or a workflow command.
+              report=$(printf '%s' "$pages" | jq -rs --arg app "$CHECKS_APP" --arg checks "$CHECKS" '
+                (add // []) as $statuses
+                | ($checks | splits("\\s+") | select(. != "")) as $check
+                | ([$statuses[] | select(.context == $check and .creator.login == $app)] | max_by(.id)) as $newest
+                | [$check,
+                   (($newest.state // "missing") | gsub("[^a-z]"; "")),
+                   (($newest.description // "") | gsub("[[:cntrl:][:space:]]+"; " ")),
+                   (($newest.target_url // "") | gsub("[[:cntrl:][:space:]]+"; ""))]
+                | join("\u001f")')
+              summary=''
+              lines=0
+              passed=0
+              failed=''
+              while IFS=$'\x1f' read -r check state description url; do
+                lines=$((lines + 1))
+                case "$state" in
+                  success) passed=$((passed + 1)) ;;
+                  failure | error) failed="$failed$check: $state${description:+, $description}${url:+ ($url)}"$'\n' ;;
+                esac
+                case "$state" in
+                  missing) shown='no status yet' ;;
+                  *) shown="$state${description:+ ($description)}" ;;
+                esac
+                summary="$summary${summary:+, }$check: $shown"
+              done <<<"$report"
+              # A verdict only on one line per check, never on more or fewer
+              if [ "$lines" -ne "$total" ]; then
+                echo "::error title=Launchway checks::Read $lines lines for $total checks from the statuses of $SHA; no verdict."
+                exit 1
+              fi
+              echo "[$elapsed] $summary"
+              if [ -n "$failed" ]; then
+                printf '%s' "$failed" | while IFS= read -r line; do
+                  echo "::error title=Launchway checks::${line//%/%25}"
+                done
+                echo "$TAG stays a draft: the node's checks did not pass on $SHA."
+                echo "Fix it in a new release. When the cause was not the code (the node was down, a newer push superseded the run), re-run the check in Launchway (Trail, tab Checks), then this job: gh run rerun $GITHUB_RUN_ID --failed"
+                exit 1
+              fi
+              if [ "$passed" -eq "$total" ]; then
+                echo "All $total checks passed on $SHA."
+                break
+              fi
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error title=Launchway checks::The checks of $SHA did not all pass within $WAIT_MINUTES minutes, so $TAG stays a draft. Is the node up? Run them in Launchway (Trail, tab Checks), then re-run this job: gh run rerun $GITHUB_RUN_ID --failed"
+              exit 1
+            fi
+            sleep "$POLL_SECONDS"
+          done
 
   # A release is created as a draft (scripts/release.sh, or release-please
   # when its pull request is merged on GitHub) and published here, once the
-  # images of its tag exist: Launchway deploys on the release's `published`
-  # event, so it never waits for an image that is still being built.
+  # images of its tag exist and the release gate has seen the Launchway
+  # node's checks pass on its commit: Launchway deploys on the release's
+  # `published` event, so it never waits for an image that is still being
+  # built, and never deploys a commit whose checks failed or never ran.
   release:
-    needs: image
+    needs: [image, release-gate]
     if: github.event_name != 'pull_request' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -312,7 +248,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           # The release script creates the draft right after pushing the tag,
-          # long before the tests above finish; wait a few minutes anyway.
+          # long before the image and the checks are done; wait a few minutes
+          # anyway.
           draft=''
           for _ in $(seq 1 30); do
             if draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then break; fi

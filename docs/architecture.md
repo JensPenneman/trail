@@ -30,7 +30,7 @@ trail/
 ├── docs/               this file, the public API guide (api.md), operations and user docs
 ├── scripts/            repo tooling (dev, build, hooks, db init)
 ├── tests/e2e/          Playwright end-to-end suite (whole stack)
-├── .devcontainer/      development container (scripts/devc.sh, §3)
+├── .devcontainer/      development container (scripts/devc.sh, §3), where the node's checks run (§15)
 ├── compose.yaml        development services (Postgres)
 └── Dockerfile          single production image (API + built SPA)
 ```
@@ -152,9 +152,9 @@ installs the lockfile's `playwright-core` with `npm ci` from a one-package
 lockfile, so the lockfile's sha512 covers the package; that verified package
 pins the Chromium build (`browsers.json`) and fetches it over HTTPS with a
 size check only (Playwright compares the byte count with `Content-Length`,
-and neither Playwright nor Chrome for Testing publishes checksums). CI builds
-the image whenever `.devcontainer/`, `package-lock.json` or `ci.yml` change
-(§15).
+and neither Playwright nor Chrome for Testing publishes checksums). The
+Launchway node builds this image for every check it runs (§15), so a change
+that breaks it fails the checks of its commit.
 
 ### Production (Launchway)
 
@@ -2083,8 +2083,8 @@ package.json or tag version, the 7-character commit that matches the
 
 ### 13.2 Images and releases
 
-GitHub Actions (`ci.yml`): on every push to a branch of this repository
-(after lint/typecheck/unit/integration/E2E pass) build and push
+GitHub Actions (`ci.yml`, job `image`): on every push to a branch of this
+repository, without waiting for the checks (§15), build and push
 `ghcr.io/jenspenneman/trail` tags `sha-<short>` and the branch name, plus
 `latest` on `main`; a `v*` tag adds `<version>` and `<major>.<minor>`, never
 `latest`. Pull request runs only build, so a fork never publishes; Dependabot
@@ -2092,14 +2092,15 @@ branches only build too (read-only token). BuildKit provenance (`mode=max`)
 and SBOM attestations, plus a signed GitHub build provenance attestation when
 the repository is public (GitHub offers those on private repositories only
 with Enterprise Cloud). Base-image patches arrive as Dependabot digest updates
-of the Dockerfile, auto-merged on green CI; the weekly scheduled run (Monday
-03:00 UTC) rebuilds and republishes `main`.
+of the Dockerfile, auto-merged once the required checks pass; the weekly
+scheduled run (Monday 03:00 UTC) rebuilds and republishes `main`.
 
 Releases: release-please (`release-please-config.json`, `release-type: node`,
 `"draft": true`) keeps a release pull request open; `scripts/release.sh`
 cherry-picks its commit onto `main` signed, pushes a signed tag `vX.Y.Z` and
-creates the GitHub release as a draft. CI on the tag publishes the images and
-then the draft (job `release`); a release pull request merged on GitHub
+creates the GitHub release as a draft. CI on the tag publishes the images and,
+once the node's checks of the tag's commit have passed, the draft (jobs
+`release-gate` and `release`, §15); a release pull request merged on GitHub
 instead gets its tag and CI run from the Release Please workflow.
 
 ### 13.3 Deployment
@@ -2648,26 +2649,90 @@ map chunk is lazy-loaded. PWA manifest + icons (home-screen app on iPhone).
 
 ## 15. CI/CD
 
-`.github/workflows/ci.yml` (push to `main`, `v*` tags, pull requests, Monday
-03:00 UTC schedule, manual): `quality` (biome, typecheck, knip, unit tests
-with coverage via `npm run test --workspaces --if-present -- --coverage`,
-because the root `test` script would swallow the flag) → `integration` (API
-tests against a `postgres:18-alpine` service, `TEST_DATABASE_URL` →
-`trail_test`) → `e2e` (Playwright container whose tag comes from the locked
-`@playwright/test` version, Chromium virtual authenticator, Postgres service
-reachable as `postgres`, `E2E_DATABASE_URL` → `trail_e2e`, `npm run build` then `npm run test:e2e`;
-the report is uploaded on failure) → `image` (buildx multi-arch with the GHA
-cache; pushes to GHCR only from `main` — pushes, schedule, manual runs — and
-`v*` tags; builds without pushing on PRs). Beside them, `changes` →
-`devcontainer` builds the development container's image (§3) with Buildx and
-a GHA cache scope of its own, neither pushed nor loaded, for pushes and pull
-requests that change `.devcontainer/`, `package-lock.json` or `ci.yml`
-(`changes` diffs a pull request's merge commit with its base, a push with the
-branch's previous commit, a new branch with `main`); it is not a required
-check. Actions pinned by commit SHA; per-job least-privilege permissions
-(`packages`, `id-token`, `attestations` write only in `image`). Dependabot
-(weekly, Monday 07:00 Europe/Brussels) for npm, GitHub Actions, the
-Dockerfile digests (the image's and the development container's) and the
+Two places: the Launchway node runs the checks, and GitHub keeps what has to
+stay there — building and publishing the image, publishing releases,
+release-please, Dependabot and CodeQL (default setup, no workflow file).
+
+**Checks on the Launchway node** (Launchway's
+[ADR 0020](https://github.com/JensPenneman/launchway/blob/main/docs/adr/0020-checks-run-app-test-commands-on-the-node.md);
+configured in Launchway under Trail → Settings → Checks, not in this
+repository). For every push to `main` and every pull request into `main`
+whose head is a branch of this repository, Dependabot's included, the node
+runs each check in the development container (`.devcontainer/compose.yaml`:
+`dev` and its `db`, §3) as a Compose project of its own, from a fresh copy of
+the commit and empty module volumes, so every command starts with
+`npm ci --no-audit --no-fund`:
+
+| Commit status | Command after `npm ci` | Timeout |
+|---|---|---|
+| `launchway/quality` | `npm run check` (Biome, typecheck, knip, unit tests) | 25 min |
+| `launchway/integration` | `npm run test:integration` (`TEST_DATABASE_URL` → `trail_test`) | 20 min |
+| `launchway/e2e` | `npm run build && npm run test:e2e` (`E2E_DATABASE_URL` → `trail_e2e`, one worker) | 60 min |
+
+Pull requests from forks get none: their code would run on the node. Every
+run builds the development container's image (cached on the node), so a
+change that breaks it fails all three. The containers get `CI=true`
+(Playwright's `forbidOnly` and one retry) and Launchway's `LAUNCHWAY_*`
+variables but none of the app's; each service is capped in memory, CPUs and
+processes, and Vitest sizes its workers by the CPU quota (§16). The node runs
+one check at a time, oldest first; a newer commit of a branch supersedes the
+queued checks of older ones, and a push and a pull request of the same commit
+run once. The GitHub App `launchway-for-jenspenneman-com` reports every run as
+the commit status `launchway/<name>`: `pending` while it waits or runs,
+`success` for exit code 0, `failure` for another exit code or the timeout,
+`error` when there is no verdict on the code (the image build, the Compose
+policy, the node offline, superseded, a full queue), with the time or the
+reason as description and the run in Launchway as target URL. Its log stays
+in Launchway for 30 days; nothing else outlives the run (no Playwright report
+or traces).
+
+**GitHub Actions** (`.github/workflows/ci.yml`: pushes to every branch, `v*`
+tags, pull requests, Monday 03:00 UTC, manual runs):
+
+- `image`: Buildx for `linux/amd64` and `linux/arm64` (the build stages on
+  the runner's platform, no QEMU) with the GHA cache, BuildKit provenance
+  (`mode=max`) and SBOM, and a signed GitHub attestation while the repository
+  is public (§13.2). It pushes for pushes, tags, the schedule and manual runs
+  and only builds for pull requests and Dependabot's branches. It does not
+  wait for the checks: a preview has its image within minutes, also when its
+  checks fail.
+- `release-gate` (`v*` tags, beside `image`): lists the statuses of the
+  tag's commit every 60 s for up to 300 minutes, since the release commit's
+  checks queue behind those of other commits (the release pull request's,
+  which release-please updates on every push to `main`, among them), and
+  succeeds once the newest `launchway/quality`, `launchway/integration` and
+  `launchway/e2e` statuses of the Launchway app (creator
+  `launchway-for-jenspenneman-com[bot]`; the same names from anyone else count
+  for nothing) are all `success`. A `failure` or an `error` stops it at once,
+  since the node never runs a check again by itself, and so does the 300th
+  minute. It reads the statuses' descriptions and links without control
+  characters or line breaks and gives a verdict only on exactly one line per
+  check; its token may only read statuses.
+- `release` (`v*` tags, after `image` and `release-gate`): publishes the
+  draft, or creates and publishes the release of a tag pushed by hand. When
+  the gate fails, the release stays a draft, which Launchway does not deploy,
+  though the version's images exist already. The tag's commit is the head of
+  `main` (`scripts/release.sh` pushes both at once), so its checks are those
+  of that push.
+
+GitHub Actions cancels its superseded runs of pull requests and other
+branches; its runs on `main` and tags always finish. Actions pinned by commit
+SHA; per-job least-privilege permissions (`packages`, `id-token`,
+`attestations` write only in `image`; `statuses: read` only in
+`release-gate`; `contents: write` only in `release`, which runs for a
+minute).
+The weekly run only rebuilds the image: no tests run on a schedule.
+
+**Branch rules of `main`.** The ruleset "main protection" requires a pull
+request (merge commits only) and, up to date with `main`, the status checks
+`launchway/quality`, `launchway/integration` and `launchway/e2e` with the
+Launchway GitHub App as their source, and `image` from GitHub Actions, besides
+CodeQL's results; "main signatures" requires signed commits. A pull request
+from a fork never gets the node's statuses: a maintainer reviews it, pushes
+its branch to this repository and merges the pull request from there.
+
+**Dependabot** (weekly, Monday 07:00 Europe/Brussels) for npm, GitHub Actions,
+the Dockerfile digests (the image's and the development container's) and the
 compose files, `.devcontainer/` included (only major tags change there;
 majors never auto-merge). The npm groups: `security`
 (`applies-to: security-updates`, every package; GitHub Actions has one too),
@@ -2675,10 +2740,12 @@ majors never auto-merge). The npm groups: `security`
 `react`, …) and the catch-all `minor-and-patch` with the pattern `*`:
 Dependabot gives a dependency to the group whose pattern names it most
 precisely, and a group without patterns would take every dependency.
-`dependabot-auto-merge.yml` enables auto-merge, which lands on green CI once
-branch protection requires the checks, for minor, patch and digest updates,
-the `security` groups' included, except the `biome` and `typescript` groups,
-which are merged by hand; majors wait for a person, security ones too.
+`dependabot-auto-merge.yml` only enables auto-merge (`gh pr merge --auto`):
+GitHub then waits for the required checks of the branch rules, the node's
+commit statuses included, before it merges. It does so for minor, patch and
+digest updates, the `security` groups' included, except the `biome` and
+`typescript` groups, which are merged by hand; majors wait for a person,
+security ones too.
 
 ## 16. Testing
 
