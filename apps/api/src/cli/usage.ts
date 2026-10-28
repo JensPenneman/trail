@@ -16,10 +16,14 @@ Commands:
   prune                                    Delete expired sessions, links, invites and old logs now
   worker                                   Run the processing worker in the foreground until SIGTERM
                                            (the worker service's command; logs on stdout)
+  map import <dir>                         Import a region's map data from a build's directory
+                                           (manifest.json, ways.opl.gz, pois.geojsonseq.gz,
+                                           region.poly) and swap it in for the region's old build
   map refresh [<region>]                   Pull the newest map data of the regions (MAP_DATA_REGIONS)
                                            or of one, when the registry has another build, and
                                            import it (what the worker does every MAP_DATA_REFRESH_DAYS)
-  map status                               List the map regions' builds on the volume, with their digests
+  map status                               List the map regions' builds on the volume, with their
+                                           digests, those in the map tables, and the Overpass cache
   help                                     Show this help
 
 Configuration comes from the same environment as the server (DATABASE_URL, PUBLIC_URL, …).

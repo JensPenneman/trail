@@ -1,6 +1,7 @@
 import { setImmediate as yieldToEvents } from "node:timers/promises";
 import type { Logger } from "pino";
 import type { Database } from "../db/database";
+import { sweepMapBuilds } from "../mapdata/sweepMapBuilds";
 import { enqueueBackfill, enqueueCatchUp } from "./backfill";
 import type { ProcessingConfig } from "./processingConfig";
 import { queuePriority, rearmWindows, retryWindows, takeNextWindow } from "./processingQueue";
@@ -70,7 +71,7 @@ export class ProcessingWorker {
     return this.#running !== null;
   }
 
-  /** Starts the timers and the boot-time backfill (the server; tests use `flush`). */
+  /** Starts the timers, the boot-time backfill and the map builds' sweep (the server; tests use `flush`). */
   start(): void {
     if (this.#started || this.#stopped) return;
     this.#started = true;
@@ -79,6 +80,7 @@ export class ProcessingWorker {
     this.#mapPass = setInterval(() => void this.#mapWaitPass(), mapPassMs);
     this.#mapPass.unref();
     void this.#backfill().then(() => this.notify(0));
+    void this.#sweepMapBuilds();
   }
 
   /** New work was queued: run soon. */
@@ -226,6 +228,15 @@ export class ProcessingWorker {
       this.#startFetching();
     } catch (error) {
       this.#logger.error({ err: error }, "processing map pass failed");
+    }
+  }
+
+  /** The tables of map builds a crash left behind (mapdata/sweepMapBuilds.ts). */
+  async #sweepMapBuilds(): Promise<void> {
+    try {
+      await sweepMapBuilds(this.#db, this.#logger);
+    } catch (error) {
+      this.#logger.error({ err: error }, "map build tables could not be swept");
     }
   }
 
