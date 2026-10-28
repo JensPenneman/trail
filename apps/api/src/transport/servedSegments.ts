@@ -1,4 +1,5 @@
 import { type SQL, sql } from "drizzle-orm";
+import { continuesSql } from "../processing/stayParts";
 
 /*
  * A stay is one stop (docs/architecture.md §17.6). Bounded passes work a long
@@ -6,27 +7,35 @@ import { type SQL, sql } from "drizzle-orm";
  * hours, and grows at most two days into a segment — so its parts are
  * consecutive stops of one device that meet. Read as they are stored, a
  * week at home would be five stops at one place and Insights would count
- * them all; read through this they are one again. Nothing is changed in the
- * stored segments: processing stays as it is, every pass repeatable.
+ * them all; read through this they are one again (the rule: `stayParts`).
+ * Nothing is changed in the stored segments: processing stays as it is, every
+ * pass repeatable.
  */
 
-/** A recording gap longer than this … */
-const travelGapS = 1800;
-/**
- * … whose ends lie farther apart than this is travel (§17.3): the stops on
- * either side are two. Stops that meet are one stay unless the phone was this
- * far away when the next began (§17.3's pause: no stay holds such a jump).
- */
-const travelGapM = 300;
-/** Stops a short hole apart are one place when their middles lie within their spread, or this. */
-const samePlaceM = 100;
 /** The parts of a stay are looked for this far beyond the range asked for. */
 const stayReachMs = 14 * 86_400_000;
 
-/** Metres between two positions given as SQL expressions (equirectangular: close ones only). */
-const metres = (lat1: string, lon1: string, lat2: string, lon2: string): SQL =>
-  sql.raw(`(111195 * sqrt(power(${lat2} - ${lat1}, 2)
-    + power(cos(radians(${lat1})) * (${lon2} - ${lon1}), 2)))`);
+/** A part and the segment before it, as `parts` names their columns. */
+const continues = continuesSql(
+  {
+    kind: "before_kind",
+    endedAt: "before_end",
+    endLat: "before_end_lat",
+    endLon: "before_end_lon",
+    centroidLat: "before_lat",
+    centroidLon: "before_lon",
+    spreadM: "before_spread",
+  },
+  {
+    kind: "kind",
+    startedAt: "started_at",
+    startLat: "start_lat",
+    startLon: "start_lon",
+    centroidLat: "centroid_lat",
+    centroidLon: "centroid_lon",
+    spreadM: "spread_m",
+  },
+);
 
 /**
  * The segments of `deviceIds` around `[from, to)` as they are served, a
@@ -62,15 +71,7 @@ export function servedSegments(deviceIds: readonly string[], range: { from: Date
         AND p.started_at < ${to}::timestamptz AND p.ended_at > ${from}::timestamptz
       WINDOW w AS (PARTITION BY p.device_id ORDER BY p.started_at)
     ), marked AS (
-      SELECT *,
-        coalesce(kind = 'stop' AND before_kind = 'stop' AND (
-          (started_at = before_end
-            AND ${metres("before_end_lat", "before_end_lon", "start_lat", "start_lon")} <= ${travelGapM})
-          OR (NOT (started_at - before_end > ${travelGapS}::integer * interval '1 second'
-              AND ${metres("before_end_lat", "before_end_lon", "start_lat", "start_lon")} > ${travelGapM})
-            AND ${metres("before_lat", "before_lon", "centroid_lat", "centroid_lon")}
-              <= greatest(coalesce(before_spread, 0), coalesce(spread_m, 0), ${samePlaceM}))
-        ), false) AS continues
+      SELECT *, ${continues} AS continues
       FROM parts
     ), stays AS (
       SELECT *,

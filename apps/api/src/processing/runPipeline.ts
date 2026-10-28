@@ -22,11 +22,13 @@ import type {
   OverrideSpan,
   RawPoint,
   Span,
+  StayBefore,
   VisitSpan,
 } from "./pipelineTypes";
 import { combinePois, PoiIndex } from "./poiIndex";
 import type { ProcessingConfig } from "./processingConfig";
 import { scorePart, splitMove } from "./splitMoves";
+import { continuesStop, type StopShape } from "./stayParts";
 import { isAirborne, moveTiles, type TileKey } from "./tileCover";
 import { WayGraph } from "./wayGraph";
 import { WayIndex } from "./wayIndex";
@@ -53,6 +55,8 @@ export interface InferInputs {
   mapping: boolean;
   /** Tiles whose data is cached. A move is mapped only when all its tiles are. */
   available: ReadonlySet<TileKey>;
+  /** The stored stop the window begins in or right after, for the stay of its first stop. */
+  stayBefore?: StayBefore | null | undefined;
 }
 
 /** What finishing a window needs in one go, its map data included (tests, the benchmark). */
@@ -65,6 +69,8 @@ export interface WindowInputs {
   available: ReadonlySet<TileKey>;
   /** Mapped points stored earlier, per raw point (`--from-level inferred` reuses them). */
   storedMapping?: readonly (MappedPoint | null)[] | undefined;
+  /** The stored stop the window begins in or right after, for the stay of its first stop. */
+  stayBefore?: StayBefore | null | undefined;
 }
 
 export interface WindowResult {
@@ -267,18 +273,33 @@ export function inferWindow(
   const offsets: number[] = [];
   const drafts: Draft[] = [];
   let moveNumber = 0;
+  // The stop before, for the stay each stop is part of: one that continues it counts from its start.
+  let stay: { shape: StopShape; startT: number } | null =
+    inputs.stayBefore === null || inputs.stayBefore === undefined
+      ? null
+      : {
+          shape: inputs.stayBefore,
+          startT: inputs.stayBefore.stayStartT ?? Number.NEGATIVE_INFINITY,
+        };
   for (const span of spans) {
     if (span.kind === "stop") {
+      const ownLast = span.ownLast ?? span.last;
+      const shape = stopShape(kept, span, ownLast);
+      const stayStartT =
+        stay !== null && continuesStop(stay.shape, shape) ? stay.startT : span.startT;
+      stay = { shape, startT: stayStartT };
       drafts.push({
         kind: "stop",
         first: span.first,
         last: span.last,
-        ownLast: span.ownLast ?? span.last,
+        ownLast,
         startT: span.startT,
         endT: span.endT,
+        stayStartT,
       });
       continue;
     }
+    stay = null;
     const move = plan.moves[moveNumber];
     if (move === undefined) throw new Error(`No move ${moveNumber} in this window`);
     const points = kept.slice(span.first, span.last + 1);
@@ -365,6 +386,7 @@ export function finishWindow(
       overrides: inputs.overrides,
       mapping: map !== null,
       available: inputs.available,
+      stayBefore: inputs.stayBefore,
     },
     config,
   );
@@ -372,6 +394,18 @@ export function finishWindow(
 
 function position(point: KeptPoint | undefined): { lat: number; lon: number } {
   return { lat: point?.lat ?? 0, lon: point?.lon ?? 0 };
+}
+
+/** A stop of the window as the continuation of a stay reads it: as it will be stored (`toSegment`). */
+function stopShape(kept: readonly KeptPoint[], span: Span, ownLast: number): StopShape {
+  return {
+    startT: span.startT,
+    endT: span.endT,
+    start: position(kept[span.first]),
+    end: position(kept[span.last]),
+    centroid: centroidOf(kept, span.first, span.last),
+    spreadM: Math.round(spreadOf(kept, span.first, ownLast)),
+  };
 }
 
 function toSegment(

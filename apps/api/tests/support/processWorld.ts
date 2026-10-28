@@ -3,6 +3,7 @@ import type {
   ManualTrip,
   OverrideSpan,
   RawPoint,
+  StayBefore,
   VisitSpan,
 } from "../../src/processing/pipelineTypes";
 import {
@@ -30,6 +31,8 @@ export function processWorld(
     visits?: readonly VisitSpan[];
     trips?: readonly ManualTrip[];
     overrides?: readonly OverrideSpan[];
+    /** The stored stop the window begins in or right after (`loadStayBefore`). */
+    stayBefore?: StayBefore | null;
     /** False: no map data at all (mapping switched off). */
     withMap?: boolean;
     config?: ProcessingConfig;
@@ -43,6 +46,7 @@ export function processWorld(
     {
       trips: options.trips ?? [],
       overrides: options.overrides ?? [],
+      stayBefore: options.stayBefore ?? null,
       map: withMap ? worldMap() : null,
       available: withMap ? plan.tiles : new Set(),
     },
