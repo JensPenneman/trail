@@ -73,6 +73,19 @@ describe("Settings › Devices › a device", () => {
     expect(screen.queryByRole("table", { name: "Stored points of this device" })).toBeNull();
   });
 
+  it("leaves Settings for its tracks in History, keeping no way back into Settings", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderSettings(devicePage);
+    await person.click(await screen.findByRole("link", { name: "History" }));
+    expect(await screen.findByText("Elsewhere")).toBeInTheDocument();
+    expect(router.state.location).toMatchObject({
+      pathname: "/",
+      search: `?view=history&devices=${ids.phone}`,
+      state: null,
+    });
+  });
+
   it("goes a level deeper to its uploads and comes back, with focus on the row", async () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();

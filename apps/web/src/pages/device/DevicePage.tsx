@@ -89,7 +89,7 @@ export function DevicePage() {
           value={format.count(current.counts.total)}
         />
         <SettingsRow
-          kind="link"
+          kind="away"
           to={`/?view=history&devices=${encodeURIComponent(current.id)}`}
           icon="history"
           tone="indigo"

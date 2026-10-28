@@ -35,6 +35,15 @@ interface ExternalRow extends RowLook {
   newTab?: boolean;
 }
 
+interface AwayRow extends RowLook {
+  kind: "away";
+  /**
+   * A page of the app outside Settings (People's History): it leaves Settings,
+   * so it has the arrow of a row that leaves, and keeps no way back here.
+   */
+  to: string;
+}
+
 interface ActionRow extends RowLook {
   kind: "action";
   onClick: () => void;
@@ -69,7 +78,14 @@ interface PlainRow extends RowLook {
   muted?: boolean;
 }
 
-export type SettingsRowProps = LinkRow | ExternalRow | ActionRow | SwitchRow | SelectRow | PlainRow;
+export type SettingsRowProps =
+  | LinkRow
+  | ExternalRow
+  | AwayRow
+  | ActionRow
+  | SwitchRow
+  | SelectRow
+  | PlainRow;
 
 /** A row that opens a page of Settings: named by its label, described by the rest. */
 function LinkRowBody({
@@ -102,8 +118,8 @@ function LinkRowBody({
 
 /**
  * One row of a Settings group: an optional icon tile, the label (and a second
- * line), and what the row does — open a page (chevron), leave the app
- * (arrow), act at once, switch, choose, or nothing but show a value.
+ * line), and what the row does — open a page (chevron), leave Settings or the
+ * app (arrow), act at once, switch, choose, or nothing but show a value.
  */
 export function SettingsRow(props: SettingsRowProps) {
   const id = useId();
@@ -192,6 +208,22 @@ export function SettingsRow(props: SettingsRowProps) {
             {shownValue}
             <Icon name="external" className="settings-row__chevron" />
           </a>
+        </li>
+      );
+    case "away":
+      return (
+        <li className="settings-row">
+          <Link
+            to={props.to}
+            className="settings-row__body settings-row__body--interactive"
+            aria-labelledby={labelId}
+            aria-describedby={describedBy}
+          >
+            {tile}
+            {text}
+            {shownValue}
+            <Icon name="external" className="settings-row__chevron" />
+          </Link>
         </li>
       );
     case "action":
