@@ -371,6 +371,12 @@ release, run `trail recompute` ([Heatmap](#heatmap)): an older release keeps
 fewer sizes of the heatmap. The server also rebuilds the sizes it finds out of
 step at every start.
 
+A rollback to 0.5.x, from a release with the map regions, needs the database
+rolled back too: the release rebuilds the map tables (a source per row, the
+geometry in bytes), which 0.5.x can neither write nor read, so map matching
+stops until the dump made before the update is restored; uploads, the
+dashboard and the rest of processing keep working meanwhile.
+
 ## Your data
 
 Every point, visit, trip and event is kept forever; Trail itself only ever
