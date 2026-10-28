@@ -67,7 +67,7 @@ export function applyServerEvent(
       // Processing finished a window, or a mode was corrected: its levels, stops and moves, the
       // current mode, the statistics of Insights and the digests' stamps changed — of that
       // device, in that window only.
-      staleProcessed(queryClient, event);
+      staleProcessed(queryClient, event, "event");
       return;
     case "session-ended":
       // The route guard takes the person to the sign-in page, with a way back here.

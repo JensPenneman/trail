@@ -3214,7 +3214,8 @@ of those days of that device go stale (refetched where shown,
 Devices page no longer polls the day's sums. `segments` marks stale only the
 levels, timelines, Insights and calendar digests that overlap the window of
 that device, and its mode (`staleProcessed`); a corrected mode does the same
-for its move's time at once, without waiting for the event. The digests go
+for its move's time at once, without waiting for the event — once: the event
+for it, before or after its answer, is the same change. The digests go
 with them because processing moves their processed stamps without a `days`
 event: one left fresh would still vouch for the days' answers as they were,
 and asking a past day again would ask the server nothing.

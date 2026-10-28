@@ -127,6 +127,13 @@ describe("the Transport level on History", () => {
       [`PUT /api/v1/segments/${ids.train}/mode`]: () => {
         train = { ...train, modeUser: "train", needsReview: false };
         processed = "processed-2";
+        // The server tells every open page, this one too, before it answers.
+        applyServerEvent(queryClient, liveStore, {
+          type: "segments",
+          deviceId: ids.phone,
+          from: train.startedAt,
+          to: train.endedAt,
+        });
         return { status: 200, body: { segment: train } };
       },
     });
@@ -134,7 +141,11 @@ describe("the Transport level on History", () => {
     // The zone the stamps' days are in, as the session probe leaves it.
     queryClient.setQueryData(queryKeys.session, user);
     const person = userEvent.setup();
-    renderPage(<PeoplePage />, { url: `/?view=history&date=${date}`, user, queryClient });
+    const { liveStore } = renderPage(<PeoplePage />, {
+      url: `/?view=history&date=${date}`,
+      user,
+      queryClient,
+    });
     await person.click(await screen.findByRole("button", { name: /Details of the train/ }));
     const dialog = await screen.findByRole("dialog", { name: "Train" });
     await person.click(within(dialog).getByRole("button", { name: "Yes, train" }));
@@ -143,11 +154,12 @@ describe("the Transport level on History", () => {
     expect(within(dialog).queryByText("Was this a train ride?")).not.toBeInTheDocument();
     const list = screen.getByRole("region", { name: "Timeline" });
     expect(within(list).queryByText("unsure")).not.toBeInTheDocument();
-    // The day was asked for again after the correction, the digest too.
+    // The day was asked for again after the correction, the digest too — once, though both the
+    // answer and the event told of it.
     const put = api.calls.findIndex((call) => call.method === "PUT");
     const after = api.calls.slice(put + 1).map((call) => call.path);
-    expect(after).toContain("/api/v1/segments");
-    expect(after).toContain("/api/stats/days");
+    expect(after.filter((path) => path === "/api/v1/segments")).toHaveLength(1);
+    expect(after.filter((path) => path === "/api/stats/days")).toHaveLength(1);
   });
 });
 

@@ -9,7 +9,7 @@ import { staleProcessed } from "../live/staleProcessed";
  * the move's time shows is asked for again as a `segments` event would have
  * it (staleProcessed: the levels, the timeline, Insights, the calendar's
  * digests and the current mode) — without waiting for the event, which does
- * the same for other open dashboards.
+ * the same for other open dashboards and, on this page, nothing more.
  */
 export function useSegmentModeChange(segmentId: string) {
   const queryClient = useQueryClient();
@@ -24,11 +24,11 @@ export function useSegmentModeChange(segmentId: string) {
             body: { mode },
           }),
     onSuccess: ({ segment }) => {
-      staleProcessed(queryClient, {
-        deviceId: segment.deviceId,
-        from: segment.startedAt,
-        to: segment.endedAt,
-      });
+      staleProcessed(
+        queryClient,
+        { deviceId: segment.deviceId, from: segment.startedAt, to: segment.endedAt },
+        "correction",
+      );
     },
   });
 }

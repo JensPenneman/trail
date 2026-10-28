@@ -1,11 +1,13 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import type { DeviceListResponse, DeviceResponse } from "@trail/contracts/device";
 import type { PeopleResponse } from "@trail/contracts/person";
+import type { DaysResponse } from "@trail/contracts/stats";
 import type { TracksResponse } from "@trail/contracts/track";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../src/api/queryKeys";
 import { applyServerEvent } from "../src/live/applyServerEvent";
 import { createLiveStore } from "../src/live/createLiveStore";
+import { staleProcessed } from "../src/live/staleProcessed";
 import { localDayRange } from "../src/time/localDayRange";
 import { ana, bob, car, device, ids, sharedDevice, tracks } from "./support/fixtures";
 
@@ -413,5 +415,77 @@ describe("applyServerEvent for the copy and the digest", () => {
     expect(invalidated(lastMonth)).toBe(false);
     expect(invalidated(september)).toBe(false);
     expect(invalidated(carDigest)).toBe(false);
+  });
+
+  it("keeps a digest a processing window made stale so when a days event updates it in place", () => {
+    const { queryClient, store } = withDigest();
+    applyServerEvent(queryClient, store, {
+      type: "segments",
+      deviceId: ids.phone,
+      from: "2026-10-25T06:00:00.000Z",
+      to: "2026-10-25T09:00:00.000Z",
+    });
+    // An upload today: its row is new, the 25th's processed stamp is still the old one.
+    applyServerEvent(queryClient, store, {
+      type: "days",
+      deviceId: ids.phone,
+      dates: ["2026-10-24"],
+      days: [row(ids.phone, "2026-10-24", 120, "a2")],
+    });
+    const state = queryClient.getQueryState<DaysResponse>(monthKey);
+    expect(state?.data?.days.find((day) => day.date === "2026-10-24")?.points).toBe(120);
+    expect(state?.isInvalidated).toBe(true);
+  });
+});
+
+describe("a change told twice", () => {
+  const change = {
+    deviceId: ids.phone,
+    from: "2026-10-26T06:00:00.000Z",
+    to: "2026-10-26T06:40:00.000Z",
+  };
+  /** A timeline of the day on screen, and how often it was asked for. */
+  async function onScreen() {
+    const queryClient = new QueryClient();
+    const fetches = vi.fn(async () => ({ items: [], pending: false }));
+    const observer = new QueryObserver(queryClient, {
+      queryKey: queryKeys.timeline({
+        ...localDayRange("2026-10-26", "2026-10-26", "Europe/Brussels"),
+        deviceIds: null,
+      }),
+      queryFn: fetches,
+      staleTime: Number.POSITIVE_INFINITY,
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+    const asked = async () => {
+      await vi.waitFor(() => expect(queryClient.isFetching()).toBe(0));
+      return fetches.mock.calls.length - 1;
+    };
+    await asked();
+    return { queryClient, asked, unsubscribe };
+  }
+
+  it("asks once for a correction made here, whether its answer or its event comes first", async () => {
+    for (const order of [
+      ["correction", "event"],
+      ["event", "correction"],
+    ] as const) {
+      const { queryClient, asked, unsubscribe } = await onScreen();
+      for (const by of order) staleProcessed(queryClient, change, by);
+      expect(await asked()).toBe(1);
+      // The same move corrected again: a change of its own, asked for again, once.
+      for (const by of order) staleProcessed(queryClient, change, by);
+      expect(await asked()).toBe(2);
+      unsubscribe();
+    }
+  });
+
+  it("asks again for every event of a window that no correction here told of", async () => {
+    const { queryClient, asked, unsubscribe } = await onScreen();
+    staleProcessed(queryClient, change, "event");
+    expect(await asked()).toBe(1);
+    staleProcessed(queryClient, change, "event");
+    expect(await asked()).toBe(2);
+    unsubscribe();
   });
 });
