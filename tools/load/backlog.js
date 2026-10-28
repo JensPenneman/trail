@@ -17,14 +17,16 @@ import { backlogThresholds, errorBudget } from "./lib/targets.js";
 const backlog = config.backlog || {};
 const seconds = Math.round((backlog.hours || 8) * 3600);
 const drain = new Trend("backlog_drain_s");
+/** At most this many phones flush at once (a thousand would need gigabytes of k6); the rest follow. */
+const flushers = Math.min(phones.length, 200);
 
 export const options = {
   scenarios: {
     backlog: {
       executor: "per-vu-iterations",
       exec: "flush",
-      vus: phones.length,
-      iterations: 1,
+      vus: flushers,
+      iterations: Math.ceil(phones.length / flushers),
       maxDuration: "30m",
     },
   },
@@ -55,11 +57,11 @@ export function setup() {
 
 /** One phone's queue, sent as its app sends it. */
 export function flush(data) {
-  const phone = phones[exec.vu.idInTest - 1];
+  const phone = phones[exec.scenario.iterationInTest];
   if (phone === undefined) return;
   const plan = planBacklog(phone, routeList(), shape, seconds);
-  // The backlog ends before the day's first point: its seconds count back from then.
-  const epochS = Math.floor(data.epochMs / 1000) - Math.round(backlog.endsAgoS || 0);
+  // The backlog ends a minute before the day's first point (run.mjs): its seconds count back from then.
+  const epochS = Math.floor((backlog.endsAtMs || data.epochMs) / 1000);
   const started = Date.now();
   const deadline = started + 25 * 60_000;
   const upload = [plan.index, 0, -seconds, 0, 0];

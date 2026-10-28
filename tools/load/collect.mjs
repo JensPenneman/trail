@@ -9,9 +9,11 @@
  *
  *   node tools/load/collect.mjs --env-file <run>/compose.env --out <run>   until Ctrl-C
  */
+import { spawn } from "node:child_process";
 import { createWriteStream, writeFileSync } from "node:fs";
 import { loadavg } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -220,6 +222,38 @@ export function readAppLog(log, sinceMs) {
   return { loadLines, windows, listeningAt, errors, warnings };
 }
 
+/** The lines of the app's log the collector reads: the rest is not kept, not even in memory. */
+const keptLine = /"msg":"(?:load|processing window done|Trail API listening)"|"level":(?:40|50|60)/;
+
+/**
+ * Follows the app's log from its start while the run lasts, keeping only the
+ * lines readAppLog reads: Docker keeps the last 50 MB of a container's log,
+ * which a long run outgrows (every request is a line).
+ * @param {LoadStack} stack
+ */
+function followAppLog(stack) {
+  /** @type {string[]} */
+  const kept = [];
+  const child = spawn(
+    "docker",
+    stack.composeArgs(["logs", "--follow", "--no-color", "--no-log-prefix", "app"]),
+    { env: stack.env, stdio: ["ignore", "pipe", "ignore"] },
+  );
+  createInterface({ input: child.stdout }).on("line", (line) => {
+    if (keptLine.test(line)) kept.push(line);
+  });
+  const closed = new Promise((resolve) => child.once("close", resolve));
+  return {
+    async stop() {
+      // A last moment for what the app wrote just before.
+      await sleep(1000);
+      child.kill("SIGTERM");
+      await Promise.race([closed, sleep(5000)]);
+      return kept.join("\n");
+    },
+  };
+}
+
 /**
  * Samples until stopped; `stop` takes the last sample, the statements, the sizes
  * and the log, and writes collector.json.
@@ -227,6 +261,7 @@ export function readAppLog(log, sinceMs) {
  */
 export function startCollector({ stack, out, intervalS = 10, sinceMs = Date.now() }) {
   const csv = createWriteStream(join(out, "collector.csv"));
+  const appLog = followAppLog(stack);
   let header = false;
   let stopped = false;
   /** @type {PgSample | null} */
@@ -295,17 +330,17 @@ export function startCollector({ stack, out, intervalS = 10, sinceMs = Date.now(
       await loop;
       await sample().catch(() => undefined);
       csv.end();
-      const [top, tableSizes, logs] = await Promise.all([
+      const [top, tableSizes, log] = await Promise.all([
         stack.json(statements).catch(() => []),
         stack.json(sizes).catch(() => ({})),
-        stack.compose(["logs", "--no-color", "--no-log-prefix", "app"], { allowFailure: true }),
+        appLog.stop(),
       ]);
       const result = {
         first,
         last: previous,
         statements: top,
         sizes: tableSizes,
-        app: readAppLog(logs.stdout, sinceMs),
+        app: readAppLog(log, sinceMs),
       };
       writeFileSync(join(out, "collector.json"), JSON.stringify(result, null, 2));
       return result;

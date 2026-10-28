@@ -62,6 +62,7 @@ function context(/** @type {{ batchOneP95?: number }} */ options = {}) {
         profiles: { "overland-high-resolution": 1, gpslogger: 1 },
       },
       history: null,
+      phases: { day: { k6Exit: 0 }, backlog: { k6Exit: 99 } },
     },
     day: {
       metrics: {
@@ -156,6 +157,21 @@ describe("the report", () => {
     );
     assert.match(markdown, /## What this run cannot tell/);
     assert.match(markdown, /\[2026-10-28-abc1234-fleet-10\.csv\]/);
+  });
+
+  it("fails when a phase measured nothing", () => {
+    const missing = context();
+    const { failedGates } = renderReport({ ...missing, backlog: null });
+    assert.deepEqual(
+      failedGates.map((r) => r.target),
+      ["the backlog phase ran to its end (a k6 summary, exit 0 or 99)"],
+    );
+    const crashed = context();
+    crashed.run.phases.day.k6Exit = 107;
+    assert.equal(
+      renderReport(crashed).failedGates[0]?.target,
+      "the day phase ran to its end (a k6 summary, exit 0 or 99)",
+    );
   });
 
   it("fails when a gated target is missed, and says which", () => {

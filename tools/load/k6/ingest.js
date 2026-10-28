@@ -47,31 +47,30 @@ function uniqueIdOf(deviceKey) {
 }
 
 /**
- * The requests of one upload of the schedule (lib/schedule.js `uploadsOf`).
+ * The requests of one upload of the schedule (lib/schedule.js `uploadsOf`),
+ * one at a time: a backlog of hours builds a body only when it sends it.
  * @param {{ profile: string, token: string, deviceKey: string }} phone
  * @param {import("../lib/schedule.js").PhonePlan} plan
  * @param {import("../lib/schedule.js").UploadRef} upload
  * @param {number} epochS
  */
-export function requestsOf(phone, plan, upload, epochS) {
+export function* requestsOf(phone, plan, upload, epochS) {
   const [, , from, to, kind] = upload;
   const { profile } = plan;
   if (kind === 1) {
     const state = stateAt(plan, to);
     const place = positionAlong(plan.route, state ? state.stopAtM : 0);
-    return [
-      owntracksTransition(
-        phone.token,
-        place,
-        epochS,
-        to,
-        from === 1 ? "enter" : "leave",
-        phone.deviceKey,
-      ),
-    ];
+    yield owntracksTransition(
+      phone.token,
+      place,
+      epochS,
+      to,
+      from === 1 ? "enter" : "leave",
+      phone.deviceKey,
+    );
+    return;
   }
   const points = pointsBetween(plan, from, to);
-  if (points.length === 0) return [];
   switch (profile.encoder) {
     case "overland": {
       const batchSize = profile.upload.kind === "batch" ? profile.upload.batchSize : 500;
@@ -87,35 +86,36 @@ export function requestsOf(phone, plan, upload, epochS) {
               distanceM: move.speedMs * (to - move.from),
               start: positionAlong(plan.route, move.startM),
             };
-      const requests = [];
       for (let start = 0; start < points.length; start += batchSize) {
         const last = start + batchSize >= points.length;
-        requests.push(
-          overlandBatch(phone.token, points.slice(start, start + batchSize), epochS, {
-            deviceKey: phone.deviceKey,
-            uniqueId: uniqueIdOf(phone.deviceKey),
-            desiredAccuracy: profile.accuracyM.moving <= 10 ? -1 : 100,
-            visits: last ? visits : [],
-            trip: last ? trip : null,
-          }),
-        );
+        yield overlandBatch(phone.token, points.slice(start, start + batchSize), epochS, {
+          deviceKey: phone.deviceKey,
+          uniqueId: uniqueIdOf(phone.deviceKey),
+          desiredAccuracy: profile.accuracyM.moving <= 10 ? -1 : 100,
+          visits: last ? visits : [],
+          trip: last ? trip : null,
+        });
       }
-      return requests;
+      return;
     }
     case "owntracks-ios":
-      return points.map((point) =>
-        owntracksLocation("ios", phone.token, point, epochS, phone.deviceKey),
-      );
+      for (const point of points) {
+        yield owntracksLocation("ios", phone.token, point, epochS, phone.deviceKey);
+      }
+      return;
     case "owntracks-android":
-      return points.map((point) =>
-        owntracksLocation("android", phone.token, point, epochS, phone.deviceKey),
-      );
+      for (const point of points) {
+        yield owntracksLocation("android", phone.token, point, epochS, phone.deviceKey);
+      }
+      return;
     case "traccar":
-      return points.map((point) => traccarForm(phone.token, point, epochS));
+      for (const point of points) yield traccarForm(phone.token, point, epochS);
+      return;
     case "osmand":
-      return points.map((point) => osmandQuery(phone.token, point, epochS));
+      for (const point of points) yield osmandQuery(phone.token, point, epochS);
+      return;
     default:
-      return points.map((point) => gpsloggerQuery(phone.token, point, epochS));
+      for (const point of points) yield gpsloggerQuery(phone.token, point, epochS);
   }
 }
 
@@ -162,20 +162,27 @@ function retryAfterS(encoder, status, attempt, waitedS, intervalS) {
 
 /**
  * Sends the requests of some uploads at once, as independent phones would,
- * then tries the unacknowledged ones again by their apps' rules until the
- * run's end (`deadlineMs`, epoch ms). Tags every request with the phase, its
- * endpoint, app and batch class; `name` stands for the URL, which can hold a
- * token (OsmAnd's address).
+ * then tries each unacknowledged one again when its app would (its own wait,
+ * not its neighbours'), until the run's end (`deadlineMs`, epoch ms). Tags
+ * every request with the phase, its endpoint, app and batch class; `name`
+ * stands for the URL, which can hold a token (OsmAnd's address).
  * @param {string} baseUrl
  * @param {string} phase
  * @param {{ app: string, encoder: string, intervalS: number, request: import("../lib/encoders.js").IngestRequest }[]} items
  * @param {number} deadlineMs
  */
 export function sendUploads(baseUrl, phase, items, deadlineMs) {
-  let pending = items.map((item) => ({ ...item, attempts: 0, waitedS: 0 }));
-  while (pending.length > 0) {
+  let queue = items.map((item) => ({ ...item, attempts: 0, waitedS: 0, dueAt: 0 }));
+  while (queue.length > 0) {
+    const now = Date.now();
+    const due = queue.filter((item) => item.dueAt <= now);
+    const later = queue.filter((item) => item.dueAt > now);
+    if (due.length === 0) {
+      sleep((Math.min(...later.map((item) => item.dueAt)) - now) / 1000);
+      continue;
+    }
     const responses = http.batch(
-      pending.map(({ app, request }) => {
+      due.map(({ app, request }) => {
         const endpoint = request.path.slice(5).split("?")[0];
         return {
           method: request.method,
@@ -198,9 +205,8 @@ export function sendUploads(baseUrl, phase, items, deadlineMs) {
       }),
     );
     const again = [];
-    let waitS = 0;
-    for (let index = 0; index < pending.length; index += 1) {
-      const item = pending[index];
+    for (let index = 0; index < due.length; index += 1) {
+      const item = due[index];
       const response = responses[index];
       item.attempts += 1;
       const ok = acknowledged(item.app, response);
@@ -229,11 +235,9 @@ export function sendUploads(baseUrl, phase, items, deadlineMs) {
       }
       metrics.retries.add(1, { phase });
       item.waitedS += wait;
-      waitS = Math.max(waitS, wait);
+      item.dueAt = Date.now() + wait * 1000;
       again.push(item);
     }
-    if (again.length === 0) return;
-    sleep(waitS);
-    pending = again;
+    queue = [...later, ...again];
   }
 }

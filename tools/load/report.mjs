@@ -98,6 +98,21 @@ export function targetRows(context) {
   const { day, backlog, probe, run, derived } = context;
   /** @type {Row[]} */
   const rows = [];
+  // A phase without its summary (k6 crashed, the container went) measured nothing: that fails.
+  for (const [phase, summary] of /** @type {const} */ ([
+    ["day", day],
+    ["backlog", backlog],
+  ])) {
+    const exit = run.phases?.[phase]?.k6Exit;
+    const ran = summary !== null && (exit === 0 || exit === 99);
+    rows.push({
+      section: "6.2",
+      target: `the ${phase} phase ran to its end (a k6 summary, exit 0 or 99)`,
+      measured: summary === null ? "no summary" : `exit ${exit ?? "?"}`,
+      verdict: ran ? "pass" : "FAIL",
+      gate: true,
+    });
+  }
   for (const target of ingestTargets) {
     const values = metric(day, `http_req_duration{phase:day,kind:ingest,batch:${target.batch}}`);
     const samples = values?.["count"] ?? 0;
@@ -183,7 +198,7 @@ export function targetRows(context) {
     ),
     row(
       "3.1",
-      "zero data loss: acknowledged points not stored",
+      "zero data loss: acknowledged points not stored (net of stored ones never acknowledged)",
       derived.lostAcknowledged,
       (v) => v === 0,
       "",

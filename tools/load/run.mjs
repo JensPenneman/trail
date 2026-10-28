@@ -102,6 +102,44 @@ const defaultRoutes = fileURLToPath(
 /** @param {string} message */
 const say = (message) => console.log(`load ${new Date().toISOString().slice(11, 19)} ${message}`);
 
+/** The shell's variables the Docker CLI reads; nothing else reaches Compose. */
+const dockerVariables = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "TMPDIR",
+  "LANG",
+  "LC_ALL",
+  "SSH_AUTH_SOCK",
+  "DOCKER_CONFIG",
+  "DOCKER_CONTEXT",
+  "DOCKER_HOST",
+  "DOCKER_CERT_PATH",
+  "DOCKER_TLS_VERIFY",
+];
+
+/**
+ * A load test runs on this machine: the Docker daemon must be a local socket,
+ * never a remote context or host.
+ * @param {NodeJS.ProcessEnv} env
+ */
+async function refuseRemoteDocker(env) {
+  const host =
+    env["DOCKER_HOST"] ??
+    (
+      await run("docker", ["context", "inspect", "--format", "{{.Endpoints.docker.Host}}"], {
+        env,
+        allowFailure: true,
+      })
+    ).stdout.trim();
+  if (!/^(unix|npipe):\/\//.test(host)) {
+    throw new Error(
+      `the Docker daemon is at ${host || "an unknown address"}: a load test runs on this machine only`,
+    );
+  }
+}
+
 /**
  * Text of a command, or "" when it fails.
  * @param {string} command
@@ -271,6 +309,31 @@ async function databaseChecks(stack, window, historyRows) {
 }
 
 /**
+ * A JSON file, or null when it is missing or broken.
+ * @param {string} path
+ */
+function readJsonFile(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Stops the SSE probe and waits for it to write its result, 15 s at most.
+ * @param {import("node:child_process").ChildProcess} child
+ */
+async function stopProbe(child) {
+  const exited =
+    child.exitCode !== null || child.signalCode !== null
+      ? Promise.resolve()
+      : new Promise((resolve) => child.once("exit", resolve));
+  child.kill("SIGTERM");
+  await Promise.race([exited, sleep(15_000)]);
+}
+
+/**
  * A k6 phase in its container: its output redacted on the way; resolves to k6's exit code
  * (0 every threshold held, 99 some failed).
  * @param {LoadStack} stack
@@ -344,17 +407,14 @@ async function main() {
   }
   const runDir = mkdtempSync(join(values.tmp ?? tmpdir(), `trailload-${scenario}-`));
   const image = values.image ?? `trail-load:${commit}`;
+  // Only what Docker needs: Compose prefers the shell's variables to the env
+  // file, and an exported TRAIL_DB_VOLUME or TRAIL_IMAGE must not reach the stack.
   /** @type {NodeJS.ProcessEnv} */
-  const env = { ...process.env, DOCKER_CLI_HINTS: "false" };
-  for (const key of [
-    "NODE_ENV",
-    "DATABASE_URL",
-    "AUTH_SECRET",
-    "COMPOSE_PROFILES",
-    "COMPOSE_FILE",
-    "COMPOSE_PROJECT_NAME",
-  ])
-    delete env[key];
+  const env = { DOCKER_CLI_HINTS: "false" };
+  for (const key of dockerVariables) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  await refuseRemoteDocker(env);
   const envFile = join(runDir, "compose.env");
   writeFileSync(
     envFile,
@@ -380,6 +440,33 @@ async function main() {
   let known = [];
   /** @type {import("node:child_process").ChildProcess | null} */
   let probe = null;
+  let cleaned = false;
+  // The stack and the fleet's secrets go whatever ends the run, Ctrl-C included.
+  const cleanup = async () => {
+    if (cleaned) return;
+    cleaned = true;
+    if (probe !== null) await stopProbe(probe);
+    if (values.keep === true) {
+      say(
+        `kept: ${projectName} still runs; remove it with docker compose -p ${projectName} down -v (and ${runDir})`,
+      );
+      return;
+    }
+    say(`removing ${projectName} and its volume`);
+    await stack.compose(["--profile", "k6", "down", "--volumes", "--remove-orphans"], {
+      allowFailure: true,
+    });
+    // The fleet's secrets go with the stack; the rest of the run's folder stays for a look.
+    rmSync(join(runDir, "fleet.json"), { force: true });
+    rmSync(join(runDir, "probe.json"), { force: true });
+    rmSync(join(runDir, "compose.env"), { force: true });
+  };
+  for (const signal of /** @type {const} */ (["SIGINT", "SIGTERM"])) {
+    process.once(signal, () => {
+      say(`${signal}: stopping`);
+      cleanup().finally(() => process.exit(130));
+    });
+  }
   try {
     if (values.image === undefined) {
       say(`building ${image}`);
@@ -519,7 +606,7 @@ async function main() {
         .map((value) => value.toFixed(4))
         .join(","),
       dashboard: { opensPerMinute: preset.opensPerMinute, historyDays: preset.historyDays + 1 },
-      backlog: { hours: preset.backlogHours, endsAgoS: 0 },
+      backlog: { hours: preset.backlogHours, endsAtMs: 0 },
     };
     writeFileSync(join(runDir, "config.json"), JSON.stringify(config, null, 2));
 
@@ -528,7 +615,9 @@ async function main() {
     const dayExit = await k6(stack, "day.js", known);
     const dayTo = Date.now();
 
-    config.backlog.endsAgoS = Math.round((Date.now() - dayFrom) / 1000) + 60;
+    // The backlog ends a minute before the day's first point (k6's setup of the day).
+    const daySetup = readJsonFile(join(runDir, "day.summary.json"))?.setup_data?.epochMs;
+    config.backlog.endsAtMs = (typeof daySetup === "number" ? daySetup : dayFrom) - 60_000;
     writeFileSync(join(runDir, "config.json"), JSON.stringify(config, null, 2));
     say(`the backlog: ${preset.backlogHours} h of every phone at once (k6 backlog.js)`);
     const backlogFrom = Date.now();
@@ -537,8 +626,7 @@ async function main() {
 
     say("settling: the last load line and the backlog's processing");
     await sleep(65_000);
-    probe.kill("SIGTERM");
-    await new Promise((resolve) => probe?.once("exit", resolve));
+    await stopProbe(probe);
     probe = null;
     await collector.stop();
 
@@ -614,21 +702,7 @@ async function main() {
       process.exitCode = failedGates.length === 0 && dayExit === 0 && backlogExit === 0 ? 0 : 1;
     }
   } finally {
-    probe?.kill("SIGTERM");
-    if (values.keep === true) {
-      say(
-        `kept: ${projectName} still runs; remove it with docker compose -p ${projectName} down -v (and ${runDir})`,
-      );
-    } else {
-      say(`removing ${projectName} and its volume`);
-      await stack.compose(["--profile", "k6", "down", "--volumes", "--remove-orphans"], {
-        allowFailure: true,
-      });
-      // The fleet's secrets go with the stack; the rest of the run's folder stays for a look.
-      rmSync(join(runDir, "fleet.json"), { force: true });
-      rmSync(join(runDir, "probe.json"), { force: true });
-      rmSync(join(runDir, "compose.env"), { force: true });
-    }
+    await cleanup();
   }
 }
 

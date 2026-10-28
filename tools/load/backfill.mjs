@@ -114,19 +114,29 @@ export async function generateHistory({ stack, fleet, routes, seed, days, endMs 
     ],
     { input, known },
   );
+  // psql may quit before it has read everything (a refused row, a restart): the
+  // failure is the COPY's, reported once, not a crash of the runner.
+  /** @type {unknown} */
+  let failed = null;
+  const copied = copy.catch((error) => {
+    failed = error;
+  });
+  input.on("error", () => undefined);
   let rows = 0;
   const copyStarted = performance.now();
-  for (let day = 0; day < days; day += 1) {
+  for (let day = 0; day < days && failed === null; day += 1) {
     for (const phone of phones) {
+      if (failed !== null) break;
       const lines = dayRows(phone, routes, seed, from + day * dayMs);
       rows += lines.length;
       if (lines.length > 0 && !input.write(`${lines.join("\n")}\n`)) {
-        await new Promise((resolve) => input.once("drain", resolve));
+        await Promise.race([new Promise((resolve) => input.once("drain", resolve)), copied]);
       }
     }
   }
   input.end();
-  await copy;
+  await copied;
+  if (failed !== null) throw failed;
   const copySeconds = (performance.now() - copyStarted) / 1000;
 
   // The device's cached count, as the uploads would have kept it.

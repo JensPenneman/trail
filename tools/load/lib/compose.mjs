@@ -26,8 +26,32 @@ const loadFile = fileURLToPath(new URL("../compose.load.yaml", import.meta.url))
  */
 
 /**
+ * Prints a stream's text line by line, each line redacted whole: a secret split
+ * between two chunks of output is still found.
+ * @param {{ write(text: string): unknown }} out
+ * @param {readonly string[] | undefined} known
+ */
+export function redactedLines(out, known) {
+  let pending = "";
+  return {
+    /** @param {string} text */
+    write(text) {
+      pending += text;
+      const end = pending.lastIndexOf("\n");
+      if (end < 0) return;
+      out.write(redact(pending.slice(0, end + 1), known));
+      pending = pending.slice(end + 1);
+    },
+    flush() {
+      if (pending !== "") out.write(`${redact(pending, known)}\n`);
+      pending = "";
+    },
+  };
+}
+
+/**
  * Runs a command; its output is collected (or written to `stdoutTo`) and, with
- * `show`, printed redacted as it comes.
+ * `show`, printed redacted as it comes, a line at a time.
  * @param {string} command
  * @param {readonly string[]} args
  * @param {RunOptions} [options]
@@ -42,19 +66,23 @@ export function run(command, args, options = {}) {
     });
     let stdout = "";
     let stderr = "";
+    const shownOut = redactedLines(process.stdout, options.known);
+    const shownErr = redactedLines(process.stderr, options.known);
     child.stdout.on("data", (chunk) => {
       if (options.stdoutTo !== undefined) options.stdoutTo.write(chunk);
       else stdout += chunk.toString();
-      if (options.show === true && options.stdoutTo === undefined) {
-        process.stdout.write(redact(chunk.toString(), options.known));
-      }
+      if (options.show === true && options.stdoutTo === undefined) shownOut.write(chunk.toString());
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
-      if (options.show === true) process.stderr.write(redact(chunk.toString(), options.known));
+      if (options.show === true) shownErr.write(chunk.toString());
     });
+    // A command that quits before it has read its input must not crash the runner.
+    child.stdin.on("error", () => undefined);
     child.on("error", reject);
     child.on("close", (code) => {
+      shownOut.flush();
+      shownErr.flush();
       const finished = { code: code ?? 1, stdout, stderr };
       if (finished.code !== 0 && options.allowFailure !== true) {
         const detail = redact(stderr.trim().split("\n").slice(-5).join("\n"), options.known);

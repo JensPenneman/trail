@@ -156,9 +156,10 @@ export async function runProbe(config, signal) {
             },
           );
         }
-      } catch (error) {
+      } catch {
         if (signal.aborted) return;
-        if (!(error instanceof Error)) counts.failedOpens += 1;
+        // The stream could not be opened, or broke off: either way it reconnects.
+        counts.failedOpens += 1;
       }
       if (!signal.aborted) await sleep(retryMs, undefined, { signal }).catch(() => undefined);
     }

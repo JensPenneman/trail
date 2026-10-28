@@ -29,10 +29,33 @@ describe("redaction", () => {
     ]);
   });
 
+  it("takes positions out of JSON and forms, and a secret split between two chunks", async () => {
+    const json =
+      '{"_type":"location","lat":51.0543,"lon":3.7174,"geometry":{"coordinates":[3.7,51.04]}}';
+    assert.equal(leaksIn(redact(json)).length, 0, redact(json));
+    assert.equal(leaksIn(redact("lat=51.05&lon=3.71&timestamp=1")).length, 0);
+    const { redactedLines } = await import("../lib/compose.mjs");
+    /** @type {string[]} */
+    const written = [];
+    const lines = redactedLines({ write: (/** @type {string} */ text) => written.push(text) }, []);
+    // Two chunks of output split the token; the line is redacted whole.
+    lines.write(`url ?token=${token.slice(0, 10)}`);
+    lines.write(`${token.slice(10)}&lat=1\nnext `);
+    lines.flush();
+    const shown = written.join("");
+    assert.ok(!shown.includes(token.slice(10)), shown);
+    assert.equal(shown, "url ?token=[redacted]&lat=[redacted]\nnext \n");
+  });
+
   it("knows the fleet's own secrets, whatever their shape", () => {
     const fleet = { people: [{ session, devices: [{ token, deviceKey: "load-1a2b3c-7" }] }] };
     const known = secretsOf(fleet);
-    assert.deepEqual(known, [session, token, "load-1a2b3c-7"]);
+    assert.deepEqual(known, [
+      session,
+      token,
+      "load-1a2b3c-7",
+      Buffer.from(`load-1a2b3c-7:${token}`).toString("base64"),
+    ]);
     assert.equal(redact("phone load-1a2b3c-7 sent", known), "phone [redacted] sent");
     assert.deepEqual(leaksIn("topic owntracks/load-1a2b3c-7", known), [
       "a secret or name of the fleet",

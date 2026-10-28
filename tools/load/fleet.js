@@ -101,7 +101,12 @@ export function setup() {
   return { epochMs: Date.now() };
 }
 
-/** One tenth of a second of the day: the uploads due in it. */
+/**
+ * One tenth of a second of the day: the uploads due in it. The slot is the
+ * iteration's number: k6 numbers only the iterations it starts, so after a
+ * dropped one the rest of the day comes late — and such a run fails its gate
+ * on `dropped_iterations` anyway.
+ */
 export function phonesSlot(data) {
   const slot = exec.scenario.iterationInTest;
   const fromMs = slot * slotMs;

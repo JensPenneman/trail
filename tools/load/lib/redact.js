@@ -15,8 +15,13 @@ const patterns = [
   { kind: "address", pattern: /[A-Za-z0-9._%+-]+@load\.invalid/g },
   {
     kind: "position",
-    pattern: /([?&](?:lat|lon|latitude|longitude|location)=)(?!\[redacted\])[^&\s"']+/gi,
+    pattern: /((?:^|[?&\s"'])(?:lat|lon|latitude|longitude|location)=)(?!\[redacted\])[^&\s"']+/gim,
   },
+  {
+    kind: "position",
+    pattern: /("(?:lat|lon|latitude|longitude)"\s*:\s*)-?\d+(?:\.\d+)?/gi,
+  },
+  { kind: "position", pattern: /("coordinates"\s*:\s*)(?!\[redacted\])\[[^\]]*\]/gi },
   {
     kind: "authorization",
     pattern: /(authorization["']?\s*[:=]\s*["']?)(?:bearer|basic)\s+[^\s"',]+/gi,
@@ -63,7 +68,15 @@ export function leaksIn(text, known = []) {
 }
 
 /**
- * Everything of a fleet file that must stay out of logs and reports.
+ * Base64 of ASCII text, as HTTP Basic carries `user:password`.
+ * @param {string} text
+ */
+const base64 = (text) => Buffer.from(text, "utf8").toString("base64");
+
+/**
+ * Everything of a fleet file that must stay out of logs and reports: the
+ * sessions, the device tokens and keys, and the Basic credentials OwnTracks for
+ * Android sends (the key and the token, in base64).
  * @param {{ people?: readonly { session?: string, devices?: readonly { token?: string, deviceKey?: string }[] }[] }} fleet
  * @returns {string[]}
  */
@@ -75,6 +88,9 @@ export function secretsOf(fleet) {
     for (const device of person.devices ?? []) {
       if (device.token !== undefined) secrets.push(device.token);
       if (device.deviceKey !== undefined) secrets.push(device.deviceKey);
+      if (device.token !== undefined && device.deviceKey !== undefined) {
+        secrets.push(base64(`${device.deviceKey}:${device.token}`));
+      }
     }
   }
   return secrets;
