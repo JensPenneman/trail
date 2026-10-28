@@ -256,7 +256,7 @@ describe("event ids and resuming", () => {
     expect(days.days[0]?.stamp.raw).toMatch(/^[A-Za-z0-9_-]{22}$/);
   });
 
-  it("tells of the days a visit-only upload touches, points or not", async () => {
+  it("tells of the days a visit-only upload touches, points or not, and its deletion", async () => {
     const owner = await member("visit-days@allowed.test");
     const device = await createDevice(owner.agent, { name: "iPhone" });
     const stream = await SseClient.connect(server, owner.cookie);
@@ -287,6 +287,16 @@ describe("event ids and resuming", () => {
       // No points on either day, so no rows: the dates say what changed.
       days: [],
     });
+    // Deleting the minute the visit was recorded in removes no point, and changes both days.
+    const seen = stream.events.length;
+    await from(owner.agent, "post", apiPaths.deleteLocations, {
+      deviceId: device.device.id,
+      from: "2026-10-21T05:00:00.000Z",
+      to: "2026-10-21T05:01:00.000Z",
+    }).expect(200);
+    await settle();
+    const after = await stream.waitFor("days", 5_000, seen);
+    expect(after.dates).toEqual(["2026-10-20", "2026-10-21"]);
   });
 
   it("sends a recipient who was away when a shared position came back to a resync", async () => {
@@ -344,11 +354,28 @@ describe("many streams", () => {
         fake(`fake-${index}`),
       ),
     );
+    // The bus's own 20-second tick may run meanwhile: then this one waits for its turn.
+    const tickThatChecks = async () => {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (await t.ctx.bus.tick()) return;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error("No tick checked the sessions");
+    };
+    const sessionChecks = () =>
+      watch.statements.filter(({ text }) => /FROM sessions\s+WHERE id = ANY/.test(text));
     const watch = watchStatements(t.ctx.pool);
     try {
-      await t.ctx.bus.tick();
-      expect(watch.texts.filter((text) => /FROM sessions/.test(text))).toHaveLength(1);
-      // A session revoked behind the server's back ends its stream at the next tick.
+      await tickThatChecks();
+      // One statement per check, never one per stream: each holds every stream's session.
+      const checks = sessionChecks();
+      expect(checks.length).toBeGreaterThanOrEqual(1);
+      expect(checks.length).toBeLessThanOrEqual(2);
+      for (const check of checks) {
+        const asked = new Set(check.values[0] as string[]);
+        expect(fakes.every((_, index) => asked.has(`fake-${index}`))).toBe(true);
+      }
+      // A session revoked behind the server's back ends its stream at the next check.
       const secondId = (
         await t.ctx.db.execute<{ id: string }>(sql`
           SELECT s.id FROM sessions s JOIN users u ON u.id = s.user_id
@@ -356,9 +383,7 @@ describe("many streams", () => {
         `)
       ).rows[0]?.id;
       await t.ctx.db.execute(sql`DELETE FROM sessions WHERE id = ${secondId ?? ""}`);
-      watch.reset();
-      await t.ctx.bus.tick();
-      expect(watch.texts.filter((text) => /FROM sessions/.test(text))).toHaveLength(1);
+      await tickThatChecks();
       await real[1]?.waitFor("session-ended");
       await real[1]?.ended();
       expect(real[0]?.events.some((event) => event.type === "session-ended")).toBe(false);

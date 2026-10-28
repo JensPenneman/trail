@@ -73,7 +73,7 @@ export function locationsRouter(ctx: AppContext): Router {
       queueProcessing: ctx.processing.enabled,
     });
     ctx.processing.notify();
-    // Their statistics are summed up already: the open pages learn of their new stamps.
+    // Summed up already where points went: the open pages learn of the days' new stamps.
     ctx.dailyStats.announce(device.id, days);
     ctx.logger.info({ deviceId: device.id, deleted }, "points deleted");
     publishDeviceLater(ctx, user.id, device.id);

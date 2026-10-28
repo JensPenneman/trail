@@ -143,7 +143,7 @@ describe("EventBus", () => {
       bus.subscribe(`user-${index % 100}`, each.subscriber);
     }
     expect(bus.streamCount()).toBe(1_000);
-    await bus.tick();
+    expect(await bus.tick()).toBe(true);
     expect(calls).toHaveLength(1);
     expect(calls[0]).toHaveLength(500);
     expect(streams.every((each) => each.pings() === 1)).toBe(true);
@@ -170,10 +170,11 @@ describe("EventBus", () => {
     const checking = bus.tick();
     const late = stream("new");
     bus.subscribe(userId, late.subscriber);
-    await bus.tick();
+    // The second tick pings, and leaves the sessions to the check still running.
+    expect(await bus.tick()).toBe(false);
     expect(calls).toBe(1);
     release(new Set(["old"]));
-    await checking;
+    expect(await checking).toBe(true);
     expect(late.closed()).toBe(0);
   });
 
@@ -185,8 +186,14 @@ describe("EventBus", () => {
     });
     const each = stream();
     bus.subscribe(userId, each.subscriber);
-    await expect(bus.tick()).resolves.toBeUndefined();
+    await expect(bus.tick()).resolves.toBe(true);
     expect(each.closed()).toBe(0);
     expect(each.pings()).toBe(1);
+  });
+
+  it("checks nothing without a check, or without a stream", async () => {
+    expect(await new EventBus().tick()).toBe(false);
+    const bus = new EventBus({ activeSessions: async (ids) => new Set(ids) });
+    expect(await bus.tick()).toBe(false);
   });
 });

@@ -5,10 +5,26 @@ type Query = (...args: unknown[]) => unknown;
 const textOf = (query: unknown): string =>
   typeof query === "string" ? query : ((query as QueryConfig | undefined)?.text ?? "");
 
+/** A statement's parameters: the second argument, or the config's `values`. */
+const valuesOf = (args: readonly unknown[]): readonly unknown[] => {
+  const [query, values] = args;
+  if (Array.isArray(values)) return values;
+  const config = query as QueryConfig | undefined;
+  return typeof query === "object" && Array.isArray(config?.values) ? config.values : [];
+};
+
+/** A statement as the app sent it. */
+export interface WatchedStatement {
+  text: string;
+  values: readonly unknown[];
+}
+
 /** What `watchStatements` gives a test: the statements seen, and a hook after the next one that matches. */
 export interface StatementWatch {
   /** Every statement's text since the last `reset`, in order. */
   readonly texts: string[];
+  /** The same statements with their parameters. */
+  readonly statements: WatchedStatement[];
   reset(): void;
   /**
    * Runs `hook` once, after the next statement whose text matches has
@@ -27,6 +43,7 @@ export interface StatementWatch {
  */
 export function watchStatements(pool: Pool): StatementWatch {
   const texts: string[] = [];
+  const statements: WatchedStatement[] = [];
   const patched = new WeakSet<PoolClient>();
   let pending: { pattern: RegExp; hook: () => Promise<void> } | null = null;
   let watching = true;
@@ -50,7 +67,10 @@ export function watchStatements(pool: Pool): StatementWatch {
     const original = client.query.bind(client) as Query;
     (client as unknown as { query: Query }).query = (...args: unknown[]) => {
       const text = textOf(args[0]);
-      if (watching) texts.push(text);
+      if (watching) {
+        texts.push(text);
+        statements.push({ text, values: valuesOf(args) });
+      }
       return hooked(text, original(...args));
     };
   };
@@ -61,8 +81,10 @@ export function watchStatements(pool: Pool): StatementWatch {
 
   return {
     texts,
+    statements,
     reset() {
       texts.length = 0;
+      statements.length = 0;
     },
     after(pattern, hook) {
       pending = { pattern, hook };

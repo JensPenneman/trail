@@ -1897,7 +1897,7 @@ hashed for nothing. The dashboard's routers use `answerConditionally`, v1
 | `GET /api/v1/tracks` | the raw strings at level `raw`, raw and processed otherwise |
 | `GET /api/v1/segments` | raw and processed (the cursor and limit are in the query) |
 | `GET /api/stats/days`, `/api/v1/stats/days` | the body: a few hundred small rows with their stamps |
-| `GET /api/heatmap` | the devices, the sum of their point counters (an upload of points too inaccurate for the cells moves it: a needless 200, never a wrong 304) and the generation of rebuilt cells (`heatGeneration`, which the start-up fill moves) |
+| `GET /api/heatmap` | the devices, the sum of their point counters (an upload of points too inaccurate for the cells moves it: a needless 200, never a wrong 304), the newest `updated_at` of their rows, which a deletion sets (as many points uploaded as deleted would leave the sum as it was), and the generation of rebuilt cells (`heatGeneration`, which the start-up fill moves) |
 | `GET /api/v1/insights/*` | the scope (zone, period, devices) and over the segments of the period — the overview's with the period before — their count, newest `computed_at`, versions and the sums of their bounds, and `pending` |
 | `GET /api/v1/people` | the body (projecting it is cheap: the saving is bytes and parsing) |
 
@@ -1908,8 +1908,12 @@ track, its inferred tracks and its timeline: before, 14 statements, about
 cold, and warm 13 statements, about 10 ms and no body — each 304 is its
 session, its validator and nothing else (`conditionalAnswers.test.ts` keeps
 the counts). The stamps' statement is one aggregate over a union of the
-tables' rows, prepared by name on each connection: about 1 ms for a device's
-day and 1.2 ms for a month.
+tables' rows, prepared on each connection under a name taken from its text
+(an edited statement is a new one): about 1 ms for a device's day and 1.2 ms
+for a month. A named statement lives on its connection, so Trail talks to
+Postgres directly or through a pooler in session mode, never one in
+transaction mode (PgBouncer's default), which would run it on a connection
+that never prepared it.
 
 What a stamp cannot see, accepted: points replaced by as many within the same
 bounds on one day (the counts and the first and last point stay); a day with
@@ -1924,8 +1928,12 @@ as they change).
 ## 9. Live updates (SSE)
 
 `GET /api/events` — `text/event-stream`, `Cache-Control: no-store`,
-`X-Accel-Buffering: no`, never compressed. In-process event bus keyed by user
-id (the app is a single instance; `events/eventBus.ts`). A stream starts with
+`X-Accel-Buffering: no`, never compressed. The API is one process, and its
+event bus, keyed by user id, lives in it (`events/eventBus.ts`): `ingest`,
+`device`, `person`, `share`, `days`, `resync` and a corrected mode's
+`segments` start there in every role, and a processing pass, in whichever
+process it ran (§3), reaches it through `NOTIFY` and the processing listener
+(below) — its `segments` events get ids and rings like any other. A stream starts with
 a `retry:` of its own between 3 and 8 s (the browsers' own reconnects after a
 restart then come back spread out) and a `hello` event with the server's
 time and the processing `versions`, so a page open across a release learns of
@@ -1994,8 +2002,10 @@ to the owner's streams only, never to the people the device is shared with,
 after a daily statistics pass (§10): the dates it summed up again — also
 those whose stamps changed without their points, a new visit or trip
 (`afterIngest`, the days it touches, a month of them at most) or a deletion
-(whose transaction summed them up) — and their rows now, each with its
-stamp; a date without a row has no points. The pass computes them only
+(whose transaction summed them up: the days of its points, of the visits and
+trips it removed and of the segments it took away, also when no point went)
+— and their rows now, each with its stamp; a date without a row has no
+points. The pass computes them only
 while the owner's ring lives. `resync` also follows a new time zone's
 rebuild of every day, instead of a `days` event per day.
 

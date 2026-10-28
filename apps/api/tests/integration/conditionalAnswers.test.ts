@@ -272,6 +272,35 @@ describe("conditional answers", () => {
       expect(changed.headers["etag"]).not.toBe(etag);
     });
   }
+
+  it("the heatmap: a deletion moves its ETag, also when as many new points follow", async () => {
+    const view = { bbox: "-180,-85,180,85", zoom: "3" };
+    const first = await owner.get(apiPaths.heatmap).query(view).expect(200);
+    // Four points of the fixture's morning go, and nothing else of it…
+    const removed = await from(owner, "post", apiPaths.deleteLocations, {
+      deviceId,
+      from: "2026-09-29T07:00:00.000Z",
+      to: "2026-09-29T07:05:00.000Z",
+    }).expect(200);
+    expect(removed.body).toEqual({ deleted: 4 });
+    // …and four others arrive elsewhere: the devices' point counters add up as before.
+    await postOverland(t.app, deviceToken, {
+      locations: [1, 2, 3, 4].map((minute) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [3.9, 51.1] },
+        properties: {
+          timestamp: `2026-09-30T10:0${minute}:00Z`,
+          horizontal_accuracy: 5,
+          device_id: "test-phone",
+        },
+      })),
+    }).expect(200);
+    await owner
+      .get(apiPaths.heatmap)
+      .query(view)
+      .set("If-None-Match", first.headers["etag"] ?? "")
+      .expect(200);
+  });
 });
 
 describe("stamps", () => {

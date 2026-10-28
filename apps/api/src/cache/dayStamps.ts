@@ -125,13 +125,17 @@ export function localDaysOf(range: { from: Date; to: Date }, timezone: string): 
 }
 
 const dialect = new PgDialect();
+
 /**
  * The statement is prepared by name on each connection — its text is the same
  * every time, only the parameters change — so it is parsed once per
  * connection rather than with every request: a third of its cost, and the
- * stamps are most of what a 304 reads.
+ * stamps are most of what a 304 reads. node-postgres sends the text only the
+ * first time a connection sees a name, so the name comes from the text: an
+ * edited statement is a new one, never the old text run under its name.
  */
-const statementName = "trail_day_stamps_1";
+const statementNameOf = (text: string): string =>
+  `trail_day_stamps_${createHash("sha256").update(text).digest("hex").slice(0, 16)}`;
 
 /**
  * The stamps of `dates` (local days in `timezone`) of `deviceIds`, by date then
@@ -237,7 +241,7 @@ export async function loadStampedDays(
     ORDER BY d.date, d.device_id
   `);
   const result = await db.$client.query<DayStampRow>({
-    name: statementName,
+    name: statementNameOf(statement.sql),
     text: statement.sql,
     values: statement.params,
   });

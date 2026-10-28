@@ -37,8 +37,10 @@ interface HeldRing {
 }
 
 /**
- * In-process fan-out of live events to the SSE streams of one user (the app
- * runs as a single instance, docs/architecture.md §9). Every event of a user
+ * The fan-out of live events to the SSE streams of one user, in the API's own
+ * process (docs/architecture.md §9): what the API does publishes here, and a
+ * processing pass, in whichever process it ran, arrives through NOTIFY and the
+ * processing listener, which publishes it here like any other. Every event of a user
  * gets an id in their ring, which keeps the last ones (`EventRing`) while a
  * stream is open and two minutes after the last one closed, so a stream that
  * comes back with the id it saw last gets what it missed. Every tick pings
@@ -163,9 +165,11 @@ export class EventBus {
   /**
    * One tick: a ping to every stream, then one statement for all their
    * sessions; the streams of a session that ended learn it and close. A
-   * check still running when the next tick comes is not doubled.
+   * check still running when the next tick comes is not doubled. Returns
+   * whether this tick checked the sessions (not without a check, without a
+   * stream, or while another check runs).
    */
-  async tick(): Promise<void> {
+  async tick(): Promise<boolean> {
     const sessions = new Set<string>();
     for (const subscribers of [...this.#byUser.values()]) {
       for (const subscriber of [...subscribers]) {
@@ -173,7 +177,7 @@ export class EventBus {
         sessions.add(subscriber.sessionId);
       }
     }
-    if (this.#activeSessions === null || this.#checking || sessions.size === 0) return;
+    if (this.#activeSessions === null || this.#checking || sessions.size === 0) return false;
     this.#checking = true;
     try {
       const active = await this.#activeSessions([...sessions]);
@@ -190,6 +194,7 @@ export class EventBus {
     } finally {
       this.#checking = false;
     }
+    return true;
   }
 
   /** Drops the rings whose user has had no stream for longer than a ring keeps an event. */

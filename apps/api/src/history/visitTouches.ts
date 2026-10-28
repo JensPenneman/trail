@@ -1,6 +1,6 @@
 import { type SQL, sql } from "drizzle-orm";
-import { addDays, daysBetween } from "../lib/calendarDate";
 import { localDate } from "../lib/localDate";
+import { spannedLocalDays } from "../lib/spannedLocalDays";
 
 /**
  * Whether the visit row `alias` touches `[from, to)`: recorded, arrived or
@@ -19,27 +19,22 @@ export function visitTouches(alias: string, from: SQL, to: SQL): SQL {
   )`;
 }
 
-/** Days between two ends are named only this far apart: the stamps stay right either way. */
-const spannedDaysLimit = 31;
-
 /**
  * The local days a visit touches under `visitTouches`, to tell open pages
  * which days changed: those it was recorded, arrived and departed on, and
- * with both ends known the days between them, which it spans — up to a month
- * of them (a visit can claim decades; the stamps, read from the table, are
- * right whatever is named here).
+ * with both ends known the days between them, which it spans
+ * (`spannedLocalDays`: up to a month of them).
  */
 export function visitDays(
   visit: { recordedAt: Date; arrivedAt: Date | null; departedAt: Date | null },
   timezone: string,
 ): string[] {
   const days = new Set([localDate(visit.recordedAt, timezone)]);
-  const arrived = visit.arrivedAt === null ? null : localDate(visit.arrivedAt, timezone);
-  const departed = visit.departedAt === null ? null : localDate(visit.departedAt, timezone);
-  if (arrived !== null) days.add(arrived);
-  if (departed !== null) days.add(departed);
-  if (arrived !== null && departed !== null && daysBetween(arrived, departed) <= spannedDaysLimit) {
-    for (let day = addDays(arrived, 1); day < departed; day = addDays(day, 1)) days.add(day);
+  const { arrivedAt, departedAt } = visit;
+  if (arrivedAt !== null) days.add(localDate(arrivedAt, timezone));
+  if (departedAt !== null) days.add(localDate(departedAt, timezone));
+  if (arrivedAt !== null && departedAt !== null) {
+    for (const day of spannedLocalDays(arrivedAt, departedAt, timezone)) days.add(day);
   }
   return [...days].sort();
 }
