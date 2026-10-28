@@ -6,6 +6,7 @@ import type { RawPoint } from "../../src/processing/pipelineTypes";
 import { defaultProcessingConfig } from "../../src/processing/processingConfig";
 import { finishWindow, planWindow } from "../../src/processing/runPipeline";
 import { denseDay, morning } from "../support/journeys";
+import { throughOsmWays } from "../support/storedMap";
 import { stay, worldMap } from "../support/syntheticWorld";
 
 /** The budget of docs/architecture.md §17.4: a dense day, map data at hand, well under a few seconds. */
@@ -16,7 +17,8 @@ it("processes a dense day of about 20 000 points within the CPU budget", {
 }, () => {
   const points = denseDay();
   expect(points.length).toBeGreaterThan(20_000);
-  const map = worldMap();
+  // As loadMapData reads it from osm_ways: the compact geometry's 1e-7 degrees.
+  const map = throughOsmWays(worldMap());
   const run = () => {
     const plan = planWindow(points, [], defaultProcessingConfig);
     return finishWindow(

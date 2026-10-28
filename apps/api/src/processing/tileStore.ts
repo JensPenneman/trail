@@ -2,6 +2,8 @@ import type { WayKind } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import type { Database, Executor } from "../db/database";
 import { tileBounds } from "../heatmap/tileMath";
+import { overpassSource } from "../mapdata/buildPartitions";
+import { decodeGeometry, encodeGeometry } from "../mapdata/geometryCodec";
 import type { MapData, OsmPoi, OsmWay, PoiKind } from "./mapData";
 import { parseTileKey, type TileKey, tileKey } from "./tileCover";
 import type { TileAddress, TileData } from "./waySource";
@@ -13,21 +15,28 @@ interface TileRow extends Record<string, unknown> {
   stale: boolean;
 }
 
-interface WayRow extends Record<string, unknown> {
-  id: string;
-  kind: WayKind;
-  nodes: string[];
-  geometry: [number, number][];
-  name: string | null;
-}
-
-interface PoiRow extends Record<string, unknown> {
-  id: string;
-  kind: PoiKind;
-  lat: number;
-  lon: number;
-  name: string | null;
-}
+/** A way or a stop of `loadMapData`'s one statement. */
+type MapRow =
+  | {
+      element: "way";
+      id: string;
+      kind: WayKind;
+      nodes: string[];
+      geometry: Buffer;
+      name: string | null;
+      lat: null;
+      lon: null;
+    }
+  | {
+      element: "poi";
+      id: string;
+      kind: PoiKind;
+      nodes: null;
+      geometry: null;
+      name: string | null;
+      lat: number;
+      lon: number;
+    };
 
 const addresses = (keys: Iterable<TileKey>): TileAddress[] =>
   [...keys].flatMap((key) => {
@@ -67,40 +76,71 @@ export async function cachedTiles(
   return { available, stale };
 }
 
-/** The ways and stops of the cached tiles among `keys`. */
+/**
+ * The ways and stops of the tiles among `keys`, from every source that serves
+ * (docs/architecture.md §17.3): the Overpass cache and the ready build of each
+ * imported region. A way or stop that two of them hold comes once, from the
+ * one with the newer data (`fetched_at`: when Overpass sent it, or the
+ * region's extract; then the source), so the answer never depends on the
+ * order of the rows. One statement, so one moment: a region's build swapped
+ * meanwhile is read old or new, never both or neither (importRegion.ts).
+ */
 export async function loadMapData(db: Executor, keys: Iterable<TileKey>): Promise<MapData> {
   const tiles = addresses(keys);
   if (tiles.length === 0) return { ways: [], pois: [] };
-  const list = JSON.stringify(tiles);
-  const ways = await db.execute<WayRow>(sql`
-    SELECT DISTINCT w.id::text AS id, w.kind, w.nodes::text[] AS nodes, w.geometry, w.tags->>'name' AS name
-    FROM jsonb_to_recordset(${list}::jsonb) AS r(z smallint, x integer, y integer)
-    JOIN osm_tile_ways tw ON tw.z = r.z AND tw.x = r.x AND tw.y = r.y
-    JOIN osm_ways w ON w.id = tw.way_id
+  const result = await db.execute<MapRow & Record<string, unknown>>(sql`
+    WITH tiles AS MATERIALIZED (
+      SELECT * FROM jsonb_to_recordset(${JSON.stringify(tiles)}::jsonb) AS r(z smallint, x integer, y integer)
+    ),
+    serving AS MATERIALIZED (
+      SELECT ${overpassSource}::text AS source
+      UNION ALL
+      SELECT source FROM osm_regions WHERE status = 'ready'
+    ),
+    ways AS (
+      SELECT DISTINCT ON (w.id) w.id, w.kind, w.nodes, w.geometry, w.tags->>'name' AS name
+      FROM tiles r
+      JOIN osm_tile_ways tw ON tw.z = r.z AND tw.x = r.x AND tw.y = r.y
+        AND tw.source = ANY (ARRAY(SELECT source FROM serving))
+      JOIN osm_ways w ON w.id = tw.way_id AND w.source = tw.source
+      ORDER BY w.id, w.fetched_at DESC, w.source DESC
+    ),
+    pois AS (
+      SELECT DISTINCT ON (p.id) p.id, p.kind, p.lat, p.lon, p.name
+      FROM tiles r
+      JOIN osm_pois p ON p.z = r.z AND p.x = r.x AND p.y = r.y
+        AND p.source = ANY (ARRAY(SELECT source FROM serving))
+      ORDER BY p.id, p.fetched_at DESC, p.source DESC
+    )
+    SELECT 'way' AS element, id::text AS id, kind, nodes::text[] AS nodes, geometry, name,
+      NULL::double precision AS lat, NULL::double precision AS lon
+    FROM ways
+    UNION ALL
+    SELECT 'poi', id, kind, NULL, NULL, name, lat, lon FROM pois
   `);
-  const pois = await db.execute<PoiRow>(sql`
-    SELECT p.id, p.kind, p.lat, p.lon, p.name
-    FROM jsonb_to_recordset(${list}::jsonb) AS r(z smallint, x integer, y integer)
-    JOIN osm_pois p ON p.z = r.z AND p.x = r.x AND p.y = r.y
-  `);
-  return {
-    ways: ways.rows.map(
-      (row): OsmWay => ({
+  const ways: OsmWay[] = [];
+  const pois: OsmPoi[] = [];
+  for (const row of result.rows) {
+    if (row.element === "way") {
+      ways.push({
         id: Number(row.id),
         kind: row.kind,
         nodes: row.nodes.map(Number),
-        geometry: row.geometry,
+        geometry: decodeGeometry(row.geometry),
         name: row.name,
-      }),
-    ),
-    pois: pois.rows.map((row): OsmPoi => ({ ...row })),
-  };
+      });
+    } else {
+      pois.push({ id: row.id, kind: row.kind, lat: row.lat, lon: row.lon, name: row.name });
+    }
+  }
+  return { ways, pois };
 }
 
 /**
- * Stores a fetched tile in one transaction: its ways (shared with neighbouring
- * tiles, so upserted), which ways it contains, its stops, and the tile row.
- * Ways that no tile contains any more are dropped.
+ * Stores a fetched tile in one transaction, in the Overpass cache's partition
+ * (`source` overpass): its ways (shared with neighbouring tiles, so upserted)
+ * with their compact geometry, which ways it contains, its stops, and the
+ * tile row. Ways that no tile contains any more are dropped.
  */
 export async function saveTile(
   db: Database,
@@ -125,7 +165,7 @@ export async function saveTile(
       kind: way.kind,
       tags: way.tags,
       nodes: way.nodes,
-      geometry: way.geometry,
+      geometry: encodeGeometry(way.geometry).toString("hex"),
       min_lat: minLat,
       min_lon: minLon,
       max_lat: maxLat,
@@ -139,26 +179,27 @@ export async function saveTile(
   );
   await db.transaction(async (tx) => {
     const previous = await tx.execute<{ way_id: string }>(sql`
-      DELETE FROM osm_tile_ways WHERE z = ${tile.z} AND x = ${tile.x} AND y = ${tile.y}
+      DELETE FROM osm_tile_ways
+      WHERE source = ${overpassSource} AND z = ${tile.z} AND x = ${tile.x} AND y = ${tile.y}
       RETURNING way_id::text
     `);
     if (ways.length > 0) {
       await tx.execute(sql`
-        INSERT INTO osm_ways (id, kind, tags, nodes, geometry, min_lat, min_lon, max_lat, max_lon, fetched_at)
-        SELECT id, kind, tags, ARRAY(SELECT jsonb_array_elements_text(nodes))::bigint[], geometry,
-          min_lat, min_lon, max_lat, max_lon, ${fetchedAt}::timestamptz
+        INSERT INTO osm_ways (id, source, kind, tags, nodes, geometry, min_lat, min_lon, max_lat, max_lon, fetched_at)
+        SELECT id, ${overpassSource}, kind, tags, ARRAY(SELECT jsonb_array_elements_text(nodes))::bigint[],
+          decode(geometry, 'hex'), min_lat, min_lon, max_lat, max_lon, ${fetchedAt}::timestamptz
         FROM jsonb_to_recordset(${JSON.stringify(ways)}::jsonb) AS r(
-          id bigint, kind text, tags jsonb, nodes jsonb, geometry jsonb,
+          id bigint, kind text, tags jsonb, nodes jsonb, geometry text,
           min_lat double precision, min_lon double precision, max_lat double precision, max_lon double precision
         )
-        ON CONFLICT (id) DO UPDATE SET
+        ON CONFLICT (id, source) DO UPDATE SET
           kind = excluded.kind, tags = excluded.tags, nodes = excluded.nodes,
           geometry = excluded.geometry, min_lat = excluded.min_lat, min_lon = excluded.min_lon,
           max_lat = excluded.max_lat, max_lon = excluded.max_lon, fetched_at = excluded.fetched_at
       `);
       await tx.execute(sql`
-        INSERT INTO osm_tile_ways (z, x, y, way_id)
-        SELECT ${tile.z}, ${tile.x}, ${tile.y}, id
+        INSERT INTO osm_tile_ways (z, x, y, way_id, source)
+        SELECT ${tile.z}, ${tile.x}, ${tile.y}, id, ${overpassSource}
         FROM jsonb_to_recordset(${JSON.stringify(ways.map(({ id }) => ({ id })))}::jsonb) AS r(id bigint)
       `);
     }
@@ -166,21 +207,23 @@ export async function saveTile(
     if (gone.length > 0) {
       await tx.execute(sql`
         DELETE FROM osm_ways w
-        WHERE w.id = ANY(${`{${gone.join(",")}}`}::bigint[])
-          AND NOT EXISTS (SELECT 1 FROM osm_tile_ways t WHERE t.way_id = w.id)
+        WHERE w.source = ${overpassSource} AND w.id = ANY(${`{${gone.join(",")}}`}::bigint[])
+          AND NOT EXISTS (
+            SELECT 1 FROM osm_tile_ways t WHERE t.source = ${overpassSource} AND t.way_id = w.id
+          )
       `);
     }
     await tx.execute(
-      sql`DELETE FROM osm_pois WHERE z = ${tile.z} AND x = ${tile.x} AND y = ${tile.y}`,
+      sql`DELETE FROM osm_pois WHERE source = ${overpassSource} AND z = ${tile.z} AND x = ${tile.x} AND y = ${tile.y}`,
     );
     if (pois.length > 0) {
       await tx.execute(sql`
-        INSERT INTO osm_pois (id, kind, lat, lon, name, z, x, y, fetched_at)
-        SELECT id, kind, lat, lon, name, ${tile.z}, ${tile.x}, ${tile.y}, ${fetchedAt}::timestamptz
+        INSERT INTO osm_pois (id, source, kind, lat, lon, name, z, x, y, fetched_at)
+        SELECT id, ${overpassSource}, kind, lat, lon, name, ${tile.z}, ${tile.x}, ${tile.y}, ${fetchedAt}::timestamptz
         FROM jsonb_to_recordset(${JSON.stringify(pois)}::jsonb) AS r(
           id text, kind text, lat double precision, lon double precision, name text
         )
-        ON CONFLICT (id) DO UPDATE SET
+        ON CONFLICT (id, source) DO UPDATE SET
           kind = excluded.kind, lat = excluded.lat, lon = excluded.lon, name = excluded.name,
           z = excluded.z, x = excluded.x, y = excluded.y, fetched_at = excluded.fetched_at
       `);
