@@ -51,6 +51,13 @@ export class DailyStatsScheduler {
     this.#add(deviceId, dates, false);
   }
 
+  /** (device, day) pairs waiting for their recomputation (the load line). */
+  pendingDays(): number {
+    let total = 0;
+    for (const days of this.#pending.values()) total += days.size;
+    return total;
+  }
+
   /** Recomputes everything pending now and waits for it (tests, shutdown). */
   async flush(): Promise<void> {
     clearTimeout(this.#timer);

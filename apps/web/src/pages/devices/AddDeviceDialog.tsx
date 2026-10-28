@@ -2,6 +2,7 @@ import type { DeviceWithCredentialsResponse } from "@trail/contracts/device";
 import { deviceAppInfo } from "@trail/contracts/deviceApp";
 import { useState } from "react";
 import { CredentialsView } from "../../devices/CredentialsView";
+import { devicePath } from "../../devices/devicePaths";
 import { UploadWait } from "../../devices/UploadWait";
 import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
@@ -58,7 +59,7 @@ export function AddDeviceDialog({ open, onClose }: AddDeviceDialogProps) {
             }
           />
           <div className="dialog__actions">
-            <LinkButton to={`/devices/${created.device.id}`} onClick={onClose}>
+            <LinkButton to={devicePath(created.device.id)} onClick={onClose}>
               Open device page
             </LinkButton>
             <Button variant="primary" onClick={onClose}>

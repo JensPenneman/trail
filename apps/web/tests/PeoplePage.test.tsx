@@ -76,7 +76,7 @@ describe("the People page's list", () => {
     const [phone, car] = devices as [HTMLElement, HTMLElement];
     expect(within(phone).getByRole("link", { name: "iPhone 16" })).toHaveAttribute(
       "href",
-      `/devices/${ids.phone}`,
+      `/settings/devices/${ids.phone}`,
     );
     expect(within(phone).getByText("62%")).toBeInTheDocument();
     expect(within(phone).getByText("50.9845° N, 3.5268° E ±12 m")).toBeInTheDocument();
@@ -85,7 +85,7 @@ describe("the People page's list", () => {
     expect(within(car).getByText("Last reported movement")).toBeInTheDocument();
     expect(
       within(details).getByRole("link", { name: /Uploads, activity and settings of your devices/ }),
-    ).toHaveAttribute("href", "/devices");
+    ).toHaveAttribute("href", "/settings/devices");
 
     await person.click(button);
     expect(button).toHaveAttribute("aria-expanded", "false");
@@ -104,7 +104,7 @@ describe("the People page's list", () => {
     expect(await within(me).findByText("Waiting for the first upload")).toBeInTheDocument();
     expect(within(me).getByRole("link", { name: "Setup details" })).toHaveAttribute(
       "href",
-      `/devices/${ids.phone}`,
+      `/settings/devices/${ids.phone}/setup`,
     );
     // Nothing to toggle before a first upload.
     expect(within(me).queryByRole("group", { name: "Now:" })).toBeNull();

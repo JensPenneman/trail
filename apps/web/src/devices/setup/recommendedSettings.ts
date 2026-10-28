@@ -28,7 +28,7 @@ const android = owntracksTracking.android;
 const overland: RecommendedSettingsList = {
   title: "Recommended Overland settings",
   intro:
-    "The setup code fills in the connection only. These give detailed tracks without draining the battery; later you can also send a preset to the phone from the device’s page.",
+    "The setup code fills in the connection only. These give detailed tracks without draining the battery; later you can also send a preset to the phone from the device’s Tracking settings.",
   settings: [
     {
       name: "Logging mode",

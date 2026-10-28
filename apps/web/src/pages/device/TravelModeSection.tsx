@@ -1,5 +1,5 @@
 import type { DeviceSummary } from "@trail/contracts/device";
-import { useId } from "react";
+import { SettingsGroup } from "../../settings/SettingsGroup";
 import { QuickModeChips, toggleMinutes } from "../../transport/QuickModeChips";
 
 /**
@@ -8,21 +8,13 @@ import { QuickModeChips, toggleMinutes } from "../../transport/QuickModeChips";
  * its mode set here.
  */
 export function TravelModeSection({ device }: { device: DeviceSummary }) {
-  const headingId = useId();
   return (
-    <section className="section" aria-labelledby={headingId}>
-      <div className="section__header">
-        <h2 className="section__title" id={headingId}>
-          Travelling now
-        </h2>
-        <p className="section__description">
-          How this device travels from now until it stops for {toggleMinutes} minutes or more or
-          travels another way; Auto leaves it to Trail.
-        </p>
-      </div>
-      <div className="card">
-        <QuickModeChips deviceId={device.id} deviceName={device.name} />
-      </div>
-    </section>
+    <SettingsGroup
+      title="Travelling now"
+      variant="card"
+      footer={`How this device travels from now until it stops for ${toggleMinutes} minutes or more or travels another way; Auto leaves it to Trail.`}
+    >
+      <QuickModeChips deviceId={device.id} deviceName={device.name} />
+    </SettingsGroup>
   );
 }

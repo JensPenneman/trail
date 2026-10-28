@@ -82,12 +82,22 @@ services:
       RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE:
       # location processing; an empty PROCESSING_OVERPASS_URL (set in .env)
       # means no map data, an unset one the public Overpass instance
+      # What this container runs, fixed here and not taken from .env
+      # (docs/architecture.md section 3): all = the API and the processing
+      # worker in one process.
+      PROCESSING_ROLE: all
       PROCESSING_ENABLED:
       PROCESSING_OVERPASS_URL:
       PROCESSING_OVERPASS_DAILY_MB:
       PROCESSING_OSM_TTL_DAYS:
       PROCESSING_MAX_ACCURACY_M:
       PROCESSING_STOP_MIN_S:
+      # `trail load-fleet` only (docs/perf/README.md): a preview's load test sets
+      # LOAD_TEST=true, and Launchway's name of the deployment (production or
+      # preview) makes the command refuse anywhere but in a preview. Launchway
+      # writes it to .env; it is the one of its variables the app receives.
+      LOAD_TEST:
+      LAUNCHWAY_ENVIRONMENT:
       # The V8 heap's limit, set instead of Node's own guess from mem_limit
       # (about 560 MB of the 1 GB on Node 24; other V8 versions guess
       # otherwise). A processing backfill holds up to ~250 MB per piece:

@@ -37,8 +37,15 @@ interface BuildInfo {
   builtAt: string | null;
 }
 
+/**
+ * What a process runs of processing (docs/architecture.md §3): `api` serves
+ * and queues work, `worker` works the queue out (`trail worker`), `all` both.
+ */
+type ProcessingRole = "api" | "worker" | "all";
+
 /** Location processing (docs/architecture.md §17.7). */
 interface ProcessingSettings {
+  role: ProcessingRole;
   enabled: boolean;
   /** Overpass interpreter for map data; null when mapping is switched off. */
   overpassUrl: string | null;
@@ -98,4 +105,8 @@ export interface Config {
   build: BuildInfo;
   rateLimits: RateLimitConfig;
   processing: ProcessingSettings;
+  /** `LOAD_TEST=true`: one of the conditions of `trail load-fleet` (docs/perf/README.md). */
+  loadTest: boolean;
+  /** `LAUNCHWAY_ENVIRONMENT` as Launchway set it (`production`, `preview`), null elsewhere. */
+  launchwayEnvironment: string | null;
 }

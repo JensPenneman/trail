@@ -1,10 +1,9 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { DevicesPage } from "../src/pages/devices/DevicesPage";
-import { device, ids, user } from "./support/fixtures";
+import { device, ids } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
-import { renderPage } from "./support/renderPage";
+import { renderSettings } from "./support/renderSettings";
 import { standardRoutes } from "./support/standardRoutes";
 
 const created = {
@@ -30,15 +29,40 @@ const created = {
 const fact = (scope: HTMLElement, label: string) =>
   within(scope).getByText(label, { selector: "dt" }).nextElementSibling;
 
-describe("DevicesPage", () => {
+const heading = (name: string) => screen.findByRole("heading", { level: 1, name });
+
+describe("Settings › Devices", () => {
+  it("is a page of Settings, with the way back to its list and adding a device", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderSettings("/settings/devices");
+    expect(await heading("Devices")).toBeInTheDocument();
+    expect(document.title).toBe("Devices · Settings · Trail");
+    expect(screen.getByRole("region", { name: "Devices" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to Settings" })).toHaveAttribute(
+      "href",
+      "/settings",
+    );
+    expect(
+      screen.getByText("Phones that send their location to Trail with a tracking app."),
+    ).toBeInTheDocument();
+    expect(
+      within(await screen.findByRole("list", { name: "Your devices" })).getAllByRole("article"),
+    ).toHaveLength(2);
+    await person.click(screen.getByRole("button", { name: "Add device" }));
+    expect(screen.getByRole("dialog", { name: "Add a device" })).toBeInTheDocument();
+    expect(router.state.location.search).toBe("?add=1");
+  });
+
   it("proves each device is sending: status, last upload, battery, movement and today", async () => {
     const api = mockApi(standardRoutes());
-    renderPage(<DevicesPage />, { path: "/devices", user });
+    renderSettings("/settings/devices");
     expect(await screen.findByText("1 of 2 devices live")).toBeInTheDocument();
     const phone = await screen.findByRole("article", { name: "iPhone 16" });
+    expect(within(phone).getByRole("heading", { level: 3, name: "iPhone 16" })).toBeInTheDocument();
     expect(within(phone).getByRole("link", { name: "iPhone 16" })).toHaveAttribute(
       "href",
-      `/devices/${ids.phone}`,
+      `/settings/devices/${ids.phone}`,
     );
     expect(within(phone).getByText("Live")).toBeInTheDocument();
     expect(within(phone).getByText("1 min ago")).toBeInTheDocument();
@@ -61,10 +85,57 @@ describe("DevicesPage", () => {
     expect(fact(car, "Movement")).toHaveTextContent("Last seen standing still");
   });
 
+  it("opens a device's page from its card, and comes back to the card", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderSettings("/settings/devices");
+    const phone = await screen.findByRole("article", { name: "iPhone 16" });
+    await person.click(within(phone).getByRole("link", { name: "iPhone 16" }));
+    expect(await heading("iPhone 16")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe(`/settings/devices/${ids.phone}`);
+    expect(document.title).toBe("iPhone 16 · Devices · Settings · Trail");
+    await person.click(screen.getByRole("link", { name: "Back to Devices" }));
+    expect(await heading("Devices")).toBeInTheDocument();
+    // Back in the history, and the focus on the card it came from.
+    expect(router.state.historyAction).toBe("POP");
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("article", { name: "iPhone 16" })).getByRole("link", {
+          name: "iPhone 16",
+        }),
+      ).toHaveFocus(),
+    );
+  });
+
+  it("leads a device still waiting for its first upload to its setup", async () => {
+    const waiting = device({ lastSeenAt: null, lastLocation: null, battery: null });
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/devices": { status: 200, body: { devices: [waiting] } },
+    });
+    renderSettings("/settings/devices");
+    const card = await screen.findByRole("article", { name: "iPhone 16" });
+    expect(within(card).getByText(/^Waiting for the first upload\./)).toBeInTheDocument();
+    expect(within(card).getByRole("link", { name: "Setup details" })).toHaveAttribute(
+      "href",
+      `/settings/devices/${ids.phone}/setup`,
+    );
+  });
+
+  it("says when there are no devices yet, and how to add the first", async () => {
+    mockApi({ ...standardRoutes(), "GET /api/devices": { status: 200, body: { devices: [] } } });
+    const person = userEvent.setup();
+    renderSettings("/settings/devices");
+    expect(await screen.findByRole("heading", { name: "No devices yet" })).toBeInTheDocument();
+    expect(screen.queryByText(/devices? live/)).toBeNull();
+    await person.click(screen.getByRole("button", { name: "Add your first device" }));
+    expect(screen.getByRole("dialog", { name: "Add a device" })).toBeInTheDocument();
+  });
+
   it("lists the uploads as they arrive, newest first", async () => {
     mockApi(standardRoutes());
-    const { liveStore } = renderPage(<DevicesPage />, { path: "/devices", user });
-    const uploads = await screen.findByRole("region", { name: "Uploads" });
+    const { liveStore } = renderSettings("/settings/devices");
+    const uploads = await screen.findByRole("list", { name: "Uploads" });
     expect(await within(uploads).findByText("+40 points")).toBeInTheDocument();
     expect(within(uploads).getByText(/1 rejected/)).toBeInTheDocument();
     act(() =>
@@ -85,7 +156,7 @@ describe("DevicesPage", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const api = mockApi(standardRoutes());
-      const { liveStore } = renderPage(<DevicesPage />, { path: "/devices", user });
+      const { liveStore } = renderSettings("/settings/devices");
       await screen.findByRole("article", { name: "iPhone 16" });
       const asked = () => api.calls.filter((call) => call.path === "/api/stats/days").length;
       await waitFor(() => expect(asked()).toBe(1));
@@ -129,8 +200,8 @@ describe("DevicesPage", () => {
       [`GET /api/devices/${created.device.id}`]: { status: 200, body: { device: created.device } },
     });
     const person = userEvent.setup();
-    renderPage(<DevicesPage />, { path: "/devices", user });
-    await person.click(screen.getByRole("button", { name: "Add device" }));
+    renderSettings("/settings/devices");
+    await person.click(await screen.findByRole("button", { name: "Add device" }));
     const dialog = screen.getByRole("dialog", { name: "Add a device" });
     await person.type(within(dialog).getByLabelText("Name"), "Lotte’s iPhone");
     await person.click(within(dialog).getByRole("button", { name: "Add device" }));
@@ -175,7 +246,7 @@ describe("DevicesPage", () => {
       [`GET /api/devices/${pixel.id}`]: { status: 200, body: { device: pixel } },
     });
     const person = userEvent.setup();
-    renderPage(<DevicesPage />, { path: "/devices", url: "/devices?add=1", user });
+    renderSettings("/settings/devices?add=1");
     const dialog = await screen.findByRole("dialog", { name: "Add a device" });
     await person.type(within(dialog).getByLabelText("Name"), "Lotte’s Pixel");
     const apps = within(dialog).getByRole("group", { name: "App on the phone" });
@@ -209,7 +280,7 @@ describe("DevicesPage", () => {
   it("says which name is missing instead of sending an empty device", async () => {
     const { calls } = mockApi(standardRoutes());
     const person = userEvent.setup();
-    renderPage(<DevicesPage />, { path: "/devices", url: "/devices?add=1", user });
+    renderSettings("/settings/devices?add=1");
     const dialog = await screen.findByRole("dialog", { name: "Add a device" });
     await person.click(within(dialog).getByRole("button", { name: "Add device" }));
     expect(within(dialog).getByText("Give the device a name.")).toBeInTheDocument();

@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/database";
 import { devices } from "../db/schema/devices";
+import { notifySegments } from "../events/processingNotify";
 import { lockDeviceProcessing } from "./deviceLock";
 import { persistWindow } from "./persistWindow";
 import type { ProcessingConfig } from "./processingConfig";
@@ -115,6 +116,8 @@ export async function processWindow(
     if (waitFor.length > 0) {
       await awaitTiles(tx, { deviceId, ...span, fromLevel, priority }, waitFor);
     }
+    // The owner's streams learn of it with the commit, whichever process ran the pass (§9).
+    await notifySegments(tx, { userId: owner.userId, deviceId, from: window.from, to: window.to });
     return {
       deviceId,
       userId: owner.userId,

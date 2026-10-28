@@ -27,8 +27,9 @@ trail/
 ├── packages/
 │   └── contracts/      zod schemas + types = the HTTP contract (imported by both)
 ├── deploy/             production compose stack, env example, Windows docs/scripts
-├── docs/               this file, the public API guide (api.md), operations and user docs
+├── docs/               this file, the public API guide (api.md), operations and user docs, load-test reports (perf/)
 ├── scripts/            repo tooling (dev, build, hooks, db init)
+├── tools/load/         the load-test harness: k6 scenarios, SSE probe, collector, reports (docs/perf/README.md)
 ├── tests/e2e/          Playwright end-to-end suite (whole stack)
 ├── .devcontainer/      development container (scripts/devc.sh, §3), where the node's checks run (§15)
 ├── compose.yaml        development services (Postgres)
@@ -173,6 +174,43 @@ and `backend` (app, db, backup; `internal`, no route out); Launchway attaches
 `app` to its proxy network itself. No host port is published. See §13 and the
 runbook `docs/operations.md`.
 
+### Processing roles
+
+One image, two roles, chosen by `PROCESSING_ROLE`:
+
+| Role | Entry | Runs |
+|---|---|---|
+| `api` | `apps/api/dist/main.mjs` (the image's `CMD`) | HTTP, ingest, the SSE streams and the jobs of §10; it queues processing and runs no pass, no map download, no backfill |
+| `worker` | `trail worker` (`dist/cli.mjs worker`; `apps/api/src/worker.ts` in development, `npm run dev:worker -w @trail/api`); the server's entry in this role does the same | The processing worker of §17.4 — passes, map tiles, the backfill at the start, the 15-minute pass — and its heartbeat; no HTTP server |
+| `all` (default) | `main.mjs` | Both in one process: a single container, `npm run dev`, the tests and the end-to-end suite's server, any install that never set the variable |
+
+Postgres is the only coordination, so a worker needs no address of the API's
+and the API none of the worker's:
+
+- **The queue is the table** `processing_queue` (§17.2). The API writes it, the
+  worker reads it: every two seconds while it has nothing to do (an upload in
+  another process cannot wake it), every minute for retries, every 15 minutes
+  for the map pass. In role `all` an upload wakes the worker of its process
+  3 s later, as before.
+- **Per-device advisory locks** (`deviceLock.ts`) are the cluster's: a pass in
+  the worker and a deletion or a corrected mode in the API exclude each other
+  across processes.
+- **`segments` events cross with `NOTIFY`**: the pass ends with
+  `pg_notify('trail_processing', …)` inside its transaction, and the API's
+  listener republishes the message on its bus (§9) — in role `all` too, so
+  there is one path.
+- **Heartbeats**: each worker writes its row of `processing_workers` at the
+  start, every 15 s and at its stop; the API reads them (§17.2) and the hourly
+  prune removes rows unseen for an hour.
+
+Both entries wait for the database and migrate under the same advisory lock:
+whichever starts first migrates, the other finds nothing to do, and neither
+needs the other to be up. On SIGTERM the worker takes no new window and lets
+the one in progress commit (§11). One worker works the queue out at a time:
+two would take the same windows and work each out twice, as the queue has no
+claims yet. `deploy/compose.yaml` fixes `app` at `PROCESSING_ROLE: all` (not
+taken from `.env`).
+
 ## 4. Configuration (API environment)
 
 All configuration is environment variables, validated at boot with zod
@@ -212,12 +250,15 @@ All configuration is environment variables, validated at boot with zod
 | `RATE_LIMIT_TOKEN_PER_MINUTE` | `600` | `/api/v1` and `/mcp` requests with a valid API token, per token, both together (§8.3, §8.6) |
 | `RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES` | `30` | `/api/v1` and `/mcp` requests with an invalid API token, per IP |
 | `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE` | `60` | The public share endpoint (`/api/public/share`), per IP (§8.5) |
+| `PROCESSING_ROLE` | `all` | What this process runs (§3): `api` serves and queues processing, `worker` processes and serves no HTTP (`trail worker`), `all` both |
 | `PROCESSING_ENABLED` | `true` | Location processing (§17); `false` queues and processes nothing |
 | `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Map data for the mapped level; set but empty: none (§17.3) |
 | `PROCESSING_OVERPASS_DAILY_MB` | `300` | Map download budget per UTC day |
 | `PROCESSING_OSM_TTL_DAYS` | `90` | Map tiles are refreshed after this many days |
 | `PROCESSING_MAX_ACCURACY_M` | `150` | Less accurate points are dropped from the averaged level on |
 | `PROCESSING_STOP_MIN_S` | `180` | The shortest stop |
+| `LOAD_TEST` | `false` | `true` lets `trail load-fleet` create a load test's synthetic people (§11, docs/perf/README.md); previews only |
+| `LAUNCHWAY_ENVIRONMENT` | unset | Set by Launchway (`production` or `preview`), never by hand; `trail load-fleet` runs only where it is `preview` or unset |
 | `NODE_ENV` | `development` | `production` in the image (see below) |
 
 Development safety: when `NODE_ENV !== "production"` the API refuses to start
@@ -354,8 +395,9 @@ are kept 30 days for the record, then pruned.
 **Processing** (§17.2): the derived, rebuildable `processed_points` (cascading
 from `locations`), `segments`, `processing_queue`, `processing_state` and the
 OpenStreetMap cache (`osm_tiles`, `osm_ways`, `osm_tile_ways`, `osm_pois`);
-and `mode_overrides`, the transport modes people set — user data, kept when
-everything else is rebuilt.
+the workers' heartbeats (`processing_workers`); and `mode_overrides`, the
+transport modes people set — user data, kept when everything else is
+rebuilt.
 
 **shares** — one person's location shared with another (§8.5): `id`,
 `owner_user_id` → users (cascade), `recipient_email` (lower-case, checked),
@@ -1980,7 +2022,20 @@ replaces device cache entries from `device` events and appends
 `ingest.points` to today's track. `segments { deviceId, from, to }` follows when processing finished a
 window of a device's history, or a person corrected a mode (§17.4): the
 dashboard refetches the tracks at their level, the timeline and the current
-mode.
+mode. A corrected mode is the API's own doing and goes on the bus at once. A
+pass, in whichever process it ran (§3), ends with
+`pg_notify('trail_processing', '{"t":"segments","u":<user>,"d":<device>,"from":…,"to":…}')`
+in its transaction, so the message (about 160 bytes) leaves with the commit
+and never after a rollback; the API's listener (`events/processingListener.ts`,
+a connection of its own outside the pool) republishes it on the bus, and
+leaves alone any message it does not know. A lost connection is opened again
+after 1 s, then twice as long after each failure up to 30 s, and a check
+every 30 s (10 s to answer) finds one that died silently. Listening again, it
+publishes a `segments` event for every device whose segments were worked out
+(`computed_at`) since ten minutes before the connection last answered — a
+pass's segments carry the start of its transaction, which may lie that far
+before its commit — so a dashboard that stayed open still refetches what it
+missed.
 
 Sharing (§8.5) adds two events. `person` (`{ userId, device }`, the device as
 the stream user's share shows it) follows every upload of a shared device, to
@@ -2011,6 +2066,9 @@ rebuild of every day, instead of a `days` event per day.
 
 ## 10. Background jobs (in-process, single instance)
 
+All of them run in the API's process except the processing worker, which
+runs in the worker (§3) — or in the API's process too, in role `all`.
+
 - every 5 min (only when `ALERT_NTFY_URL` is set) — silent-device check:
   alerts-enabled devices whose `last_seen_at` is older than
   `STALE_AFTER_HOURS` and not yet alerted → ntfy message ("<device> (<owner>)
@@ -2024,8 +2082,9 @@ rebuild of every day, instead of a `days` event per day.
   > 30 days), API tokens (revoked/expired > 30 days) and stopped or ended
   shares and share links (> 30 days); prune `ingest_log` (> 90 d) and the
   hours of the data access log older than `DATA_ACCESS_RETENTION_DAYS` (365 d;
-  a log, not recorded data). Recorded data — locations, visits, trips,
-  events, rejects — is never pruned.
+  a log, not recorded data), and the heartbeats of workers unseen for an hour.
+  Recorded data — locations, visits, trips, events, rejects — is never
+  pruned.
 - every 2 s while accesses wait — the data access log's write (§8.8), in one
   statement per 500 rows; a failed write is tried again with the next.
 - debounced (10 s) — daily-stats recomputation per touched (device, day), in
@@ -2037,10 +2096,19 @@ rebuild of every day, instead of a `days` event per day.
 - once, 5 s after the start — the heat levels of every device whose totals
   disagree are rebuilt from its points (`fillHeatLevels`, §8.2). A shutdown
   does not wait for it: it is cancelled and rolls back.
-- the processing worker (§17.4) — 3 s after new work, every minute for
-  retries and every 15 minutes for windows waiting on map data and lost
-  windows; the boot-time backfill when a level's algorithms changed version;
-  map tiles fetched alongside, within the daily budget.
+- every minute — the API's `load` log line at `info` (docs/perf/README.md): the
+  minute's event-loop delay (p50, p99, max), the pool (connections, idle,
+  waiting), open SSE streams, background tasks, device-days waiting for their
+  daily statistics, the minute's uploads, points, duplicates and rejects, RSS
+  and heap, and the processing queue (rows, new windows ready, how long the
+  oldest of those has waited since it was queued; one small aggregate).
+  Numbers only, for `docker logs` and the load harness; no endpoint.
+- the processing worker (§17.4), in the worker's process (role `worker`) or
+  the API's (`all`) — 3 s after new work in its own process, every 2 s while
+  idle in a worker process, every minute for retries and every 15 minutes for
+  windows waiting on map data and lost windows; the boot-time backfill when a
+  level's algorithms changed version; map tiles fetched alongside, within the
+  daily budget; its heartbeat every 15 s.
 Jobs must never crash the process; failures are logged. Runs never overlap.
 
 ## 11. CLI
@@ -2056,12 +2124,34 @@ the image, so `docker compose exec app trail <command>`):
 - `reprocess [--device <id>] [--from <iso> --to <iso>] [--from-level averaged|mapped|inferred]`
   — work out the processed levels again (§17.4)
 - `prune` — run the retention cleanup now
+- `worker` — the processing worker in the foreground (§3), the worker
+  container's command. A service rather than a command: its own pool of five
+  connections, the server's logging (stdout, `LOG_LEVEL`), a heartbeat, until
+  SIGTERM or SIGINT; then it takes no new window, lets the one in progress
+  commit, writes its last heartbeat and exits 0. A window not committed within
+  80 s is left to the database, which rolls it back as the process exits (1).
+  Exit 1 also on an invalid configuration, in role `api` (a process that must
+  not process) and when it cannot start.
+- `load-fleet --people <n> [--mix default|steered] [--shares <0-1>] [--probe]`
+  — the synthetic people of a load test (docs/perf/README.md): an account per
+  person at `load.invalid`, one phone each with its device token, one session
+  each, shares among them (`--shares`, 0.3: a person in three shares with the
+  next two), the SSE probe's own person with `--probe`; the profiles of
+  docs/design/capacity.md §2.2 (`apps/api/src/load/fleetProfiles.ts`) in the
+  mix's shares, ten phones one of each. The fleet's ids and secrets go to
+  stdout as one JSON document (refused into a terminal: exit 2); stderr gets
+  counts only. Refused (exit 1) unless `LOAD_TEST=true`, `LAUNCHWAY_ENVIRONMENT`
+  is `preview` or unset (fail closed: `production` and any other name are
+  refused) — both checked before the database is opened — and the
+  database holds no passkey and no account outside `load.invalid`, checked
+  before the CLI migrates it and again under the sign-up lock in the
+  transaction that writes the fleet.
 - `help` / `--help`
 
 Every command applies pending migrations first (same advisory lock as the
-server). Output on stdout, logs on stderr. Exit codes: 0 success, 1 failure
-(including invalid configuration), 2 wrong usage (unknown command or option,
-invalid value).
+server). Output on stdout, logs on stderr (`worker`: logs on stdout). Exit
+codes: 0 success, 1 failure (including invalid configuration), 2 wrong usage
+(unknown command or option, invalid value).
 
 ## 12. Security
 
@@ -2213,7 +2303,15 @@ invalid value).
 - Postgres is not published outside the Docker network in production.
 - The app container receives an explicit list of its own variables (§4), not
   the whole `deploy/.env`: Launchway's and the backup's variables never reach
-  it.
+  it — but `LAUNCHWAY_ENVIRONMENT`, the deployment's kind, on which `trail
+  load-fleet` refuses anywhere but in a preview.
+- Load tests never share a database with real people: `trail load-fleet`
+  (§11) refuses without `LOAD_TEST=true`, in a deployment Launchway calls
+  anything but a preview, and in a database that holds a passkey or an
+  account outside `load.invalid`; the harness
+  (`tools/load/`) drives only the stack it started, redacts tokens, sessions,
+  addresses and positions from every line of output it shows, and refuses to
+  write a report that would hold any (docs/perf/README.md, "Safety").
 
 ## 13. Deployment
 
@@ -2228,7 +2326,7 @@ production `node_modules` of the API only (`npm ci --omit=dev --workspace
 dependencies must stay pure JavaScript; the build fails on a `.node` addon),
 `apps/api/dist` (with the API guide and the reference bundle the API build
 copies next to the server, §8.3), `apps/api/drizzle`, `apps/web/dist`, the CLI wrapper
-`/usr/local/bin/trail`; `USER 1000:1000` (`node`); `EXPOSE 8080`;
+`/usr/local/bin/trail` (also the worker's entry, `trail worker`, §3); `USER 1000:1000` (`node`); `EXPOSE 8080`;
 `HEALTHCHECK` on `/api/health/live` (busybox `wget`); OCI labels
 (`org.opencontainers.image.source` links the GHCR package to the repo);
 build args `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` → env (CI sets the
@@ -2298,26 +2396,28 @@ vector styles, light/dark and optional satellite imagery from `/api/config`),
 `uqr` for QR codes. Plain CSS with custom properties (LCH colours with sRGB
 fallbacks), system font stack, no web fonts, no third-party scripts, CSP-clean.
 
-Navigation (`PrimaryNav`, one landmark): **People · Devices · Insights ·
-Settings**, in the header on wide screens and as a tab bar along the bottom
-edge on phones (the same element, restyled); the current item carries
+Navigation (`PrimaryNav`, one landmark): **People · Insights · Settings**,
+in the header on wide screens and as a tab bar along the bottom edge on
+phones (the same element, restyled); the current item carries
 `aria-current="page"` on every address below it. Settings leads to
 `/settings`: the list of Settings on phones, its first page beside the list
-on wide screens.
+on wide screens. The devices live in Settings (Settings › Devices, below), so
+Settings is the current item on their pages too.
 
 | Route | Page |
 |---|---|
 | `/login`, `/invite/:token`, `/link/:token` | sign-in and sign-up (public) |
 | `/s` | a public link; its secret is the fragment, `/s#trls_…` (public) |
 | `/` | **People**, the home page: the map with Live, History and Heat, and the people list (signed in) |
-| `/devices`, `/devices/:id` | Devices, one device |
 | `/insights`, `/insights/transport/:mode`, `/insights/time`, `/insights/roads` | Insights: the overview, a transport mode's page, when you travel, roads |
 | `/settings` | Settings: on phones the list with search; on wide screens the first page (Profile) beside the list. An anchor of the single page of 0.2 (`/settings#tokens`, `#browsers`, …) opens its page (`settingsPathFor`) |
-| `/settings/profile`, `…/passkeys`, `…/browsers`, `…/sharing`, `…/links`, `…/privacy/viewers`, `…/privacy/access-log`, `…/data`, `…/tokens`, `…/mcp`, `…/preferences`, `…/notifications`, `…/about`, `…/accounts` | a page of Settings each; `…/accounts` for administrators only, everyone else lands on `/settings` |
-| `/settings/passkeys/:id`, `…/sharing/:shareId`, `…/links/:id`, `…/tokens/:id`, `…/privacy/viewers/:actor` | the page of one passkey, share, public link, API token or viewer — an actor of the access log, its actor id (§8.8) as base64url |
+| `/settings/profile`, `…/devices`, `…/passkeys`, `…/browsers`, `…/sharing`, `…/links`, `…/privacy/viewers`, `…/privacy/access-log`, `…/data`, `…/tokens`, `…/mcp`, `…/preferences`, `…/notifications`, `…/about`, `…/accounts` | a page of Settings each; `…/accounts` for administrators only, everyone else lands on `/settings`; `/settings/devices?add=1` opens Add device |
+| `/settings/devices/:deviceId`, `…/passkeys/:id`, `…/sharing/:shareId`, `…/links/:id`, `…/tokens/:id`, `…/privacy/viewers/:actor` | the page of one device, passkey, share, public link, API token or viewer — an actor of the access log, its actor id (§8.8) as base64url |
+| `/settings/devices/:deviceId/uploads`, `…/points`, `…/tracking`, `…/setup` | a device's uploads, raw points, tracking settings (Overland's presets; for another app the page says that only Overland takes them) and setup: the pages of its parts, a level below its own |
 | `/settings/people` | Accounts' address of 0.3: redirects (replacing the entry) to `/settings/accounts` |
 | `/history?…`, `/explore?…` | redirect (replacing the entry) to `/?view=history&…` and `/?view=heat&…`, every parameter kept (`legacyMapPath`) |
 | `/people?…` | redirect (replacing the entry) to `/?…`, every parameter kept (`legacyPeoplePath`): People had an address of its own before it took in the map |
+| `/devices?…`, `/devices/:id?…` | redirect (replacing the entry) to `/settings/devices?…` and `/settings/devices/:id?…`, the query and the anchor kept (`legacyDevicesPath`, rendered rather than in a loader, whose request has no anchor): Devices had a tab of its own before it moved into Settings, and links, bookmarks and the guides keep working |
 | anything else | 404 |
 
 `isSignedInPath` lists the signed-in paths, those of Settings taken from its
@@ -2363,7 +2463,7 @@ count among them, since they lead to signed-in pages.
     sits right under the Me card (a region "Your day so far"): today's
     timeline of stops and moves (`DayTimeline`, the one History has), whose
     Details open the move's dialog and move the camera to it. That the phones
-    keep sending — status, uploads, activity — is the Devices page's.
+    keep sending — status, uploads, activity — is Settings › Devices'.
   - **History** — pick a day (prev/next, calendar with days that have data
     from `/api/stats/days`) or a range ≤ 93 days; tracks per device at a
     level (Raw · Averaged · Mapped · Transport, §17.6), stops and moves in
@@ -2461,12 +2561,13 @@ count among them, since they lead to signed-in pages.
   devices are not changed." —
   another
   device is set on its own page); with no device yet "Connect your first
-  phone", and while no device has uploaded "Waiting for the first upload"
-  with the way to its setup. Its Details: each device by name, linked to its
-  page, with when it last reported a position ("Waiting for the first
-  upload" before it did), battery, that position with its accuracy,
-  movement ("Last reported movement" once it is not live) and trip, and the
-  way to the Devices page. Then "Sharing with you": a card per person (`PersonCard`),
+  phone" (Add a device: `/settings/devices?add=1`), and while no device has
+  uploaded "Waiting for the first upload" with the way to its setup (the
+  device's Setup page). Its Details: each device by name, linked to its
+  page in Settings › Devices, with when it last reported a position ("Waiting
+  for the first upload" before it did), battery, that position with its
+  accuracy, movement ("Last reported movement" once it is not live) and trip,
+  and the way to Settings › Devices. Then "Sharing with you": a card per person (`PersonCard`),
   each as their initials in their colour (`personPalette`, a second ring
   beside the device colours, assigned in the order they started sharing),
   the line about them from the device that reported last (`primaryDevice`;
@@ -2521,47 +2622,6 @@ count among them, since they lead to signed-in pages.
   (a `share` event refetches the people) is never asked for what it allowed
   before, and they are not cached once off screen (`gcTime` 0); `person`
   events refetch them.
-- **Devices** — the proof that data still comes in, which People leaves out:
-  under the title how many devices are live and the latest upload of any ("1
-  of 2 devices live · last upload 2 min ago", ticking); a card per device
-  (`DeviceCard`, the name leading to its page): status badge
-  (`deviceStatus()`: Live, Idle, Silent, No data yet, with what each means),
-  its app, Device ID and points in total, last upload ("2 min ago", ticking;
-  "Waiting for the first upload" with the app to open and the way to its
-  setup), the Overland trip
-  in progress, battery, movement ("Last seen …" once it is not live), points
-  today, the distance today (from the day's sums, `/api/stats/days`, not
-  from its whole track; asked for every 10 s while uploads come in, until a
-  minute after the last, since the server sums a day up 10 s after the first
-  upload of a run and again for the ones after that pass), the last position
-  with its accuracy and time, and the 48 h activity sparkline (points per
-  hour and a tick per hour with uploads, its numbers in a table); then
-  **Uploads**, the feed of every upload of every device, newest first (the
-  ingest logs merged with those the event stream announces while the page is
-  open, marked New); "How it works". The "Add device" flow: name and the
-  app on the phone (Overland · OwnTracks · Traccar Client · OsmAnd · GPSLogger,
-  each with its platforms and a line on what Trail gets from it; the device
-  key only for Overland and OwnTracks), then what that app needs
-  (`CredentialsView`, one component per app in `devices/setup/`): Overland's
-  QR of `overland://setup` and "Open in Overland"; OwnTracks' configuration
-  link per platform (an iPhone · Android switch, on an iPhone Move ·
-  Significant changes with what each costs in battery, "Allow external
-  configuration" first) with URL, user name, device ID, tracker ID and the
-  token — the iPhone's *HTTP Headers* line, Android's password; Traccar Client's `org.traccar.client://` link with server URL and device
-  identifier (and a word that it is the token); OsmAnd's web address and
-  GPSLogger's URL, header and method to copy — every value with a copy button,
-  the settings Trail recommends for that app (`recommendedSettings.ts`, the
-  numbers from the same contracts as the links), then "Waiting for the first
-  upload…" with what to check in that app, which turns into a success state
-  via SSE. Device page: status, overview (last upload and position, movement,
-  altitude, battery, trip, points, the app, Device ID, token, added),
-  **Activity** (the same sparkline), **Travelling now** (the quick toggle for
-  this device: the Me card's sets the device that reported last), remote
-  settings presets (Overland only), alerts toggle, ingest log, raw points
-  (paginated), Setup (the app, its connection without the token, its
-  recommended settings), rotate token — optionally to another app, which
-  keeps the history — re-showing the setup, rename, delete (type the name to
-  confirm).
 - **Insights** (`pages/insights/`) — how the signed-in person travelled,
   from the operations of §8.7, on four pages that share a heading, a
   navigation of their own (Overview · When you travel · Roads; a mode's page
@@ -2650,35 +2710,51 @@ count among them, since they lead to signed-in pages.
   groups Account · Privacy & data · Developer · App · Admin, and each row's
   id, path, label, icon and tile colour, keywords for search, `adminOnly`,
   the parts of its page that search lists on their own (with their heading's
-  id) and the pages of its items (`/settings/tokens/:tokenId`). The routes
-  (`settingsRoutes.tsx`, a chunk per page), `isSignedInPath`, the old anchors
-  (`settingsPathFor`, own keys only) and the search index are built from it.
-  `useSettingsTree` adds what the person sees: the administrators' group for
-  administrators only, and the value on the right of a row from the lists
-  the pages load anyway (one cache) — the display name; the number of
-  passkeys, browsers, people shared with, working links ("3 active") and
-  active tokens; how many people, links and tokens looked in the last 30
-  days (the summary Who viewed you and Insights' card load too); whether
-  alerts are on; the version.
+  id, or the query the page takes: Add device is `/settings/devices?add=1`),
+  the pages of its items (`/settings/tokens/:tokenId`), whether search finds
+  the items by name (`searchable`: the devices) and the pages of the parts of
+  an item (`/settings/devices/:deviceId/uploads`, each with its title and
+  line). A part of an item gets a page a level deeper when it is a table, a
+  list loaded on its own or a choice (a device's uploads, raw points, presets
+  and setup); otherwise it stays a section of the item's page, `#anchor` and
+  all (a token's scopes and use, a share's terms and its use). The routes (`settingsRoutes.tsx`, a chunk per page),
+  `isSignedInPath`, the old anchors (`settingsPathFor`, own keys only), the
+  search index and the devices' addresses (`devicePaths.ts`, every link to a
+  device's pages) are built from it. `useSettingsTree` adds what the person
+  sees: the administrators' group for administrators only, the value on the
+  right of a row from the lists the pages load anyway (one cache) — the
+  display name; the number of devices, passkeys, browsers, people shared
+  with, working links ("3 active") and active tokens; how many people, links
+  and tokens looked in the last 30 days (the summary Who viewed you and
+  Insights' card load too); whether alerts are on; the version — and to
+  search one's devices, by name, app and device ID ("Account › Devices",
+  leading to the device's page).
 
   The frame (`SettingsShell`): on phones (below 64rem) the list — the search
   field, then the groups as inset cards of rows — is the page at `/settings`,
   and every other page has the screen to itself under a bar with the way back
   and the page's title, which starts large and moves into the bar once it
-  scrolls under it; going deeper slides the new page in from the right,
-  coming back from the left, with no motion under `prefers-reduced-motion`.
+  scrolls under it; going deeper — the root, a page, an item's page, a part
+  of an item (`settingsPlaceOf`, levels 0 to 3) — slides the new page in from
+  the right, coming back from the left, with no motion under
+  `prefers-reduced-motion`.
   On wide screens the list stands beside the page (as in the Mac's System
   Settings), marks the row of the page on screen (`aria-current`), scrolls by
   itself and keeps its search while pages change; `/settings` opens the first
   page there. The components: `SettingsGroup` (a titled card of rows, of
   label/value facts or of a form, with small print below; a list is named by
-  its title), `SettingsRow` (an icon tile, the label, a second line and the
-  value, then a chevron — or a switch, a choice, an action, an arrow for a
-  page outside the app; a row's link is named by its label and described by
-  the rest), `SettingsPage` (a region named by its h1, the bar, the title and
-  description) and `SettingsSearch`. Every page has the document title
-  "<page> · Settings" ("<item> · <page> · Settings" one level deeper) and
-  takes focus when it opens; coming back up, focus returns to the row of the
+  its title; also an ordered list, the uploads newest first, and a group of
+  cards, a device each), `SettingsRow` (an icon tile, the label, a second
+  line and the value, then a chevron — or a switch, a choice, an action, an
+  arrow for a page outside Settings: the API reference outside the app, a
+  device's History in it (`away`, a link that keeps no way back into
+  Settings); a row's link is named by its label and described by the rest; `useSettingsLink` gives it, and a device's card,
+  where it was opened from and the focus on the way back), `SettingsPage` (a
+  region named by its h1, the bar, the title and description; for the part
+  of an item the way back is the item's page, by the item's name) and
+  `SettingsSearch`. Every page has the document title "<page> · Settings"
+  ("<item> · <page> · Settings" one level deeper, "<part> · <item> · <page> ·
+  Settings" for the part of an item) and takes focus when it opens; coming back up, focus returns to the row of the
   page that was left, and an address with `#part` focuses that part's
   heading. The way back goes back in the history when the page was opened
   from the one above it (a row puts its address in the location's state),
@@ -2688,7 +2764,8 @@ count among them, since they lead to signed-in pages.
   matches first) and shows each with where it is ("Privacy & data › Your
   data"); Enter opens the first.
 
-  The pages: **Profile** (name, time zone); **Passkeys** (the list, adding
+  The pages: **Profile** (name, time zone); **Devices** (below);
+  **Passkeys** (the list, adding
   one here, a one-time link with a QR code for another device or address)
   and a passkey's page (where it is kept, synced or not, its address, added,
   last used; rename, delete — never the last); **Browsers** (the signed-in
@@ -2784,6 +2861,71 @@ count among them, since they lead to signed-in pages.
   Saving the map style or the level forgets this browser's own choice of it,
   so the browser follows the account again. A public link's page has no
   session and uses the built-in defaults.
+- **Devices**, in Settings (`/settings/devices`, `pages/devices/`: the row
+  after Profile in the Account group, with the number of devices) — the proof
+  that data still comes in, which People leaves out: under the title how many
+  devices are live and the latest upload of any ("1 of 2 devices live · last
+  upload 2 min ago", ticking); **Add device**, an action row; then **Your
+  devices**, a card per device (`DeviceCard`, in a group of cards, its name an
+  h3: the head — colour, name, status, a chevron — leads to the device's page
+  as a row of Settings does, carrying where it was opened from, and takes the
+  focus again on the way back, unless the device is going away): status badge
+  (`deviceStatus()`: Live, Idle, Silent, No data yet, with what each means),
+  its app, Device ID and points in total, last upload ("2 min ago", ticking;
+  "Waiting for the first upload" with the app to open and "Setup details",
+  the device's Setup page), the Overland trip
+  in progress, battery, movement ("Last seen …" once it is not live), points
+  today, the distance today (from the day's sums, `/api/stats/days`, not
+  from its whole track; asked for every 10 s while uploads come in, until a
+  minute after the last, since the server sums a day up 10 s after the first
+  upload of a run and again for the ones after that pass), the last position
+  with its accuracy and time, and the 48 h activity sparkline (points per
+  hour and a tick per hour with uploads, its numbers in a table); then
+  **Uploads** (an ordered group, `#uploads`), the feed of every upload of
+  every device, newest first (the ingest logs merged with those the event
+  stream announces while the page is open, marked New); "How it works". The
+  "Add device" flow (`?add=1`, a dialog): name and the
+  app on the phone (Overland · OwnTracks · Traccar Client · OsmAnd · GPSLogger,
+  each with its platforms and a line on what Trail gets from it; the device
+  key only for Overland and OwnTracks), then what that app needs
+  (`CredentialsView`, one component per app in `devices/setup/`): Overland's
+  QR of `overland://setup` and "Open in Overland"; OwnTracks' configuration
+  link per platform (an iPhone · Android switch, on an iPhone Move ·
+  Significant changes with what each costs in battery, "Allow external
+  configuration" first) with URL, user name, device ID, tracker ID and the
+  token — the iPhone's *HTTP Headers* line, Android's password; Traccar Client's `org.traccar.client://` link with server URL and device
+  identifier (and a word that it is the token); OsmAnd's web address and
+  GPSLogger's URL, header and method to copy — every value with a copy button,
+  the settings Trail recommends for that app (`recommendedSettings.ts`, the
+  numbers from the same contracts as the links), then "Waiting for the first
+  upload…" with what to check in that app, which turns into a success state
+  via SSE, and "Open device page".
+
+  **A device's page** (`/settings/devices/:deviceId`, `pages/device/`), in
+  the groups of the iPhone's Settings: under its name its colour, status and
+  last upload; **Overview** (facts: last upload and position, movement,
+  altitude, battery, trip, points, the app, Device ID, token, added);
+  **Activity** (the same sparkline); **Travelling now** (the quick toggle for
+  this device: the Me card's sets the device that reported last); **Alerts**
+  (its switch, as Notifications has it); **What it sent**: Uploads, Raw points
+  (its total on the right) and History (its tracks in the People page's
+  History, with the arrow of a row that leaves Settings); **The phone**: Tracking settings (Overland only; "Queued" while a
+  preset waits) and Setup; then Rename; Issue new
+  token — optionally to another app, which keeps the history — re-showing the
+  setup; and Delete device (type the name to confirm), which goes back in the
+  history to the list when the page was opened from it, so Back never leads to
+  the gone device, and otherwise leaves the list in its place; focus goes to
+  the list's title. A level deeper, a page each (`DevicePartPage`: its title
+  and line from the tree, the way back named after the device, the document
+  title "<part> · <device> · Devices · Settings"): **Uploads** (the ingest
+  log, the latest 10 or all 50), **Raw points** (paginated, and "New points
+  arrived" once the device uploaded after the list was loaded), **Tracking
+  settings** (Overland's presets, queued for its next upload and delivered
+  once; another app's address says that only Overland takes them) and
+  **Setup** (for OwnTracks the phone it runs on and how an iPhone tracks; the
+  connection without the token; the settings Trail recommends). A device that
+  does not exist — deleted, here or in another tab, or someone else's — has a
+  page that says so at each of its addresses.
 - **Public link** (`/s#<secret>`) — no session, no navigation: the label, a map
   of the shared devices (with the route for history links), how fresh each
   position is, details when included, the expiry, a refresh every 15 s, and a
@@ -2877,6 +3019,19 @@ SHA; per-job least-privilege permissions (`packages`, `id-token`,
 minute).
 The weekly run only rebuilds the image: no tests run on a schedule.
 
+**Map data** (`.github/workflows/mapdata.yml`; first version, from task 0 of
+`docs/design/self-hosted-maps.md`): on dispatch with a `region` input (one
+job per region of `scripts/mapdata/regions.json`, one build per region at a
+time), and on Monaco for pull requests that change it or `scripts/mapdata/`,
+it runs `scripts/mapdata/build.sh` on `ubuntu-24.04` with Ubuntu's
+osmium-tool and Planetiler 0.10.2 (its jar pinned by SHA-256) on the runner
+image's Temurin 21. The script fetches Planetiler's sources into a monthly
+Actions cache (Natural Earth and the lake centrelines pinned by SHA-256, the
+daily water polygons recorded only) and keeps the files of each region as
+artefacts of the run for 14 days; a job may take 4 hours. Read-only token;
+nothing is published yet: the GHCR push of the design's task 2 comes in a
+job of its own that never runs for pull requests.
+
 **Branch rules of `main`.** The ruleset "main protection" requires a pull
 request (merge commits only) and, up to date with `main`, the status checks
 `launchway/quality`, `launchway/integration` and `launchway/e2e` with the
@@ -2915,7 +3070,7 @@ security ones too.
   RDP, distance, tile math and the heatmap's levels, whole-cell windows and
   the levels a device's totals call for rebuilding (those below the highest,
   level 18 included),
-  token hashing, config parsing, presets, share
+  token hashing, config parsing, the processing channel's messages, presets, share
   durations across DST and skipped midnights, the sharing grids — one per
   owner, fixed, within the cell around the position, area cells made of whole
   approximate cells, whole at the antimeridian, and a property test that no
@@ -3020,6 +3175,15 @@ security ones too.
   of map data as in one, ready times by the worker's clock, a deleted range
   repaired, the backfill across a restart, the v1 routes with sessions and
   tokens, `trail reprocess`, and a log that names tiles only at debug level.
+  `processingTopology.test.ts` holds an API in role `api` and a worker
+  (`createWorkerContext()`: the worker's side without the HTTP app) on one
+  database: the API queues and works nothing out, the worker's pass reaches the
+  API's stream through `NOTIFY`, the listener comes back after its backend is
+  terminated and announces what it missed, and heartbeats are written, read
+  and pruned. `workerProcess.test.ts` runs the entries as processes: `trail
+  worker` lets a pass held in the middle of its transaction commit after
+  SIGTERM, then exits 0; the server's entry serves no HTTP in role `worker` and
+  starts no worker in role `api`.
   The MCP server is driven by the SDK's own client over Streamable HTTP
   (`tests/support/mcpClient.ts`), in both protocol eras: `mcp.test.ts` the
   transport (JSON answers, tools/list per scope, the unknown-tool answer,
@@ -3095,6 +3259,25 @@ security ones too.
   and remembered names, the retention, the account's deletion and the
   shutdown's last write. The migration-upgrade test fingerprints its rows and
   the visitor key.
+- The load harness (`tools/load/test`, `node --test`, part of `npm test`):
+  the profiles equal `trail load-fleet`'s and give §2.2's day; a thousand
+  phones played over a day send what docs/design/capacity.md §2.3 computes
+  (points and requests a day, the morning peak and the night, the worst ten
+  seconds, an eight-hour backlog) and a compressed day the same rates; a
+  phone's points are the same whenever asked for, on whole seconds, one a
+  second at most; the encoders send the fields and units of
+  `trackerSamples.ts` and the Overland fixture, the token where each app
+  puts it; routes from the fixture and from a file; the targets as k6
+  thresholds; the redaction of tokens, sessions, addresses and positions;
+  the collector's rates and its reading of the app's log (numbers only); the
+  report (every target, the verdict, the index) and its refusal to hold a
+  secret; the SSE probe's lags against a fake server. In the API,
+  `loadFleet.test.ts` (unit) allocates the profiles and checks every refusal
+  condition alone, and `loadFleet.test.ts` (integration) runs `trail
+  load-fleet` refused without each condition, then creates a fleet whose
+  phones upload through all three protocols, whose sessions sign in and whose
+  shares show, with no secret on stderr; `loadLine.test.ts` (both) holds the
+  load line to numbers and counts an upload.
 - `apps/web/tests` — Vitest + Testing Library (jsdom). Pages render through
   `renderPage` with the API answered by `mockApi` and the map replaced by a
   stub that shows what it was handed; the People page's tests also check
@@ -3116,16 +3299,25 @@ security ones too.
   `mapSearchUpdates`, `resolveMapSelection`, `viewsFor` and `shownView`), the
   selection of a card (`selectionShowing`, `everyoneToggled`), the line about
   one's own sharing (`sharingSummary`), the old addresses (`legacyMapPath`,
-  `legacyPeoplePath`, and the redirects through the app's own route table),
-  Settings' tree (groups, paths, levels, administrators' rows), its search
-  index and row values, the old anchors (`settingsPathFor`),
+  `legacyPeoplePath`, `legacyDevicesPath`, and the redirects through the
+  app's own route table — the Devices page's rendered, its query and anchor
+  kept and its entry replaced), Settings' tree (groups, paths, levels down to
+  the parts of an item, administrators' rows, the devices' addresses), its
+  search index (one's devices by name, app and device ID) and row values, the
+  old anchors (`settingsPathFor`),
   `isSignedInPath`, the precedence of the map's defaults, the heatmap's
   scale, classes and squares (`heatHelpers.test.ts`) and where its layer
   goes in OpenFreeMap's two styles, their layers as served
   (`heatLayers.test.ts`: over every shape, under every name, Trail's lines
   where they were) have unit tests of their own; Settings itself renders through its real routes
   (`renderSettings`, phone or wide screen) for the list, search, going
-  deeper and back with focus, and every page. The charts' helpers (scales,
+  deeper and back with focus, and every page — Settings › Devices among them:
+  its cards, each the way to its device and back with the focus on it, a
+  device's page and the pages of its parts (a level deeper and back, the
+  sidebar's row marked), a tracking page for an app that takes no presets, a
+  device that does not exist, and deleting one opened from the list (back in
+  the history, focus on the list's title) or by its address (the list in its
+  place, nothing asked for the gone device). The charts' helpers (scales,
   nice ticks, bands, tick thinning, the heat grid's bins, summaries, tooltip
   placement) and components (named and described figures, marks with their
   values as descriptions, one tab stop and the arrow keys, tooltips by
@@ -3158,13 +3350,16 @@ security ones too.
   suite's server has satellite imagery from a host of its own, whose tiles
   the stub answers, so the CSP's map origins are checked too), other
   third-party requests refused. The Overland fixture is shifted to today.
-  Scenarios: sign-up and refusal, device setup and the live upload (on the
-  Devices page: status, points, battery, trip, activity and the upload feed;
-  on People the Me card), setting up OwnTracks (its links for both platforms
+  Scenarios: sign-up and refusal, device setup and the live upload (in
+  Settings › Devices: status, points, battery, trip, activity and the upload
+  feed; on People the Me card), setting up OwnTracks (its links for both platforms
   and both ways an iPhone tracks decoded, the first uploads with Android's
   Basic and the iPhone's bearer header over the suite's http:// address, the
-  device page), ingest log and raw points, remote settings, token
-  rotation, History and its scrubber,
+  device page and its setup), a device's page and the pages of its parts a
+  level deeper (its uploads and raw points, remote settings, its setup, back
+  with the focus on the row), token rotation, renaming, deleting (from the
+  list: back in the history, Back not to the gone device), History and its
+  scrubber,
   the heatmap (its squares on the map, found by their colours in a
   screenshot of the canvas, its key and the busiest places), sign-in by email,
   passkey button and autofill, invitations and
@@ -3194,11 +3389,14 @@ security ones too.
   by an upload; sharing back and stopping from a card's Details; a deep link
   to someone alone), Settings (the list with its values and search, on phones
   a page of its own and beside the page on wide screens, every page and the
-  page of each kind of item, going deeper and back by address and through
-  the history, the old anchors and addresses, the preferences the map opens
-  with, the administrators' page), the navigation (a tab bar on phones, the
-  current item, focus on the new page's heading, `/people` leading home with
-  its parameters), Insights (a walk and a drive worked out by the server
+  page of each kind of item — a device's and its four parts too —, a device
+  found by its name, going deeper and back by address and through the
+  history, the old anchors and addresses, the preferences the map opens
+  with, the administrators' page), the navigation (People · Insights ·
+  Settings, a tab bar on phones, the current item — Settings on the devices'
+  pages —, focus on the new page's heading, `/people` leading home with its
+  parameters, `/devices?add=1` and a device's old address leading into
+  Settings in place of the old entry), Insights (a walk and a drive worked out by the server
   without map data: the overview and its numbers, another period in the
   address, a chart by keyboard — one tab stop, arrow keys, the tooltip and
   Escape —, a mode's page from the table and its link to the move on the
@@ -3297,8 +3495,9 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   `confidence`, `review` (the inference was unsure; `needsReview` = review and
   no `mode_user`), `distance_m`, `duration_s`, `max_speed`, `point_count`,
   start, end and centroid lat/lon, `features` (jsonb), `version` (the
-  inferred level's), `computed_at`. Unique `(device_id, started_at)`, index
-  `(device_id, ended_at)`. Stops and moves follow each other without overlap
+  inferred level's), `computed_at`. Unique `(device_id, started_at)`, indexes
+  `(device_id, ended_at)` and `(computed_at)` (the listener's catch-up, §9).
+  Stops and moves follow each other without overlap
   and share their boundary point — except after a stop that lasted beyond its
   last point (until a visit's departure, through a pause or a still gap), whose
   next move starts at the point after it; a recording gap the phone lay still
@@ -3327,6 +3526,12 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   was backfilled for, `{ "versions": { "averaged": 1, "mapped": 1, "inferred": 3 } }`
   (`{ "version": n }`, from before the levels had versions of their own, means
   n for every level).
+- **processing_workers** — one row per worker process (§3), its heartbeat:
+  `id` (host, process id, start time and a random tag), `started_at`,
+  `last_seen_at` (the database's clock, refreshed every 15 s and at the stop),
+  `version` (the release), `job_id` (the job it runs; null until jobs have ids),
+  `passes` and `points` (since its start). No user data; rows unseen for an
+  hour are pruned (§10).
 
 ### 17.3 Algorithms
 
@@ -3553,10 +3758,12 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   (a long stop reaching far beyond the range leaves no hole), in its
   transaction, under the device's processing lock; deleting a device
   cascades. A time-zone change needs nothing (segments are UTC).
-- One in-process worker (`ProcessingWorker`, the daily-statistics scheduler's
-  pattern, reading the table) wakes 3 s after new work, every minute for
-  retries and on a 15-minute pass. It takes the next ready window — new data
-  oldest first, then the backfill newest day first, and after a pass of new
+- One worker (`ProcessingWorker`, the daily-statistics scheduler's pattern,
+  reading the table), in the worker process or in the API's in role `all`
+  (§3), wakes 3 s after new work queued in its own process, every 2 s while
+  idle in a worker process, every minute for retries and on a 15-minute
+  pass. It takes the next ready window — new data oldest first, then the
+  backfill newest day first, and after a pass of new
   data a ready backfill window gets the next turn, so a phone uploading every
   few minutes never starves the backfill — with every ready window of the
   device that overlaps it (not one waiting for map tiles or a retry: it would
@@ -3615,9 +3822,11 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   them itself with the map data already cached; tiles still missing are left
   to the server's fetcher.
 - When a window is done, the owner's streams get `segments { deviceId, from,
-  to }` (§9), and so after a correction; an open dashboard refetches.
-- Shutdown stops the worker: a window in progress finishes its transaction,
-  map downloads are aborted.
+  to }` through the processing channel (§9), whichever process worked it out
+  (`trail reprocess` included), and from the API itself after a correction;
+  an open dashboard refetches.
+- Shutdown stops the worker: a window in progress finishes its transaction
+  (`trail worker` waits up to 80 s for it, §11), map downloads are aborted.
 
 ### 17.5 Overrides (the person wins)
 
@@ -3719,6 +3928,7 @@ current mode.
 
 | Variable | Default | Meaning |
 |---|---|---|
+| `PROCESSING_ROLE` | `all` | `api`: this process queues and processes nothing; `worker`: it processes and serves no HTTP; `all`: both (§3) |
 | `PROCESSING_ENABLED` | `true` | `false`: nothing is queued or processed; the derived tables stay as they are |
 | `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Overpass interpreter for map data; set but empty: no map data (mapped degrades to averaged) |
 | `PROCESSING_OVERPASS_DAILY_MB` | `300` | Map download budget per UTC day |

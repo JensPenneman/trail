@@ -1,0 +1,6 @@
+{
+  "attributes": { "type": true, "id": true },
+  "linear_tags": false,
+  "area_tags": ["aeroway=aerodrome"],
+  "include_tags": ["name", "railway", "station", "subway", "highway", "amenity", "aeroway"]
+}

@@ -30,11 +30,14 @@ describe("Settings on a phone", () => {
         .map((link) => link.textContent),
     ).toEqual([
       expect.stringContaining("Profile"),
+      expect.stringContaining("Devices"),
       expect.stringContaining("Passkeys"),
       expect.stringContaining("Browsers"),
     ]);
     expect(row("Profile")).toHaveAttribute("href", "/settings/profile");
     expect(row("Profile")).toHaveAccessibleDescription("Jens");
+    expect(row("Devices")).toHaveAttribute("href", "/settings/devices");
+    await waitFor(() => expect(row("Devices")).toHaveAccessibleDescription("2"));
     await waitFor(() => expect(row("Passkeys")).toHaveAccessibleDescription("1"));
     await waitFor(() => expect(row("Browsers")).toHaveAccessibleDescription("2"));
     await waitFor(() => expect(row("Sharing")).toHaveAccessibleDescription("1"));
@@ -85,6 +88,47 @@ describe("Settings on a phone", () => {
     await waitFor(() =>
       expect(screen.getByRole("heading", { level: 2, name: "Export" })).toHaveFocus(),
     );
+  });
+
+  it("finds a device by its name, its app or its device ID, and opens its page", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderSettings("/settings");
+    const search = await screen.findByRole("searchbox", { name: "Search Settings" });
+    // The devices come with the list: search knows them once it has loaded.
+    await waitFor(() => expect(row("Devices")).toHaveAccessibleDescription("2"));
+    await person.type(search, "iphone");
+    const results = screen.getByRole("list", { name: "Results" });
+    expect(within(results).getByRole("link", { name: "iPhone 16" })).toHaveAttribute(
+      "href",
+      `/settings/devices/${ids.phone}`,
+    );
+    expect(within(results).getByRole("link", { name: "iPhone 16" })).toHaveAccessibleDescription(
+      "Account › Devices",
+    );
+    await person.clear(search);
+    await person.type(search, "car-old");
+    const byKey = within(screen.getByRole("list", { name: "Results" })).getAllByRole("link");
+    expect(byKey).toHaveLength(1);
+    expect(byKey[0]).toHaveAccessibleName("Car");
+    await person.clear(search);
+    await person.type(search, "car{Enter}");
+    expect(await heading("Car")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe(`/settings/devices/${ids.car}`);
+    expect(document.title).toBe("Car · Devices · Settings · Trail");
+  });
+
+  it("opens Add device from search, with its dialog", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderSettings("/settings");
+    const search = await screen.findByRole("searchbox", { name: "Search Settings" });
+    await person.type(search, "add device{Enter}");
+    expect(await screen.findByRole("dialog", { name: "Add a device" })).toBeInTheDocument();
+    expect(router.state.location).toMatchObject({
+      pathname: "/settings/devices",
+      search: "?add=1",
+    });
   });
 
   it("goes a page deeper and comes back, with focus on the row it came from", async () => {
@@ -180,6 +224,19 @@ describe("Settings beside the list", () => {
     await person.click(await screen.findByRole("link", { name: "Home Assistant" }));
     expect(await heading("Home Assistant")).toBeInTheDocument();
     expect(row("API tokens")).toHaveAttribute("aria-current", "page");
+  });
+
+  it("marks Devices beside a device's page and the pages of its parts", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    renderSettings(`/settings/devices/${ids.phone}`, { wide: true });
+    expect(await heading("iPhone 16")).toBeInTheDocument();
+    expect(row("Devices")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Back to Devices" })).toBeInTheDocument();
+    await person.click(screen.getByRole("link", { name: "Raw points" }));
+    expect(await heading("Raw points")).toBeInTheDocument();
+    expect(row("Devices")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Back to iPhone 16" })).toBeInTheDocument();
   });
 
   it("searches from the sidebar and keeps the query while pages change", async () => {

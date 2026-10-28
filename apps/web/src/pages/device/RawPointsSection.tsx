@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { useFormatter } from "../../format/useFormatter";
 import { useLocationPages } from "../../queries/useLocationPages";
+import { SettingsGroup } from "../../settings/SettingsGroup";
 import { Button } from "../../ui/Button";
 import { EmptyState } from "../../ui/EmptyState";
 import { ErrorState } from "../../ui/ErrorState";
@@ -18,7 +19,6 @@ interface RawPointsSectionProps {
 /** The stored points exactly as they arrived, newest first, a page at a time. */
 export function RawPointsSection({ deviceId, lastSeenAt }: RawPointsSectionProps) {
   const format = useFormatter();
-  const headingId = useId();
   const captionId = useId();
   const scrollable = useScrollableFocus();
   const pages = useLocationPages(deviceId);
@@ -29,13 +29,7 @@ export function RawPointsSection({ deviceId, lastSeenAt }: RawPointsSectionProps
     value === null ? "—" : render(value);
 
   return (
-    <section className="section" aria-labelledby={headingId}>
-      <div className="section__header">
-        <h2 className="section__title" id={headingId}>
-          Raw points
-        </h2>
-        <p className="section__description">Every stored point, newest first.</p>
-      </div>
+    <>
       {newer ? (
         <Notice
           tone="info"
@@ -59,60 +53,58 @@ export function RawPointsSection({ deviceId, lastSeenAt }: RawPointsSectionProps
           retrying={pages.isFetching}
         />
       ) : rows.length === 0 ? (
-        <div className="card">
-          <EmptyState icon="pin" title="No points stored" level={3} />
-        </div>
+        <SettingsGroup variant="card">
+          <EmptyState icon="pin" title="No points stored" />
+        </SettingsGroup>
       ) : (
         <>
-          <section
-            className="card card--flush table-scroll"
-            aria-labelledby={captionId}
-            ref={scrollable}
-          >
-            <table className="table">
-              <caption className="visually-hidden" id={captionId}>
-                Stored points of this device
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Recorded</th>
-                  <th scope="col">Position</th>
-                  <th scope="col" className="table__number">
-                    Accuracy
-                  </th>
-                  <th scope="col" className="table__number">
-                    Speed
-                  </th>
-                  <th scope="col" className="table__number">
-                    Altitude
-                  </th>
-                  <th scope="col">Motion</th>
-                  <th scope="col" className="table__number">
-                    Battery
-                  </th>
-                  <th scope="col">Received</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.recordedAt}>
-                    <td>
-                      <time dateTime={row.recordedAt}>
-                        {format.dateTimeCompact(row.recordedAt)}
-                      </time>
-                    </td>
-                    <td>{format.coordinates(row.lat, row.lon, 5)}</td>
-                    <td className="table__number">{orDash(row.accuracy, format.accuracy)}</td>
-                    <td className="table__number">{orDash(row.speed, format.speed)}</td>
-                    <td className="table__number">{orDash(row.altitude, format.metres)}</td>
-                    <td>{row.motion.length === 0 ? "—" : row.motion.join(", ")}</td>
-                    <td className="table__number">{orDash(row.batteryLevel, format.percent)}</td>
-                    <td className="table__muted">{format.timeWithSeconds(row.receivedAt)}</td>
+          <SettingsGroup variant="flush">
+            <section className="table-scroll" aria-labelledby={captionId} ref={scrollable}>
+              <table className="table">
+                <caption className="visually-hidden" id={captionId}>
+                  Stored points of this device
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Recorded</th>
+                    <th scope="col">Position</th>
+                    <th scope="col" className="table__number">
+                      Accuracy
+                    </th>
+                    <th scope="col" className="table__number">
+                      Speed
+                    </th>
+                    <th scope="col" className="table__number">
+                      Altitude
+                    </th>
+                    <th scope="col">Motion</th>
+                    <th scope="col" className="table__number">
+                      Battery
+                    </th>
+                    <th scope="col">Received</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.recordedAt}>
+                      <td>
+                        <time dateTime={row.recordedAt}>
+                          {format.dateTimeCompact(row.recordedAt)}
+                        </time>
+                      </td>
+                      <td>{format.coordinates(row.lat, row.lon, 5)}</td>
+                      <td className="table__number">{orDash(row.accuracy, format.accuracy)}</td>
+                      <td className="table__number">{orDash(row.speed, format.speed)}</td>
+                      <td className="table__number">{orDash(row.altitude, format.metres)}</td>
+                      <td>{row.motion.length === 0 ? "—" : row.motion.join(", ")}</td>
+                      <td className="table__number">{orDash(row.batteryLevel, format.percent)}</td>
+                      <td className="table__muted">{format.timeWithSeconds(row.receivedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          </SettingsGroup>
           <div className="cluster">
             {pages.hasNextPage ? (
               <Button
@@ -131,6 +123,6 @@ export function RawPointsSection({ deviceId, lastSeenAt }: RawPointsSectionProps
           </div>
         </>
       )}
-    </section>
+    </>
   );
 }

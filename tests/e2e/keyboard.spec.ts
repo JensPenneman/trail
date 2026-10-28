@@ -13,7 +13,7 @@ async function tabTo(page: Page, target: ReturnType<Page["getByRole"]>, limit = 
 
 test("a device can be added with the keyboard alone", async ({ page, account }) => {
   expect(account.email).toBeTruthy();
-  await page.goto("/devices");
+  await page.goto("/settings/devices");
   const addButton = page.getByRole("button", { name: "Add device", exact: true });
   await tabTo(page, addButton);
   await page.keyboard.press("Enter");
@@ -44,7 +44,7 @@ test("a Device ID can be used only once per account", async ({ page, account, co
   expect(account.email).toBeTruthy();
   consoleGuard.expectFailedResponse(409, /\/api\/devices$/);
   for (const name of ["First phone", "Second phone"]) {
-    await page.goto("/devices?add=1");
+    await page.goto("/settings/devices?add=1");
     const form = page.getByRole("dialog", { name: "Add a device" });
     await form.getByLabel("Name").fill(name);
     await form.getByText("Device ID (optional)").click();

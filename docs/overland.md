@@ -15,7 +15,7 @@ several devices, and every device belongs to one person.
 
 ## 1. Add the device in Trail
 
-1. In the dashboard: Devices > Add device, give it a name ("Jens's
+1. In the dashboard: Settings > Devices > Add device, give it a name ("Jens's
    iPhone") and choose Overland.
 2. Trail shows a QR code. Scan it with the iPhone's **Camera** app and tap the
    Overland banner: Overland opens and stores the receiver endpoint, the
@@ -111,11 +111,12 @@ On the phone, Overland's Tracker screen shows:
 - **Last Sent**: time since the last accepted upload.
 - **Send Now**: uploads immediately, handy while testing.
 
-In Trail, the **Devices** page shows every device's status and last upload
+In Trail, **Settings › Devices** shows every device's status and last upload
 ("2 min ago"), battery, movement and position, its points per hour over two
-days, plus a feed of uploads as they arrive; the device page lists every upload
-in its ingest log with the number of points. The two should agree: when Last
-Sent changes on the phone, a new entry appears in Trail.
+days, plus a feed of uploads as they arrive; a device's page leads to its
+**Uploads**, every upload in its ingest log with the number of points. The two
+should agree: when Last Sent changes on the phone, a new entry appears in
+Trail.
 
 To test the endpoint and token without the phone, from any computer:
 

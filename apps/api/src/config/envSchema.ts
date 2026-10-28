@@ -130,12 +130,20 @@ export const envSchema = z
     RATE_LIMIT_TOKEN_PER_MINUTE: env(intSchema(1, 1_000_000).default(600)),
     RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES: env(intSchema(1, 1_000_000).default(30)),
     RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE: env(intSchema(1, 1_000_000).default(60)),
+    // What this process runs (docs/architecture.md §3): `api` queues and processes nothing,
+    // `worker` processes and serves no HTTP, `all` does both, as one container always did.
+    PROCESSING_ROLE: env(z.enum(["api", "worker", "all"]).default("all")),
     PROCESSING_ENABLED: env(booleanSchema.default(true)),
     PROCESSING_OVERPASS_URL: overpassUrlSchema,
     PROCESSING_OVERPASS_DAILY_MB: env(intSchema(1, 100_000).default(300)),
     PROCESSING_OSM_TTL_DAYS: env(intSchema(1, 3650).default(90)),
     PROCESSING_MAX_ACCURACY_M: env(intSchema(10, 5000).default(150)),
     PROCESSING_STOP_MIN_S: env(intSchema(30, 7200).default(180)),
+    // Only `trail load-fleet` reads these two (docs/perf/README.md): a load test's synthetic
+    // accounts need LOAD_TEST=true and a deployment Launchway does not call production.
+    LOAD_TEST: env(booleanSchema.default(false)),
+    // Only compared: no length limit that could keep a deployment from starting.
+    LAUNCHWAY_ENVIRONMENT: env(z.string().trim().optional()),
   })
   .superRefine((values, context) => {
     // Refinements see invalid fields too; an invalid URL has its own issue already.

@@ -1,6 +1,7 @@
 import { settingsPathsSource } from "../settings/settingsTree";
 
-// `history`, `explore` and `people` only redirect to the People page, which needs a session.
+// `history`, `explore` and `people` only redirect to the People page, and `devices` to
+// Settings › Devices: pages that need a session.
 const signedIn = new RegExp(
   `^(?:/(?:history|explore|people|devices(?:/[^/]+)?|insights(?:/(?:time|roads|transport/[^/]+))?)?|${settingsPathsSource()})/?$`,
 );

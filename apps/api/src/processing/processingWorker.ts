@@ -1,7 +1,6 @@
 import { setImmediate as yieldToEvents } from "node:timers/promises";
 import type { Logger } from "pino";
 import type { Database } from "../db/database";
-import type { EventBus } from "../events/eventBus";
 import { enqueueBackfill, enqueueCatchUp } from "./backfill";
 import type { ProcessingConfig } from "./processingConfig";
 import { queuePriority, rearmWindows, retryWindows, takeNextWindow } from "./processingQueue";
@@ -18,17 +17,18 @@ const pollMs = 60_000;
 const mapPassMs = 15 * 60_000;
 
 /**
- * The one in-process processing worker (docs/architecture.md §17.4), in the
- * pattern of the daily-statistics scheduler but reading its work from the
- * `processing_queue` table: new data first, the backfill newest day first, one
- * window at a time, giving the event loop a turn between windows. Map tiles
- * are fetched alongside, so a missing tile never holds up other windows.
- * Failures are logged and retried with backoff; nothing throws out of it.
+ * The processing worker (docs/architecture.md §17.4), in the pattern of the
+ * daily-statistics scheduler but reading its work from the `processing_queue`
+ * table: new data first, the backfill newest day first, one window at a time,
+ * giving the event loop a turn between windows. It runs in the worker process,
+ * or in the API's in role `all`; each pass announces itself on the processing
+ * channel with its commit. Map tiles are fetched alongside, so a missing tile
+ * never holds up other windows. Failures are logged and retried with backoff;
+ * nothing throws out of it.
  */
 export class ProcessingWorker {
   readonly #db: Database;
   readonly #logger: Logger;
-  readonly #bus: EventBus;
   readonly #config: ProcessingConfig;
   readonly #fetcher: TileFetcher | null;
   readonly #delayMs: number;
@@ -43,21 +43,31 @@ export class ProcessingWorker {
   #stopped = false;
   /** The priority of the last pass: after new data, a ready backfill window gets the next turn. */
   #lastPriority: number | null = null;
+  /** Passes done and raw points they read since the start, for the heartbeat. */
+  readonly #totals = { passes: 0, points: 0 };
 
   constructor(input: {
     db: Database;
     logger: Logger;
-    bus: EventBus;
     config: ProcessingConfig;
     fetcher: TileFetcher | null;
     delayMs?: number;
   }) {
     this.#db = input.db;
     this.#logger = input.logger;
-    this.#bus = input.bus;
     this.#config = input.config;
     this.#fetcher = input.fetcher;
     this.#delayMs = input.delayMs ?? defaultDelayMs;
+  }
+
+  /** Passes done and the raw points they read since the start. */
+  get totals(): { passes: number; points: number } {
+    return { ...this.#totals };
+  }
+
+  /** Whether the timers' run is at work: a pass, or looking for the next (`flush` runs apart). */
+  get busy(): boolean {
+    return this.#running !== null;
   }
 
   /** Starts the timers and the boot-time backfill (the server; tests use `flush`). */
@@ -149,6 +159,8 @@ export class ProcessingWorker {
           now: new Date(),
         });
         if (outcome !== null) {
+          this.#totals.passes += 1;
+          this.#totals.points += outcome.points;
           this.#logger.info(
             {
               deviceId: outcome.deviceId,
@@ -162,12 +174,6 @@ export class ProcessingWorker {
             },
             "processing window done",
           );
-          this.#bus.publish(outcome.userId, {
-            type: "segments",
-            deviceId: outcome.deviceId,
-            from: outcome.from.toISOString(),
-            to: outcome.to.toISOString(),
-          });
           // Tiles are fetched alongside: a long backfill does not keep the map waiting.
           if (outcome.missingTiles.length > 0) this.#startFetching();
         }

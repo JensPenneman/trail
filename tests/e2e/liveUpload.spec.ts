@@ -5,7 +5,7 @@ import { overlandBatch } from "./support/overlandBatch";
 import { postOverland } from "./support/postOverland";
 import { test } from "./support/test";
 
-test("a new phone's first upload turns up on Devices by itself, and you on People", async ({
+test("a new phone's first upload turns up in Settings › Devices by itself, and you on People", async ({
   page,
   account,
   request,
@@ -29,7 +29,11 @@ test("a new phone's first upload turns up on Devices by itself, and you on Peopl
   await expect(dialog.getByText("Waiting for the first upload…")).toBeVisible();
   await dialog.getByRole("button", { name: "Done" }).click();
 
-  // The Devices page is the proof that data arrives.
+  // Settings › Devices is the proof that data arrives.
+  await expect(page).toHaveURL(/\/settings\/devices$/);
+  await expect(
+    page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" }),
+  ).toHaveAttribute("aria-current", "page");
   const card = deviceCard(page, "Test iPhone");
   await expect(card.getByText("No data yet")).toBeVisible();
   await expect(page.getByText("Live updates on")).toBeAttached();
@@ -54,7 +58,7 @@ test("a new phone's first upload turns up on Devices by itself, and you on Peopl
     }),
   ).toBeVisible();
   await expect(page.getByText(/^1 of 1 device live/)).toBeVisible();
-  const uploads = page.getByRole("region", { name: "Uploads", exact: true }).getByRole("listitem");
+  const uploads = page.getByRole("list", { name: "Uploads", exact: true }).getByRole("listitem");
   await expect(uploads).toHaveCount(1);
   await expect(uploads.first()).toContainText("+30 points");
   await expect(uploads.first()).toContainText("New");
@@ -69,5 +73,5 @@ test("a new phone's first upload turns up on Devices by itself, and you on Peopl
   await expect(me.getByText("Live", { exact: true })).toBeVisible();
   await expect(me.getByText(/18\skm\/h$/)).toBeVisible();
   await expect(page.getByRole("article", { name: "Test iPhone" })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Uploads", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Uploads", exact: true })).toHaveCount(0);
 });

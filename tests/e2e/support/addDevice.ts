@@ -12,15 +12,15 @@ export interface AddedDevice {
 }
 
 /**
- * Adds a device through Devices → Add device and reads the credentials the
- * dialog shows, as someone setting up a phone by hand would.
+ * Adds a device through Settings › Devices › Add device and reads the
+ * credentials the dialog shows, as someone setting up a phone by hand would.
  */
 export async function addDevice(
   page: Page,
   name: string,
   options: { deviceKey?: string } = {},
 ): Promise<AddedDevice> {
-  await page.goto("/devices");
+  await page.goto("/settings/devices");
   await page.getByRole("button", { name: "Add device", exact: true }).click();
   const form = page.getByRole("dialog", { name: "Add a device" });
   await form.getByLabel("Name").fill(name);
@@ -33,7 +33,7 @@ export async function addDevice(
   await expect(dialog).toBeVisible();
   const value = (label: string) => dialog.getByRole("textbox", { name: label }).inputValue();
   const href = await dialog.getByRole("link", { name: "Open device page" }).getAttribute("href");
-  const id = /^\/devices\/([0-9a-f-]{36})$/.exec(href ?? "")?.[1];
+  const id = /^\/settings\/devices\/([0-9a-f-]{36})$/.exec(href ?? "")?.[1];
   if (id === undefined) throw new Error(`No device page link in the setup dialog: ${href}`);
   return {
     id,

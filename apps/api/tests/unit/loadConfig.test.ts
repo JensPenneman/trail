@@ -58,6 +58,7 @@ describe("loadConfig", () => {
         publicSharePerMinute: 60,
       },
       processing: {
+        role: "all",
         enabled: true,
         overpassUrl: "https://overpass-api.de/api/interpreter",
         overpassDailyBytes: 300_000_000,
@@ -65,7 +66,26 @@ describe("loadConfig", () => {
         maxAccuracyM: 150,
         stopMinS: 180,
       },
+      loadTest: false,
+      launchwayEnvironment: null,
     });
+  });
+
+  it("reads the load-test switch and Launchway's environment name for `trail load-fleet`", () => {
+    const config = loadConfig(
+      { ...minimal, LOAD_TEST: "true", LAUNCHWAY_ENVIRONMENT: " preview " },
+      defaults,
+    );
+    expect(config).toMatchObject({ loadTest: true, launchwayEnvironment: "preview" });
+    expect(
+      loadConfig({ ...minimal, LOAD_TEST: "", LAUNCHWAY_ENVIRONMENT: "" }, defaults),
+    ).toMatchObject({ loadTest: false, launchwayEnvironment: null });
+    expect(issuesOf({ ...minimal, LOAD_TEST: "1" })).toEqual(["LOAD_TEST: Use true or false"]);
+    // Only compared, never limited: a long value never keeps the app from starting.
+    expect(
+      loadConfig({ ...minimal, LAUNCHWAY_ENVIRONMENT: "x".repeat(500) }, defaults)
+        .launchwayEnvironment,
+    ).toHaveLength(500);
   });
 
   it("switches mapping off with an empty Overpass URL, and processing off altogether", () => {
@@ -91,6 +111,7 @@ describe("loadConfig", () => {
       defaults,
     );
     expect(custom.processing).toEqual({
+      role: "all",
       enabled: false,
       overpassUrl: "http://overpass.lan/api/interpreter",
       overpassDailyBytes: 50_000_000,
@@ -103,6 +124,18 @@ describe("loadConfig", () => {
     ).toEqual([
       "PROCESSING_ENABLED: Use true or false",
       expect.stringMatching(/^PROCESSING_OVERPASS_URL: /),
+    ]);
+  });
+
+  it("runs both processing roles in one process unless told which", () => {
+    expect(loadConfig({ ...minimal, PROCESSING_ROLE: "" }, defaults).processing.role).toBe("all");
+    for (const role of ["api", "worker", "all"] as const) {
+      expect(loadConfig({ ...minimal, PROCESSING_ROLE: role }, defaults).processing.role).toBe(
+        role,
+      );
+    }
+    expect(issuesOf({ ...minimal, PROCESSING_ROLE: "both" })).toEqual([
+      expect.stringMatching(/^PROCESSING_ROLE: /),
     ]);
   });
 

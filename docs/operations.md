@@ -23,9 +23,15 @@ unless noted.
 
 | Service | Image | Production | Preview |
 |---|---|---|---|
-| `app` | `ghcr.io/jenspenneman/trail:sha-<commit>` | API, the phones' ingest and the dashboard on port 8080 | the same, for the pull request's head commit |
+| `app` | `ghcr.io/jenspenneman/trail:sha-<commit>` | API, the phones' ingest and the dashboard on port 8080, and the processing worker (`PROCESSING_ROLE` unset: `all`) | the same, for the pull request's head commit |
 | `db` | `postgres:18-alpine` | the database, in the volume `TRAIL_DB_VOLUME` | the database, in a volume of the preview's own project |
 | `backup` | `postgres:18-alpine` | daily `pg_dump` into `BACKUP_DIR` (profile `production`) | not started |
+
+The image has a second role: `trail worker` runs the processing worker
+without an HTTP server, and `PROCESSING_ROLE=api` keeps a container from
+processing, so the work can leave the API's container for one of its own
+([Processing](#processing)). `deploy/compose.yaml` runs no such container
+yet: it fixes `app` at `PROCESSING_ROLE: all`.
 
 Launchway names the Compose projects `launchway-trail` (production) and
 `launchway-trail-pr-<number>` (previews); the containers are
@@ -136,9 +142,9 @@ On a server without Trail:
 5. Open `https://trail.jenspenneman.com`, enter the address from
    `SIGNUP_ALLOWLIST` and create a passkey. The first account is the admin;
    others join through the allowlist or an invite (Settings > Accounts).
-6. Add a phone: Devices > Add device, choose its app and follow what Trail
-   shows — for Overland, OwnTracks and Traccar Client a QR code that sets the
-   app up ([trackers.md](trackers.md)).
+6. Add a phone: Settings > Devices > Add device, choose its app and follow
+   what Trail shows — for Overland, OwnTracks and Traccar Client a QR code that
+   sets the app up ([trackers.md](trackers.md)).
 
 ```sh
 curl -i https://trail.jenspenneman.com/api/health      # 200: app and database are up
@@ -256,9 +262,10 @@ forks get no preview, and CI never publishes their images.
   ```
 - **Sign-in.** Passkeys are bound to a host name, so every preview needs its
   own account: sign up with an address from `SIGNUP_ALLOWLIST`.
-- **Phones.** A phone can post to a preview like to production (Devices > Add
-  device in the preview), for example with a test device. Do not move a real
-  device there: its points would end up in a database that disappears.
+- **Phones.** A phone can post to a preview like to production (Settings >
+  Devices > Add device in the preview), for example with a test device. Do not
+  move a real device there: its points would end up in a database that
+  disappears.
 - **No backups.** The `backup` service runs only with the `production`
   profile, so a preview needs no host folder.
 
@@ -467,9 +474,9 @@ setup QR code. After a new `PUBLIC_URL`:
    the passkey. The link is valid for 15 minutes and works once. Without a
    working sign-in, create the link with the CLI:
    `docker exec launchway-trail-app-1 trail passkey-link you@example.com --origin https://<new address>`.
-2. **Move each phone.** Devices > the device > Rotate token shows a new QR code
-   with the new endpoint; scan it with the phone right away (the old token
-   stops working at once). Points queued on the phone are kept.
+2. **Move each phone.** Settings > Devices > the device > Issue new token shows
+   a new QR code with the new endpoint; scan it with the phone right away (the
+   old token stops working at once). Points queued on the phone are kept.
 3. **Public links** carry the address they were made on. Links sent before the
    change still work as long as the old address reaches the server; otherwise
    make new ones in Settings › Public links.
@@ -483,9 +490,25 @@ for the details): the averaged level (outliers dropped, noise smoothed), the
 mapped one (snapped to roads and railways from OpenStreetMap), and the
 inferred one — stops and moves, each move with its transport mode. All of it
 lives in tables of its own and can be rebuilt; the recorded points are never
-changed. One worker in the app does the work a few seconds after each upload;
-after a release that changes the algorithms it works through the whole history
-again, newest days first, while new uploads keep going first.
+changed. One worker does the work a few seconds after each upload; after a
+release that changes the algorithms it works through the whole history again,
+newest days first, while new uploads keep going first.
+
+**Where the worker runs** (`PROCESSING_ROLE`, [architecture.md
+§3](architecture.md#3-runtime-topology)): in the app's own process by default
+(`all`). In a container of its own it is one worker, the same image running
+`trail worker` (role `worker`, no HTTP server), next to an app in role `api`,
+which still takes the uploads and queues their work but works nothing out —
+without a worker, the queue only grows. Run exactly one: a second worker, or a
+worker next to an app in role `all`, would take the same windows and work
+each out twice (the queue has no claims yet). Both start in any order: whichever
+starts first applies the migrations. The worker writes a heartbeat every 15
+seconds to `processing_workers` (rows of stopped workers go after an hour),
+and each finished window reaches the open dashboards through Postgres
+(`NOTIFY` on `trail_processing`) whichever process worked it out. On SIGTERM
+the worker takes no new window and lets the one in progress commit (up to 80
+s; past that it exits and the database rolls the window back, to be worked
+out again).
 
 **Map data and Overpass.** Map data comes from the public Overpass instance
 at `https://overpass-api.de/api/interpreter` (`PROCESSING_OVERPASS_URL`), one
@@ -512,6 +535,7 @@ interface is there for it).
 
 | Setting | Effect |
 |---|---|
+| `PROCESSING_ROLE=api` / `worker` | This container only queues (the app) / only processes (`trail worker`); unset (`all`): both |
 | `PROCESSING_ENABLED=false` | Nothing is queued or processed; what was worked out stays as it is |
 | `PROCESSING_OVERPASS_URL=` (empty) | No map data: stops, moves and modes are still worked out, without map evidence |
 | `PROCESSING_OVERPASS_DAILY_MB=100` | A smaller daily download budget |
@@ -528,13 +552,18 @@ docker exec launchway-trail-app-1 trail reprocess --from-level inferred         
 
 It works through the range in day windows and prints a line per device;
 tiles it lacks are left to the server, which fetches them politely
-afterwards. The modes people set are kept through every reprocessing.
+afterwards. The modes people set are kept through every reprocessing. It does
+the work itself, in the command's own process, whatever role the container
+has: in an app in role `api` too.
 
-The log tells what the worker does: `processing window done` (device, range,
-points, segments, missing tiles, milliseconds), `map tile stored` (ways,
-stops, bytes, milliseconds), `processing backfill queued` (days), and warnings
-when a tile fails (with the kind of failure; it is tried again later) or the
-daily budget is spent. Which tile — a place someone has been — is logged at
+The log tells what the worker does: `Trail worker started` (in a container of
+its own), `processing window done` (device, range, points, segments, missing
+tiles, milliseconds), `map tile stored` (ways, stops, bytes, milliseconds),
+`processing backfill queued` (days), and warnings when a tile fails (with the
+kind of failure; it is tried again later), the daily budget is spent or a
+heartbeat could not be written. The API warns `processing events: connection
+lost; reconnecting` when its listening connection broke, and says `processing
+events listened to again` with the number of devices it caught up on. Which tile — a place someone has been — is logged at
 `LOG_LEVEL=debug` only, like coordinates.
 
 ## Heatmap
@@ -622,6 +651,25 @@ docker logs launchway-trail-app-1 2>&1 | grep '"msg":"API token'      # API toke
 Every container keeps at most 5 files of 10 MB of logs. Device and API tokens,
 cookies, coordinates and map tiles never appear in the app's logs at the
 default level; the API token lines carry the token's and the user's id only.
+
+Once a minute the app logs its `load` line — event-loop delay, the database
+pool, open streams, the minute's uploads and points, memory and the
+processing queue's age, numbers only ([docs/perf/README.md](perf/README.md#what-a-run-does)):
+
+```sh
+docker logs --since 1h launchway-trail-app-1 2>&1 | grep '"msg":"load"'
+```
+
+## Load tests
+
+Load tests run on the Mac against a capped copy of this stack
+(`npm run load -- fleet-10`), never against production; how to run one, how
+to read its report and the targets are in [docs/perf/README.md](perf/README.md).
+Their synthetic people come from `trail load-fleet`, which refuses unless
+`LOAD_TEST=true`, the deployment is not Launchway's `production` and its
+database holds no passkey and no real account. A load test on the node (a
+later milestone) is a preview with `LOAD_TEST=true` in its variables; never
+set it in production's.
 
 ## Local run
 

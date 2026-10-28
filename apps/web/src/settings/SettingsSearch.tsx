@@ -2,8 +2,9 @@ import { type FormEvent, useId } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { Icon } from "../ui/Icon";
 import { SettingsGroup } from "./SettingsGroup";
-import { type SettingsLocationState, SettingsRow } from "./SettingsRow";
+import { SettingsRow } from "./SettingsRow";
 import type { SettingsSearchEntry } from "./settingsSearchIndex";
+import type { SettingsLocationState } from "./useSettingsLink";
 import "../ui/Field.css";
 import "./SettingsSearch.css";
 

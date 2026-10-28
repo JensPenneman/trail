@@ -1,10 +1,12 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { appRoutes } from "../src/app/createAppRouter";
 import { PrimaryNav } from "../src/app/PrimaryNav";
 import { ids } from "./support/fixtures";
+import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
+import { standardRoutes } from "./support/standardRoutes";
 
 const nav = () => screen.getByRole("navigation", { name: "Main" });
 const current = () =>
@@ -14,13 +16,13 @@ const current = () =>
     .map((link) => link.textContent);
 
 describe("the main navigation", () => {
-  it("offers People, Devices, Insights and Settings, and says which one is current", () => {
+  it("offers People, Insights and Settings, and says which one is current", () => {
     renderPage(<PrimaryNav />, { path: "/", url: "/?view=history&date=2026-09-01" });
     expect(
       within(nav())
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["People", "Devices", "Insights", "Settings"]);
+    ).toEqual(["People", "Insights", "Settings"]);
     expect(current()).toEqual(["People"]);
     expect(within(nav()).getByRole("link", { name: "People" })).toHaveAttribute("href", "/");
     expect(within(nav()).getByRole("link", { name: "Settings" })).toHaveAttribute(
@@ -29,9 +31,12 @@ describe("the main navigation", () => {
     );
   });
 
-  it("keeps an item current on every address below it", () => {
-    renderPage(<PrimaryNav />, { path: "/devices/:deviceId", url: "/devices/abc" });
-    expect(current()).toEqual(["Devices"]);
+  it("keeps an item current on every address below it, the devices in Settings among them", () => {
+    renderPage(<PrimaryNav />, {
+      path: "/settings/devices/:deviceId/uploads",
+      url: "/settings/devices/abc/uploads",
+    });
+    expect(current()).toEqual(["Settings"]);
   });
 
   it("marks Insights on each of its pages", () => {
@@ -55,7 +60,7 @@ describe("the main navigation", () => {
 // The People page's code loads through the app's own routes: slow on a busy machine.
 const loadingThePage = 15_000;
 
-describe("the old addresses of History, Explore and People", {
+describe("the old addresses of History, Explore, People and Devices", {
   timeout: 2 * loadingThePage,
 }, () => {
   it("open the People page's views with their parameters", async () => {
@@ -85,5 +90,36 @@ describe("the old addresses of History, Explore and People", {
     await router.navigate("/people");
     await waitFor(() => expect(at()).toBe("/"));
     router.dispose();
+  });
+
+  it("lead from /devices and a device's page of old into Settings, the address kept", async () => {
+    mockApi(standardRoutes());
+    const { router } = renderPage(null, {
+      routes: appRoutes(),
+      before: ["/settings/about"],
+      url: "/devices?add=1#how",
+    });
+    const at = () =>
+      `${router.state.location.pathname}${router.state.location.search}${router.state.location.hash}`;
+    expect(
+      await screen.findByRole("dialog", { name: "Add a device" }, { timeout: loadingThePage }),
+    ).toBeInTheDocument();
+    expect(at()).toBe("/settings/devices?add=1#how");
+    expect(screen.getByRole("heading", { level: 1, name: "Devices" })).toBeInTheDocument();
+    // Replaced, not added: Back skips the old address.
+    expect(router.state.historyAction).toBe("REPLACE");
+    await act(() => router.navigate(-1));
+    await waitFor(() => expect(at()).toBe("/settings/about"));
+
+    await act(() => router.navigate(`/devices/${ids.phone}`));
+    expect(
+      await screen.findByRole(
+        "heading",
+        { level: 1, name: "iPhone 16" },
+        { timeout: loadingThePage },
+      ),
+    ).toBeInTheDocument();
+    expect(at()).toBe(`/settings/devices/${ids.phone}`);
+    expect(router.state.historyAction).toBe("REPLACE");
   });
 });

@@ -21,6 +21,8 @@ export function renderPage(
     user?: SessionUser | null;
     /** Routes of their own instead of `element` at `path` (nested pages, redirects). */
     routes?: RouteObject[];
+    /** Addresses in the history before `url`, for Back. */
+    before?: readonly string[];
   } = {},
 ) {
   const queryClient = new QueryClient({
@@ -35,7 +37,7 @@ export function renderPage(
       { path: options.path ?? "/", element },
       { path: "*", element: <p>Elsewhere</p> },
     ],
-    { initialEntries: [options.url ?? options.path ?? "/"] },
+    { initialEntries: [...(options.before ?? []), options.url ?? options.path ?? "/"] },
   );
   const view = render(
     <QueryClientProvider client={queryClient}>

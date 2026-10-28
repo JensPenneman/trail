@@ -151,6 +151,33 @@ describe("trail CLI", () => {
     expect(await run("reprocess", "--device", "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3")).toBe(1);
   });
 
+  it("refuses to run the worker with options, in role api or on an invalid configuration", async () => {
+    expect(await run("worker", "--once")).toBe(2);
+    expect(errors.join("\n")).toContain("trail worker:");
+    expect(output).toEqual([]);
+    expect(await run("--help")).toBe(0);
+    expect(output.join("\n")).toContain("worker");
+
+    const saved = { role: process.env["PROCESSING_ROLE"], url: process.env["PUBLIC_URL"] };
+    try {
+      process.env["PROCESSING_ROLE"] = "api";
+      expect(await run("worker")).toBe(1);
+      expect(errors.join("\n")).toContain("PROCESSING_ROLE is api");
+      process.env["PROCESSING_ROLE"] = "worker";
+      process.env["PUBLIC_URL"] = "not a url";
+      expect(await run("worker")).toBe(1);
+      expect(errors.join("\n")).toContain("PUBLIC_URL");
+    } finally {
+      for (const [name, value] of [
+        ["PROCESSING_ROLE", saved.role],
+        ["PUBLIC_URL", saved.url],
+      ] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
   it("fails with exit code 1 on configuration errors", async () => {
     const saved = process.env["PUBLIC_URL"];
     process.env["PUBLIC_URL"] = "not a url";

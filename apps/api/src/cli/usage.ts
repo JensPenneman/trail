@@ -14,6 +14,14 @@ Commands:
                                            (all history by default; mapped: map matching on;
                                            inferred: stops, moves and modes only)
   prune                                    Delete expired sessions, links, invites and old logs now
+  worker                                   Run the processing worker in the foreground until SIGTERM
+                                           (the worker service's command; logs on stdout)
+  load-fleet --people <n> [--mix default|steered] [--shares <0-1>] [--probe]
+                                           Synthetic people, phones and sessions for a load test, their
+                                           secrets as JSON on stdout (redirect it to a file); refused
+                                           without LOAD_TEST=true, in a deployment Launchway calls
+                                           anything but a preview (LAUNCHWAY_ENVIRONMENT) and in a
+                                           database that holds a passkey or a real account
   help                                     Show this help
 
 Configuration comes from the same environment as the server (DATABASE_URL, PUBLIC_URL, …).

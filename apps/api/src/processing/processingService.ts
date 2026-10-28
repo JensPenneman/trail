@@ -1,70 +1,53 @@
 import type { Logger } from "pino";
 import type { Database } from "../db/database";
-import type { EventBus } from "../events/eventBus";
+import type { WorkerLoop } from "../worker/workerLoop";
 import type { ProcessingConfig } from "./processingConfig";
 import { enqueueWindow } from "./processingQueue";
-import { ProcessingWorker } from "./processingWorker";
-import { TileFetcher } from "./tileFetcher";
-import type { WaySource } from "./waySource";
 
 /** An upload's new points widen into this much on each side (docs/architecture.md §17.4). */
 const ingestMarginMs = 30 * 60_000;
 
 /**
- * Location processing as the rest of the app sees it: queue work after an
- * upload, run the worker, stop it. With PROCESSING_ENABLED=false nothing is
+ * Location processing as the API sees it: queue work after an upload and, in
+ * role `all`, run the worker in this process and stop it. In role `api` it
+ * only queues — a worker process (`trail worker`) takes the work from the
+ * table (docs/architecture.md §3). With PROCESSING_ENABLED=false nothing is
  * queued or run, and the derived tables simply stay as they are.
  */
 export class ProcessingService {
   readonly enabled: boolean;
-  /** False when no map data source is configured: the mapped level degrades to averaged. */
-  readonly mapping: boolean;
   readonly config: ProcessingConfig;
   readonly #db: Database;
   readonly #logger: Logger;
-  readonly #worker: ProcessingWorker | null;
+  readonly #worker: WorkerLoop | null;
 
   constructor(input: {
     db: Database;
     logger: Logger;
-    bus: EventBus;
     config: ProcessingConfig;
     enabled: boolean;
-    waySource: WaySource | null;
-    dailyBytes: number;
-    delayMs?: number;
+    /** The worker of this process (role `all`); null when another process works the queue out. */
+    worker: WorkerLoop | null;
   }) {
     this.enabled = input.enabled;
-    this.mapping = input.enabled && input.waySource !== null;
     this.config = input.config;
     this.#db = input.db;
     this.#logger = input.logger;
-    this.#worker = input.enabled
-      ? new ProcessingWorker({
-          db: input.db,
-          logger: input.logger,
-          bus: input.bus,
-          config: input.config,
-          fetcher:
-            input.waySource === null
-              ? null
-              : new TileFetcher({
-                  db: input.db,
-                  logger: input.logger,
-                  source: input.waySource,
-                  dailyBytes: input.dailyBytes,
-                  maxAgeDays: input.config.mapping.tileMaxAgeDays,
-                }),
-          ...(input.delayMs === undefined ? {} : { delayMs: input.delayMs }),
-        })
-      : null;
+    this.#worker = input.worker;
+  }
+
+  /** Whether this process works the queue out itself (role `all`). */
+  get runsWorker(): boolean {
+    return this.#worker !== null;
   }
 
   start(): void {
-    this.#worker?.start();
+    this.#worker?.start().catch((error: unknown) => {
+      this.#logger.error({ err: error }, "processing could not start");
+    });
   }
 
-  /** Something was queued: the worker runs soon. */
+  /** Something was queued: the worker of this process runs soon (a worker process finds it itself). */
   notify(): void {
     this.#worker?.notify();
   }
@@ -81,7 +64,7 @@ export class ProcessingService {
     this.notify();
   }
 
-  /** Runs everything that is ready, map tiles included (tests and the CLI). */
+  /** Runs everything that is ready, map tiles included (tests); nothing without a worker here. */
   async flush(): Promise<void> {
     await this.#worker?.flush();
   }

@@ -7,7 +7,7 @@ import { type DaysParams, queryKeys } from "../api/queryKeys";
 /**
  * Per-day totals (calendar dots, yearly totals) for local dates `from..to`
  * inclusive. Null params ask for nothing; `refetchInterval` asks again while
- * a page expects the sums to change (the Devices page while uploads come in).
+ * a page expects the sums to change (Settings › Devices while uploads come in).
  */
 export function useDays(
   params: DaysParams | null,

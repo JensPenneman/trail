@@ -67,7 +67,7 @@ test("an invited person gets an account of their own and sees nothing of anyone 
   expect(tokenRotation.status()).toBe(404);
 
   consoleGuard.expectFailedResponse(404, /\/api\/devices\/[0-9a-f-]{36}$/);
-  await invited.page.goto(`/devices/${device.id}`);
+  await invited.page.goto(`/settings/devices/${device.id}`);
   await expect(
     invited.page.getByRole("heading", { level: 1, name: "Device not found" }),
   ).toBeVisible();

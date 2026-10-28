@@ -11,6 +11,7 @@ export interface PruneResult {
   shareLinks: number;
   ingestLog: number;
   dataAccessEvents: number;
+  processingWorkers: number;
 }
 
 /**
@@ -19,9 +20,9 @@ export interface PruneResult {
  * tokens after 30 days (so the lists still show recent ones), stopped or ended
  * shares and share links after 30 days, upload logs after 90 days, the hours
  * of the data access log after `dataAccessRetentionDays` (a log, not location
- * data). Recorded data is never pruned: points, visits, trips, events and the
- * dead letter of rejected records (raw phone data that may still be
- * recovered) are kept forever.
+ * data), the heartbeats of workers gone for an hour. Recorded data is never
+ * pruned: points, visits, trips, events and the dead letter of rejected
+ * records (raw phone data that may still be recovered) are kept forever.
  */
 export async function pruneExpiredData(
   db: Executor,
@@ -60,5 +61,8 @@ export async function pruneExpiredData(
       DELETE FROM data_access_events
       WHERE bucket_start < now() - make_interval(days => ${retention.dataAccessRetentionDays})
     `),
+    processingWorkers: await count(
+      sql`DELETE FROM processing_workers WHERE last_seen_at < now() - interval '1 hour'`,
+    ),
   };
 }

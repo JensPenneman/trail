@@ -59,6 +59,8 @@ export const segments = pgTable(
   (table) => [
     unique("segments_device_id_started_at_key").on(table.deviceId, table.startedAt),
     index("segments_device_id_ended_at_idx").on(table.deviceId, table.endedAt),
+    // The API's catch-up after a lost listening connection reads by it (docs/architecture.md §9).
+    index("segments_computed_at_idx").on(table.computedAt),
     check("segments_kind_check", sql`${table.kind} IN ('stop', 'move')`),
     check("segments_mode_check", sql`${table.mode} IN (${modes})`),
     check("segments_mode_inferred_check", sql`${table.modeInferred} IN (${modes})`),

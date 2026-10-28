@@ -104,6 +104,7 @@ export function loadConfig(
       publicSharePerMinute: env.RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE,
     },
     processing: {
+      role: env.PROCESSING_ROLE,
       enabled: env.PROCESSING_ENABLED,
       overpassUrl: env.PROCESSING_OVERPASS_URL,
       overpassDailyBytes: env.PROCESSING_OVERPASS_DAILY_MB * 1_000_000,
@@ -111,5 +112,7 @@ export function loadConfig(
       maxAccuracyM: env.PROCESSING_MAX_ACCURACY_M,
       stopMinS: env.PROCESSING_STOP_MIN_S,
     },
+    loadTest: env.LOAD_TEST,
+    launchwayEnvironment: env.LAUNCHWAY_ENVIRONMENT ?? null,
   };
 }

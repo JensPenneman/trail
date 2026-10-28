@@ -1,4 +1,5 @@
 import { expect, type Locator } from "@playwright/test";
+import { fact } from "./support/deviceCard";
 import { expectAccessible } from "./support/expectAccessible";
 import { test } from "./support/test";
 
@@ -19,7 +20,7 @@ test("an OwnTracks phone is set up from its link and its first point turns up", 
   baseURL,
 }) => {
   expect(account.email).toContain("@");
-  await page.goto("/devices");
+  await page.goto("/settings/devices");
   await page.getByRole("button", { name: "Add device", exact: true }).click();
   const form = page.getByRole("dialog", { name: "Add a device" });
   await form.getByLabel("Name").fill("Lotte’s Pixel");
@@ -109,17 +110,23 @@ test("an OwnTracks phone is set up from its link and its first point turns up", 
   expect(iphoneUpload.status()).toBe(200);
 
   await dialog.getByRole("link", { name: "Open device page" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Lotte’s Pixel" })).toBeVisible();
-  const overview = page.getByRole("region", { name: "Overview" });
-  await expect(overview.getByText("OwnTracks", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/settings\/devices\/[0-9a-f-]{36}$/);
+  const overview = page.getByRole("region", { name: "Lotte’s Pixel" });
+  await expect(overview.getByRole("heading", { level: 1 })).toHaveText("Lotte’s Pixel");
+  await expect(fact(overview, "App")).toHaveText("OwnTracks");
   // "today" would depend on the minute after midnight; the total does not.
-  await expect(overview.getByText(/· 2 in total$/)).toBeVisible();
+  await expect(fact(overview, "Points")).toHaveText(/· 2 in total$/);
   // Overland's presets are Overland's: no tracking settings for OwnTracks.
-  await expect(page.getByRole("region", { name: "Tracking settings" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Tracking settings" })).toHaveCount(0);
+  await expectAccessible(page, "an OwnTracks device's page");
+
+  await page.getByRole("link", { name: "Setup" }).click();
   const setup = page.getByRole("region", { name: "Setup" });
   await expect(setup.getByText(url)).toBeVisible();
+  await expectAccessible(page, "an OwnTracks device's setup");
+  await page.getByRole("link", { name: "Back to Lotte’s Pixel" }).click();
+  await page.getByRole("link", { name: "Uploads", exact: true }).click();
   const uploads = page.getByRole("table", { name: "Uploads of this device" });
   // The header row and one row per upload.
   await expect(uploads.getByRole("row")).toHaveCount(3);
-  await expectAccessible(page, "an OwnTracks device's page");
 });

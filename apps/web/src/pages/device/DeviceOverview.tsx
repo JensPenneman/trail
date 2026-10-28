@@ -1,9 +1,10 @@
 import type { DeviceSummary } from "@trail/contracts/device";
 import { deviceAppInfo } from "@trail/contracts/deviceApp";
-import { useId } from "react";
 import { describeMovement } from "../../devices/describeMovement";
 import { tripModeLabel } from "../../devices/tripModeLabel";
 import { useFormatter } from "../../format/useFormatter";
+import { SettingsGroup } from "../../settings/SettingsGroup";
+import { SettingsFact } from "../../settings/SettingsRow";
 import { BatteryIndicator } from "../../ui/BatteryIndicator";
 import { RelativeTime } from "../../ui/RelativeTime";
 
@@ -16,95 +17,62 @@ interface DeviceOverviewProps {
 /** The device's latest state as label/value pairs. */
 export function DeviceOverview({ device, live }: DeviceOverviewProps) {
   const format = useFormatter();
-  const headingId = useId();
   const location = device.lastLocation;
   const movement = describeMovement(location, format);
   return (
-    <section className="section" aria-labelledby={headingId}>
-      <h2 className="section__title" id={headingId}>
-        Overview
-      </h2>
-      <dl className="facts card">
-        <div>
-          <dt>Last upload</dt>
-          <dd>
-            {device.lastSeenAt === null ? (
-              "Never"
-            ) : (
-              <>
-                <RelativeTime value={device.lastSeenAt} />
-                <span className="muted"> · {format.dateTime(device.lastSeenAt)}</span>
-              </>
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>Last position</dt>
-          <dd>
-            {location === null ? (
-              "—"
-            ) : (
-              <>
-                {format.coordinates(location.lat, location.lon)}
-                <span className="muted">
-                  {location.accuracy === null ? "" : ` ${format.accuracy(location.accuracy)}`} ·{" "}
-                  {format.dateTime(location.recordedAt)}
-                </span>
-              </>
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>{live ? "Movement" : "Last reported movement"}</dt>
-          <dd>{movement ?? "—"}</dd>
-        </div>
-        <div>
-          <dt>Altitude</dt>
-          <dd>{location?.altitude == null ? "—" : format.metres(location.altitude)}</dd>
-        </div>
-        <div>
-          <dt>Battery</dt>
-          <dd>
-            <BatteryIndicator battery={device.battery} />
-          </dd>
-        </div>
-        <div>
-          <dt>Trip</dt>
-          <dd>
-            {device.liveTrip === null
-              ? "None in progress"
-              : `${tripModeLabel(device.liveTrip.mode)} since ${format.time(device.liveTrip.startedAt)} · ${format.distance(device.liveTrip.distanceM)}`}
-          </dd>
-        </div>
-        <div>
-          <dt>Points</dt>
-          <dd>
-            {format.count(device.counts.today)} today · {format.count(device.counts.last24h)} in 24
-            h · {format.count(device.counts.total)} in total
-          </dd>
-        </div>
-        <div>
-          <dt>App</dt>
-          <dd>{deviceAppInfo[device.source].name}</dd>
-        </div>
-        {/* The other apps have no use for the device key. */}
-        {device.source === "overland" || device.source === "owntracks" ? (
-          <div>
-            <dt>Device ID</dt>
-            <dd className="mono">{device.deviceKey}</dd>
-          </div>
-        ) : null}
-        <div>
-          <dt>Access token</dt>
-          <dd>
-            <span className="mono">…{device.tokenHint}</span>
-          </dd>
-        </div>
-        <div>
-          <dt>Added</dt>
-          <dd>{format.dateTime(device.createdAt)}</dd>
-        </div>
-      </dl>
-    </section>
+    <SettingsGroup title="Overview" variant="facts">
+      <SettingsFact label="Last upload">
+        {device.lastSeenAt === null ? (
+          "Never"
+        ) : (
+          <>
+            <RelativeTime value={device.lastSeenAt} />
+            <span className="muted"> · {format.dateTime(device.lastSeenAt)}</span>
+          </>
+        )}
+      </SettingsFact>
+      <SettingsFact label="Last position">
+        {location === null ? (
+          "—"
+        ) : (
+          <>
+            {format.coordinates(location.lat, location.lon)}
+            <span className="muted">
+              {location.accuracy === null ? "" : ` ${format.accuracy(location.accuracy)}`} ·{" "}
+              {format.dateTime(location.recordedAt)}
+            </span>
+          </>
+        )}
+      </SettingsFact>
+      <SettingsFact label={live ? "Movement" : "Last reported movement"}>
+        {movement ?? "—"}
+      </SettingsFact>
+      <SettingsFact label="Altitude">
+        {location?.altitude == null ? "—" : format.metres(location.altitude)}
+      </SettingsFact>
+      <SettingsFact label="Battery">
+        <BatteryIndicator battery={device.battery} />
+      </SettingsFact>
+      <SettingsFact label="Trip">
+        {device.liveTrip === null
+          ? "None in progress"
+          : `${tripModeLabel(device.liveTrip.mode)} since ${format.time(device.liveTrip.startedAt)} · ${format.distance(device.liveTrip.distanceM)}`}
+      </SettingsFact>
+      <SettingsFact label="Points">
+        {format.count(device.counts.today)} today · {format.count(device.counts.last24h)} in 24 h ·{" "}
+        {format.count(device.counts.total)} in total
+      </SettingsFact>
+      <SettingsFact label="App">{deviceAppInfo[device.source].name}</SettingsFact>
+      {/* The other apps have no use for the device key. */}
+      {device.source === "overland" || device.source === "owntracks" ? (
+        <SettingsFact label="Device ID">
+          <span className="mono">{device.deviceKey}</span>
+        </SettingsFact>
+      ) : null}
+      <SettingsFact label="Access token">
+        <span className="mono">…{device.tokenHint}</span>
+      </SettingsFact>
+      <SettingsFact label="Added">{format.dateTime(device.createdAt)}</SettingsFact>
+    </SettingsGroup>
   );
 }

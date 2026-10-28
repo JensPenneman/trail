@@ -46,7 +46,7 @@ describe("the People page, Live", () => {
     expect(await screen.findByRole("dialog", { name: "Train" })).toBeInTheDocument();
     expect(map().getAttribute("data-focus")).toMatch(new RegExp(`^segment:${ids.train}#`));
 
-    // What the devices send is the Devices page's.
+    // What the devices send is Settings › Devices'.
     expect(screen.queryByRole("article", { name: "iPhone 16" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Uploads" })).toBeNull();
     expect(screen.queryByText(/devices? live/)).toBeNull();
@@ -59,7 +59,7 @@ describe("the People page, Live", () => {
     expect(await screen.findByText("Connect your first phone")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Add a device" })).toHaveAttribute(
       "href",
-      "/devices?add=1",
+      "/settings/devices?add=1",
     );
   });
 
@@ -88,7 +88,7 @@ describe("the People page, Live", () => {
       "/api/visits",
       "/api/trips",
       "/api/stats/days",
-      // The Devices page's: the uploads and the hours of activity.
+      // Settings › Devices': the uploads and the hours of activity.
       "/api/stats/activity",
       `/api/devices/${ids.phone}/ingest-log`,
     ]) {

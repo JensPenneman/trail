@@ -19,14 +19,16 @@ jobs:
       # enabled here lands on green checks only: minor and patch updates and
       # digest bumps, security updates (the `security` groups of
       # dependabot.yml) among them, except the Biome and TypeScript groups,
-      # whose releases change what the checks accept, so they are merged by
-      # hand. Majors wait for a human, a security fix that needs one too (and
-      # with it the rest of its group), and so does a new Postgres major. One
-      # that fails a check is fixed, not left open (SECURITY.md).
+      # whose releases change what the checks accept, and k6, which no check
+      # runs (a load test does, by hand), so they are merged by hand. Majors
+      # wait for a human, a security fix that needs one too (and with it the
+      # rest of its group), and so does a new Postgres major. One that fails
+      # a check is fixed, not left open (SECURITY.md).
       - if: >-
           steps.meta.outputs.update-type != 'version-update:semver-major' &&
           steps.meta.outputs.dependency-group != 'biome' &&
-          steps.meta.outputs.dependency-group != 'typescript'
+          steps.meta.outputs.dependency-group != 'typescript' &&
+          steps.meta.outputs.dependency-group != 'k6'
         run: gh pr merge --auto --merge "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

@@ -3,6 +3,7 @@ import { NotFoundPage } from "../pages/notFound/NotFoundPage";
 import { settingsRoute } from "../settings/settingsRoutes";
 import { AppLoading } from "./AppLoading";
 import { AppShell } from "./AppShell";
+import { LegacyDevicesRedirect } from "./LegacyDevicesRedirect";
 import { legacyMapPath, legacyPeoplePath } from "./legacyMapPath";
 import { PublicLayout } from "./PublicLayout";
 import { RequireSession } from "./RequireSession";
@@ -53,6 +54,9 @@ export function appRoutes(): RouteObject[] {
           path: "people",
           loader: ({ request }) => replace(legacyPeoplePath(new URL(request.url))),
         },
+        // The devices moved into Settings: links and bookmarks of the Devices page land there.
+        { path: "devices", Component: LegacyDevicesRedirect },
+        { path: "devices/:deviceId", Component: LegacyDevicesRedirect },
         {
           // A public link (`/s#<secret>`): no session, no navigation, a layout of its own.
           path: "s",
@@ -71,18 +75,6 @@ export function appRoutes(): RouteObject[] {
                   index: true,
                   lazy: () =>
                     import("../pages/people/PeoplePage").then((m) => ({ Component: m.PeoplePage })),
-                },
-                {
-                  path: "devices",
-                  lazy: () =>
-                    import("../pages/devices/DevicesPage").then((m) => ({
-                      Component: m.DevicesPage,
-                    })),
-                },
-                {
-                  path: "devices/:deviceId",
-                  lazy: () =>
-                    import("../pages/device/DevicePage").then((m) => ({ Component: m.DevicePage })),
                 },
                 {
                   path: "insights",
