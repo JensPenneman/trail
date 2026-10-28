@@ -151,29 +151,34 @@ const dueBy = (now: Date, liveReadyBy: Date): SQL => sql`next_at <= CASE
     THEN ${liveReadyBy.toISOString()}::timestamptz ELSE ${now.toISOString()}::timestamptz END`;
 
 /**
- * The next window to process: new data oldest first, then repair and the
- * backfill newest first (`backfillFirst`: the backfill first, then repair,
- * their turn between passes of new data) — and every ready window of the
- * same device that overlaps it, so one pass covers them all. A window
- * waiting for map tiles, or for a retry, is not taken along: it would be
- * worked out again with every upload, for nothing, before its tiles are
- * there. Nor is the backfill taken along by other work, or the reverse: an
- * upload's pass stays the size of the upload, a backfill day waits its turn.
+ * The next window to process: new data first, then repair, each in the order
+ * it came, then the backfill newest first (`othersFirst`: repair and the
+ * backfill before new data, their turn between passes of new data; repair is
+ * finite, the backfill gets its turns once it is done) — and every ready
+ * window of the same device that overlaps it, so one pass covers them all. A
+ * window waiting for map tiles, or for a retry, is not taken along: it would
+ * be worked out again with every upload, for nothing, before its tiles are
+ * there. Nor is the backfill taken along by other work, or the reverse — not
+ * a backfill row 0.5 queued as priority 1 either: an upload's pass stays the
+ * size of the upload, a backfill day waits its turn.
  */
 export async function takeNextWindow(
   db: Executor,
   now: Date,
-  options: { backfillFirst?: boolean; liveReadyBy?: Date } = {},
+  options: { othersFirst?: boolean; liveReadyBy?: Date } = {},
 ): Promise<QueueRow[]> {
-  const order = options.backfillFirst === true ? sql.raw("-priority") : sql.raw("priority");
+  const order =
+    options.othersFirst === true
+      ? sql`CASE priority WHEN ${queuePriority.repair} THEN 0 WHEN ${queuePriority.backfill} THEN 1 ELSE 2 END`
+      : sql`priority`;
   const due = dueBy(now, options.liveReadyBy ?? now);
   const head = await db.execute<QueueSqlRow>(sql`
     SELECT device_id, from_at, to_at, reason, from_level, priority, attempts, enqueued_at::text
     FROM processing_queue
     WHERE ${due}
     ORDER BY ${order},
-      CASE WHEN priority = 0 THEN extract(epoch FROM next_at) ELSE -extract(epoch FROM from_at) END,
-      device_id, from_at
+      CASE WHEN priority = ${queuePriority.backfill} THEN 0 ELSE extract(epoch FROM next_at) END,
+      from_at DESC, device_id
     LIMIT 1
   `);
   const first = head.rows[0];
@@ -181,7 +186,7 @@ export async function takeNextWindow(
   const kind =
     first.priority === queuePriority.backfill
       ? sql`priority = ${queuePriority.backfill}`
-      : sql`priority <> ${queuePriority.backfill}`;
+      : sql`priority <> ${queuePriority.backfill} AND reason <> 'backfill'`;
   const overlapping = await db.execute<QueueSqlRow>(sql`
     SELECT device_id, from_at, to_at, reason, from_level, priority, attempts, enqueued_at::text
     FROM processing_queue
@@ -237,8 +242,8 @@ export async function finishWindows(db: Executor, rows: readonly QueueRow[]): Pr
 }
 
 /**
- * The end of a pass of new data: a live window of the device still queued —
- * an upload came while the pass ran — waits for the pass interval from now
+ * The end of a pass: a live window of the device still queued — an upload
+ * came while the pass ran — waits for the pass interval from now
  * (`livePassIntervalMs`), the uploads after it with it.
  */
 export async function deferLiveWindows(db: Executor, deviceId: string): Promise<void> {

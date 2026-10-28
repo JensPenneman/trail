@@ -17,7 +17,7 @@ export interface Pass {
 
 /**
  * Runs passes as the worker does (`ProcessingWorker`) — the next window, the
- * backfill's turn after a pass of new data, an upload not waiting for its
+ * others' turn after a pass of new data, an upload not waiting for its
  * pass interval (as in a flush) — one at a time, keeping the pass log and
  * calling `after` once each pass has committed, so that a test can check
  * the invariants between passes. Map tiles are not fetched: a window whose
@@ -47,7 +47,7 @@ export class PassRunner {
   async next(when: (rows: readonly QueueRow[]) => boolean = () => true): Promise<Pass | null> {
     const now = new Date();
     const rows = await takeNextWindow(this.#db, now, {
-      backfillFirst: this.#lastPriority === queuePriority.live,
+      othersFirst: this.#lastPriority === queuePriority.live,
       liveReadyBy: new Date(now.getTime() + livePassIntervalMs),
     });
     if (rows.length === 0 || !when(rows)) return null;

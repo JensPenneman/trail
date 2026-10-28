@@ -3274,7 +3274,8 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   (`ingest`, `delete`, `override`, `reprocess`, `catch-up`, `backfill`,
   `map`, `split`), `from_level` `averaged|mapped|inferred`, `priority` (0 new
   data from the phones, 1 repair — the rest but the backfill —, 2 the
-  backfill; rows that 0.5 queued at 1 were its backfill and run as repair),
+  backfill; rows that 0.5 queued at 1 were its backfill and run as repair,
+  its rows at 0 as new data),
   `attempts`, `next_at`, `enqueued_at` (the version a finished pass compares
   against), `missing_tiles` (jsonb `["z/x/y", …]`: the window waits for map
   data), `last_error`.
@@ -3525,20 +3526,25 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   device cascades. A time-zone change needs nothing (segments are UTC). The
   work has three priorities: new data from the phones (0); repair (1) — a
   deletion, a corrected mode, the catch-up, `trail reprocess`, the older part
-  of an upload's window too big for one pass; the backfill (2).
+  of an upload's window too big for one pass; the backfill (2). Rows that 0.5
+  queued keep their numbers: its backfill (1) runs as repair until it drains,
+  never taken along by an upload's pass, and its deletions, corrections and
+  catch-ups (0) run as new data.
 - One worker (`ProcessingWorker`, the daily-statistics scheduler's pattern,
   reading the table), in the worker process or in the API's in role `all`
   (§3), wakes 3 s after new work queued in its own process, every 2 s while
   idle in a worker process, every minute for retries, when a window that
   waits for its device's pass interval comes due, and on a 15-minute pass.
-  It takes the next ready window — new data
-  oldest first, then repair and the backfill newest first, and after a pass
-  of new data the backfill (else repair) gets the next turn, so a phone
-  uploading every few minutes never starves them — with every ready window
-  of the device that overlaps it (not one waiting for map tiles or a retry:
-  it would be worked out again with every upload, before its tiles are
-  there; and the backfill only with the backfill, so an upload's pass stays
-  the size of the upload and a backfill day waits its turn).
+  It takes the next ready window — new data, then repair, each in the order
+  it came, then the backfill newest first; after a pass of new data the
+  others get the next turn, repair before the backfill (repair is finite: a
+  corrected mode never waits for a whole run, and the backfill gets the turns
+  once repair is done), so a phone uploading every few minutes never starves
+  them — with every ready window of the device that overlaps it (not one
+  waiting for map tiles or a retry: it would be worked out again with every
+  upload, before its tiles are there; and the backfill only with the
+  backfill, so an upload's pass stays the size of the upload and a backfill
+  day waits its turn).
 - **Bounded passes.** A pass reads at most `PROCESSING_PASS_MAX_POINTS`
   (60 000) raw points, and the points it takes on span at most
   `PROCESSING_PASS_MAX_SPAN_HOURS` (36). Rows that hold more are split first,
@@ -3547,15 +3553,17 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   more than 30 minutes — the night the phone slept through — among those that
   leave a newest part within the budget and holding at least half of what
   the budget allows there (the older of equal ones; no pass of a few points),
-  else at the budget's point boundary, the newest 60 000 points or 36 hours.
-  The pass goes on with the newest part; the older part is queued with the
-  rows' reason and level — an upload's as repair (`split`), so a backlog of
-  history never holds up the fresh points of other devices — and is split
-  again when it is taken. At a gap the older part ends at the point before
-  it and the newer part's pass reaches back over it, so the gap is worked out
-  with both its ends; at a point boundary both parts hold the point, so their
-  segments meet. Every split leaves the older part fewer points, so a job is
-  worked through. The window 0.5.0 ran as one pass of 10 to 20 minutes, with
+  else at the budget's point boundary, the newest 60 000 points (less two
+  kept for the window's seams, below) or 36 hours. The pass goes on with the
+  newest part; the older part is queued with the rows' reason and level — an
+  upload's as repair (`split`), so a backlog of history never holds up the
+  fresh points of other devices — and is split again when it is taken. At a
+  gap the older part ends at the point before it and the newer part's pass
+  steps back over it, so the gap is worked out with both its ends — an older
+  part of that one point alone is none, the newer pass takes it in; at a
+  point boundary both parts hold the point, so their segments meet. Every
+  split leaves the older part fewer points, so a job is worked through. The
+  window 0.5.0 ran as one pass of 10 to 20 minutes, with
   every upload — twelve days of a phone recording every second, 570 000
   points of production's history — is so worked out in eleven passes of at
   most 3.5 s on a Mac, the newest first.
@@ -3565,13 +3573,18 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   first (the segment under the start, then the one before a gap, else the
   point before it) — each whole or not at all, so that a window is not cut
   again at another place with every upload. A segment that does not fit stays
-  as it is, cut at the queued range's first or last point — or at the point
-  before a recording gap that precedes the first, so the gap is still worked
-  out with both its ends; a stale multi-day stop at an edge costs a pass at
-  most the budget, never two days of it. A segment that starts after the
-  window's end with only a short hole and no point between counts as
-  touching it, as one sharing the end does: a day's edge that an older pass
-  left between two points is worked out across by the window before it.
+  as it is, cut at the queued range's first or last point; a stale multi-day
+  stop at an edge costs a pass at most the budget, never two days of it. A
+  segment that starts after the window's end with only a short hole and no
+  point between counts as touching it, as one sharing the end does: a day's
+  edge that an older pass left between two points is worked out across by
+  the window before it. Two steps of one point each are taken even when
+  nothing else fits, with the two points the split keeps of the budget for
+  them: back to the point before a recording gap in front of the window's
+  first point, so the gap is worked out with both its ends, and forward to
+  the first point of a touching segment the window cannot take, so the two
+  meet. To decide, the pass counts the points up to two days on either side
+  of its range — an index scan of up to those two days, not of the budget.
   Growth goes at most two days out of the range the rows were queued with: a
   segment reaching further back is cut at the first point within them, and
   the part of one reaching beyond its end stays as a segment from the
@@ -3604,11 +3617,11 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   window queued for an upload crept back across days of history (0.5.0);
   tiles are fetched alongside, so a missing tile never holds up other
   windows. Ready times are kept to the millisecond, the worker's clock.
-- **The pass interval.** When a pass of new data ends, a window of the device
-  still queued — an upload came while it ran — waits until 30 s after the
-  pass ended, and the uploads after it with it: a phone uploading every few
-  seconds costs a pass per half minute, not one per upload. A flush (the
-  tests, the CLI) does not wait for the interval.
+- **The pass interval.** When a pass of a device ends — of new data or any
+  other — a live window of the device still queued (an upload came while it
+  ran) waits until 30 s after the pass ended, and the uploads after it with
+  it: a phone uploading every few seconds costs a pass per half minute, not
+  one per upload. A flush (the tests, the CLI) does not wait for the interval.
 - The 15-minute pass makes waiting windows whose tiles arrived ready and
   queues the gap of any device whose newest point is more than 15 minutes
   newer than its newest processed point (a window lost when the process
