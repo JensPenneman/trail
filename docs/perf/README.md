@@ -35,7 +35,8 @@ npm run load -- fleet-100     # a hundred phones, the design's mix: about 80 min
 | `soak-100` | 100 | 86 400 s (real time) | 7 days | 8 h | 15 + the probe's | every second | M2's 24-hour soak |
 
 Options: `--quiet` waits until the Mac is quiet — the other containers below
-half a CPU and the load average below half the cores, three minutes in a row —
+half a CPU and the load average below the number of cores, three minutes in a
+row, for at most 45 minutes —
 which is how the runs below were made (a busy Mac measures itself: the first
 smoke runs beside other worktrees' test suites, at a load average of 20, had
 event-loop stalls of a second and k6 itself falling behind); `--keep` leaves

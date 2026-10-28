@@ -143,23 +143,25 @@ async function machineLoad() {
 
 /**
  * Waits until the Mac is quiet — the other containers below half a CPU and the
- * load average below half the cores, three times in a row a minute apart — so
- * that a run measures Trail rather than the Mac's other work.
+ * load average below the number of cores, three minutes in a row — so that a
+ * run measures Trail rather than the Mac's other work; after `maxMinutes` it
+ * goes on all the same (the report shows what else ran).
+ * @param {number} maxMinutes
  */
-async function waitForQuiet() {
+async function waitForQuiet(maxMinutes) {
   let quiet = 0;
-  let waited = 0;
-  while (quiet < 3) {
+  for (let minute = 0; quiet < 3; minute += 1) {
     const load = await machineLoad();
-    if (load.othersCpu < 0.5 && load.load1 < load.cpus / 2) quiet += 1;
-    else {
-      quiet = 0;
-      if (waited % 5 === 0) {
-        say(
-          `waiting for a quiet Mac: load average ${load.load1.toFixed(1)}, other containers ${load.othersCpu.toFixed(1)} CPUs`,
-        );
-      }
-      waited += 1;
+    if (load.othersCpu < 0.5 && load.load1 < load.cpus) quiet += 1;
+    else quiet = 0;
+    if (quiet === 0 && minute % 5 === 0) {
+      say(
+        `waiting for a quiet Mac: load average ${load.load1.toFixed(1)} on ${load.cpus} cores, other containers ${load.othersCpu.toFixed(1)} CPUs`,
+      );
+    }
+    if (minute >= maxMinutes) {
+      say(`the Mac did not get quiet in ${maxMinutes} minutes: running all the same`);
+      return;
     }
     if (quiet < 3) await sleep(60_000);
   }
@@ -401,7 +403,7 @@ async function main() {
         { env },
       );
     }
-    if (values.quiet === true) await waitForQuiet();
+    if (values.quiet === true) await waitForQuiet(45);
     const machineAtStart = await machineLoad();
     say(`starting ${projectName} (${runDir})`);
     const upStarted = Date.now();
