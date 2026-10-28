@@ -546,6 +546,11 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
     }
   };
   channel?.addEventListener("message", onMessage);
+  // Back online, a sweep runs: what expired while the page waited goes.
+  const onOnline = () => {
+    if (owner !== null) scheduleSweep(touchDelayMs);
+  };
+  if (typeof window !== "undefined") window.addEventListener("online", onOnline);
 
   const purge = async (reason: PurgeReason) => {
     forget();
@@ -666,6 +671,7 @@ export function createBrowserCache(options: BrowserCacheOptions = {}): BrowserCa
       clearInterval(hourly);
       unsubscribeSession?.();
       channel?.removeEventListener("message", onMessage);
+      if (typeof window !== "undefined") window.removeEventListener("online", onOnline);
       if (options.channel === undefined) channel?.close();
       void storePromise?.then((opened) => opened?.close());
     },

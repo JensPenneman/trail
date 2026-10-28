@@ -10,6 +10,14 @@ import { policyOf } from "./cachePolicy";
 import { cacheValidators } from "./cacheValidators";
 import { settleDay } from "./settledDay";
 
+/**
+ * Answers kept in memory only that still revalidate with their ETag: the
+ * people sharing with you, asked for again after every upload of yours (the
+ * distances start from your newest position). Nothing of theirs reaches the
+ * disk; the `304` saves the bytes and the parsing.
+ */
+const revalidatedInMemory = new Set<unknown>(["people"]);
+
 /** The query function context a revalidation needs: whose cache, which query. */
 export interface CachedFetchContext {
   client: QueryClient;
@@ -53,10 +61,9 @@ export async function revalidate<T>(
     }
   }
   if (!onlineManager.isOnline()) throw offline();
-  const etag =
-    shown !== undefined && policy !== null && policy.validate !== "none"
-      ? cacheValidators.get(client, queryKey)
-      : null;
+  const revalidates =
+    policy === null ? revalidatedInMemory.has(queryKey[0]) : policy.validate !== "none";
+  const etag = shown !== undefined && revalidates ? cacheValidators.get(client, queryKey) : null;
   const response = await sendApiRequest(path, {
     ...request,
     signal,
