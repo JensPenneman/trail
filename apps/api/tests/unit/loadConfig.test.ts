@@ -59,6 +59,8 @@ describe("loadConfig", () => {
       },
       processing: {
         role: "all",
+        metricsPort: 8081,
+        testStall: false,
         enabled: true,
         overpassUrl: "https://overpass-api.de/api/interpreter",
         overpassDailyBytes: 300_000_000,
@@ -93,6 +95,8 @@ describe("loadConfig", () => {
     );
     expect(custom.processing).toEqual({
       role: "all",
+      metricsPort: 8081,
+      testStall: false,
       enabled: false,
       overpassUrl: "http://overpass.lan/api/interpreter",
       overpassDailyBytes: 50_000_000,
@@ -117,6 +121,24 @@ describe("loadConfig", () => {
     }
     expect(issuesOf({ ...minimal, PROCESSING_ROLE: "both" })).toEqual([
       expect.stringMatching(/^PROCESSING_ROLE: /),
+    ]);
+  });
+
+  it("reads the worker's liveness port and the stall of its health check test", () => {
+    const set = loadConfig(
+      { ...minimal, PROCESSING_METRICS_PORT: "9100", PROCESSING_TEST_STALL: "true" },
+      defaults,
+    ).processing;
+    expect(set).toMatchObject({ metricsPort: 9100, testStall: true });
+    expect(
+      loadConfig({ ...minimal, PROCESSING_METRICS_PORT: "0", PROCESSING_TEST_STALL: "" }, defaults)
+        .processing,
+    ).toMatchObject({ metricsPort: 0, testStall: false });
+    expect(
+      issuesOf({ ...minimal, PROCESSING_METRICS_PORT: "65536", PROCESSING_TEST_STALL: "1" }),
+    ).toEqual([
+      expect.stringMatching(/^PROCESSING_METRICS_PORT: /),
+      "PROCESSING_TEST_STALL: Use true or false",
     ]);
   });
 

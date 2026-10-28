@@ -1,3 +1,4 @@
+import type { Server } from "node:http";
 import type { Logger } from "pino";
 import type { Config } from "../config/config";
 import { createPool } from "../db/createPool";
@@ -5,6 +6,7 @@ import { createDatabase } from "../db/database";
 import { runMigrations } from "../db/runMigrations";
 import { waitForDatabase } from "../db/waitForDatabase";
 import { createWorkerLoop } from "./createWorkerLoop";
+import { closeLivenessServer, startLivenessServer } from "./livenessServer";
 import type { WorkerLoop } from "./workerLoop";
 
 /** A pass's statements are cut off after two minutes, as the server's are. */
@@ -14,7 +16,7 @@ const poolSize = 5;
 
 export interface StartedWorker {
   loop: WorkerLoop;
-  /** Takes no more work, lets the pass in progress commit, writes the last heartbeat, closes the pool. */
+  /** Takes no more work, lets the pass in progress commit, writes the last heartbeat, closes the probe and the pool. */
   stop(): Promise<void>;
 }
 
@@ -22,8 +24,10 @@ export interface StartedWorker {
  * The worker process (docs/architecture.md §3), without an HTTP server: it
  * waits for the database, applies pending migrations under the same lock as
  * the server (whichever starts first migrates; the other finds nothing to
- * do), and starts the loop — the passes, the map tiles, the backfill and the
- * 15-minute pass, with a heartbeat every 15 seconds.
+ * do), opens its liveness probe on PROCESSING_METRICS_PORT (`/health/live`,
+ * its container's health check; first, so a port in use fails the start
+ * before any work) and starts the loop — the passes, the map tiles, the
+ * backfill and the 15-minute pass, with a heartbeat every 15 seconds.
  */
 export async function startWorker(input: {
   config: Config;
@@ -45,6 +49,16 @@ export async function startWorker(input: {
   }
   logger.info("database migrations applied");
   const loop = createWorkerLoop({ config, logger, db: createDatabase(pool), pollReady: true });
+  const { metricsPort } = config.processing;
+  let liveness: Server | null = null;
+  if (metricsPort > 0) {
+    try {
+      liveness = await startLivenessServer({ port: metricsPort, host: config.host, loop });
+    } catch (error) {
+      await pool.end();
+      throw error;
+    }
+  }
   await loop.start();
   logger.info(
     {
@@ -52,6 +66,7 @@ export async function startWorker(input: {
       version: config.build.version,
       commit: config.build.commit,
       processing: config.processing.enabled,
+      livenessPort: liveness === null ? null : metricsPort,
     },
     "Trail worker started",
   );
@@ -62,6 +77,7 @@ export async function startWorker(input: {
     loop,
     async stop() {
       await loop.stop();
+      if (liveness !== null) await closeLivenessServer(liveness);
       await pool.end();
     },
   };
