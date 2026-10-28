@@ -171,27 +171,37 @@ and that neither the tag nor a release exists yet. Then it:
 
 CI on the tag publishes the images (`X.Y.Z`, `X.Y`, `sha-<commit>`), waits
 until the node's [checks](#checks) have passed on the tag's commit and then
-**publishes the draft** (job `release`). Launchway deploys on that `published`
-event, so by then the image exists and the checks are green. They are the
-checks of the push of `main` (the tag's commit is its head), so a release
-takes about as long as they do. If the script stops before the push, it moves
-`main` back and deletes the tag; after the push, it prints the commands that
-are left. It needs git with commit signing, an authenticated GitHub CLI and
-Node.js.
+**publishes the draft** (jobs `release-gate` and `release`). Launchway
+deploys on that `published` event, so by then the image exists and the
+checks are green. They are the checks of the push of `main` (the tag's commit
+is its head), so a release takes about as long as they do. If the script
+stops before the push, it moves `main` back and deletes the tag; after the
+push, it prints the commands that are left. It needs git with commit
+signing, an authenticated GitHub CLI and Node.js.
 
-**The release gate.** The `release` job lists the statuses of the tag's
-commit every minute, for up to 90 minutes, and counts only those of the
+**The release gate.** The `release-gate` job lists the statuses of the tag's
+commit every minute, for up to 300 minutes, and counts only those of the
 Launchway GitHub App; its log shows the three checks' states at every turn.
-It publishes the draft once all three are *success*. A *failure* or an
-*error* stops it at once, and so do 90 minutes without all three: the release
-stays a draft and nothing is deployed, while the version's images exist
-already (they are pushed before the gate). Then:
+The node runs one check at a time, so the release commit's checks wait
+behind those queued before them, the release pull request's among them
+(release-please updates it on every push to `main`). Once all three are
+*success*, `release` publishes the draft. A *failure* or an *error* stops the
+gate at once, and so do 300 minutes without all three: the release stays a
+draft and nothing is deployed, while the version's images exist already
+(they are pushed before the gate). Then:
 
 - a check failed on the code: fix it on `main` and release the next version;
 - a check could not run or did not finish (the node was down, a newer push to
   `main` superseded it): **Re-run** it on Launchway's Checks tab, or **Run
   checks** with the tag as the ref, and once it has passed re-run the job
   with the command its log ends with, `gh run rerun <run id> --failed`.
+
+**Until the release is published, push nothing to `main` past the rules**: no
+bypass push and no `gh pr merge --admin`. A newer commit on `main` supersedes
+the release commit's checks that are still queued; they report *error*, and
+the gate stops. Ordinary merges cannot do that: the rules make a pull request
+catch up with `main` and pass its checks first, and those queue behind the
+release commit's.
 
 When the release pull request is not one commit on top of `main`,
 release-please has not processed the latest push yet: wait for the Release
@@ -332,7 +342,7 @@ never appear for pushes that Launchway did not receive, and no pull request
 can merge. (When only the node's agent is down, its queued checks end with
 *error* after 10 minutes.) GitHub keeps building and publishing the images,
 so they are there when the node is back, but a release's gate gives up after
-90 minutes and leaves the release a draft ([Releases](#releases)). Once the
+300 minutes and leaves the release a draft ([Releases](#releases)). Once the
 node is back, **Re-run** the checks that ended with *error*, use **Run
 checks** (or push again) for commits without a status, and re-run a release
 job that failed.
@@ -633,7 +643,7 @@ Day-to-day development uses `npm run dev` instead (README).
 | Symptom | Cause and fix |
 |---|---|
 | The deployment fails at the pull of `sha-<commit>` | GitHub Actions has not published that commit's image yet (job `image` still running, or failed). Launchway retries for an hour; check the commit's CI run. |
-| A release was tagged but nothing deployed | The release is still a draft: CI publishes it after the images and the checks. Check the tag's CI run, job `release`: its log shows the checks it waits for, or why it stopped ([Releases](#releases)). |
+| A release was tagged but nothing deployed | The release is still a draft: CI publishes it after the images and the checks. Check the tag's CI run, job `release-gate`: its log shows the checks it waits for, or why it stopped ([Releases](#releases)). |
 | A pull request's `launchway/*` statuses stay *pending* | The node runs one check at a time and others are ahead, or it is down ([Checks](#checks)). |
 | A `launchway/*` status is *error* | The check could not run: the description names why (superseded, the image build, the node offline, a full queue). **Re-run** it on the Checks tab once the cause is gone. |
 | A pull request has no `launchway/*` statuses | It comes from a fork ([Checks](#checks)), or Launchway missed the push: **Run checks** for its branch on the Checks tab. |

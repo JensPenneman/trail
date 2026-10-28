@@ -122,6 +122,19 @@ yourself: location data is personal data.
   commit have passed, as reported by the Launchway GitHub App and no one else;
   Dependabot updates for npm, Actions and Docker
   ([Dependencies](#dependencies)).
+- **Checks on the production node**: the code of every push to `main` and of
+  every pull request into it from a branch of this repository, Dependabot's
+  included, runs on the Launchway node next to production, in the
+  development container: every command of `package.json` and the install
+  scripts of the lockfile's packages (esbuild, lefthook and vue-demi;
+  fsevents installs on macOS only). A check gets none of the app's variables
+  or secrets, but it reaches the internet, the ports the node publishes
+  (Launchway's API on port 3000 among them) and, on Docker Desktop, the host's
+  loopback; the risks that remain are listed in Launchway's
+  [ADR 0020](https://github.com/JensPenneman/launchway/blob/main/docs/adr/0020-checks-run-app-test-commands-on-the-node.md#consequences).
+  Pull requests from forks never run there. What the checks run is set in
+  Launchway's database (Trail → Settings → Checks), not in this repository,
+  so a change to it is not reviewed in a pull request.
 
 ## Sharing: who sees what
 

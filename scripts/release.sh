@@ -217,8 +217,8 @@ stage=pushed
 
 say "Creating the draft release"
 # A draft: CI publishes it once the images of the tag exist and the node's
-# checks of its commit have passed (ci.yml, job `release`), and publishing is
-# what makes Launchway deploy it.
+# checks of its commit have passed (ci.yml, jobs `release-gate` and
+# `release`), and publishing is what makes Launchway deploy it.
 release_url=$(gh release create "$tag" --repo "$repo" --verify-tag --draft --title "$tag" --notes-file "$notes_file")
 echo "  $release_url"
 

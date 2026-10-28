@@ -2099,9 +2099,9 @@ Releases: release-please (`release-please-config.json`, `release-type: node`,
 `"draft": true`) keeps a release pull request open; `scripts/release.sh`
 cherry-picks its commit onto `main` signed, pushes a signed tag `vX.Y.Z` and
 creates the GitHub release as a draft. CI on the tag publishes the images and,
-once the node's checks of the tag's commit have passed, the draft (job
-`release`, §15); a release pull request merged on GitHub instead gets its tag
-and CI run from the Release Please workflow.
+once the node's checks of the tag's commit have passed, the draft (jobs
+`release-gate` and `release`, §15); a release pull request merged on GitHub
+instead gets its tag and CI run from the Release Please workflow.
 
 ### 13.3 Deployment
 
@@ -2696,23 +2696,31 @@ tags, pull requests, Monday 03:00 UTC, manual runs):
   and only builds for pull requests and Dependabot's branches. It does not
   wait for the checks: a preview has its image within minutes, also when its
   checks fail.
-- `release` (`v*` tags, after `image`): the release gate. It lists the
-  statuses of the tag's commit every 60 s for up to 90 minutes and goes on
-  once the newest `launchway/quality`, `launchway/integration` and
+- `release-gate` (`v*` tags, beside `image`): lists the statuses of the
+  tag's commit every 60 s for up to 300 minutes, since the release commit's
+  checks queue behind those of other commits (the release pull request's,
+  which release-please updates on every push to `main`, among them), and
+  succeeds once the newest `launchway/quality`, `launchway/integration` and
   `launchway/e2e` statuses of the Launchway app (creator
   `launchway-for-jenspenneman-com[bot]`; the same names from anyone else count
   for nothing) are all `success`. A `failure` or an `error` stops it at once,
-  since the node never runs a check again by itself, and so does the 90th
-  minute; the release then stays a draft, which Launchway does not deploy,
-  though the version's images exist already. Otherwise it publishes the
-  draft, or creates and publishes the release of a tag pushed by hand. The
-  tag's commit is the head of `main` (`scripts/release.sh` pushes both at
-  once), so its checks are those of that push.
+  since the node never runs a check again by itself, and so does the 300th
+  minute. It reads the statuses' descriptions and links without control
+  characters or line breaks and gives a verdict only on exactly one line per
+  check; its token may only read statuses.
+- `release` (`v*` tags, after `image` and `release-gate`): publishes the
+  draft, or creates and publishes the release of a tag pushed by hand. When
+  the gate fails, the release stays a draft, which Launchway does not deploy,
+  though the version's images exist already. The tag's commit is the head of
+  `main` (`scripts/release.sh` pushes both at once), so its checks are those
+  of that push.
 
-Superseded runs of pull requests and other branches are cancelled; runs on
-`main` and tags always finish. Actions pinned by commit SHA; per-job
-least-privilege permissions (`packages`, `id-token`, `attestations` write
-only in `image`; `contents: write` and `statuses: read` only in `release`).
+GitHub Actions cancels its superseded runs of pull requests and other
+branches; its runs on `main` and tags always finish. Actions pinned by commit
+SHA; per-job least-privilege permissions (`packages`, `id-token`,
+`attestations` write only in `image`; `statuses: read` only in
+`release-gate`; `contents: write` only in `release`, which runs for a
+minute).
 The weekly run only rebuilds the image: no tests run on a schedule.
 
 **Branch rules of `main`.** The ruleset "main protection" requires a pull
