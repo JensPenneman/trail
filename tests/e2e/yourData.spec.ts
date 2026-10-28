@@ -78,8 +78,9 @@ test.describe("your data", () => {
       "34 records were removed.",
     );
 
-    await page.goto(`/devices/${device.id}`);
+    await page.goto(`/settings/devices/${device.id}`);
     await expect(page.getByText("0 today · 0 in 24 h · 0 in total")).toBeVisible();
+    await page.getByRole("link", { name: "Raw points" }).click();
     await expect(page.getByRole("heading", { name: "No points stored" })).toBeVisible();
   });
 

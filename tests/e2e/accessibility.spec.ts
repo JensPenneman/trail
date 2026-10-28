@@ -32,8 +32,8 @@ test.describe("accessibility", () => {
     await expect(page.getByRole("heading", { name: "Connect your first phone" })).toBeVisible();
     await expect(page.getByText("Nobody shares with you yet")).toBeVisible();
     await expectAccessible(page, "People's Live without devices or anyone who shares");
-    await open(page, "/devices", "Devices", "No devices yet");
-    await expectAccessible(page, "Devices without devices");
+    await open(page, "/settings/devices", "Devices", "No devices yet");
+    await expectAccessible(page, "Settings › Devices without devices");
 
     await page.getByRole("button", { name: "Add device", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Add a device" })).toBeVisible();
@@ -43,7 +43,7 @@ test.describe("accessibility", () => {
     const device = await uploadedDevice(page, "Checked phone", overlandBatch(account.timezone));
     await open(page, "/", "People", "Timeline");
     await expectAccessible(page, "People's Live");
-    // The Me card opened up: each device, the way to Devices.
+    // The Me card opened up: each device, the way to Settings › Devices.
     await page
       .getByRole("region", { name: "Me", exact: true })
       .getByRole("button", { name: "Details" })
@@ -55,16 +55,26 @@ test.describe("accessibility", () => {
     await open(page, "/?view=heat", "People", "Busiest places in view");
     await expect(page.getByText(/^\d+ points$/).first()).toBeVisible();
     await expectAccessible(page, "People's Heat");
-    await open(page, "/devices", "Devices", "Checked phone");
-    await expectAccessible(page, "Devices");
-    await open(page, `/devices/${device.id}`, "Checked phone", "Uploads of this device");
+    // Settings › Devices, a device's page and the pages of its parts.
+    await open(page, "/settings/devices", "Devices", "Checked phone");
+    await expectAccessible(page, "Settings › Devices");
+    await open(page, `/settings/devices/${device.id}`, "Checked phone", "Overview");
     await expectAccessible(page, "the device page");
+    for (const [part, name, ready] of [
+      ["uploads", "Uploads", "Overland"],
+      ["points", "Raw points", "25 shown"],
+      ["tracking", "Tracking settings", "Send with next upload"],
+      ["setup", "Setup", "Recommended Overland settings"],
+    ] as const) {
+      await open(page, `/settings/devices/${device.id}/${part}`, name, ready);
+      await expectAccessible(page, `the device's ${name.toLowerCase()}`);
+    }
     // Settings, every page of it and the administrators' one: settings.spec.ts.
   });
 
   test("the setup code of a new device", async ({ page, account }) => {
     expect(account.email).toBeTruthy();
-    await page.goto("/devices?add=1");
+    await page.goto("/settings/devices?add=1");
     const form = page.getByRole("dialog", { name: "Add a device" });
     await form.getByLabel("Name").fill("Scanned phone");
     await form.getByRole("button", { name: "Add device" }).click();

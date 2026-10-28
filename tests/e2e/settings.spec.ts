@@ -52,9 +52,10 @@ test("Settings: the rows of every group with their values, and search", async ({
   }
   const groups = list(page).getByRole("list");
   await expect(groups).toHaveCount(4);
-  await expect(list(page).getByRole("list", { name: "Account" }).getByRole("link")).toHaveCount(3);
+  await expect(list(page).getByRole("list", { name: "Account" }).getByRole("link")).toHaveCount(4);
   for (const [name, path] of [
     ["Profile", "/settings/profile"],
+    ["Devices", "/settings/devices"],
     ["Passkeys", "/settings/passkeys"],
     ["Browsers", "/settings/browsers"],
     ["Sharing", "/settings/sharing"],
@@ -109,12 +110,13 @@ test("Settings: the rows of every group with their values, and search", async ({
 test("every page of Settings, and the page of each kind of item, renders and is accessible", async ({
   page,
   account,
-}) => {
-  // Eighteen pages, each loaded by its address and scanned by axe.
+}, testInfo) => {
+  // Twenty-four pages, each loaded by its address and scanned by axe.
   test.slow();
-  await uploadedDevice(page, "Settings phone", overlandBatch(account.timezone));
+  const device = await uploadedDevice(page, "Settings phone", overlandBatch(account.timezone));
   for (const [path, name, ready] of [
     ["/settings/profile", "Profile", "Time zone"],
+    ["/settings/devices", "Devices", "Settings phone"],
     ["/settings/passkeys", "Passkeys", "works on this address"],
     ["/settings/browsers", "Browsers", "This browser"],
     ["/settings/sharing", "Sharing", "Nobody sees your location."],
@@ -132,6 +134,32 @@ test("every page of Settings, and the page of each kind of item, renders and is 
     await expect(page).toHaveTitle(`${name} · Settings · Trail`);
     await expectAccessible(page, `Settings › ${name}`);
   }
+
+  // A device's page, and the pages of its parts one level deeper.
+  await open(page, `/settings/devices/${device.id}`, "Settings phone", "Overview");
+  await expect(page).toHaveTitle("Settings phone · Devices · Settings · Trail");
+  await expectAccessible(page, "a device's page");
+  for (const [part, name, ready] of [
+    ["uploads", "Uploads", "Overland"],
+    ["points", "Raw points", "25 shown"],
+    ["tracking", "Tracking settings", "Send with next upload"],
+    ["setup", "Setup", "Recommended Overland settings"],
+  ] as const) {
+    await open(page, `/settings/devices/${device.id}/${part}`, name, ready);
+    await expect(page).toHaveTitle(`${name} · Settings phone · Devices · Settings · Trail`);
+    await expectAccessible(page, `a device's ${name.toLowerCase()}`);
+  }
+
+  // Search finds the device by its name, and leads to its page.
+  await page.goto(onPhone(testInfo) ? "/settings" : "/settings/devices");
+  const search = page.getByRole("searchbox", { name: "Search Settings" });
+  await search.fill("settings phone");
+  await expect(
+    page.getByRole("list", { name: "Results" }).getByRole("link", { name: "Settings phone" }),
+  ).toHaveAccessibleDescription("Account › Devices");
+  await search.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`/settings/devices/${device.id}$`));
+  await expect(title(page, "Settings phone")).toBeFocused();
 
   // A passkey's page, from the list.
   await page.goto("/settings/passkeys");

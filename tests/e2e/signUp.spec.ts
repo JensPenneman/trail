@@ -12,7 +12,7 @@ test.describe("signing up", () => {
     await expect(page.getByRole("heading", { name: "Connect your first phone" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Add a device" })).toHaveAttribute(
       "href",
-      "/devices?add=1",
+      "/settings/devices?add=1",
     );
     await expect(page.getByRole("heading", { name: "Uploads" })).toHaveCount(0);
   });
