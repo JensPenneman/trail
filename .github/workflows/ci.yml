@@ -172,17 +172,25 @@ jobs:
             else
               refused=0
               # One line per check: its name, its newest state ("missing"
-              # before the first status), description and link, apart by \x1f.
+              # before the first status), description and link, apart by
+              # \x1f. Control characters and line breaks are taken out of
+              # what the statuses say, so no status can add a line of its own
+              # or a workflow command.
               report=$(printf '%s' "$pages" | jq -rs --arg app "$CHECKS_APP" --arg checks "$CHECKS" '
                 (add // []) as $statuses
                 | ($checks | splits("\\s+") | select(. != "")) as $check
                 | ([$statuses[] | select(.context == $check and .creator.login == $app)] | max_by(.id)) as $newest
-                | [$check, ($newest.state // "missing"), (($newest.description // "") | gsub("\\s+"; " ")), ($newest.target_url // "")]
+                | [$check,
+                   (($newest.state // "missing") | gsub("[^a-z]"; "")),
+                   (($newest.description // "") | gsub("[[:cntrl:][:space:]]+"; " ")),
+                   (($newest.target_url // "") | gsub("[[:cntrl:][:space:]]+"; ""))]
                 | join("\u001f")')
               summary=''
+              lines=0
               passed=0
               failed=''
               while IFS=$'\x1f' read -r check state description url; do
+                lines=$((lines + 1))
                 case "$state" in
                   success) passed=$((passed + 1)) ;;
                   failure | error) failed="$failed$check: $state${description:+, $description}${url:+ ($url)}"$'\n' ;;
@@ -193,6 +201,11 @@ jobs:
                 esac
                 summary="$summary${summary:+, }$check: $shown"
               done <<<"$report"
+              # A verdict only on one line per check, never on more or fewer
+              if [ "$lines" -ne "$total" ]; then
+                echo "::error title=Launchway checks::Read $lines lines for $total checks from the statuses of $SHA; no verdict."
+                exit 1
+              fi
               echo "[$elapsed] $summary"
               if [ -n "$failed" ]; then
                 printf '%s' "$failed" | while IFS= read -r line; do
