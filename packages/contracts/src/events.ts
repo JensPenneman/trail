@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { dayStampsSchema } from "./cacheStamp";
 import { deviceSummarySchema } from "./device";
 import { sharedDeviceSchema } from "./person";
 import { trackPointSchema } from "./track";
+import { processingVersionsSchema } from "./transport";
 
 /** What happened to a share, as told to the other side of it (docs/architecture.md §9). */
 export const shareChanges = [
@@ -31,7 +33,16 @@ export type ShareChange = (typeof shareChanges)[number];
  * people share with them, projected as their shares allow.
  */
 export const serverEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("hello"), serverTime: z.iso.datetime() }),
+  /**
+   * First on every stream. `versions` are those of the processing algorithms:
+   * a page open across a release learns of new ones, and the stamps of the days
+   * they work out again change as they go.
+   */
+  z.object({
+    type: z.literal("hello"),
+    serverTime: z.iso.datetime(),
+    versions: processingVersionsSchema.optional(),
+  }),
   /** A device was created, renamed or received data — replace it in caches. */
   z.object({ type: z.literal("device"), device: deviceSummarySchema }),
   z.object({ type: z.literal("device-removed"), deviceId: z.uuid() }),
@@ -67,6 +78,18 @@ export const serverEventSchema = z.discriminatedUnion("type", [
     from: z.iso.datetime(),
     to: z.iso.datetime(),
   }),
+  /**
+   * The daily statistics summed up some of a device's days again (after
+   * uploads or a deletion, or for a new time zone): the stamps of those days
+   * now. A copy of one of them whose stamps differ is out of date.
+   */
+  z.object({ type: z.literal("days"), deviceId: z.uuid(), days: dayStampsSchema }),
+  /**
+   * Sent first to a stream reopened with `?after=<id>` (the `id:` of the last
+   * message it got) when the server no longer holds what came since, or has
+   * restarted: events were lost, so what the page shows may be out of date.
+   */
+  z.object({ type: z.literal("resync") }),
   /**
    * The session behind this stream ended — signed out, revoked from another
    * browser, expired, or the account was deleted. The server closes the stream

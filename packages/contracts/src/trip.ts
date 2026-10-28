@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dayStampsSchema } from "./cacheStamp";
 
 /** A trip recorded with Overland's Start/Stop button (`GET /api/trips`, query = `eventRangeQuerySchema`). */
 export const tripSchema = z.object({
@@ -14,5 +15,9 @@ export const tripSchema = z.object({
 });
 export type Trip = z.infer<typeof tripSchema>;
 
-export const tripsResponseSchema = z.object({ trips: z.array(tripSchema) });
+export const tripsResponseSchema = z.object({
+  trips: z.array(tripSchema),
+  /** One per device and local day of the range: while they all stay the same, so does the answer. */
+  stamps: dayStampsSchema.optional(),
+});
 export type TripsResponse = z.infer<typeof tripsResponseSchema>;

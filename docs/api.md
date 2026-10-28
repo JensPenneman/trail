@@ -195,6 +195,12 @@ like its token, is changed in the dashboard only.
 - `HEAD` works wherever `GET` does.
 - Responses are `Cache-Control: no-store`, except the OpenAPI document,
   which may be cached for five minutes and revalidated with its `ETag`.
+- Answers sliced by local day may carry stamps: `GET /api/v1/tracks` and
+  `GET /api/v1/segments` one per device and local day of the range
+  (`stamps`), `GET /api/v1/stats/days` one on every day (`stamp`). A stamp is
+  two opaque strings that stay the same while the day's recorded data and its
+  processing do: a copy of a day is current as long as its stamp has not
+  changed. Compare stamps, never parse them.
 
 ## Pagination
 

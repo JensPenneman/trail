@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dayStampsSchema } from "./cacheStamp";
 import { deviceIdsParamSchema, instantRange } from "./query";
 
 /** Shared query of `GET /api/visits` and `GET /api/trips`. */
@@ -19,5 +20,9 @@ export const visitSchema = z.object({
 });
 export type Visit = z.infer<typeof visitSchema>;
 
-export const visitsResponseSchema = z.object({ visits: z.array(visitSchema) });
+export const visitsResponseSchema = z.object({
+  visits: z.array(visitSchema),
+  /** One per device and local day of the range: while they all stay the same, so does the answer. */
+  stamps: dayStampsSchema.optional(),
+});
 export type VisitsResponse = z.infer<typeof visitsResponseSchema>;
