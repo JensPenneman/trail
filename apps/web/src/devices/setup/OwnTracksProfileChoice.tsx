@@ -2,6 +2,8 @@ import type { PhonePlatform } from "@trail/contracts/deviceApp";
 import { type OwnTracksProfile, platformOfProfile } from "@trail/contracts/owntracksSetup";
 import { useState } from "react";
 import { SegmentedControl } from "../../ui/SegmentedControl";
+// Its note shares the setup's look (`credentials__hint`), wherever it is shown.
+import "../CredentialsView.css";
 
 type IphoneTracking = "move" | "significant";
 

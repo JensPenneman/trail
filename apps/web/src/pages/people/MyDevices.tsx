@@ -2,6 +2,7 @@ import type { DeviceSummary } from "@trail/contracts/device";
 import { deviceStatus } from "@trail/contracts/deviceStatus";
 import { Link } from "react-router";
 import { describeMovement } from "../../devices/describeMovement";
+import { devicePath, devicesPath } from "../../devices/devicePaths";
 import { tripModeLabel } from "../../devices/tripModeLabel";
 import { capitalise } from "../../format/capitalise";
 import { useFormatter } from "../../format/useFormatter";
@@ -19,7 +20,7 @@ interface MyDevicesProps {
 /**
  * The Me card, opened up: each of one's devices with when it last reported
  * a position, its battery, that position with its accuracy, its movement and
- * trip — each linking to its page — and the way to the Devices page, where
+ * trip — each linking to its page — and the way to Settings › Devices, where
  * the uploads are.
  */
 export function MyDevices({ devices, now, thresholds }: MyDevicesProps) {
@@ -37,7 +38,7 @@ export function MyDevices({ devices, now, thresholds }: MyDevicesProps) {
             return (
               <li key={device.id} className="person-details__device">
                 <p className="person-details__device-name">
-                  <Link to={`/devices/${device.id}`}>{device.name}</Link>
+                  <Link to={devicePath(device.id)}>{device.name}</Link>
                 </p>
                 <dl className="person-details__facts">
                   <div>
@@ -84,7 +85,7 @@ export function MyDevices({ devices, now, thresholds }: MyDevicesProps) {
           })}
         </PlainList>
       </div>
-      <Link to="/devices" className="person-details__more">
+      <Link to={devicesPath} className="person-details__more">
         <span>Uploads, activity and settings of your devices</span>
         <Icon name="chevronRight" />
       </Link>

@@ -44,6 +44,7 @@ interface SettingsSearchRow {
 /** Which value a row shows on its right (settingsBadges.ts). */
 export type SettingsBadgeId =
   | "profile"
+  | "devices"
   | "passkeys"
   | "browsers"
   | "sharing"
@@ -140,6 +141,77 @@ export const settingsNodes = [
     rows: [
       { label: "Display name", keywords: ["name"] },
       { label: "Time zone", keywords: ["timezone", "days", "today", "midnight"] },
+    ],
+  },
+  {
+    kind: "page",
+    id: "devices",
+    path: "/settings/devices",
+    group: "account",
+    label: "Devices",
+    icon: "devices",
+    tone: "teal",
+    description: "Phones that send their location to Trail with a tracking app.",
+    keywords: [
+      "phones",
+      "trackers",
+      "tracking app",
+      "overland",
+      "owntracks",
+      "traccar",
+      "osmand",
+      "gpslogger",
+      "uploads",
+      "battery",
+      "status",
+      "live",
+      "silent",
+      "access token",
+      "setup",
+    ],
+    adminOnly: false,
+    badge: "devices",
+    rows: [
+      {
+        label: "Add device",
+        query: "add=1",
+        keywords: ["new device", "new phone", "connect a phone", "set up a phone", "qr code"],
+      },
+      { label: "Uploads", anchor: "uploads", keywords: ["ingest", "feed", "requests", "arrive"] },
+    ],
+    details: [
+      {
+        id: "device",
+        path: "/settings/devices/:deviceId",
+        label: "Device",
+        searchable: true,
+        parts: [
+          {
+            id: "uploads",
+            path: "/settings/devices/:deviceId/uploads",
+            label: "Uploads",
+            description: "Requests from the phone, newest first.",
+          },
+          {
+            id: "points",
+            path: "/settings/devices/:deviceId/points",
+            label: "Raw points",
+            description: "Every stored point, newest first.",
+          },
+          {
+            id: "tracking",
+            path: "/settings/devices/:deviceId/tracking",
+            label: "Tracking settings",
+            description: "Change how Overland records, without touching the phone.",
+          },
+          {
+            id: "setup",
+            path: "/settings/devices/:deviceId/setup",
+            label: "Setup",
+            description: "The app, how it is connected, and the settings Trail recommends for it.",
+          },
+        ],
+      },
     ],
   },
   {

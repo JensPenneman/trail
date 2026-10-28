@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
 import { deviceAppInfo } from "@trail/contracts/deviceApp";
 import type { DeviceStatus } from "@trail/contracts/deviceStatus";
@@ -6,8 +7,11 @@ import { Link } from "react-router";
 import { ActivitySparkline } from "../../devices/ActivitySparkline";
 import type { ActivitySlot } from "../../devices/activitySlots";
 import { describeMovement } from "../../devices/describeMovement";
+import { devicePath } from "../../devices/devicePaths";
+import { goneDevices } from "../../devices/goneDevices";
 import { tripModeLabel } from "../../devices/tripModeLabel";
 import { useFormatter } from "../../format/useFormatter";
+import { useSettingsLink } from "../../settings/useSettingsLink";
 import { BatteryIndicator } from "../../ui/BatteryIndicator";
 import { DeviceSwatch } from "../../ui/DeviceSwatch";
 import { Icon } from "../../ui/Icon";
@@ -30,7 +34,8 @@ interface DeviceCardProps {
  * Everything that proves a device is (or is not) sending data: its status,
  * last upload, trip, battery, movement, today's points and distance, its last
  * position with the accuracy, and the last 48 hours of points and uploads.
- * The name leads to the device's page.
+ * Its head leads to the device's page, a level deeper in Settings, as a row
+ * does: coming back, focus returns to it.
  */
 export function DeviceCard({
   device,
@@ -42,7 +47,11 @@ export function DeviceCard({
   now,
 }: DeviceCardProps) {
   const format = useFormatter();
+  const queryClient = useQueryClient();
   const titleId = useId();
+  const to = devicePath(device.id);
+  // A device deleted on its page is still listed for a moment after it: no focus to return to it.
+  const link = useSettingsLink(to, { returnFocus: !goneDevices.has(queryClient, device.id) });
   const location = device.lastLocation;
   const movement = describeMovement(location, format);
   // What a silent or idle device last reported is history, not its current state.
@@ -54,10 +63,13 @@ export function DeviceCard({
     <article className={`device-card device-card--${status}`} aria-labelledby={titleId}>
       <header className="device-card__header">
         <DeviceSwatch slot={colorSlot} />
-        <h2 className="device-card__name" id={titleId}>
-          <Link to={`/devices/${device.id}`}>{device.name}</Link>
-        </h2>
+        <h3 className="device-card__name" id={titleId}>
+          <Link to={to} {...link} className="device-card__link">
+            {device.name}
+          </Link>
+        </h3>
         <StatusBadge status={status} thresholds={thresholds} />
+        <Icon name="chevronRight" className="device-card__chevron" />
       </header>
       <p className="device-card__meta">
         {deviceAppInfo[device.source].name}
@@ -71,7 +83,7 @@ export function DeviceCard({
       {device.lastSeenAt === null ? (
         <p className="device-card__upload device-card__upload--never">
           Waiting for the first upload. Open {deviceAppInfo[device.source].name} on the phone and
-          check that tracking is on. <Link to={`/devices/${device.id}`}>Setup details</Link>
+          check that tracking is on. <Link to={devicePath(device.id, "setup")}>Setup details</Link>
         </p>
       ) : (
         <p className="device-card__upload">

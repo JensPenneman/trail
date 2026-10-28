@@ -14,6 +14,7 @@ type LazyPage = NonNullable<RouteObject["lazy"]>;
 const pageModules: Readonly<Record<SettingsPageId, LazyPage>> = {
   profile: () =>
     import("../pages/settings/ProfilePage").then((m) => ({ Component: m.ProfilePage })),
+  devices: () => import("../pages/devices/DevicesPage").then((m) => ({ Component: m.DevicesPage })),
   passkeys: () =>
     import("../pages/settings/PasskeysPage").then((m) => ({ Component: m.PasskeysPage })),
   browsers: () =>
@@ -42,6 +43,7 @@ const pageModules: Readonly<Record<SettingsPageId, LazyPage>> = {
 };
 
 const detailModules: Readonly<Record<SettingsDetailId, LazyPage>> = {
+  device: () => import("../pages/device/DevicePage").then((m) => ({ Component: m.DevicePage })),
   passkey: () =>
     import("../pages/settings/PasskeyPage").then((m) => ({ Component: m.PasskeyPage })),
   share: () => import("../pages/settings/SharePage").then((m) => ({ Component: m.SharePage })),
@@ -52,7 +54,18 @@ const detailModules: Readonly<Record<SettingsDetailId, LazyPage>> = {
   viewer: () => import("../pages/settings/ViewerPage").then((m) => ({ Component: m.ViewerPage })),
 };
 
-const partModules: Readonly<Record<SettingsPartId, LazyPage>> = {};
+const partModules: Readonly<Record<SettingsPartId, LazyPage>> = {
+  uploads: () =>
+    import("../pages/device/DeviceUploadsPage").then((m) => ({ Component: m.DeviceUploadsPage })),
+  points: () =>
+    import("../pages/device/DevicePointsPage").then((m) => ({ Component: m.DevicePointsPage })),
+  tracking: () =>
+    import("../pages/device/DeviceTrackingPage").then((m) => ({
+      Component: m.DeviceTrackingPage,
+    })),
+  setup: () =>
+    import("../pages/device/DeviceSetupPage").then((m) => ({ Component: m.DeviceSetupPage })),
+};
 
 /** A path of the tree relative to `/settings`, as a child route takes it. */
 const relative = (path: string): string => path.slice(settingsRootPath.length + 1);

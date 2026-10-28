@@ -59,7 +59,7 @@ type Focus = { key: string; lon: number; lat: number; zoom: number };
  * while Me is chosen. Every view keeps its state and its queries in a hook
  * that asks for nothing while another view is shown, so the map itself, with
  * its camera, stays as it is when the view changes. What the devices send is
- * the Devices page's.
+ * Settings › Devices'.
  */
 export function PeoplePage() {
   const user = useSessionUser();

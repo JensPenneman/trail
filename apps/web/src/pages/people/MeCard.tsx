@@ -3,6 +3,7 @@ import type { DeviceSummary } from "@trail/contracts/device";
 import { deviceAppInfo } from "@trail/contracts/deviceApp";
 import { useId } from "react";
 import { Link } from "react-router";
+import { addDevicePath, devicePath } from "../../devices/devicePaths";
 import { useFormatter } from "../../format/useFormatter";
 import { describeMe } from "../../people/describeMe";
 import { latestOwnDevice } from "../../people/latestOwnDevice";
@@ -34,7 +35,7 @@ interface MeCardProps {
  * as their devices: what they are doing now and how fresh that is, from the
  * device that reported last; the quick toggle of the transport mode, which
  * applies to that device; Show on map; and Details, closed at first, with
- * each device's facts and the way to the Devices page.
+ * each device's facts and the way to Settings › Devices.
  */
 export function MeCard({ name, devices, now, thresholds, shown, onShowOnMap }: MeCardProps) {
   const format = useFormatter();
@@ -91,7 +92,7 @@ export function MeCard({ name, devices, now, thresholds, shown, onShowOnMap }: M
           title="Connect your first phone"
           level={3}
           action={
-            <LinkButton to="/devices?add=1" variant="primary" icon="plus">
+            <LinkButton to={addDevicePath} variant="primary" icon="plus">
               Add a device
             </LinkButton>
           }
@@ -106,7 +107,7 @@ export function MeCard({ name, devices, now, thresholds, shown, onShowOnMap }: M
       {waiting && latest !== null ? (
         <p className="me-card__setup">
           Open {deviceAppInfo[latest.source].name} on the phone and check that tracking is on.{" "}
-          <Link to={`/devices/${latest.id}`}>Setup details</Link>
+          <Link to={devicePath(latest.id, "setup")}>Setup details</Link>
         </p>
       ) : null}
 

@@ -1,6 +1,7 @@
 import type { DeviceSummary } from "@trail/contracts/device";
 import { useState } from "react";
 import { useSessionUser } from "../../app/useSessionUser";
+import { addDevicePath } from "../../devices/devicePaths";
 import { useConfig } from "../../queries/useConfig";
 import { useDevices } from "../../queries/useDevices";
 import { useUpdateDevice } from "../../queries/useUpdateDevice";
@@ -106,7 +107,7 @@ export function NotificationsPage() {
               muted
               label="No devices yet."
               end={
-                <LinkButton to="/devices?add=1" variant="ghost" icon="plus">
+                <LinkButton to={addDevicePath} variant="ghost" icon="plus">
                   Add a device
                 </LinkButton>
               }

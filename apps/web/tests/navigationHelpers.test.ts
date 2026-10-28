@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isSignedInPath } from "../src/app/isSignedInPath";
+import { legacyDevicesPath } from "../src/app/legacyDevicesPath";
 import { legacyMapPath, legacyPeoplePath } from "../src/app/legacyMapPath";
 import { loginPath } from "../src/app/loginPath";
 import { safeNextPath } from "../src/app/safeNextPath";
@@ -36,6 +37,12 @@ describe("sign-in redirects", () => {
       "/settings",
       "/settings/",
       "/settings/profile",
+      "/settings/devices",
+      "/settings/devices/abc",
+      "/settings/devices/abc/uploads",
+      "/settings/devices/abc/points",
+      "/settings/devices/abc/tracking",
+      "/settings/devices/abc/setup/",
       "/settings/passkeys",
       "/settings/passkeys/abc",
       "/settings/browsers",
@@ -70,6 +77,10 @@ describe("sign-in redirects", () => {
       "/settings/privacy",
       "/settings/profile/x",
       "/settings/passkeys/a/b",
+      "/devices/abc/uploads",
+      "/settings/devices/abc/nope",
+      "/settings/devices/abc/uploads/x",
+      "/settings/devices/uploads/abc/x",
       "/settingsx",
       "/xsettings/profile",
     ]) {
@@ -108,6 +119,21 @@ describe("addresses of the pages the People page replaced", () => {
   });
 });
 
+describe("addresses of the Devices page of old", () => {
+  it("lead into Settings, with the device, the query and the anchor as they were", () => {
+    const at = (address: string) =>
+      legacyDevicesPath(new URL(address, "https://trail.example.com"));
+    expect(at("/devices")).toBe("/settings/devices");
+    expect(at("/devices/")).toBe("/settings/devices");
+    expect(at("/devices?add=1")).toBe("/settings/devices?add=1");
+    expect(at("/devices#uploads")).toBe("/settings/devices#uploads");
+    expect(at("/devices/0192-abc")).toBe("/settings/devices/0192-abc");
+    expect(at("/devices/0192-abc/?x=1#y")).toBe("/settings/devices/0192-abc?x=1#y");
+    // An id stays as the address had it, escaped.
+    expect(at("/devices/a%2Fb")).toBe("/settings/devices/a%2Fb");
+  });
+});
+
 describe("anchors of the single Settings page of old", () => {
   it("open their page, and nothing otherwise (then /settings itself shows)", () => {
     expect(settingsPathFor("", false)).toBeNull();
@@ -124,6 +150,7 @@ describe("anchors of the single Settings page of old", () => {
     expect(settingsPathFor("#Data", false)).toBe("/settings/data");
     expect(settingsPathFor("#export", false)).toBe("/settings/data#export");
     expect(settingsPathFor("#about", false)).toBe("/settings/about");
+    expect(settingsPathFor("#devices", false)).toBe("/settings/devices");
     expect(settingsPathFor("#%E0%A4%A", false)).toBeNull();
     expect(settingsPathFor("#_r_5_", false)).toBeNull();
   });

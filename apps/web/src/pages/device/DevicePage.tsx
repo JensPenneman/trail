@@ -1,34 +1,26 @@
 import { deviceStatus } from "@trail/contracts/deviceStatus";
 import { useState } from "react";
-import { Link, useParams } from "react-router";
-import { ApiError } from "../../api/ApiError";
-import { DocumentTitle } from "../../app/DocumentTitle";
+import { devicePath } from "../../devices/devicePaths";
 import { useDeviceColors } from "../../devices/useDeviceColors";
+import { useFormatter } from "../../format/useFormatter";
 import { useConfig } from "../../queries/useConfig";
-import { useDevice } from "../../queries/useDevice";
+import { SettingsGroup } from "../../settings/SettingsGroup";
+import { SettingsPage } from "../../settings/SettingsPage";
+import { SettingsRow } from "../../settings/SettingsRow";
+import { type SettingsPartId, settingsPart } from "../../settings/settingsTree";
 import { useNow } from "../../time/useNow";
-import { Button } from "../../ui/Button";
 import { DeviceSwatch } from "../../ui/DeviceSwatch";
-import { EmptyState } from "../../ui/EmptyState";
-import { ErrorState } from "../../ui/ErrorState";
-import { Icon } from "../../ui/Icon";
-import { LinkButton } from "../../ui/LinkButton";
-import { LoadingBlock } from "../../ui/LoadingBlock";
-import { PageHeader } from "../../ui/PageHeader";
 import { RelativeTime } from "../../ui/RelativeTime";
-import { Skeleton } from "../../ui/Skeleton";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { ActivitySection } from "./ActivitySection";
 import { AlertsSection } from "./AlertsSection";
 import { DeleteDeviceDialog } from "./DeleteDeviceDialog";
 import { DeviceOverview } from "./DeviceOverview";
-import { DeviceSetupSection } from "./DeviceSetupSection";
-import { IngestLogSection } from "./IngestLogSection";
-import { RawPointsSection } from "./RawPointsSection";
-import { RemoteSettingsSection } from "./RemoteSettingsSection";
+import { DeviceUnavailable } from "./DeviceUnavailable";
 import { RenameDeviceDialog } from "./RenameDeviceDialog";
 import { RotateTokenDialog } from "./RotateTokenDialog";
 import { TravelModeSection } from "./TravelModeSection";
+import { useRoutedDevice } from "./useRoutedDevice";
 import "./DevicePage.css";
 
 const defaultThresholds = { liveMinutes: 15, staleHours: 12 };
@@ -36,91 +28,48 @@ const defaultThresholds = { liveMinutes: 15, staleHours: 12 };
 type OpenDialog = "rename" | "rotate" | "delete" | null;
 
 /**
- * One device: its state and activity, what it uploaded, how it travels now,
- * and everything that can be changed about it.
+ * Settings › Devices › one device: its state and activity, how it travels
+ * now, its alert, the way to what it uploaded (uploads, raw points) and to how
+ * it is set up (tracking settings, setup), a level deeper, and everything that
+ * can be changed about it — its name, its token, whether it exists.
  */
 export function DevicePage() {
-  const { deviceId = "" } = useParams();
-  const device = useDevice(deviceId);
+  const { deviceId, device } = useRoutedDevice();
   const config = useConfig();
   const colors = useDeviceColors();
+  const format = useFormatter();
   const now = useNow(15_000);
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const thresholds = config.data?.thresholds ?? defaultThresholds;
-  const back = (
-    <Link to="/devices" className="device-page__back">
-      <Icon name="arrowLeft" />
-      Devices
-    </Link>
-  );
 
-  if (device.data === undefined) {
-    const notFound = device.error instanceof ApiError && device.error.status === 404;
-    return (
-      <div className="page page--narrow">
-        <DocumentTitle title={notFound ? "Device not found" : "Device"} />
-        <PageHeader title={notFound ? "Device not found" : "Device"} eyebrow={back} />
-        {device.isPending ? (
-          <LoadingBlock label="Loading the device">
-            <Skeleton height="10rem" />
-            <Skeleton height="6rem" />
-          </LoadingBlock>
-        ) : notFound ? (
-          <div className="card">
-            <EmptyState
-              icon="devices"
-              title="There is no such device"
-              action={<LinkButton to="/devices">All devices</LinkButton>}
-            >
-              <p>It may have been deleted, or the link belongs to another account.</p>
-            </EmptyState>
-          </div>
-        ) : (
-          <ErrorState
-            title="The device could not be loaded"
-            error={device.error}
-            onRetry={() => void device.refetch()}
-            retrying={device.isFetching}
-          />
-        )}
-      </div>
-    );
-  }
+  if (device.data === undefined) return <DeviceUnavailable deviceId={deviceId} device={device} />;
 
   const current = device.data;
   const status = deviceStatus(current.lastSeenAt, new Date(now), thresholds);
+  const part = (id: SettingsPartId) => ({
+    to: devicePath(current.id, id),
+    label: settingsPart(id).label,
+    detail: settingsPart(id).description,
+  });
 
   return (
-    <div className="page page--narrow device-page">
-      <DocumentTitle title={current.name} />
-      <PageHeader
-        eyebrow={back}
-        title={current.name}
-        description={
-          <span className="device-page__status">
-            <DeviceSwatch slot={colors.slot(current.id)} />
-            <StatusBadge status={status} thresholds={thresholds} />
-            {current.lastSeenAt === null ? (
-              <span>No upload yet</span>
-            ) : (
-              <span>
-                Last upload <RelativeTime value={current.lastSeenAt} />
-              </span>
-            )}
-          </span>
-        }
-        actions={
-          <>
-            <LinkButton to={`/?view=history&devices=${current.id}`} icon="history">
-              History
-            </LinkButton>
-            <Button icon="pencil" onClick={() => setDialog("rename")}>
-              Rename
-            </Button>
-          </>
-        }
-      />
-
+    <SettingsPage
+      parent="devices"
+      title={current.name}
+      description={
+        <span className="device-page__status">
+          <DeviceSwatch slot={colors.slot(current.id)} />
+          <StatusBadge status={status} thresholds={thresholds} />
+          {current.lastSeenAt === null ? (
+            <span>No upload yet</span>
+          ) : (
+            <span>
+              Last upload <RelativeTime value={current.lastSeenAt} />
+            </span>
+          )}
+        </span>
+      }
+    >
       <DeviceOverview device={current} live={status === "live"} />
       <ActivitySection
         deviceId={current.id}
@@ -128,43 +77,58 @@ export function DevicePage() {
         colorSlot={colors.slot(current.id)}
       />
       {current.lastSeenAt === null ? null : <TravelModeSection device={current} />}
-      {/* Settings presets travel in Overland's answers; no other app takes them. */}
-      {current.source === "overland" ? (
-        <RemoteSettingsSection key={current.pendingSettings ?? "none"} device={current} />
-      ) : null}
       <AlertsSection device={current} />
-      <IngestLogSection deviceId={current.id} app={current.source} />
-      <RawPointsSection deviceId={current.id} lastSeenAt={current.lastSeenAt} />
-      <DeviceSetupSection device={current} />
 
-      <section className="section" aria-labelledby="device-danger">
-        <h2 className="section__title" id="device-danger">
-          Access and removal
-        </h2>
-        <div className="card device-page__danger">
-          <div className="device-page__danger-row">
-            <div>
-              <p className="device-page__danger-title">New access token</p>
-              <p className="muted">
-                For a lost token, a phone that changed hands or another app on the phone. The
-                current one (…{current.tokenHint}) stops working.
-              </p>
-            </div>
-            <Button icon="refresh" onClick={() => setDialog("rotate")}>
-              Issue new token
-            </Button>
-          </div>
-          <div className="device-page__danger-row">
-            <div>
-              <p className="device-page__danger-title">Delete device</p>
-              <p className="muted">Removes the device and every point it recorded.</p>
-            </div>
-            <Button variant="danger-outline" icon="trash" onClick={() => setDialog("delete")}>
-              Delete
-            </Button>
-          </div>
-        </div>
-      </section>
+      <SettingsGroup title="What it sent">
+        <SettingsRow kind="link" icon="upload" tone="green" {...part("uploads")} />
+        <SettingsRow
+          kind="link"
+          icon="pin"
+          tone="orange"
+          {...part("points")}
+          value={format.count(current.counts.total)}
+        />
+        <SettingsRow
+          kind="link"
+          to={`/?view=history&devices=${encodeURIComponent(current.id)}`}
+          icon="history"
+          tone="indigo"
+          label="History"
+          detail="Where it has been, day by day, on the map."
+        />
+      </SettingsGroup>
+
+      <SettingsGroup title="The phone">
+        {/* Settings presets travel in Overland's answers; no other app takes them. */}
+        {current.source === "overland" ? (
+          <SettingsRow
+            kind="link"
+            icon="settings"
+            tone="gray"
+            {...part("tracking")}
+            value={current.pendingSettings === null ? undefined : "Queued"}
+          />
+        ) : null}
+        <SettingsRow kind="link" icon="qr" tone="blue" {...part("setup")} />
+      </SettingsGroup>
+
+      <SettingsGroup>
+        <SettingsRow kind="action" label="Rename" onClick={() => setDialog("rename")} />
+      </SettingsGroup>
+
+      <SettingsGroup
+        footer={`For a lost token, a phone that changed hands or another app on the phone. The current one (…${current.tokenHint}) stops working.`}
+      >
+        <SettingsRow kind="action" label="Issue new token" onClick={() => setDialog("rotate")} />
+      </SettingsGroup>
+      <SettingsGroup footer="Removes the device and every point it recorded.">
+        <SettingsRow
+          kind="action"
+          danger
+          label="Delete device"
+          onClick={() => setDialog("delete")}
+        />
+      </SettingsGroup>
 
       <RenameDeviceDialog
         device={current}
@@ -182,6 +146,6 @@ export function DevicePage() {
         open={dialog === "delete"}
         onClose={() => setDialog(null)}
       />
-    </div>
+    </SettingsPage>
   );
 }

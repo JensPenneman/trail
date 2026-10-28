@@ -41,10 +41,7 @@ export function renderSettings(url: string, options: { user?: SessionUser; wide?
     url,
     user: options.user ?? defaultUser,
     routes: [
-      {
-        element: <Frame />,
-        children: [settingsRoute, { path: "devices", element: <h1>Devices</h1> }],
-      },
+      { element: <Frame />, children: [settingsRoute] },
       { path: "*", element: <p>Elsewhere</p> },
     ],
   });
