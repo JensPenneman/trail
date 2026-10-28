@@ -13,6 +13,7 @@
 
 import { SharedArray } from "k6/data";
 import exec from "k6/execution";
+import { Trend } from "k6/metrics";
 import { requestsOf, sendUploads } from "./k6/ingest.js";
 import { config, phones, routeList, shape } from "./k6/run.js";
 import { summaryWriter } from "./k6/summary.js";
@@ -20,6 +21,8 @@ import { planPhone, uploadsOf } from "./lib/schedule.js";
 import { errorBudget, ingestThresholds } from "./lib/targets.js";
 
 const slotMs = config.slotMs || 100;
+/** How late each tenth started against the scenario's clock: a generator behind its schedule. */
+const lateness = new Trend("slot_lateness_ms", true);
 
 /** Every upload of the run, oldest first: `[phone, at ms, from s, to s, kind]`. */
 const schedule = new SharedArray("schedule", () => {
@@ -103,12 +106,15 @@ export function setup() {
 
 /**
  * One tenth of a second of the day: the uploads due in it. The slot is the
- * iteration's number: k6 numbers only the iterations it starts, so after a
- * dropped one the rest of the day comes late — and such a run fails its gate
- * on `dropped_iterations` anyway.
+ * iteration's number, so every tenth is sent once, never twice (a slot taken
+ * from the wall clock would send one twice or skip one after a late start);
+ * `slot_lateness_ms` shows how late it came. k6 numbers only the iterations
+ * it starts, so after a dropped one the rest of the day comes late — and such
+ * a run fails its gate on `dropped_iterations` anyway.
  */
 export function phonesSlot(data) {
   const slot = exec.scenario.iterationInTest;
+  lateness.add(Math.max(0, Date.now() - (exec.scenario.startTime + slot * slotMs)));
   const fromMs = slot * slotMs;
   const toMs = fromMs + slotMs;
   const epochS = Math.floor(data.epochMs / 1000);

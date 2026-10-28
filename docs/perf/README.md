@@ -147,7 +147,10 @@ lat], …] }] }`, which is what the extract will write.
    (`fleet.js`) and the people (`dashboard.js`) at once — while the SSE probe
    (`sse-probe.mjs`) and the collector (`collect.mjs`) run on the host.
 7. Plays the backlog (`backlog.js`): every phone sends the 8 hours it
-   recorded while the node was away, as its app does.
+   recorded while the node was away, as its app does — at most 200 phones
+   at once, so up to `fleet-100` every phone flushes at the same moment and
+   at `fleet-1000` each of the 200 virtual users flushes five phones one
+   after the other.
 8. Waits a minute for the last load line, stops the probe and the collector,
    checks that every acknowledged point is stored, and writes the report into
    this folder (`report.mjs`).
@@ -162,7 +165,10 @@ iteration every tenth of a second, whether or not the server keeps up, and
 each sends the uploads that fall in its tenth, so the arrivals are the
 schedule's, bursts included; a slow server makes k6 start more virtual users,
 and what it could not start counts as `dropped_iterations` (a gate: the run
-is only valid without).
+is only valid without). A slot is numbered by its iteration, so k6 sends
+each tenth of a second once, never twice, at worst late: `slot_lateness_ms`
+records how late each one started against the scenario's own clock (tracked,
+p99 ≤ 1 s), which tells a generator that fell behind from a slow server.
 
 **The load line.** The API logs a line `"msg":"load"` once a minute at
 `info`, in production too: the minute's event-loop delay (p50, p99, max),

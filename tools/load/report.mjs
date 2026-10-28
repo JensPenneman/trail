@@ -469,6 +469,15 @@ export function targetRows(context) {
       "",
       true,
     ),
+    row(
+      "6.1",
+      `the generator kept its schedule (a tenth of the day started late, p99 ≤ ${show(serverTargets.slotLatenessP99Ms)} ms)`,
+      metric(day, "slot_lateness_ms")?.["p(99)"],
+      (v) => v <= serverTargets.slotLatenessP99Ms,
+      ` ms (max ${show(metric(day, "slot_lateness_ms")?.["max"], 1)} ms)`,
+      false,
+      1,
+    ),
   );
   return rows;
 }

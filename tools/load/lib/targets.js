@@ -110,6 +110,8 @@ export const serverTargets = {
   processingPointsPerS: 1500,
   backfillDeviceDaysPerHour: 600,
   startupS: 20,
+  /** The generator's own health: how late k6 starts a tenth of the day (fleet.js). */
+  slotLatenessP99Ms: 1000,
 };
 
 /**
