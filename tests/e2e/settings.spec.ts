@@ -88,6 +88,26 @@ test("Settings: the rows of every group with their values, and search", async ({
   await expectAccessible(page, "the list of Settings");
 
   const search = page.getByRole("searchbox", { name: "Search Settings" });
+  // The magnifier has room of its own, and the focused field the accent's edge, as every field.
+  const room = await search.evaluate((input) => {
+    const icon = input.parentElement?.querySelector(".settings-search__icon");
+    const textStart =
+      input.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(input).paddingLeft);
+    return textStart - (icon?.getBoundingClientRect().right ?? Number.POSITIVE_INFINITY);
+  });
+  expect(room).toBeGreaterThanOrEqual(0);
+  await search.focus();
+  const accent = await search.evaluate((input) => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--color-accent)";
+    input.after(probe);
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  });
+  await expect
+    .poll(() => search.evaluate((input) => getComputedStyle(input).borderTopColor))
+    .toBe(accent);
   await search.fill("zzz");
   await expect(page.getByText("No settings match “zzz”.")).toBeVisible();
   await search.fill("gpx");
