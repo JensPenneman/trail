@@ -737,7 +737,11 @@ Three sources, one collector:
   at `info` — event-loop p50/p99 (`perf_hooks.monitorEventLoopDelay`), pool
   waiting and idle, open streams, background tasks pending, uploads and
   points in the minute, RSS and heap, and for the worker the queue's age
-  (oldest `next_at` of a ready `ingest` row), passes, points and rows written.
+  (how long the oldest ready new-data row has waited since it was queued, its
+  `enqueued_at` — not its `next_at`, which a deliberate delay before the pass
+  would hide), passes, points and rows written. The SSE probe measures the
+  same age end to end, from an upload to the `segments` event of the window
+  that covers it, and the report holds §3.2's queue-age target to that.
   No metrics endpoint and no new threat model: the line is for `docker logs`,
   and the collector parses it. (A `/metrics` for Prometheus — `prom-client`,
   Apache-2.0 — is a later step if a Grafana appears; the line's fields are

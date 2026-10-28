@@ -77,6 +77,19 @@ function row(section, target, value, holds, unit, gate, digits = 0) {
 /** @param {number | null | undefined} value */
 const percent = (value) => (value === null || value === undefined ? null : value * 100);
 
+/** @param {number | null | undefined} ms */
+const seconds = (ms) => (ms === null || ms === undefined ? null : ms / 1000);
+
+/**
+ * The larger of two measures, either of which may be missing.
+ * @param {number | null | undefined} a
+ * @param {number | null | undefined} b
+ */
+const longest = (a, b) => {
+  const values = [a, b].filter((value) => typeof value === "number" && Number.isFinite(value));
+  return values.length === 0 ? null : Math.max(.../** @type {number[]} */ (values));
+};
+
 /**
  * "1 day", "2 days".
  * @param {number} count
@@ -269,19 +282,21 @@ export function targetRows(context) {
     ),
     row(
       "3.2",
-      `processing queue age p95 ≤ ${serverTargets.queueAgeP95QuietS / 60} min (quiet), ≤ ${serverTargets.queueAgeP95PeakS / 60} min (peak)`,
-      derived.queueAgeP95,
+      `processing queue age p95 ≤ ${serverTargets.queueAgeP95QuietS / 60} min (quiet), ≤ ${serverTargets.queueAgeP95PeakS / 60} min (peak): upload → its \`segments\` event (the probe)`,
+      seconds(probe?.processingMs?.p95),
       (v) => v <= serverTargets.queueAgeP95PeakS,
-      " s",
+      ` s (n ${show(probe?.processingMs?.n ?? 0)})`,
       false,
+      1,
     ),
     row(
       "3.2",
-      "processing queue age never over 1 h",
-      derived.queueAgeMax,
+      "processing queue age never over 1 h (the probe's longest; the load lines' oldest ready window)",
+      longest(seconds(probe?.processingMs?.max), derived.queueAgeMax),
       (v) => v <= serverTargets.queueAgeMaxS,
       " s",
       false,
+      1,
     ),
     row(
       "3.2",
@@ -993,9 +1008,9 @@ export function renderReport(context) {
           `daily statistics waiting: ${show(derived.dailyStatsMax)} device-days`,
         ],
         [
-          "processing queue age",
+          "processing queue age (load lines)",
           `${show(derived.queueAgeMax)} s`,
-          `p95 of the minutes ${show(derived.queueAgeP95)} s`,
+          `the oldest ready new data since it was queued; p95 of the minutes ${show(derived.queueAgeP95)} s`,
         ],
       ],
     ),

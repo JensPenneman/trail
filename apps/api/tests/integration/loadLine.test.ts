@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { loadLineJob } from "../../src/jobs/loadLineJob";
 import { agentFor, signUp } from "../support/authFlows";
@@ -46,6 +47,20 @@ describe("the load line", () => {
           const index = all.findIndex((line) => line["uploads"] === 1);
           expect(index).toBeGreaterThanOrEqual(0);
           expect(all.slice(index + 1).some((line) => line["uploads"] === 0)).toBe(true);
+        },
+        { timeout: 10_000, interval: 50 },
+      );
+      // The queue's age is how long the oldest ready new data has waited since it was queued,
+      // not since it became ready: a window queued ten minutes ago, ready for one.
+      await t.ctx.db.execute(sql`
+        UPDATE processing_queue
+        SET enqueued_at = now() - interval '10 minutes', next_at = now() - interval '1 minute'
+      `);
+      await vi.waitFor(
+        () => {
+          const age = Number(loadLines().at(-1)?.["queueAgeS"]);
+          expect(age).toBeGreaterThanOrEqual(600);
+          expect(age).toBeLessThan(660);
         },
         { timeout: 10_000, interval: 50 },
       );

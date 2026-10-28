@@ -10,7 +10,9 @@ interface QueueStateRow extends Record<string, unknown> {
 /**
  * The processing queue at a glance, for the load line: its rows, the new-data
  * windows ready to run, and how long the oldest of those has waited since it
- * became ready (docs/design/capacity.md §6.3). One small aggregate a minute.
+ * was queued (`enqueued_at`; docs/design/capacity.md §6.3) — new data waiting
+ * for its pass, not how late the worker is past a window's `next_at`, which a
+ * deliberate delay before the pass would hide. One small aggregate a minute.
  */
 export async function processingQueueState(
   db: Database,
@@ -18,7 +20,7 @@ export async function processingQueueState(
   const result = await db.execute<QueueStateRow>(sql`
     SELECT count(*)::int AS queued,
       count(*) FILTER (WHERE priority = 0 AND next_at <= now())::int AS ready,
-      extract(epoch FROM now() - min(next_at) FILTER (WHERE priority = 0 AND next_at <= now()))::float8
+      extract(epoch FROM now() - min(enqueued_at) FILTER (WHERE priority = 0 AND next_at <= now()))::float8
         AS oldest_ready_s
     FROM processing_queue
   `);

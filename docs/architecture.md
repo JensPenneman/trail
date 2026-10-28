@@ -1947,8 +1947,8 @@ runs in the worker (§3) — or in the API's process too, in role `all`.
   waiting), open SSE streams, background tasks, device-days waiting for their
   daily statistics, the minute's uploads, points, duplicates and rejects, RSS
   and heap, and the processing queue (rows, new windows ready, how long the
-  oldest has waited since it became ready; one small aggregate). Numbers
-  only, for `docker logs` and the load harness; no endpoint.
+  oldest of those has waited since it was queued; one small aggregate).
+  Numbers only, for `docker logs` and the load harness; no endpoint.
 - the processing worker (§17.4), in the worker's process (role `worker`) or
   the API's (`all`) — 3 s after new work in its own process, every 2 s while
   idle in a worker process, every minute for retries and every 15 minutes for

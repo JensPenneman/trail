@@ -169,8 +169,11 @@ is only valid without).
 the pool (connections, idle, waiting), open SSE streams, background tasks,
 device-days waiting for their daily statistics, uploads, points,
 duplicates and rejects, RSS and heap, and the processing queue (rows, new
-windows ready, how long the oldest has waited since it became ready).
-Numbers only — no id, name, token or coordinate (a test holds it to that).
+windows ready, and how long the oldest of those has waited since it was
+queued). Numbers only — no id, name, token or coordinate (a test holds it to
+that). §3.2's queue-age target is held to the SSE probe's measure of the same
+age end to end: from an upload to the `segments` event of the window that
+covers it.
 `docker logs launchway-trail-app-1 2>&1 | grep '"msg":"load"'` shows it on
 the node.
 
