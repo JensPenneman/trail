@@ -347,10 +347,11 @@ needs the same scenario on the node.
 Load data and real data never share a database.
 
 - **`trail load-fleet` refuses** unless all of these hold: `LOAD_TEST=true`
-  in the app's environment; `LAUNCHWAY_ENVIRONMENT` is not `production`
+  in the app's environment; `LAUNCHWAY_ENVIRONMENT` is `preview` or unset
   (Launchway names every deployment `production` or `preview`, and
   `deploy/compose.yaml` passes that one variable of Launchway's to the app
-  for this check); the database holds no passkey (nobody has ever signed in
+  for this check; any other name is refused, so a rename can never let a
+  load test in); the database holds no passkey (nobody has ever signed in
   there) and no account but the load test's own. It checks the environment
   before it opens the database, the database before the CLI would migrate it
   (so a wrong `DATABASE_URL` is never touched), and both again under the

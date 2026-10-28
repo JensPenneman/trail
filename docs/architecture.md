@@ -258,7 +258,7 @@ All configuration is environment variables, validated at boot with zod
 | `PROCESSING_MAX_ACCURACY_M` | `150` | Less accurate points are dropped from the averaged level on |
 | `PROCESSING_STOP_MIN_S` | `180` | The shortest stop |
 | `LOAD_TEST` | `false` | `true` lets `trail load-fleet` create a load test's synthetic people (§11, docs/perf/README.md); previews only |
-| `LAUNCHWAY_ENVIRONMENT` | unset | Set by Launchway (`production` or `preview`), never by hand; `trail load-fleet` refuses in `production` |
+| `LAUNCHWAY_ENVIRONMENT` | unset | Set by Launchway (`production` or `preview`), never by hand; `trail load-fleet` runs only where it is `preview` or unset |
 | `NODE_ENV` | `development` | `production` in the image (see below) |
 
 Development safety: when `NODE_ENV !== "production"` the API refuses to start
@@ -1987,7 +1987,8 @@ the image, so `docker compose exec app trail <command>`):
   mix's shares, ten phones one of each. The fleet's ids and secrets go to
   stdout as one JSON document (refused into a terminal: exit 2); stderr gets
   counts only. Refused (exit 1) unless `LOAD_TEST=true`, `LAUNCHWAY_ENVIRONMENT`
-  is not `production` — both checked before the database is opened — and the
+  is `preview` or unset (fail closed: `production` and any other name are
+  refused) — both checked before the database is opened — and the
   database holds no passkey and no account outside `load.invalid`, checked
   before the CLI migrates it and again under the sign-up lock in the
   transaction that writes the fleet.
@@ -2148,11 +2149,12 @@ codes: 0 success, 1 failure (including invalid configuration), 2 wrong usage
 - Postgres is not published outside the Docker network in production.
 - The app container receives an explicit list of its own variables (§4), not
   the whole `deploy/.env`: Launchway's and the backup's variables never reach
-  it — but `LAUNCHWAY_ENVIRONMENT`, the deployment's kind, which `trail
-  load-fleet` refuses on in production.
+  it — but `LAUNCHWAY_ENVIRONMENT`, the deployment's kind, on which `trail
+  load-fleet` refuses anywhere but in a preview.
 - Load tests never share a database with real people: `trail load-fleet`
-  (§11) refuses without `LOAD_TEST=true`, in production and in a database
-  that holds a passkey or an account outside `load.invalid`; the harness
+  (§11) refuses without `LOAD_TEST=true`, in a deployment Launchway calls
+  anything but a preview, and in a database that holds a passkey or an
+  account outside `load.invalid`; the harness
   (`tools/load/`) drives only the stack it started, redacts tokens, sessions,
   addresses and positions from every line of output it shows, and refuses to
   write a report that would hold any (docs/perf/README.md, "Safety").

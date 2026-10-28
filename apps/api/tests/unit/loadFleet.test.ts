@@ -62,7 +62,17 @@ describe("the load fleet's conditions", () => {
 
   it("hold on the Mac's capped stack and in a preview", () => {
     expect(loadFleetRefusals(allowed)).toEqual([]);
-    expect(loadFleetRefusals({ ...allowed, launchwayEnvironment: "preview" })).toEqual([]);
+    for (const preview of ["preview", " Preview ", ""]) {
+      expect(loadFleetRefusals({ ...allowed, launchwayEnvironment: preview })).toEqual([]);
+    }
+  });
+
+  it("fail closed: any other kind of deployment is refused, not only production", () => {
+    for (const other of ["staging", "prod", "production-eu", "previews"]) {
+      expect(loadFleetRefusals({ ...allowed, launchwayEnvironment: other })).toEqual([
+        "LAUNCHWAY_ENVIRONMENT is neither unset nor preview (a load test runs on its own stack or in a preview only)",
+      ]);
+    }
   });
 
   it("refuse without LOAD_TEST, in production, with a passkey or a real account — each alone", () => {

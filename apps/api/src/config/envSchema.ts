@@ -142,7 +142,8 @@ export const envSchema = z
     // Only `trail load-fleet` reads these two (docs/perf/README.md): a load test's synthetic
     // accounts need LOAD_TEST=true and a deployment Launchway does not call production.
     LOAD_TEST: env(booleanSchema.default(false)),
-    LAUNCHWAY_ENVIRONMENT: env(z.string().trim().max(100).optional()),
+    // Only compared: no length limit that could keep a deployment from starting.
+    LAUNCHWAY_ENVIRONMENT: env(z.string().trim().optional()),
   })
   .superRefine((values, context) => {
     // Refinements see invalid fields too; an invalid URL has its own issue already.

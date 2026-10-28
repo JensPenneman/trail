@@ -94,8 +94,8 @@ services:
       PROCESSING_STOP_MIN_S:
       # `trail load-fleet` only (docs/perf/README.md): a preview's load test sets
       # LOAD_TEST=true, and Launchway's name of the deployment (production or
-      # preview) makes the command refuse in production. Launchway writes it to
-      # .env; it is the one of its variables the app receives.
+      # preview) makes the command refuse anywhere but in a preview. Launchway
+      # writes it to .env; it is the one of its variables the app receives.
       LOAD_TEST:
       LAUNCHWAY_ENVIRONMENT:
       # The V8 heap's limit, set instead of Node's own guess from mem_limit

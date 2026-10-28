@@ -92,7 +92,7 @@ const secretsOf = async (fleet: LoadFleet) => {
 };
 
 describe("trail load-fleet", () => {
-  it("refuses without LOAD_TEST=true, and in production, before it writes a row", async () => {
+  it("refuses without LOAD_TEST=true, and outside a preview, before it writes a row", async () => {
     expect(await run({}, "--people", "10")).toBe(1);
     expect(errors.join("\n")).toContain("trail load-fleet: refused: LOAD_TEST is not true");
     expect(await run({ LOAD_TEST: "false" }, "--people", "10")).toBe(1);
@@ -100,6 +100,11 @@ describe("trail load-fleet", () => {
       await run({ LOAD_TEST: "true", LAUNCHWAY_ENVIRONMENT: "production" }, "--people", "10"),
     ).toBe(1);
     expect(errors.join("\n")).toContain("LAUNCHWAY_ENVIRONMENT is production");
+    // Any kind of deployment Launchway might name one day but a preview: refused too.
+    expect(
+      await run({ LOAD_TEST: "true", LAUNCHWAY_ENVIRONMENT: "staging" }, "--people", "10"),
+    ).toBe(1);
+    expect(errors.join("\n")).toContain("LAUNCHWAY_ENVIRONMENT is neither unset nor preview");
     expect(output).toEqual([]);
     expect(await counts()).toEqual({ users: 0, devices: 0, sessions: 0 });
   });

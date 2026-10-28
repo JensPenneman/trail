@@ -5,7 +5,7 @@ export const loadAccountDomain = "load.invalid";
 export interface LoadFleetConditions {
   /** `LOAD_TEST=true` in the environment. */
   loadTest: boolean;
-  /** `LAUNCHWAY_ENVIRONMENT` as Launchway set it, null when unset (the Mac's capped stack). */
+  /** `LAUNCHWAY_ENVIRONMENT` as Launchway set it (`production`, `preview`), null when unset (the Mac's capped stack). */
   launchwayEnvironment: string | null;
   /** Passkeys in the database: anyone who has ever signed up or signed in here. */
   passkeys: number;
@@ -23,9 +23,16 @@ export function environmentRefusals(
       "LOAD_TEST is not true (a load test sets LOAD_TEST=true in the app's environment)",
     );
   }
-  if (conditions.launchwayEnvironment?.trim().toLowerCase() === "production") {
+  // Fail closed: only a deployment Launchway calls a preview, or none at all (the Mac's capped
+  // stack), takes a load test — a renamed or new kind of deployment is refused until allowed.
+  const environment = conditions.launchwayEnvironment?.trim().toLowerCase() ?? "";
+  if (environment === "production") {
     refusals.push(
       "LAUNCHWAY_ENVIRONMENT is production (load data never shares a database with production)",
+    );
+  } else if (environment !== "" && environment !== "preview") {
+    refusals.push(
+      "LAUNCHWAY_ENVIRONMENT is neither unset nor preview (a load test runs on its own stack or in a preview only)",
     );
   }
   return refusals;
@@ -34,9 +41,9 @@ export function environmentRefusals(
 /**
  * Why the synthetic fleet may not be created in this database; empty when it
  * may. Load data and real data never share a database: a load test runs only
- * where it was switched on, outside production, and where nobody real has an
- * account — no passkey (nobody ever signed in) and no account but the load
- * test's own.
+ * where it was switched on, on its own stack or in a preview, and where nobody
+ * real has an account — no passkey (nobody ever signed in) and no account but
+ * the load test's own.
  */
 export function loadFleetRefusals(conditions: LoadFleetConditions): string[] {
   return [...environmentRefusals(conditions), ...databaseRefusals(conditions)];

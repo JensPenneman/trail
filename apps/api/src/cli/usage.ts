@@ -19,8 +19,9 @@ Commands:
   load-fleet --people <n> [--mix default|steered] [--shares <0-1>] [--probe]
                                            Synthetic people, phones and sessions for a load test, their
                                            secrets as JSON on stdout (redirect it to a file); refused
-                                           without LOAD_TEST=true, in production (LAUNCHWAY_ENVIRONMENT)
-                                           and in a database that holds a passkey or a real account
+                                           without LOAD_TEST=true, in a deployment Launchway calls
+                                           anything but a preview (LAUNCHWAY_ENVIRONMENT) and in a
+                                           database that holds a passkey or a real account
   help                                     Show this help
 
 Configuration comes from the same environment as the server (DATABASE_URL, PUBLIC_URL, …).

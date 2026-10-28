@@ -81,6 +81,11 @@ describe("loadConfig", () => {
       loadConfig({ ...minimal, LOAD_TEST: "", LAUNCHWAY_ENVIRONMENT: "" }, defaults),
     ).toMatchObject({ loadTest: false, launchwayEnvironment: null });
     expect(issuesOf({ ...minimal, LOAD_TEST: "1" })).toEqual(["LOAD_TEST: Use true or false"]);
+    // Only compared, never limited: a long value never keeps the app from starting.
+    expect(
+      loadConfig({ ...minimal, LAUNCHWAY_ENVIRONMENT: "x".repeat(500) }, defaults)
+        .launchwayEnvironment,
+    ).toHaveLength(500);
   });
 
   it("switches mapping off with an empty Overpass URL, and processing off altogether", () => {
