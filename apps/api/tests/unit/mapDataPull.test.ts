@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
@@ -53,13 +53,19 @@ function clientFor(options: { credentials?: RegistryCredentials | null; logger?:
   });
 }
 
-async function pull(
+async function pull(...args: Parameters<typeof pulled>) {
+  return (await pulled(...args)).build;
+}
+
+async function pulled(
   region: string,
   options: {
     client?: RegistryClient;
     source?: BlobSource;
     maxBytes?: number;
     freeBytes?: number;
+    idleTimeoutMs?: number;
+    deadlineMs?: number;
   } = {},
 ) {
   const client = options.client ?? clientFor();
@@ -72,7 +78,12 @@ async function pull(
     root,
     signal: never,
     logger: silent,
-    download: { attempts: 3, idleTimeoutMs: 5000, wait: noWait },
+    download: {
+      attempts: 3,
+      idleTimeoutMs: options.idleTimeoutMs ?? 5000,
+      ...(options.deadlineMs === undefined ? {} : { deadlineMs: options.deadlineMs }),
+      wait: noWait,
+    },
     freeBytes: async () => options.freeBytes ?? 1e12,
   });
 }
@@ -92,6 +103,10 @@ const monaco = (overrides: Partial<Parameters<typeof makeArtefact>[0]> = {}): Fa
   makeArtefact({ region: "monaco", buildId: "20261027", files: monacoFiles(), ...overrides });
 
 const fixtureFile = (name: string) => readFile(join(monacoFixture, name));
+
+/** The fixture's files with a byte more each: a build whose files the volume does not hold. */
+const otherFiles = () =>
+  monacoFiles().map((file) => ({ ...file, bytes: Buffer.concat([file.bytes, Buffer.from("\n")]) }));
 
 async function downloadsLeft(): Promise<string[]> {
   return readdir(join(root, "tmp")).catch(() => []);
@@ -186,6 +201,21 @@ describe("pulling a build from the registry", () => {
     expect(await listLocalBuilds(root, "monaco")).toEqual([]);
   });
 
+  it("downloads a file again when the copy on the volume does not hash right", async () => {
+    fake.publish(monaco());
+    const original = await pull("monaco");
+    // Same size, other bytes: the disk lies.
+    const ways = await fixtureFile("ways.opl.gz");
+    const damaged = Buffer.from(ways);
+    damaged[100] = (damaged[100] ?? 0) ^ 0xff;
+    await rm(join(original.dir, "ways.opl.gz"));
+    await writeFile(join(original.dir, "ways.opl.gz"), damaged);
+    fake.publish(monaco({ builtAt: "2026-10-28T12:00:00Z" }));
+    const { build, downloadedBytes } = await pulled("monaco");
+    expect(await readFile(join(build.dir, "ways.opl.gz"))).toEqual(ways);
+    expect(downloadedBytes).toBeGreaterThan(ways.length);
+  });
+
   it("downloads nothing for a build it holds already", async () => {
     fake.publish(monaco());
     const first = await pull("monaco");
@@ -195,15 +225,27 @@ describe("pulling a build from the registry", () => {
     expect(fake.requests.slice(before).filter((request) => request.server === "blobs")).toEqual([]);
   });
 
-  it("keeps a rebuild of the same extract as a build of its own", async () => {
+  it("keeps a rebuild of the same extract as a build of its own, its files linked", async () => {
     const first = monaco();
     fake.publish(first);
-    await pull("monaco");
+    const original = await pull("monaco");
     const rebuild = monaco({ builtAt: "2026-10-28T12:00:00Z" });
     expect(rebuild.digest).not.toBe(first.digest);
     fake.publish(rebuild);
-    const second = await pull("monaco");
+    const before = fake.requests.length;
+    const { build: second, downloadedBytes } = await pulled("monaco");
     expect(second.name).toBe(`20261027-${rebuild.digest.slice(7, 15)}`);
+    // Only the new manifest.json came over the network: the data files are the same.
+    expect(downloadedBytes).toBe(rebuild.trailManifest.length);
+    expect(
+      fake.requests.slice(before).filter((request) => request.server === "blobs"),
+    ).toHaveLength(1);
+    for (const name of ["ways.opl.gz", "pois.geojsonseq.gz", "region.poly", "basemap.pmtiles"]) {
+      expect(await readFile(join(second.dir, name))).toEqual(await fixtureFile(name));
+      expect((await stat(join(second.dir, name))).ino).toBe(
+        (await stat(join(original.dir, name))).ino,
+      );
+    }
     expect((await listLocalBuilds(root, "monaco")).map((build) => build.digest)).toEqual([
       rebuild.digest,
       first.digest,
@@ -225,7 +267,7 @@ describe("refusing what is not right, keeping the build already there", () => {
 
   it("refuses a blob whose bytes are not its digest", async () => {
     const oldDir = await withOldBuild();
-    const next = monaco({ buildId: "20261028" });
+    const next = monaco({ buildId: "20261028", files: otherFiles() });
     fake.publish(next);
     const ways = next.layers.find((layer) => layer.title === "ways.opl.gz");
     fake.blobFaults.set(ways?.digest ?? "", { kind: "corrupt" });
@@ -280,9 +322,36 @@ describe("refusing what is not right, keeping the build already there", () => {
     );
   });
 
+  it("resumes a download that stalls, after the idle timeout or the attempt's deadline", async () => {
+    const artefact = monaco();
+    fake.publish(artefact);
+    const digest = artefact.layers.find((layer) => layer.title === "basemap.pmtiles")?.digest ?? "";
+    fake.blobFaults.set(digest, { kind: "stall", after: 4096, times: 1 });
+    const idle = await pull("monaco", { idleTimeoutMs: 200 });
+    expect(await readFile(join(idle.dir, "basemap.pmtiles"))).toEqual(
+      await fixtureFile("basemap.pmtiles"),
+    );
+    // A server that keeps the connection open but never finishes runs into the deadline.
+    const next = monaco({ buildId: "20261028", files: otherFiles() });
+    fake.publish(next);
+    const nextDigest = next.layers.find((layer) => layer.title === "basemap.pmtiles")?.digest ?? "";
+    fake.blobFaults.set(nextDigest, { kind: "stall", after: 4096, times: 1 });
+    // The same file is the same blob in both builds: count this pull's requests only.
+    const before = fake.requests.length;
+    const late = await pull("monaco", { idleTimeoutMs: 60_000, deadlineMs: 300 });
+    expect(await readFile(join(late.dir, "basemap.pmtiles"))).toEqual(
+      Buffer.concat([await fixtureFile("basemap.pmtiles"), Buffer.from("\n")]),
+    );
+    const requests = fake.requests
+      .slice(before)
+      .filter((request) => request.server === "blobs" && request.path.includes(nextDigest));
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.range).toMatch(/^bytes=\d+-$/);
+  });
+
   it("gives up on a blob that keeps ending early", async () => {
     const oldDir = await withOldBuild();
-    const next = monaco({ buildId: "20261028" });
+    const next = monaco({ buildId: "20261028", files: otherFiles() });
     fake.publish(next);
     const basemap = next.layers.find((layer) => layer.title === "basemap.pmtiles");
     fake.blobFaults.set(basemap?.digest ?? "", { kind: "truncate", after: 1000 });
@@ -292,7 +361,7 @@ describe("refusing what is not right, keeping the build already there", () => {
 
   it("refuses a blob longer than its layer, while it reads", async () => {
     const oldDir = await withOldBuild();
-    const next = monaco({ buildId: "20261028" });
+    const next = monaco({ buildId: "20261028", files: otherFiles() });
     fake.publish(next);
     const poly = next.layers.find((layer) => layer.title === "region.poly");
     fake.blobFaults.set(poly?.digest ?? "", { kind: "overlong" });

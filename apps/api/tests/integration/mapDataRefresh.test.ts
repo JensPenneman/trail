@@ -96,8 +96,12 @@ function refresher(options: { tables?: RegionTables | null; now?: Date } = {}): 
   });
 }
 
-const build = (buildId: string, builtAt = "2026-10-28T10:36:15Z") =>
-  makeArtefact({ region: "monaco", buildId, files: monacoFiles(), builtAt });
+const build = (buildId: string, builtAt = "2026-10-28T10:36:15Z", files = monacoFiles()) =>
+  makeArtefact({ region: "monaco", buildId, files, builtAt });
+
+/** Files no build on the volume holds, so that they are downloaded rather than linked. */
+const otherFiles = () =>
+  monacoFiles().map((file) => ({ ...file, bytes: Buffer.concat([file.bytes, Buffer.from("\n")]) }));
 
 const world = () =>
   makeArtefact({
@@ -199,7 +203,7 @@ describe("refreshing a region", () => {
   it("keeps serving the old build when a blob of the new one is wrong", async () => {
     fake.publish(build("20261027"));
     const first = await refresher().refresh("monaco", never);
-    const next = build("20261031");
+    const next = build("20261031", "2026-11-01T05:00:00Z", otherFiles());
     fake.publish(next);
     const ways = next.layers.find((layer) => layer.title === "ways.opl.gz");
     fake.blobFaults.set(ways?.digest ?? "", { kind: "corrupt" });

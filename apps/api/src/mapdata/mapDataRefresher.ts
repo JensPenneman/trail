@@ -21,7 +21,7 @@ const dayMs = 86_400_000;
 
 /** A step of a refresh that failed, and why, in words without a URL or a token. */
 export interface RefreshFailure {
-  stage: "registry" | "download" | "import" | "volume";
+  stage: "database" | "registry" | "download" | "import" | "volume";
   /** A `RegistryFailure`, or `import` for the loader's errors. */
   reason: string;
   message: string;
@@ -34,7 +34,7 @@ export interface RefreshOutcome {
   registry: { buildId: string; digest: string } | null;
   /** The build on the volume that serves, or is to: the registry's, or the newest kept one. */
   build: LocalBuild | null;
-  /** Downloaded in this refresh. */
+  /** Pulled in this refresh: the bytes that came over the network (a file the volume held is linked). */
   pulled: { bytes: number; seconds: number } | null;
   /** The registry's build is older than the newest on the volume, which is kept. */
   keptNewer: boolean;
@@ -137,8 +137,10 @@ export class MapDataRefresher {
       failures: [],
     };
     const logger = this.#logger.child({ region });
+    let entered = false;
     try {
       await withRegionLock(this.#pool, region, async (locked) => {
+        entered = true;
         if (!locked) {
           outcome.busy = true;
           logger.info("map region refresh skipped: another process is refreshing it");
@@ -148,8 +150,9 @@ export class MapDataRefresher {
       });
     } catch (error) {
       if (signal.aborted) throw error;
-      outcome.failures.push(failureOf("volume", error));
-      logger.warn({ stage: "volume", err: error }, "map region refresh failed");
+      // Before the lock: its connection to the database; after it: the volume.
+      const stage = entered ? "volume" : "database";
+      this.#fail(outcome, logger, failureOf(stage, error));
     }
     this.#warnWhenOld(outcome, logger);
     return outcome;
@@ -191,7 +194,7 @@ export class MapDataRefresher {
       } else {
         const started = performance.now();
         try {
-          build = await pullBuild({
+          const pulled = await pullBuild({
             source: this.client,
             resolved,
             layout,
@@ -200,10 +203,11 @@ export class MapDataRefresher {
             logger,
             ...this.#pull,
           });
+          build = pulled.build;
           const seconds = Math.round((performance.now() - started) / 100) / 10;
-          outcome.pulled = { bytes: layout.totalBytes, seconds };
+          outcome.pulled = { bytes: pulled.downloadedBytes, seconds };
           logger.info(
-            { build: build.name, digest: build.digest, bytes: layout.totalBytes, seconds },
+            { build: build.name, digest: build.digest, bytes: pulled.downloadedBytes, seconds },
             "map region pulled",
           );
         } catch (error) {
@@ -222,7 +226,7 @@ export class MapDataRefresher {
     if (build !== null) keep.add(build.digest);
     let keepNewest = keptBuilds;
     if (region === worldRegion) {
-      outcome.tables = "none";
+      outcome.tables = build === null ? null : "none";
     } else if (this.#tables === null) {
       outcome.tables = build === null ? null : "unavailable";
     } else if (

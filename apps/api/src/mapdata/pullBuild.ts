@@ -1,9 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, open, rename, rm, statfs } from "node:fs/promises";
+import { copyFile, link, mkdir, open, readFile, rename, rm, stat, statfs } from "node:fs/promises";
 import { join } from "node:path";
 import type { Logger } from "pino";
-import { type ArtefactLayout, checkTrailManifest, type Layer } from "./artefactLayout";
+import {
+  type ArtefactLayout,
+  checkTrailManifest,
+  type Layer,
+  type PlannedFile,
+} from "./artefactLayout";
 import { type BlobSource, downloadBlob } from "./downloadBlob";
 import {
   buildName,
@@ -32,6 +37,7 @@ export interface PullOptions {
   download?: {
     attempts?: number;
     idleTimeoutMs?: number;
+    deadlineMs?: number;
     wait?: (ms: number, signal: AbortSignal) => Promise<void>;
   };
   freeBytes?: (path: string) => Promise<number>;
@@ -73,11 +79,7 @@ async function downloadFile(
   }
   if (layers.length === 1) return;
   // The chunks are right one by one; the file they make is checked against manifest.json.
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path, { signal: options.signal })) {
-    hash.update(chunk as Buffer);
-  }
-  const whole = hash.digest("hex");
+  const whole = await sha256Of(path, options.signal);
   if (whole !== sha256) {
     throw new RegistryError(
       `the chunks of ${path} make a file with the SHA-256 ${whole}, not ${sha256}`,
@@ -86,6 +88,46 @@ async function downloadFile(
       },
     );
   }
+}
+
+async function sha256Of(path: string, signal: AbortSignal): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path, { signal })) hash.update(chunk as Buffer);
+  return hash.digest("hex");
+}
+
+/**
+ * The same file in a build already on the volume (a rebuild of the same
+ * extract has the same data files, byte for byte): linked into the
+ * download instead of fetched again, and hashed before it counts.
+ */
+async function reuseFile(
+  options: PullOptions,
+  builds: readonly LocalBuild[],
+  path: string,
+  file: PlannedFile,
+  sha256: string,
+): Promise<boolean> {
+  for (const build of builds) {
+    let listed = false;
+    try {
+      const manifest = JSON.parse(await readFile(join(build.dir, "manifest.json"), "utf8")) as {
+        files?: { name?: unknown; bytes?: unknown; sha256?: unknown }[];
+      };
+      listed = (manifest.files ?? []).some(
+        (entry) =>
+          entry.name === file.name && entry.bytes === file.bytes && entry.sha256 === sha256,
+      );
+    } catch {
+      listed = false;
+    }
+    const candidate = join(build.dir, file.name);
+    if (!listed || (await stat(candidate).catch(() => null))?.size !== file.bytes) continue;
+    await link(candidate, path).catch(() => copyFile(candidate, path));
+    if ((await sha256Of(path, options.signal)) === sha256) return true;
+    await rm(path, { force: true });
+  }
+  return false;
 }
 
 async function syncDirectory(path: string): Promise<void> {
@@ -97,6 +139,12 @@ async function syncDirectory(path: string): Promise<void> {
   }
 }
 
+/** A pulled build, and how many of its bytes came over the network. */
+export interface PulledBuild {
+  build: LocalBuild;
+  downloadedBytes: number;
+}
+
 /**
  * Pulls a build into `regions/<region>/<yyyymmdd>-<digest8>/` (docs/design/self-hosted-maps.md
  * §4.3): `manifest.json` first, checked against the layers, then every other
@@ -104,17 +152,17 @@ async function syncDirectory(path: string): Promise<void> {
  * digest as it streams in, chunks put together and checked against the
  * manifest's SHA-256, the registry's manifest beside them as
  * `oci-manifest.json`, everything synced, and the directory renamed into
- * place in one step. Anything wrong deletes the download and leaves every
- * build already on the volume as it was. A build already there is returned
- * as it is.
+ * place in one step. A file that a build on the volume holds already is
+ * linked from there and hashed instead of fetched. Anything wrong deletes
+ * the download and leaves every build already on the volume as it was. A
+ * build already there is returned as it is.
  */
-export async function pullBuild(options: PullOptions): Promise<LocalBuild> {
+export async function pullBuild(options: PullOptions): Promise<PulledBuild> {
   const { layout, resolved, root, logger } = options;
   const name = buildName(layout.buildId, layout.digest);
-  const existing = (await listLocalBuilds(root, layout.region)).find(
-    (build) => build.digest === layout.digest,
-  );
-  if (existing !== undefined) return existing;
+  const builds = await listLocalBuilds(root, layout.region);
+  const existing = builds.find((build) => build.digest === layout.digest);
+  if (existing !== undefined) return { build: existing, downloadedBytes: 0 };
 
   const tmpRoot = downloadsDirectory(root);
   try {
@@ -148,13 +196,19 @@ export async function pullBuild(options: PullOptions): Promise<LocalBuild> {
       await handle.close();
     }
     const trailManifest = checkTrailManifest(layout, manifestBytes);
+    let downloadedBytes = layout.manifest.size;
     for (const file of layout.files) {
-      await downloadFile(
-        options,
-        join(tmp, file.name),
-        file.layers,
-        trailManifest.sha256.get(file.name) ?? "",
-      );
+      const path = join(tmp, file.name);
+      const sha256 = trailManifest.sha256.get(file.name) ?? "";
+      if (await reuseFile(options, builds, path, file, sha256)) {
+        logger.debug(
+          { region: layout.region, file: file.name },
+          "map data file taken from the volume",
+        );
+        continue;
+      }
+      await downloadFile(options, path, file.layers, sha256);
+      downloadedBytes += file.bytes;
       logger.debug(
         { region: layout.region, file: file.name, bytes: file.bytes },
         "map data file downloaded",
@@ -200,7 +254,7 @@ export async function pullBuild(options: PullOptions): Promise<LocalBuild> {
       { region: layout.region, build: name, ms: Math.round(performance.now() - started) },
       "map data build renamed into place",
     );
-    return build;
+    return { build, downloadedBytes };
   } catch (error) {
     await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
     if (error instanceof RegistryError || options.signal.aborted) throw error;

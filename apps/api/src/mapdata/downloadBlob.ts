@@ -10,6 +10,9 @@ export interface BlobSource {
   openBlob(digest: string, options: { signal: AbortSignal; offset: number }): Promise<Response>;
 }
 
+/** 64 KiB/s: slower than this, a download is taken as stuck. */
+const slowestBytesPerMs = 65_536 / 1000;
+
 const wait = (ms: number, signal: AbortSignal): Promise<void> =>
   sleep(ms, undefined, { signal }).then(() => undefined);
 
@@ -32,7 +35,9 @@ function parseContentRange(
  * exactly the layer's size and digest. A download that breaks off, ends
  * early or stalls for `idleTimeoutMs` is resumed where it stopped with a
  * Range request (from the start when the server ignores the range), at most
- * `attempts` times; too many bytes or the wrong digest end it at once.
+ * `attempts` times; too many bytes or the wrong digest end it at once. An
+ * attempt also ends when it has run a minute longer than the blob takes at
+ * 64 KiB/s, so that a server dripping bytes cannot hold the refresh for ever.
  */
 export async function downloadBlob(input: {
   source: BlobSource;
@@ -43,17 +48,21 @@ export async function downloadBlob(input: {
   logger: Logger;
   attempts?: number;
   idleTimeoutMs?: number;
+  /** An attempt's limit (default: a minute more than the blob takes at 64 KiB/s). */
+  deadlineMs?: number;
   wait?: (ms: number, signal: AbortSignal) => Promise<void>;
 }): Promise<void> {
   const { source, layer, file, position, signal, logger } = input;
   const attempts = input.attempts ?? 5;
   const idleTimeoutMs = input.idleTimeoutMs ?? 60_000;
+  const deadlineMs = input.deadlineMs ?? 60_000 + layer.size / slowestBytesPerMs;
   const pause = input.wait ?? wait;
   let hash = createHash("sha256");
   let written = 0;
   for (let attempt = 1; ; attempt += 1) {
     const idle = new AbortController();
     let timer = setTimeout(() => idle.abort(), idleTimeoutMs);
+    const deadline = setTimeout(() => idle.abort(), deadlineMs);
     const restartTimer = () => {
       clearTimeout(timer);
       timer = setTimeout(() => idle.abort(), idleTimeoutMs);
@@ -123,7 +132,7 @@ export async function downloadBlob(input: {
         caught instanceof RegistryError
           ? caught
           : idle.signal.aborted
-            ? new RegistryError(`no data of ${layer.digest} for ${idleTimeoutMs / 1000} s`, {
+            ? new RegistryError(`${layer.digest} came too slowly, or stopped coming`, {
                 reason: "timeout",
                 retryable: true,
               })
@@ -154,6 +163,7 @@ export async function downloadBlob(input: {
       await pause(backoff, signal);
     } finally {
       clearTimeout(timer);
+      clearTimeout(deadline);
     }
   }
 }

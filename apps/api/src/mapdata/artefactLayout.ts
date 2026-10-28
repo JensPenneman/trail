@@ -63,7 +63,7 @@ export interface Layer {
 }
 
 /** A file of the build, as one layer or as chunks in order. */
-interface PlannedFile {
+export interface PlannedFile {
   name: ArtefactFileName;
   mediaType: string;
   layers: Layer[];

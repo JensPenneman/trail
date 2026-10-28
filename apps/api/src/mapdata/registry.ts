@@ -75,6 +75,20 @@ export function parseChallenge(header: string | null): Challenge | null {
   return { scheme: (match[1] ?? "").toLowerCase(), params };
 }
 
+/**
+ * What failed, as a code (`ECONNREFUSED`, `UND_ERR_SOCKET`, `TimeoutError`):
+ * an error's message or cause could quote the URL, and a blob URL carries a
+ * signature.
+ */
+function errorCode(error: unknown): string {
+  for (let current: unknown = error, depth = 0; current instanceof Error && depth < 5; depth += 1) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && /^[A-Za-z0-9_]{1,40}$/.test(code)) return code;
+    current = current.cause;
+  }
+  return error instanceof Error ? error.name : "unknown";
+}
+
 /** A URL for messages and logs: no query, which may carry a signature (GHCR's blob redirects do). */
 const shown = (url: URL): string => `${url.origin}${url.pathname}`;
 
@@ -410,7 +424,7 @@ export class RegistryClient {
       if (signal.aborted) throw error;
       const timedOut = headersTimeout.signal.aborted;
       this.#logger.debug(
-        { url: shown(url), err: error, timedOut },
+        { url: shown(url), code: errorCode(error), timedOut },
         "map data registry request failed",
       );
       throw new RegistryError(
