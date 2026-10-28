@@ -277,6 +277,19 @@ export async function tilesToFetch(
   return result.rows.map((row) => row.key);
 }
 
+/**
+ * Whether a window is ready by `now`: what a worker process, which no upload
+ * wakes, asks every few seconds while it has nothing to do.
+ */
+export async function windowReady(db: Executor, now: Date): Promise<boolean> {
+  const result = await db.execute<{ ready: boolean }>(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM processing_queue WHERE next_at <= ${now.toISOString()}::timestamptz
+    ) AS ready
+  `);
+  return result.rows[0]?.ready === true;
+}
+
 /** Whether recorded points in the range still wait for processing. */
 export async function hasPendingWork(
   db: Executor,

@@ -57,6 +57,13 @@
       "when": 1793119602154,
       "tag": "0007_device_apps",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793172031510,
+      "tag": "0008_processing_workers",
+      "breakpoints": true
     }
   ]
 }

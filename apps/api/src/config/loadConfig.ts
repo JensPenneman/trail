@@ -104,6 +104,7 @@ export function loadConfig(
       publicSharePerMinute: env.RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE,
     },
     processing: {
+      role: env.PROCESSING_ROLE,
       enabled: env.PROCESSING_ENABLED,
       overpassUrl: env.PROCESSING_OVERPASS_URL,
       overpassDailyBytes: env.PROCESSING_OVERPASS_DAILY_MB * 1_000_000,
