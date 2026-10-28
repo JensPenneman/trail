@@ -14,7 +14,8 @@ import { resolveDeviceIds } from "../devices/resolveDeviceIds";
 import { DistanceAccumulator } from "../tracks/distanceAccumulator";
 import { haversineM } from "../tracks/haversine";
 import { simplifyParts } from "../tracks/simplifyTrack";
-import { type SegmentRow, segmentColumns, toSegment } from "./segmentRow";
+import { type SegmentRow, toSegment } from "./segmentRow";
+import { servedColumns, servedSegments } from "./servedSegments";
 
 /** Rows per round trip (keyset on recorded_at). */
 const pageSize = 20_000;
@@ -346,10 +347,10 @@ export async function loadLevelTracks(
   for (const device of owned) {
     let pieces: Piece[];
     if (query.level === "inferred") {
+      // The timeline's stops and moves, a stay one stop: the map and the timeline name the same.
       const rows = await db.execute<SegmentRow>(sql`
-        SELECT ${segmentColumns} FROM segments s
-        WHERE s.device_id = ${device.id}
-          AND s.started_at < ${query.to.toISOString()}::timestamptz
+        SELECT ${servedColumns} FROM ${servedSegments([device.id], query)}
+        WHERE s.started_at < ${query.to.toISOString()}::timestamptz
           AND s.ended_at > ${query.from.toISOString()}::timestamptz
         ORDER BY s.started_at
       `);
