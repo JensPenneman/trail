@@ -17,6 +17,8 @@ const eventTypes = [
   "segments",
   "person",
   "share",
+  "days",
+  "resync",
   "session-ended",
 ] as const satisfies readonly ServerEventType[];
 
@@ -28,6 +30,11 @@ const staleAfterHiddenMs = 30_000;
 const reconnectGraceMs = 2500;
 /** A stream that keeps dropping must not turn every reconnect into a full refetch. */
 const minResyncIntervalMs = 15_000;
+/**
+ * After a `resync` every open page refetches what it shows: spread over this
+ * long, a restart's thousand pages do not ask in the same second.
+ */
+const resyncSpreadMs = 20_000;
 
 function backoffMs(attempt: number): number {
   const base = Math.min(30_000, 1000 * 2 ** Math.min(attempt, 5));
@@ -38,8 +45,12 @@ function backoffMs(attempt: number): number {
  * Keeps one `/api/events` stream open while signed in and folds its events
  * into the caches. Reconnects with jittered exponential backoff (the browser's
  * own retry gives up for good on an HTTP error), immediately when the tab
- * becomes visible or the network returns, and resynchronises after any gap —
- * events sent while disconnected are lost. When the server says the session
+ * becomes visible or the network returns. A server that numbers its events
+ * (`id:`) is asked to resume after the last one this tab got (`?after=`) and
+ * replays what the gap missed, or says `resync` when it no longer can — then
+ * the page refetches what it shows, spread over twenty seconds. A server that
+ * does not number them loses what was sent meanwhile, so every reconnect
+ * resynchronises at once, as before. When the server says the session
  * ended, the stream stays closed: a reconnect could only be refused.
  */
 export function useServerEvents(store: LiveStore): void {
@@ -56,6 +67,11 @@ export function useServerEvents(store: LiveStore): void {
     let sessionEnded = false;
     let lastResync = 0;
     let hiddenSince: number | null = null;
+    /** The `id:` of the last message this tab got; kept in memory only, per tab. */
+    let lastEventId: string | null = null;
+    /** The stream was reopened with `after`: its first message says whether the server resumes. */
+    let resuming = false;
+    let spreadTimer: ReturnType<typeof setTimeout> | undefined;
 
     const resync = (): void => {
       clearTimeout(resyncTimer);
@@ -68,20 +84,44 @@ export function useServerEvents(store: LiveStore): void {
       resyncAfterGap(queryClient);
     };
 
+    /**
+     * A server that could not replay the gap: refetch, at a moment of this tab's own, and no
+     * more often than any resync (a server that keeps restarting gets one now and then).
+     */
+    const resyncSpread = (): void => {
+      if (spreadTimer !== undefined) return;
+      spreadTimer = setTimeout(() => {
+        spreadTimer = undefined;
+        resync();
+      }, Math.random() * resyncSpreadMs);
+    };
+
     const onOpen = (): void => {
       failures = 0;
       clearTimeout(graceTimer);
       store.setConnection("open");
-      if (openedBefore) resync();
+      // Resumed streams replay the gap or say `resync`; the others lost it.
+      if (openedBefore && !resuming) resync();
       openedBefore = true;
     };
 
     const onMessage = (message: MessageEvent<unknown>): void => {
+      const numbered = message.lastEventId !== "";
+      if (resuming) {
+        resuming = false;
+        // Reopened with `after` on a server that numbers nothing (an older release): it replayed nothing.
+        if (!numbered) {
+          lastEventId = null;
+          resync();
+        }
+      }
+      if (numbered) lastEventId = message.lastEventId;
       const event = parseServerEvent(message.data);
       if (event === null) return;
+      if (event.type === "resync") resyncSpread();
       if (event.type === "session-ended") {
         sessionEnded = true;
-        for (const timer of [retryTimer, graceTimer, resyncTimer]) clearTimeout(timer);
+        for (const timer of [retryTimer, graceTimer, resyncTimer, spreadTimer]) clearTimeout(timer);
         close();
       }
       applyServerEvent(queryClient, store, event);
@@ -110,7 +150,12 @@ export function useServerEvents(store: LiveStore): void {
       close();
       if (sessionEnded) return;
       if (!openedBefore) store.setConnection("connecting");
-      source = new EventSource(apiPaths.events);
+      resuming = lastEventId !== null;
+      source = new EventSource(
+        lastEventId === null
+          ? apiPaths.events
+          : `${apiPaths.events}?after=${encodeURIComponent(lastEventId)}`,
+      );
       source.addEventListener("open", onOpen);
       source.addEventListener("error", onError);
       source.addEventListener("message", onMessage);
@@ -156,7 +201,9 @@ export function useServerEvents(store: LiveStore): void {
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("online", onOnline);
-      for (const timer of [retryTimer, refreshTimer, graceTimer, resyncTimer]) clearTimeout(timer);
+      for (const timer of [retryTimer, refreshTimer, graceTimer, resyncTimer, spreadTimer]) {
+        clearTimeout(timer);
+      }
       close();
     };
   }, [queryClient, store]);

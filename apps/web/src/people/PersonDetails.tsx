@@ -1,4 +1,5 @@
 import type { Person } from "@trail/contracts/person";
+import { offlineReasonId, useReadOnly } from "../app/useReadOnly";
 import { tripModeLabel } from "../devices/tripModeLabel";
 import { capitalise } from "../format/capitalise";
 import { useFormatter } from "../format/useFormatter";
@@ -39,6 +40,8 @@ export function PersonDetails({
   onHide,
   hiding,
 }: PersonDetailsProps) {
+  const readOnly = useReadOnly();
+  const offline = readOnly ? { disabled: true, "aria-describedby": offlineReasonId } : {};
   const format = useFormatter();
   const { share } = person;
   const where = primaryDevice(person.devices)?.location ?? null;
@@ -178,6 +181,7 @@ export function PersonDetails({
             {onStopSharing === undefined ? null : (
               <Button
                 variant="danger-outline"
+                {...offline}
                 onClick={onStopSharing}
                 aria-label={`Stop sharing your location with ${person.displayName}`}
               >
@@ -188,6 +192,7 @@ export function PersonDetails({
         ) : (
           <Button
             icon="users"
+            {...offline}
             onClick={onShareBack}
             aria-label={`Share back with ${person.displayName}`}
           >
@@ -198,6 +203,7 @@ export function PersonDetails({
           variant="ghost"
           icon="close"
           busy={hiding}
+          {...offline}
           onClick={onHide}
           aria-label={`Hide ${person.displayName}`}
         >

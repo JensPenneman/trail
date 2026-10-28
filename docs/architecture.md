@@ -2386,6 +2386,18 @@ codes: 0 success, 1 failure (including invalid configuration), 2 wrong usage
   on the volume as it was. `MAP_DATA_REGISTRY_TOKEN` goes to the token
   service only, as Basic credentials, and prints as `[redacted]`; tokens and
   the signed blob URLs are never logged.
+- What the browser keeps (§14.1): the signed-in person's own answers, those
+  of the copy's policy only — never anyone else's data (the people who share,
+  their tracks, the shares and links, a public link's page), the access log,
+  sessions, passkeys, tokens or any secret (one-time secrets live in
+  component state, the session cookie is `HttpOnly`). Nothing is painted from
+  it before the session probe named its owner, except while the session
+  cannot be checked at all (offline), and it is emptied on sign-out, a lost
+  session, another account, the toggle and a new format. It is not
+  encrypted: a key the page can use, a script in the page could use too, and
+  such a script could ask the API for the same data with the session; on a
+  shared computer the toggle (Settings › Preferences) keeps nothing. The
+  service worker keeps the public shell only and never answers `/api`.
 - pino-http redacts `authorization`, `cookie`, `referer`, `set-cookie`, token
   query params and the `X-Share-Secret` header; coordinates, map tile keys and
   OSM ids are never logged above `debug` (the processing log keeps counts,
@@ -2992,7 +3004,8 @@ count among them, since they lead to signed-in pages.
   **API reference** (`/docs`, outside the app); **Preferences**;
   **Notifications** (whether the server sends alerts through ntfy, and a
   switch per device); **About** (version, commit, build time, receiver
-  endpoint, and Sign out — the place for it on phones); **Accounts**
+  endpoint, **On this device** — below — and Sign out, the place for it on
+  phones); **Accounts**
   (administrators: invite someone, invitations, the accounts on the server).
   An item that does not exist gets a page that says so.
 
@@ -3062,7 +3075,22 @@ count among them, since they lead to signed-in pages.
   the cache, put back if the save fails); changes go out one after another.
   Saving the map style or the level forgets this browser's own choice of it,
   so the browser follows the account again. A public link's page has no
-  session and uses the built-in defaults.
+  session and uses the built-in defaults. Last, **On this device** — this
+  browser's own settings, not the account's: **Keep a copy of your data on
+  this device** (a switch, on by default; localStorage `trail.cache`, `"off"`
+  to opt out, read before anything is restored: "Shows your map at once when
+  you open Trail and works when you are offline. Turn it off on a shared
+  computer."), the size of the copy and **Clear the copy**, which empties it
+  and keeps keeping one (§14.1). Both work offline, the only rows of
+  Settings that do. About's **On this device** shows, as a list of facts,
+  whether the copy is on (or "Memory only" where the browser gives no storage
+  or no room), its size as the store counts it, what the browser counts for
+  Trail and its quota (`navigator.storage.estimate()`), whether the storage
+  is persistent, what the copy did during this visit (answers restored and
+  their size with the time the first screen's took, shown from the copy, not
+  in it, checked with the server and of those unchanged, dropped as out of
+  date or damaged, clean-ups, not written) and the server's processing
+  versions from the stream's `hello`. Nothing of it leaves the device.
 - **Devices**, in Settings (`/settings/devices`, `pages/devices/`: the row
   after Profile in the Account group, with the number of devices) — the proof
   that data still comes in, which People leaves out: under the title how many
@@ -3078,9 +3106,11 @@ count among them, since they lead to signed-in pages.
   the device's Setup page), the Overland trip
   in progress, battery, movement ("Last seen …" once it is not live), points
   today, the distance today (from the day's sums, `/api/stats/days`, not
-  from its whole track; asked for every 10 s while uploads come in, until a
-  minute after the last, since the server sums a day up 10 s after the first
-  upload of a run and again for the ones after that pass), the last position
+  from its whole track; the server's `days` events update them in place, and
+  only from a server without them — `hello` names no processing versions —
+  they are asked for every 10 s while uploads come in, until a minute after
+  the last, since the server sums a day up 10 s after the first upload of a
+  run and again for the ones after that pass), the last position
   with its accuracy and time, and the 48 h activity sparkline (points per
   hour and a tick per hour with uploads, its numbers in a table); then
   **Uploads** (an ordered group, `#uploads`), the feed of every upload of
@@ -3143,7 +3173,198 @@ management on navigation, labelled controls, text alternatives for map-only
 information, scrolling panels and wide tables reachable by keyboard while
 they scroll), 44 px targets, WCAG AAA text contrast where feasible, dark mode,
 `prefers-contrast: more`, `forced-colors`, `prefers-reduced-motion`. The
-map chunk is lazy-loaded. PWA manifest + icons (home-screen app on iPhone).
+map chunk is lazy-loaded. PWA manifest + icons (home-screen app on iPhone)
+and a service worker for the shell (§14.1), so Chrome offers to install the
+app and it opens without a network.
+
+### 14.1 Data: queries, the live stream, the copy on this device
+
+**Queries.** TanStack Query is the one cache; its keys are those of
+`api/queryKeys.ts`, the first element naming the resource. Every answer is
+checked against its contract: `apiFetch` for reads that are never asked
+conditionally and for every change, `cachedFetch` (`cache/cachedFetch.ts`)
+for the reads the server answers conditionally — it asks nothing for a past
+day whose stamps a fresh digest still has (below), and otherwise, with an
+answer on screen and its ETag (`cacheValidators`, in memory per query
+client, set by every answer and every restore), sends `If-None-Match`: a
+`304` keeps the answer on screen and moves its `dataUpdatedAt`; a `304` it
+did not ask for is `invalid_response`, as for `apiFetch`. The timeline asks
+its first page conditionally — the ETag and stamps cover the range — and
+reads the rest only after a `200`. The people list revalidates with its
+ETag too, in memory only. Nothing is asked while the browser is offline: the
+resources of the copy's policy run with `networkMode: "offlineFirst"`, so
+their query function runs once (the persister can restore the copy) and its
+retries wait for the network; changes run with `networkMode: "always"`, so a
+change offline fails at once and is never queued.
+
+**The live stream** (`live/useServerEvents.ts`, `applyServerEvent.ts`).
+Every message's `id:` is kept in memory, per tab; a stream the page opens
+again (after an error, the tab coming back, the network returning) asks for
+`/api/events?after=<id>`: the server replays what the gap missed, or says
+`resync`, after which the page refetches what it shows (`resyncAfterGap`,
+each with its ETag, mostly `304`s) at a moment of its own within 20 s, so the
+pages open across a restart do not ask in the same second. A server that
+numbers nothing (an older release) loses what was sent meanwhile, and every
+reconnect refetches at once, as before. `hello.versions` tells that the
+server publishes `days` events: then the calendar's digests are updated in
+place from the rows the event carries (a named date without a row lost its
+last point; `applyDaysEvent`), keeping when they were fetched, the answers
+of those days of that device go stale (refetched where shown,
+`staleDaySlices`), an upload no longer marks every digest stale, and the
+Devices page no longer polls the day's sums. `segments` marks stale only the
+levels, timelines and Insights that overlap the window of that device, and
+its mode.
+
+**The copy on this device** (`apps/web/src/cache/`) keeps the signed-in
+person's own answers in IndexedDB `trail-cache`, whose version is
+`cacheFormat` (a new format opens it empty; a page of an older format keeps
+memory only once a newer one opened it): `entries` — per answer the key
+`${cacheFormat}|${owner}|${hash of the query key, id lists sorted}`, the
+owner, the zone it was asked in, the resource, the query key, the devices it
+covers, when it was fetched and last shown, where its period ends, an
+absolute end of life for an answer about today, its ETag and stamps, whether
+it may be warm and its size; indexes on owner, `touchedAt` and `warm` —,
+`bodies` (the answers, read only when one is restored) and `meta` (the one
+owner, their zone, their account as the session probe last returned it, for
+an open without a session check, and the total size). Every access is in
+`try`/`catch`: a browser without IndexedDB, or one that refuses it, keeps
+memory only.
+
+- **One owner, named by the session probe.** Nothing is read or written
+  before the probe named whose session this is (`sessionQuery` →
+  `BrowserCache.signedIn`, also on a sign-in in the page): a store holding
+  another account is emptied first, and a new zone drops the answers about
+  local days of the old one. Answers that came before (the configuration,
+  asked for at start-up) wait for it, 32 at most. The store refuses, in the
+  write's own transaction, an entry for an owner its `meta` does not hold, so
+  a purge in another tab is never written over.
+- **What is kept, and for how long** (`cachePolicy.ts`; a query whose key
+  starts with anything else is memory only — other people's data, the access
+  log, sessions, passkeys, tokens, invites, the accounts, a device's own page
+  and its raw points, the session):
+
+  | Resource | Warm | Fresh | Asked again | TTL |
+  |---|---|---|---|---|
+  | `config` | always | 1 h | as is | 30 d |
+  | `devices` | always | 30 s | ETag | 30 d |
+  | `tracks` | today | 30 s; a settled past day ∞ | stamps of a past day, else ETag | 90 d since last shown; today's until the day ended + 7 d |
+  | `level-tracks` | today | as `tracks` (raw: the raw stamp; other levels: raw and processed) | as `tracks` | as `tracks` |
+  | `timeline` | today | as `tracks` (raw and processed) | as `tracks` | as `tracks` |
+  | `visits`, `trips` | — | as `tracks` (raw) | as `tracks` | 90 d |
+  | `days` | the current month (≤ 32 days covering today) | 60 s | ETag | 90 d |
+  | `heatmap` | — (the newest 20 kept) | 5 min | ETag | 30 d |
+  | `insights` | — | 5 min | ETag | 30 d |
+  | `device-mode` | the device that reported last | 30 s | as is | 1 d |
+  | `activity` | — | 5 min | as is | 7 d |
+  | `ingest-log` | — | 30 s | as is | 7 d |
+
+  The answers of a past period leave memory two minutes after they leave the
+  screen (the disk has them); "today" and ranges keep the 30 s they had, so
+  a server without ETags is not asked more often than before.
+- **The persister**: TanStack Query's `experimental_createQueryPersister`
+  (`@tanstack/query-persist-client-core`), given to the policy's resources
+  only (`attachBrowserCache`, `setQueryDefaults`), over the store
+  (`BrowserCache.storage`): it restores a stored answer on a query's first
+  fetch with the answer's own `dataUpdatedAt` (so the freshness line says
+  how old it is) and asks for it again at once (`refetchOnRestore:
+  "always"`: a copy of another page load is never taken as current; a `304`
+  when unchanged, nothing at all for a settled day), and hands every new
+  answer to the store, as it does a change made in place (an event, a
+  mutation's answer), a second after it settled. An answer the store already
+  holds (a restore, a `304`, matching stamps) is written as a touch — its
+  times and ETag — not as a new body. Entries never expire there: the TTLs count from
+  when an entry was last shown.
+- **The warm set** — the account's settings and devices, today's tracks,
+  levels and timeline, the calendar's current month and the mode of the
+  device that reported last — is read by `prepare()` in `main.tsx` while the
+  probe is on its way, and put into the query cache (`restoreWarmSet`) once
+  the probe named its owner and before its answer reaches the route guard,
+  so the first paint after a `200` is the page with its data, marked stale so
+  that it is asked for again as its page shows it; a read slower
+  than 300 ms is not waited for, and the rest is restored as its page asks.
+  `performance.mark("trail:first-data")` marks the moment.
+- **Packing** (`pointCodec.ts`): the points of tracks and level tracks and
+  the cells of a heat view go into one buffer each, column after column, as
+  64-bit floats with NaN for null — 48 bytes a track point, exactly the
+  numbers the server sent (32-bit floats would round 5.3; 32-bit seconds end
+  in 2038). On every read (`decodeEntry`) an entry of another format, owner
+  or zone, past its TTL, damaged or no longer what its contract allows is
+  deleted and counted; the contracts' schemas are loaded with the first
+  answer of their kind (`cacheCodecs.ts`), so a public page loads none.
+- **Budgets** (`sweepEntries.ts`): no entry over 4 MB; past 32 MB the sweep
+  removes, least recently shown first, heat views beyond the newest 20,
+  settled days and ranges, then Insights, then the rest — never the warm set
+  while it is current, never today; past 64 MB nothing is written until it
+  ran. It runs two seconds after start-up, every hour and after a write
+  passed the soft budget; `QuotaExceededError` sweeps to 16 MB and tries
+  once more, a second refusal keeps memory only for the rest of the page
+  load. Trail asks once for persistent storage (`navigator.storage.persist()`):
+  a store the browser evicts is a cold open, never anything worse.
+- **Settled days** (`settledDay.ts`): a past local day's answer whose stamps
+  are, both ways, those of a `days` answer in memory that covers its date
+  and devices and was fetched within the minute (`stampsMatch`: `raw` for
+  recorded data, `raw` and `processed` for levels and the timeline; a null
+  `processed`, a missing row, a row the answer has no stamp for never
+  match) has an infinite `staleTime`; before asking for such a day,
+  `cachedFetch` waits for a digest on its way, or asks one on screen again
+  first (one small request instead of the day's). A day one of the devices
+  recorded nothing on has no digest row, so it is revalidated with its ETag.
+- **Purges** (`purgeCache`): signing out and deleting the account (when the
+  request starts, before it is sent, waiting at most 2 s), a lost session (a
+  `401` anywhere, `session-ended`, a probe that finds none), another account,
+  the toggle off, Clear the copy, a new format and — for its entries — a
+  deleted device (`removeDeviceFromCache`: every entry that covers it, the
+  lists of all devices among them). A new zone drops the answers about local
+  days. A purge stops all writing at once, empties the store with `meta` and
+  resets the counters; `BroadcastChannel("trail-cache")` tells the other
+  tabs, which stop writing for that owner (they also get `session-ended`).
+- **Counters** (`cacheStats.ts`), per page load, for About; nothing is sent
+  anywhere.
+
+**Freshness** (`app/FreshnessIndicator.tsx`, beside the connection
+indicator): over the live answers on screen — the devices and today's
+tracks, levels, timeline and mode — "Updated 3 min ago" while the copy of
+the last visit is on screen, "Updating…" while one is asked for again,
+"Live" once the stream is open and everything shown came from the server in
+this visit (on screen the connection indicator says it; the line says it to
+assistive technology), "Offline · as of 10:32" without a network; nothing on
+pages without live data. Its status region announces changes of state only,
+never the minutes, at most once a minute. **The live window rule**
+(`liveWindowOpen`): "Live" is decided from a position's own time, and while
+the stream is not open only while the devices' answer is itself within the
+live window — the Me card says "as of 10:32" instead, and the markers do not
+pulse.
+
+**Offline.** The service worker opens the shell; a signed-in page whose
+session cannot be checked — the browser is offline, or the probe never
+reached the server — is painted from the copy as the account in `meta`
+(`useOfflineSession`), under the offline banner, until the probe answers
+(a `401` then empties the copy and leads to the sign-in page). Read-only:
+every control that changes something is off with the reason (the quick
+toggle, a correction, Share my location and the people's Share back, Stop
+and Hide, and every action, switch and choice of Settings but the copy's
+own, each described by the banner's or its own line); there is no write
+queue. Back online the stream reconnects with `after`, stale queries
+revalidate and the sweep runs.
+
+**The service worker** (`scripts/serviceWorker.mjs`, written into
+`apps/web/dist/sw.js` by `scripts/build.mjs` after Vite's build, from what it
+built; registered by `registerServiceWorker` after `load`, production builds
+only, same origin as `worker-src 'self'` allows): it keeps the shell of its
+build — `index.html`, every file of `/assets`, the manifest and the icons,
+the hashed assets by name and the others by a hash of their content — in a
+cache of its own (`trail-shell-<version>`), installed with `cache: "reload"`,
+and takes over at once (`skipWaiting`, `clients.claim`), dropping the caches
+of older builds; a lazy chunk of a build that is gone is the chunk-load error
+the app answers with a reload. A navigation — anything but `/api`, `/docs`,
+`/mcp` and the address of a file — gets the kept page at once; the network's
+is fetched meanwhile and kept for the next open when it is the same page with
+other headers (a new Content-Security-Policy after a configuration change),
+while a page of another build waits for that build's worker. The shell's
+files come from the cache; everything else, the API above all, goes to the
+network as if there were no worker: the API's copy is the store, with its
+owner, purges and contracts. Written without `workbox-build`, which would
+bring 280 packages for this file, an advisory without a fix among them.
 
 ## 15. CI/CD
 

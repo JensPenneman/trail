@@ -2,6 +2,8 @@ import type { BrowserContext, ConsoleMessage, Page } from "@playwright/test";
 
 /** Chrome's wording when a request gets a non-2xx answer; the page itself logged nothing. */
 const failedResource = /^Failed to load resource: the server responded with a status of (\d{3})/;
+/** Chrome's wording when a request is made without a network. */
+const offlineResource = /^Failed to load resource: net::ERR_INTERNET_DISCONNECTED/;
 
 interface ExpectedFailure {
   status: number;
@@ -17,6 +19,7 @@ interface ExpectedFailure {
 export class ConsoleGuard {
   readonly #problems: string[] = [];
   readonly #expected: ExpectedFailure[] = [];
+  #offline = false;
 
   /** Watches every page of the context, including the ones it opens later. */
   async watch(context: BrowserContext): Promise<void> {
@@ -48,6 +51,14 @@ export class ConsoleGuard {
     this.#expected.push({ status, url });
   }
 
+  /**
+   * The test takes the network away (`context.setOffline`): a request to the
+   * API that a page makes meanwhile fails, and Chrome says so — expected.
+   */
+  expectOffline(): void {
+    this.#offline = true;
+  }
+
   problems(): readonly string[] {
     return this.#problems;
   }
@@ -66,6 +77,10 @@ export class ConsoleGuard {
   }
 
   #isExpected(message: ConsoleMessage): boolean {
+    if (this.#offline && offlineResource.test(message.text())) {
+      const url = message.location().url;
+      return url !== "" && new URL(url).pathname.startsWith("/api/");
+    }
     const status = failedResource.exec(message.text())?.[1];
     if (status === undefined) return false;
     const url = message.location().url;

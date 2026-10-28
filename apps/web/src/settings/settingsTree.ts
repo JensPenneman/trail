@@ -381,8 +381,19 @@ export const settingsNodes = [
     label: "Preferences",
     icon: "settings",
     tone: "gray",
-    description: "Defaults your account takes to every browser you sign in on.",
-    keywords: ["defaults", "map style", "dark", "light", "satellite", "level", "own activity"],
+    description:
+      "Defaults your account takes to every browser you sign in on, and what this one keeps.",
+    keywords: [
+      "defaults",
+      "map style",
+      "dark",
+      "light",
+      "satellite",
+      "level",
+      "own activity",
+      "offline",
+      "cache",
+    ],
     adminOnly: false,
     rows: [
       { label: "Map style", anchor: "map", keywords: ["dark", "light", "satellite", "auto"] },
@@ -392,6 +403,11 @@ export const settingsNodes = [
         keywords: ["level", "raw", "averaged", "mapped", "transport"],
       },
       { label: "Your own activity", anchor: "access-log", keywords: ["access log"] },
+      {
+        label: "Keep a copy of your data on this device",
+        anchor: "device",
+        keywords: ["cache", "offline", "storage", "shared computer", "clear the copy"],
+      },
     ],
   },
   {
@@ -416,7 +432,7 @@ export const settingsNodes = [
     label: "About",
     icon: "info",
     tone: "gray",
-    description: "The version of Trail that runs here, and signing out.",
+    description: "The version of Trail that runs here, what this device keeps, and signing out.",
     keywords: [
       "version",
       "build",
@@ -432,6 +448,11 @@ export const settingsNodes = [
     badge: "about",
     rows: [
       { label: "Sign out", keywords: ["log out"] },
+      {
+        label: "On this device",
+        anchor: "device",
+        keywords: ["cache", "storage", "offline", "copy", "service worker"],
+      },
       { label: "Overland endpoint", keywords: ["ingest", "receiver endpoint", "overland url"] },
       { label: "OwnTracks endpoint", keywords: ["ingest", "owntracks url", "http mode"] },
       {

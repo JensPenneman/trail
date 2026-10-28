@@ -1,3 +1,4 @@
+import type { QueryClient } from "@tanstack/react-query";
 import type { SessionUser } from "@trail/contracts/user";
 import { Outlet } from "react-router";
 import { vi } from "vitest";
@@ -35,11 +36,15 @@ function screenOf(wide: boolean) {
  * Settings as the app routes it (every page lazy, as in the build), opened at
  * `url` on a phone or, with `wide`, on a screen with the list beside the page.
  */
-export function renderSettings(url: string, options: { user?: SessionUser; wide?: boolean } = {}) {
+export function renderSettings(
+  url: string,
+  options: { user?: SessionUser; wide?: boolean; queryClient?: QueryClient } = {},
+) {
   vi.stubGlobal("matchMedia", screenOf(options.wide === true));
   return renderPage(null, {
     url,
     user: options.user ?? defaultUser,
+    ...(options.queryClient === undefined ? {} : { queryClient: options.queryClient }),
     routes: [
       { element: <Frame />, children: [settingsRoute] },
       { path: "*", element: <p>Elsewhere</p> },

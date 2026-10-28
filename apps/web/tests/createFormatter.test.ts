@@ -52,6 +52,14 @@ describe("createFormatter", () => {
     expect(format.metres(11.4)).toBe("11 m");
   });
 
+  it("states sizes on disk in decimal units", () => {
+    const format = createFormatter("en-GB", "Europe/Brussels");
+    expect(format.bytes(512)).toBe("512 byte");
+    expect(format.bytes(380_000)).toBe("380 kB");
+    expect(format.bytes(12_430_000)).toBe("12.4 MB");
+    expect(format.bytes(2_100_000_000)).toBe("2.1 GB");
+  });
+
   it("describes elapsed time relative to now", () => {
     const format = brussels();
     const now = Date.parse("2026-09-30T12:00:00.000Z");

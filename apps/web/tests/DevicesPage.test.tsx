@@ -1,8 +1,12 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { device, ids } from "./support/fixtures";
+import { queryKeys } from "../src/api/queryKeys";
+import { localDateOf } from "../src/time/localDateOf";
+import { holdAll, seedEntry, warmClient } from "./support/cacheHarness";
+import { car, config, device, ids, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
+import { createTestQueryClient } from "./support/renderPage";
 import { renderSettings } from "./support/renderSettings";
 import { standardRoutes } from "./support/standardRoutes";
 
@@ -285,5 +289,64 @@ describe("Settings › Devices", () => {
     await person.click(within(dialog).getByRole("button", { name: "Add device" }));
     expect(within(dialog).getByText("Give the device a name.")).toBeInTheDocument();
     expect(calls.some((call) => call.method === "POST")).toBe(false);
+  });
+});
+
+describe("Settings › Devices on a warm open", () => {
+  it("shows the copy of every card before any request resolved, then confirms it", async () => {
+    const today = localDateOf(Date.now(), user.timezone);
+    const fetchedAt = Date.now() - 5 * 60_000;
+    const standard = standardRoutes();
+    const devices = [device(), car()];
+    const daysAnswer = {
+      timezone: user.timezone,
+      days: [
+        {
+          date: today,
+          deviceId: ids.phone,
+          points: 1066,
+          distanceM: 32_900,
+          firstAt: new Date(fetchedAt - 3_600_000).toISOString(),
+          lastAt: new Date(fetchedAt).toISOString(),
+          stamp: { raw: "r", processed: null },
+        },
+      ],
+    };
+    const queryClient = createTestQueryClient();
+    await warmClient(queryClient, user, async (store) => {
+      await seedEntry(store, { user, queryKey: queryKeys.config, answer: config, fetchedAt });
+      await seedEntry(store, {
+        user,
+        queryKey: queryKeys.devices,
+        answer: { devices },
+        fetchedAt,
+        etag: 'W/"devices"',
+      });
+      await seedEntry(store, {
+        user,
+        queryKey: queryKeys.days({ from: today, to: today, deviceIds: null }),
+        answer: daysAnswer,
+        fetchedAt,
+        etag: 'W/"days"',
+      });
+    });
+    const server = holdAll({
+      ...standard,
+      "GET /api/devices": { status: 200, body: { devices }, etag: 'W/"devices"' },
+      "GET /api/stats/days": { status: 200, body: daysAnswer, etag: 'W/"days"' },
+    });
+    const api = mockApi(server.routes);
+    renderSettings("/settings/devices", { queryClient });
+    expect(await screen.findByText("1 of 2 devices live")).toBeInTheDocument();
+    const phone = screen.getByRole("article", { name: "iPhone 16" });
+    expect(within(phone).getByText("32.9 km")).toBeInTheDocument();
+    expect(api.calls.every((call) => call.status === undefined)).toBe(true);
+
+    act(() => server.release());
+    await waitFor(() =>
+      expect(api.calls.find((call) => call.path === "/api/devices")?.status).toBe(304),
+    );
+    expect(api.calls.find((call) => call.path === "/api/stats/days")?.status).toBe(304);
+    expect(within(phone).getByText("32.9 km")).toBeInTheDocument();
   });
 });

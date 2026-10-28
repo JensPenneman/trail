@@ -25,8 +25,14 @@ class FakeEventSource extends EventTarget {
   open(): void {
     this.dispatchEvent(new Event("open"));
   }
-  send(type: string, data: unknown): void {
-    this.dispatchEvent(new MessageEvent(type, { data: JSON.stringify(data) }));
+  /** A message; `id` is its `id:` line, which only a server that numbers its events sends. */
+  send(type: string, data: unknown, id?: string): void {
+    this.dispatchEvent(
+      new MessageEvent(type, {
+        data: JSON.stringify(data),
+        ...(id === undefined ? {} : { lastEventId: id }),
+      }),
+    );
   }
   fail(): void {
     this.dispatchEvent(new Event("error"));
@@ -148,5 +154,129 @@ describe("useServerEvents", () => {
         rejected: 0,
       },
     ]);
+  });
+
+  describe("resuming after a gap", () => {
+    const hello = { type: "hello", serverTime: "2026-10-28T10:00:00.000Z" };
+    const refetchedDevices = (invalidate: { mock: { calls: unknown[][] } }) =>
+      invalidate.mock.calls.some(
+        ([filters]) =>
+          (filters as { queryKey?: unknown } | undefined)?.queryKey === queryKeys.devices,
+      );
+
+    it("reopens the stream after the last event it got, and the server's replay needs no refetch", () => {
+      const { queryClient } = setup();
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      act(() => latest().open());
+      act(() => latest().send("hello", hello, "boot1:1"));
+      act(() => latest().send("device", { type: "device", device: device() }, "boot1:2"));
+      act(() => latest().fail());
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(latest().url).toBe(`/api/events?after=${encodeURIComponent("boot1:2")}`);
+      act(() => latest().open());
+      act(() => latest().send("hello", hello, "boot1:3"));
+      act(() =>
+        latest().send(
+          "device",
+          { type: "device", device: device({ name: "Replayed" }) },
+          "boot1:4",
+        ),
+      );
+      act(() => {
+        vi.advanceTimersByTime(30_000);
+      });
+      expect(refetchedDevices(invalidate)).toBe(false);
+      expect(
+        queryClient.getQueryData<DeviceListResponse>(queryKeys.devices)?.devices[0]?.name,
+      ).toBe("Replayed");
+    });
+
+    it("refetches after resync, at a moment of its own within twenty seconds", () => {
+      const { queryClient } = setup();
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      vi.spyOn(Math, "random").mockReturnValue(0.5);
+      act(() => latest().open());
+      act(() => latest().send("hello", hello, "boot1:1"));
+      act(() => latest().fail());
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      act(() => latest().open());
+      act(() => latest().send("hello", hello, "boot2:1"));
+      act(() => latest().send("resync", { type: "resync" }, "boot2:2"));
+      act(() => {
+        vi.advanceTimersByTime(9_000);
+      });
+      expect(refetchedDevices(invalidate)).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(2_000);
+      });
+      expect(refetchedDevices(invalidate)).toBe(true);
+    });
+
+    it("refetches at once after a reconnect to a server that numbers nothing, as before", () => {
+      const { queryClient } = setup();
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      act(() => latest().open());
+      act(() => latest().send("hello", hello));
+      act(() => latest().fail());
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(latest().url).toBe("/api/events");
+      act(() => latest().open());
+      expect(refetchedDevices(invalidate)).toBe(true);
+    });
+
+    it("refetches when the stream it resumed comes from a server that numbers nothing", () => {
+      const { queryClient } = setup();
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      act(() => latest().open());
+      act(() => latest().send("hello", hello, "boot1:1"));
+      act(() => latest().fail());
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      act(() => latest().open());
+      expect(refetchedDevices(invalidate)).toBe(false);
+      act(() => latest().send("hello", hello));
+      expect(refetchedDevices(invalidate)).toBe(true);
+    });
+
+    it("refetches after a resync no more often than any resync, however often the server restarts", () => {
+      const { queryClient } = setup();
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      vi.spyOn(Math, "random").mockReturnValue(0);
+      const resyncs = () =>
+        invalidate.mock.calls.filter(
+          ([filters]) =>
+            (filters as { queryKey?: unknown } | undefined)?.queryKey === queryKeys.devices,
+        ).length;
+      const restart = (boot: string) => {
+        act(() => latest().fail());
+        act(() => {
+          vi.advanceTimersByTime(3000);
+        });
+        act(() => latest().open());
+        act(() => latest().send("hello", hello, `${boot}:1`));
+        act(() => latest().send("resync", { type: "resync" }, `${boot}:2`));
+        act(() => {
+          vi.advanceTimersByTime(0);
+        });
+      };
+      act(() => latest().open());
+      act(() => latest().send("hello", hello, "boot1:1"));
+      restart("boot2");
+      expect(resyncs()).toBe(1);
+      // The server restarts again at once: that resync waits for the interval.
+      restart("boot3");
+      expect(resyncs()).toBe(1);
+      act(() => {
+        vi.advanceTimersByTime(15_000);
+      });
+      expect(resyncs()).toBe(2);
+    });
   });
 });

@@ -1,83 +1,29 @@
 import type { z } from "zod";
 import { ApiError } from "./ApiError";
-import { apiUrl, type QueryValue } from "./apiUrl";
+import { readApiAnswer } from "./readApiAnswer";
 import { readApiError } from "./readApiError";
-
-export interface ApiRequest {
-  /** Defaults to GET without a body and POST with one. */
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  query?: Readonly<Record<string, QueryValue>>;
-  /** Sent as JSON; the API's CSRF check requires JSON bodies on unsafe methods. */
-  body?: unknown;
-  /** Extra request headers, e.g. the secret of a public link (`X-Share-Secret`). */
-  headers?: Readonly<Record<string, string>>;
-  signal?: AbortSignal;
-}
-
-/* Aborts are the caller's own doing (TanStack Query cancelling a stale request)
- * and must propagate unchanged. DOMException is not an Error subclass everywhere. */
-function isAbort(error: unknown): boolean {
-  if (typeof error !== "object" || error === null || !("name" in error)) return false;
-  return error.name === "AbortError" || error.name === "TimeoutError";
-}
+import { type ApiRequest, sendApiRequest } from "./sendApiRequest";
 
 /**
  * Calls the Trail API and validates the answer against its contract schema, so
  * a response that drifted from `@trail/contracts` fails loudly here instead of
  * deep inside a component. Empty (204) answers are validated as `undefined`.
+ * A `304 Not Modified` it never asked for (only `cachedFetch` sends
+ * `If-None-Match`) is an answer it cannot use.
  */
 export async function apiFetch<T>(
   path: string,
   schema: z.ZodType<T>,
   request: ApiRequest = {},
 ): Promise<T> {
-  const hasBody = request.body !== undefined;
-  const headers: Record<string, string> = { ...request.headers, Accept: "application/json" };
-  if (hasBody) headers["Content-Type"] = "application/json";
-
-  let response: Response;
-  try {
-    response = await fetch(apiUrl(path, request.query), {
-      method: request.method ?? (hasBody ? "POST" : "GET"),
-      headers,
-      credentials: "same-origin",
-      ...(hasBody ? { body: JSON.stringify(request.body) } : {}),
-      ...(request.signal === undefined ? {} : { signal: request.signal }),
-    });
-  } catch (error) {
-    if (isAbort(error)) throw error;
+  const response = await sendApiRequest(path, request);
+  if (response.status === 304) {
     throw new ApiError({
-      status: 0,
-      code: "network",
-      message: "Can’t reach the Trail server. Check your connection and try again.",
-      cause: error,
-    });
-  }
-
-  if (!response.ok) throw await readApiError(response);
-
-  let payload: unknown;
-  try {
-    const text = await response.text();
-    payload = text === "" ? undefined : JSON.parse(text);
-  } catch (error) {
-    if (isAbort(error)) throw error;
-    throw new ApiError({
-      status: response.status,
-      code: "invalid_response",
-      message: "The server sent a response Trail could not read.",
-      cause: error,
-    });
-  }
-
-  const parsed = schema.safeParse(payload);
-  if (!parsed.success) {
-    throw new ApiError({
-      status: response.status,
+      status: 304,
       code: "invalid_response",
       message: "The server answered in a format this version of Trail does not understand.",
-      cause: parsed.error,
     });
   }
-  return parsed.data;
+  if (!response.ok) throw await readApiError(response);
+  return readApiAnswer(response, schema);
 }

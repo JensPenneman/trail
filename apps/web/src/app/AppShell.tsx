@@ -6,6 +6,7 @@ import { useServerEvents } from "../live/useServerEvents";
 import { Wordmark } from "../ui/Wordmark";
 import { AccountMenu } from "./AccountMenu";
 import { ConnectionIndicator } from "./ConnectionIndicator";
+import { FreshnessIndicator } from "./FreshnessIndicator";
 import { OfflineBanner } from "./OfflineBanner";
 import { PrimaryNav } from "./PrimaryNav";
 import { useDeviceStatusAnnouncements } from "./useDeviceStatusAnnouncements";
@@ -32,6 +33,7 @@ export function AppShell() {
           </Link>
           <PrimaryNav />
           <div className="app-header__end">
+            <FreshnessIndicator />
             <ConnectionIndicator />
             <AccountMenu />
           </div>
