@@ -660,6 +660,81 @@ a map. What a server without a bundle shows is in §3.5.
   a tile, a glyph, a sprite, a tile for matching inside the regions — all
   from the node.
 
+### 3.6 As built in task 4
+
+`apps/api/src/basemap/` and `scripts/map-assets.mjs`; docs/architecture.md
+§14 and docs/operations.md ("The basemap") describe it. Where it differs
+from §3.1–3.5:
+
+- **No `map_bundles` table.** Since task 2 the refresh runs in the API's
+  process, and the volume is what the router reads anyway: the bundle is
+  worked out from it — the newest build of `MAP_BASEMAP_REGION` whose
+  `basemap.pmtiles` opens and checks, with the newest world overview — at
+  the start (before the first request), every minute (a `trail map
+  refresh` in another process) and after every refresh of the process that
+  pulled or removed a build. No migration; a restore needs nothing. A build
+  appears on the volume only verified and renamed into place, so a region
+  that is *importing* serves its basemap already (the tables play no part
+  in it); a region with no build, or none with a basemap, is *missing*:
+  the fallback serves.
+- **The bundle and its id.** The tile URL's `<build>` is a bundle: 16 hex
+  digits of the SHA-256 of the region's and the overview's digests, so a
+  new build of either is a new URL. A refresh of the region and one of the
+  overview, minutes apart, make two new bundles in a row, so every bundle
+  served before stays served while its builds are on the volume, as §3.5
+  has it (the refresh keeps the build served before for a period); once a
+  build is gone, its bundles are dropped at the next look and their
+  archives closed when their reads are done (the open file serves until
+  then, the handle outliving the deletion).
+- **`MAP_BASEMAP=self|openfreemap`** beside `MAP_BASEMAP_FALLBACK`:
+  `openfreemap` uses the external styles always (OpenFreeMap's detail
+  everywhere, which §3.1 hands to "the fallback flag"); `self` (the
+  default) serves the volume's basemap and, without one, the external
+  styles (`MAP_BASEMAP_FALLBACK=true`, the default of this phase) or the
+  plain ground (`false`). `/api/health` says which (`basemap: self |
+  external | none`), `trail map status` too, with the builds and why.
+- **The CSP per response.** The map's origins are `'self'` (with the
+  satellite imagery's and an explicit `MAP_CONNECT_SRC`) while the
+  basemap serves, and add the external styles' while they are in use;
+  unset, `MAP_CONNECT_SRC` stands for OpenFreeMap's origin only then.
+- **Relative URLs.** Tiles and glyphs load by their paths (MapLibre's
+  worker is a same-origin script, and the main thread fetches the glyphs),
+  checked in the end-to-end suite on the built app and in the dev server
+  (Vite proxies `/map`). MapLibre 6 refuses a relative sprite URL ("must be
+  absolute"), so the web app makes it absolute against the page's address
+  (`absoluteSprite`, MapLibre's `transformStyle`): the style stays the
+  same for every origin, with no `Host` header in it.
+- **Tiles as stored.** The `pmtiles` package (4.5) parses the header and
+  directories; its `getZxy` inflates tiles, so Trail walks the directories
+  itself (`findTile`, at most three deep) and reads a tile's bytes as
+  Planetiler stored them, gzipped, for `Content-Encoding: gzip` (a client
+  that takes no gzip gets them inflated, under an ETag of its own). The
+  directories of all open archives share one cache of about 10 MB by an
+  estimate of their memory, not the package's count of entries.
+- **Fonts, measured.** A stack of openmaptiles/fonts is 34.5 MB, not 10:
+  86 % of it CJK, Hangul and Kana, which MapLibre 6 draws with the
+  browser's own fonts and never asks for, as it does the Indic scripts.
+  `scripts/map-assets.mjs` ships the 87 ranges of each stack MapLibre can
+  ask for (`drawnByMapLibre` in `scripts/map-assets.json`, to be checked
+  with MapLibre's major versions; a missing range is drawn locally, with a
+  warning): 10.9 MB for the three stacks instead of 105, from the pinned
+  `noto-sans.zip` (62 MB, read by the script's own zip reader). The sprite
+  sheet is 224 KB, not 1.5 MB. The Docker stage keyed on the JSON
+  downloads them; `npm run build` lays them out from its cache, and so
+  does `npm run dev` before it starts.
+- **Measured** (the built server in the development container, Monaco and
+  the world overview from the registry, 100 tiles, 70 of the region at
+  z5–14 and 30 of the overview at z0–6, one request after the other over
+  loopback): p50 0.33 ms and p95 2.11 ms the first time (the directories
+  read once), p50 0.30 ms and p95 0.84 ms the second.
+- **Tests of the fallback.** The end-to-end suite's one server draws the
+  Monaco basemap; the fallback's styles, CSP and plain ground are tested
+  on the server (`basemap.test.ts`), the notice in the browser with the
+  config answered as a server without a basemap would.
+- **Licences.** The vendored styles carry their origin, commit and
+  licences in `metadata`, `scripts/map-assets.json` those of the fonts and
+  sprites; `docs/licences.md` and About's credits stay with task 6.
+
 ## 4. Build and distribution pipeline
 
 ### 4.1 Where things are built
