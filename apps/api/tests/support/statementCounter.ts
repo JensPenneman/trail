@@ -17,6 +17,8 @@ const valuesOf = (args: readonly unknown[]): readonly unknown[] => {
 export interface WatchedStatement {
   text: string;
   values: readonly unknown[];
+  /** What `origin` named when it was sent: the request it came from, for a test that tags them. */
+  origin: string | undefined;
 }
 
 /** What `watchStatements` gives a test: the statements seen, and a hook after the next one that matches. */
@@ -41,7 +43,10 @@ export interface StatementWatch {
  * so each statement is seen once; the hook waits on whichever promise the
  * caller awaits (`pool.query`'s, or a checked-out client's in a transaction).
  */
-export function watchStatements(pool: Pool): StatementWatch {
+export function watchStatements(
+  pool: Pool,
+  options: { origin?: () => string | undefined } = {},
+): StatementWatch {
   const texts: string[] = [];
   const statements: WatchedStatement[] = [];
   const patched = new WeakSet<PoolClient>();
@@ -69,7 +74,7 @@ export function watchStatements(pool: Pool): StatementWatch {
       const text = textOf(args[0]);
       if (watching) {
         texts.push(text);
-        statements.push({ text, values: valuesOf(args) });
+        statements.push({ text, values: valuesOf(args), origin: options.origin?.() });
       }
       return hooked(text, original(...args));
     };
