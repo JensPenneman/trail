@@ -1,0 +1,65 @@
+{
+  "about": "The fonts and sprites of the vendored map styles (apps/api/map/styles), fetched when the image is built by scripts/map-assets.mjs and checked against these SHA-256 (docs/design/self-hosted-maps.md §3.2). Their URLs carry the first 16 hex digits of this file's SHA-256: a change here is a new set of URLs, which every map loads afresh.",
+  "fonts": {
+    "url": "https://github.com/openmaptiles/fonts/releases/download/v2.0/noto-sans.zip",
+    "bytes": 61899817,
+    "sha256": "d117316544b43a5dde7ee761b36e17701e9f85574e181d76a74814240fdbaf34",
+    "licence": "Noto Sans, SIL Open Font License 1.1 (https://openfontlicense.org), as glyph PBFs of openmaptiles/fonts v2.0 (https://github.com/openmaptiles/fonts)",
+    "stacks": ["Noto Sans Bold", "Noto Sans Italic", "Noto Sans Regular"],
+    "drawnByMapLibre": {
+      "about": "Code points MapLibre GL JS 6 draws with the browser's own fonts and never fetches (codePointUsesLocalIdeographFontFamily and codePointIsInComplexShapingScript in maplibre-gl): a range of 256 that lies wholly inside them is left out, 169 of every stack's 256 (CJK, Hangul, Kana, the Indic scripts). Check them when MapLibre's major version changes: a missing range is drawn locally, with a warning in the console.",
+      "blocks": [
+        "02ea-02eb",
+        "0900-109f",
+        "1100-11ff",
+        "1700-17ff",
+        "1900-194f",
+        "19e0-1aaf",
+        "1b00-1c4f",
+        "1cc0-1ccf",
+        "2e80-2fdf",
+        "3000-30ff",
+        "3105-312f",
+        "3131-318e",
+        "31a0-4dbf",
+        "4e00-a48c",
+        "a490-a4c6",
+        "a800-a82f",
+        "a880-a8ff",
+        "a930-a95f",
+        "a960-a97c",
+        "a980-aaff",
+        "abc0-abff",
+        "ac00-d7c6",
+        "d7cb-d7fb",
+        "f900-fa6d",
+        "fa70-fad9",
+        "fe10-fe1f",
+        "fe30-fe4f",
+        "ff00-ffef"
+      ]
+    }
+  },
+  "sprites": {
+    "url": "https://tiles.openfreemap.org/sprites/ofm_f384/",
+    "licence": "OpenFreeMap's sheet of OSM Liberty's icons (https://github.com/hyperknot/openfreemap-styles, MIT): the Maki POI icons, CC0 1.0 (https://github.com/mapbox/maki), and an arrow from Wikimedia Commons, public domain",
+    "files": {
+      "ofm.json": {
+        "bytes": 27737,
+        "sha256": "73e75e58d8c7bb62cc25d9d150660500552f4d04f6eac5efa4e236076773c356"
+      },
+      "ofm.png": {
+        "bytes": 49454,
+        "sha256": "8996a519d218dc5f98015267709dae272a77bb74ef0ecc5a0992dcf276c1be4c"
+      },
+      "ofm@2x.json": {
+        "bytes": 27822,
+        "sha256": "82a4aaeed2c5ce6e98553915754dbe394ee66fd9a2aacc4318d25cdd74e8730b"
+      },
+      "ofm@2x.png": {
+        "bytes": 118872,
+        "sha256": "3793faf7dc47960636e4b6b1039978fa6925e6c90a7cb49ef23b37e153635c9b"
+      }
+    }
+  }
+}
