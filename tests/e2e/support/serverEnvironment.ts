@@ -68,5 +68,7 @@ export function e2eServerEnvironment(databaseUrl: string): Record<string, string
     PROCESSING_STOP_MIN_S: "",
     PROCESSING_PASS_MAX_POINTS: "",
     PROCESSING_PASS_MAX_SPAN_HOURS: "",
+    LOAD_TEST: "",
+    LAUNCHWAY_ENVIRONMENT: "",
   };
 }

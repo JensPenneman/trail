@@ -20,9 +20,11 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.json",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && npm run test:load",
     "test:integration": "npm run test:integration -w @trail/api",
     "test:e2e": "playwright test",
+    "test:load": "node --test \"tools/load/test/*.test.mjs\"",
+    "load": "node tools/load/run.mjs",
     "knip": "knip",
     "check": "npm run lint && npm run typecheck && npm run knip && npm run test",
     "prepare": "node scripts/hooks.mjs"
