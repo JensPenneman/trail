@@ -37,11 +37,12 @@ function familySql(mode: SQL): SQL {
  * `toggle` (an alias of `mode_overrides`) when it starts after the toggle
  * began (docs/architecture.md §17.5): a stay of `toggleEndingStopS` or more
  * that began after the toggle, or a move the inference reads as another kind
- * of travel than the toggle's after such a stay — the first move it reaches
- * is its own. A stay is counted from its first part (`stayParts`): a part
- * that continues the stop before it is no new stop, so a toggle set during a
- * stay runs on through the parts the passes leave of it until the device
- * leaves, and a stay that began after it ends it however it was cut.
+ * of travel than the toggle's after any stay that began after it — the first
+ * move it reaches is its own. A stay is counted from its first part
+ * (`stayParts`): a part that continues the stop before it is no new stop, so
+ * a toggle set during a stay runs on through the parts the passes leave of it
+ * until the device leaves, and a stay that began after it ends it however it
+ * was cut.
  */
 export function endsToggleSql(segment: string, toggle: string): SQL {
   const s = sql.raw(segment);

@@ -395,8 +395,8 @@ interface OverrideRow extends Record<string, unknown> {
  * The corrections in force for the window. A toggle that began before it gets
  * the start of the first stored segment before the window that ends it — a
  * stay of `toggleEndingStopS` or more that began after it, or a move of
- * another kind of travel after one (`endsToggleSql`) — and whether a stay
- * began between it and the window: a window that starts at the ride home after
+ * another kind of travel after any stay that began after it (`endsToggleSql`)
+ * — and whether a stay began between it and the window: a window that starts at the ride home after
  * a short wait must not take that ride for the toggle's own, and the parts the
  * passes left of the stay it was set in are no such stay.
  */

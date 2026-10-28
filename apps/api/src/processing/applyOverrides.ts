@@ -49,8 +49,8 @@ export interface OverrideContext {
 /**
  * Where an override applies: a segment override its span; a toggle until the
  * first stay of `toggleEndingStopS` or more that began after it, or a move
- * after such a stay that the inference reads as another kind of travel
- * (`familyOf`). The first move it reaches is its own, all its parts, whatever
+ * after any stay that began after it that the inference reads as another kind
+ * of travel (`familyOf`). The first move it reaches is its own, all its parts, whatever
  * the inference reads in them (a ride partly read as a car, the walk to the
  * platform) — a change of trains does not end it, cycling home from the
  * station does. A stay counts from its first part: the parts the passes left
