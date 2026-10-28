@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { publicConfigSchema } from "@trail/contracts/config";
 import { apiErrorSchema } from "@trail/contracts/errors";
+import { healthSchema, liveHealthSchema } from "@trail/contracts/health";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { resetDatabase } from "../support/resetDatabase";
@@ -41,16 +42,19 @@ const expectedCsp =
 describe("health and configuration", () => {
   it("reports health with a database round trip", async () => {
     const response = await request(t.app).get("/api/health").expect(200);
-    expect(response.body).toMatchObject({
+    expect(healthSchema.parse(response.body)).toMatchObject({
       status: "ok",
       db: "ok",
       version: expect.any(String),
       commit: "dev",
+      // Role `all` in a test: its worker is never started, so it never beat.
+      processing: { worker: "down", lastSeenS: null, queued: 0 },
     });
     expect(response.body.uptimeS).toBeGreaterThanOrEqual(0);
     const live = await request(t.app).get("/api/health/live").expect(200);
-    expect(live.body).toMatchObject({ status: "ok" });
+    expect(liveHealthSchema.parse(live.body)).toMatchObject({ status: "ok" });
     expect(live.body).not.toHaveProperty("db");
+    expect(live.body).not.toHaveProperty("processing");
   });
 
   it("answers 503 when the database is down (liveness stays up)", async () => {
@@ -60,6 +64,7 @@ describe("health and configuration", () => {
     try {
       const response = await request(offline.app).get("/api/health").expect(503);
       expect(response.body).toMatchObject({ status: "unavailable", db: "down" });
+      await request(offline.app).get("/api/health/processing").expect(503);
       await request(offline.app).get("/api/health/live").expect(200);
       const api = await request(offline.app)
         .get("/api/auth/session")
