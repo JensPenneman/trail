@@ -3723,18 +3723,30 @@ raw-only, and `/stats/days` is not extended.
 A stay is one stop wherever it is served (`transport/servedSegments.ts`).
 Bounded passes (§17.4) work a long stay out a part at a time, so it is
 stored as stops of one device one after the other; read with `lag()` over the
-device's segments, consecutive stops with no travel gap between them (more
-than 30 minutes with ends more than 300 m apart, as in §17.3) and their
-middles within the larger of their spreads or 100 m are one: from the first
-part's start to the last part's end, under the first part's id, its points
-counted once at the points two parts share and its middle weighed by them,
-its spread the largest. The parts are looked for up to two weeks beyond the
-range asked for. The timeline (and the MCP `get_timeline`, `get_day_summary`),
-the inferred tracks — so the map and the timeline name the same stop — the
-current mode of a device (`since` is the stay's start), Insights' count of
-stops and the stationary `segments` of the mode statistics read it; the
-stored segments stay as the passes left them, every pass repeatable.
-`get_visits` serves the visits iOS reported, one a stay already.
+device's segments, consecutive stops are one where the next begins as the one
+before ends and within 300 m of where it ended (the parts of one stay share
+their boundary point, or follow a stop that lasted beyond its last point; a
+pass joins stops at one place within 300 m, §17.3), or, a short hole apart
+(not a travel gap: more than 30 minutes with ends more than 300 m apart), where
+their middles lie within the larger of their spreads or 100 m. The stop runs
+from the first part's start to the last part's end, under the first part's
+id, its points counted once (a point two parts share once, as each part
+counts its own up to `min(ended_at, lastPointT)`) and its middle weighed by
+them, its spread the largest. The parts are looked for up to two weeks
+beyond the range asked for: a stay longer than that is served — its start,
+duration and id — from its earliest part within them, and a device's `since`
+reaches back two weeks at most (walking the chain of parts back to its start
+with a bounded recursive query is a follow-up). The timeline (and the MCP
+`get_timeline`, `get_day_summary`), the inferred tracks — so the map and the
+timeline name the same stop — the current mode of a device (`since` is the
+stay's start; it reads the latest segment and coalesces only when that is a
+stop), Insights' count of stops and the stationary `segments` of the mode
+statistics read it; the stored segments stay as the passes left them, every
+pass repeatable. `get_visits` serves the visits iOS reported, one a stay
+already. The query reads the device's segments of the range and two weeks on
+either side, a window function and a grouping over them; its plan on a large
+history is to be measured (`EXPLAIN ANALYZE` on a restored dump, a one-day
+timeline and the device mode).
 
 The dashboard calls these with its session (`apps/web/src/transport/`):
 History and Live get the level `SegmentedControl` (Raw · Averaged · Mapped ·

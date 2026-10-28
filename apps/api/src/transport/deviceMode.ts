@@ -14,7 +14,7 @@ import { HttpError } from "../http/httpError";
 import { lockDeviceProcessing } from "../processing/deviceLock";
 import { enqueueWindow } from "../processing/processingQueue";
 import { endsToggleSql } from "../processing/travelFamily";
-import type { SegmentRow } from "./segmentRow";
+import { type SegmentRow, segmentColumns } from "./segmentRow";
 import { servedColumns, servedSegments } from "./servedSegments";
 
 interface ToggleRow extends Record<string, unknown> {
@@ -80,14 +80,28 @@ export async function loadDeviceMode(
 ): Promise<DeviceMode> {
   const device = await findOwnedDevice(db, access, deviceId);
   const toggle = await openToggle(db, device.id, options.now);
-  // The latest stop or move as the timeline serves it: a stay since it began, under its id.
-  const recentFrom = new Date(options.now.getTime() - options.recentMs);
   const latest = await db.execute<SegmentRow>(sql`
-    SELECT ${servedColumns} FROM ${servedSegments([device.id], { from: recentFrom, to: options.now })}
+    SELECT ${segmentColumns} FROM segments s
+    WHERE s.device_id = ${device.id}
     ORDER BY s.started_at DESC
     LIMIT 1
   `);
-  const segment = latest.rows[0];
+  const stored = latest.rows[0];
+  // A stop as the timeline serves it: the stay since it began, under its id.
+  const segment =
+    stored?.kind === "stop"
+      ? ((
+          await db.execute<SegmentRow>(sql`
+            SELECT ${servedColumns}
+            FROM ${servedSegments([device.id], {
+              from: new Date(toIso(stored.started_at)),
+              to: new Date(toIso(stored.ended_at)),
+            })}
+            ORDER BY s.started_at DESC
+            LIMIT 1
+          `)
+        ).rows[0] ?? stored)
+      : stored;
   const endedAt = segment === undefined ? 0 : Date.parse(toIso(segment.ended_at));
   const recent = segment !== undefined && endedAt >= options.now.getTime() - options.recentMs;
   if (toggle !== null) {
