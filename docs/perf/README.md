@@ -301,27 +301,36 @@ The first comparison, from the reports of 28 October 2026 below:
 
 Load data and real data never share a database.
 
-- **`trail load-fleet` refuses** — before it writes a row, and for the
-  environment's conditions before it opens the database — unless all of
-  these hold: `LOAD_TEST=true` in the app's environment; `LAUNCHWAY_ENVIRONMENT`
-  is not `production` (Launchway names every deployment `production` or
-  `preview`, and `deploy/compose.yaml` passes that one variable of Launchway's
-  to the app for this check); the database holds no passkey (nobody has ever
-  signed in there) and no account but the load test's own. It takes the
-  sign-up lock while it checks and writes, so nobody signs up in between,
-  and writes everything in one transaction. It refuses to write the fleet's
-  secrets into a terminal: redirect its output to a file. The integration
-  tests try each condition alone (`apps/api/tests/integration/loadFleet.test.ts`).
+- **`trail load-fleet` refuses** unless all of these hold: `LOAD_TEST=true`
+  in the app's environment; `LAUNCHWAY_ENVIRONMENT` is not `production`
+  (Launchway names every deployment `production` or `preview`, and
+  `deploy/compose.yaml` passes that one variable of Launchway's to the app
+  for this check); the database holds no passkey (nobody has ever signed in
+  there) and no account but the load test's own. It checks the environment
+  before it opens the database, the database before the CLI would migrate it
+  (so a wrong `DATABASE_URL` is never touched), and both again under the
+  sign-up lock in the one transaction that writes the fleet, so nobody signs
+  up in between and a refusal or a failure leaves nothing behind. It refuses
+  to write the fleet's secrets into a terminal; `docker exec` without `-t`
+  hides the terminal from it, so redirect its output to a file there too.
+  The integration tests try each condition alone
+  (`apps/api/tests/integration/loadFleet.test.ts`).
 - **No production path.** The runner drives only the stack it started on
-  the Mac; it has no option for another address. Its synthetic accounts are
-  at `load.invalid`, a domain that cannot exist (RFC 2606).
+  this machine: it has no option for another address, refuses a Docker
+  context or `DOCKER_HOST` that is not a local socket, and hands Compose only
+  the variables Docker needs, so that nothing exported in the shell (a
+  `TRAIL_DB_VOLUME`, a `TRAIL_IMAGE`) reaches the stack. Ctrl-C removes the
+  stack and the fleet's secrets as the end of a run does. Its synthetic
+  accounts are at `load.invalid`, a domain that cannot exist (RFC 2606).
 - **Nothing secret or personal in a log line or a report.** The app's load
   line holds numbers only; `trail load-fleet` prints counts on stderr and its
-  secrets only on stdout, into the file; the runner redacts every line of
-  k6's and Compose's output it shows (device tokens, sessions, the accounts'
-  addresses, positions in a URL — OsmAnd's address carries its token, and k6
-  names a URL in its warnings), and k6 tags every request with a name, never
-  its URL; the collector keeps numbers of the app's log, never a line;
+  secrets only on stdout, into the file; the runner redacts k6's and
+  Compose's output a whole line at a time before it shows it (device tokens,
+  sessions, the Basic credentials of OwnTracks for Android, the accounts'
+  addresses, positions in a URL, a form or JSON — OsmAnd's address carries
+  its token, and k6 names a URL in its warnings), and k6 tags every request
+  with a name, never its URL; the collector follows the app's log and keeps
+  numbers of it, never a line;
   `report.mjs` refuses to write a report that would hold a token, a session,
   an address, a position or any of the fleet's secrets. The harness's tests
   hold each of these.
@@ -355,4 +364,5 @@ Load data and real data never share a database.
 <!-- runs:start -->
 | Run | Date | Commit | Scenario | Gates |
 | --- | --- | --- | --- | --- |
+| [2026-10-28-0d99ed5-fleet-10](2026-10-28-0d99ed5-fleet-10.md) | 2026-10-28 | `0d99ed5` | fleet-10 | fail |
 <!-- runs:end -->
