@@ -8,6 +8,7 @@ import {
 import type { RouteAuth, RouteSpec, SuccessStatus, V1Route } from "../defineRoute";
 import { pathParameters } from "../toExpressPath";
 import { v1Tags } from "../v1Tags";
+import { conditionalComponents, conditionalReferences } from "./conditionalResponses";
 import {
   type ErrorStatus,
   errorResponseComponents,
@@ -31,7 +32,11 @@ const successDescriptions: Record<SuccessStatus, string> = {
   201: "Created",
   202: "Accepted",
   204: "No content",
+  304: "Not modified",
 };
+
+/** A GET that answers 304 to its own ETag (docs/architecture.md §8.9). */
+const isConditional = (spec: RouteSpec): boolean => spec.responses[304] !== undefined;
 
 /** The error statuses an operation can answer with, from what its spec declares. */
 function errorStatusesOf(spec: RouteSpec): ErrorStatus[] {
@@ -75,14 +80,22 @@ function securityOf(auth: RouteAuth): NonNullable<ZodOpenApiOperationObject["sec
 
 function responsesOf(spec: RouteSpec): ZodOpenApiResponsesObject {
   const responses: ZodOpenApiResponsesObject = {};
+  const conditional = isConditional(spec);
   for (const [key, schema] of Object.entries(spec.responses)) {
     const status = Number(key) as SuccessStatus;
+    if (status === 304) {
+      responses["304"] = conditionalReferences.notModified;
+      continue;
+    }
     responses[`${status}`] =
       schema === null || schema === undefined
         ? { description: successDescriptions[status] }
         : {
             description: schema.description ?? successDescriptions[status],
             content: { "application/json": { schema } },
+            ...(conditional && status === 200
+              ? { headers: { ETag: conditionalReferences.etagHeader } }
+              : {}),
           };
   }
   for (const status of errorStatusesOf(spec)) {
@@ -99,6 +112,7 @@ function operationOf(spec: RouteSpec): ZodOpenApiOperationObject {
     description: `${spec.description}\n\n${accessNote(spec.auth)}`,
     tags: [...spec.tags],
     security: securityOf(spec.auth),
+    ...(isConditional(spec) ? { parameters: [conditionalReferences.ifNoneMatch] } : {}),
     ...(params === undefined && query === undefined
       ? {}
       : {
@@ -157,7 +171,9 @@ export function buildOpenApiDocument(
           },
         },
         schemas: { ApiScope: apiScopeSchema },
-        responses: errorResponseComponents(),
+        headers: conditionalComponents.headers,
+        parameters: conditionalComponents.parameters,
+        responses: { ...errorResponseComponents(), ...conditionalComponents.responses },
       },
     },
     {

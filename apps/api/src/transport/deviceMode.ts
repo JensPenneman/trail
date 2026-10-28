@@ -15,6 +15,7 @@ import { lockDeviceProcessing } from "../processing/deviceLock";
 import { enqueueWindow } from "../processing/processingQueue";
 import { endsToggleSql } from "../processing/travelFamily";
 import { type SegmentRow, segmentColumns } from "./segmentRow";
+import { servedColumns, servedSegments } from "./servedSegments";
 
 interface ToggleRow extends Record<string, unknown> {
   id: string;
@@ -39,9 +40,10 @@ const toOverride = (row: ToggleRow): ModeOverride => ({
 
 /**
  * The quick toggle in force at `now`: not revoked, not past its until, and
- * nothing that ends it detected since it began — a stop of
- * `toggleEndingStopS` or more, or a move of another kind of travel
- * (`endsToggleSql`).
+ * nothing that ends it detected since it began — a stay of
+ * `toggleEndingStopS` or more that began after it, or a move of another kind
+ * of travel after any stay that began after it (`endsToggleSql`, which counts
+ * a stay from its first part, however the passes cut it).
  */
 async function openToggle(
   db: Executor,
@@ -85,7 +87,22 @@ export async function loadDeviceMode(
     ORDER BY s.started_at DESC
     LIMIT 1
   `);
-  const segment = latest.rows[0];
+  const stored = latest.rows[0];
+  // A stop as the timeline serves it: the stay since it began, under its id.
+  const segment =
+    stored?.kind === "stop"
+      ? ((
+          await db.execute<SegmentRow>(sql`
+            SELECT ${servedColumns}
+            FROM ${servedSegments([device.id], {
+              from: new Date(toIso(stored.started_at)),
+              to: new Date(toIso(stored.ended_at)),
+            })}
+            ORDER BY s.started_at DESC
+            LIMIT 1
+          `)
+        ).rows[0] ?? stored)
+      : stored;
   const endedAt = segment === undefined ? 0 : Date.parse(toIso(segment.ended_at));
   const recent = segment !== undefined && endedAt >= options.now.getTime() - options.recentMs;
   if (toggle !== null) {
@@ -121,9 +138,10 @@ export async function loadDeviceMode(
 
 /**
  * The quick toggle (docs/architecture.md §17.5): from now on the device
- * travels by `mode`, until `until`, the first detected stop of
- * `toggleEndingStopS` or more, or the first move the inference reads as
- * another kind of travel, whichever comes first. Idempotent — the same mode
+ * travels by `mode`, until `until`, the first stay of `toggleEndingStopS` or
+ * more that begins after it, or the first move the inference reads as another
+ * kind of travel after a stay that begins after it, whichever comes first (the
+ * parts the passes leave of a stay are one stay). Idempotent — the same mode
  * again changes nothing (but a new until);
  * another mode ends the running toggle and starts a new one; `null` ends it.
  * Spans that lose a toggle are queued for the inference again (`queue`).

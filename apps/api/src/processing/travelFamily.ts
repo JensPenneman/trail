@@ -1,5 +1,6 @@
 import { type TransportMode, toggleEndingStopS } from "@trail/contracts/transport";
 import { type SQL, sql } from "drizzle-orm";
+import { continuesBeforeSql, stayStartedAfterSql } from "./stayParts";
 
 /**
  * The kinds of travel the splitting stage cuts between (docs/architecture.md
@@ -34,20 +35,30 @@ function familySql(mode: SQL): SQL {
 /**
  * Whether stored segment `segment` (an alias of `segments`) ends quick toggle
  * `toggle` (an alias of `mode_overrides`) when it starts after the toggle
- * began (docs/architecture.md §17.5): a stop of `toggleEndingStopS` or more,
- * or a move the inference reads as another kind of travel than the toggle's
- * after a stop that followed the toggle — the first move it reaches is its own.
+ * began (docs/architecture.md §17.5): a stay of `toggleEndingStopS` or more
+ * that began after the toggle, or a move the inference reads as another kind
+ * of travel than the toggle's after any stay that began after it — the first
+ * move it reaches is its own. A stay is counted from its first part
+ * (`stayParts`): a part that continues the stop before it is no new stop, so
+ * a toggle set during a stay runs on through the parts the passes leave of it
+ * until the device leaves, and a stay that began after it ends it however it
+ * was cut.
  */
 export function endsToggleSql(segment: string, toggle: string): SQL {
   const s = sql.raw(segment);
   const o = sql.raw(toggle);
   return sql`((${s}.kind = 'stop'
-      AND ${s}.ended_at - ${s}.started_at >= make_interval(secs => ${toggleEndingStopS}))
+      AND ${s}.ended_at - ${stayStartedAfterSql(segment, sql`${o}.from_at`)}
+        >= make_interval(secs => ${toggleEndingStopS}))
     OR (${s}.kind = 'move'
       AND ${familySql(sql`${s}.mode_inferred`)} <> ${familySql(sql`${o}.mode`)}
-      AND EXISTS (
+      AND (
+        -- The first such stay, read along (device_id, started_at): not the device's whole history.
         SELECT 1 FROM segments toggle_stop
         WHERE toggle_stop.device_id = ${s}.device_id AND toggle_stop.kind = 'stop'
           AND toggle_stop.started_at > ${o}.from_at AND toggle_stop.started_at < ${s}.started_at
-      )))`;
+          AND NOT ${continuesBeforeSql("toggle_stop")}
+        ORDER BY toggle_stop.started_at
+        LIMIT 1
+      ) IS NOT NULL))`;
 }

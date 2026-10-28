@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
 import { toIso } from "../db/toIso";
 import type { TileKey } from "./tileCover";
@@ -14,16 +14,45 @@ export type QueueReason =
   | "backfill"
   | "override"
   | "map"
-  | "catch-up";
+  | "catch-up"
+  | "split";
 
-/** Normal work comes before the backfill of older history. */
-export const queuePriority = { normal: 0, backfill: 1 } as const;
+/**
+ * The order of the work (docs/architecture.md §17.4): new data from the
+ * phones first, then repair — a deletion, a corrected mode, the catch-up,
+ * `trail reprocess`, the older parts of an upload's window too big for one
+ * pass — then the backfill of older history.
+ */
+export const queuePriority = { live: 0, repair: 1, backfill: 2 } as const;
+
+/** The priority of a reason's windows, unless the caller says otherwise. */
+function priorityOf(reason: QueueReason): number {
+  if (reason === "ingest") return queuePriority.live;
+  return reason === "backfill" ? queuePriority.backfill : queuePriority.repair;
+}
+
+/**
+ * A device's live passes are at least this far apart (docs/architecture.md
+ * §17.4): an upload's window is ready no sooner than this after the device's
+ * last pass began, and one queued while a pass ran waits this long after it
+ * ended, so a phone uploading every few seconds costs a pass per half minute.
+ */
+export const livePassIntervalMs = 30_000;
+
+const livePassInterval = sql`(${livePassIntervalMs}::integer * interval '1 millisecond')`;
+
+/**
+ * The database's time to the millisecond, for `next_at`: the worker asks for
+ * windows ready by its own clock, which has milliseconds only, so a window
+ * made ready now must not lie a fraction of a millisecond ahead of it.
+ */
+export const readyNow = sql.raw("date_trunc('milliseconds', now())");
 
 export interface QueueRow {
   deviceId: string;
   from: Date;
   to: Date;
-  reason: string;
+  reason: QueueReason;
   fromLevel: FromLevel;
   priority: number;
   attempts: number;
@@ -34,7 +63,7 @@ interface QueueSqlRow extends Record<string, unknown> {
   device_id: string;
   from_at: string;
   to_at: string;
-  reason: string;
+  reason: QueueReason;
   from_level: FromLevel;
   priority: number;
   attempts: number;
@@ -56,10 +85,27 @@ const toRow = (row: QueueSqlRow): QueueRow => ({
 const levelOrder = sql.raw("ARRAY['averaged', 'mapped', 'inferred']");
 
 /**
- * Queues a window of a device's history (docs/architecture.md §17.4). A
- * window with the same start widens the queued one; the worker merges
- * overlapping windows when it takes them. Merging keeps the more thorough
- * level and the higher priority, and makes the window ready at the earlier time.
+ * When a live window of the device may run: not before `at`, not sooner than
+ * the pass interval after the device's last pass began (when it wrote the
+ * newest processed point), and not before a live window of the device that
+ * already waits for its turn, so that the uploads in between run with it.
+ */
+function liveReadyAt(deviceId: string, at: SQL): SQL {
+  return sql`greatest(${at},
+    (SELECT date_trunc('milliseconds', p.processed_at) + ${livePassInterval} FROM processed_points p
+      WHERE p.device_id = ${deviceId} ORDER BY p.recorded_at DESC LIMIT 1),
+    (SELECT max(q.next_at) FROM processing_queue q
+      WHERE q.device_id = ${deviceId} AND q.priority = ${queuePriority.live}
+        AND q.missing_tiles IS NULL AND q.attempts = 0))`;
+}
+
+/**
+ * Queues a window of a device's history (docs/architecture.md §17.4), at the
+ * priority of its reason unless one is given; an upload's window waits for
+ * the device's pass interval (`liveReadyAt`). A window with the same start
+ * widens the queued one; the worker merges overlapping windows when it takes
+ * them. Merging keeps the more thorough level and the higher priority, and
+ * makes the window ready at the earlier time.
  */
 export async function enqueueWindow(
   db: Executor,
@@ -76,12 +122,13 @@ export async function enqueueWindow(
 ): Promise<void> {
   if (window.to <= window.from) return;
   const level = window.fromLevel ?? "averaged";
+  const priority = window.priority ?? priorityOf(window.reason);
+  const at = sql`${(window.at ?? new Date()).toISOString()}::timestamptz`;
   await db.execute(sql`
     INSERT INTO processing_queue (device_id, from_at, to_at, reason, from_level, priority, next_at)
     VALUES (${window.deviceId}, ${window.from.toISOString()}::timestamptz,
-      ${window.to.toISOString()}::timestamptz, ${window.reason}, ${level},
-      ${window.priority ?? queuePriority.normal},
-      ${(window.at ?? new Date()).toISOString()}::timestamptz)
+      ${window.to.toISOString()}::timestamptz, ${window.reason}, ${level}, ${priority},
+      ${priority === queuePriority.live ? liveReadyAt(window.deviceId, at) : at})
     ON CONFLICT (device_id, from_at) DO UPDATE SET
       to_at = greatest(processing_queue.to_at, excluded.to_at),
       reason = excluded.reason,
@@ -96,37 +143,57 @@ export async function enqueueWindow(
 }
 
 /**
- * The next window to process: new data oldest first, then the backfill newest
- * first (`backfillFirst`: the backfill first, its turn between passes of new
- * data) — and every ready window of the same device that overlaps it, so one
- * pass covers them all. A window waiting for map tiles, or for a retry, is
- * not taken along: it would be worked out again with every upload, for
- * nothing, before its tiles are there.
+ * Due by `now` — or, for a live window that waits only for its device's pass
+ * interval, by `liveReadyBy` (a flush does not wait for the interval).
+ */
+const dueBy = (now: Date, liveReadyBy: Date): SQL => sql`next_at <= CASE
+    WHEN priority = ${queuePriority.live} AND attempts = 0 AND missing_tiles IS NULL
+    THEN ${liveReadyBy.toISOString()}::timestamptz ELSE ${now.toISOString()}::timestamptz END`;
+
+/**
+ * The next window to process: new data first, then repair, each in the order
+ * it came, then the backfill newest first (`othersFirst`: repair and the
+ * backfill before new data, their turn between passes of new data; repair is
+ * finite, the backfill gets its turns once it is done) — and every ready
+ * window of the same device that overlaps it, so one pass covers them all. A
+ * window waiting for map tiles, or for a retry, is not taken along: it would
+ * be worked out again with every upload, for nothing, before its tiles are
+ * there. Nor is the backfill taken along by other work, or the reverse — not
+ * a backfill row 0.5 queued as priority 1 either: an upload's pass stays the
+ * size of the upload, a backfill day waits its turn.
  */
 export async function takeNextWindow(
   db: Executor,
   now: Date,
-  options: { backfillFirst?: boolean } = {},
+  options: { othersFirst?: boolean; liveReadyBy?: Date } = {},
 ): Promise<QueueRow[]> {
-  const order = options.backfillFirst === true ? sql.raw("-priority") : sql.raw("priority");
+  const order =
+    options.othersFirst === true
+      ? sql`CASE priority WHEN ${queuePriority.repair} THEN 0 WHEN ${queuePriority.backfill} THEN 1 ELSE 2 END`
+      : sql`priority`;
+  const due = dueBy(now, options.liveReadyBy ?? now);
   const head = await db.execute<QueueSqlRow>(sql`
     SELECT device_id, from_at, to_at, reason, from_level, priority, attempts, enqueued_at::text
     FROM processing_queue
-    WHERE next_at <= ${now.toISOString()}::timestamptz
+    WHERE ${due}
     ORDER BY ${order},
-      CASE WHEN priority = 0 THEN extract(epoch FROM next_at) ELSE -extract(epoch FROM from_at) END,
-      device_id, from_at
+      CASE WHEN priority = ${queuePriority.backfill} THEN 0 ELSE extract(epoch FROM next_at) END,
+      from_at DESC, device_id
     LIMIT 1
   `);
   const first = head.rows[0];
   if (first === undefined) return [];
+  const kind =
+    first.priority === queuePriority.backfill
+      ? sql`priority = ${queuePriority.backfill}`
+      : sql`priority <> ${queuePriority.backfill} AND reason <> 'backfill'`;
   const overlapping = await db.execute<QueueSqlRow>(sql`
     SELECT device_id, from_at, to_at, reason, from_level, priority, attempts, enqueued_at::text
     FROM processing_queue
     WHERE device_id = ${first.device_id}
       AND from_at < ${toIso(first.to_at)}::timestamptz AND to_at > ${toIso(first.from_at)}::timestamptz
       AND (from_at = ${toIso(first.from_at)}::timestamptz
-        OR (missing_tiles IS NULL AND next_at <= ${now.toISOString()}::timestamptz))
+        OR (missing_tiles IS NULL AND ${due} AND ${kind}))
     ORDER BY from_at
   `);
   return overlapping.rows.map(toRow);
@@ -174,6 +241,30 @@ export async function finishWindows(db: Executor, rows: readonly QueueRow[]): Pr
   }
 }
 
+/**
+ * The end of a pass: a live window of the device still queued — an upload
+ * came while the pass ran — waits for the pass interval from now
+ * (`livePassIntervalMs`), the uploads after it with it.
+ */
+export async function deferLiveWindows(db: Executor, deviceId: string): Promise<void> {
+  await db.execute(sql`
+    UPDATE processing_queue
+    SET next_at = greatest(next_at, date_trunc('milliseconds', clock_timestamp()) + ${livePassInterval})
+    WHERE device_id = ${deviceId} AND priority = ${queuePriority.live}
+      AND missing_tiles IS NULL AND attempts = 0
+  `);
+}
+
+/** When the next window not waiting for map tiles comes due after `now`, if any is queued. */
+export async function nextDueAt(db: Executor, now: Date): Promise<Date | null> {
+  const result = await db.execute<{ due: string | null }>(sql`
+    SELECT min(next_at)::text AS due FROM processing_queue
+    WHERE missing_tiles IS NULL AND next_at > ${now.toISOString()}::timestamptz
+  `);
+  const due = result.rows[0]?.due ?? null;
+  return due === null ? null : new Date(toIso(due));
+}
+
 /** A failed pass: the windows are retried later, sooner after the first failures. */
 export async function retryWindows(
   db: Executor,
@@ -184,7 +275,7 @@ export async function retryWindows(
     await db.execute(sql`
       UPDATE processing_queue SET
         attempts = attempts + 1,
-        next_at = now() + least(interval '6 hours', interval '30 seconds' * power(4, attempts)),
+        next_at = ${readyNow} + least(interval '6 hours', interval '30 seconds' * power(4, attempts)),
         last_error = ${error.slice(0, 500)}
       WHERE device_id = ${row.deviceId} AND from_at = ${row.from.toISOString()}::timestamptz
     `);
@@ -208,7 +299,7 @@ export async function awaitTiles(
     INSERT INTO processing_queue (device_id, from_at, to_at, reason, from_level, priority, next_at, missing_tiles)
     VALUES (${window.deviceId}, ${window.from.toISOString()}::timestamptz, ${window.to.toISOString()}::timestamptz,
       'map', ${window.fromLevel === "inferred" ? "mapped" : window.fromLevel}, ${window.priority},
-      now() + interval '1 day', ${JSON.stringify(missing)}::jsonb)
+      ${readyNow} + interval '1 day', ${JSON.stringify(missing)}::jsonb)
     ON CONFLICT (device_id, from_at) DO UPDATE SET
       to_at = greatest(processing_queue.to_at, excluded.to_at),
       missing_tiles = excluded.missing_tiles,
@@ -216,13 +307,6 @@ export async function awaitTiles(
       enqueued_at = now()
   `);
 }
-
-/**
- * The database's time to the millisecond, for `next_at`: the worker asks for
- * windows ready by its own clock, which has milliseconds only, so a window
- * made ready now must not lie a fraction of a millisecond ahead of it.
- */
-export const readyNow = sql.raw("date_trunc('milliseconds', now())");
 
 /**
  * Makes the windows ready whose missing tiles have all arrived, each fetched

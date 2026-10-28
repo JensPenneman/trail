@@ -30,6 +30,8 @@ export function testEnvironment(overrides: Record<string, string> = {}): NodeJS.
     PROCESSING_OVERPASS_URL: "",
     // Nor the map data registry: a test that pulls points a refresher at a fake registry.
     MAP_DATA_REGIONS: "",
+    // A worker process a test starts opens no port unless the test gives it one.
+    PROCESSING_METRICS_PORT: "0",
     ...overrides,
   };
 }

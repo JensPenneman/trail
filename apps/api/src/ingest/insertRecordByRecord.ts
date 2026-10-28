@@ -26,8 +26,8 @@ export async function insertRecordByRecord(
 ): Promise<StoredRecords> {
   const stored: StoredRecords = {
     inserted: [],
-    visits: 0,
-    trips: 0,
+    visits: [],
+    trips: [],
     events: 0,
     locationRecords: 0,
     rejects: [],
@@ -38,8 +38,8 @@ export async function insertRecordByRecord(
         insertPreparedRecords(savepoint, deviceId, single.batch),
       );
       stored.inserted.push(...result.inserted);
-      stored.visits += result.visits;
-      stored.trips += result.trips;
+      stored.visits.push(...result.visits);
+      stored.trips.push(...result.trips);
       stored.events += result.events;
       stored.locationRecords += result.locationRecords;
       stored.rejects.push(...result.rejects);

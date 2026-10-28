@@ -5,6 +5,7 @@ import {
 } from "@trail/contracts/insights";
 import { loadModeInsights } from "../../../insights/loadModeInsights";
 import { defineRoute } from "../../defineRoute";
+import { answerInsights } from "./answerInsights";
 
 /** `GET /api/v1/insights/modes/{mode}` */
 export const getInsightsMode = defineRoute(
@@ -18,10 +19,16 @@ export const getInsightsMode = defineRoute(
     tags: ["Insights"],
     auth: { scopes: ["history:read"] },
     request: { params: insightsModeParamsSchema, query: insightsQuerySchema },
-    responses: { 200: insightsModeSchema },
+    responses: { 200: insightsModeSchema, 304: null },
   },
-  async ({ ctx, auth, params, query }) => ({
-    status: 200,
-    body: await loadModeInsights(ctx.db, auth, params.mode, query),
-  }),
+  ({ ctx, auth, params, query, ifNoneMatch }) =>
+    answerInsights({
+      ctx,
+      auth,
+      ifNoneMatch,
+      operationId: "getInsightsMode",
+      asked: [params, query],
+      query,
+      load: (scope) => loadModeInsights(ctx.db, auth, params.mode, query, scope),
+    }),
 );

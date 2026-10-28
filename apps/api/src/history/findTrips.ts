@@ -5,6 +5,7 @@ import { toIso } from "../db/toIso";
 import type { DeviceAccess } from "../devices/deviceAccess";
 import { resolveDeviceIds } from "../devices/resolveDeviceIds";
 import type { HistoryRange } from "./historyRange";
+import { tripTouches } from "./tripTouches";
 
 interface TripRow extends Record<string, unknown> {
   device_id: string;
@@ -31,10 +32,13 @@ export async function findTrips(
   const result = await db.execute<TripRow>(sql`
     SELECT device_id, started_at, ended_at, mode, distance_m, duration_s, steps,
       stopped_automatically
-    FROM trips
+    FROM trips t
     WHERE device_id = ANY(${sql.param(ids)}::uuid[])
-      AND started_at < ${new Date(range.to).toISOString()}::timestamptz
-      AND ended_at >= ${new Date(range.from).toISOString()}::timestamptz
+      AND ${tripTouches(
+        "t",
+        sql`${new Date(range.from).toISOString()}::timestamptz`,
+        sql`${new Date(range.to).toISOString()}::timestamptz`,
+      )}
     ORDER BY started_at, device_id
   `);
   return result.rows.map((row) => ({

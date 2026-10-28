@@ -65,7 +65,7 @@ export function locationsRouter(ctx: AppContext): Router {
     const { user } = auth;
     const request = parseBody(deleteLocationsRequestSchema, req);
     const device = await findOwnedDevice(db, auth, request.deviceId);
-    const deleted = await deleteLocationRange(db, {
+    const { deleted, days } = await deleteLocationRange(db, {
       deviceId: device.id,
       timezone: user.timezone,
       from: new Date(request.from),
@@ -73,6 +73,8 @@ export function locationsRouter(ctx: AppContext): Router {
       queueProcessing: ctx.processing.enabled,
     });
     ctx.processing.notify();
+    // Summed up already where points went: the open pages learn of the days' new stamps.
+    ctx.dailyStats.announce(device.id, days);
     ctx.logger.info({ deviceId: device.id, deleted }, "points deleted");
     publishDeviceLater(ctx, user.id, device.id);
     const body: DeleteLocationsResponse = { deleted };

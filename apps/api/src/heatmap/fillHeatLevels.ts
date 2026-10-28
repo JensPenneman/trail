@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import type { Logger } from "pino";
 import { allowLongStatements } from "../db/allowLongStatements";
 import type { Database } from "../db/database";
+import { heatCellsRebuilt } from "./heatGeneration";
 import { levelsToRebuild } from "./levelsToRebuild";
 import { rebuildHeatCells } from "./rebuildHeatCells";
 
@@ -100,6 +101,7 @@ export async function fillHeatLevels(
     if (!(await rebuildUnlessStopped(db, deviceId, levels, signal))) {
       return { devices, complete: false };
     }
+    heatCellsRebuilt();
     devices += 1;
     logger.info(
       { deviceId, levels, durationMs: Math.round(performance.now() - started) },
