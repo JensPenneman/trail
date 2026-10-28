@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dayStampsSchema } from "./cacheStamp";
 import { deviceIdsParamSchema, instantRange } from "./query";
 
 /**
@@ -44,5 +45,7 @@ export const tracksResponseSchema = z.object({
   from: z.iso.datetime(),
   to: z.iso.datetime(),
   tracks: z.array(trackSchema),
+  /** One per device and local day of the range: while they all stay the same, so does the answer. */
+  stamps: dayStampsSchema.optional(),
 });
 export type TracksResponse = z.infer<typeof tracksResponseSchema>;

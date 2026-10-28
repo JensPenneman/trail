@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dayStampsSchema } from "./cacheStamp";
 import { localDateSchema } from "./datetime";
 import { deviceIdsParamSchema } from "./query";
 
@@ -73,6 +74,18 @@ export const processingLevelSchema = z.enum(processingLevels).meta({
 });
 export type ProcessingLevel = z.infer<typeof processingLevelSchema>;
 
+/**
+ * The versions of the processing algorithms, one per level above `raw`: a
+ * level's version counts the changes to it and to the levels below it, and a
+ * new one has the server work the history out again (docs/architecture.md §17).
+ */
+export const processingVersionsSchema = z.object({
+  averaged: z.number().int().positive(),
+  mapped: z.number().int().positive(),
+  inferred: z.number().int().positive(),
+});
+export type ProcessingVersions = z.infer<typeof processingVersionsSchema>;
+
 /** Where a correction came from: the dashboard, the API or an agent (MCP). */
 export const modeOverrideSources = ["ui", "api", "mcp"] as const;
 export type ModeOverrideSource = (typeof modeOverrideSources)[number];
@@ -93,6 +106,11 @@ const deviceId = z.uuid().meta({
 const devicesParam = deviceIdsParamSchema.optional().meta({
   description: "Comma-separated device ids; all devices the credential may reach when omitted.",
   example: "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3",
+});
+
+const dayStamps = dayStampsSchema.optional().meta({
+  description:
+    "One per device and local day (the account's time zone) the range intersects: while they all stay the same, so does the answer. Compare them with the `stamp` of the days in `GET /api/v1/stats/days`.",
 });
 
 interface InstantRange {
@@ -217,6 +235,7 @@ export const timelineResponseSchema = z
       description: "Recorded points in the range are still waiting to be processed.",
       example: false,
     }),
+    stamps: dayStamps,
   })
   .meta({ id: "Timeline", description: "Stops and moves, one page." });
 export type TimelineResponse = z.infer<typeof timelineResponseSchema>;
@@ -309,6 +328,7 @@ export const levelTracksResponseSchema = z
     segments: z.array(levelTrackSegmentSchema).meta({
       description: "Per device in the order of the devices, oldest first.",
     }),
+    stamps: dayStamps,
   })
   .meta({ id: "Tracks", description: "Tracks at a level of calculation." });
 export type LevelTracksResponse = z.infer<typeof levelTracksResponseSchema>;

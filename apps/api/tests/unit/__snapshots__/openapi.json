@@ -4565,6 +4565,13 @@
               "$ref": "#/components/schemas/TrackSegment"
             },
             "description": "Per device in the order of the devices, oldest first."
+          },
+          "stamps": {
+            "description": "One per device and local day (the account's time zone) the range intersects: while they all stay the same, so does the answer. Compare them with the `stamp` of the days in `GET /api/v1/stats/days`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DayStamp"
+            }
           }
         },
         "required": [
@@ -4775,6 +4782,51 @@
           1793000000
         ]
       },
+      "DayStamp": {
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The device.",
+            "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "description": "The local day, in the account's time zone.",
+            "example": "2026-10-26"
+          },
+          "raw": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A hash of the day's recorded data. It changes when points, visits or trips of the day arrive — also late, for a day long past — or are deleted; a re-sent upload of duplicates changes nothing.",
+            "example": "GGJyqloxyuYLlVGgXnOvXX"
+          },
+          "processed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hash of the day's processing: its averaged and mapped levels and its stops and moves. It changes when the day waits for processing and again when processing has worked it out — after new points, a corrected transport mode or a new version of the algorithms. Null while the day has no stops or moves.",
+            "example": "AHW_x1m7axfLciupDmb52n"
+          }
+        },
+        "required": [
+          "deviceId",
+          "date",
+          "raw",
+          "processed"
+        ],
+        "additionalProperties": false,
+        "description": "The stamp of one device's local day (`CacheStamp`)."
+      },
       "Timeline": {
         "type": "object",
         "properties": {
@@ -4796,6 +4848,13 @@
             "type": "boolean",
             "description": "Recorded points in the range are still waiting to be processed.",
             "example": false
+          },
+          "stamps": {
+            "description": "One per device and local day (the account's time zone) the range intersects: while they all stay the same, so does the answer. Compare them with the `stamp` of the days in `GET /api/v1/stats/days`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DayStamp"
+            }
           }
         },
         "required": [
@@ -5325,6 +5384,10 @@
             "format": "date-time",
             "description": "The day's last point.",
             "example": "2026-10-26T21:58:03.000Z"
+          },
+          "stamp": {
+            "description": "The day's stamp, as `GET /api/v1/tracks` and `GET /api/v1/segments` carry it in their `stamps`: a copy of the day from either is current while the two are the same.",
+            "$ref": "#/components/schemas/CacheStamp"
           }
         },
         "required": [
@@ -5337,6 +5400,36 @@
         ],
         "additionalProperties": false,
         "description": "What one device recorded on one local day."
+      },
+      "CacheStamp": {
+        "type": "object",
+        "properties": {
+          "raw": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A hash of the day's recorded data. It changes when points, visits or trips of the day arrive — also late, for a day long past — or are deleted; a re-sent upload of duplicates changes nothing.",
+            "example": "GGJyqloxyuYLlVGgXnOvXX"
+          },
+          "processed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hash of the day's processing: its averaged and mapped levels and its stops and moves. It changes when the day waits for processing and again when processing has worked it out — after new points, a corrected transport mode or a new version of the algorithms. Null while the day has no stops or moves.",
+            "example": "AHW_x1m7axfLciupDmb52n"
+          }
+        },
+        "required": [
+          "raw",
+          "processed"
+        ],
+        "additionalProperties": false,
+        "description": "A device's local day in two opaque hashes: while they stay the same, so do the day's answers. Tracks at the `raw` level, visits and trips depend on `raw`; the other levels and the timeline on both. Compare stamps and nothing more: a release may change what goes into them, which costs a copy one refetch."
       },
       "ActivityBucket": {
         "type": "object",

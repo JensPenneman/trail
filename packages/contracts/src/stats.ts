@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cacheStampSchema } from "./cacheStamp";
 import { localDateSchema } from "./datetime";
 import { deviceIdsParamSchema } from "./query";
 
@@ -23,6 +24,8 @@ export const dayStatSchema = z.object({
   distanceM: z.number().nonnegative(),
   firstAt: z.iso.datetime(),
   lastAt: z.iso.datetime(),
+  /** The day's stamp: a copy of the day's answers is current while their stamps equal it. */
+  stamp: cacheStampSchema.optional(),
 });
 export type DayStat = z.infer<typeof dayStatSchema>;
 

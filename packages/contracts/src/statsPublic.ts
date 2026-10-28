@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cacheStampSchema } from "./cacheStamp";
 import { localDateSchema } from "./datetime";
 import { devicesParamSchema } from "./query";
 
@@ -50,6 +51,10 @@ export const dayStatsSchema = z
     lastAt: z.iso.datetime().meta({
       description: "The day's last point.",
       example: "2026-10-26T21:58:03.000Z",
+    }),
+    stamp: cacheStampSchema.optional().meta({
+      description:
+        "The day's stamp, as `GET /api/v1/tracks` and `GET /api/v1/segments` carry it in their `stamps`: a copy of the day from either is current while the two are the same.",
     }),
   })
   .meta({ id: "DayStats", description: "What one device recorded on one local day." });
