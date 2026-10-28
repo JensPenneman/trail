@@ -11,6 +11,11 @@ interface SettingsPageProps {
   page?: SettingsPageId;
   /** A page one level deeper: the page it belongs to, where its back control leads. */
   parent?: SettingsPageId;
+  /**
+   * A page of a part of an item, deeper still (a device's uploads): the
+   * item's page, where its back control leads instead, and the item's name.
+   */
+  item?: { path: string; label: string };
   /** The title, when it is not the tree page's own (an item's name). */
   title?: string;
   description?: ReactNode;
@@ -78,9 +83,17 @@ function useCompactTitle() {
  * A page of Settings: a landmark named by its title, which is the page's h1
  * and where focus goes when the page opens (useRouteFocus). Above it a bar
  * with the way back: on phones always (the list is a page of its own there),
- * beside the list on wide screens only for the pages of single items.
+ * beside the list on wide screens only for the pages of single items and of
+ * their parts.
  */
-export function SettingsPage({ page, parent, title, description, children }: SettingsPageProps) {
+export function SettingsPage({
+  page,
+  parent,
+  item,
+  title,
+  description,
+  children,
+}: SettingsPageProps) {
   const titleId = useId();
   const { barRef, titleRef, compact } = useCompactTitle();
   const node = page === undefined ? undefined : settingsPage(page);
@@ -88,17 +101,21 @@ export function SettingsPage({ page, parent, title, description, children }: Set
   const shownTitle = title ?? node?.label ?? "Settings";
   const shownDescription = description ?? node?.description;
   const up =
-    above !== undefined
-      ? { to: above.path, label: above.label, always: true }
-      : node !== undefined
-        ? { to: settingsRootPath, label: "Settings", always: false }
-        : null;
+    above !== undefined && item !== undefined
+      ? { to: item.path, label: item.label, always: true }
+      : above !== undefined
+        ? { to: above.path, label: above.label, always: true }
+        : node !== undefined
+          ? { to: settingsRootPath, label: "Settings", always: false }
+          : null;
   const documentTitle =
-    above !== undefined
-      ? `${shownTitle} · ${above.label} · Settings`
-      : node !== undefined
-        ? `${shownTitle} · Settings`
-        : "Settings";
+    above !== undefined && item !== undefined
+      ? `${shownTitle} · ${item.label} · ${above.label} · Settings`
+      : above !== undefined
+        ? `${shownTitle} · ${above.label} · Settings`
+        : node !== undefined
+          ? `${shownTitle} · Settings`
+          : "Settings";
   return (
     <section className="settings-page" aria-labelledby={titleId}>
       <DocumentTitle title={documentTitle} />

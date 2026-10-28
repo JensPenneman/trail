@@ -2,6 +2,7 @@ import { Navigate, type RouteObject, useLocation } from "react-router";
 import {
   type SettingsDetailId,
   type SettingsPageId,
+  type SettingsPartId,
   settingsPageNodes,
   settingsRedirects,
   settingsRootPath,
@@ -51,6 +52,8 @@ const detailModules: Readonly<Record<SettingsDetailId, LazyPage>> = {
   viewer: () => import("../pages/settings/ViewerPage").then((m) => ({ Component: m.ViewerPage })),
 };
 
+const partModules: Readonly<Record<SettingsPartId, LazyPage>> = {};
+
 /** A path of the tree relative to `/settings`, as a child route takes it. */
 const relative = (path: string): string => path.slice(settingsRootPath.length + 1);
 
@@ -71,10 +74,13 @@ export const settingsRoute: RouteObject = {
     },
     ...settingsPageNodes.flatMap((page): RouteObject[] => [
       { path: relative(page.path), lazy: pageModules[page.id as SettingsPageId] },
-      ...(page.details ?? []).map((detail) => ({
-        path: relative(detail.path),
-        lazy: detailModules[detail.id as SettingsDetailId],
-      })),
+      ...(page.details ?? []).flatMap((detail): RouteObject[] => [
+        { path: relative(detail.path), lazy: detailModules[detail.id as SettingsDetailId] },
+        ...(detail.parts ?? []).map((part) => ({
+          path: relative(part.path),
+          lazy: partModules[part.id as SettingsPartId],
+        })),
+      ]),
     ]),
     ...settingsRedirects.map((redirect) => ({
       path: relative(redirect.from),

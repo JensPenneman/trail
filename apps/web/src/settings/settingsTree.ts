@@ -2,8 +2,9 @@ import type { IconName } from "../ui/iconPaths";
 
 /*
  * Settings as a tree of pages (docs/architecture.md §14), in the style of the
- * iPhone's Settings app: groups of rows on the root, a page per row, and for
- * some pages a page per item (a passkey, a token). This file is the tree as
+ * iPhone's Settings app: groups of rows on the root, a page per row, for some
+ * pages a page per item (a passkey, a token, a device) and, for a device, a
+ * page per part of it (its uploads, its raw points). This file is the tree as
  * data — the root list, the sidebar, search, the routes, the signed-in paths
  * and the old addresses all come from it — and stays free of components and
  * requests, as the start-up code reads it.
@@ -36,6 +37,8 @@ interface SettingsSearchRow {
   keywords?: readonly string[];
   /** The id of the heading it sits under: `/settings/<page>#<anchor>`. */
   anchor?: string;
+  /** What the page's address asks of it, such as a dialog open: `/settings/<page>?<query>`. */
+  query?: string;
 }
 
 /** Which value a row shows on its right (settingsBadges.ts). */
@@ -50,6 +53,17 @@ export type SettingsBadgeId =
   | "notifications"
   | "about";
 
+/** A page of a part of an item, one level deeper than the item's (a device's uploads). */
+export interface SettingsPartNode {
+  id: string;
+  /** A route pattern under its item's: `:name` stands for the item's id. */
+  path: string;
+  /** Its title, and the row on the item's page that leads to it. */
+  label: string;
+  /** The line under its title, and on that row. */
+  description: string;
+}
+
 /** A page one level deeper, one per item of its page (a passkey of Passkeys). */
 interface SettingsDetailNode {
   id: string;
@@ -57,6 +71,10 @@ interface SettingsDetailNode {
   path: string;
   /** What one item is called, for a page whose item does not exist. */
   label: string;
+  /** Search finds each item by its name (the person's devices): see settingsSearchIndex. */
+  searchable?: boolean;
+  /** Pages of parts of an item, a level deeper still. */
+  parts?: readonly SettingsPartNode[];
 }
 
 interface SettingsNodeBase {
@@ -372,11 +390,16 @@ type TreePage = Extract<(typeof settingsNodes)[number], { kind: "page" }>;
 
 export type SettingsPageId = TreePage["id"];
 
+type TreeDetail = Extract<TreePage, { details: readonly unknown[] }>["details"][number];
+
 /** The pages of single items, by id (`passkey`, `token`, …). */
-export type SettingsDetailId = Extract<
-  TreePage,
-  { details: readonly unknown[] }
->["details"][number]["id"];
+export type SettingsDetailId = TreeDetail["id"];
+
+/** The pages of parts of an item, by id (`uploads`, `points`, …). */
+export type SettingsPartId = Extract<
+  TreeDetail,
+  { parts: readonly unknown[] }
+>["parts"][number]["id"];
 
 /** Every page of the root list, in its order (the external row is not a page). */
 export const settingsPageNodes: readonly SettingsPageNode[] = settingsNodes.filter(
@@ -389,6 +412,26 @@ export function settingsPage(id: SettingsPageId): SettingsPageNode {
   const page = pages.find((candidate) => candidate.id === id);
   if (page === undefined) throw new Error(`No Settings page ${id}`);
   return page;
+}
+
+/** Every page of a part of an item, in the tree's order. */
+const partNodes: readonly SettingsPartNode[] = pages.flatMap((page) =>
+  (page.details ?? []).flatMap((detail) => detail.parts ?? []),
+);
+
+/** The page of the part `id` of an item (a device's `uploads`). */
+export function settingsPart(id: SettingsPartId): SettingsPartNode {
+  const part = partNodes.find((candidate) => candidate.id === id);
+  if (part === undefined) throw new Error(`No Settings part ${id}`);
+  return part;
+}
+
+/** A route pattern with its item's id in place of the `:name` segment, made safe for a path. */
+export function settingsItemPath(pattern: string, itemId: string): string {
+  return pattern
+    .split("/")
+    .map((segment) => (segment.startsWith(":") ? encodeURIComponent(itemId) : segment))
+    .join("/");
 }
 
 /** Where `/settings` goes where the list stands beside the page: the first page. */
@@ -433,26 +476,36 @@ export const settingsRedirects: readonly { from: string; to: string }[] = [
 export function settingsPathsSource(): string {
   const paths = [
     settingsRootPath,
-    ...pages.flatMap((page) => [page.path, ...(page.details ?? []).map((detail) => detail.path)]),
+    ...pages.flatMap((page) => [
+      page.path,
+      ...(page.details ?? []).flatMap((detail) => [
+        detail.path,
+        ...(detail.parts ?? []).map((part) => part.path),
+      ]),
+    ]),
     ...settingsRedirects.map((redirect) => redirect.from),
   ];
   return `(?:${paths.map(patternSource).join("|")})`;
 }
 
 /**
- * Where an address sits in the tree: the root (0), a page (1) or the page of
- * one of its items (2) — so moving between them can look like going in or
- * coming back. The page is the one its row is for (a detail's own page).
+ * Where an address sits in the tree: the root (0), a page (1), the page of
+ * one of its items (2) or of a part of that item (3) — so moving between them
+ * can look like going in or coming back. The page is the one its row is for
+ * (a detail's own page).
  */
 export function settingsPlaceOf(pathname: string): {
-  level: 0 | 1 | 2;
+  level: 0 | 1 | 2 | 3;
   page: SettingsPageNode | undefined;
 } {
   if (trimmed(pathname) === settingsRootPath) return { level: 0, page: undefined };
   for (const page of pages) {
     if (matches(page.path, pathname)) return { level: 1, page };
-    if ((page.details ?? []).some((detail) => matches(detail.path, pathname))) {
-      return { level: 2, page };
+    for (const detail of page.details ?? []) {
+      if (matches(detail.path, pathname)) return { level: 2, page };
+      if ((detail.parts ?? []).some((part) => matches(part.path, pathname))) {
+        return { level: 3, page };
+      }
     }
   }
   return { level: 1, page: undefined };

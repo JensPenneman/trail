@@ -8,8 +8,14 @@ interface SettingsGroupProps {
   id?: string;
   /** A heading on pages; a plain label in the sidebar, whose page brings its own h1 later. */
   titleAs?: "h2" | "p";
-  /** `list`: rows; `facts`: labels and values; `card`: anything else, such as a form; `flush`: a card without padding (a table). */
-  variant?: "list" | "facts" | "card" | "flush";
+  /**
+   * `list`: rows; `facts`: labels and values; `card`: anything else, such as a
+   * form; `flush`: a card without padding (a table); `cards`: a list of items
+   * that are cards of their own (a device each), `<li>`s like a list's rows.
+   */
+  variant?: "list" | "facts" | "card" | "flush" | "cards";
+  /** Rows in an order that means something (newest first): an ordered list. */
+  ordered?: boolean;
   /** Under the group, in small print. */
   footer?: ReactNode;
   children: ReactNode;
@@ -24,6 +30,7 @@ export function SettingsGroup({
   id,
   titleAs = "h2",
   variant = "list",
+  ordered = false,
   footer,
   children,
 }: SettingsGroupProps) {
@@ -41,9 +48,10 @@ export function SettingsGroup({
           {title}
         </Title>
       )}
-      {variant === "list" ? (
+      {variant === "list" || variant === "cards" ? (
         <PlainList
-          className="settings-group__body"
+          ordered={ordered}
+          className={variant === "list" ? "settings-group__body" : "settings-group__cards"}
           {...(title === undefined ? {} : { labelledBy: headingId })}
         >
           {children}
