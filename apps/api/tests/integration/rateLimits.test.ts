@@ -38,12 +38,15 @@ describe("rate limits", () => {
     expect(limited.headers["ratelimit-policy"]).toBeDefined();
   });
 
-  it("limits the database health check per IP, but never the liveness probe", async () => {
-    for (let attempt = 0; attempt < 8; attempt += 1) {
+  it("limits the database health checks per IP, but never the liveness probe", async () => {
+    // One budget for both: the processing route answers 503 here, as no worker beats.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
       await request(t.app).get("/api/health").expect(200);
+      await request(t.app).get("/api/health/processing").expect(503);
     }
     const limited = await request(t.app).get("/api/health").expect(429);
     expect(apiErrorSchema.parse(limited.body).error.code).toBe("rate_limited");
+    await request(t.app).get("/api/health/processing").expect(429);
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await request(t.app).get("/api/health/live").expect(200);
     }

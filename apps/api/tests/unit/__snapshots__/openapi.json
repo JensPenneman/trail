@@ -751,7 +751,7 @@
       "get": {
         "operationId": "getTracks",
         "summary": "Get tracks at a level",
-        "description": "The tracks of the devices in `[from, to)` (at most 93 days) at a level of calculation: `raw` as recorded, `averaged` (outliers dropped, GPS noise smoothed), `mapped` (snapped to roads and railways, with the way's shape between points) or `inferred` (the stops and moves of the timeline, each move with its transport mode). A point that has not reached the level yet is served at the best one below it, and `availableLevel` says which level every point reached. Each device's track is simplified to at most `maxPoints`.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "description": "The tracks of the devices in `[from, to)` (at most 93 days) at a level of calculation: `raw` as recorded, `averaged` (outliers dropped, GPS noise smoothed), `mapped` (snapped to roads and railways, with the way's shape between points) or `inferred` (the stops and moves of the timeline, each move with its transport mode). A point that has not reached the level yet is served at the best one below it, and `availableLevel` says which level every point reached. Each device's track is simplified to at most `maxPoints`. `stamps` describe every device's local day of the range; send the `ETag` back as `If-None-Match` and the answer is `304` while they stay the same.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
         "tags": [
           "Tracks"
         ],
@@ -817,11 +817,19 @@
               "maximum": 50000
             },
             "description": "At most this many points per device; longer tracks are simplified."
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
           }
         ],
         "responses": {
           "200": {
             "description": "Tracks at a level of calculation.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -829,6 +837,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -855,7 +866,7 @@
       "get": {
         "operationId": "listSegments",
         "summary": "List stops and moves",
-        "description": "The timeline: the stops and moves overlapping `[from, to)` (at most 93 days), oldest first, a page at a time. A stop has its place (`centroid`) and duration; a move its transport mode — the one a person set, else the inferred one — with the confidence, distance, duration and speeds. `pending` is true while points of the range still wait for processing, so the timeline may still change.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "description": "The timeline: the stops and moves overlapping `[from, to)` (at most 93 days), oldest first, a page at a time. A stop has its place (`centroid`) and duration; a move its transport mode — the one a person set, else the inferred one — with the confidence, distance, duration and speeds. `pending` is true while points of the range still wait for processing, so the timeline may still change. `stamps` describe every device's local day of the range; send the `ETag` back as `If-None-Match` and the answer is `304` while they stay the same.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
         "tags": [
           "Timeline"
         ],
@@ -924,11 +935,19 @@
               "maximum": 1000
             },
             "description": "Segments per page."
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
           }
         ],
         "responses": {
           "200": {
             "description": "Stops and moves, one page.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -936,6 +955,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -1465,7 +1487,7 @@
       "get": {
         "operationId": "listDayStats",
         "summary": "List daily statistics",
-        "description": "Points, distance and the first and last point of every device on every local day from `from` to `to` (both included) that has points. Days follow the account's time zone, which the answer repeats. At most 400 days at once.\n\n**Access:** an API token with the scope `history:read`, or a signed-in session.",
+        "description": "Points, distance and the first and last point of every device on every local day from `from` to `to` (both included) that has points, each with its `stamp`. Days follow the account's time zone, which the answer repeats. At most 400 days at once. Send the `ETag` back as `If-None-Match` and the answer is `304` while it stays the same.\n\n**Access:** an API token with the scope `history:read`, or a signed-in session.",
         "tags": [
           "History"
         ],
@@ -1511,11 +1533,19 @@
               "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
           }
         ],
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1542,6 +1572,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -1716,11 +1749,19 @@
               "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
           }
         ],
         "responses": {
           "200": {
             "description": "How you travelled in a period.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1728,6 +1769,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -1810,11 +1854,19 @@
               "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
           }
         ],
         "responses": {
           "200": {
             "description": "How you travelled in one mode.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1822,6 +1874,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -1905,11 +1960,19 @@
               "$ref": "#/components/schemas/TransportMode"
             },
             "description": "Only the moves in this mode; every move when left out."
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
           }
         ],
         "responses": {
           "200": {
             "description": "When you travel: time and distance per weekday and hour.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1917,6 +1980,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -2000,11 +2066,19 @@
               "$ref": "#/components/schemas/TransportMode"
             },
             "description": "Only the moves in this mode; every move when left out."
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
           }
         ],
         "responses": {
           "200": {
             "description": "The roads and railways you travelled on.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2012,6 +2086,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -2052,9 +2129,19 @@
             ]
           }
         ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2075,6 +2162,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -8283,6 +8373,15 @@
         "example": "devices:read"
       }
     },
+    "headers": {
+      "ETag": {
+        "description": "A weak validator of this answer. Send it back as `If-None-Match` to get `304 Not Modified` while the answer stays the same. It is opaque: compare it, never parse it.",
+        "schema": {
+          "type": "string"
+        },
+        "example": "W/\"q8Zr2mXnB4vT1cKd9LsE0a\""
+      }
+    },
     "responses": {
       "BadRequest": {
         "description": "The request is invalid: `validation_failed` lists the offending fields in `fields`; `bad_request` means unreadable JSON, or a session calling an operation that only an API token can call.",
@@ -8714,6 +8813,26 @@
             }
           }
         }
+      },
+      "NotModified": {
+        "description": "Not modified: the answer whose `ETag` the request sent in `If-None-Match` still stands. No body.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          }
+        }
+      }
+    },
+    "parameters": {
+      "IfNoneMatch": {
+        "name": "If-None-Match",
+        "in": "header",
+        "required": false,
+        "description": "The `ETag` of an answer to the same request: when it still stands, the answer is `304 Not Modified` without a body. Several are allowed, separated by commas.",
+        "schema": {
+          "type": "string"
+        },
+        "example": "W/\"q8Zr2mXnB4vT1cKd9LsE0a\""
       }
     },
     "securitySchemes": {

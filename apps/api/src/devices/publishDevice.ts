@@ -7,9 +7,13 @@ export function publishDevice(ctx: AppContext, userId: string, device: DeviceSum
   ctx.bus.publish(userId, { type: "device", device });
 }
 
-/** Reloads a summary and publishes it after the response (e.g. after an upload). */
+/**
+ * Reloads a summary and publishes it after the response (e.g. after an
+ * upload) — also while the owner's stream is away for a moment, which gets it
+ * when it comes back (docs/architecture.md §9).
+ */
 export function publishDeviceLater(ctx: AppContext, userId: string, deviceId: string): void {
-  if (ctx.bus.connectionCount(userId) === 0) return;
+  if (!ctx.bus.follows(userId)) return;
   ctx.background.run("publish device summary", async () => {
     const [device] = await loadDeviceSummaries(ctx.db, { user: { id: userId } }, deviceId);
     if (device !== undefined) publishDevice(ctx, userId, device);

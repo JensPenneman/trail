@@ -2,6 +2,7 @@ import type { DeviceSummary } from "@trail/contracts/device";
 import { sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
 import { allowedDeviceIds, type DeviceAccess } from "./deviceAccess";
+import { deviceSummaryColumns } from "./deviceSummaryColumns";
 import { type DeviceSummaryRow, toDeviceSummary } from "./toDeviceSummary";
 
 /**
@@ -21,11 +22,7 @@ export async function loadDeviceSummaries(
   const onlyAllowed =
     allowed === null ? sql`` : sql`AND d.id = ANY(${sql.param([...allowed])}::uuid[])`;
   const result = await db.execute<DeviceSummaryRow>(sql`
-    SELECT d.id, d.name, d.source, d.device_key, d.token_hint, d.alerts_enabled, d.created_at,
-      d.last_seen_at, d.last_recorded_at, d.last_lat, d.last_lon, d.last_accuracy, d.last_speed,
-      d.last_altitude, d.last_course, d.last_motion, d.battery_level, d.battery_state,
-      d.battery_recorded_at, d.live_trip, d.points_total, d.pending_settings, d.settings_applied_at,
-      counts.today, counts.last24h
+    SELECT ${deviceSummaryColumns}, counts.today, counts.last24h
     FROM devices d
     JOIN users u ON u.id = d.user_id
     CROSS JOIN LATERAL (

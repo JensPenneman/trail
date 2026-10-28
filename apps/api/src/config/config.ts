@@ -48,6 +48,10 @@ type ProcessingRole = "api" | "worker" | "all";
 /** Location processing (docs/architecture.md §17.7). */
 interface ProcessingSettings {
   role: ProcessingRole;
+  /** The worker process's liveness port (`/health/live`); 0 = none. */
+  metricsPort: number;
+  /** Tests of the worker's health check: it beats once and then stands still. */
+  testStall: boolean;
   enabled: boolean;
   /** Overpass interpreter for map data; null when mapping is switched off. */
   overpassUrl: string | null;
@@ -57,6 +61,10 @@ interface ProcessingSettings {
   osmTtlDays: number;
   maxAccuracyM: number;
   stopMinS: number;
+  /** A pass reads at most this many raw points: a bigger job is split first. */
+  passMaxPoints: number;
+  /** The points a pass reads span at most this long. */
+  passMaxSpanHours: number;
 }
 
 /** Map data from the registry (docs/architecture.md §4, docs/design/self-hosted-maps.md §4). */
@@ -124,4 +132,8 @@ export interface Config {
   rateLimits: RateLimitConfig;
   processing: ProcessingSettings;
   mapData: MapDataSettings;
+  /** `LOAD_TEST=true`: one of the conditions of `trail load-fleet` (docs/perf/README.md). */
+  loadTest: boolean;
+  /** `LAUNCHWAY_ENVIRONMENT` as Launchway set it (`production`, `preview`), null elsewhere. */
+  launchwayEnvironment: string | null;
 }

@@ -17,13 +17,18 @@ import { toSharedDevice } from "./toSharedDevice";
 export function publishPeopleLater(ctx: AppContext, ownerId: string, deviceId: string): void {
   ctx.background.run("publish shared position", async () => {
     const now = new Date();
-    const receiving = (await ctx.sharing.sharesOf(ownerId, now.getTime())).filter(
+    const inForce = (await ctx.sharing.sharesOf(ownerId, now.getTime())).filter(
       (share) =>
         share.hiddenAt === null &&
         (share.expiresAt === null || share.expiresAt.getTime() > now.getTime()) &&
-        coversDevice(share.deviceIds, deviceId) &&
-        ctx.bus.connectionCount(share.recipientUserId) > 0,
+        coversDevice(share.deviceIds, deviceId),
     );
+    // A position goes to an open page only, and counts as a look there: a recipient whose
+    // stream is away for a moment resyncs when it comes back rather than miss it (§9).
+    for (const share of inForce) {
+      if (ctx.bus.connectionCount(share.recipientUserId) === 0) ctx.bus.miss(share.recipientUserId);
+    }
+    const receiving = inForce.filter((share) => ctx.bus.connectionCount(share.recipientUserId) > 0);
     if (receiving.length === 0) return;
     const [device] = await ctx.db
       .select()

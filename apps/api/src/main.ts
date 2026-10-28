@@ -12,6 +12,7 @@ import { createLogger } from "./logging/createLogger";
 import { runtimePaths } from "./runtimePaths";
 import { listen } from "./server/listen";
 import { shutdown } from "./server/shutdown";
+import { startingListener } from "./server/startingListener";
 import { runWorker } from "./worker/runWorker";
 
 process.setSourceMapsEnabled(true);
@@ -23,6 +24,9 @@ const statementTimeoutMs = 120_000;
 
 async function start(config: Config, logger: Logger): Promise<void> {
   const paths = runtimePaths(import.meta.url);
+  // Listening first: the liveness probe says "starting" while the database is
+  // awaited and migrated, so a long migration fails no health check.
+  const { server, serve } = await listen(startingListener(config.build), config.port, config.host);
   const pool = createPool(config.databaseUrl, logger, { statementTimeoutMs });
   await waitForDatabase(pool, logger, { attempts: 30, delayMs: 2_000 });
   await runMigrations(pool, paths.migrationsFolder);
@@ -31,7 +35,7 @@ async function start(config: Config, logger: Logger): Promise<void> {
   const ctx = createAppContext({ config, logger, pool });
   // Before the first stream connects: what a pass finishes from now on reaches it.
   await ctx.processingListener.start();
-  const server = await listen(createApp(ctx), config.port, config.host);
+  serve(createApp(ctx));
   const jobs = startJobs(ctx);
   ctx.processing.start();
   logger.info(

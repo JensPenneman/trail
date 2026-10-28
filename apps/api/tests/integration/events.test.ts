@@ -1,11 +1,18 @@
 import type { Server } from "node:http";
+import { apiPaths } from "@trail/contracts/apiPaths";
+import { daysResponseSchema } from "@trail/contracts/stats";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { EventSubscriber } from "../../src/events/eventBus";
+import { processingVersions } from "../../src/processing/processingVersion";
 import { agentFor, signInWithCookie, signUpWithCookie } from "../support/authFlows";
 import { createDevice, postOverland } from "../support/deviceFlows";
 import { overlandFixture } from "../support/overlandFixture";
 import { resetDatabase } from "../support/resetDatabase";
+import { from, uploadOf } from "../support/sharingFlows";
 import { SoftwareAuthenticator } from "../support/softwareAuthenticator";
 import { SseClient } from "../support/sseClient";
+import { watchStatements } from "../support/statementCounter";
 import { createTestContext, type TestContext } from "../support/testContext";
 import { testOrigin } from "../support/testEnvironment";
 
@@ -110,5 +117,305 @@ describe("live events (SSE)", () => {
       .expect(204);
     await stream.waitFor("session-ended");
     await stream.ended();
+  });
+});
+
+/** A stand-in stream on the bus: what the cap and the session checks count, with nothing behind it. */
+const fake = (sessionId: string): EventSubscriber => ({
+  sessionId,
+  send: () => {},
+  ping: () => {},
+  close: () => {},
+});
+
+const settle = async () => {
+  await t.ctx.background.drain(5_000);
+  await t.ctx.dailyStats.flush();
+};
+
+describe("event ids and resuming", () => {
+  it("numbers every event, starts with versions and a jittered retry", async () => {
+    const owner = await member("ids@allowed.test");
+    const device = await createDevice(owner.agent, { name: "iPhone" });
+    const stream = await SseClient.connect(server, owner.cookie);
+    clients.push(stream);
+    const hello = await stream.waitFor("hello");
+    expect(hello.versions).toEqual(processingVersions);
+    expect(stream.retryMs).toBeGreaterThanOrEqual(3_000);
+    expect(stream.retryMs).toBeLessThanOrEqual(8_000);
+    await postOverland(
+      t.app,
+      device.credentials.accessToken,
+      uploadOf([{ ago: 5, lat: 51, lon: 3.7 }]),
+    ).expect(200);
+    await stream.waitFor("device");
+    expect(stream.ids.every((id) => id !== undefined && /^[A-Za-z0-9_-]{8}:\d+$/.test(id))).toBe(
+      true,
+    );
+    const seqs = stream.ids.map((id) => Number(id?.split(":")[1]));
+    // The hello stands where the stream starts; every event after it is the next.
+    expect(seqs).toEqual([0, 1, 2]);
+  });
+
+  it("replays what a stream missed when it comes back with the id it saw last", async () => {
+    const owner = await member("resume@allowed.test");
+    const device = await createDevice(owner.agent, { name: "iPhone" });
+    const first = await SseClient.connect(server, owner.cookie);
+    await first.waitFor("hello");
+    const seen = first.lastId ?? "";
+    first.close();
+    // Away, while the phone uploads.
+    await postOverland(
+      t.app,
+      device.credentials.accessToken,
+      uploadOf([{ ago: 5, lat: 51, lon: 3.7 }]),
+    ).expect(200);
+    await t.ctx.background.drain(5_000);
+    const back = await SseClient.connect(server, owner.cookie, { after: seen });
+    clients.push(back);
+    await back.waitFor("device");
+    expect(back.events.map((event) => event.type)).toEqual(["hello", "ingest", "device"]);
+    expect(back.ids[0]).toBe(seen);
+    expect(back.events.some((event) => event.type === "resync")).toBe(false);
+  });
+
+  it("prefers the browser's Last-Event-ID to an older ?after=", async () => {
+    const owner = await member("last-event-id@allowed.test");
+    const device = await createDevice(owner.agent, { name: "iPhone" });
+    const first = await SseClient.connect(server, owner.cookie);
+    await first.waitFor("hello");
+    const opened = first.lastId ?? "";
+    await postOverland(
+      t.app,
+      device.credentials.accessToken,
+      uploadOf([{ ago: 5, lat: 51, lon: 3.7 }]),
+    ).expect(200);
+    await first.waitFor("device");
+    const latest = first.lastId ?? "";
+    first.close();
+    const back = await SseClient.connect(server, owner.cookie, {
+      after: opened,
+      lastEventId: latest,
+    });
+    clients.push(back);
+    await back.waitFor("hello");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Nothing happened after the newest id: nothing to replay, no resync.
+    expect(back.events.map((event) => event.type)).toEqual(["hello"]);
+    expect(back.ids[0]).toBe(latest);
+  });
+
+  it("answers resync to an id it does not hold: unknown, malformed, or from another process", async () => {
+    const owner = await member("resync@allowed.test");
+    for (const after of ["nonsense", "x".repeat(65)]) {
+      const stream = await SseClient.connect(server, owner.cookie, { after });
+      clients.push(stream);
+      await stream.waitFor("resync");
+      expect(stream.events.map((event) => event.type)).toEqual(["hello", "resync"]);
+      // The id it stands at now is the server's own, never what came in.
+      expect(stream.ids[1]).toBe(stream.ids[0]);
+      expect(stream.ids[0]).not.toBe(after);
+    }
+    const first = await SseClient.connect(server, owner.cookie);
+    clients.push(first);
+    await first.waitFor("hello");
+    // A new process: an empty ring, whatever the id.
+    const restarted = await createTestContext();
+    try {
+      const back = await SseClient.connect(restarted.app, owner.cookie, {
+        after: first.lastId ?? "",
+      });
+      await back.waitFor("resync");
+      back.close();
+    } finally {
+      await restarted.close();
+    }
+  });
+
+  it("tells the owner's streams of the days the statistics summed up, with their stamps", async () => {
+    const owner = await member("days@allowed.test");
+    const device = await createDevice(owner.agent, { name: "iPhone" });
+    const stream = await SseClient.connect(server, owner.cookie);
+    clients.push(stream);
+    await stream.waitFor("hello");
+    await postOverland(t.app, device.credentials.accessToken, overlandFixture()).expect(200);
+    await settle();
+    const days = await stream.waitFor("days");
+    expect(days.deviceId).toBe(device.device.id);
+    // The points' day, and the day before, which the fixture's trip started on.
+    expect(days.dates).toEqual(["2026-09-28", "2026-09-29"]);
+    const digest = daysResponseSchema.parse(
+      (
+        await owner.agent
+          .get(apiPaths.statsDays)
+          .query({ from: "2026-09-28", to: "2026-09-29" })
+          .expect(200)
+      ).body,
+    );
+    expect(days.days).toEqual(digest.days);
+    expect(days.days[0]?.stamp.raw).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  });
+
+  it("tells of the days a visit-only upload touches, points or not, and its deletion", async () => {
+    const owner = await member("visit-days@allowed.test");
+    const device = await createDevice(owner.agent, { name: "iPhone" });
+    const stream = await SseClient.connect(server, owner.cookie);
+    clients.push(stream);
+    await stream.waitFor("hello");
+    // From 22:00 on 20 October to 07:00 on the 21st, Brussels time: a night away.
+    await postOverland(t.app, device.credentials.accessToken, {
+      locations: [
+        {
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [3.71, 51.03] },
+          properties: {
+            action: "visit",
+            timestamp: "2026-10-21T05:00:30Z",
+            arrival_date: "2026-10-20T20:00:00Z",
+            departure_date: "2026-10-21T05:00:00Z",
+            horizontal_accuracy: 20,
+          },
+        },
+      ],
+    }).expect(200);
+    await settle();
+    const days = await stream.waitFor("days");
+    expect(days).toEqual({
+      type: "days",
+      deviceId: device.device.id,
+      dates: ["2026-10-20", "2026-10-21"],
+      // No points on either day, so no rows: the dates say what changed.
+      days: [],
+    });
+    // Deleting the minute the visit was recorded in removes no point, and changes both days.
+    const seen = stream.events.length;
+    await from(owner.agent, "post", apiPaths.deleteLocations, {
+      deviceId: device.device.id,
+      from: "2026-10-21T05:00:00.000Z",
+      to: "2026-10-21T05:01:00.000Z",
+    }).expect(200);
+    await settle();
+    const after = await stream.waitFor("days", 5_000, seen);
+    expect(after.dates).toEqual(["2026-10-20", "2026-10-21"]);
+  });
+
+  it("sends a recipient who was away when a shared position came back to a resync", async () => {
+    const sharer = await member("sharer@allowed.test");
+    const viewer = await member("viewer@allowed.test");
+    const phone = await createDevice(sharer.agent, { name: "iPhone" });
+    await from(sharer.agent, "post", apiPaths.v1.shares.root, {
+      email: "viewer@allowed.test",
+      precision: "precise",
+      duration: "indefinitely",
+    }).expect(201);
+    const first = await SseClient.connect(server, viewer.cookie);
+    await first.waitFor("hello");
+    const seen = first.lastId ?? "";
+    first.close();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // A position goes to an open page only: the one that comes back has to look again.
+    await postOverland(
+      t.app,
+      phone.credentials.accessToken,
+      uploadOf([{ ago: 5, lat: 51, lon: 3.7 }]),
+    ).expect(200);
+    await t.ctx.background.drain(5_000);
+    const back = await SseClient.connect(server, viewer.cookie, { after: seen });
+    clients.push(back);
+    await back.waitFor("resync");
+  });
+
+  it("tells a stream to resync once a new time zone rebuilt every day", async () => {
+    const owner = await member("zone@allowed.test");
+    const stream = await SseClient.connect(server, owner.cookie);
+    clients.push(stream);
+    await stream.waitFor("hello");
+    await from(owner.agent, "patch", apiPaths.me.root, { timezone: "America/New_York" }).expect(
+      200,
+    );
+    await t.ctx.background.drain(5_000);
+    await stream.waitFor("resync");
+  });
+});
+
+describe("many streams", () => {
+  it("checks every stream's session in one statement per tick", async () => {
+    const owner = await member("tick@allowed.test");
+    const second = await member("tick-two@allowed.test");
+    const real = [
+      await SseClient.connect(server, owner.cookie),
+      await SseClient.connect(server, second.cookie),
+    ];
+    clients.push(...real);
+    for (const stream of real) await stream.waitFor("hello");
+    const fakes = Array.from({ length: 1_000 }, (_, index) =>
+      t.ctx.bus.subscribe(
+        `0199a0f2-0000-7000-8000-${String(index).padStart(12, "0")}`,
+        fake(`fake-${index}`),
+      ),
+    );
+    // The bus's own 20-second tick may run meanwhile: then this one waits for its turn.
+    const tickThatChecks = async () => {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (await t.ctx.bus.tick()) return;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error("No tick checked the sessions");
+    };
+    const sessionChecks = () =>
+      watch.statements.filter(({ text }) => /FROM sessions\s+WHERE id = ANY/.test(text));
+    const watch = watchStatements(t.ctx.pool);
+    try {
+      await tickThatChecks();
+      // One statement per check, never one per stream: each holds every stream's session.
+      const checks = sessionChecks();
+      expect(checks.length).toBeGreaterThanOrEqual(1);
+      expect(checks.length).toBeLessThanOrEqual(2);
+      for (const check of checks) {
+        const asked = new Set(check.values[0] as string[]);
+        expect(fakes.every((_, index) => asked.has(`fake-${index}`))).toBe(true);
+      }
+      // A session revoked behind the server's back ends its stream at the next check.
+      const secondId = (
+        await t.ctx.db.execute<{ id: string }>(sql`
+          SELECT s.id FROM sessions s JOIN users u ON u.id = s.user_id
+          WHERE u.email = 'tick-two@allowed.test'
+        `)
+      ).rows[0]?.id;
+      await t.ctx.db.execute(sql`DELETE FROM sessions WHERE id = ${secondId ?? ""}`);
+      await tickThatChecks();
+      await real[1]?.waitFor("session-ended");
+      await real[1]?.ended();
+      expect(real[0]?.events.some((event) => event.type === "session-ended")).toBe(false);
+    } finally {
+      watch.stop();
+      for (const subscription of fakes) subscription.unsubscribe();
+    }
+  });
+
+  it("refuses a stream past the cap of the process with a 503 and a random Retry-After", async () => {
+    const owner = await member("cap@allowed.test");
+    const open = t.ctx.bus.streamCount();
+    const fakes = Array.from({ length: 5_000 - open }, (_, index) =>
+      t.ctx.bus.subscribe(
+        `0199a0f2-1111-7000-8000-${String(index).padStart(12, "0")}`,
+        fake(`cap-${index}`),
+      ),
+    );
+    try {
+      const refused = await agentFor(t.app)
+        .get("/api/events")
+        .set("Cookie", owner.cookie)
+        .expect(503);
+      expect(refused.body.error.code).toBe("unavailable");
+      const wait = Number(refused.headers["retry-after"]);
+      expect(wait).toBeGreaterThanOrEqual(10);
+      expect(wait).toBeLessThanOrEqual(30);
+    } finally {
+      for (const subscription of fakes) subscription.unsubscribe();
+    }
+    const stream = await SseClient.connect(server, owner.cookie);
+    clients.push(stream);
+    await stream.waitFor("hello");
   });
 });

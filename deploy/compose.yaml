@@ -7,7 +7,9 @@
 # LAUNCHWAY_COMMIT_SHA_SHORT selects the image, LAUNCHWAY_PUBLIC_URL is the
 # address of the deployment's host name. It attaches `app` to its proxy
 # network, where its edge forwards the route to port 8080; no host port is
-# published.
+# published. `worker` runs the same image as `trail worker`, the processing
+# out of the API's container; it publishes nothing and the edge never reaches
+# it.
 #
 #   production  COMPOSE_PROFILES=production starts `backup` too, and
 #               TRAIL_DB_VOLUME names the existing database volume
@@ -26,6 +28,72 @@ x-logging: &logging
     max-size: 10m
     max-file: "5"
 
+# The environment of `app` and `worker`, one list for both, so both processes
+# validate the same configuration (an invalid value stops either). An explicit
+# list instead of env_file: the containers never see the rest of .env.
+# Entries without a value are passed only when .env sets them, so the app's
+# own defaults (docs/architecture.md section 4) apply otherwise. Each service
+# adds its PROCESSING_ROLE and NODE_OPTIONS; the worker's port is fixed below,
+# and PROCESSING_TEST_STALL (a test of the worker's health check) is only ever
+# set by compose.dev.yaml.
+x-app-environment: &app-environment
+  DATABASE_URL: postgres://trail:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/trail
+  # A preview runs on its own host name: without PUBLIC_URL it takes the
+  # deployment's address from Launchway.
+  PUBLIC_URL: ${PUBLIC_URL:-${LAUNCHWAY_PUBLIC_URL:?set PUBLIC_URL (Launchway sets LAUNCHWAY_PUBLIC_URL)}}
+  ADDITIONAL_ORIGINS:
+  MCP_ALLOWED_ORIGINS:
+  INGEST_BASE_URL:
+  SIGNUP_ALLOWLIST:
+  # Only Launchway's edge may set X-Forwarded-* (client address, HTTPS):
+  # its fixed address on Launchway's proxy network.
+  TRUST_PROXY: ${TRUST_PROXY:-10.210.0.2}
+  SESSION_TTL_DAYS:
+  LIVE_WINDOW_MINUTES:
+  STALE_AFTER_HOURS:
+  DATA_ACCESS_RETENTION_DAYS:
+  ALERT_NTFY_URL:
+  ALERT_NTFY_TOKEN:
+  DEFAULT_TIMEZONE:
+  MAP_STYLE_LIGHT:
+  MAP_STYLE_DARK:
+  MAP_STYLE_SATELLITE:
+  MAP_STYLE_SATELLITE_ATTRIBUTION:
+  MAP_CONNECT_SRC:
+  LOG_LEVEL:
+  RATE_LIMIT_AUTH_PER_MINUTE:
+  RATE_LIMIT_API_PER_MINUTE:
+  RATE_LIMIT_INGEST_PER_MINUTE:
+  RATE_LIMIT_INGEST_SINGLE_PER_MINUTE:
+  RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES:
+  RATE_LIMIT_TOKEN_PER_MINUTE:
+  RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES:
+  RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE:
+  # location processing; an empty PROCESSING_OVERPASS_URL (set in .env)
+  # means no map data, an unset one the public Overpass instance
+  PROCESSING_ENABLED:
+  PROCESSING_OVERPASS_URL:
+  PROCESSING_OVERPASS_DAILY_MB:
+  PROCESSING_OSM_TTL_DAYS:
+  PROCESSING_MAX_ACCURACY_M:
+  PROCESSING_STOP_MIN_S:
+  PROCESSING_PASS_MAX_POINTS:
+  PROCESSING_PASS_MAX_SPAN_HOURS:
+  # map data from the registry (docs/operations.md, "Map data"), which `app`
+  # pulls into trail-map; an empty MAP_DATA_REGIONS (set in .env) means none,
+  # an unset one Belgium. MAP_DATA_DIR stays the image's default, the mount.
+  MAP_DATA_REGIONS:
+  MAP_DATA_REGISTRY:
+  MAP_DATA_REGISTRY_TOKEN:
+  MAP_DATA_REFRESH_DAYS:
+  MAP_DATA_MAX_GB:
+  # `trail load-fleet` only (docs/perf/README.md): a preview's load test sets
+  # LOAD_TEST=true, and Launchway's name of the deployment (production or
+  # preview) makes the command refuse anywhere but in a preview. Launchway
+  # writes it to .env; it is the one of its variables the containers receive.
+  LOAD_TEST:
+  LAUNCHWAY_ENVIRONMENT:
+
 services:
   app:
     # The image CI built for the deployed commit; nothing is built on the
@@ -34,7 +102,7 @@ services:
     # tests, and publishes a release only once they have passed. Until the
     # image exists the pull fails, and Launchway retries it. TRAIL_IMAGE
     # replaces it for local runs (compose.dev.yaml); Launchway leaves it unset.
-    image: ${TRAIL_IMAGE:-ghcr.io/jenspenneman/trail:sha-${LAUNCHWAY_COMMIT_SHA_SHORT:?Launchway sets LAUNCHWAY_COMMIT_SHA_SHORT; local runs set TRAIL_IMAGE}}
+    image: &image ${TRAIL_IMAGE:-ghcr.io/jenspenneman/trail:sha-${LAUNCHWAY_COMMIT_SHA_SHORT:?Launchway sets LAUNCHWAY_COMMIT_SHA_SHORT; local runs set TRAIL_IMAGE}}
     pull_policy: always
     restart: unless-stopped
     init: true
@@ -44,72 +112,23 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # An explicit list instead of env_file: the app never sees the rest of
-    # .env. Entries without a value are passed only when .env sets them, so
-    # the app's own defaults (docs/architecture.md section 4) apply otherwise.
     environment:
-      DATABASE_URL: postgres://trail:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/trail
-      # A preview runs on its own host name: without PUBLIC_URL it takes the
-      # deployment's address from Launchway.
-      PUBLIC_URL: ${PUBLIC_URL:-${LAUNCHWAY_PUBLIC_URL:?set PUBLIC_URL (Launchway sets LAUNCHWAY_PUBLIC_URL)}}
-      ADDITIONAL_ORIGINS:
-      MCP_ALLOWED_ORIGINS:
-      INGEST_BASE_URL:
-      SIGNUP_ALLOWLIST:
-      # Only Launchway's edge may set X-Forwarded-* (client address, HTTPS):
-      # its fixed address on Launchway's proxy network.
-      TRUST_PROXY: ${TRUST_PROXY:-10.210.0.2}
-      SESSION_TTL_DAYS:
-      LIVE_WINDOW_MINUTES:
-      STALE_AFTER_HOURS:
-      DATA_ACCESS_RETENTION_DAYS:
-      ALERT_NTFY_URL:
-      ALERT_NTFY_TOKEN:
-      DEFAULT_TIMEZONE:
-      MAP_STYLE_LIGHT:
-      MAP_STYLE_DARK:
-      MAP_STYLE_SATELLITE:
-      MAP_STYLE_SATELLITE_ATTRIBUTION:
-      MAP_CONNECT_SRC:
-      LOG_LEVEL:
-      RATE_LIMIT_AUTH_PER_MINUTE:
-      RATE_LIMIT_API_PER_MINUTE:
-      RATE_LIMIT_INGEST_PER_MINUTE:
-      RATE_LIMIT_INGEST_SINGLE_PER_MINUTE:
-      RATE_LIMIT_INGEST_FAILED_PER_10_MINUTES:
-      RATE_LIMIT_TOKEN_PER_MINUTE:
-      RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES:
-      RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE:
-      # location processing; an empty PROCESSING_OVERPASS_URL (set in .env)
-      # means no map data, an unset one the public Overpass instance
+      <<: *app-environment
       # What this container runs, fixed here and not taken from .env
-      # (docs/architecture.md section 3): all = the API and the processing
-      # worker in one process.
-      PROCESSING_ROLE: all
-      PROCESSING_ENABLED:
-      PROCESSING_OVERPASS_URL:
-      PROCESSING_OVERPASS_DAILY_MB:
-      PROCESSING_OSM_TTL_DAYS:
-      PROCESSING_MAX_ACCURACY_M:
-      PROCESSING_STOP_MIN_S:
-      # map data from the registry (docs/operations.md, "Map data"); an empty
-      # MAP_DATA_REGIONS (set in .env) means none, an unset one Belgium.
-      # MAP_DATA_DIR stays the image's default, where trail-map is mounted.
-      MAP_DATA_REGIONS:
-      MAP_DATA_REGISTRY:
-      MAP_DATA_REGISTRY_TOKEN:
-      MAP_DATA_REFRESH_DAYS:
-      MAP_DATA_MAX_GB:
+      # (docs/architecture.md section 3): the API, the phones' ingest and the
+      # dashboard. It queues the processing, which `worker` does.
+      PROCESSING_ROLE: api
       # The V8 heap's limit, set instead of Node's own guess from mem_limit
       # (about 560 MB of the 1 GB on Node 24; other V8 versions guess
-      # otherwise). A processing backfill holds up to ~250 MB per piece:
-      # 640 MB of old space gives it room beside the server and leaves the
-      # rest of the 1 GB to memory outside the heap (buffers, native code), so
-      # the heap is collected, or at worst fails with an out-of-memory error in
-      # the log, before the kernel would OOM-kill the container mid-backfill.
+      # otherwise). The API processes nothing in this role; `trail reprocess`
+      # run here by hand still does (docs/operations.md), in a second Node
+      # process with a limit of its own, and a piece of map data holds up to
+      # ~250 MB: 640 MB leaves the rest of the 1 GB to memory outside the
+      # heap, so a heap fails in the log before the kernel would OOM-kill the
+      # container.
       NODE_OPTIONS: --max-old-space-size=640
-    # default: the way out (ntfy alerts, map data from Overpass and the
-    # registry); backend: the database
+    # default: the way out (ntfy alerts, map data from the registry); backend:
+    # the database
     networks: [default, backend]
     read_only: true
     tmpfs:
@@ -119,13 +138,68 @@ services:
       - trail-map:/var/lib/trail/map
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    # Explicit CPU caps (docs/operations.md, "What runs"): without one, a
+    # single process could take every CPU of the node.
+    cpus: 1
     mem_limit: 1g
+    # no swap on top (the default doubles mem_limit on WSL)
+    memswap_limit: 1g
     healthcheck:
-      # same probe as the image's HEALTHCHECK: liveness only, no database
+      # the API's half of the image's HEALTHCHECK: liveness only, no database
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/api/health/live || exit 1"]
       interval: 30s
       timeout: 5s
       start_period: 30s
+      retries: 3
+    logging: *logging
+
+  # The processing worker (docs/architecture.md section 3): the image of `app`
+  # running `trail worker`, which works out the averaged, mapped and inferred
+  # levels, fetches the map data and runs the backfill, with no HTTP server.
+  # CPUs and memory of its own, so processing can never take the API down.
+  worker:
+    image: *image
+    pull_policy: always
+    restart: unless-stopped
+    init: true
+    # On SIGTERM a pass in progress commits before the worker exits; one not
+    # done within 50 s is rolled back by the database as the worker exits.
+    # Launchway stops containers with `--timeout 60` (up and down), which
+    # overrides this: 60 s is what the worker gets there too.
+    stop_grace_period: 60s
+    command: ["trail", "worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *app-environment
+      # fixed here, as the app's (docs/architecture.md section 3)
+      PROCESSING_ROLE: worker
+      # Its liveness probe (/health/live) for the health check below: on the
+      # project's networks only, published nowhere, and nothing routes to it.
+      PROCESSING_METRICS_PORT: "8081"
+      # A pass holds up to ~250 MB of map data per piece: 768 MB of old space
+      # gives it room and leaves the rest of the 1 GB to memory outside the
+      # heap, so a heap fails in the log before the kernel would OOM-kill a
+      # pass (which the database then rolls back).
+      NODE_OPTIONS: --max-old-space-size=768
+    # default: the way out (map data from Overpass); backend: the database
+    networks: [default, backend]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 2
+    mem_limit: 1g
+    memswap_limit: 1g
+    healthcheck:
+      # The worker's own probe, never the API's port: 503 once the loop's
+      # heartbeat is 90 s old, so a stuck loop turns the container unhealthy.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8081/health/live || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
       retries: 3
     logging: *logging
 
@@ -147,7 +221,10 @@ services:
     shm_size: 256mb
     stop_grace_period: 60s
     security_opt: ["no-new-privileges:true"]
+    # the worker's passes and the API's queries share these
+    cpus: 2
     mem_limit: 2g
+    memswap_limit: 2g
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U trail -d trail"]
       interval: 10s
@@ -203,7 +280,7 @@ services:
     logging: *logging
 
 networks:
-  # app, db and backup only; no route out
+  # app, worker, db and backup only; no route out
   backend:
     internal: true
 

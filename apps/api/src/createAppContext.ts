@@ -6,11 +6,13 @@ import type { Config } from "./config/config";
 import { tableAccessStore } from "./dataAccess/accessStore";
 import { type DataAccessOptions, DataAccessRecorder } from "./dataAccess/dataAccessRecorder";
 import { createDatabase } from "./db/database";
+import { activeSessions } from "./events/activeSessions";
 import { EventBus } from "./events/eventBus";
 import { ProcessingListener } from "./events/processingListener";
 import type { AlertSender } from "./jobs/alert";
 import { createNtfySender } from "./jobs/createNtfySender";
 import { BackgroundTasks } from "./lib/backgroundTasks";
+import { IngestMeter } from "./load/ingestMeter";
 import { processingConfigWith } from "./processing/processingConfig";
 import { ProcessingService } from "./processing/processingService";
 import type { WaySource } from "./processing/waySource";
@@ -38,7 +40,10 @@ export function createAppContext(input: {
 }): AppContext {
   const { config, logger, pool } = input;
   const db = createDatabase(pool);
-  const bus = new EventBus();
+  const bus = new EventBus({
+    activeSessions: (ids) => activeSessions(db, ids),
+    logger: logger.child({ component: "events" }),
+  });
   const alerts =
     input.alerts !== undefined
       ? input.alerts
@@ -65,8 +70,9 @@ export function createAppContext(input: {
     pool,
     db,
     bus,
-    dailyStats: new DailyStatsScheduler(db, logger, input.dailyStatsDelayMs),
+    dailyStats: new DailyStatsScheduler(db, logger, bus, input.dailyStatsDelayMs),
     background,
+    ingestMeter: new IngestMeter(),
     alerts,
     apiTokens: input.apiTokens ?? new DatabaseTokenVerifier(db, background),
     processing: new ProcessingService({

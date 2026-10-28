@@ -188,6 +188,12 @@ export const envSchema = z
     // What this process runs (docs/architecture.md §3): `api` queues and processes nothing,
     // `worker` processes and serves no HTTP, `all` does both, as one container always did.
     PROCESSING_ROLE: env(z.enum(["api", "worker", "all"]).default("all")),
+    // A worker process's own port (role `worker`): `/health/live` for its container's health
+    // check (docs/architecture.md §3). 0 switches it off; role `all` opens none (the API's port is
+    // its probe).
+    PROCESSING_METRICS_PORT: env(intSchema(0, 65_535).default(8081)),
+    // Tests of that health check only: the worker beats once, then stands still.
+    PROCESSING_TEST_STALL: env(booleanSchema.default(false)),
     PROCESSING_ENABLED: env(booleanSchema.default(true)),
     PROCESSING_OVERPASS_URL: overpassUrlSchema,
     PROCESSING_OVERPASS_DAILY_MB: env(intSchema(1, 100_000).default(300)),
@@ -202,6 +208,15 @@ export const envSchema = z
     MAP_DATA_DIR: env(z.string().default("/var/lib/trail/map")),
     MAP_DATA_REFRESH_DAYS: env(intSchema(1, 365).default(30)),
     MAP_DATA_MAX_GB: env(intSchema(1, 1000).default(10)),
+    // A pass works out at most this many points, spanning at most this long; bigger work is
+    // split first (docs/architecture.md §17.4). A very large value restores unbounded passes.
+    PROCESSING_PASS_MAX_POINTS: env(intSchema(1000, 100_000_000).default(60_000)),
+    PROCESSING_PASS_MAX_SPAN_HOURS: env(intSchema(1, 87_600).default(36)),
+    // Only `trail load-fleet` reads these two (docs/perf/README.md): a load test's synthetic
+    // accounts need LOAD_TEST=true and a deployment Launchway does not call production.
+    LOAD_TEST: env(booleanSchema.default(false)),
+    // Only compared: no length limit that could keep a deployment from starting.
+    LAUNCHWAY_ENVIRONMENT: env(z.string().trim().optional()),
   })
   .superRefine((values, context) => {
     // Refinements see invalid fields too; an invalid URL has its own issue already.

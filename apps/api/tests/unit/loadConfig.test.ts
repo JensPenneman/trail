@@ -60,12 +60,16 @@ describe("loadConfig", () => {
       },
       processing: {
         role: "all",
+        metricsPort: 8081,
+        testStall: false,
         enabled: true,
         overpassUrl: "https://overpass-api.de/api/interpreter",
         overpassDailyBytes: 300_000_000,
         osmTtlDays: 90,
         maxAccuracyM: 150,
         stopMinS: 180,
+        passMaxPoints: 60_000,
+        passMaxSpanHours: 36,
       },
       mapData: {
         regions: ["belgium"],
@@ -75,7 +79,26 @@ describe("loadConfig", () => {
         refreshDays: 30,
         maxBytes: 10_000_000_000,
       },
+      loadTest: false,
+      launchwayEnvironment: null,
     });
+  });
+
+  it("reads the load-test switch and Launchway's environment name for `trail load-fleet`", () => {
+    const config = loadConfig(
+      { ...minimal, LOAD_TEST: "true", LAUNCHWAY_ENVIRONMENT: " preview " },
+      defaults,
+    );
+    expect(config).toMatchObject({ loadTest: true, launchwayEnvironment: "preview" });
+    expect(
+      loadConfig({ ...minimal, LOAD_TEST: "", LAUNCHWAY_ENVIRONMENT: "" }, defaults),
+    ).toMatchObject({ loadTest: false, launchwayEnvironment: null });
+    expect(issuesOf({ ...minimal, LOAD_TEST: "1" })).toEqual(["LOAD_TEST: Use true or false"]);
+    // Only compared, never limited: a long value never keeps the app from starting.
+    expect(
+      loadConfig({ ...minimal, LAUNCHWAY_ENVIRONMENT: "x".repeat(500) }, defaults)
+        .launchwayEnvironment,
+    ).toHaveLength(500);
   });
 
   it("switches mapping off with an empty Overpass URL, and processing off altogether", () => {
@@ -97,23 +120,40 @@ describe("loadConfig", () => {
         PROCESSING_OSM_TTL_DAYS: "30",
         PROCESSING_MAX_ACCURACY_M: "100",
         PROCESSING_STOP_MIN_S: "300",
+        PROCESSING_PASS_MAX_POINTS: "20000",
+        PROCESSING_PASS_MAX_SPAN_HOURS: "12",
       },
       defaults,
     );
     expect(custom.processing).toEqual({
       role: "all",
+      metricsPort: 8081,
+      testStall: false,
       enabled: false,
       overpassUrl: "http://overpass.lan/api/interpreter",
       overpassDailyBytes: 50_000_000,
       osmTtlDays: 30,
       maxAccuracyM: 100,
       stopMinS: 300,
+      passMaxPoints: 20_000,
+      passMaxSpanHours: 12,
     });
     expect(
       issuesOf({ ...minimal, PROCESSING_ENABLED: "yes", PROCESSING_OVERPASS_URL: "ftp://x" }),
     ).toEqual([
       "PROCESSING_ENABLED: Use true or false",
       expect.stringMatching(/^PROCESSING_OVERPASS_URL: /),
+    ]);
+    // A pass reads at least a thousand points and spans at least an hour.
+    expect(
+      issuesOf({
+        ...minimal,
+        PROCESSING_PASS_MAX_POINTS: "999",
+        PROCESSING_PASS_MAX_SPAN_HOURS: "0",
+      }),
+    ).toEqual([
+      expect.stringMatching(/^PROCESSING_PASS_MAX_POINTS: /),
+      expect.stringMatching(/^PROCESSING_PASS_MAX_SPAN_HOURS: /),
     ]);
   });
 
@@ -126,6 +166,24 @@ describe("loadConfig", () => {
     }
     expect(issuesOf({ ...minimal, PROCESSING_ROLE: "both" })).toEqual([
       expect.stringMatching(/^PROCESSING_ROLE: /),
+    ]);
+  });
+
+  it("reads the worker's liveness port and the stall of its health check test", () => {
+    const set = loadConfig(
+      { ...minimal, PROCESSING_METRICS_PORT: "9100", PROCESSING_TEST_STALL: "true" },
+      defaults,
+    ).processing;
+    expect(set).toMatchObject({ metricsPort: 9100, testStall: true });
+    expect(
+      loadConfig({ ...minimal, PROCESSING_METRICS_PORT: "0", PROCESSING_TEST_STALL: "" }, defaults)
+        .processing,
+    ).toMatchObject({ metricsPort: 0, testStall: false });
+    expect(
+      issuesOf({ ...minimal, PROCESSING_METRICS_PORT: "65536", PROCESSING_TEST_STALL: "1" }),
+    ).toEqual([
+      expect.stringMatching(/^PROCESSING_METRICS_PORT: /),
+      "PROCESSING_TEST_STALL: Use true or false",
     ]);
   });
 

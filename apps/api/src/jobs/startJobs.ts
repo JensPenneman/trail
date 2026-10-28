@@ -4,6 +4,7 @@ import { createMapDataRefresher } from "../mapdata/createMapDataRefresher";
 import { startMapDataSchedule } from "../mapdata/mapDataSchedule";
 import { checkSilentDevices } from "./checkSilentDevices";
 import { intervalJob } from "./intervalJob";
+import { loadLineJob } from "./loadLineJob";
 import { oneOffJob } from "./oneOffJob";
 import { pruneExpiredData } from "./pruneExpiredData";
 
@@ -41,6 +42,7 @@ export function startJobs(ctx: AppContext): Jobs {
         }
       },
     }),
+    loadLineJob(ctx),
   ];
   if (alerts !== null) {
     jobs.push(

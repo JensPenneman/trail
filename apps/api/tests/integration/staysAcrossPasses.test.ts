@@ -1,0 +1,717 @@
+import type { Client } from "@modelcontextprotocol/client";
+import { apiPaths } from "@trail/contracts/apiPaths";
+import { insightsOverviewSchema } from "@trail/contracts/insights";
+import {
+  getDaySummaryOutputSchema,
+  getTimelineOutputSchema,
+  getVisitsOutputSchema,
+} from "@trail/contracts/mcp";
+import {
+  deviceModeResponseSchema,
+  levelTracksResponseSchema,
+  modeStatsResponseSchema,
+  type Segment,
+  type TransportMode,
+  timelineResponseSchema,
+} from "@trail/contracts/transport";
+import { sql } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { z } from "zod";
+import { countStops } from "../../src/insights/insightMoves";
+import type { RawPoint } from "../../src/processing/pipelineTypes";
+import { enqueueWindow, takeDeviceWindows } from "../../src/processing/processingQueue";
+import { processWindow } from "../../src/processing/processWindow";
+import { loadOverrides, loadStayBefore } from "../../src/processing/windowData";
+import { loadCurrentModes } from "../../src/sharing/currentModes";
+import { createApiToken } from "../support/apiTokenFlows";
+import { type Agent, signUpWithCookie } from "../support/authFlows";
+import { createDevice } from "../support/deviceFlows";
+import { morning } from "../support/journeys";
+import { connectMcp } from "../support/mcpClient";
+import { uploadJourney, uploadVisits } from "../support/overlandPoints";
+import {
+  assertIdempotent,
+  assertSegmentInvariants,
+  processingFingerprint,
+} from "../support/processingInvariants";
+import { resetDatabase } from "../support/resetDatabase";
+import { concat, lastT, stay, toLonLat, travel, type Vertex } from "../support/syntheticWorld";
+import { createTestContext, type TestContext } from "../support/testContext";
+
+/*
+ * A stay is one stop wherever it is served. Bounded passes work a long stay
+ * out a part at a time, so it is stored as stops one after the other at one
+ * place; the timeline (v1 and MCP), the map's tracks, the day summary,
+ * Insights and the mode statistics serve them as the one stop it was, and
+ * the stored segments stay as the passes left them.
+ */
+let t: TestContext;
+let owner: Agent;
+let client: Client;
+
+const home: Vertex = [-1000, -200];
+const work: Vertex = [-1000, 4600];
+const iso = (epochSeconds: number) => new Date(epochSeconds * 1000).toISOString();
+
+beforeAll(async () => {
+  await resetDatabase();
+  t = await createTestContext();
+  ({ agent: owner } = await signUpWithCookie(t.app, "first@example.com"));
+  const token = await createApiToken(owner, {
+    name: "Stays",
+    scopes: ["locations:read", "history:read"],
+    deviceIds: null,
+    expiresAt: null,
+  });
+  ({ client } = await connectMcp(t.app, token.secret));
+});
+
+afterAll(async () => {
+  await client.close();
+  await t.close();
+});
+
+async function newDevice(name: string) {
+  const device = await createDevice(owner, { name });
+  return { id: device.device.id, token: device.credentials.accessToken, name };
+}
+
+async function upload(token: string, points: readonly RawPoint[]) {
+  await uploadJourney(t.app, token, points);
+  await t.ctx.background.drain(5000);
+}
+
+/** The timeline of a range, every page of `limit` items. */
+async function timeline(deviceId: string, from: string, to: string, limit = 500) {
+  const items: Segment[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const page = timelineResponseSchema.parse(
+      (
+        await owner
+          .get(apiPaths.v1.segments.root)
+          .query({
+            devices: deviceId,
+            from,
+            to,
+            limit,
+            ...(cursor === undefined ? {} : { cursor }),
+          })
+          .expect(200)
+      ).body,
+    );
+    items.push(...page.items);
+    if (page.nextCursor === null) return items;
+    cursor = page.nextCursor;
+  }
+}
+
+/** The stops of a device as the passes stored them. */
+const storedStops = async (deviceId: string) =>
+  (
+    await t.ctx.db.execute<{ id: string; from: string; to: string; points: number }>(sql`
+      SELECT id, started_at::text AS from, ended_at::text AS to, point_count AS points
+      FROM segments WHERE device_id = ${deviceId} AND kind = 'stop' ORDER BY started_at
+    `)
+  ).rows;
+
+/** Calls a tool and parses its structured content with the tool's own output schema. */
+async function call<S extends z.ZodType>(
+  name: string,
+  args: Record<string, unknown>,
+  schema: S,
+): Promise<z.output<S>> {
+  const result = await client.callTool({ name, arguments: args });
+  if (result.isError === true) throw new Error(`${name} failed: ${JSON.stringify(result.content)}`);
+  return schema.parse(result.structuredContent);
+}
+
+/** A local date of the account's time zone (Europe/Brussels). */
+const localDate = (epochSeconds: number) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Brussels" }).format(
+    new Date(epochSeconds * 1000),
+  );
+
+/**
+ * Inserts a stored segment as a pass would leave it: ten points of its own around `at`, from
+ * `start` to `end` (both `at` unless given), a stop's spread 20 m and its last point at its end,
+ * a move read as a walk unless asked. Answers its id.
+ */
+async function segment(
+  deviceId: string,
+  kind: "stop" | "move",
+  from: number,
+  to: number,
+  at: Vertex,
+  options: {
+    start?: Vertex;
+    end?: Vertex;
+    spreadM?: number;
+    lastPointT?: number;
+    mode?: TransportMode;
+  } = {},
+): Promise<string> {
+  const [lon, lat] = toLonLat(at[0], at[1]);
+  const [startLon, startLat] = toLonLat(...(options.start ?? at));
+  const [endLon, endLat] = toLonLat(...(options.end ?? at));
+  const features =
+    kind === "stop" ? { spreadM: options.spreadM ?? 20, lastPointT: options.lastPointT ?? to } : {};
+  const mode = kind === "move" ? (options.mode ?? "walking") : null;
+  const inserted = await t.ctx.db.execute<{ id: string }>(sql`
+    INSERT INTO segments (device_id, started_at, ended_at, kind, mode, mode_inferred, distance_m,
+      duration_s, point_count, start_lat, start_lon, end_lat, end_lon, centroid_lat, centroid_lon,
+      features, version)
+    VALUES (${deviceId}, to_timestamp(${from}), to_timestamp(${to}), ${kind}, ${mode}, ${mode}, 0,
+      ${to - from}, 10, ${startLat}, ${startLon}, ${endLat}, ${endLon}, ${lat}, ${lon},
+      ${JSON.stringify(features)}::jsonb, 3)
+    RETURNING id
+  `);
+  return inserted.rows[0]?.id ?? "";
+}
+
+/** Sets the quick toggle of a device from `from` on, as `POST /devices/{id}/mode` would have. */
+async function toggle(deviceId: string, from: number, mode: TransportMode): Promise<void> {
+  await t.ctx.db.execute(sql`
+    INSERT INTO mode_overrides (device_id, kind, from_at, mode, source)
+    VALUES (${deviceId}, 'toggle', to_timestamp(${from}), ${mode}, 'ui')
+  `);
+}
+
+/** A device's mode now, as the owner sees it. */
+const deviceMode = async (deviceId: string) =>
+  deviceModeResponseSchema.parse(
+    (await owner.get(apiPaths.v1.devices.mode(deviceId)).expect(200)).body,
+  ).mode;
+
+describe("stops of one stay", () => {
+  it("are one stop when they meet at one place, two across a move, a jump or travel", async () => {
+    const device = await newDevice("Hand-made stays");
+    const start = morning - 320 * 86_400;
+    const h = 3600;
+    // One place, two stops that meet: one stay.
+    await segment(device.id, "stop", start, start + 30 * h, home);
+    await segment(device.id, "stop", start + 30 * h, start + 50 * h, [home[0] + 40, home[1]]);
+    // A walk away and back: the stop after it is another stop.
+    await segment(device.id, "move", start + 50 * h, start + 51 * h, home);
+    await segment(device.id, "stop", start + 51 * h, start + 52 * h, home);
+    // Right after it, 500 m on: another place.
+    await segment(device.id, "stop", start + 52 * h, start + 53 * h, [home[0] + 500, home[1]]);
+    // Back home after two hours without a point, 500 m from where it left off: travel between.
+    await segment(device.id, "stop", start + 55 * h, start + 56 * h, home);
+    const served = await timeline(device.id, iso(start - h), iso(start + 60 * h));
+    expect(served.map((item) => [item.kind, item.startedAt, item.endedAt])).toEqual([
+      ["stop", iso(start), iso(start + 50 * h)],
+      ["move", iso(start + 50 * h), iso(start + 51 * h)],
+      ["stop", iso(start + 51 * h), iso(start + 52 * h)],
+      ["stop", iso(start + 52 * h), iso(start + 53 * h)],
+      ["stop", iso(start + 55 * h), iso(start + 56 * h)],
+    ]);
+    // The stay under its first part's id, its points counted once at the shared one.
+    const [first] = await storedStops(device.id);
+    expect(served[0]).toMatchObject({ id: first?.id, durationS: 50 * h, pointCount: 19 });
+  });
+
+  it("are one where they meet, or a short hole apart at one place, as the pipeline would", async () => {
+    const device = await newDevice("Stays of every shape");
+    const h = 3600;
+    type Options = Parameters<typeof segment>[5];
+    /** Two stops of a case at a place of its own, 2 km and a day from the case before. */
+    const cases: {
+      name: string;
+      first?: Options;
+      second: Options & { at: number; after?: number };
+      served: number;
+      points?: number;
+    }[] = [
+      // Middles 120 m apart: one stay where they meet at the point they share …
+      {
+        name: "meet, 120 m",
+        first: { end: [60, 0] },
+        second: { at: 120, start: [60, 0] },
+        served: 1,
+        points: 19,
+      },
+      // … two a ten-minute hole apart: not one place …
+      { name: "hole, 120 m", second: { at: 120, after: 600 }, served: 2 },
+      // … but one at 90 m, and one 140 m apart where they spread 150 m.
+      { name: "hole, 90 m", second: { at: 90, after: 600 }, served: 1, points: 20 },
+      {
+        name: "hole, 140 m, spread 150 m",
+        first: { spreadM: 150 },
+        second: { at: 140, after: 600, spreadM: 150 },
+        served: 1,
+        points: 20,
+      },
+      // A stop that lasted beyond its last point (a gap the phone lay still through), the next
+      // where it ended, 200 m from its middle: one stay, the point at the seam not the first's own.
+      {
+        name: "after a still gap, 200 m",
+        first: { end: [200, 0], lastPointT: 1200 },
+        second: { at: 200 },
+        served: 1,
+        points: 20,
+      },
+      // Where the next begins 400 m from where the one before ended: two.
+      { name: "meet, jumped 400 m", second: { at: 400 }, served: 2 },
+    ];
+    for (const [index, entry] of cases.entries()) {
+      const begin = morning - 322 * 86_400 + index * 86_400;
+      const place: Vertex = [index * 2000, -5000];
+      const offset = ([x, y]: readonly [number, number]): Vertex => [place[0] + x, place[1] + y];
+      const first = entry.first ?? {};
+      await segment(device.id, "stop", begin, begin + h, place, {
+        ...first,
+        ...(first.end === undefined ? {} : { end: offset(first.end) }),
+        ...(first.lastPointT === undefined ? {} : { lastPointT: begin + first.lastPointT }),
+      });
+      const next = begin + h + (entry.second.after ?? 0);
+      const { at, after, ...second } = entry.second;
+      await segment(device.id, "stop", next, next + h, offset([at, 0]), {
+        ...second,
+        ...(second.start === undefined ? {} : { start: offset(second.start) }),
+      });
+      const served = await timeline(device.id, iso(begin - 60), iso(next + h + 60));
+      expect(served.length, entry.name).toBe(entry.served);
+      if (entry.points !== undefined) expect(served[0]?.pointCount, entry.name).toBe(entry.points);
+    }
+  });
+
+  it("count a stay that began before a period in the period it began", async () => {
+    const device = await newDevice("A stay across a period's start");
+    const day = Math.floor((morning - 324 * 86_400) / 86_400) * 86_400;
+    const h = 3600;
+    // Two parts of one stay: from ten in the evening to six the next evening, across midnight.
+    await segment(device.id, "stop", day - 2 * h, day + 10 * h, home);
+    await segment(device.id, "stop", day + 10 * h, day + 18 * h, home);
+    const counts = await countStops(
+      t.ctx.db,
+      [device.id],
+      [
+        { startMs: day * 1000, endMs: (day + 86_400) * 1000 },
+        { startMs: (day - 86_400) * 1000, endMs: day * 1000 },
+      ],
+    );
+    expect(counts).toEqual([0, 1]);
+  });
+
+  it("are one stop everywhere a three-day stay uploaded at once is served", {
+    timeout: 300_000,
+  }, async () => {
+    const device = await newDevice("Three days at home");
+    const start = morning - 330 * 86_400;
+    const there = travel([work, home], { startT: start, speedMs: 5, intervalS: 2, seed: 101 });
+    const days = stay(home, {
+      startT: lastT(there) + 2,
+      durationS: 3 * 86_400,
+      intervalS: 60,
+      seed: 102,
+    });
+    const away = travel([home, work], {
+      startT: lastT(days) + 2,
+      speedMs: 5,
+      intervalS: 2,
+      seed: 103,
+    });
+    const [lon, lat] = toLonLat(home[0], home[1]);
+    await uploadVisits(t.app, device.token, [
+      { arrivedAt: days[0]?.t ?? 0, departedAt: lastT(days), lat, lon, accuracy: 20 },
+    ]);
+    await upload(device.token, concat(there, days, away));
+    await t.ctx.processing.flush();
+    // As the bounded passes left it: the stay in parts, one after the other.
+    const stops = await storedStops(device.id);
+    expect(stops.length).toBeGreaterThanOrEqual(2);
+    await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
+    const before = await processingFingerprint(t.ctx.db, device.id, {
+      from: new Date((start - 3600) * 1000),
+      to: new Date((lastT(away) + 3600) * 1000),
+    });
+
+    const from = iso(start - 3600);
+    const to = iso(lastT(away) + 3600);
+    const served = await timeline(device.id, from, to);
+    const stay3 = served.filter((item) => item.kind === "stop");
+    expect(stay3).toHaveLength(1);
+    const [one] = stay3;
+    expect(one?.id).toBe(stops[0]?.id);
+    expect(one?.startedAt).toBe(new Date(stops[0]?.from ?? "").toISOString());
+    expect(one?.endedAt).toBe(new Date(stops.at(-1)?.to ?? "").toISOString());
+    expect(one?.durationS).toBe(
+      (Date.parse(one?.endedAt ?? "") - Date.parse(one?.startedAt ?? "")) / 1000,
+    );
+    // Its points each once: what the parts hold of their own, a point two of them share once.
+    const own = await t.ctx.db.execute<{ count: number }>(sql`
+      SELECT count(*)::int AS count FROM processed_points
+      WHERE device_id = ${device.id} AND kept
+        AND recorded_at >= ${one?.startedAt ?? ""}::timestamptz
+        AND recorded_at <= ${one?.endedAt ?? ""}::timestamptz
+    `);
+    expect(one?.pointCount).toBe(own.rows[0]?.count);
+    // A page at a time, every stay once.
+    const paged = await timeline(device.id, from, to, 1);
+    expect(paged.map((item) => item.id)).toEqual(served.map((item) => item.id));
+
+    // The map's tracks name the same stop, over the whole stay.
+    const tracks = levelTracksResponseSchema.parse(
+      (
+        await owner
+          .get(apiPaths.v1.tracks)
+          .query({ devices: device.id, from, to, level: "inferred" })
+          .expect(200)
+      ).body,
+    );
+    const mapped = tracks.segments.filter((segment) => segment.kind === "stop");
+    expect(mapped.map((segment) => [segment.id, segment.startedAt, segment.endedAt])).toEqual([
+      [one?.id, one?.startedAt, one?.endedAt],
+    ]);
+
+    // Insights counts one stop, the mode statistics one stop a day it spans.
+    const firstDay = localDate(start);
+    const lastDay = localDate(lastT(away));
+    const overview = insightsOverviewSchema.parse(
+      (
+        await owner
+          .get(apiPaths.v1.insights.overview)
+          .query({ devices: device.id, from: firstDay, to: lastDay })
+          .expect(200)
+      ).body,
+    );
+    expect(overview.totals.stops).toBe(1);
+    const stats = modeStatsResponseSchema.parse(
+      (
+        await owner
+          .get(apiPaths.v1.statsModes)
+          .query({ devices: device.id, from: firstDay, to: lastDay })
+          .expect(200)
+      ).body,
+    );
+    const stationary = stats.days.filter((row) => row.mode === "stationary");
+    expect(stationary.length).toBeGreaterThanOrEqual(3);
+    expect(stationary.every((row) => row.segments === 1)).toBe(true);
+
+    // The MCP tools agree: one stop on the timeline, one that day, one visit.
+    const mcp = await call(
+      "get_timeline",
+      { from, to, device: device.id },
+      getTimelineOutputSchema,
+    );
+    const mcpStops = mcp.items.filter((item) => item.kind === "stop");
+    expect(mcpStops.map((item) => [Date.parse(item.startedAt), Date.parse(item.endedAt)])).toEqual([
+      [Date.parse(one?.startedAt ?? ""), Date.parse(one?.endedAt ?? "")],
+    ]);
+    const middle = localDate((days[0]?.t ?? 0) + 36 * 3600);
+    const summary = await call(
+      "get_day_summary",
+      { date: middle, device: device.id },
+      getDaySummaryOutputSchema,
+    );
+    expect(summary.stops).toBe(1);
+    expect(summary.modes.find((row) => row.mode === "stationary")?.segments).toBe(1);
+    const visits = await call("get_visits", { from, to, device: device.id }, getVisitsOutputSchema);
+    expect(visits.visits).toHaveLength(1);
+
+    // Serving changed nothing that was stored.
+    expect(
+      await processingFingerprint(t.ctx.db, device.id, {
+        from: new Date((start - 3600) * 1000),
+        to: new Date((lastT(away) + 3600) * 1000),
+      }),
+    ).toEqual(before);
+  });
+
+  it("are the device's current mode since the stay began, under the stay's id", {
+    timeout: 300_000,
+  }, async () => {
+    // Three days at home up to a minute ago, a point every minute: worked out in parts.
+    const device = await newDevice("Home for three days now");
+    const now = Math.floor(Date.now() / 1000);
+    const days = stay(home, {
+      startT: now - 3 * 86_400,
+      durationS: 3 * 86_400 - 60,
+      intervalS: 60,
+      seed: 121,
+    });
+    await upload(device.token, days);
+    await t.ctx.processing.flush();
+    const stops = await storedStops(device.id);
+    expect(stops.length).toBeGreaterThan(1);
+    const answer = deviceModeResponseSchema.parse(
+      (await owner.get(apiPaths.v1.devices.mode(device.id)).expect(200)).body,
+    );
+    expect(answer.mode.current).toEqual({
+      mode: "stationary",
+      setByUser: false,
+      since: new Date(stops[0]?.from ?? "").toISOString(),
+      segmentId: stops[0]?.id,
+    });
+  });
+
+  it("are one stop through 0.5.1's live uploads after days at home", {
+    timeout: 300_000,
+  }, async () => {
+    // Three days at home, a point every ten minutes, by bike to work, two hours there.
+    const device = await newDevice("Live after days at home");
+    const start = morning - 340 * 86_400;
+    const atHome = stay(home, { startT: start, durationS: 3 * 86_400, intervalS: 600, seed: 111 });
+    const toWork = travel([home, work], {
+      startT: lastT(atHome) + 60,
+      speedMs: 5,
+      intervalS: 2,
+      motion: ["cycling"],
+      seed: 112,
+    });
+    const atWork = stay(work, {
+      startT: lastT(toWork) + 2,
+      durationS: 7200,
+      intervalS: 30,
+      seed: 113,
+    });
+    await upload(device.token, concat(atHome, toWork, atWork));
+    await t.ctx.processing.flush();
+    // Riding on, an upload every three minutes, each worked out before the next.
+    const ride = travel([work, [work[0] + 8000, work[1]]], {
+      startT: lastT(atWork) + 2,
+      speedMs: 5,
+      intervalS: 2,
+      motion: ["cycling"],
+      seed: 114,
+    });
+    const riding = ride[0]?.t ?? 0;
+    const from = iso(start - 3600);
+    for (let index = 0; index < 6; index += 1) {
+      await upload(
+        device.token,
+        ride.filter(
+          (point) => point.t >= riding + index * 180 && point.t < riding + (index + 1) * 180,
+        ),
+      );
+      await t.ctx.processing.flush();
+      const to = iso(riding + (index + 1) * 180 + 3600);
+      const served = (await timeline(device.id, from, to)).filter((item) => item.kind === "stop");
+      // Home and work, however many parts the passes left.
+      expect(served).toHaveLength(2);
+      expect(served[0]?.startedAt).toBe(iso(start));
+      const mcp = await call(
+        "get_timeline",
+        { from, to, device: device.id },
+        getTimelineOutputSchema,
+      );
+      expect(mcp.items.filter((item) => item.kind === "stop")).toHaveLength(2);
+    }
+    expect((await storedStops(device.id)).length).toBeGreaterThan(2);
+    await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
+  });
+});
+
+/** Stores recorded points as a pass would have left them: at `x` metres east of `at`, kept unless not. */
+async function storedPoints(
+  deviceId: string,
+  at: Vertex,
+  points: readonly { t: number; x: number; kept: boolean }[],
+): Promise<void> {
+  for (const point of points) {
+    const [lon, lat] = toLonLat(at[0] + point.x, at[1]);
+    await t.ctx.db.execute(sql`
+      INSERT INTO locations (device_id, recorded_at, lat, lon)
+      VALUES (${deviceId}, to_timestamp(${point.t}), ${lat}, ${lon})
+    `);
+    await t.ctx.db.execute(sql`
+      INSERT INTO processed_points (device_id, recorded_at, kept, lat_avg, lon_avg, version)
+      VALUES (${deviceId}, to_timestamp(${point.t}), ${point.kept}, ${lat}, ${lon}, 1)
+    `);
+  }
+}
+
+describe("a quick toggle across the parts of a stay", () => {
+  it("runs on through the parts of the stay it was set in, and a stay after it ends it", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const h = 3600;
+    // A day at home stored in three parts, the bike set during the second: the third does not end
+    // it, wherever its stay is read — the device's mode, the shares' activity, the next pass.
+    const setAtHome = await newDevice("Set at home");
+    await segment(setAtHome.id, "stop", now - 30 * h, now - 6 * h, home);
+    await segment(setAtHome.id, "stop", now - 6 * h, now - 3 * h, [home[0] + 40, home[1]]);
+    await segment(setAtHome.id, "stop", now - 3 * h, now - 50 * 60, [home[0] + 20, home[1]]);
+    await toggle(setAtHome.id, now - 4 * h, "cycling");
+    const shared = async () =>
+      (
+        await loadCurrentModes(t.ctx.db, [setAtHome.id], {
+          now: new Date(),
+          recentMs: 15 * 60_000,
+        })
+      ).get(setAtHome.id);
+    expect(await deviceMode(setAtHome.id)).toMatchObject({
+      override: { mode: "cycling" },
+      current: { mode: "cycling", setByUser: true },
+    });
+    expect(await shared()).toBe("cycling");
+    // The window of the ride after it: the toggle's own first move, whatever the inference reads.
+    const [read] = await loadOverrides(
+      t.ctx.db,
+      setAtHome.id,
+      new Date((now - 50 * 60) * 1000),
+      new Date(now * 1000),
+    );
+    expect(read).toMatchObject({ endsBy: null, stoppedBefore: false });
+    expect(
+      await loadStayBefore(
+        t.ctx.db,
+        setAtHome.id,
+        new Date((now - 50 * 60) * 1000),
+        new Date((read?.from ?? 0) * 1000),
+      ),
+    ).toMatchObject({ startT: now - 3 * h, endT: now - 50 * 60, stayStartT: null });
+    // Off by car, read as a car: still the toggle's first move, so the toggle runs on …
+    const ride = await segment(setAtHome.id, "move", now - 50 * 60, now - 30 * 60, home, {
+      end: work,
+      mode: "car",
+    });
+    expect(await deviceMode(setAtHome.id)).toMatchObject({
+      override: { mode: "cycling" },
+      current: { mode: "cycling", segmentId: ride },
+    });
+    expect(await shared()).toBe("cycling");
+    // … until the stay at work, which began after it.
+    await segment(setAtHome.id, "stop", now - 30 * 60, now - 60, work);
+    expect((await deviceMode(setAtHome.id)).override).toBeNull();
+    expect(await shared()).toBe("stationary");
+
+    // The train set on the way, five minutes at work stored apart from the rest of the stay: the
+    // stay began after the toggle and lasts ten minutes and more, which ends it.
+    const off = await newDevice("Set on the way");
+    await segment(off.id, "move", now - 3 * h, now - 2 * h, home, { end: work, mode: "car" });
+    await toggle(off.id, now - 2.5 * h, "train");
+    await segment(off.id, "stop", now - 2 * h, now - 2 * h + 300, work);
+    await segment(off.id, "stop", now - 2 * h + 300, now - 60, [work[0] + 40, work[1]]);
+    expect((await deviceMode(off.id)).override).toBeNull();
+    const [ended] = await loadOverrides(
+      t.ctx.db,
+      off.id,
+      new Date(now * 1000),
+      new Date((now + 60) * 1000),
+    );
+    expect(ended).toMatchObject({ endsBy: now - 2 * h + 300, stoppedBefore: true });
+    expect(
+      await loadStayBefore(
+        t.ctx.db,
+        off.id,
+        new Date((now - 2 * h + 300) * 1000),
+        new Date((ended?.from ?? 0) * 1000),
+      ),
+    ).toMatchObject({ startT: now - 2 * h, endT: now - 2 * h + 300, stayStartT: now - 2 * h });
+  });
+
+  it("read the stored stop a window cuts as the window leaves it", async () => {
+    // Two hours at home stored as one stop whose phone last spoke at 90 minutes: points of its own
+    // every ten minutes, a spike at 85 dropped, and at 100 the point the next move starts at.
+    const device = await newDevice("Cut by a window");
+    const start = morning - 326 * 86_400;
+    const at = (minutes: number) => start + minutes * 60;
+    await segment(device.id, "stop", start, at(120), home, { lastPointT: at(90) });
+    await storedPoints(
+      device.id,
+      home,
+      [0, 10, 20, 30, 40, 50, 60, 70, 80, 85, 90, 100].map((minute) => ({
+        t: at(minute),
+        x: minute,
+        kept: minute !== 85,
+      })),
+    );
+    /** The stop as a window from `minute` on leaves it, and the point its end should be. */
+    const cutAt = async (minute: number, pointAt: number) => {
+      const before = await loadStayBefore(
+        t.ctx.db,
+        device.id,
+        new Date(at(minute) * 1000),
+        new Date((start - 3600) * 1000),
+      );
+      const [lon, lat] = toLonLat(home[0] + pointAt, home[1]);
+      expect(before, `cut at ${minute}`).toMatchObject({ startT: start, endT: at(minute) });
+      expect(before?.end.lat, `cut at ${minute}`).toBeCloseTo(lat, 9);
+      expect(before?.end.lon, `cut at ${minute}`).toBeCloseTo(lon, 9);
+      return before;
+    };
+    // Its end, as the part the window leaves will count it (`persistWindow`): the last point of its
+    // own up to the window's start — not the next move's at 100, not the dropped one at 85.
+    expect((await cutAt(105, 90))?.stayStartT).toBe(start);
+    await cutAt(87, 80);
+    await cutAt(70, 70);
+  });
+
+  it("keeps a toggle set during a three-day stay until the device leaves, for the ride", {
+    timeout: 300_000,
+  }, async () => {
+    // Three days at home up to two hours ago, a point a minute: worked out in parts.
+    const device = await newDevice("Toggle at home for days");
+    const now = Math.floor(Date.now() / 1000);
+    const days = stay(home, {
+      startT: now - 3 * 86_400,
+      durationS: 3 * 86_400 - 2 * 3600,
+      intervalS: 60,
+      seed: 131,
+    });
+    await upload(device.token, days);
+    await t.ctx.processing.flush();
+    const parts = await storedStops(device.id);
+    expect(parts.length).toBeGreaterThan(1);
+    // The train set an hour before the last part began: the parts after it are the same stay.
+    const lastPart = Date.parse(parts.at(-1)?.from ?? "") / 1000;
+    await toggle(device.id, lastPart - 3600, "train");
+    expect(await deviceMode(device.id)).toMatchObject({
+      override: { mode: "train" },
+      current: { mode: "train", setByUser: true },
+    });
+
+    // Leaving: the ride (read as a bike) is the toggle's, the stay at work ends it.
+    const toWork = travel([home, work], {
+      startT: lastT(days) + 60,
+      speedMs: 5,
+      intervalS: 2,
+      motion: ["cycling"],
+      seed: 132,
+    });
+    const atWork = stay(work, {
+      startT: lastT(toWork) + 2,
+      durationS: 1200,
+      intervalS: 30,
+      seed: 133,
+    });
+    await upload(device.token, concat(toWork, atWork));
+    await t.ctx.processing.flush();
+    const rides = (
+      await t.ctx.db.execute<{ mode_user: string | null; mode_inferred: string | null }>(sql`
+        SELECT mode_user, mode_inferred FROM segments
+        WHERE device_id = ${device.id} AND kind = 'move' ORDER BY started_at
+      `)
+    ).rows;
+    expect(rides.length).toBeGreaterThan(0);
+    expect(rides.map((ride) => ride.mode_user)).toEqual(rides.map(() => "train"));
+    expect((await deviceMode(device.id)).override).toBeNull();
+    await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
+    // I6: the ride's window, run again on what its pass wrote, gives the toggle the same moves.
+    const ride = {
+      from: new Date(((toWork[0]?.t ?? 0) - 1800) * 1000),
+      to: new Date((lastT(atWork) + 1800) * 1000),
+    };
+    await assertIdempotent(
+      t.ctx.db,
+      device.id,
+      { from: new Date((lastPart - 3 * 3600) * 1000), to: ride.to },
+      async () => {
+        await enqueueWindow(t.ctx.db, {
+          deviceId: device.id,
+          ...ride,
+          reason: "reprocess",
+          fromLevel: "averaged",
+        });
+        const rows = await takeDeviceWindows(t.ctx.db, device.id, ride.from, ride.to);
+        expect(rows.length).toBeGreaterThan(0);
+        await processWindow(t.ctx.db, rows, {
+          config: t.ctx.processing.config,
+          mapping: false,
+          now: new Date(),
+        });
+      },
+    );
+  });
+});

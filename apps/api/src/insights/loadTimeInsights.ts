@@ -5,7 +5,7 @@ import type { DeviceAccess } from "../devices/deviceAccess";
 import { hasPendingWork } from "../processing/processingQueue";
 import { buildTimeGrid } from "./buildTimeGrid";
 import { loadInsightMoves } from "./insightMoves";
-import { insightsScope } from "./insightsScope";
+import { type InsightsScope, insightsScope } from "./insightsScope";
 
 /** `GET /api/v1/insights/time`: every mode's moves are read, for the list of modes present. */
 export async function loadTimeInsights(
@@ -17,8 +17,9 @@ export async function loadTimeInsights(
     devices?: readonly string[] | undefined;
     mode?: TransportMode | undefined;
   },
+  given?: InsightsScope,
 ): Promise<InsightsTime> {
-  const scope = await insightsScope(db, access, query);
+  const scope = given ?? (await insightsScope(db, access, query));
   const moves = await loadInsightMoves(db, scope.deviceIds, {
     startMs: scope.start.getTime(),
     endMs: scope.end.getTime(),

@@ -56,8 +56,11 @@ export function e2eServerEnvironment(databaseUrl: string): Record<string, string
     RATE_LIMIT_TOKEN_PER_MINUTE: "100000",
     RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES: "100000",
     RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE: "100000",
-    // One server for the suite: it queues and works out what the tests upload.
+    // One server for the suite: it queues and works out what the tests upload. In this role the
+    // worker's liveness port stays closed (the API's /api/health/live is the probe).
     PROCESSING_ROLE: "all",
+    PROCESSING_METRICS_PORT: "",
+    PROCESSING_TEST_STALL: "",
     PROCESSING_ENABLED: "",
     // Empty here is not the default but "no map data": the suite never reaches Overpass, so the
     // mapped level degrades to averaged, as it does on a server without map data.
@@ -73,5 +76,9 @@ export function e2eServerEnvironment(databaseUrl: string): Record<string, string
     MAP_DATA_DIR: "",
     MAP_DATA_REFRESH_DAYS: "",
     MAP_DATA_MAX_GB: "",
+    PROCESSING_PASS_MAX_POINTS: "",
+    PROCESSING_PASS_MAX_SPAN_HOURS: "",
+    LOAD_TEST: "",
+    LAUNCHWAY_ENVIRONMENT: "",
   };
 }
