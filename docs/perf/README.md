@@ -300,8 +300,33 @@ plus `pg_stat_statements` and `track_io_timing` for the report (§4.6 brings
 both to production).
 
 The first comparison, from the reports of 28 October 2026 below:
+
 <!-- calibration:start -->
-(filled in by the first runs)
+
+| | Production (the node, M0) | Mac, `fleet-10` | Mac, `fleet-100` |
+|---|---|---|---|
+| fsync, fdatasync (one 8 kB write) | 837 ops/s (1.20 ms) | 14 966 ops/s | 16 334 ops/s (0.06 ms) |
+| `ingest_log` p95, < 10 records | 13 ms | 9.1 ms (0.70 ×) | 8.0 ms (0.62 ×) |
+| `ingest_log` p95, 10–99 records | 19 ms | 17.6 ms (0.93 ×) | 16.2 ms (0.86 ×) |
+| `ingest_log` p95, 100–499 records | 52 ms | — | 59.1 ms (n 7; 1.14 ×) |
+| `locations`, bytes a row | 256 | 259 | 261 |
+| `processed_points`, bytes a row | 320 | 178 | 217 |
+| WAL a point | ≈ 70 kB (3.2 GB a day, 45 000 points) | 5.8 kB | 14.1 kB |
+
+The Mac's volume syncs about twenty times faster than the node's, yet a small
+upload takes 0.6–0.9 times production's time on the server: an upload is
+round trips to Postgres and Node's work more than its fsync, and the Mac
+shared its cores with Spotlight and other worktrees during both runs (load
+averages up to 30–38). Rows weigh what they weigh in production
+(`locations` 256 against 259–261 bytes). WAL is where a compressed day
+misleads: production writes about 70 kB of WAL a point for its one
+high-resolution phone, whose whole night the processing rewrites every
+minute (§5.2), while a compressed day's stops last minutes and its runs
+write 6–14 kB a point — the 24-hour soak (`soak-100`, M2) is where the
+amplification and the WAL target are measured. The calibration factor of
+§6.5 (expected 1.5–2 on CPU-bound numbers, 1–3 on fsync-bound ones) still
+needs the same scenario on the node.
+
 <!-- calibration:end -->
 
 ## Safety
@@ -371,5 +396,6 @@ Load data and real data never share a database.
 <!-- runs:start -->
 | Run | Date | Commit | Scenario | Gates |
 | --- | --- | --- | --- | --- |
+| [2026-10-28-ad9e5d5-fleet-100](2026-10-28-ad9e5d5-fleet-100.md) | 2026-10-28 | `ad9e5d5` | fleet-100 | fail |
 | [2026-10-28-0d99ed5-fleet-10](2026-10-28-0d99ed5-fleet-10.md) | 2026-10-28 | `0d99ed5` | fleet-10 | fail |
 <!-- runs:end -->
