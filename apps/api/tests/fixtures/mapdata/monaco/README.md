@@ -4,13 +4,16 @@ The files of a Trail map data artefact for Monaco, as `scripts/mapdata/build.sh
 monaco` writes them (docs/design/self-hosted-maps.md, §2.2, §3.1 and §4.4),
 kept here so that the loader, the coverage rules, the tile router and the
 end-to-end suite have real OpenStreetMap data and real tiles without a
-network. Built on 28 October 2026 (10:36 UTC) by the Map data workflow
-(`.github/workflows/mapdata.yml`, run 40673177968,
-https://github.com/JensPenneman/trail/actions/runs/40673177968) at commit
-5219f04, from Geofabrik's extract `monaco-261027.osm.pbf` (OSM data up to
-2026-10-27T21:23:59Z). The data files are the same, byte for byte, as those
-of the first build (run 40652466713); only the manifest's build time,
-commit and Java differ.
+network. Built on 28 October 2026 (10:53 UTC) by the Map data workflow
+(`.github/workflows/mapdata.yml`, run 40675644151,
+https://github.com/JensPenneman/trail/actions/runs/40675644151) at commit
+a09cf45, from Geofabrik's extract `monaco-261027.osm.pbf` (OSM data up to
+2026-10-27T21:23:59Z): build `20261027`, which the same run published as
+`ghcr.io/jenspenneman/trail-mapdata:monaco-20261027` (manifest
+`sha256:72f10f35fce6a0fc760bf32b16b3ead41ce4f70a7734b6749eee056e3dc2e762`).
+The data files are the same, byte for byte, as those of the first build
+(run 40652466713); only the manifest differs: its build id, time, commit
+and Java, and the extract's `mirror` (none for Monaco).
 
 | File | Contents | Bytes |
 |---|---|---:|
@@ -18,7 +21,7 @@ commit and Java differ.
 | `pois.geojsonseq.gz` | 119 stops: 117 bus stops, the railway station Monaco - Monte Carlo and the cruise terminal (`amenity=ferry_terminal`); no aerodrome | 3 306 |
 | `region.poly` | Geofabrik's polygon of the extract (Monaco's land border and its waters) | 635 |
 | `basemap.pmtiles` | vector tiles z0–14, OpenMapTiles schema 3.16.0, gzipped MVT, 246 tiles over the extract's bounding box | 421 415 |
-| `manifest.json` | the region, the extract, the build, the tools, the counts, attribution, licences, and every file's size and SHA-256 (Planetiler's sources marked `pinned` or not) | 3 287 |
+| `manifest.json` | the region, the extract, the build (its id, time, commit and tools), the counts, attribution, licences, and every file's size and SHA-256 (Planetiler's sources marked `pinned` or not) | 3 329 |
 | `SHA256SUMS` | the checksums, for `sha256sum -c SHA256SUMS` | |
 
 Facts the tests can rely on:
