@@ -14,6 +14,7 @@ import { resolveDeviceIds } from "../devices/resolveDeviceIds";
 import { DistanceAccumulator } from "../tracks/distanceAccumulator";
 import { haversineM } from "../tracks/haversine";
 import { simplifyParts } from "../tracks/simplifyTrack";
+import { segmentOverlaps } from "./segmentOverlaps";
 import { type SegmentRow, segmentColumns, toSegment } from "./segmentRow";
 
 /** Rows per round trip (keyset on recorded_at). */
@@ -349,8 +350,11 @@ export async function loadLevelTracks(
       const rows = await db.execute<SegmentRow>(sql`
         SELECT ${segmentColumns} FROM segments s
         WHERE s.device_id = ${device.id}
-          AND s.started_at < ${query.to.toISOString()}::timestamptz
-          AND s.ended_at > ${query.from.toISOString()}::timestamptz
+          AND ${segmentOverlaps(
+            "s",
+            sql`${query.from.toISOString()}::timestamptz`,
+            sql`${query.to.toISOString()}::timestamptz`,
+          )}
         ORDER BY s.started_at
       `);
       const ends = new Set<number>();

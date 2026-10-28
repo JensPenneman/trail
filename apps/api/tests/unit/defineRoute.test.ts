@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { AppContext } from "../../src/appContext";
 import { type RequestAuth, setRequestAuth, type UserRow } from "../../src/auth/requestAuth";
+import { etagMatches } from "../../src/cache/etagMatches";
+import { weakEtag } from "../../src/cache/weakEtag";
 import type { AccessRecord } from "../../src/dataAccess/accessRecord";
 import { createErrorHandler } from "../../src/http/errorHandler";
 import { HttpError } from "../../src/http/httpError";
@@ -52,6 +54,8 @@ const token = (scopes: ApiScope[]): RequestAuth => ({
 /** The route alone, as the v1 router mounts it, behind a stand-in for authentication. */
 function appFor(route: V1Route, auth?: RequestAuth): Express {
   const app = express();
+  // As createApp: no ETags of Express's own, so the ones seen here are the route's.
+  app.set("etag", false);
   app.use(express.json());
   app.use((req, _res, next) => {
     if (auth !== undefined) setRequestAuth(req, auth);
@@ -742,5 +746,171 @@ describe("the data access log", () => {
         () => ({ status: 200, body: {} }),
       ),
     ).toThrow(/data access log/);
+  });
+});
+
+describe("conditional answers", () => {
+  /** A stand-in for a validator read first: the heavy work runs only for a 200. */
+  let version = 1;
+  let built = 0;
+  const conditional = defineRoute(
+    {
+      method: "get",
+      path: "/api/v1/devices/{id}/day",
+      operationId: "dayProbe",
+      summary: "Day",
+      description: "",
+      tags: ["Devices"],
+      auth: { scopes: ["devices:read"] },
+      request: { params: itemParams, query: z.object({ bad: z.literal("1").optional() }) },
+      responses: { 200: z.object({ version: z.number() }), 304: null },
+    },
+    ({ auth, params, query, ifNoneMatch }) => {
+      const etag = weakEtag(auth.user.id, "dayProbe", [params, version]);
+      if (etagMatches(ifNoneMatch, etag)) return { status: 304, etag };
+      built += 1;
+      const body = { version: query.bad === "1" ? ("one" as unknown as number) : version };
+      return { status: 200, body, etag };
+    },
+  );
+  const path = `/api/v1/devices/${itemId}/day`;
+
+  it("answers 304 to its own ETag, before the heavy work, and 200 once it changed", async () => {
+    version = 1;
+    built = 0;
+    const app = appFor(conditional, session);
+    const first = await request(app).get(path).expect(200);
+    expect(first.body).toEqual({ version: 1 });
+    const etag = first.headers["etag"];
+    expect(etag).toMatch(/^W\/"[A-Za-z0-9_-]{22}"$/);
+    const again = await request(app)
+      .get(path)
+      .set("If-None-Match", etag ?? "")
+      .expect(304);
+    expect(again.text).toBe("");
+    expect(again.headers["etag"]).toBe(etag);
+    expect(again.headers["content-type"]).toBeUndefined();
+    expect(built).toBe(1);
+    version = 2;
+    const changed = await request(app)
+      .get(path)
+      .set("If-None-Match", etag ?? "")
+      .expect(200);
+    expect(changed.body).toEqual({ version: 2 });
+    expect(changed.headers["etag"]).not.toBe(etag);
+    expect(built).toBe(2);
+  });
+
+  it("never matches another account's ETag", async () => {
+    version = 1;
+    const mine = await request(appFor(conditional, session)).get(path).expect(200);
+    const other: RequestAuth = {
+      ...session,
+      user: { ...user, id: "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a99" },
+    };
+    await request(appFor(conditional, other))
+      .get(path)
+      .set("If-None-Match", mine.headers["etag"] ?? "")
+      .expect(200);
+  });
+
+  it("sends the ETag only with a body its schema accepted", async () => {
+    const response = await request(appFor(conditional, session)).get(`${path}?bad=1`).expect(500);
+    expect(response.headers["etag"]).toBeUndefined();
+  });
+
+  it("turns a 200 whose ETag the request names into a 304 (a validator that is the body)", async () => {
+    let sent = 0;
+    const whole = defineRoute(
+      {
+        method: "get",
+        path: "/api/v1/whole-body",
+        operationId: "wholeBodyProbe",
+        summary: "Whole body",
+        description: "",
+        tags: ["Reference"],
+        auth: { scopes: ["devices:read"] },
+        responses: { 200: z.object({ n: z.number() }), 304: null },
+      },
+      ({ auth }) => {
+        sent += 1;
+        const body = { n: 7 };
+        return { status: 200, body, etag: weakEtag(auth.user.id, "wholeBodyProbe", body) };
+      },
+    );
+    const app = appFor(whole, session);
+    const first = await request(app).get("/api/v1/whole-body").expect(200);
+    await request(app)
+      .get("/api/v1/whole-body")
+      .set("If-None-Match", `"other", ${first.headers["etag"] ?? ""}`)
+      .expect(304);
+    expect(sent).toBe(2);
+  });
+
+  it("records a 304 like the 200 it stands for, with its own status", async () => {
+    recorded.length = 0;
+    recordFails = false;
+    version = 5;
+    const app = appFor(conditional, session);
+    const first = await request(app).get(path).expect(200);
+    await request(app)
+      .get(path)
+      .set("If-None-Match", first.headers["etag"] ?? "")
+      .expect(304);
+    expect(recorded.map(({ status, action, resource }) => ({ status, action, resource }))).toEqual([
+      { status: 200, action: "dayProbe", resource: { deviceIds: [itemId] } },
+      { status: 304, action: "dayProbe", resource: { deviceIds: [itemId] } },
+    ]);
+  });
+
+  it("refuses a 304 where a client cannot hold the 200", () => {
+    const base = {
+      path: "/api/v1/items",
+      operationId: "conditionalProbe",
+      summary: "Conditional",
+      description: "",
+      tags: ["Devices"],
+      auth: { scopes: ["devices:read"] },
+    } as const;
+    expect(() =>
+      defineRoute({ ...base, method: "post", responses: { 200: z.object({}), 304: null } }, () => ({
+        status: 304,
+        etag: 'W/"x"',
+      })),
+    ).toThrow(/lists 304 without being a GET/);
+    expect(() =>
+      defineRoute({ ...base, method: "get", responses: { 204: null, 304: null } }, () => ({
+        status: 304,
+        etag: 'W/"x"',
+      })),
+    ).toThrow(/lists 304 without being a GET/);
+    expect(() =>
+      defineRoute(
+        { ...base, method: "get", responses: { 200: z.object({}), 304: z.object({}) } },
+        () => ({ status: 304, etag: 'W/"x"' }),
+      ),
+    ).toThrow(/a 304 has no body/);
+  });
+
+  it("are typed: a conditional route sends its ETag with every 200, others never answer 304", () => {
+    const spec = {
+      method: "get",
+      path: "/api/v1/typed",
+      operationId: "typedProbe",
+      summary: "Typed",
+      description: "",
+      tags: ["Reference"],
+      auth: { scopes: ["devices:read"] },
+      responses: { 200: z.object({ n: z.number() }), 304: null },
+    } as const;
+    // @ts-expect-error a conditional route's 200 without its ETag
+    defineRoute(spec, () => ({ status: 200, body: { n: 1 } }));
+    // @ts-expect-error a 304 without the ETag it stands for
+    defineRoute(spec, () => ({ status: 304 }));
+    defineRoute({ ...spec, responses: { 200: spec.responses[200] } }, () => ({
+      // @ts-expect-error a route that does not list 304 cannot answer it
+      status: 304,
+      etag: 'W/"x"',
+    }));
   });
 });

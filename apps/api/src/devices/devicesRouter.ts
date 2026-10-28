@@ -13,6 +13,8 @@ import express, { type Router } from "express";
 import { forgetDeviceInTokens } from "../apiTokens/forgetDeviceInTokens";
 import type { AppContext } from "../appContext";
 import { requireAuth, requireSession } from "../auth/requestAuth";
+import { answerConditionally } from "../cache/answerConditionally";
+import { weakEtag } from "../cache/weakEtag";
 import { recordDashboardAccess } from "../dataAccess/recordDashboardAccess";
 import { allowLongStatements } from "../db/allowLongStatements";
 import { devices } from "../db/schema/devices";
@@ -23,6 +25,7 @@ import { removeDeviceFromShares } from "../sharing/removeDeviceFromShares";
 import { changeDevice } from "./changeDevice";
 import { createDevice } from "./createDevice";
 import { deviceCredentials } from "./deviceCredentials";
+import { deviceListValidator } from "./deviceListValidator";
 import { findOwnedDevice } from "./findOwnedDevice";
 import { generateDeviceToken } from "./generateDeviceToken";
 import { loadDeviceSummaries } from "./loadDeviceSummaries";
@@ -39,8 +42,13 @@ export function devicesRouter(ctx: AppContext): Router {
   const { db, config } = ctx;
 
   router.get(apiPaths.devices.root, async (req, res) => {
-    const body: DeviceListResponse = { devices: await loadDeviceSummaries(db, requireAuth(req)) };
-    res.json(body);
+    const auth = requireAuth(req);
+    // The validator first, the summaries only when it changed (docs/architecture.md §8.9).
+    const etag = weakEtag(auth.user.id, apiPaths.devices.root, await deviceListValidator(db, auth));
+    await answerConditionally(req, res, etag, async () => {
+      const body: DeviceListResponse = { devices: await loadDeviceSummaries(db, auth) };
+      return body;
+    });
   });
 
   router.post(apiPaths.devices.root, async (req, res) => {

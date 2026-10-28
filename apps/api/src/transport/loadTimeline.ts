@@ -4,6 +4,7 @@ import type { Executor } from "../db/database";
 import type { DeviceAccess } from "../devices/deviceAccess";
 import { resolveDeviceIds } from "../devices/resolveDeviceIds";
 import { hasPendingWork } from "../processing/processingQueue";
+import { segmentOverlaps } from "./segmentOverlaps";
 import { type SegmentRow, segmentColumns, toSegment } from "./segmentRow";
 import { decodeTimelineCursor, encodeTimelineCursor } from "./timelineCursor";
 
@@ -31,8 +32,11 @@ export async function loadTimeline(
     SELECT ${segmentColumns}
     FROM segments s
     WHERE s.device_id = ANY(${sql.param(ids)}::uuid[])
-      AND s.started_at < ${query.to.toISOString()}::timestamptz
-      AND s.ended_at > ${query.from.toISOString()}::timestamptz
+      AND ${segmentOverlaps(
+        "s",
+        sql`${query.from.toISOString()}::timestamptz`,
+        sql`${query.to.toISOString()}::timestamptz`,
+      )}
       ${
         cursor === null
           ? sql``

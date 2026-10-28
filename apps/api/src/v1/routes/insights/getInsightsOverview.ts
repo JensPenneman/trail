@@ -1,6 +1,7 @@
 import { insightsOverviewSchema, insightsQuerySchema } from "@trail/contracts/insights";
-import { loadInsightsOverview } from "../../../insights/loadInsightsOverview";
+import { loadInsightsOverview, overviewRange } from "../../../insights/loadInsightsOverview";
 import { defineRoute } from "../../defineRoute";
+import { answerInsights } from "./answerInsights";
 
 /** `GET /api/v1/insights/overview` */
 export const getInsightsOverview = defineRoute(
@@ -16,10 +17,17 @@ export const getInsightsOverview = defineRoute(
     request: { query: insightsQuerySchema },
     // A device in `devices` that is unknown, foreign or outside the token is a 404.
     errors: [404],
-    responses: { 200: insightsOverviewSchema },
+    responses: { 200: insightsOverviewSchema, 304: null },
   },
-  async ({ ctx, auth, query }) => ({
-    status: 200,
-    body: await loadInsightsOverview(ctx.db, auth, query),
-  }),
+  ({ ctx, auth, query, ifNoneMatch }) =>
+    answerInsights({
+      ctx,
+      auth,
+      ifNoneMatch,
+      operationId: "getInsightsOverview",
+      asked: query,
+      query,
+      range: overviewRange,
+      load: (scope) => loadInsightsOverview(ctx.db, auth, query, scope),
+    }),
 );
