@@ -3365,9 +3365,13 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
 - One in-process worker (`ProcessingWorker`, the daily-statistics scheduler's
   pattern, reading the table) wakes 3 s after new work, every minute for
   retries and on a 15-minute pass. It takes the next ready window — new data
-  oldest first, then the backfill newest day first — with every queued window
-  of the device that overlaps it, grows it to whole segments at both edges (at
-  most two days out: a segment reaching further back is cut at the window's
+  oldest first, then the backfill newest day first, and after a pass of new
+  data a ready backfill window gets the next turn, so a phone uploading every
+  few minutes never starves the backfill — with every ready window of the
+  device that overlaps it (not one waiting for map tiles or a retry: it would
+  be worked out again with every upload, before its tiles are there), grows
+  it to whole segments at both edges (at most two days out of the range the
+  rows were queued with: a segment reaching further back is cut at the window's
   start, and the part of one reaching beyond its end stays as a segment from
   the window's end, so no time drops out of the timeline; each part counts
   what it holds of its own — its points, distance, ends and middle, a stop's
@@ -3392,7 +3396,10 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   failure re-queues with backoff (30 s × 4ⁿ, at most 6 h). Moves without
   their tiles are stored unmapped and the window waits for them, as it does
   for tiles due for a refresh (`missing_tiles`, re-checked after a day at the
-  latest); tiles are fetched alongside, so a missing tile never holds up other
+  latest) — with the bounds it was queued with, never the ones the pass grew
+  it to: stored grown, each pass would grow it again from there, and a
+  window queued for an upload crept back across days of history (0.5.0);
+  tiles are fetched alongside, so a missing tile never holds up other
   windows. Ready times are kept to the millisecond, the worker's clock.
 - The 15-minute pass makes waiting windows whose tiles arrived ready and
   queues the gap of any device whose newest point is more than 15 minutes

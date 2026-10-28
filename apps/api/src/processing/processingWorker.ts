@@ -4,7 +4,7 @@ import type { Database } from "../db/database";
 import type { EventBus } from "../events/eventBus";
 import { enqueueBackfill, enqueueCatchUp } from "./backfill";
 import type { ProcessingConfig } from "./processingConfig";
-import { rearmWindows, retryWindows, takeNextWindow } from "./processingQueue";
+import { queuePriority, rearmWindows, retryWindows, takeNextWindow } from "./processingQueue";
 import { processingVersions } from "./processingVersion";
 import { processWindow } from "./processWindow";
 import type { TileFetcher } from "./tileFetcher";
@@ -41,6 +41,8 @@ export class ProcessingWorker {
   #fetching: Promise<void> | null = null;
   #started = false;
   #stopped = false;
+  /** The priority of the last pass: after new data, a ready backfill window gets the next turn. */
+  #lastPriority: number | null = null;
 
   constructor(input: {
     db: Database;
@@ -128,11 +130,16 @@ export class ProcessingWorker {
   async #processReady(): Promise<number> {
     let passes = 0;
     while (!this.#stopped) {
-      const rows = await takeNextWindow(this.#db, new Date()).catch((error: unknown) => {
-        this.#logger.error({ err: error }, "processing queue could not be read");
-        return [];
-      });
+      // A phone uploading every few minutes must not starve the backfill: they take turns.
+      const backfillFirst = this.#lastPriority === queuePriority.normal;
+      const rows = await takeNextWindow(this.#db, new Date(), { backfillFirst }).catch(
+        (error: unknown) => {
+          this.#logger.error({ err: error }, "processing queue could not be read");
+          return [];
+        },
+      );
       if (rows.length === 0) break;
+      this.#lastPriority = Math.min(...rows.map((row) => row.priority));
       passes += 1;
       const started = performance.now();
       try {

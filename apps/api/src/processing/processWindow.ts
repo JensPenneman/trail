@@ -33,7 +33,8 @@ const levels: readonly FromLevel[] = ["averaged", "mapped", "inferred"];
 /**
  * One pass of the worker over a device's queued windows (docs/architecture.md
  * §17.4), in one transaction under the device's processing lock: the window
- * grows to whole segments, the points, visits, trips and overrides are read,
+ * grows to whole segments — at most two days out of the queued range, which
+ * a window waiting for tiles keeps as it was — the points, visits, trips and overrides are read,
  * the pipeline runs with the cached map data loaded a piece at a time, the
  * results replace the window's derived rows and the queue rows are done.
  * A window queued from the inferred level keeps each move's mapped points as
@@ -108,10 +109,11 @@ export async function processWindow(
       config,
     });
     await finishWindows(tx, rows);
-    // Missing tiles, and old ones (they served this pass): the window is done again once they are here.
+    // Missing tiles, and old ones (they served this pass): the window is done again once they are
+    // here — with the bounds it was queued with: the next pass grows them anew, never from these.
     const waitFor = [...new Set([...result.missingTiles, ...stale])].sort();
     if (waitFor.length > 0) {
-      await awaitTiles(tx, { deviceId, ...window, fromLevel, priority }, waitFor);
+      await awaitTiles(tx, { deviceId, ...span, fromLevel, priority }, waitFor);
     }
     return {
       deviceId,
