@@ -16,6 +16,9 @@ export const satelliteStyleSchema = z.discriminatedUnion("kind", [
 ]);
 export type SatelliteStyle = z.infer<typeof satelliteStyleSchema>;
 
+/** A style's address: a URL, or a path on this server (the self-hosted basemap's). */
+const mapStyleUrlSchema = z.union([z.url(), z.string().regex(/^\/map\/styles\/[a-z]+\.json$/)]);
+
 /** `GET /api/config` — public, unauthenticated runtime configuration for the web app. */
 export const publicConfigSchema = z.object({
   appName: z.string(),
@@ -31,11 +34,20 @@ export const publicConfigSchema = z.object({
   ingestUrl: z.url(),
   /** Every ingest endpoint, per protocol (docs/architecture.md §6). */
   ingestUrls: z.object({ overland: z.url(), owntracks: z.url(), osmand: z.url() }),
-  /** MapLibre style JSON URLs per colour scheme, and satellite imagery when configured. */
+  /**
+   * MapLibre style JSON per colour scheme — a path on this server (`/map/styles/…`)
+   * or another server's URL — and satellite imagery when configured.
+   */
   mapStyles: z.object({
-    light: z.url(),
-    dark: z.url(),
+    light: mapStyleUrlSchema,
+    dark: mapStyleUrlSchema,
     satellite: satelliteStyleSchema.optional(),
+    /**
+     * What the light and dark styles draw (docs/architecture.md §14): `self`,
+     * the server's own basemap; `external`, another server's styles; `none`, a
+     * plain ground while the server has no basemap yet (the map says so).
+     */
+    basemap: z.enum(["self", "external", "none"]),
   }),
   /** Freshness thresholds used by `deviceStatus()`. */
   thresholds: z.object({

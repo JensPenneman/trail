@@ -47,7 +47,11 @@ export const config: PublicConfig = {
     owntracks: "https://trail.example.com/api/owntracks",
     osmand: "https://trail.example.com/api/osmand",
   },
-  mapStyles: { light: "https://tiles.example.com/light", dark: "https://tiles.example.com/dark" },
+  mapStyles: {
+    light: "https://tiles.example.com/light",
+    dark: "https://tiles.example.com/dark",
+    basemap: "external",
+  },
   thresholds: { liveMinutes: 15, staleHours: 12 },
   features: { alerts: true },
 };

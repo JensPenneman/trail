@@ -3,7 +3,8 @@
  * `api` and the worker in role `worker`, as the containers of
  * deploy/compose.yaml do, whatever .env says about PROCESSING_ROLE.
  * Variables from .env override the shell's own — a DATABASE_URL exported for
- * another project must never reach this one. In the development container
+ * another project must never reach this one. The basemap's fonts and sprites
+ * are laid out first, as the build does (scripts/map-assets.mjs). In the development container
  * (.devcontainer) its own Compose project holds the database and the
  * environment, so neither compose.yaml nor .env is used, and Vite listens on
  * every interface for `scripts/devc.sh up --web`. */
@@ -12,6 +13,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
+import { writeMapAssets } from "./map-assets.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const envPath = fileURLToPath(new URL("../.env", import.meta.url));
@@ -31,6 +33,14 @@ const env = {
 
 if (!inDevContainer) {
   execFileSync("docker", ["compose", "up", "-d", "--wait"], { cwd: root, stdio: "inherit" });
+}
+
+// The basemap's fonts and sprites, where the API looks for them (once; then from the cache).
+// Without them the map uses its fallback, so a failed download is no reason not to start.
+try {
+  await writeMapAssets(fileURLToPath(new URL("../apps/web/dist/map-assets", import.meta.url)));
+} catch (error) {
+  console.warn(`dev: no map fonts or sprites (${String(error)}); the map uses its fallback`);
 }
 
 const services = [

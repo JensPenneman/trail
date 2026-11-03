@@ -40,8 +40,8 @@ export interface RefreshOutcome {
   keptNewer: boolean;
   /**
    * The tables: `imported` now, `current` (they hold the build already),
-   * `unavailable` (no loader in this version), `none` (the world overview,
-   * which is never imported), or null when there is no build to import.
+   * `unavailable` (no loader in this version), `none` (the world overview and a
+   * basemap-only region, which are never imported), or null when there is no build to import.
    */
   tables: "imported" | "current" | "unavailable" | "none" | null;
   imported: RegionImport | null;
@@ -76,12 +76,15 @@ export class MapDataRefresher {
   readonly #tables: RegionTables | null;
   readonly #pull: Pick<PullOptions, "download" | "freeBytes">;
   readonly #now: () => Date;
+  readonly #basemapRegion: string | null;
 
   constructor(input: {
     settings: MapDataSettings;
     pool: Pool;
     logger: Logger;
     tables: RegionTables | null;
+    /** `MAP_BASEMAP_REGION` (resolved): pulled even when `MAP_DATA_REGIONS` does not list it. */
+    basemapRegion?: string | null;
     /** For tests: a client for the fake registry, the download's patience, the free space and the clock. */
     client?: RegistryClient;
     pull?: Pick<PullOptions, "download" | "freeBytes">;
@@ -100,11 +103,22 @@ export class MapDataRefresher {
       });
     this.#pull = input.pull ?? {};
     this.#now = input.now ?? (() => new Date());
+    this.#basemapRegion = input.basemapRegion ?? null;
   }
 
-  /** The regions this node keeps: `MAP_DATA_REGIONS` and, with any of them, the world overview. */
+  /**
+   * The regions this node pulls: `MAP_DATA_REGIONS`, the basemap's region
+   * (`MAP_BASEMAP_REGION`, also when it is none of them) and, with any of
+   * them, the world overview. Only `MAP_DATA_REGIONS` are imported into the
+   * map tables; the others are pulled for the basemap.
+   */
   regions(): string[] {
-    const listed = [...this.settings.regions];
+    const listed = [
+      ...new Set([
+        ...this.settings.regions,
+        ...(this.#basemapRegion === null ? [] : [this.#basemapRegion]),
+      ]),
+    ];
     return listed.length === 0 ? [] : [...listed, worldRegion];
   }
 
@@ -226,6 +240,9 @@ export class MapDataRefresher {
     if (build !== null) keep.add(build.digest);
     let keepNewest = keptBuilds;
     if (region === worldRegion) {
+      outcome.tables = build === null ? null : "none";
+    } else if (!this.settings.regions.includes(region)) {
+      // Pulled for the basemap alone (MAP_BASEMAP_REGION): no map tables.
       outcome.tables = build === null ? null : "none";
     } else if (this.#tables === null) {
       outcome.tables = build === null ? null : "unavailable";

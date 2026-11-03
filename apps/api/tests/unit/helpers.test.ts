@@ -90,6 +90,17 @@ describe("logging safety", () => {
     expect(redactUrl("/link")).toBe("/link");
   });
 
+  it("keeps the tile a map asked for out of the logs: where someone looks", () => {
+    expect(redactUrl("/map/tiles/0123456789abcdef/14/8530/5974.pbf")).toBe(
+      "/map/tiles/0123456789abcdef/[redacted]",
+    );
+    expect(redactUrl("/MAP/Tiles/0123456789abcdef/14/8530/5974.pbf?x=1")).toBe(
+      "/MAP/Tiles/0123456789abcdef/[redacted]?x",
+    );
+    expect(redactUrl("/map/tiles/0123456789abcdef")).toBe("/map/tiles/0123456789abcdef");
+    expect(redactUrl("/map/styles/light.json")).toBe("/map/styles/light.json");
+  });
+
   it("removes share link secrets and API tokens that a client puts into a URL after all", () => {
     // They belong in the fragment of the page and the X-Share-Secret header only.
     const secret = `trls_${"Ab9-_".repeat(8)}xyz`;

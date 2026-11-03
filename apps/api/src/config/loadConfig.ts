@@ -23,6 +23,9 @@ const describeIssue = (issue: z.core.$ZodIssue): string =>
 
 const originOf = (url: string): string => new URL(url).origin;
 
+/** Where OpenFreeMap's styles load their tiles, fonts and sprites from (`MAP_CONNECT_SRC` unset). */
+const openFreeMapOrigin = "https://tiles.openfreemap.org";
+
 /**
  * Validates the environment (docs/architecture.md §4). `defaultWebDistDir` is
  * resolved by the entry point, relative to the running bundle.
@@ -42,17 +45,22 @@ export function loadConfig(
     env.MAP_STYLE_SATELLITE,
     env.MAP_STYLE_SATELLITE_ATTRIBUTION,
   );
-  const mapOrigins = [
-    ...new Set([
-      ...env.MAP_CONNECT_SRC,
-      originOf(env.MAP_STYLE_LIGHT),
-      originOf(env.MAP_STYLE_DARK),
-      // The imagery's own host; a style that loads from more hosts lists them in MAP_CONNECT_SRC.
-      ...(satellite === null
-        ? []
-        : [originOf(satellite.kind === "style" ? satellite.url : satellite.tiles)]),
-    ]),
-  ];
+  // The imagery's own host; a style that loads from more hosts lists them in MAP_CONNECT_SRC.
+  const imagery =
+    satellite === null
+      ? []
+      : [originOf(satellite.kind === "style" ? satellite.url : satellite.tiles)];
+  const mapOrigins = {
+    self: [...new Set([...(env.MAP_CONNECT_SRC ?? []), ...imagery])],
+    external: [
+      ...new Set([
+        ...(env.MAP_CONNECT_SRC ?? [openFreeMapOrigin]),
+        originOf(env.MAP_STYLE_LIGHT),
+        originOf(env.MAP_STYLE_DARK),
+        ...imagery,
+      ]),
+    ],
+  };
 
   return {
     nodeEnv: env.NODE_ENV,
@@ -82,6 +90,11 @@ export function loadConfig(
         : { url: env.ALERT_NTFY_URL, token: env.ALERT_NTFY_TOKEN ?? null },
     defaultTimezone: env.DEFAULT_TIMEZONE,
     mapStyles: { light: env.MAP_STYLE_LIGHT, dark: env.MAP_STYLE_DARK, satellite },
+    basemap: {
+      mode: env.MAP_BASEMAP,
+      region: env.MAP_BASEMAP_REGION ?? env.MAP_DATA_REGIONS[0] ?? null,
+      fallback: env.MAP_BASEMAP_FALLBACK,
+    },
     mapOrigins,
     webDistDir:
       env.WEB_DIST_DIR === undefined
@@ -102,6 +115,7 @@ export function loadConfig(
       tokenPerMinute: env.RATE_LIMIT_TOKEN_PER_MINUTE,
       tokenFailedPer10Minutes: env.RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES,
       publicSharePerMinute: env.RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE,
+      mapPerMinute: env.RATE_LIMIT_MAP_PER_MINUTE,
     },
     processing: {
       role: env.PROCESSING_ROLE,

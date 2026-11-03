@@ -40,6 +40,12 @@ export const healthSchema = liveHealthSchema.extend({
   status: z.enum(["ok", "unavailable"]),
   db: z.enum(["ok", "down"]),
   processing: processingHealthSchema.optional(),
+  /**
+   * What the map draws (docs/architecture.md §14): `self`, the basemap this
+   * server serves from its map data; `external`, `MAP_STYLE_LIGHT`/`DARK`
+   * (OpenFreeMap by default); `none`, a plain ground until the first basemap.
+   */
+  basemap: z.enum(["self", "external", "none"]).optional(),
 });
 export type Health = z.infer<typeof healthSchema>;
 

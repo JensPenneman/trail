@@ -361,7 +361,8 @@ How the API is built and how to add an operation: [docs/architecture.md
 - **API**: Node.js LTS, TypeScript 7, Express 5, PostgreSQL 18 with Drizzle
   ORM, zod, SimpleWebAuthn, pino; bundled with tsdown.
 - **Web**: React 19, React Router 8, TanStack Query 5, MapLibre GL 6 with
-  OpenFreeMap styles, plain CSS; built with Vite 8.
+  OpenFreeMap's styles over a basemap the server serves itself (OpenMapTiles
+  vector tiles from the map data, `pmtiles`), plain CSS; built with Vite 8.
 - **Shared**: `packages/contracts`, the zod schemas of the HTTP API used by
   both sides.
 - **Tooling**: npm workspaces, Biome, knip, Vitest, Playwright, lefthook,

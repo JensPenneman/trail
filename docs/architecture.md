@@ -177,8 +177,9 @@ running `trail worker`, role `worker`), `db`, and `backup` (profile
 `production`). Each has its caps — `app` 1 CPU and 1 GiB (V8 heap 640 MB),
 `worker` 2 CPUs and 1 GiB (heap 768 MB), `db` 2 CPUs and 2 GiB, `backup`
 512 MiB — so processing never takes the API's CPU or memory. Volumes: the
-database's, and `trail-map` (`app`'s map data from the registry, §4, of
-each project and rebuildable from the registry, so no backup takes it). Networks: the
+database's, and `trail-map` (`app`'s map data from the registry, §4, which it
+also serves the basemap from, §14; of each project and rebuildable from the
+registry, so no backup takes it). Networks: the
 project's `default` (app and worker; the way out, for ntfy and map data) and
 `backend` (app, worker, db, backup; `internal`, no route out); Launchway
 attaches `app` to its proxy network itself. No host port is published; the
@@ -272,11 +273,11 @@ All configuration is environment variables, validated at boot with zod
 | `ALERT_NTFY_URL` | empty | ntfy topic URL for silent/recovered device alerts; empty = off |
 | `ALERT_NTFY_TOKEN` | empty | Optional ntfy access token |
 | `DEFAULT_TIMEZONE` | `Europe/Brussels` | Time zone of new accounts |
-| `MAP_STYLE_LIGHT` | `https://tiles.openfreemap.org/styles/liberty` | MapLibre style URL |
-| `MAP_STYLE_DARK` | `https://tiles.openfreemap.org/styles/dark` | MapLibre style URL |
+| `MAP_STYLE_LIGHT` | `https://tiles.openfreemap.org/styles/liberty` | The external light style (a MapLibre style URL), for `MAP_BASEMAP=openfreemap` and the fallback (§14) |
+| `MAP_STYLE_DARK` | `https://tiles.openfreemap.org/styles/dark` | The external dark style, likewise |
 | `MAP_STYLE_SATELLITE` | empty (none) | Satellite imagery for the map's style control: a MapLibre style URL, or a raster tile URL template with `{z}`, `{x}`, `{y}` (256 px tiles); its origin joins the CSP's map origins |
 | `MAP_STYLE_SATELLITE_ATTRIBUTION` | empty | The imagery provider's credit, plain text; required with a tile template |
-| `MAP_CONNECT_SRC` | `https://tiles.openfreemap.org` | Extra CSP `connect-src`/`img-src` origins for the map (comma-separated) |
+| `MAP_CONNECT_SRC` | unset: `https://tiles.openfreemap.org` while the map uses the external styles | Extra CSP `connect-src`/`img-src` origins for the map (comma-separated), for a satellite style or external styles that load from more hosts; when set, always (§12) |
 | `WEB_DIST_DIR` | `apps/web/dist` (`../../web/dist` from the bundle in `apps/api/dist`) | Built SPA to serve; missing `index.html` = API only |
 | `LOG_LEVEL` | `info` | pino level |
 | `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` | root package.json version / `dev` / null | Baked into the image by the Dockerfile |
@@ -288,6 +289,7 @@ All configuration is environment variables, validated at boot with zod
 | `RATE_LIMIT_TOKEN_PER_MINUTE` | `600` | `/api/v1` and `/mcp` requests with a valid API token, per token, both together (§8.3, §8.6) |
 | `RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES` | `30` | `/api/v1` and `/mcp` requests with an invalid API token, per IP |
 | `RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE` | `60` | The public share endpoint (`/api/public/share`), per IP (§8.5) |
+| `RATE_LIMIT_MAP_PER_MINUTE` | `3000` | The basemap (`/map/*`: styles, tiles, fonts, sprites), per IP, a budget of its own (§14) |
 | `PROCESSING_ROLE` | `all` | What this process runs (§3): `api` serves and queues processing, `worker` processes and serves no HTTP (`trail worker`), `all` both. `deploy/compose.yaml` and `npm run dev` fix it per service |
 | `PROCESSING_METRICS_PORT` | `8081` | A worker process's own port (role `worker`), on `HOST`: `GET /health/live`, its container's health check (§3); `0` = none. Role `all` opens none |
 | `PROCESSING_TEST_STALL` | `false` | Tests of that health check only: the worker beats once and then stands still (no heartbeat, no pass). Passed by `deploy/compose.dev.yaml` alone, never in production |
@@ -305,6 +307,9 @@ All configuration is environment variables, validated at boot with zod
 | `MAP_DATA_DIR` | `/var/lib/trail/map` | The volume `trail-map`: builds in `regions/<region>/<yyyymmdd>-<first 8 hex of the digest>/`, downloads under way in `tmp/` |
 | `MAP_DATA_REFRESH_DAYS` | `30` | How often the app looks for a newer build (§10) |
 | `MAP_DATA_MAX_GB` | `10` | The largest build, all its files together, the app downloads (Europe: about 31) |
+| `MAP_BASEMAP` | `self` | `self`: the app serves the basemap from the map data volume (§14); `openfreemap`: the map uses `MAP_STYLE_LIGHT`/`DARK` always |
+| `MAP_BASEMAP_REGION` | the first of `MAP_DATA_REGIONS` | Whose `basemap.pmtiles` the map draws (with the world overview); a region name, not `world` |
+| `MAP_BASEMAP_FALLBACK` | `true` | Without a basemap on the volume yet: the external styles (`true`) or a plain ground saying "Basemap not installed yet" (`false`) |
 | `LOAD_TEST` | `false` | `true` lets `trail load-fleet` create a load test's synthetic people (§11, docs/perf/README.md); previews only |
 | `LAUNCHWAY_ENVIRONMENT` | unset | Set by Launchway (`production` or `preview`), never by hand; `trail load-fleet` runs only where it is `preview` or unset |
 | `NODE_ENV` | `development` | `production` in the image (see below) |
@@ -988,8 +993,8 @@ dashboard's private API; the public, versioned one is `/api/v1` (§8.3).
 
 | Method & path | Auth | Contract |
 |---|---|---|
-| `GET /api/config` | — | `config.ts` `PublicConfig` |
-| `GET /api/health`, `GET /api/health/processing`, `GET /api/health/live` | — | `health.ts`: `{status, db, version, commit, uptimeS, processing: {worker, lastSeenS, queued}}` (§3); `/api/health` 503 only when the DB is down, `/processing` also while no worker beat for 90 s; `/live` `{status: ok\|starting, version, commit, uptimeS}` never touches the DB (`starting` while the server migrates, §3) |
+| `GET /api/config` | — | `config.ts` `PublicConfig`; `mapStyles.light`/`dark` are the basemap's paths (`/map/styles/…`) or the external styles' URLs, `mapStyles.basemap` says which (§14) |
+| `GET /api/health`, `GET /api/health/processing`, `GET /api/health/live` | — | `health.ts`: `{status, db, version, commit, uptimeS, processing: {worker, lastSeenS, queued}, basemap: self\|external\|none}` (§3, §14); `/api/health` 503 only when the DB is down, `/processing` also while no worker beat for 90 s; `/live` `{status: ok\|starting, version, commit, uptimeS}` never touches the DB (`starting` while the server migrates, §3) |
 | `GET /api/health/requests` | administrator (session, or an administrator's API token with `health:read`) | `health.ts` `requestsHealthSchema`: per route pattern, the last 15 minutes and 24 hours of this process's requests against their budgets, from memory (§8.10) |
 | `POST /api/overland`, `GET /api/overland` | device token | §6, §6.4 |
 | `POST /api/owntracks` | device token | §6, §6.5 |
@@ -1028,6 +1033,9 @@ dashboard's private API; the public, versioned one is `/api/v1` (§8.3).
 | `GET /api/public/share` | the link's secret in `X-Share-Secret` | `shareLink.ts` `publicShareResponse` (§8.5) |
 | `POST /mcp` | API token | the MCP server (§8.6); `GET`, `DELETE` and other methods answer 405 |
 | `GET /docs` | — | the API reference page (§8.3) |
+| `GET /map/styles/light.json`, `dark.json` | — | the basemap's style for the current bundle, or a plain ground without one; `no-cache`, a strong `ETag` of its bytes (§14) |
+| `GET /map/tiles/:bundle/:z/:x/:y.pbf` | — | a vector tile as stored (`application/x-protobuf`, `Content-Encoding: gzip`; `406` for a client that takes no gzip), `204` where the archives have none, `404` for a bundle not served or numbers off the grid (z 0–14); a year, `immutable`, `ETag` the bundle's (§14) |
+| `GET /map/assets/:hash/fonts/:stack/:range.pbf`, `…/sprites/ofm(@2x).json\|png` | — | the image's glyphs and sprite sheet; a year, `immutable`; whole files only (§14) |
 
 Ownership: every device-scoped query is filtered by the session user's
 devices; a foreign or unknown id is `404 not_found` (never 403, no probing).
@@ -2270,6 +2278,15 @@ runs in the worker (§3) — or in the API's process too, in role `all`.
   imported`, `… up to date`, `map region refresh failed` and `map region
   import failed` with the reason, `map region data is old` past three
   periods.
+- every minute (with `MAP_BASEMAP=self` and a basemap region), and after a
+  refresh of this process that pulled or removed a build — the basemap's
+  look at the volume (§14): the basemap region's and the world overview's
+  newest builds whose `basemap.pmtiles` opens and checks, a new bundle when
+  either changed (`basemap: serving a new bundle`, the builds' names), the
+  bundles before it served on while their builds are on the volume and
+  dropped, their archives closed, once a build is gone. Before the first
+  request at the start, so the config names the basemap from the first page
+  on.
 Jobs must never crash the process; failures are logged. Runs never overlap.
 
 ## 11. CLI
@@ -2323,9 +2340,11 @@ the image, so `docker compose exec app trail <command>`):
   the extract's time, whether the map tables hold them and how much of a
   rebuild is linked from the build before it, the regions on the volume no
   longer configured, and the volume's total with every file counted once;
-  then the map tables: every region's builds (status, build, extract,
-  imported, ways, stops, size on disk, digest, the last error) and the
-  Overpass cache; asks the registry nothing
+  what the map draws (`Basemap:` Trail's own from which builds and its
+  bundle, the external styles or a plain ground, and why), worked out from
+  the volume as the server does; then the map tables: every region's builds
+  (status, build, extract, imported, ways, stops, size on disk, digest, the
+  last error) and the Overpass cache; asks the registry nothing
 - `help` / `--help`
 
 Every command applies pending migrations first (same advisory lock as the
@@ -2340,8 +2359,12 @@ codes: 0 success, 1 failure (including invalid configuration), 2 wrong usage
   worker-src 'self' blob:; child-src 'self' blob:; font-src 'self';
   manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self';
   frame-ancestors 'none'` (+ `upgrade-insecure-requests` on HTTPS); the map
-  origins are `MAP_CONNECT_SRC` plus the origins of the map styles and of the
-  satellite imagery (§4). No inline scripts or styles in HTML; CSSOM style changes (React `style`, MapLibre) are
+  origins are those of the satellite imagery and an explicit
+  `MAP_CONNECT_SRC` while the app serves the basemap itself (§14), and
+  besides them the external styles' origins and `MAP_CONNECT_SRC`'s default,
+  OpenFreeMap's, while the map uses those (`MAP_BASEMAP=openfreemap`, or the
+  fallback before the first basemap): chosen per response, since the
+  basemap can arrive while the server runs (§4). No inline scripts or styles in HTML; CSSOM style changes (React `style`, MapLibre) are
   allowed by CSP. HSTS (2 years, includeSubDomains) on HTTPS only.
   `Referrer-Policy: same-origin`, `Permissions-Policy` denying the powerful
   features (camera, microphone, geolocation, payment, USB, …) and allowing
@@ -2381,7 +2404,9 @@ codes: 0 success, 1 failure (including invalid configuration), 2 wrong usage
   the one-point-per-request endpoints, and ~30 failed tokens/10 min/IP across
   all three (§6); API tokens
   ~600/min/token and ~30 failed tokens/10 min/IP; the data of public share
-  pages ~60/min/IP; everything else, `/docs` included, ~600/min/IP
+  pages ~60/min/IP; the basemap (`/map/*`) ~3000/min/IP, a budget of its own
+  that never counts against the API's (a fast pan asks for hundreds of
+  tiles); everything else, `/docs` included, ~600/min/IP
   (`/api/health*` and `/api/config` excluded). `429
   rate_limited` (ingest: `{"error"}`, and `503` on `/api/owntracks`, whose iOS
   app drops a message on a 4xx), IETF `RateLimit` headers.
@@ -2448,6 +2473,23 @@ codes: 0 success, 1 failure (including invalid configuration), 2 wrong usage
   on the volume as it was. `MAP_DATA_REGISTRY_TOKEN` goes to the token
   service only, as Basic credentials, and prints as `[redacted]`; tokens and
   the signed blob URLs are never logged.
+- The basemap (`/map/*`, §14) is public like `/assets/*`: open data, no
+  session, mounted before compression, its own rate limit. No name from a
+  request reaches the file system: a tile is asked of an archive the server
+  opened itself (`basemap.pmtiles` of a build on the volume, once, never
+  through a link) by the bundle's id — one of the two served — and numbers
+  checked against the zoom's grid (z 0–14, written one way); a font stack
+  must be one the image lists, a range `<n·256>-<n·256+255>`, a sprite file
+  one of four names, the assets' hash the image's own; anything else is a
+  `404` with `no-store`. The archives are parsed as untrusted bytes: the
+  `pmtiles` package checks the header and directories, Trail checks the
+  spec version 3, vector tiles, gzip or no compression, every section
+  inside the file, every leaf directory inside its section, directories at
+  most three deep, a tile inside the tile data and at most 2 MB, and every
+  read a whole number of bytes inside the file and at most 32 MiB; a
+  refused archive is logged once and the build before it serves. The
+  directories are cached in about 10 MB, whatever the archives' size.
+  Fonts and sprites are whole files (`Range` is ignored).
 - What the browser keeps (§14.1): the signed-in person's own answers, those
   of the copy's policy only — never anyone else's data (the people who share,
   their tracks, the shares and links, a public link's page), the access log,
@@ -2474,8 +2516,10 @@ codes: 0 success, 1 failure (including invalid configuration), 2 wrong usage
   is coordinates. The URL is redacted from its parsed parts, as the routers
   read them (decoded, case-insensitive): device tokens in `token`/`access_token`, every value of
   an upload in the OsmAnd format (`/api/osmand?…`: Traccar Client's `id` and
-  the coordinates), the one-time tokens of `/link/…`, `/invite/…` and
-  `/api/auth/link/…`, and any device token, API token or share link secret
+  the coordinates), a basemap tile's zoom, column and row (where someone
+  looks; `/map/*` is logged at `debug` besides), the one-time tokens of
+  `/link/…`, `/invite/…` and `/api/auth/link/…`, and any device token, API
+  token or share link secret
   (`trl_…`, `trlk_…`, `trls_…`) a client puts into a URL after all —
   public links keep theirs in the fragment and a header (§8.5). Request bodies
   are never logged, not even in an error: the `body` a body parser keeps in
@@ -2542,7 +2586,11 @@ production `node_modules` of the API only (`npm ci --omit=dev --workspace
 @trail/api`, installed on the build platform — which is why the API's runtime
 dependencies must stay pure JavaScript; the build fails on a `.node` addon),
 `apps/api/dist` (with the API guide and the reference bundle the API build
-copies next to the server, §8.3), `apps/api/drizzle`, `apps/web/dist`, the CLI wrapper
+copies next to the server, §8.3), `apps/api/drizzle`, `apps/web/dist` (with
+the basemap's fonts and sprites in `map-assets/`, 11 MB: a stage of their own
+downloads the files `scripts/map-assets.json` pins by SHA-256, a layer only a
+change of that file or its script invalidates, and the build lays them out
+from it, hashing them again; §14), the CLI wrapper
 `/usr/local/bin/trail` (also the worker's entry, `trail worker`, §3); `USER 1000:1000` (`node`); `EXPOSE 8080`;
 `HEALTHCHECK` for both roles (busybox `wget`): `/api/health/live` on
 `PORT`, or else a worker's `/health/live` on `PROCESSING_METRICS_PORT`
@@ -2672,9 +2720,9 @@ and the restart retries. Restore with `pg_restore --clean --if-exists
 
 ## 14. Web app
 
-React 19 + React Router 8 + TanStack Query 5 + MapLibre GL 6 (OpenFreeMap
-vector styles, light/dark and optional satellite imagery from `/api/config`),
-`@simplewebauthn/browser`,
+React 19 + React Router 8 + TanStack Query 5 + MapLibre GL 6 (the basemap
+the server serves itself, below, or external styles; light/dark and optional
+satellite imagery from `/api/config`), `@simplewebauthn/browser`,
 `uqr` for QR codes. Plain CSS with custom properties (LCH colours with sRGB
 fallbacks), system font stack, no web fonts, no third-party scripts, CSP-clean.
 
@@ -3235,6 +3283,45 @@ count among them, since they lead to signed-in pages.
   button; clear states for not invited, no passkey for this address,
   cancelled, unsupported browser.
 
+**The basemap** (docs/design/self-hosted-maps.md §3). Light and Dark are
+OpenFreeMap's `liberty` and `dark` styles, vendored in
+`apps/api/map/styles/` without their Natural Earth relief layer (their
+origin, commit and licences in their `metadata`), drawn over OpenMapTiles
+vector tiles the server reads from the map data volume: the `basemap.pmtiles`
+of the newest build of `MAP_BASEMAP_REGION` and of the world overview, a
+*bundle* named by a hash of both builds' digests (`apps/api/src/basemap/`).
+`/api/config` names `/map/styles/light.json` and `dark.json` then, and the
+API renders the vendored style for the bundle: its source becomes
+`/map/tiles/<bundle>/{z}/{x}/{y}.pbf` (z0–14, MapLibre enlarging z14 beyond)
+with the attribution "© OpenMapTiles © OpenStreetMap contributors" (links,
+shown by MapLibre's control), its glyphs and sprite
+`/map/assets/<hash>/fonts/…` and `…/sprites/ofm`, the image's files —
+paths on the page's own origin, whichever the dashboard was opened on;
+MapLibre's same-origin worker resolves the tiles' and the page the glyphs',
+and `absoluteSprite` makes the sprite's absolute before the style is
+applied, as MapLibre 6 asks. A tile of z ≤ 4 comes from the world overview
+(from the region until the volume has one), since a region's low zooms hold
+only what touches its bounding box; z ≥ 5 from the region, else the
+overview's z5–6, else `204`. The tiles go out as Planetiler stored them,
+gzipped, never compressed again, and are immutable, their bundle being in
+the path; a new build is a new bundle, which the style (`no-cache`, an ETag)
+brings to a map at its next load, while maps open on an earlier bundle keep
+their tiles as long as its builds are on the volume. Without a basemap on the volume — before the first pull, with
+no region, or for an image without the fonts and sprites — the map uses the
+external styles (`MAP_STYLE_LIGHT`, `MAP_STYLE_DARK`; OpenFreeMap's) with
+`MAP_BASEMAP_FALLBACK=true`, and with `false` a plain ground in the map
+box's colours (`--color-surface-2`) under Trail's layers and "Basemap not
+installed yet" over the map (`basemap: "none"` in the config);
+`MAP_BASEMAP=openfreemap` uses the external styles always. The service
+worker keeps none of it (§14.1): tiles, glyphs and sprites stay in the
+browser's HTTP cache. Fonts and sprites come from `scripts/map-assets.mjs`
+(§13.1): Noto Sans Regular, Bold and Italic from openmaptiles/fonts and
+OpenFreeMap's sprite sheet, pinned by SHA-256, laid out in
+`apps/web/dist/map-assets/<hash>/`, `<hash>` from `scripts/map-assets.json`;
+of each stack only the 87 ranges of 256 code points MapLibre asks for, since
+it draws CJK, Hangul, Kana and the Indic scripts with the browser's own
+fonts (11 MB instead of 105).
+
 Quality bar: responsive from 320 px (phone-first, bottom tab bar on phones,
 safe-area insets), keyboard and screen-reader accessible (landmarks, focus
 management on navigation, labelled controls, text alternatives for map-only
@@ -3432,13 +3519,15 @@ cache of its own (`trail-shell-<version>`), installed with `cache: "reload"`,
 and takes over at once (`skipWaiting`, `clients.claim`), dropping the caches
 of older builds; a lazy chunk of a build that is gone is the chunk-load error
 the app answers with a reload. A navigation — anything but `/api`, `/docs`,
-`/mcp` and the address of a file — gets the kept page at once; the network's
+`/mcp`, `/map` and the address of a file — gets the kept page at once; the network's
 is fetched meanwhile and kept for the next open when it is the same page with
 other headers (a new Content-Security-Policy after a configuration change),
 while a page of another build waits for that build's worker. The shell's
 files come from the cache; everything else, the API above all, goes to the
 network as if there were no worker: the API's copy is the store, with its
-owner, purges and contracts. Written without `workbox-build`, which would
+owner, purges and contracts, and the basemap's tiles, fonts and sprites
+(`/map`, never in the shell, nor `map-assets/` beside it) are immutable in
+the browser's HTTP cache. Written without `workbox-build`, which would
 bring 280 packages for this file, an advisory without a fix among them.
 
 ## 15. CI/CD
@@ -3461,7 +3550,7 @@ the commit and empty module volumes, so every command starts with
 |---|---|---|
 | `launchway/quality` | `npm run check` (Biome, typecheck, knip, unit tests) | 25 min |
 | `launchway/integration` | `npm run test:integration` (`TEST_DATABASE_URL` → `trail_test`) | 20 min |
-| `launchway/e2e` | `npm run build && npm run test:e2e` (`E2E_DATABASE_URL` → `trail_e2e`, one worker) | 60 min |
+| `launchway/e2e` | `npm run build && npm run test:e2e` (`E2E_DATABASE_URL` → `trail_e2e`, one worker; the build fetches the basemap's pinned fonts and sprites, 62 MB, the module volumes being fresh) | 60 min |
 
 Pull requests from forks get none: their code would run on the node. Every
 run builds the development container's image (cached on the node), so a
@@ -3654,7 +3743,24 @@ security ones too.
   level. `mapDataLayout.test.ts` reads the manifest the workflow published
   (`trail-mapdata:monaco-20261027`, byte for byte) against the fixture's
   manifest.json; `mapDataSchedule.test.ts` runs the schedule on a clock of
-  its own.
+  its own. The basemap: `basemapArchive.test.ts` opens the Monaco fixture's
+  archive (its tiles as stored, gzipped, the bytes the `pmtiles` package
+  inflates; nothing outside the extract's box; the directory cache's bound,
+  down to a cache too small for the root directory) and archives written in
+  the test (`tests/support/pmtilesWriter.ts`: a leaf directory, stored tiles,
+  and refusals — not PMTiles, raster tiles, version 2, Brotli, cut short, a
+  link, a tile over 2 MB, a leaf outside its section, reads past the end,
+  negative, fractional or over 32 MiB); `basemapBundle.test.ts` the zoom
+  rule; `basemap.test.ts` the bundles from a volume (the newest build with
+  the overview, switches of the region and the overview with the bundles
+  before them served on, a deleted build served from its open file until
+  the next look and then dropped, a build without a basemap skipped and a
+  broken one refused once, the fallback, the plain ground, no fonts,
+  `MAP_BASEMAP=openfreemap`, no region);
+  `basemapStyles.test.ts` the served styles (same-origin tiles, glyphs and
+  sprite only, every layer kept, the vendored files without their relief
+  layer, the font stacks of `scripts/map-assets.json`), the plain ground and
+  the names a request may use (a tile's numbers, a glyph range).
   what the route registry and the tool runner record, and when not.
   The browser cache's server side (§8.9, §9): `weakEtag.test.ts` (the owner,
   route and question in the hash, 22 characters, stable; `If-None-Match`
@@ -3815,7 +3921,18 @@ security ones too.
   old build serving, the import after a restore with the registry away, an
   older build in the registry, an unknown region, another process holding
   the lock, a stop that deletes the download, and data three periods old;
-  `mapDataCli.test.ts` `trail map refresh` and `status`.
+  `mapDataCli.test.ts` `trail map refresh` and `status` (its Basemap line).
+  The basemap (`basemap.test.ts`) is served from a volume holding the Monaco
+  fixture's `basemap.pmtiles` as a pulled build and from made-up fonts and
+  sprites: the config's paths and the CSP's `'self'`, the styles and their
+  ETag and 304, a tile of Monaco's streets byte for byte as stored (gzip,
+  read with `node:http`, which inflates nothing) and a `406` for a client
+  without gzip, 204 at sea, 404 for another bundle and for paths off the
+  grid or naming files (`..%2F` included), the fonts and sprites and
+  nothing beside them, a switch to a newer build with the bundle before it
+  still served, the fallback's external styles and CSP, the plain ground
+  with the fallback off, `MAP_BASEMAP=openfreemap`, and the map's own rate
+  limit apart from the API's.
   the visitor key.
 - The load harness (`tools/load/test`, `node --test`, part of `npm test`):
   the profiles equal `trail load-fleet`'s and give §2.2's day; a thousand
@@ -3865,9 +3982,10 @@ security ones too.
   old anchors (`settingsPathFor`),
   `isSignedInPath`, the precedence of the map's defaults, the heatmap's
   scale, classes and squares (`heatHelpers.test.ts`) and where its layer
-  goes in OpenFreeMap's two styles, their layers as served
+  goes in the two basemap styles, their layers read from the vendored files
   (`heatLayers.test.ts`: over every shape, under every name, Trail's lines
-  where they were) have unit tests of their own; Settings itself renders through its real routes
+  where they were), and the sprite made absolute (`absoluteSprite.test.ts`)
+  have unit tests of their own; Settings itself renders through its real routes
   (`renderSettings`, phone or wide screen) for the list, search, going
   deeper and back with focus, and every page — Settings › Devices among them:
   its cards, each the way to its device and back with the focus on it, a
@@ -3904,10 +4022,14 @@ security ones too.
   holds the passkeys), plus WebKit for the signed-out pages where the port
   allows (WebKit refuses 4190). A setup project signs up the first account
   (the admin) for the invitation tests. Every test fails on a console error,
-  an uncaught exception or a CSP violation; map styles are stubbed (the
-  suite's server has satellite imagery from a host of its own, whose tiles
-  the stub answers, so the CSP's map origins are checked too), other
-  third-party requests refused. The Overland fixture is shifted to today.
+  an uncaught exception or a CSP violation. The suite's server draws its own
+  basemap: `scripts/e2e-server.mjs` lays the Monaco fixture's
+  `basemap.pmtiles` out as a pulled build in its `MAP_DATA_DIR`
+  (`node_modules/.cache/trail-e2e-map`), and the build has the real fonts
+  and sprites; every request to another origin is refused, but for
+  satellite imagery from a host of the suite's own, whose tiles the stub
+  answers (so the CSP's map origins are checked too). The Overland fixture
+  is shifted to today.
   Scenarios: sign-up and refusal, device setup and the live upload (in
   Settings › Devices: status, points, battery, trip, activity and the upload
   feed; on People the Me card), setting up OwnTracks (its links for both platforms
@@ -3934,7 +4056,11 @@ security ones too.
   out, turned off, too short, unknown), the People page's map (its three
   views on one map, Back through them, the old addresses and deep links, the
   device filter under Advanced across views, the map style — Auto following
-  the system, a remembered choice, satellite imagery), the People page's
+  the system, a remembered choice, satellite imagery), the basemap (a phone
+  in Monaco: tiles, glyphs and the sprite from the server's own origin and
+  nothing from anywhere else, the attribution, axe; the styles, tiles,
+  fonts and sprites with their caching; "Basemap not installed yet" over a
+  plain map), the People page's
   people (three accounts: Me first as a person with one's day so far, a card
   per person
   with its devices and terms in Details; someone who shares roughly and live

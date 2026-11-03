@@ -18,13 +18,25 @@ COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 COPY packages/contracts/package.json packages/contracts/
 
+# The basemap's fonts and sprites (docs/design/self-hosted-maps.md section 3.2):
+# the files scripts/map-assets.json pins by SHA-256, downloaded in a layer of
+# their own that only a change of the two files below invalidates, so an image
+# build fetches them once per change rather than once per commit.
+FROM --platform=$BUILDPLATFORM node:lts-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS map-assets
+WORKDIR /app
+COPY scripts/map-assets.mjs scripts/map-assets.json scripts/
+RUN TRAIL_MAP_ASSETS_CACHE=/map-assets node scripts/map-assets.mjs download
+
 FROM manifests AS build
 # Lifecycle scripts are skipped: the dependencies need none (native tools ship
 # as optional platform packages) and the root `prepare` only installs git hooks.
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     npm ci --ignore-scripts --no-audit --no-fund
 COPY . .
-RUN npm run build \
+# The build lays the map assets out from that layer (apps/web/dist/map-assets),
+# hashing every file again; it downloads nothing.
+RUN --mount=type=bind,from=map-assets,source=/map-assets,target=/map-assets \
+    TRAIL_MAP_ASSETS_CACHE=/map-assets npm run build \
     && mkdir -p /out/map
 
 FROM manifests AS runtime-deps

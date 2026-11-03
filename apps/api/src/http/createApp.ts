@@ -5,6 +5,7 @@ import { apiReferenceRouter } from "../apiReference/apiReferenceRouter";
 import type { AppContext } from "../appContext";
 import { authRouter } from "../auth/authRouter";
 import { loadSession } from "../auth/loadSession";
+import { mapRouter } from "../basemap/mapRouter";
 import { devicesRouter } from "../devices/devicesRouter";
 import { eventsRouter } from "../events/eventsRouter";
 import { exportRouter } from "../export/exportRouter";
@@ -45,10 +46,10 @@ import { securityHeaders } from "./securityHeaders";
 import { spaRouter } from "./spaRouter";
 
 /**
- * The Express application. Order matters: the MCP server (`/mcp`) is mounted
- * before compression and everything else, as it sets its own order; the
- * ingest endpoints (Overland, OwnTracks, the OsmAnd format) before cookies,
- * CSRF checks and the 100 kB JSON parser;
+ * The Express application. Order matters: the MCP server (`/mcp`) and the
+ * basemap's tiles (`/map`) are mounted before compression and everything else,
+ * as they set their own order (the basemap's styles come after it); the ingest endpoints (Overland, OwnTracks, the
+ * OsmAnd format) before cookies, CSRF checks and the 100 kB JSON parser;
  * health and config before the rate limiter; the public API (`/api/v1`)
  * before the dashboard's `/api` chain, as it sets its own order; unknown
  * `/api` paths never fall through to the SPA, and neither does `/docs`.
@@ -72,20 +73,36 @@ export function createApp(ctx: AppContext): Express {
   // First: the timing starts before anything else, and its facts are ready for the log line.
   app.use(requestTiming(ctx.requests));
   app.use(requestLogger(logger));
-  app.use(securityHeaders(config.mapOrigins));
+  app.use(
+    securityHeaders(
+      config.mapOrigins,
+      config.basemap.fallback || config.basemap.mode === "openfreemap",
+    ),
+  );
   // Before compression and the /api chain: its own order, answers that are never compressed.
   // CORS headers come first, so that a browser client can read even a 429.
   app.use(apiPaths.mcp, noStore, mcpCorsHeaders);
   app.use(apiPaths.mcp, apiRateLimit);
   app.use(apiPaths.mcp, mcpRouter(ctx));
+  // The basemap: public, its own limit. Tiles are stored gzipped and sent as they are, so they
+  // come before compression; the styles and the sprite JSON are compressed with the rest.
+  const map = mapRouter({
+    basemap: ctx.basemap,
+    logger,
+    perMinute: config.rateLimits.mapPerMinute,
+    allowedOrigins: config.allowedOrigins,
+    publicUrl: config.publicUrl,
+  });
+  app.use("/map", map.tiles);
   app.use(compress());
+  app.use("/map", map.documents);
   app.use("/api", noStore);
 
   app.use(apiPaths.overland, overlandRouter(ctx));
   app.use(apiPaths.owntracks, owntracksRouter(ctx));
   app.use(apiPaths.osmand, osmandRouter(ctx));
   app.use(healthRouter(ctx));
-  app.use(configRouter(config));
+  app.use(configRouter(config, ctx.basemap));
 
   // Public links: a per-address limit of their own, no session, no CSRF (they only read).
   const publicShareRateLimit = ipRateLimit({

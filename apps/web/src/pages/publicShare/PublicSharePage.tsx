@@ -91,7 +91,7 @@ export function PublicSharePage() {
 function SharedLocation({ share, now }: { share: PublicShareResponse; now: number }) {
   const format = useFormatter();
   const config = useConfig();
-  const { style, dark } = useMapStyle();
+  const { style, dark, notice } = useMapStyle();
   const liveMinutes = config.data?.thresholds.liveMinutes ?? defaultLiveMinutes;
   const palette = dark ? devicePalette.dark : devicePalette.light;
 
@@ -160,6 +160,7 @@ function SharedLocation({ share, now }: { share: PublicShareResponse; now: numbe
               label={mapLabel}
               mapStyle={style}
               dark={dark}
+              notice={notice}
               positions={positions}
               tracks={tracks}
               fit={{

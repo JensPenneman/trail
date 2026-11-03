@@ -103,8 +103,11 @@ test("the service worker keeps the app's shell, every chunk of it, and nothing o
   for (const icon of ["/favicon.svg", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png"]) {
     expect(precache, icon).toContain(icon);
   }
+  // Nor the basemap: its tiles, fonts and sprites stay in the browser's HTTP cache.
   expect(
-    precache.filter((url) => !url.startsWith("/") || /^\/(?:api|docs|mcp)(?:\/|$)/.test(url)),
+    precache.filter(
+      (url) => !url.startsWith("/") || /^\/(?:api|docs|mcp|map|map-assets)(?:\/|$)/.test(url),
+    ),
   ).toEqual([]);
   expect(precache).not.toContain("/sw.js");
 });

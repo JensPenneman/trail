@@ -11,9 +11,9 @@ const cleanupTimeoutMs = 2_000;
 /**
  * Graceful stop: no new connections, live streams ended and the processing
  * channel let go, jobs and processing stopped, in-flight requests finished
- * (at most 10 s, then connections are cut), pending statistics and data
- * access rows flushed, background work drained — and what it recorded
- * flushed too — pool closed.
+ * (at most 10 s, then connections are cut), the basemap's files closed,
+ * pending statistics and data access rows flushed, background work drained —
+ * and what it recorded flushed too — pool closed.
  */
 export async function shutdown(input: {
   server: Server;
@@ -43,6 +43,8 @@ export async function shutdown(input: {
 
   await Promise.race([processing, sleep(cleanupTimeoutMs)]);
   await listener;
+  // The requests are done: the basemap's files are closed.
+  await Promise.race([ctx.basemap.stop(), sleep(cleanupTimeoutMs)]);
   await Promise.race([
     Promise.all([ctx.dailyStats.flush(), ctx.dataAccess.flush()]),
     sleep(cleanupTimeoutMs),
