@@ -9,6 +9,7 @@ import type { AlertSender } from "./jobs/alert";
 import type { BackgroundTasks } from "./lib/backgroundTasks";
 import type { IngestMeter } from "./load/ingestMeter";
 import type { ProcessingService } from "./processing/processingService";
+import type { RequestStats } from "./requests/requestStats";
 import type { SharingState } from "./sharing/sharingState";
 import type { DailyStatsScheduler } from "./stats/dailyStatsScheduler";
 import type { ApiTokenVerifier } from "./v1/apiTokens";
@@ -24,6 +25,8 @@ export interface AppContext {
   background: BackgroundTasks;
   /** Accepted uploads per minute, for the load line (docs/perf/README.md). */
   ingestMeter: IngestMeter;
+  /** How long this process's requests take per route, for `/api/health/requests` (docs/architecture.md §8.10). */
+  requests: RequestStats;
   /** Null when no ntfy topic is configured. */
   alerts: AlertSender | null;
   /** Resolves API tokens for `/api/v1`: the `api_tokens` table, or a stand-in in tests. */

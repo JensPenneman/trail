@@ -25,6 +25,7 @@ import { overlandRouter } from "../overland/overlandRouter";
 import { owntracksRouter } from "../owntracks/owntracksRouter";
 import { apiReferenceScriptPath } from "../packagedFiles";
 import { configRouter } from "../publicConfig/configRouter";
+import { requestTiming } from "../requests/requestTiming";
 import { linkPageHeaders } from "../sharing/linkPageHeaders";
 import { publicShareRouter } from "../sharing/publicShareRouter";
 import { statsRouter } from "../stats/statsRouter";
@@ -68,6 +69,8 @@ export function createApp(ctx: AppContext): Express {
     identifier: "ip",
   });
 
+  // First: the timing starts before anything else, and its facts are ready for the log line.
+  app.use(requestTiming(ctx.requests));
   app.use(requestLogger(logger));
   app.use(securityHeaders(config.mapOrigins));
   // Before compression and the /api chain: its own order, answers that are never compressed.

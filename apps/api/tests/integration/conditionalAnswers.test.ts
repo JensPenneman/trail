@@ -478,13 +478,14 @@ describe("the cost of a dashboard open", () => {
     const cold = await measure(etags, texts);
     const warm = await measure(etags, texts);
     // Every request reads its session first. Cold, each then reads its validator (the
-    // devices' rows, the stamps of the day) and the data; warm, the validator answers it:
-    // no points, no day of counting, no segments.
+    // devices' rows, the stamps of the day) and the data — the level's tracks their points and
+    // the processed points beside them, a range each; warm, the validator answers it: no
+    // points, no day of counting, no segments.
     expect(cold, JSON.stringify(texts, null, 1)).toEqual({
       "/api/devices 200": 3,
       "/api/v1/people 200": 2,
       "/api/tracks 200": 4,
-      "/api/v1/tracks 200": 7,
+      "/api/v1/tracks 200": 8,
       "/api/v1/segments 200": 6,
     });
     expect(warm, JSON.stringify(texts, null, 1)).toEqual({

@@ -6,13 +6,17 @@ import { resetDatabase } from "../support/resetDatabase";
 import { SoftwareAuthenticator } from "../support/softwareAuthenticator";
 import { createTestContext, type TestContext } from "../support/testContext";
 
-/* The access log keeps method and URL of every request: secrets in either must not reach it. */
+/* The access log keeps method and route of every request, and at debug its URL: secrets in
+ * either must not reach it — so the log is read at debug, where the URL is. */
 let t: TestContext;
 const lines: string[] = [];
 
 beforeAll(async () => {
   await resetDatabase();
-  t = await createTestContext({ logDestination: { write: (line: string) => lines.push(line) } });
+  t = await createTestContext({
+    logDestination: { write: (line: string) => lines.push(line) },
+    logLevel: "debug",
+  });
 });
 
 afterAll(async () => {

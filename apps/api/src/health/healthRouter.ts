@@ -1,5 +1,5 @@
 import { apiPaths } from "@trail/contracts/apiPaths";
-import type { Health, LiveHealth, ProcessingHealth } from "@trail/contracts/health";
+import type { Health, LiveHealth, ProcessingHealth, RequestsHealth } from "@trail/contracts/health";
 import express, { type Response, type Router } from "express";
 import type { AppContext } from "../appContext";
 import { ipRateLimit } from "../http/ipRateLimit";
@@ -84,6 +84,17 @@ export function healthRouter(ctx: AppContext): Router {
       ...info(),
       processing,
     } satisfies Health);
+  });
+
+  // This process's timing of its requests per route, from memory, against their budgets
+  // (docs/architecture.md §8.10); behind the database checks' limiter, as they are.
+  router.get(apiPaths.healthRequests, databaseCheckLimit, (_req, res) => {
+    const routes = ctx.requests.summary();
+    res.json({
+      status: routes.some((route) => route.overBudget) ? "over_budget" : "ok",
+      ...info(),
+      routes,
+    } satisfies RequestsHealth);
   });
 
   return router;
