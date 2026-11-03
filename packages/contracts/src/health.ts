@@ -45,7 +45,7 @@ export type Health = z.infer<typeof healthSchema>;
 
 /**
  * One window of a route's requests in `/api/health/requests`: counts and
- * milliseconds only. Quantiles are estimated within a quarter of the true
+ * milliseconds only. Quantiles are estimated within a third of the true
  * value; `overBudget` counts the requests slower than the route's budget
  * exactly (0 without a budget). Null quantiles: no request in the window.
  */
@@ -55,6 +55,8 @@ export const requestWindowSchema = z.object({
   errors: z.number().int().nonnegative(),
   /** `304 Not Modified`: the browser's copy was current. */
   notModified: z.number().int().nonnegative(),
+  /** Requests whose client closed the connection before the answer was out; timed until then. */
+  aborted: z.number().int().nonnegative(),
   overBudget: z.number().int().nonnegative(),
   p50Ms: z.number().nonnegative().nullable(),
   p95Ms: z.number().nonnegative().nullable(),

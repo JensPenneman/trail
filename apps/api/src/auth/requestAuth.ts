@@ -78,6 +78,18 @@ export function requireAdmin(req: Request): SessionPrincipal {
   return auth;
 }
 
+/**
+ * The principal of an administrator, 401 without one and 403 for anyone else:
+ * a passkey session with the admin grant, or an API token whose owner is an
+ * administrator. For the operator's read-only views a monitor may call with a
+ * token (`/api/health/requests`); administration itself stays `requireAdmin`.
+ */
+export function requireAdminOrToken(req: Request): RequestAuth {
+  const auth = requireAuth(req);
+  if (!auth.user.isAdmin) throw new HttpError(403, "forbidden", "Only administrators can do this.");
+  return auth;
+}
+
 /** Whether the principal holds `scope`: a session holds every scope, a token only its own. */
 export function hasScope(auth: RequestAuth, scope: ApiScope): boolean {
   return auth.kind === "session" || auth.scopes.includes(scope);

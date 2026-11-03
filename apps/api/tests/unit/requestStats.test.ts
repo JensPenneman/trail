@@ -51,7 +51,7 @@ describe("the latency histogram", () => {
     expect(bucketOf(250_000)).toBe(bucketBounds.length);
   });
 
-  it("estimates quantiles within a quarter of the true value, never above the slowest", () => {
+  it("estimates quantiles within a third of the true value, never above the slowest", () => {
     // A skewed spread like an API's: most fast, a tail of slow ones.
     let seed = 7;
     const random = () => {
@@ -187,7 +187,7 @@ describe("the request summary", () => {
     for (let index = 0; index < 18; index += 1) stats.record("GET /api/heatmap", 40, ok);
     stats.record("GET /api/heatmap", 160, ok);
     stats.record("GET /api/heatmap", 900, ok);
-    stats.record("GET /api/stats/activity", 5000, ok);
+    for (let index = 0; index < 20; index += 1) stats.record("GET /api/stats/activity", 5000, ok);
     stats.record("POST /api/overland", 5000, ok);
     const [first, ...others] = stats.summary();
     expect(first).toMatchObject({
@@ -209,6 +209,47 @@ describe("the request summary", () => {
       overBudget: false,
       last15m: { count: 1 },
       last24h: { count: 21, overBudget: 2 },
+    });
+  });
+
+  it("judges a route only on at least 20 requests in its last 15 minutes", () => {
+    const stats = new RequestStats({ now: () => start });
+    for (let index = 0; index < 19; index += 1) stats.record("GET /api/heatmap", 900, ok);
+    expect(stats.summary()[0]).toMatchObject({
+      overBudget: false,
+      last15m: { count: 19, overBudget: 19 },
+    });
+    stats.record("GET /api/heatmap", 900, ok);
+    expect(stats.summary()[0]).toMatchObject({ overBudget: true, last15m: { count: 20 } });
+  });
+
+  it("counts the requests whose client left", () => {
+    const stats = new RequestStats({ now: () => start });
+    stats.record("GET /api/devices", 30, ok);
+    stats.record("GET /api/devices", 40, { ...ok, aborted: true });
+    expect(stats.summary()[0]).toMatchObject({
+      last15m: { count: 2, aborted: 1 },
+      last24h: { count: 2, aborted: 1 },
+    });
+  });
+
+  it("keeps at most 256 routes apart and counts the rest as other", () => {
+    const stats = new RequestStats({ now: () => start });
+    for (let index = 0; index < 256; index += 1) stats.record(`GET /api/r${index}`, 10, ok);
+    stats.record("GET /api/late", 10, ok);
+    stats.record("POST /api/later", 20, ok, true);
+    stats.record("GET /api/r0", 10, ok);
+    const routes = stats.summary();
+    expect(routes).toHaveLength(257);
+    expect(routes.find((route) => route.route === "/api/late")).toBeUndefined();
+    expect(routes.find((route) => route.route === "other")).toMatchObject({
+      method: "",
+      longRanges: false,
+      budgetMs: null,
+      last24h: { count: 2 },
+    });
+    expect(routes.find((route) => route.route === "/api/r0")).toMatchObject({
+      last24h: { count: 2 },
     });
   });
 

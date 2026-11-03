@@ -2,7 +2,11 @@ import { apiPaths } from "@trail/contracts/apiPaths";
 import type { Health, LiveHealth, ProcessingHealth, RequestsHealth } from "@trail/contracts/health";
 import express, { type Response, type Router } from "express";
 import type { AppContext } from "../appContext";
+import { loadSession } from "../auth/loadSession";
+import { getRequestAuth, requireAdminOrToken } from "../auth/requestAuth";
 import { ipRateLimit } from "../http/ipRateLimit";
+import { sameOriginSessions } from "../http/sameOriginSessions";
+import { authenticateBearer } from "../v1/authenticateBearer";
 import { readProcessingHealth } from "./readProcessingHealth";
 
 const databaseCheckTimeoutMs = 2_000;
@@ -16,7 +20,9 @@ const databaseCheckTimeoutMs = 2_000;
  * check, which must not flap because Postgres restarts). All sit before the
  * API's rate limiter so the container health check is never throttled; the
  * two database checks share a limiter of their own, or anyone could load
- * Postgres through them.
+ * Postgres through them. `GET /api/health/requests` (the API's own timing of its
+ * requests) is the exception to "public": administrators only, by session or by
+ * the API token of one.
  */
 export function healthRouter(ctx: AppContext): Router {
   const router = express.Router();
@@ -87,15 +93,25 @@ export function healthRouter(ctx: AppContext): Router {
   });
 
   // This process's timing of its requests per route, from memory, against their budgets
-  // (docs/architecture.md §8.10); behind the database checks' limiter, as they are.
-  router.get(apiPaths.healthRequests, databaseCheckLimit, (_req, res) => {
-    const routes = ctx.requests.summary();
-    res.json({
-      status: routes.some((route) => route.overBudget) ? "over_budget" : "ok",
-      ...info(),
-      routes,
-    } satisfies RequestsHealth);
-  });
+  // (docs/architecture.md §8.10); behind the database checks' limiter, as they are, and for
+  // administrators only: an API token of one, or a session with the admin grant.
+  const session = loadSession(ctx.db, ctx.config.sessionTtlDays);
+  router.get(
+    apiPaths.healthRequests,
+    databaseCheckLimit,
+    ...authenticateBearer(ctx),
+    (req, res, next) => (getRequestAuth(req) === undefined ? session(req, res, next) : next()),
+    sameOriginSessions,
+    (req, res) => {
+      requireAdminOrToken(req);
+      const routes = ctx.requests.summary();
+      res.json({
+        status: routes.some((route) => route.overBudget) ? "over_budget" : "ok",
+        ...info(),
+        routes,
+      } satisfies RequestsHealth);
+    },
+  );
 
   return router;
 }

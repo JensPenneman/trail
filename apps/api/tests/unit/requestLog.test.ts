@@ -252,17 +252,19 @@ describe("the request log line", () => {
     expect(JSON.stringify(lines)).not.toContain(secret);
   });
 
-  it("keeps the redacted URL at debug, for following one request by hand", async () => {
+  it("logs the URL's parameter names at debug, never a value", async () => {
     const { app } = appWith("debug");
     await request(app)
       .get(`/api/heatmap?bbox=${viewport}&zoom=13`)
       .set("X-Request-Id", "request-debug")
       .expect(200);
     await settle();
-    expect(lineOf("request-debug")).toMatchObject({
-      req: { url: `/api/heatmap?bbox=${encodeURIComponent(viewport)}&zoom=13` },
-      route: "/api/heatmap",
-    });
+    const line = lineOf("request-debug");
+    expect(line).toMatchObject({ req: { url: "/api/heatmap?bbox&zoom" }, route: "/api/heatmap" });
+    const logged = JSON.stringify(lines);
+    for (const value of ["3.712", "51.012", "51.065", "13"]) {
+      expect(logged).not.toContain(`=${value}`);
+    }
   });
 });
 

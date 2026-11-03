@@ -8,6 +8,13 @@ import { budgetFor } from "./requestBudgets";
 const recent = { slices: 15, widthMs: 60_000 };
 const day = { slices: 96, widthMs: 900_000 };
 
+/** Routes kept apart; later ones are counted together as `other`. */
+const maxSeries = 256;
+const otherKey = "other";
+
+/** A route is judged on at least this many requests in its last 15 minutes. */
+const minJudgedRequests = 20;
+
 /** A p95 over budget means more than this share of the requests were slower. */
 const overBudgetShare = 0.05;
 
@@ -58,6 +65,7 @@ function describe(histogram: LatencyHistogram, budgetMs: number | null): Request
     count: histogram.count,
     errors: histogram.errors,
     notModified: histogram.notModified,
+    aborted: histogram.aborted,
     overBudget: budgetMs === null ? 0 : histogram.countAbove(budgetMs),
     p50Ms: tenth(histogram.quantile(0.5)),
     p95Ms: tenth(histogram.quantile(0.95)),
@@ -91,15 +99,21 @@ export class RequestStats {
   record(
     route: string,
     ms: number,
-    answer: { status: number; bytes: number },
+    answer: { status: number; bytes: number; aborted?: boolean },
     longRange = false,
   ): void {
-    const key = longRange ? `${route} +` : route;
+    let key = longRange ? `${route} +` : route;
     let series = this.#routes.get(key);
     if (series === undefined) {
-      series = {
-        route,
-        longRanges: longRange,
+      // Full: whatever route is new is counted as one, so memory stays bounded.
+      const full = this.#routes.size >= maxSeries;
+      if (full) {
+        key = otherKey;
+        series = this.#routes.get(key);
+      }
+      series ??= {
+        route: full ? otherKey : route,
+        longRanges: full ? false : longRange,
         recent: new SliceRing(recent.slices, recent.widthMs),
         day: new SliceRing(day.slices, day.widthMs),
       };
@@ -121,11 +135,13 @@ export class RequestStats {
       const last15m = describe(series.recent.window(now), budgetMs);
       const separator = series.route.indexOf(" ");
       routes.push({
-        method: series.route.slice(0, separator),
+        method: series.route.slice(0, Math.max(separator, 0)),
         route: series.route.slice(separator + 1),
         longRanges: series.longRanges,
         budgetMs,
-        overBudget: last15m.count > 0 && last15m.overBudget > last15m.count * overBudgetShare,
+        overBudget:
+          last15m.count >= minJudgedRequests &&
+          last15m.overBudget > last15m.count * overBudgetShare,
         last15m,
         last24h: describe(last24h, budgetMs),
       });

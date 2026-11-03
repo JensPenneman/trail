@@ -23,7 +23,7 @@ export interface RequestFacts {
   cache?: "hit" | "miss";
   account?: string;
   days?: number;
-  /** The client went away before the answer was out; not counted in the summary. */
+  /** The client went away before the answer was out; counted in the summary as `aborted`. */
   aborted?: true;
 }
 
@@ -49,7 +49,8 @@ const sizeOf = (chunk: unknown, encoding: unknown): number => {
  * (docs/architecture.md §8.10). Mounted first, so its time starts before
  * everything else and its bytes are those compression hands on; a stream of
  * server-sent events, whose length is how long a tab stayed open, is logged
- * but not counted. A few counters per request: nothing is written anywhere.
+ * but not counted; a request whose client left is counted,
+ * timed until its socket closed, as `aborted`. A few counters per request: nothing is written anywhere.
  */
 export function requestTiming(stats: RequestStats): RequestHandler {
   const tagOf = accountTagger();
@@ -77,7 +78,9 @@ export function requestTiming(stats: RequestStats): RequestHandler {
         req.headers["if-none-match"] !== undefined ||
         req.headers["if-modified-since"] !== undefined;
       const user = getRequestAuth(req)?.user.id;
-      const days = daySpan(req.originalUrl);
+      const key = `${req.method} ${route}`;
+      const perDay = isPerDay(key);
+      const days = perDay ? daySpan(req.originalUrl) : null;
       const finished = res.writableFinished;
       const facts: RequestFacts = {
         route,
@@ -92,10 +95,9 @@ export function requestTiming(stats: RequestStats): RequestHandler {
       factsByResponse.set(res, facts);
       const type = res.getHeader("Content-Type");
       const stream = typeof type === "string" && type.startsWith("text/event-stream");
-      if (finished && !stream) {
-        const key = `${req.method} ${route}`;
-        const longRange = days !== null && days > 1 && isPerDay(key);
-        stats.record(key, ms, { status: res.statusCode, bytes }, longRange);
+      if (!stream) {
+        const longRange = days !== null && days > 1;
+        stats.record(key, ms, { status: res.statusCode, bytes, aborted: !finished }, longRange);
       }
     };
     res.on("finish", done);

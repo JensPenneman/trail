@@ -49,66 +49,49 @@ describe("export encoding", () => {
 });
 
 describe("logging safety", () => {
-  it("removes device tokens from logged URLs", () => {
-    expect(redactUrl("/api/overland?token=trl_secret&x=1")).toBe(
-      "/api/overland?token=[redacted]&x=1",
+  it("logs a query's parameter names only, never a value", () => {
+    expect(redactUrl("/api/overland?token=trl_secret&x=1")).toBe("/api/overland?token&x");
+    expect(redactUrl("/api/v1/tracks?bbox=3.71,51.01&from=2026-10-16&to=2026-10-17")).toBe(
+      "/api/v1/tracks?bbox&from&to",
     );
-    expect(redactUrl("/api/overland?a=1&access_token=trl_secret")).toBe(
-      "/api/overland?a=1&access_token=[redacted]",
+    // Spelled any way, a name stays a name.
+    expect(redactUrl("/api/overland?%74oken=trl_secret&Access_Token=x&a=b%20c")).toBe(
+      "/api/overland?token&Access_Token&a",
     );
-  });
-
-  it("recognises token parameters the way the query parser reads them", () => {
-    // `%74oken` is `token` to the router, so it authenticates — and must not be logged.
-    expect(redactUrl("/api/overland?%74oken=trl_secret")).toBe("/api/overland?token=[redacted]");
-    expect(redactUrl("/api/overland?TOKEN=trl_a&Access_Token=trl_b&x=a%20b")).toBe(
-      "/api/overland?TOKEN=[redacted]&Access_Token=[redacted]&x=a%20b",
-    );
+    expect(redactUrl("/API/OsmAnd/?lat=51.05&lon=3.71&id=trl_x")).toBe("/API/OsmAnd/?lat&lon&id");
+    expect(redactUrl("/api/heatmap")).toBe("/api/heatmap");
   });
 
   it("removes one-time link and invite tokens from logged paths", () => {
     expect(redactUrl("/link/5JqNf3kP0xY")).toBe("/link/[redacted]");
-    expect(redactUrl("/invite/5JqNf3kP0xY?from=mail")).toBe("/invite/[redacted]?from=mail");
+    expect(redactUrl("/invite/5JqNf3kP0xY?from=mail")).toBe("/invite/[redacted]?from");
     expect(redactUrl("/api/auth/link/5JqNf3kP0xY")).toBe("/api/auth/link/[redacted]");
     expect(redactUrl("/api/auth/link/5JqNf3kP0xY/start")).toBe("/api/auth/link/[redacted]/start");
     // Routing ignores case and the SPA decodes the path: those spellings reach the same pages.
     expect(redactUrl("/API/Auth/LINK/5JqNf3kP0xY")).toBe("/API/Auth/LINK/[redacted]");
     expect(redactUrl("/%6Cink/5JqNf3kP0xY")).toBe("/%6Cink/[redacted]");
-    expect(redactUrl("/devices/01926f3a?x=1")).toBe("/devices/01926f3a?x=1");
+    expect(redactUrl("/devices/01926f3a?x=1")).toBe("/devices/01926f3a?x");
     expect(redactUrl("/link")).toBe("/link");
   });
 
-  it("removes share link secrets that a client puts into a URL after all", () => {
+  it("removes share link secrets and API tokens that a client puts into a URL after all", () => {
     // They belong in the fragment of the page and the X-Share-Secret header only.
     const secret = `trls_${"Ab9-_".repeat(8)}xyz`;
-    expect(redactUrl(`/api/public/share?secret=${secret}`)).toBe(
-      "/api/public/share?secret=[redacted]",
-    );
+    expect(redactUrl(`/api/public/share?secret=${secret}`)).toBe("/api/public/share?secret");
     expect(redactUrl(`/somewhere/${secret}`)).toBe("/somewhere/[redacted]");
-    expect(redactUrl(`/somewhere?next=%2Fs%23${secret}`)).toBe("/somewhere?next=[redacted]");
     // A fragment never reaches the server; one sent anyway is not logged.
     expect(redactUrl(`/s#${secret}`)).toBe("/s");
     expect(redactUrl("/api/public/share")).toBe("/api/public/share");
+    const key = `trlk_${"Ab9-_".repeat(8)}xyz`;
+    expect(key).toHaveLength(48);
+    expect(redactUrl(`/api/v1/${key}/devices`)).toBe("/api/v1/[redacted]/devices");
+    expect(redactUrl(`/api/v1/%74rlk_${key.slice(5)}`)).toBe("/api/v1/[redacted]");
   });
 
   it("removes a secret that a client sends as a parameter's name", () => {
     const secret = `trls_${"Ab9-_".repeat(8)}xyz`;
-    expect(redactUrl(`/api/public/share?${secret}`)).toBe("/api/public/share?[redacted]=");
-    expect(redactUrl(`/api/v1/me?trlk_${"x".repeat(43)}=1&a=b`)).toBe(
-      "/api/v1/me?[redacted]=1&a=b",
-    );
-  });
-
-  it("removes API token secrets wherever a client put them in the URL", () => {
-    const secret = `trlk_${"Ab9-_".repeat(8)}xyz`;
-    expect(secret).toHaveLength(48);
-    expect(redactUrl(`/api/v1/me?key=${secret}&x=1`)).toBe("/api/v1/me?key=[redacted]&x=1");
-    expect(redactUrl(`/api/v1/me?auth=Bearer%20${secret}`)).toBe("/api/v1/me?auth=[redacted]");
-    expect(redactUrl(`/api/v1/${secret}/devices`)).toBe("/api/v1/[redacted]/devices");
-    expect(redactUrl(`/api/v1/%74rlk_${secret.slice(5)}`)).toBe("/api/v1/[redacted]");
-    expect(redactUrl("/api/v1/devices?cursor=trlk_short")).toBe(
-      "/api/v1/devices?cursor=trlk_short",
-    );
+    expect(redactUrl(`/api/public/share?${secret}`)).toBe("/api/public/share?[redacted]");
+    expect(redactUrl(`/api/v1/me?trlk_${"x".repeat(43)}=1&a=b`)).toBe("/api/v1/me?[redacted]&a");
   });
 
   it("keeps only what names the failure of a Postgres error, never the refused value", () => {
@@ -126,34 +109,6 @@ describe("logging safety", () => {
     expect(serialized).toContain("22P02");
     expect(serialized).toContain("float8in_internal");
     expect(serialized).not.toContain("51.0543");
-  });
-
-  it("drops every value of an upload in the OsmAnd format from the URL, and device tokens anywhere", () => {
-    const token = `trl_${"A".repeat(43)}`;
-    expect(redactUrl(`/api/osmand?id=${token}&lat=51.0543&lon=3.7174&timestamp=1730000000`)).toBe(
-      "/api/osmand?id=[redacted]&lat=[redacted]&lon=[redacted]&timestamp=[redacted]",
-    );
-    expect(redactUrl("/API/OsmAnd/?lat=51.05")).toBe("/API/OsmAnd/?lat=[redacted]");
-    expect(redactUrl("/api/%6Fsmand?lat=51.05")).toBe("/api/%6Fsmand?lat=[redacted]");
-    // A mistyped template's path, below the endpoint or with doubled slashes, ends in a 404 at warn.
-    expect(redactUrl("/api/osmand/more?lat=51.05")).toBe("/api/osmand/more?lat=[redacted]");
-    expect(redactUrl("/api//osmand?lat=51.05&lon=3.71")).toBe(
-      "/api//osmand?lat=[redacted]&lon=[redacted]",
-    );
-    expect(redactUrl("//api/OSMAND//x/?timestamp=1")).toBe("//api/OSMAND//x/?timestamp=[redacted]");
-    // Whatever follows the endpoint's name in its segment: a 404 all the same.
-    for (const path of ["/api/osmand;x", "/api/osmand%2Fx", "/api/osmand%00", "/api/osmandx"]) {
-      expect(redactUrl(`${path}?lat=51.05&lon=3.71`), path).toBe(
-        `${path}?lat=[redacted]&lon=[redacted]`,
-      );
-    }
-    expect(redactUrl("/api/overland?lat=51.05")).toBe("/api/overland?lat=51.05");
-    // A device token is found by its shape wherever a client puts it.
-    expect(redactUrl(`/api/owntracks?u=jens&id=${token}`)).toBe(
-      "/api/owntracks?u=jens&id=[redacted]",
-    );
-    expect(redactUrl(`/api/whatever/${token}`)).toBe("/api/whatever/[redacted]");
-    expect(redactUrl(`/api/overland?next=Bearer%20${token}`)).toBe("/api/overland?next=[redacted]");
   });
 
   it("never logs a request body a body parser kept in its error", () => {

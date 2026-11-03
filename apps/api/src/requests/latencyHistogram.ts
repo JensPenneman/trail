@@ -1,7 +1,7 @@
 /**
  * The upper bounds of the histogram's buckets in milliseconds: 1, 1.25, 1.5,
  * 2, 2.5, 3, 4, 5, 6 and 8 of every decade from 0.1 ms to 100 s, so a bucket
- * is at most a quarter wider than the one below it. Every request budget is
+ * is at most a third wider than the one below it. Every request budget is
  * one of them (`requestBudgets.ts`), so the share of requests over a budget
  * is counted exactly, not estimated; a request over 100 s lands in the last
  * bucket, which ends at the slowest request seen.
@@ -28,7 +28,7 @@ export function bucketOf(ms: number): number {
 
 /**
  * Durations of one route in one slice of time: counts per bucket, the slowest
- * one, the 5xx and 304 answers and the bytes sent. Fixed size whatever the
+ * one, the 5xx and 304 answers, the requests whose client left and the bytes sent. Fixed size whatever the
  * traffic (62 counters), so a route's memory is bounded by its slices.
  */
 export class LatencyHistogram {
@@ -37,15 +37,17 @@ export class LatencyHistogram {
   maxMs = 0;
   errors = 0;
   notModified = 0;
+  aborted = 0;
   bytes = 0;
 
-  add(ms: number, answer: { status: number; bytes: number }): void {
+  add(ms: number, answer: { status: number; bytes: number; aborted?: boolean }): void {
     const bucket = bucketOf(ms);
     this.counts[bucket] = (this.counts[bucket] ?? 0) + 1;
     this.count += 1;
     if (ms > this.maxMs) this.maxMs = ms;
     if (answer.status >= 500) this.errors += 1;
     if (answer.status === 304) this.notModified += 1;
+    if (answer.aborted === true) this.aborted += 1;
     this.bytes += answer.bytes;
   }
 
@@ -57,6 +59,7 @@ export class LatencyHistogram {
     if (other.maxMs > this.maxMs) this.maxMs = other.maxMs;
     this.errors += other.errors;
     this.notModified += other.notModified;
+    this.aborted += other.aborted;
     this.bytes += other.bytes;
   }
 
@@ -66,12 +69,13 @@ export class LatencyHistogram {
     this.maxMs = 0;
     this.errors = 0;
     this.notModified = 0;
+    this.aborted = 0;
     this.bytes = 0;
   }
 
   /**
    * The `q`-quantile by nearest rank, placed within its bucket by linear
-   * interpolation and never above the slowest request: within a quarter of
+   * interpolation and never above the slowest request: within a third of
    * the true value, and always in the bucket the true value is in, so a
    * quantile over a budget is reported over it. Null without requests.
    */

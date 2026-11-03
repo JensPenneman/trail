@@ -37,7 +37,8 @@ export function followRoute(req: Request): () => string | null {
     get: () => route,
     set: (value: unknown) => {
       route = value;
-      mount = req.baseUrl;
+      // Express matches a mount without regard to case: `/API/OVERLAND` is `/api/overland`.
+      mount = req.baseUrl.toLowerCase();
     },
   });
   return () => {
