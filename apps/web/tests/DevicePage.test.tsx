@@ -19,7 +19,7 @@ describe("Settings › Devices › a device", () => {
     renderSettings(devicePage);
     expect(await heading("iPhone 16")).toBeInTheDocument();
     expect(document.title).toBe("iPhone 16 · Devices · Settings · Trail");
-    expect(screen.getByRole("link", { name: "Back to Devices" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^Back to Devices/ })).toHaveAttribute(
       "href",
       "/settings/devices",
     );
@@ -41,27 +41,27 @@ describe("Settings › Devices › a device", () => {
     ).toBeChecked();
     // The parts of it, each a page of its own.
     const sent = screen.getByRole("list", { name: "What it sent" });
-    expect(within(sent).getByRole("link", { name: "Uploads" })).toHaveAttribute(
+    expect(within(sent).getByRole("link", { name: /^Uploads/ })).toHaveAttribute(
       "href",
       `${devicePage}/uploads`,
     );
-    expect(within(sent).getByRole("link", { name: "Raw points" })).toHaveAttribute(
+    expect(within(sent).getByRole("link", { name: /^Raw points/ })).toHaveAttribute(
       "href",
       `${devicePage}/points`,
     );
-    expect(within(sent).getByRole("link", { name: "Raw points" })).toHaveAccessibleDescription(
-      "Every stored point, newest first. 184,322",
+    expect(within(sent).getByRole("link", { name: /^Raw points/ })).toHaveAccessibleName(
+      expect.stringContaining("Every stored point, newest first. 184,322"),
     );
-    expect(within(sent).getByRole("link", { name: "History" })).toHaveAttribute(
+    expect(within(sent).getByRole("link", { name: /^History/ })).toHaveAttribute(
       "href",
       `/?view=history&devices=${ids.phone}`,
     );
     const phone = screen.getByRole("list", { name: "The phone" });
-    expect(within(phone).getByRole("link", { name: "Tracking settings" })).toHaveAttribute(
+    expect(within(phone).getByRole("link", { name: /^Tracking settings/ })).toHaveAttribute(
       "href",
       `${devicePage}/tracking`,
     );
-    expect(within(phone).getByRole("link", { name: "Setup" })).toHaveAttribute(
+    expect(within(phone).getByRole("link", { name: /^Setup/ })).toHaveAttribute(
       "href",
       `${devicePage}/setup`,
     );
@@ -77,7 +77,7 @@ describe("Settings › Devices › a device", () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
     const { router } = renderSettings(devicePage);
-    await person.click(await screen.findByRole("link", { name: "History" }));
+    await person.click(await screen.findByRole("link", { name: /^History/ }));
     expect(await screen.findByText("Elsewhere")).toBeInTheDocument();
     expect(router.state.location).toMatchObject({
       pathname: "/",
@@ -90,7 +90,7 @@ describe("Settings › Devices › a device", () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
     const { router } = renderSettings(devicePage);
-    await person.click(await screen.findByRole("link", { name: "Uploads" }));
+    await person.click(await screen.findByRole("link", { name: /^Uploads/ }));
     expect(await heading("Uploads")).toBeInTheDocument();
     expect(router.state.location.pathname).toBe(`${devicePage}/uploads`);
     expect(document.title).toBe("Uploads · iPhone 16 · Devices · Settings · Trail");
@@ -102,10 +102,10 @@ describe("Settings › Devices › a device", () => {
       expect(screen.getByRole("heading", { level: 1, name: "Uploads" })).toHaveFocus(),
     );
 
-    await person.click(screen.getByRole("link", { name: "Back to iPhone 16" }));
+    await person.click(screen.getByRole("link", { name: /^Back to iPhone 16/ }));
     expect(await heading("iPhone 16")).toBeInTheDocument();
     expect(router.state.historyAction).toBe("POP");
-    await waitFor(() => expect(screen.getByRole("link", { name: "Uploads" })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole("link", { name: /^Uploads/ })).toHaveFocus());
   });
 
   it("lists the raw points on a page of their own, which leads back to the device", async () => {
@@ -118,7 +118,7 @@ describe("Settings › Devices › a device", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("1 shown")).toBeInTheDocument();
     // Opened by its address: the way back leads to the device's page.
-    await person.click(screen.getByRole("link", { name: "Back to iPhone 16" }));
+    await person.click(screen.getByRole("link", { name: /^Back to iPhone 16/ }));
     expect(await heading("iPhone 16")).toBeInTheDocument();
     expect(router.state.historyAction).toBe("PUSH");
   });
@@ -130,7 +130,7 @@ describe("Settings › Devices › a device", () => {
     expect(
       await screen.findByText("Change how Overland records, without touching the phone."),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to iPhone 16" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^Back to iPhone 16/ })).toHaveAttribute(
       "href",
       devicePage,
     );
@@ -163,12 +163,14 @@ describe("Settings › Devices › a device", () => {
     const person = userEvent.setup();
     renderSettings(devicePage);
     expect(await heading("Pixel 8")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Tracking settings" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Setup" })).toHaveAccessibleDescription(
-      "The app, how it is connected, and the settings Trail recommends for it.",
+    expect(screen.queryByRole("link", { name: /^Tracking settings/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /^Setup/ })).toHaveAccessibleName(
+      expect.stringContaining(
+        "The app, how it is connected, and the settings Trail recommends for it.",
+      ),
     );
 
-    await person.click(screen.getByRole("link", { name: "Setup" }));
+    await person.click(screen.getByRole("link", { name: /^Setup/ }));
     expect(await heading("Setup")).toBeInTheDocument();
     expect(screen.getByText(/^OwnTracks \(iOS and Android\)/)).toBeInTheDocument();
     expect(fact("URL")).toHaveTextContent("https://trail.example.com/api/owntracks");
@@ -196,7 +198,7 @@ describe("Settings › Devices › a device", () => {
       }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("radio")).toBeNull();
-    expect(screen.getByRole("link", { name: "Pixel 8" })).toHaveAttribute("href", devicePage);
+    expect(screen.getByRole("link", { name: /^Pixel 8/ })).toHaveAttribute("href", devicePage);
   });
 
   it("issues a new token for another app and shows that app's setup", async () => {
@@ -281,7 +283,7 @@ describe("Settings › Devices › a device", () => {
     const person = userEvent.setup();
     const { router } = renderSettings("/settings/devices");
     const card = await screen.findByRole("article", { name: "iPhone 16" });
-    await person.click(within(card).getByRole("link", { name: "iPhone 16" }));
+    await person.click(within(card).getByRole("link", { name: /^iPhone 16/ }));
     await person.click(await screen.findByRole("button", { name: "Delete device" }));
     const dialog = screen.getByRole("dialog", { name: "Delete iPhone 16?" });
     await person.type(within(dialog).getByLabelText("Type “iPhone 16” to confirm"), "iPhone 16");
@@ -358,7 +360,7 @@ describe("Settings › Devices › a device", () => {
     // Another tab deleted it: the server's `device-removed` event.
     act(() => removeDeviceFromCache(queryClient, ids.phone));
     expect(await heading("Device not found")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Devices" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^Devices/ })).toHaveAttribute(
       "href",
       "/settings/devices",
     );
@@ -372,7 +374,7 @@ describe("Settings › Devices › a device", () => {
     const { unmount } = renderSettings(unknown);
     expect(await heading("Device not found")).toBeInTheDocument();
     expect(screen.getByText("There is no such device here")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Devices" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^Devices/ })).toHaveAttribute(
       "href",
       "/settings/devices",
     );

@@ -5,6 +5,7 @@ import { publicConfigSchema } from "@trail/contracts/config";
 import { shareResponseSchema } from "@trail/contracts/share";
 import { createShareLinkResponseSchema } from "@trail/contracts/shareLink";
 import { adminStatePath } from "./support/adminState";
+import { containing } from "./support/containing";
 import { expectAccessible } from "./support/expectAccessible";
 import { openMapOptions } from "./support/mapControls";
 import { overlandBatch } from "./support/overlandBatch";
@@ -70,20 +71,20 @@ test("Settings: the rows of every group with their values, and search", async ({
     ["Notifications", "/settings/notifications"],
     ["About", "/settings/about"],
   ] as const) {
-    await expect(list(page).getByRole("link", { name, exact: true }), name).toHaveAttribute(
-      "href",
-      path,
-    );
+    await expect(
+      list(page).getByRole("link", { name: new RegExp(`^${name}`) }),
+      name,
+    ).toHaveAttribute("href", path);
   }
   await expect(list(page).getByRole("link", { name: "Accounts" })).toHaveCount(0);
-  await expect(list(page).getByRole("link", { name: "Passkeys" })).toHaveAccessibleDescription("1");
-  await expect(list(page).getByRole("link", { name: "Browsers" })).toHaveAccessibleDescription("1");
-  await expect(list(page).getByRole("link", { name: "About" })).toHaveAccessibleDescription(
-    config.version,
+  await expect(list(page).getByRole("link", { name: "Passkeys" })).toHaveAccessibleName(/ 1$/);
+  await expect(list(page).getByRole("link", { name: "Browsers" })).toHaveAccessibleName(/ 1$/);
+  await expect(list(page).getByRole("link", { name: "About" })).toHaveAccessibleName(
+    containing(config.version),
   );
   // This server sends no alerts (no ALERT_NTFY_URL).
-  await expect(list(page).getByRole("link", { name: "Notifications" })).toHaveAccessibleDescription(
-    "Off",
+  await expect(list(page).getByRole("link", { name: "Notifications" })).toHaveAccessibleName(
+    / Off$/,
   );
   await expectAccessible(page, "the list of Settings");
 
@@ -112,8 +113,8 @@ test("Settings: the rows of every group with their values, and search", async ({
   await expect(page.getByText("No settings match “zzz”.")).toBeVisible();
   await search.fill("gpx");
   const results = page.getByRole("list", { name: "Results" });
-  await expect(results.getByRole("link", { name: "Export" })).toHaveAccessibleDescription(
-    "Privacy & data › Your data",
+  await expect(results.getByRole("link", { name: "Export" })).toHaveAccessibleName(
+    containing("Privacy & data › Your data"),
   );
   await expect(list(page)).toHaveCount(0);
   await expectAccessible(page, "search results in Settings");
@@ -176,7 +177,7 @@ test("every page of Settings, and the page of each kind of item, renders and is 
   await search.fill("settings phone");
   await expect(
     page.getByRole("list", { name: "Results" }).getByRole("link", { name: "Settings phone" }),
-  ).toHaveAccessibleDescription("Account › Devices");
+  ).toHaveAccessibleName(containing("Account › Devices"));
   await search.press("Enter");
   await expect(page).toHaveURL(new RegExp(`/settings/devices/${device.id}$`));
   await expect(title(page, "Settings phone")).toBeFocused();
@@ -244,7 +245,7 @@ test("going deeper and back, by address and through the browser's history", asyn
   await expect(title(page, "Passkeys")).toBeFocused();
   const passkeys = page.getByRole("list", { name: "Your passkeys" });
   const passkey = passkeys.getByRole("link").first();
-  const name = (await passkey.getAttribute("aria-labelledby")) ?? "";
+  const name = ((await passkey.getAttribute("aria-labelledby")) ?? "").split(" ")[0];
   const passkeyName = (await page.locator(`[id="${name}"]`).textContent()) ?? "";
   await passkey.click();
   await expect(title(page, passkeyName)).toBeFocused();

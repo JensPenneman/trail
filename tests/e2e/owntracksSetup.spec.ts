@@ -120,12 +120,12 @@ test("an OwnTracks phone is set up from its link and its first point turns up", 
   await expect(page.getByRole("link", { name: "Tracking settings" })).toHaveCount(0);
   await expectAccessible(page, "an OwnTracks device's page");
 
-  await page.getByRole("link", { name: "Setup" }).click();
+  await page.getByRole("link", { name: /^Setup/ }).click();
   const setup = page.getByRole("region", { name: "Setup" });
   await expect(setup.getByText(url)).toBeVisible();
   await expectAccessible(page, "an OwnTracks device's setup");
   await page.getByRole("link", { name: "Back to Lotte’s Pixel" }).click();
-  await page.getByRole("link", { name: "Uploads", exact: true }).click();
+  await page.getByRole("link", { name: /^Uploads/ }).click();
   const uploads = page.getByRole("table", { name: "Uploads of this device" });
   // The header row and one row per upload.
   await expect(uploads.getByRole("row")).toHaveCount(3);

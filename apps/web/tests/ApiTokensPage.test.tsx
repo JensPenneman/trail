@@ -22,15 +22,15 @@ describe("Settings › API tokens", () => {
   it("lists active tokens apart from revoked and expired ones, a page each", async () => {
     renderTokens("/settings/tokens");
     const active = await screen.findByRole("list", { name: "Active tokens" });
-    const token = within(active).getByRole("link", { name: "Home Assistant" });
+    const token = within(active).getByRole("link", { name: /^Home Assistant/ });
     expect(token).toHaveAttribute("href", `/settings/tokens/${ids.token}`);
-    expect(token).toHaveAccessibleDescription(/^trlk_…x7Kq · iPhone 16 · Expires /);
+    expect(token).toHaveAccessibleName(/trlk_…x7Kq · iPhone 16 · Expires /);
     const inactive = screen.getByRole("list", { name: "Expired and revoked" });
-    const old = within(inactive).getByRole("link", { name: "Old script" });
-    expect(old).toHaveAccessibleDescription(/^trlk_…Pq3z · All devices · Revoked .* Revoked$/);
+    const old = within(inactive).getByRole("link", { name: /^Old script/ });
+    expect(old).toHaveAccessibleName(/trlk_…Pq3z · All devices · Revoked .* Revoked$/);
     expect(screen.getByText(/Kept for 30 days after they stop working/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "API reference" })).toHaveAttribute("href", "/docs");
-    const guide = screen.getByRole("link", { name: "MCP guide" });
+    expect(screen.getByRole("link", { name: /^API reference/ })).toHaveAttribute("href", "/docs");
+    const guide = screen.getByRole("link", { name: /^MCP guide/ });
     expect(guide).toHaveAttribute("href", mcpGuideUrl);
     expect(guide).toHaveAttribute("rel", "noreferrer");
   });
@@ -77,7 +77,7 @@ describe("Settings › API tokens", () => {
     const dialog = screen.getByRole("dialog", { name: "Create an API token" });
     const agent = within(dialog).getByRole("radio", { name: "Agent" });
     expect(agent).toHaveAccessibleDescription(/connected to Trail's MCP server/);
-    expect(within(dialog).getByRole("link", { name: "MCP server" })).toHaveAttribute(
+    expect(within(dialog).getByRole("link", { name: /^MCP server/ })).toHaveAttribute(
       "href",
       mcpGuideUrl,
     );
@@ -177,9 +177,9 @@ describe("Settings › API tokens", () => {
       },
     });
     const inactive = await screen.findByRole("list", { name: "Expired and revoked" });
-    expect(
-      within(inactive).getByRole("link", { name: "Home Assistant" }),
-    ).toHaveAccessibleDescription(/Expired$/);
+    expect(within(inactive).getByRole("link", { name: /^Home Assistant/ })).toHaveAccessibleName(
+      /Expired$/,
+    );
     expect(screen.getByText("No active tokens.")).toBeInTheDocument();
   });
 
@@ -315,7 +315,7 @@ describe("Settings › MCP", () => {
     expect(await heading("MCP")).toBeInTheDocument();
     expect(screen.getByLabelText("Server address")).toHaveValue(`${window.location.origin}/mcp`);
     expect(screen.getByText("Authorization: Bearer trlk_…")).toBeInTheDocument();
-    const guide = screen.getByRole("link", { name: "MCP guide (opens in a new tab)" });
+    const guide = screen.getByRole("link", { name: /^MCP guide \(opens in a new tab\)/ });
     expect(guide).toHaveAttribute("href", mcpGuideUrl);
     expect(guide).toHaveAttribute("target", "_blank");
     const person = userEvent.setup();
