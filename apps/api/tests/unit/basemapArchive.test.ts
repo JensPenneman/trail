@@ -8,7 +8,8 @@ import { ArchiveFileSource, ArchiveReadError } from "../../src/basemap/archiveFi
 import {
   ArchiveClosedError,
   ArchiveError,
-  BasemapArchive, maxTileBytes,
+  BasemapArchive,
+  maxTileBytes,
 } from "../../src/basemap/basemapArchive";
 import { DirectoryCache } from "../../src/basemap/directoryCache";
 import { farAway, monacoBasemap, monacoStreets } from "../support/basemapVolume";

@@ -1,7 +1,6 @@
 import { rmSync } from "node:fs";
 import { request as httpRequest, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { publicConfigSchema } from "@trail/contracts/config";
 import { healthSchema } from "@trail/contracts/health";

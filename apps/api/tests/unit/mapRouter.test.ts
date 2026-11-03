@@ -17,7 +17,9 @@ const immutable = "public, max-age=31536000, immutable";
 function appOver(read: () => Promise<unknown>, served: string = id) {
   const archive = { acquire: () => () => {}, tile: read };
   const bundle = { id, region: { archive }, world: null } as unknown as BasemapBundle;
-  const basemap = { bundle: (name: string) => (name === served ? bundle : null) } as unknown as Basemap;
+  const basemap = {
+    bundle: (name: string) => (name === served ? bundle : null),
+  } as unknown as Basemap;
   const { tiles, documents } = mapRouter({
     basemap,
     logger: createLogger({ level: "silent" }),

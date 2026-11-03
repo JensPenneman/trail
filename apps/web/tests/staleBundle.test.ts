@@ -30,9 +30,9 @@ describe("the check for a pruned basemap bundle", () => {
     const check = createStaleBundleCheck(() => 5);
     expect(check(failedTile(500, tileUrl))).toBe(false);
     expect(check(failedTile(404, tileUrl))).toBe(false);
-    expect(
-      check(failedTile(410, "https://trail.example/map/assets/x/fonts/a/0-255.pbf")),
-    ).toBe(false);
+    expect(check(failedTile(410, "https://trail.example/map/assets/x/fonts/a/0-255.pbf"))).toBe(
+      false,
+    );
     expect(check(new Error("boom"))).toBe(false);
     expect(check(undefined)).toBe(false);
     expect(check(tile410)).toBe(true);

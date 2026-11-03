@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import type { Pool } from "pg";
+import { describe, expect, it, vi } from "vitest";
 import type { AppContext } from "../../src/appContext";
 import type { Config } from "../../src/config/config";
 import { loadConfig } from "../../src/config/loadConfig";
@@ -27,9 +27,10 @@ describe("the regions the refresher pulls", () => {
       "world",
     ]);
     expect(regionsOf({ MAP_BASEMAP: "openfreemap", MAP_BASEMAP_REGION: "monaco" })).toEqual([]);
-    expect(
-      regionsOf({ MAP_BASEMAP: "openfreemap", MAP_DATA_REGIONS: "belgium" }),
-    ).toEqual(["belgium", "world"]);
+    expect(regionsOf({ MAP_BASEMAP: "openfreemap", MAP_DATA_REGIONS: "belgium" })).toEqual([
+      "belgium",
+      "world",
+    ]);
   });
 });
 
