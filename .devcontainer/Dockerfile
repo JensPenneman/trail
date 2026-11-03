@@ -11,7 +11,7 @@
 # the current LTS, and it carries Firefox and WebKit, which the suite never
 # starts here: 937 MB compressed for arm64, against 329 MB for this image.
 
-FROM node:lts-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS playwright
+FROM node:lts-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39 AS playwright
 # The browsers must be the build that the locked Playwright drives, so they
 # come from the lockfile's own playwright-core (it has no dependencies). Its
 # lockfile entry, and nothing else, is handed on as a project of one package:
@@ -40,7 +40,7 @@ fs.writeFileSync("/tmp/playwright/package.json", JSON.stringify(project));
 fs.writeFileSync("/tmp/playwright/package-lock.json", JSON.stringify(lockfile));
 EOF
 
-FROM node:lts-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
+FROM node:lts-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39
 # Outside every home directory and volume, owned by root, shared by all users
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY --from=playwright /tmp/playwright /tmp/playwright
