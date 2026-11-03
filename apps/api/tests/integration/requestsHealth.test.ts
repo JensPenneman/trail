@@ -1,9 +1,9 @@
 import { apiPaths } from "@trail/contracts/apiPaths";
 import { requestsHealthSchema } from "@trail/contracts/health";
+import { sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { bearer, createApiToken } from "../support/apiTokenFlows";
-import { sql } from "drizzle-orm";
 import { signUpWithCookie } from "../support/authFlows";
 import { createDevice, postOverland } from "../support/deviceFlows";
 import { overlandFixture } from "../support/overlandFixture";

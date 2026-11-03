@@ -71,6 +71,13 @@
       "when": 1793194345337,
       "tag": "0009_map_regions",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793723608067,
+      "tag": "0010_health_read_scope",
+      "breakpoints": true
     }
   ]
 }
