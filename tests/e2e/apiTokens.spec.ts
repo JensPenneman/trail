@@ -56,8 +56,8 @@ test.describe("API tokens", () => {
     const item = page.getByRole("list", { name: "Active tokens" }).getByRole("link", {
       name: "Calendar agent",
     });
-    await expect(item).toHaveAccessibleDescription(
-      new RegExp(`^trlk_…${secret.slice(-4)} · All devices · Expires `),
+    await expect(item).toHaveAccessibleName(
+      new RegExp(`trlk_…${secret.slice(-4)} · All devices · Expires `),
     );
     expect(await page.content()).not.toContain(secret);
 
@@ -99,7 +99,7 @@ test.describe("API tokens", () => {
       page.getByRole("list", { name: "Expired and revoked" }).getByRole("link", {
         name: "Calendar agent",
       }),
-    ).toHaveAccessibleDescription(/ Revoked$/);
+    ).toHaveAccessibleName(/ Revoked$/);
   });
 
   test("limit a token to some devices and an expiry date", async ({ page, account }) => {
@@ -130,7 +130,7 @@ test.describe("API tokens", () => {
     const item = page.getByRole("list", { name: "Active tokens" }).getByRole("link", {
       name: "Home Assistant",
     });
-    await expect(item).toHaveAccessibleDescription(/ · Tracked phone · Expires 31.*2099.*23:59$/);
+    await expect(item).toHaveAccessibleName(/ · Tracked phone · Expires 31.*2099.*23:59$/);
     await item.click();
     await expect(page.getByText("Any", { exact: true })).toBeVisible();
   });

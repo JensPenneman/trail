@@ -12,7 +12,7 @@ test.describe("passkeys", () => {
     await page.goto("/settings/passkeys");
     const rows = page.getByRole("list", { name: "Your passkeys" }).getByRole("link");
     await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toHaveAccessibleDescription(/works on this address$/);
+    await expect(rows.first()).toHaveAccessibleName(/works on this address$/);
 
     // A security key; the built-in authenticator, which already holds a passkey, is not touched.
     const securityKey = await authenticator.addSecurityKey();

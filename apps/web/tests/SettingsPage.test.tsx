@@ -7,7 +7,7 @@ import { renderSettings } from "./support/renderSettings";
 import { standardRoutes } from "./support/standardRoutes";
 
 const nav = () => screen.getByRole("navigation", { name: "Settings" });
-const row = (name: string) => within(nav()).getByRole("link", { name });
+const row = (name: string) => within(nav()).getByRole("link", { name: new RegExp(`^${name}`) });
 const heading = (name: string) => screen.findByRole("heading", { level: 1, name });
 /** Focus moves to a new page's heading in an effect, just after the heading is on screen. */
 const headingHasFocus = (name: string) =>
@@ -35,16 +35,20 @@ describe("Settings on a phone", () => {
       expect.stringContaining("Browsers"),
     ]);
     expect(row("Profile")).toHaveAttribute("href", "/settings/profile");
-    expect(row("Profile")).toHaveAccessibleDescription("Jens");
+    expect(row("Profile")).toHaveAccessibleName(expect.stringContaining("Jens"));
     expect(row("Devices")).toHaveAttribute("href", "/settings/devices");
-    await waitFor(() => expect(row("Devices")).toHaveAccessibleDescription("2"));
-    await waitFor(() => expect(row("Passkeys")).toHaveAccessibleDescription("1"));
-    await waitFor(() => expect(row("Browsers")).toHaveAccessibleDescription("2"));
-    await waitFor(() => expect(row("Sharing")).toHaveAccessibleDescription("1"));
-    await waitFor(() => expect(row("Public links")).toHaveAccessibleDescription("1 active"));
-    await waitFor(() => expect(row("API tokens")).toHaveAccessibleDescription("1"));
-    await waitFor(() => expect(row("Notifications")).toHaveAccessibleDescription("On"));
-    await waitFor(() => expect(row("About")).toHaveAccessibleDescription("0.1.0"));
+    await waitFor(() => expect(row("Devices")).toHaveAccessibleName("Devices 2"));
+    await waitFor(() => expect(row("Passkeys")).toHaveAccessibleName("Passkeys 1"));
+    await waitFor(() => expect(row("Browsers")).toHaveAccessibleName("Browsers 2"));
+    await waitFor(() => expect(row("Sharing")).toHaveAccessibleName("Sharing 1"));
+    await waitFor(() =>
+      expect(row("Public links")).toHaveAccessibleName(expect.stringContaining("1 active")),
+    );
+    await waitFor(() => expect(row("API tokens")).toHaveAccessibleName("API tokens 1"));
+    await waitFor(() => expect(row("Notifications")).toHaveAccessibleName("Notifications On"));
+    await waitFor(() =>
+      expect(row("About")).toHaveAccessibleName(expect.stringContaining("0.1.0")),
+    );
     expect(row("Who viewed you")).toHaveAttribute("href", "/settings/privacy/viewers");
     expect(row("Access log")).toHaveAttribute("href", "/settings/privacy/access-log");
     expect(row("API reference")).toHaveAttribute("href", "/docs");
@@ -58,7 +62,7 @@ describe("Settings on a phone", () => {
     const { router } = renderSettings("/settings/accounts", { user: visitor });
     expect(await heading("Settings")).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/settings");
-    expect(within(nav()).queryByRole("link", { name: "Accounts" })).not.toBeInTheDocument();
+    expect(within(nav()).queryByRole("link", { name: /^Accounts/ })).not.toBeInTheDocument();
     expect(within(nav()).queryByRole("heading", { name: "Admin" })).not.toBeInTheDocument();
   });
 
@@ -73,11 +77,11 @@ describe("Settings on a phone", () => {
     await person.clear(search);
     await person.type(search, "gpx");
     const results = screen.getByRole("list", { name: "Results" });
-    expect(within(results).getByRole("link", { name: "Your data" })).toHaveAccessibleDescription(
-      "Privacy & data",
+    expect(within(results).getByRole("link", { name: /^Your data/ })).toHaveAccessibleName(
+      expect.stringContaining("Privacy & data"),
     );
-    expect(within(results).getByRole("link", { name: "Export" })).toHaveAccessibleDescription(
-      "Privacy & data › Your data",
+    expect(within(results).getByRole("link", { name: /^Export/ })).toHaveAccessibleName(
+      expect.stringContaining("Privacy & data › Your data"),
     );
     expect(screen.queryByRole("navigation", { name: "Settings" })).not.toBeInTheDocument();
     await person.clear(search);
@@ -96,21 +100,21 @@ describe("Settings on a phone", () => {
     const { router } = renderSettings("/settings");
     const search = await screen.findByRole("searchbox", { name: "Search Settings" });
     // The devices come with the list: search knows them once it has loaded.
-    await waitFor(() => expect(row("Devices")).toHaveAccessibleDescription("2"));
+    await waitFor(() => expect(row("Devices")).toHaveAccessibleName("Devices 2"));
     await person.type(search, "iphone");
     const results = screen.getByRole("list", { name: "Results" });
-    expect(within(results).getByRole("link", { name: "iPhone 16" })).toHaveAttribute(
+    expect(within(results).getByRole("link", { name: /^iPhone 16/ })).toHaveAttribute(
       "href",
       `/settings/devices/${ids.phone}`,
     );
-    expect(within(results).getByRole("link", { name: "iPhone 16" })).toHaveAccessibleDescription(
-      "Account › Devices",
+    expect(within(results).getByRole("link", { name: /^iPhone 16/ })).toHaveAccessibleName(
+      expect.stringContaining("Account › Devices"),
     );
     await person.clear(search);
     await person.type(search, "car-old");
     const byKey = within(screen.getByRole("list", { name: "Results" })).getAllByRole("link");
     expect(byKey).toHaveLength(1);
-    expect(byKey[0]).toHaveAccessibleName("Car");
+    expect(byKey[0]).toHaveAccessibleName("Car Account › Devices");
     await person.clear(search);
     await person.type(search, "car{Enter}");
     expect(await heading("Car")).toBeInTheDocument();
@@ -135,22 +139,22 @@ describe("Settings on a phone", () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
     const { router } = renderSettings("/settings");
-    await person.click(await screen.findByRole("link", { name: "Passkeys" }));
+    await person.click(await screen.findByRole("link", { name: /^Passkeys/ }));
     await headingHasFocus("Passkeys");
     expect(document.title).toBe("Passkeys · Settings · Trail");
-    await person.click(await screen.findByRole("link", { name: "iCloud Keychain" }));
+    await person.click(await screen.findByRole("link", { name: /^iCloud Keychain/ }));
     await headingHasFocus("iCloud Keychain");
     expect(router.state.location.pathname).toBe("/settings/passkeys/pk-1");
     expect(document.title).toBe("iCloud Keychain · Passkeys · Settings · Trail");
 
-    await person.click(screen.getByRole("link", { name: "Back to Passkeys" }));
+    await person.click(screen.getByRole("link", { name: /^Back to Passkeys/ }));
     expect(await heading("Passkeys")).toBeInTheDocument();
     // Back in the history, as the browser's Back button would: no new entry.
     expect(router.state.historyAction).toBe("POP");
     await waitFor(() =>
-      expect(screen.getByRole("link", { name: "iCloud Keychain" })).toHaveFocus(),
+      expect(screen.getByRole("link", { name: /^iCloud Keychain/ })).toHaveFocus(),
     );
-    await person.click(screen.getByRole("link", { name: "Back to Settings" }));
+    await person.click(screen.getByRole("link", { name: /^Back to Settings/ }));
     expect(await heading("Settings")).toBeInTheDocument();
     expect(router.state.historyAction).toBe("POP");
     await waitFor(() => expect(row("Passkeys")).toHaveFocus());
@@ -161,7 +165,7 @@ describe("Settings on a phone", () => {
     const person = userEvent.setup();
     const { router } = renderSettings(`/settings/tokens/${ids.token}`);
     expect(await heading("Home Assistant")).toBeInTheDocument();
-    await person.click(screen.getByRole("link", { name: "Back to API tokens" }));
+    await person.click(screen.getByRole("link", { name: /^Back to API tokens/ }));
     expect(await heading("API tokens")).toBeInTheDocument();
     expect(router.state.historyAction).toBe("PUSH");
   });
@@ -197,7 +201,7 @@ describe("Settings on a phone", () => {
     mockApi(standardRoutes());
     renderSettings("/settings/tokens/01926f3e-0000-7000-8000-000000000000");
     expect(await heading("API token not found")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "API tokens" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^API tokens/ })).toHaveAttribute(
       "href",
       "/settings/tokens",
     );
@@ -221,7 +225,7 @@ describe("Settings beside the list", () => {
     expect(row("Profile")).not.toHaveAttribute("aria-current");
 
     // The page of one item keeps its page's row marked.
-    await person.click(await screen.findByRole("link", { name: "Home Assistant" }));
+    await person.click(await screen.findByRole("link", { name: /^Home Assistant/ }));
     expect(await heading("Home Assistant")).toBeInTheDocument();
     expect(row("API tokens")).toHaveAttribute("aria-current", "page");
   });
@@ -232,11 +236,11 @@ describe("Settings beside the list", () => {
     renderSettings(`/settings/devices/${ids.phone}`, { wide: true });
     expect(await heading("iPhone 16")).toBeInTheDocument();
     expect(row("Devices")).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Back to Devices" })).toBeInTheDocument();
-    await person.click(screen.getByRole("link", { name: "Raw points" }));
+    expect(screen.getByRole("link", { name: /^Back to Devices/ })).toBeInTheDocument();
+    await person.click(screen.getByRole("link", { name: /^Raw points/ }));
     expect(await heading("Raw points")).toBeInTheDocument();
     expect(row("Devices")).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Back to iPhone 16" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Back to iPhone 16/ })).toBeInTheDocument();
   });
 
   it("searches from the sidebar and keeps the query while pages change", async () => {
@@ -245,7 +249,7 @@ describe("Settings beside the list", () => {
     renderSettings("/settings/profile", { wide: true });
     const search = await screen.findByRole("searchbox", { name: "Search Settings" });
     await person.type(search, "ntfy");
-    await person.click(screen.getByRole("link", { name: "Notifications" }));
+    await person.click(screen.getByRole("link", { name: /^Notifications/ }));
     expect(await heading("Notifications")).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "Search Settings" })).toHaveValue("ntfy");
   });

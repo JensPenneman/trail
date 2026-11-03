@@ -39,13 +39,13 @@ describe("Settings › Public links", () => {
     });
     renderSettings("/settings/links");
     const links = await screen.findByRole("list", { name: "Links" });
-    const works = within(links).getByRole("link", { name: "Jens on the way home" });
+    const works = within(links).getByRole("link", { name: /^Jens on the way home/ });
     expect(works).toHaveAttribute("href", `/settings/links/${ids.link}`);
     // "10 min ago", or 9 by the page's clock, which moves on in whole minutes.
-    expect(works).toHaveAccessibleDescription(
-      /^Approximate · Live only · All devices · Opened 12 times, last (9|10) min ago Works$/,
+    expect(works).toHaveAccessibleName(
+      /Approximate · Live only · All devices · Opened 12 times, last (9|10) min ago Works$/,
     );
-    expect(within(links).getByRole("link", { name: "Old link" })).toHaveAccessibleDescription(
+    expect(within(links).getByRole("link", { name: /^Old link/ })).toHaveAccessibleName(
       /Not opened yet Ended$/,
     );
   });
@@ -91,8 +91,8 @@ describe("Settings › Public links", () => {
     expect(expires - Date.now()).toBeLessThanOrEqual(3_600_000);
 
     // Gone once the page is left: the next visit cannot show it again.
-    await person.click(screen.getByRole("link", { name: "Back to Public links" }));
-    await person.click(await screen.findByRole("link", { name: "Jens on the way home" }));
+    await person.click(screen.getByRole("link", { name: /^Back to Public links/ }));
+    await person.click(await screen.findByRole("link", { name: /^Jens on the way home/ }));
     expect(await heading("Jens on the way home")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Public link" })).not.toBeInTheDocument();
     expect(screen.getByText(/cannot show the address or its code again/)).toBeInTheDocument();
@@ -113,7 +113,7 @@ describe("Settings › Public links", () => {
     });
     const person = userEvent.setup();
     const { router } = renderSettings("/settings/links");
-    await person.click(await screen.findByRole("link", { name: "Jens on the way home" }));
+    await person.click(await screen.findByRole("link", { name: /^Jens on the way home/ }));
     expect(await heading("Jens on the way home")).toBeInTheDocument();
     expect(facts()).toMatchObject({
       Status: "Works",
@@ -139,9 +139,11 @@ describe("Settings › Sharing", () => {
     mockApi(standardRoutes());
     renderSettings("/settings/sharing");
     const shares = await screen.findByRole("list", { name: "You share with" });
-    const ana = within(shares).getByRole("link", { name: "Ana Bell" });
+    const ana = within(shares).getByRole("link", { name: /^Ana Bell/ });
     expect(ana).toHaveAttribute("href", `/settings/sharing/${ids.myShare}`);
-    expect(ana).toHaveAccessibleDescription("Precise · Live only · All devices Sees you");
+    expect(ana).toHaveAccessibleName(
+      expect.stringContaining("Precise · Live only · All devices Sees you"),
+    );
   });
 
   it("says when nobody sees you, and shares with someone new", async () => {

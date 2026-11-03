@@ -270,7 +270,7 @@ describe("the People page's list", () => {
     const line = await screen.findByRole("link", { name: /^You share with 2 people/ });
     expect(line).toHaveAttribute("href", "/settings/sharing");
     expect(line).toHaveAccessibleName(
-      "You share with 2 people, 1 waits for you to confirm: Settings › Sharing",
+      "You share with 2 people 1 waits for you to confirm · Settings › Sharing",
     );
     // The list itself lives in Settings now.
     expect(screen.queryByRole("button", { name: /^Change sharing with/ })).toBeNull();

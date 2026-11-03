@@ -254,11 +254,12 @@ export function PeopleList({
           <Link
             to="/settings/sharing"
             className="people-list__sharing"
-            // The two lines read as one sentence, which the grid of their boxes would not make.
-            aria-label={`${summary.line}${summary.toConfirm === null ? "" : `, ${summary.toConfirm}`}: Settings › Sharing`}
+            // The two lines read as one sentence, which the grid of their boxes would not make;
+            // the name keeps the visible text whole (WCAG 2.5.3, Label in Name).
+            aria-label={`${summary.line} ${summary.toConfirm === null ? "" : `${summary.toConfirm} · `}Settings › Sharing`}
           >
             <span className="people-list__sharing-text">
-              <span className="people-list__sharing-line">{summary.line}</span>
+              <span className="people-list__sharing-line">{summary.line}</span>{" "}
               <span className="people-list__sharing-where">
                 {summary.toConfirm === null ? "" : `${summary.toConfirm} · `}Settings › Sharing
               </span>

@@ -40,14 +40,14 @@ describe("Settings › Passkeys", () => {
     const person = userEvent.setup();
     const { router } = renderSettings("/settings/passkeys");
     const passkeys = await screen.findByRole("list", { name: "Your passkeys" });
-    expect(
-      within(passkeys).getByRole("link", { name: "iCloud Keychain" }),
-    ).toHaveAccessibleDescription("iCloud Keychain · synced · works on this address");
+    expect(within(passkeys).getByRole("link", { name: /^iCloud Keychain/ })).toHaveAccessibleName(
+      expect.stringContaining("iCloud Keychain · synced · works on this address"),
+    );
     expect(
       within(passkeys).getByRole("button", { name: "Add a passkey here" }),
     ).toBeInTheDocument();
 
-    await person.click(within(passkeys).getByRole("link", { name: "Security key" }));
+    await person.click(within(passkeys).getByRole("link", { name: /^Security key/ }));
     expect(await heading("Security key")).toBeInTheDocument();
     await person.click(screen.getByRole("button", { name: "Rename" }));
     const rename = screen.getByRole("dialog", { name: "Rename passkey" });
@@ -63,7 +63,7 @@ describe("Settings › Passkeys", () => {
     expect(await heading("Passkeys")).toBeInTheDocument();
     expect(router.state.historyAction).toBe("POP");
     await waitFor(() =>
-      expect(screen.queryByRole("link", { name: "YubiKey" })).not.toBeInTheDocument(),
+      expect(screen.queryByRole("link", { name: /^YubiKey/ })).not.toBeInTheDocument(),
     );
     expect(api.calls.filter((call) => call.method === "DELETE")).toHaveLength(1);
   });

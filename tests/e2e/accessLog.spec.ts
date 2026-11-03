@@ -8,6 +8,7 @@ import {
 } from "@trail/contracts/dataAccess";
 import { shareResponseSchema } from "@trail/contracts/share";
 import { createShareLinkResponseSchema } from "@trail/contracts/shareLink";
+import { containing } from "./support/containing";
 import { expectAccessible } from "./support/expectAccessible";
 import { overlandBatch } from "./support/overlandBatch";
 import { currentUser, signUp } from "./support/signUp";
@@ -125,14 +126,14 @@ test("someone you share with who reads your track is under People, with what the
   const history = countOf(looks.actions, ["getPersonTrack"]);
   const live = countOf(looks.actions, ["live.position"]);
   expect(position).toBeGreaterThan(0);
-  const sentence = `${friendAccount.displayName} looked at your live position ${times(position)} and your history ${times(history)}${live > 0 ? `, and received ${live} live update${live === 1 ? "" : "s"}` : ""}, last today at ${clock(looks.lastAt, account.timezone)}.`;
+  const sentence = `Looked at your live position ${times(position)} and your history ${times(history)}${live > 0 ? `, and received ${live} live update${live === 1 ? "" : "s"}` : ""}, last today at ${clock(looks.lastAt, account.timezone)}.`;
 
   await page.goto("/settings/privacy/viewers");
   await expect(title(page, "Who viewed you")).toBeVisible();
   const person = page.getByRole("list", { name: "People" }).getByRole("link", {
     name: friendAccount.displayName,
   });
-  await expect(person).toHaveAccessibleDescription(sentence);
+  await expect(person).toHaveAccessibleName(containing(sentence));
   const tiles = page.getByRole("group", { name: "Totals of the last 30 days" });
   await expect(tiles.getByText("People", { exact: true })).toBeVisible();
   await expect(page.getByRole("figure", { name: "Accesses per day, by who" })).toBeVisible();
@@ -197,8 +198,10 @@ test("a public link opened twice in another browser is one visitor and two views
   await page.goto("/settings/privacy/viewers");
   await expect(
     page.getByRole("list", { name: "Public links" }).getByRole("link", { name: "Counted link" }),
-  ).toHaveAccessibleDescription(
-    `Opened twice by 1 visitor, last today at ${clock(counted?.lastAt ?? "", account.timezone)}.`,
+  ).toHaveAccessibleName(
+    containing(
+      `Opened twice by 1 visitor, last today at ${clock(counted?.lastAt ?? "", account.timezone)}.`,
+    ),
   );
   const tiles = page.getByRole("group", { name: "Totals of the last 30 days" });
   await expect(tiles.locator(".stat-tile").filter({ hasText: "Link visitors" })).toContainText(
@@ -263,7 +266,7 @@ test("a token's API and MCP calls are counted apart, with what it did on its pag
   await page.goto("/settings/privacy/viewers");
   await expect(
     page.getByRole("list", { name: "API tokens" }).getByRole("link", { name: "Usage token" }),
-  ).toHaveAccessibleDescription(sentence);
+  ).toHaveAccessibleName(containing(sentence));
   const tiles = page.getByRole("group", { name: "Totals of the last 30 days" });
   await expect(tiles.locator(".stat-tile").filter({ hasText: "API calls" })).toContainText(
     "2by 1 token",

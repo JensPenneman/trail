@@ -31,7 +31,7 @@ test.describe("a device's page", () => {
     ).toBeVisible();
     await expectAccessible(page, "a device's page");
 
-    await page.getByRole("link", { name: "Uploads", exact: true }).click();
+    await page.getByRole("link", { name: /^Uploads/ }).click();
     await expect(page).toHaveURL(new RegExp(`/settings/devices/${device.id}/uploads$`));
     await expect(title(page, "Uploads")).toBeFocused();
     await expect(page).toHaveTitle("Uploads · Logged phone · Devices · Settings · Trail");
@@ -58,7 +58,7 @@ test.describe("a device's page", () => {
     // Back to the device, through the history, with the focus on the row it came from.
     await page.getByRole("link", { name: "Back to Logged phone" }).click();
     await expect(title(page, "Logged phone")).toBeVisible();
-    await expect(page.getByRole("link", { name: "Uploads", exact: true })).toBeFocused();
+    await expect(page.getByRole("link", { name: /^Uploads/ })).toBeFocused();
     await expect(page.getByText("30 today · 30 in 24 h · 30 in total")).toBeVisible();
 
     await page.getByRole("link", { name: "Raw points" }).click();
@@ -118,7 +118,7 @@ test.describe("a device's page", () => {
 
   test("shows its setup, a level deeper", async ({ page, account }) => {
     const device = await uploadedDevice(page, "Set-up phone", overlandBatch(account.timezone));
-    await page.getByRole("link", { name: "Setup" }).click();
+    await page.getByRole("link", { name: /^Setup/ }).click();
     await expect(page).toHaveURL(new RegExp(`/settings/devices/${device.id}/setup$`));
     const setup = page.getByRole("region", { name: "Setup", exact: true });
     await expect(setup.getByText(/^Overland \(iOS\)\. To set the phone up again/)).toBeVisible();

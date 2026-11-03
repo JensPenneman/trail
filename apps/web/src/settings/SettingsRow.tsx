@@ -101,13 +101,13 @@ export type SettingsRowProps =
 function LinkRowBody({
   to,
   current,
-  labelId,
+  nameIds,
   describedBy,
   children,
 }: {
   to: string;
   current: boolean;
-  labelId: string;
+  nameIds: string;
   describedBy: string | undefined;
   children: ReactNode;
 }) {
@@ -117,7 +117,7 @@ function LinkRowBody({
       to={to}
       {...link}
       className="settings-row__body settings-row__body--interactive"
-      aria-labelledby={labelId}
+      aria-labelledby={nameIds}
       aria-describedby={describedBy}
       aria-current={current ? "page" : undefined}
     >
@@ -136,20 +136,27 @@ export function SettingsRow(props: SettingsRowProps) {
   const labelId = `${id}-label`;
   const detailId = `${id}-detail`;
   const valueId = `${id}-value`;
+  const newTabId = `${id}-new-tab`;
   const readOnly = useReadOnly();
   const off =
     (props.kind === "action" || props.kind === "switch" || props.kind === "select") &&
     readOnly &&
     props.worksOffline !== true;
   const value = "value" in props ? props.value : undefined;
-  const describedBy =
-    [
-      props.detail === undefined ? null : detailId,
-      value === undefined || value === null ? null : valueId,
-      off ? offlineReasonId : null,
-    ]
-      .filter((part) => part !== null)
-      .join(" ") || undefined;
+  const hasValue = value !== undefined && value !== null;
+  // The name starts with the label and holds all the visible text of the row (WCAG 2.5.3, Label
+  // in Name); only the reason a row is off is left to the description.
+  // The hidden "(opens in a new tab)" hint goes last, so the visible text stays one run.
+  const opensInNewTab = props.kind === "external" && props.newTab === true;
+  const nameIds = [
+    labelId,
+    props.detail === undefined ? null : detailId,
+    hasValue ? valueId : null,
+    opensInNewTab ? newTabId : null,
+  ]
+    .filter((part) => part !== null)
+    .join(" ");
+  const describedBy = off ? offlineReasonId : undefined;
   const tile =
     props.icon === undefined ? null : (
       <SettingsTile icon={props.icon} tone={props.tone ?? "gray"} />
@@ -164,7 +171,9 @@ export function SettingsRow(props: SettingsRowProps) {
         {props.label}
       </span>
       {props.detail === undefined ? null : (
+        // A space between the spans, so that the text one reads is the text of the name.
         <span className="settings-row__detail" id={detailId}>
+          {" "}
           {props.detail}
         </span>
       )}
@@ -173,6 +182,7 @@ export function SettingsRow(props: SettingsRowProps) {
   const shownValue =
     value === undefined || value === null ? null : (
       <span className="settings-row__value" id={valueId}>
+        {" "}
         {value}
       </span>
     );
@@ -184,7 +194,7 @@ export function SettingsRow(props: SettingsRowProps) {
           <LinkRowBody
             to={props.to}
             current={props.current === true}
-            labelId={labelId}
+            nameIds={nameIds}
             describedBy={describedBy}
           >
             {tile}
@@ -200,7 +210,7 @@ export function SettingsRow(props: SettingsRowProps) {
           <a
             href={props.href}
             className="settings-row__body settings-row__body--interactive"
-            aria-labelledby={labelId}
+            aria-labelledby={nameIds}
             aria-describedby={describedBy}
             {...(props.newTab === true ? { target: "_blank", rel: "noreferrer" } : {})}
           >
@@ -208,18 +218,19 @@ export function SettingsRow(props: SettingsRowProps) {
             <span className="settings-row__text">
               <span className="settings-row__label" id={labelId}>
                 {props.label}
-                {props.newTab === true ? (
-                  <>
-                    {" "}
-                    <span className="visually-hidden">(opens in a new tab)</span>
-                  </>
-                ) : null}
               </span>
               {props.detail === undefined ? null : (
                 <span className="settings-row__detail" id={detailId}>
+                  {" "}
                   {props.detail}
                 </span>
               )}
+              {props.newTab === true ? (
+                <span className="visually-hidden" id={newTabId}>
+                  {" "}
+                  (opens in a new tab)
+                </span>
+              ) : null}
             </span>
             {shownValue}
             <Icon name="external" className="settings-row__chevron" />
@@ -232,7 +243,7 @@ export function SettingsRow(props: SettingsRowProps) {
           <Link
             to={props.to}
             className="settings-row__body settings-row__body--interactive"
-            aria-labelledby={labelId}
+            aria-labelledby={nameIds}
             aria-describedby={describedBy}
           >
             {tile}
@@ -248,7 +259,7 @@ export function SettingsRow(props: SettingsRowProps) {
           <button
             type="button"
             className={`settings-row__body settings-row__body--interactive settings-row__action${props.danger === true ? " settings-row__action--danger" : ""}`}
-            aria-labelledby={labelId}
+            aria-labelledby={nameIds}
             aria-describedby={describedBy}
             disabled={props.disabled === true || props.busy === true || off}
             aria-busy={props.busy === true ? true : undefined}

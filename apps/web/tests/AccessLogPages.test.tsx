@@ -116,9 +116,9 @@ describe("Settings › Who viewed you", () => {
     expect(within(chart).getByRole("list", { name: "Legend" })).not.toHaveTextContent("You");
 
     const people = screen.getByRole("list", { name: "People" });
-    const ana = within(people).getByRole("link", { name: "Ana Bell" });
-    expect(ana).toHaveAccessibleDescription(
-      /^Ana Bell looked at your live position 14 times and your history twice, and received 30 live updates, last today at \d{2}:\d{2}\.$/,
+    const ana = within(people).getByRole("link", { name: /^Ana Bell/ });
+    expect(ana).toHaveAccessibleName(
+      /Ana Bell Looked at your live position 14 times and your history twice, and received 30 live updates, last today at \d{2}:\d{2}\.$/,
     );
     expect(ana).toHaveAttribute(
       "href",
@@ -126,14 +126,14 @@ describe("Settings › Who viewed you", () => {
     );
     expect(
       within(screen.getByRole("list", { name: "Public links" })).getByRole("link", {
-        name: "Jens on the way home",
+        name: /^Jens on the way home/,
       }),
-    ).toHaveAccessibleDescription(/^Opened 3 times by 2 visitors, last /);
+    ).toHaveAccessibleName(/Opened 3 times by 2 visitors, last /);
     expect(
       within(screen.getByRole("list", { name: "API tokens" })).getByRole("link", {
-        name: "Home Assistant",
+        name: /^Home Assistant/,
       }),
-    ).toHaveAccessibleDescription(/^Used 14 times: 10 API calls and 4 through MCP, last /);
+    ).toHaveAccessibleName(/Used 14 times: 10 API calls and 4 through MCP, last /);
 
     // Another period is another request, and an address of its own.
     await person.click(screen.getByRole("radio", { name: "7 days" }));
@@ -171,7 +171,7 @@ describe("Settings › Who viewed you", () => {
     );
     expect(
       within(screen.getByRole("list", { name: "Your browsers" })).getByRole("link", {
-        name: "Firefox on Mac",
+        name: /^Firefox on Mac/,
       }),
     ).toHaveAttribute(
       "href",
@@ -256,7 +256,7 @@ describe("Settings › Who viewed you › one of them", () => {
     expect(first).toHaveTextContent("DeviceiPhone 16");
     expect(first).toHaveTextContent("PrecisionPrecise location");
     expect(first).toHaveTextContent("Answer200 OK");
-    expect(screen.getByRole("link", { name: "Your share with Ana Bell" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^Your share with Ana Bell/ })).toHaveAttribute(
       "href",
       `/settings/sharing/${ids.myShare}`,
     );
@@ -271,7 +271,7 @@ describe("Settings › Who viewed you › one of them", () => {
     expect(
       await screen.findByRole("heading", { level: 3, name: "Nothing in the last 30 days" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "The token's page" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^The token's page/ })).toHaveAttribute(
       "href",
       `/settings/tokens/${ids.token}`,
     );
@@ -338,7 +338,7 @@ describe("Settings › Access log", () => {
     expect(screen.getByRole("list", { name: "Today" })).toBeInTheDocument();
     // Opened, a line leads to everything its actor did.
     await person.click(within(today).getByText("Ana Bell"));
-    expect(within(today).getByRole("link", { name: "Everything by Ana Bell" })).toHaveAttribute(
+    expect(within(today).getByRole("link", { name: /^Everything by Ana Bell/ })).toHaveAttribute(
       "href",
       `/settings/privacy/viewers/${actorSegment(`person:${ids.ana}`)}`,
     );
@@ -461,7 +461,7 @@ describe("the usage of a token, a link and a share", () => {
     expect(within(last).getByText("Timeline")).toBeInTheDocument();
     expect(last).toHaveTextContent("MCP server · 4 times · last ");
     expect(
-      within(last).getByRole("link", { name: "Everything it did, hour by hour" }),
+      within(last).getByRole("link", { name: /^Everything it did, hour by hour/ }),
     ).toHaveAttribute("href", `/settings/privacy/viewers/${actorSegment(`token:${ids.token}`)}`);
     const summary = queriesOf(calls, "/api/v1/access-log/summary").find(
       (query) => query.get("actorId") === `token:${ids.token}`,
@@ -476,7 +476,7 @@ describe("the usage of a token, a link and a share", () => {
     const tiles = await screen.findByRole("group", { name: "Views" });
     expect(within(tiles).getByText("Visitors").closest(".stat-tile")).toHaveTextContent("2");
     expect(screen.getByRole("figure", { name: "Views per day" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Its visitors, hour by hour" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^Its visitors, hour by hour/ })).toHaveAttribute(
       "href",
       `/settings/privacy/viewers/${actorSegment(`link:${ids.link}`)}`,
     );
@@ -553,7 +553,7 @@ describe("Insights' card of who viewed you", () => {
     const card = await screen.findByRole("region", { name: "Who viewed you" });
     expect(within(card).getByText("People").closest(".stat-tile")).toHaveTextContent("116 looks");
     expect(within(card).getByText("Ana Bell looked most often: 46 times.")).toBeInTheDocument();
-    expect(within(card).getByRole("link", { name: "See who viewed you" })).toHaveAttribute(
+    expect(within(card).getByRole("link", { name: /^See who viewed you/ })).toHaveAttribute(
       "href",
       "/settings/privacy/viewers",
     );
