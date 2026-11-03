@@ -13,9 +13,10 @@ import { readProcessingHealth } from "./readProcessingHealth";
 const databaseCheckTimeoutMs = 2_000;
 
 /**
- * `GET /api/health` (a database round trip with the processing summary; 503
- * only when the database fails, so the edge and an uptime monitor see the
- * API's truth whatever the worker does), `GET /api/health/processing` (the
+ * `GET /api/health` (a database round trip with the processing summary and
+ * what the map draws; 503 only when the database fails, so the edge and an
+ * uptime monitor see the API's truth whatever the worker does),
+ * `GET /api/health/processing` (the
  * same, and 503 also when no worker beat for 90 s: for a monitor of the
  * worker) and `GET /api/health/live` (process only — the container health
  * check, which must not flap because Postgres restarts). All sit before the
@@ -75,7 +76,13 @@ export function healthRouter(ctx: AppContext): Router {
       databaseDown(res);
       return;
     }
-    res.json({ status: "ok", db: "ok", ...info(), processing } satisfies Health);
+    res.json({
+      status: "ok",
+      db: "ok",
+      ...info(),
+      processing,
+      basemap: ctx.basemap.source(),
+    } satisfies Health);
   });
 
   router.get(apiPaths.healthProcessing, databaseCheckLimit, async (_req, res) => {
@@ -90,6 +97,7 @@ export function healthRouter(ctx: AppContext): Router {
       db: "ok",
       ...info(),
       processing,
+      basemap: ctx.basemap.source(),
     } satisfies Health);
   });
 

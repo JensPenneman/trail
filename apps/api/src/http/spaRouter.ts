@@ -29,6 +29,8 @@ export function spaRouter(webDistDir: string, logger: Logger): Router | null {
     }),
   );
   router.use("/assets", (_req, res) => notFoundText(res));
+  // The map's fonts and sprites live beside the build; the API serves them under /map/assets.
+  router.use("/map-assets", (_req, res) => notFoundText(res));
   router.use(
     express.static(webDistDir, {
       index: false,

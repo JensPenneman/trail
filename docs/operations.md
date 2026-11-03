@@ -39,7 +39,8 @@ edge forwards the route to port 8080; no host port is published. `worker`
 publishes nothing and the edge never reaches it; it joins the project's
 default network for Overpass. `db` and `backup` sit on an internal network
 without a route out. `app` keeps the map data of its regions in
-the volume `<project>_trail-map` ([Map data](#map-data)).
+the volume `<project>_trail-map` ([Map data](#map-data)) and serves the
+basemap from it ([The basemap](#the-basemap)).
 
 The app's image is never built on the server: GitHub Actions builds every
 commit and publishes its image as `sha-<first 7 characters of the commit>`
@@ -743,6 +744,79 @@ with the stage and the reason, `map region import failed`, and `map region
 data is old` when a region's data is older than three refresh periods (the
 refresh keeps failing).
 
+## The basemap
+
+The map under Trail's tracks comes from the server itself: vector tiles of
+the region the map data was built from (OpenStreetMap in the OpenMapTiles
+schema, cut by Planetiler, `basemap.pmtiles` in each build), with the world
+overview's for the zooms that show more than the region, drawn with
+OpenFreeMap's `liberty` (Light) and `dark` (Dark) styles, which Trail keeps
+in its repository, and their fonts and icons, which come in the image. No
+browser that opens Trail asks another server for the map any more, except
+for satellite imagery ([Satellite imagery](#satellite-imagery)).
+
+**What is served**, all under `/map/` on the app's own address, without a
+sign-in (the public links draw the map too) and behind its own limit of
+`RATE_LIMIT_MAP_PER_MINUTE` (3000) requests a minute per address:
+
+| Path | What | Cached |
+|---|---|---|
+| `/map/styles/light.json`, `dark.json` | the style, pointing at the tiles of the current bundle | `no-cache` (a new bundle reaches a map at its next load) |
+| `/map/tiles/<bundle>/<z>/<x>/<y>.pbf` | a tile as stored, gzipped; `204` where the archives have none | a year, immutable |
+| `/map/assets/<hash>/fonts/…`, `…/sprites/…` | the labels' glyphs and the icons, from the image | a year, immutable |
+
+A *bundle* is the pair of builds the map draws: the newest build of
+`MAP_BASEMAP_REGION` (the first of `MAP_DATA_REGIONS` unless set) whose
+`basemap.pmtiles` checks out, and the newest world overview. Zooms 0–4 come
+from the overview (from the region until the overview is there), 5–14 from
+the region and, abroad, the overview's 5–6; beyond 14 the browser enlarges
+zoom 14. One region draws in detail, even with more in `MAP_DATA_REGIONS`;
+elsewhere the map shows coastlines, rivers and country borders to zoom 4,
+and no names (docs/design/self-hosted-maps.md §3.1). The app looks at the
+volume every minute and after each refresh, so a newly pulled build serves
+within a minute. Maps open on an earlier bundle keep their tiles while its
+builds are on the volume (the refresh keeps the build before for a period),
+so the region's and the overview's refreshes, minutes apart, cut no map off.
+
+```sh
+docker exec launchway-trail-app-1 trail map status   # … "Basemap: served by Trail from belgium 20261027-85fbe901 …"
+curl -s https://trail.example.com/api/health          # … "basemap":"self"
+```
+
+`/api/health` says `basemap`: `self` (Trail's), `external` (`MAP_STYLE_LIGHT`
+and `MAP_STYLE_DARK`, OpenFreeMap's by default) or `none` (a plain ground).
+
+**When the basemap is missing** — a new install for its first minutes,
+while its region downloads; a server whose `MAP_DATA_REGIONS` is empty; a
+region whose build has no `basemap.pmtiles` (a hand build without one) —
+the map uses the external styles while `MAP_BASEMAP_FALLBACK=true` (the
+default for now: the browser then loads the map from OpenFreeMap, as before
+this version), or, with `false`, a plain ground in the page's colours and
+"Basemap not installed yet" over it; Trail's tracks are drawn either way.
+What to do:
+
+1. `trail map status`: is the region's build on the volume, and what does
+   the Basemap line say?
+2. No build: `trail map refresh` (the log of the refresh says why it failed;
+   [Map data](#map-data)). A build but no basemap: the log says "basemap:
+   the build's basemap.pmtiles was refused" with the reason, or the build
+   has no `basemap.pmtiles`.
+3. "The image has no map fonts or sprites": the image was built without
+   `scripts/map-assets.mjs` (a hand build of the app); Trail's styles need
+   them, so the map uses the fallback. Rebuild the image.
+
+`MAP_BASEMAP=openfreemap` uses the external styles always, whatever the
+volume holds (the map's detail abroad is OpenFreeMap's, worldwide), and
+widens the Content Security Policy to their origins, as the fallback does;
+with Trail's own basemap the map needs no other origin.
+
+**Fonts and sprites** are pinned by SHA-256 in `scripts/map-assets.json`
+and fetched when the image is built (Noto Sans from openmaptiles/fonts, the
+icons from OpenFreeMap): 11 MB in `apps/web/dist/map-assets/`, the glyph
+ranges MapLibre asks for (it draws Chinese, Japanese, Korean and the Indic
+scripts with the browser's own fonts). A change of the pins is a pull
+request, like the styles in `apps/api/map/styles/`.
+
 ## Heatmap
 
 The heatmap is counted as the points arrive: every upload adds its points to
@@ -775,9 +849,9 @@ device is rebuilt (about 20 seconds for 1.2 million points).
 ## Satellite imagery
 
 The map's style control offers Auto (light or dark with the system), Light,
-Dark and — once the server has imagery — Satellite. Light and dark come from
-OpenFreeMap (`MAP_STYLE_LIGHT`, `MAP_STYLE_DARK`). Trail ships no imagery:
-`MAP_STYLE_SATELLITE` names it, in one of two forms.
+Dark and — once the server has imagery — Satellite. Light and dark are the
+basemap Trail serves itself ([The basemap](#the-basemap)). Trail ships no
+imagery: `MAP_STYLE_SATELLITE` names it, in one of two forms.
 
 - **A MapLibre style URL**, for a provider that publishes whole styles. For
   example [MapTiler](https://www.maptiler.com/maps/)'s satellite map, with an
@@ -811,9 +885,10 @@ nearly all require their credit on the map (which is why a template needs
 `MAP_STYLE_SATELLITE_ATTRIBUTION`). A key in the URL reaches every browser
 that opens Trail, and `/api/config` shows it without a sign-in: restrict the
 key to Trail's addresses in the provider's dashboard (MapTiler: *Allowed HTTP
-origins*), and rotate it there if it leaks. Like the OpenFreeMap tiles, the
-imagery tiles a browser loads tell the provider which areas it shows, from the
-browser's address: not the tracks, and not who is looking.
+origins*), and rotate it there if it leaks. Unlike the basemap, which comes
+from Trail itself, the imagery tiles a browser loads tell the provider which
+areas it shows, from the browser's address: not the tracks, and not who is
+looking.
 
 ## Logs
 
@@ -957,6 +1032,8 @@ Day-to-day development uses `npm run dev` instead (README).
 | `backup` restarts with "pg_dump failed" | The database is not reachable; the log line before it shows why. |
 | Backups happen at the wrong hour | `TZ`. |
 | The mapped level shows averaged lines | No map data for that area yet: the tiles wait for the daily budget (log: "daily map download budget spent") or failed (log: "map tile could not be fetched"; tried again later). `PROCESSING_OVERPASS_URL` empty switches map data off altogether. |
+| "Basemap not installed yet" on the map, or `/api/health` says `"basemap":"external"` | No basemap of `MAP_BASEMAP_REGION` on the volume yet, or the image lacks the map's fonts and sprites: `trail map status` says which ([The basemap](#the-basemap)). |
+| The map is blank outside the basemap's region, or shows no names there | Expected: outside `MAP_BASEMAP_REGION` the world overview has coastlines, rivers and borders only. `MAP_BASEMAP=openfreemap` draws OpenFreeMap's map everywhere instead. |
 | The map's style control has no Satellite | `MAP_STYLE_SATELLITE` is unset, or the app refused it at boot (the log names the variable). |
 | Satellite stays blank or shows only some tiles | The browser console names the refused host: add it to `MAP_CONNECT_SRC`. Otherwise the provider refuses the key (usage limit, or the key is restricted to other origins). |
 | "map region refresh failed", reason `unreachable` or `timeout` | The registry did not answer; tried again after 15 minutes, doubling up to a day. The old build serves on. |

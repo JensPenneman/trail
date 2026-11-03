@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import type { Logger } from "pino";
+import type { Basemap } from "./basemap/basemap";
 import type { Config } from "./config/config";
 import type { DataAccessRecorder } from "./dataAccess/dataAccessRecorder";
 import type { Database } from "./db/database";
@@ -39,4 +40,6 @@ export interface AppContext {
   sharing: SharingState;
   /** Who read or changed whose data: the data access log (docs/architecture.md §8.8). */
   dataAccess: DataAccessRecorder;
+  /** The basemap `/map/*` serves from the map data volume (docs/architecture.md §14). */
+  basemap: Basemap;
 }

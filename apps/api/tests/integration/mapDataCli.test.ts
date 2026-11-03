@@ -7,6 +7,7 @@ import { mapRefreshCommand } from "../../src/cli/commands/mapRefreshCommand";
 import { runCli } from "../../src/cli/runCli";
 import { MapDataRefresher } from "../../src/mapdata/mapDataRefresher";
 import { RegistryClient } from "../../src/mapdata/registry";
+import { webDistWithAssets } from "../support/basemapVolume";
 import { FakeRegistry, makeArtefact, monacoFiles } from "../support/fakeRegistry";
 import { resetDatabase } from "../support/resetDatabase";
 import { testEnvironment } from "../support/testEnvironment";
@@ -69,11 +70,14 @@ describe("trail map", () => {
   });
 
   it("has nothing to refresh without MAP_DATA_REGIONS", async () => {
-    useEnvironment({ MAP_DATA_REGIONS: "", MAP_DATA_DIR: root });
+    useEnvironment({ MAP_DATA_REGIONS: "", MAP_DATA_DIR: root, WEB_DIST_DIR: webDistWithAssets() });
     expect(await run("map", "refresh")).toBe(1);
     expect(errors.join("\n")).toContain("MAP_DATA_REGIONS is empty");
     expect(await run("map", "status")).toBe(0);
     expect(output[0]).toContain("No map regions configured (MAP_DATA_REGIONS is empty)");
+    expect(output).toContain(
+      "Basemap: the external styles, MAP_STYLE_LIGHT and MAP_STYLE_DARK (MAP_BASEMAP_FALLBACK=true): no region to draw (MAP_BASEMAP_REGION and MAP_DATA_REGIONS are empty).",
+    );
   });
 
   it("refreshes only this server's regions", async () => {
@@ -92,7 +96,11 @@ describe("trail map", () => {
       });
       fake.publish(artefact);
       const name = `20261027-${artefact.digest.slice(7, 15)}`;
-      useEnvironment({ MAP_DATA_REGIONS: "monaco", MAP_DATA_DIR: root });
+      useEnvironment({
+        MAP_DATA_REGIONS: "monaco",
+        MAP_DATA_DIR: root,
+        WEB_DIST_DIR: webDistWithAssets(),
+      });
       const ctx = await openCliContext(entryUrl);
       try {
         const refresher = new MapDataRefresher({
@@ -144,6 +152,12 @@ describe("trail map", () => {
       expect(text).toContain(`    ${artefact.digest}`);
       expect(text).toContain("world: no build on the volume yet");
       expect(text).toContain("netherlands (not in MAP_DATA_REGIONS): no build on the volume yet");
+      // What the server draws from the same volume: Monaco's basemap, no overview pulled.
+      expect(text).toMatch(
+        new RegExp(
+          `\nBasemap: served by Trail from monaco ${name} and no world overview yet \\(bundle [0-9a-f]{16}\\)\n`,
+        ),
+      );
     } finally {
       await fake.close();
     }

@@ -3,7 +3,10 @@
  * the app's shell — the page, its hashed assets, the manifest and the icons —
  * so that Trail opens without a network, and never answers anything under
  * /api: the API's copy is the browser store, with its owner, purges and
- * contracts, and a second cache without them would be a liability.
+ * contracts, and a second cache without them would be a liability. Nor under
+ * /map: the basemap's tiles, fonts and sprites are immutable and stay in the
+ * browser's own HTTP cache, and the map assets laid out beside the build
+ * (map-assets/) are no part of the shell.
  *
  * Written here rather than with workbox-build, which brings 280 packages for
  * this one file, an advisory without a fix among them (deepmerge), and a
@@ -14,10 +17,16 @@ import { join, relative, sep } from "node:path";
 
 /**
  * Navigations the shell never answers: the API, its reference, the MCP
- * server, and any address of a file (the server answers a missing one with a
- * 404, as without a worker).
+ * server, the basemap, and any address of a file (the server answers a
+ * missing one with a 404, as without a worker).
  */
-const navigationDenylist = ["^/api(?:/|$)", "^/docs(?:/|$)", "^/mcp(?:/|$)", "/[^/]+\\.[^/]+$"];
+const navigationDenylist = [
+  "^/api(?:/|$)",
+  "^/docs(?:/|$)",
+  "^/mcp(?:/|$)",
+  "^/map(?:/|$)",
+  "/[^/]+\\.[^/]+$",
+];
 
 /** @param {string} path a file of the build, relative to it, with "/" */
 const isShell = (path) =>

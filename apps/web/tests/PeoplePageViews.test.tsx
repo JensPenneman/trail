@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { basemapMissingNotice } from "../src/map/useMapStyle";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { config, ids, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
@@ -293,6 +294,49 @@ describe("the map style", () => {
     await person.click(await within(control).findByRole("radio", { name: "Satellite" }));
     expect(map()).toHaveAttribute("data-style", "document");
     expect(map()).toHaveAttribute("data-dark", "true");
+  });
+
+  it("draws the server's own basemap from its paths, and says when it has none yet", async () => {
+    const own = { light: "/map/styles/light.json", dark: "/map/styles/dark.json" };
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/config": {
+        status: 200,
+        body: { ...config, mapStyles: { ...own, basemap: "self" } },
+      },
+    });
+    const first = renderPage(<PeoplePage />, { user });
+    expect(await screen.findByRole("img", { name: /^Map/ })).toHaveAttribute(
+      "data-style",
+      own.light,
+    );
+    expect(map()).toHaveAttribute("data-notice", "");
+    first.unmount();
+
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/config": {
+        status: 200,
+        body: {
+          ...config,
+          mapStyles: {
+            ...own,
+            basemap: "none",
+            satellite: { kind: "style", url: "https://imagery.example.com/style.json" },
+          },
+        },
+      },
+    });
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { user });
+    expect(await screen.findByRole("img", { name: /^Map/ })).toHaveAttribute(
+      "data-notice",
+      basemapMissingNotice,
+    );
+    // Satellite imagery is a basemap of its own: no notice over it.
+    const control = screen.getByRole("group", { name: "Map style" });
+    await person.click(await within(control).findByRole("radio", { name: "Satellite" }));
+    expect(map()).toHaveAttribute("data-notice", "");
   });
 
   it("falls back to Auto where satellite imagery is not configured", async () => {

@@ -2,6 +2,8 @@ import type { Pool } from "pg";
 import type { Logger } from "pino";
 import { DatabaseTokenVerifier } from "./apiTokens/databaseTokenVerifier";
 import type { AppContext } from "./appContext";
+import { Basemap } from "./basemap/basemap";
+import { readMapAssets } from "./basemap/mapAssets";
 import type { Config } from "./config/config";
 import { tableAccessStore } from "./dataAccess/accessStore";
 import { type DataAccessOptions, DataAccessRecorder } from "./dataAccess/dataAccessRecorder";
@@ -95,5 +97,13 @@ export function createAppContext(input: {
       logger.child({ component: "data-access" }),
       input.dataAccess,
     ),
+    // Looks at the volume once started (main.ts, before the first request).
+    basemap: new Basemap({
+      settings: config.basemap,
+      dir: config.mapData.dir,
+      publicUrl: config.publicUrl,
+      assets: readMapAssets(config.webDistDir),
+      logger: logger.child({ component: "basemap" }),
+    }),
   };
 }

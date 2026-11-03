@@ -361,6 +361,7 @@ export function PeoplePage() {
                 focus={focus}
                 mapStyle={mapStyle.style}
                 dark={mapStyle.dark}
+                notice={mapStyle.notice}
                 onViewChange={setViewport}
                 // Two fingers move a map inside a scrolling page; beside the panel one is enough.
                 cooperativeGestures={!wide}

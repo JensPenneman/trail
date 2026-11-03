@@ -45,7 +45,8 @@ describe("loadConfig", () => {
         dark: "https://tiles.openfreemap.org/styles/dark",
         satellite: null,
       },
-      mapOrigins: ["https://tiles.openfreemap.org"],
+      basemap: { mode: "self", region: "belgium", fallback: true },
+      mapOrigins: { self: [], external: ["https://tiles.openfreemap.org"] },
       webDistDir: "/srv/web/dist",
       logLevel: "info",
       build: { commit: "dev", builtAt: null },
@@ -57,6 +58,7 @@ describe("loadConfig", () => {
         tokenPerMinute: 600,
         tokenFailedPer10Minutes: 30,
         publicSharePerMinute: 60,
+        mapPerMinute: 3000,
       },
       processing: {
         role: "all",
@@ -210,10 +212,10 @@ describe("loadConfig", () => {
     ]);
     expect(config.ingestUrl).toBe("https://trail.example.com/api/overland");
     expect(config.signupAllowlist).toEqual(["jens@example.com", "*@family.example"]);
-    expect(config.mapOrigins).toEqual([
-      "https://tiles.openfreemap.org",
-      "https://maps.example.net",
-    ]);
+    expect(config.mapOrigins).toEqual({
+      self: [],
+      external: ["https://tiles.openfreemap.org", "https://maps.example.net"],
+    });
     expect(config.alerts).toEqual({ url: "https://ntfy.sh/trail-alerts", token: null });
     expect(config.build.builtAt).toBe("2026-09-30T19:41:07.000Z");
   });
@@ -232,7 +234,11 @@ describe("loadConfig", () => {
       kind: "style",
       url: "https://api.maptiler.com/maps/satellite/style.json?key=k3y",
     });
-    expect(style.mapOrigins).toEqual(["https://tiles.openfreemap.org", "https://api.maptiler.com"]);
+    // Satellite imagery is external whatever the basemap is.
+    expect(style.mapOrigins).toEqual({
+      self: ["https://api.maptiler.com"],
+      external: ["https://tiles.openfreemap.org", "https://api.maptiler.com"],
+    });
 
     const tiles = loadConfig(
       {
@@ -247,7 +253,48 @@ describe("loadConfig", () => {
       tiles: "https://imagery.example.net/tiles/{z}/{y}/{x}.jpg",
       attribution: "Imagery © Example",
     });
-    expect(tiles.mapOrigins).toContain("https://imagery.example.net");
+    expect(tiles.mapOrigins.self).toEqual(["https://imagery.example.net"]);
+    expect(tiles.mapOrigins.external).toContain("https://imagery.example.net");
+  });
+
+  it("serves the basemap of the first region unless told otherwise, and opens the CSP to the external styles only for them", () => {
+    expect(
+      loadConfig({ ...minimal, MAP_DATA_REGIONS: "luxembourg, belgium" }, defaults).basemap,
+    ).toEqual({ mode: "self", region: "luxembourg", fallback: true });
+    expect(loadConfig({ ...minimal, MAP_DATA_REGIONS: "" }, defaults).basemap.region).toBeNull();
+    const chosen = loadConfig(
+      {
+        ...minimal,
+        MAP_DATA_REGIONS: "",
+        MAP_BASEMAP: "openfreemap",
+        MAP_BASEMAP_REGION: " Monaco ",
+        MAP_BASEMAP_FALLBACK: "false",
+        RATE_LIMIT_MAP_PER_MINUTE: "120",
+      },
+      defaults,
+    );
+    expect(chosen.basemap).toEqual({ mode: "openfreemap", region: "monaco", fallback: false });
+    expect(chosen.rateLimits.mapPerMinute).toBe(120);
+    expect(issuesOf({ ...minimal, MAP_BASEMAP: "protomaps" })).toEqual([
+      expect.stringMatching(/^MAP_BASEMAP: /),
+    ]);
+    expect(issuesOf({ ...minimal, MAP_BASEMAP_REGION: "world" })).toEqual([
+      "MAP_BASEMAP_REGION: world is the world overview, which every basemap draws on: name a country",
+    ]);
+    expect(issuesOf({ ...minimal, MAP_BASEMAP_REGION: "../etc" })).toEqual([
+      expect.stringMatching(/^MAP_BASEMAP_REGION: "..\/etc" is not a region/),
+    ]);
+    expect(issuesOf({ ...minimal, MAP_BASEMAP_FALLBACK: "yes" })).toEqual([
+      "MAP_BASEMAP_FALLBACK: Use true or false",
+    ]);
+    // An explicit MAP_CONNECT_SRC applies whatever the basemap; the default, OpenFreeMap's
+    // origin, only while the map uses the external styles.
+    expect(
+      loadConfig({ ...minimal, MAP_CONNECT_SRC: "https://tiles.example.net" }, defaults).mapOrigins,
+    ).toEqual({
+      self: ["https://tiles.example.net"],
+      external: ["https://tiles.example.net", "https://tiles.openfreemap.org"],
+    });
   });
 
   it("refuses tile templates it cannot fill in, or without the provider's credit", () => {

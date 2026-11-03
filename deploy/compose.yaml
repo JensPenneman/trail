@@ -60,6 +60,10 @@ x-app-environment: &app-environment
   MAP_STYLE_SATELLITE:
   MAP_STYLE_SATELLITE_ATTRIBUTION:
   MAP_CONNECT_SRC:
+  # the basemap `app` serves from trail-map (docs/operations.md, "The basemap")
+  MAP_BASEMAP:
+  MAP_BASEMAP_REGION:
+  MAP_BASEMAP_FALLBACK:
   LOG_LEVEL:
   RATE_LIMIT_AUTH_PER_MINUTE:
   RATE_LIMIT_API_PER_MINUTE:
@@ -69,6 +73,7 @@ x-app-environment: &app-environment
   RATE_LIMIT_TOKEN_PER_MINUTE:
   RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES:
   RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE:
+  RATE_LIMIT_MAP_PER_MINUTE:
   # location processing; an empty PROCESSING_OVERPASS_URL (set in .env)
   # means no map data, an unset one the public Overpass instance
   PROCESSING_ENABLED:

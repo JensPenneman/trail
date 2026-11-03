@@ -13,6 +13,9 @@ const apiTokenSecret = /trl[ks]?_[A-Za-z0-9_-]{43}/;
 
 const redacted = "[redacted]";
 
+/* A basemap tile's path: its zoom, column and row are where someone looks on the map. */
+const tilePrefix = ["map", "tiles"];
+
 /* A parameter name fit to log: an identifier, not a client's whole query (`?lat%3D51.05%26lon%3D3.71`
  * or `?51.05,3.71` is a name that carries values). */
 const loggableName = /^[A-Za-z_][\w.[\]-]{0,63}$/;
@@ -28,7 +31,8 @@ const decoded = (text: string): string => {
 /**
  * A request URL fit for the logs: the path, with one-time link and invite
  * tokens, device tokens, API tokens and share link secrets in it as
- * `[redacted]`, and the query's parameter names only, never a value
+ * `[redacted]`, a basemap tile's zoom, column and row (where someone looks),
+ * and the query's parameter names only, never a value
  * (`/api/v1/tracks?bbox&from&to`) — a value is a coordinate, a time, a token.
  * A name that is no identifier (a value in disguise) or carries a secret goes
  * too, and so does a path segment that holds `=`, `;` or `?` once decoded. Secrets are found the way the routers read
@@ -52,6 +56,10 @@ export function redactUrl(url: string): string {
     const text = decoded(segment);
     // `;lat=51.05` or an encoded `?lat=…` in a segment is a query in disguise (a mistyped template).
     if (apiTokenSecret.test(text) || /[=;?]/.test(text)) segments[index] = redacted;
+  }
+  if (tilePrefix.every((part, index) => names[index + 1] === part) && segments.length > 4) {
+    // `/map/tiles/<bundle>/[redacted]`: the bundle stays, the tile goes.
+    segments.splice(4, segments.length - 4, redacted);
   }
   const query = [...parsed.searchParams.keys()].map((name) =>
     // A secret can also arrive as a parameter's name (`?trls_…`): then the name goes too.

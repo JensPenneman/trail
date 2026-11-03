@@ -37,7 +37,8 @@ const withFacts = (res: ServerResponse, fields: object): object => ({
 /**
  * pino-http access log with an `X-Request-Id` on every response. Only what
  * helps to follow a request is logged — never bodies (coordinates), cookies,
- * the Authorization header or token query parameters.
+ * the Authorization header, token query parameters or the tile a map asked
+ * for (where someone looks).
  */
 export function requestLogger(logger: Logger): RequestHandler {
   // The URL holds a path's ids and a query's values (a viewport is coordinates): at `debug` only.
@@ -60,8 +61,11 @@ export function requestLogger(logger: Logger): RequestHandler {
     customLogLevel: (req: IncomingMessage, res: ServerResponse, error?: Error) => {
       if (error !== undefined || res.statusCode >= 500) return "error";
       if (res.statusCode >= 400) return "warn";
-      // Container health checks every 30 s would drown everything else.
-      if (req.url?.startsWith("/api/health") === true) return "debug";
+      // Container health checks every 30 s would drown everything else, and so would the
+      // hundreds of basemap requests of every pan (docs/architecture.md §14).
+      if (req.url?.startsWith("/api/health") === true || req.url?.startsWith("/map/") === true) {
+        return "debug";
+      }
       return "info";
     },
     serializers: {

@@ -1,5 +1,19 @@
+import { fileURLToPath } from "node:url";
+
 /** Where the suite starts its own server (a port of its own, next to `npm run dev`). */
 export const e2eServerUrl = "http://localhost:4190";
+
+/**
+ * The map data volume of the suite's server: scripts/e2e-server.mjs lays the
+ * Monaco fixture's basemap out in it as a pulled build, so the map draws real
+ * tiles, glyphs and sprites from the server's own origin with no network.
+ */
+export const e2eMapDataDir = fileURLToPath(
+  new URL("../../../node_modules/.cache/trail-e2e-map", import.meta.url),
+);
+
+/** The region of that build, the suite's basemap (MAP_BASEMAP_REGION). */
+export const e2eBasemapRegion = "monaco";
 
 /** The development Postgres (compose.yaml) holds a database just for this suite. */
 export const defaultE2eDatabaseUrl = "postgres://trail:trail@127.0.0.1:54329/trail_e2e";
@@ -39,6 +53,10 @@ export function e2eServerEnvironment(databaseUrl: string): Record<string, string
     DEFAULT_TIMEZONE: "",
     MAP_STYLE_LIGHT: "",
     MAP_STYLE_DARK: "",
+    // The basemap of the Monaco fixture, served by the server itself (scripts/e2e-server.mjs).
+    MAP_BASEMAP: "",
+    MAP_BASEMAP_REGION: e2eBasemapRegion,
+    MAP_BASEMAP_FALLBACK: "",
     // Satellite imagery from a host nobody serves: mapStyleStub answers its tiles.
     MAP_STYLE_SATELLITE: satelliteTiles,
     MAP_STYLE_SATELLITE_ATTRIBUTION: "Imagery for the end-to-end tests",
@@ -56,6 +74,7 @@ export function e2eServerEnvironment(databaseUrl: string): Record<string, string
     RATE_LIMIT_TOKEN_PER_MINUTE: "100000",
     RATE_LIMIT_TOKEN_FAILED_PER_10_MINUTES: "100000",
     RATE_LIMIT_PUBLIC_SHARE_PER_MINUTE: "100000",
+    RATE_LIMIT_MAP_PER_MINUTE: "100000",
     // One server for the suite: it queues and works out what the tests upload. In this role the
     // worker's liveness port stays closed (the API's /api/health/live is the probe).
     PROCESSING_ROLE: "all",
@@ -73,7 +92,7 @@ export function e2eServerEnvironment(databaseUrl: string): Record<string, string
     MAP_DATA_REGIONS: "",
     MAP_DATA_REGISTRY: "",
     MAP_DATA_REGISTRY_TOKEN: "",
-    MAP_DATA_DIR: "",
+    MAP_DATA_DIR: e2eMapDataDir,
     MAP_DATA_REFRESH_DAYS: "",
     MAP_DATA_MAX_GB: "",
     PROCESSING_PASS_MAX_POINTS: "",
