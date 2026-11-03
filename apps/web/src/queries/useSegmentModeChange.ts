@@ -2,12 +2,14 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import { type ChosenMode, segmentResponseSchema } from "@trail/contracts/transport";
 import { apiFetch } from "../api/apiFetch";
-import { queryKeys } from "../api/queryKeys";
+import { staleProcessed } from "../live/staleProcessed";
 
 /**
- * Sets a move's mode (a mode) or resets it to the inferred one (null). The
- * timeline and the tracks at their levels are refetched; the server's
- * `segments` event does the same for other open dashboards.
+ * Sets a move's mode (a mode) or resets it to the inferred one (null). What
+ * the move's time shows is asked for again as a `segments` event would have
+ * it (staleProcessed: the levels, the timeline, Insights, the calendar's
+ * digests and the current mode) — without waiting for the event, which does
+ * the same for other open dashboards and, on this page, nothing more.
  */
 export function useSegmentModeChange(segmentId: string) {
   const queryClient = useQueryClient();
@@ -21,14 +23,12 @@ export function useSegmentModeChange(segmentId: string) {
             method: "PUT",
             body: { mode },
           }),
-    onSuccess: () => {
-      for (const queryKey of [
-        queryKeys.all.timeline,
-        queryKeys.all.levelTracks,
-        queryKeys.all.deviceMode,
-      ]) {
-        void queryClient.invalidateQueries({ queryKey });
-      }
+    onSuccess: ({ segment }) => {
+      staleProcessed(
+        queryClient,
+        { deviceId: segment.deviceId, from: segment.startedAt, to: segment.endedAt },
+        "correction",
+      );
     },
   });
 }
