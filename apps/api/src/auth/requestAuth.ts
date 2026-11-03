@@ -13,7 +13,7 @@ export interface SessionPrincipal {
 }
 
 /**
- * An API token (`Authorization: Bearer trlk_…`), accepted on `/api/v1` only. It
+ * An API token (`Authorization: Bearer trlk_…`), accepted on `/api/v1`, `/mcp` and `/api/health/requests`. It
  * may do what its scopes allow, with the devices it names.
  */
 export interface TokenPrincipal {
@@ -29,7 +29,7 @@ export interface TokenPrincipal {
 
 /**
  * Who is behind a request — exactly one principal, set by `loadSession` (cookie)
- * or `authenticateBearer` (API token, /api/v1 only).
+ * or `authenticateBearer` (API token: `/api/v1`, `/mcp`, `/api/health/requests`).
  */
 export type RequestAuth = SessionPrincipal | TokenPrincipal;
 
@@ -81,12 +81,16 @@ export function requireAdmin(req: Request): SessionPrincipal {
 /**
  * The principal of an administrator, 401 without one and 403 for anyone else:
  * a passkey session with the admin grant, or an API token whose owner is an
- * administrator. For the operator's read-only views a monitor may call with a
- * token (`/api/health/requests`); administration itself stays `requireAdmin`.
+ * administrator and that carries `health:read`. For the operator's read-only
+ * views a monitor may call with a token (`/api/health/requests`);
+ * administration itself stays `requireAdmin`.
  */
-export function requireAdminOrToken(req: Request): RequestAuth {
+export function requireAdministrator(req: Request): RequestAuth {
   const auth = requireAuth(req);
   if (!auth.user.isAdmin) throw new HttpError(403, "forbidden", "Only administrators can do this.");
+  if (!hasScope(auth, "health:read")) {
+    throw new HttpError(403, "insufficient_scope", "This API token needs the scope health:read.");
+  }
   return auth;
 }
 

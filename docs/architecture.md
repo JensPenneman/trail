@@ -959,7 +959,7 @@ Passkeys only (no passwords), SimpleWebAuthn v14 on both ends.
   the visitor's session and write their look into someone's data access
   log (§8.8).
 - **Principals.** Every request has at most one: a session (cookie) or, on
-  `/api/v1` only, an API token. Routes ask for `requireAuth` (either),
+  `/api/v1`, `/mcp` and `/api/health/requests` only, an API token. Routes ask for `requireAuth` (either),
   `requireSession` (sessions, passkeys, live events, device credentials,
   account deletion) or `requireAdmin` (an administrator's session); §8.3 has
   the details.
@@ -1220,7 +1220,8 @@ token's `deviceIds`, which therefore answers 404 like a foreign one.
 **Scopes** (`packages/contracts/src/apiScope.ts`): `profile:read`,
 `devices:read`, `devices:write`, `locations:read`, `locations:write`,
 `history:read`, `people:read`, `shares:read`, `shares:write`, `audit:read`
-(the data access log, §8.8). A route lists the
+(the data access log, §8.8), `health:read` (`GET /api/health/requests`, §8.10; the
+token's owner must be an administrator too). A route lists the
 scopes that grant access; any one of them is enough, all of them with
 `all: true`. A failure answers 403 `insufficient_scope`, naming the missing
 scopes in the message and in `WWW-Authenticate: Bearer realm="trail",
@@ -1429,8 +1430,8 @@ The credentials of `/api/v1` for scripts, apps and agents: created in Settings
   and queues presets (Overland's only, 409 for another app), never its
   credentials, its app or its deletion, which stay with
   the session. The dialog's templates (`apiTokenTemplates`): Read-only = every
-  `:read` scope, Agent = those but `audit:read` (an agent has no business
-  with who looked at the account) and `locations:write`, Full access = all.
+  `:read` scope, Agent = those but `audit:read` and `health:read` (an agent has no business
+  with who looked at the account or the server's timings) and `locations:write`, Full access = all.
   `GET /api/v1/tokens/verify` (`auth: "token"`) lets a token describe itself.
 - **Audit**: `API token created`, `changed`, `rolled` and `revoked` at info,
   with the token's and the user's id (and the scopes or the changed fields),
@@ -2097,7 +2098,7 @@ it again, and a second API process would keep its own.
 
 `GET /api/health/requests` answers `{status, version, commit, uptimeS,
 routes}`, each route `{method, route, budgetMs, overBudget, last15m,
-last24h}` and each window `{count, errors, notModified, overBudget, p50Ms,
+last24h}` and each window `{count, errors, aborted, notModified, overBudget, p50Ms,
 p95Ms, maxMs, meanBytes}`: the 5xx and 304 answers, the requests slower than
 the budget, and the bytes sent (compressed when they were). A route is over
 budget when more than 5 % of its last 15 minutes were slower than its

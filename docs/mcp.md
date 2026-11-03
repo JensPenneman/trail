@@ -21,7 +21,7 @@ answers with a summary line.
 In the dashboard, open **Settings › API tokens › Create token**:
 
 1. Give it a name you will recognise, such as "Calendar agent".
-2. Choose the **Agent** template: every `:read` scope but `audit:read` (the
+2. Choose the **Agent** template: every `:read` scope but `audit:read` and `health:read` (the
    data access log is none of an agent's business) and `locations:write`,
    which lets the agent tell Trail how you travel right now. Leave out what
    the agent does not need: without `locations:read` it sees no positions at

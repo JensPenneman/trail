@@ -13,6 +13,10 @@ const apiTokenSecret = /trl[ks]?_[A-Za-z0-9_-]{43}/;
 
 const redacted = "[redacted]";
 
+/* A parameter name fit to log: an identifier, not a client's whole query (`?lat%3D51.05%26lon%3D3.71`
+ * or `?51.05,3.71` is a name that carries values). */
+const loggableName = /^[A-Za-z_][\w.[\]-]{0,63}$/;
+
 const decoded = (text: string): string => {
   try {
     return decodeURIComponent(text);
@@ -26,7 +30,8 @@ const decoded = (text: string): string => {
  * tokens, device tokens, API tokens and share link secrets in it as
  * `[redacted]`, and the query's parameter names only, never a value
  * (`/api/v1/tracks?bbox&from&to`) — a value is a coordinate, a time, a token.
- * A secret sent as a name goes too. Secrets are found the way the routers read
+ * A name that is no identifier (a value in disguise) or carries a secret goes
+ * too, and so does a path segment that holds `=`, `;` or `?` once decoded. Secrets are found the way the routers read
  * them — decoded and case-insensitive — so no spelling of the URL (`/LINK/…`)
  * carries one into the log.
  */
@@ -44,11 +49,13 @@ export function redactUrl(url: string): string {
     if (matches && (segments[at] ?? "") !== "") segments[at] = redacted;
   }
   for (const [index, segment] of segments.entries()) {
-    if (apiTokenSecret.test(decoded(segment))) segments[index] = redacted;
+    const text = decoded(segment);
+    // `;lat=51.05` or an encoded `?lat=…` in a segment is a query in disguise (a mistyped template).
+    if (apiTokenSecret.test(text) || /[=;?]/.test(text)) segments[index] = redacted;
   }
   const query = [...parsed.searchParams.keys()].map((name) =>
     // A secret can also arrive as a parameter's name (`?trls_…`): then the name goes too.
-    apiTokenSecret.test(name) ? redacted : encodeURIComponent(name),
+    apiTokenSecret.test(name) || !loggableName.test(name) ? redacted : name,
   );
   return `${segments.join("/")}${query.length === 0 ? "" : `?${query.join("&")}`}`;
 }

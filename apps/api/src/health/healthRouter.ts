@@ -3,10 +3,11 @@ import type { Health, LiveHealth, ProcessingHealth, RequestsHealth } from "@trai
 import express, { type Response, type Router } from "express";
 import type { AppContext } from "../appContext";
 import { loadSession } from "../auth/loadSession";
-import { getRequestAuth, requireAdminOrToken } from "../auth/requestAuth";
+import { getRequestAuth, requireAdministrator } from "../auth/requestAuth";
 import { ipRateLimit } from "../http/ipRateLimit";
 import { sameOriginSessions } from "../http/sameOriginSessions";
 import { authenticateBearer } from "../v1/authenticateBearer";
+import { tokenRateLimit } from "../v1/tokenRateLimit";
 import { readProcessingHealth } from "./readProcessingHealth";
 
 const databaseCheckTimeoutMs = 2_000;
@@ -94,16 +95,17 @@ export function healthRouter(ctx: AppContext): Router {
 
   // This process's timing of its requests per route, from memory, against their budgets
   // (docs/architecture.md §8.10); behind the database checks' limiter, as they are, and for
-  // administrators only: an API token of one, or a session with the admin grant.
+  // administrators only: an API token of one with `health:read`, or a session with the admin grant.
   const session = loadSession(ctx.db, ctx.config.sessionTtlDays);
   router.get(
     apiPaths.healthRequests,
     databaseCheckLimit,
     ...authenticateBearer(ctx),
+    tokenRateLimit(ctx),
     (req, res, next) => (getRequestAuth(req) === undefined ? session(req, res, next) : next()),
     sameOriginSessions,
     (req, res) => {
-      requireAdminOrToken(req);
+      requireAdministrator(req);
       const routes = ctx.requests.summary();
       res.json({
         status: routes.some((route) => route.overBudget) ? "over_budget" : "ok",

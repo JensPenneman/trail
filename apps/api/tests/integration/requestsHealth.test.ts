@@ -3,11 +3,13 @@ import { requestsHealthSchema } from "@trail/contracts/health";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { bearer, createApiToken } from "../support/apiTokenFlows";
+import { sql } from "drizzle-orm";
 import { signUpWithCookie } from "../support/authFlows";
 import { createDevice, postOverland } from "../support/deviceFlows";
 import { overlandFixture } from "../support/overlandFixture";
 import { resetDatabase } from "../support/resetDatabase";
 import { createTestContext, type TestContext } from "../support/testContext";
+import { testOrigin } from "../support/testEnvironment";
 
 /*
  * `/api/health/requests` (docs/architecture.md §8.10): the API's own timing of
@@ -22,6 +24,10 @@ let token = "";
 let adminToken = "";
 let adminCookie = "";
 let memberCookie = "";
+let memberToken = "";
+let scopelessToken = "";
+let revokedToken = "";
+let expiredToken = "";
 const lines: string[] = [];
 
 beforeAll(async () => {
@@ -31,9 +37,36 @@ beforeAll(async () => {
   const { agent, cookie } = await signUpWithCookie(t.app, email);
   adminCookie = cookie;
   adminToken = (
-    await createApiToken(agent, { name: "Monitor", scopes: ["profile:read"], expiresAt: null })
+    await createApiToken(agent, { name: "Monitor", scopes: ["health:read"], expiresAt: null })
   ).secret;
-  memberCookie = (await signUpWithCookie(t.app, "member@allowed.test")).cookie;
+  scopelessToken = (
+    await createApiToken(agent, { name: "No health", scopes: ["profile:read"], expiresAt: null })
+  ).secret;
+  const revoked = await createApiToken(agent, {
+    name: "Revoked",
+    scopes: ["health:read"],
+    expiresAt: null,
+  });
+  revokedToken = revoked.secret;
+  await agent.delete(apiPaths.me.token(revoked.token.id)).set("Origin", testOrigin).expect(204);
+  const expired = await createApiToken(agent, {
+    name: "Expired",
+    scopes: ["health:read"],
+    expiresAt: null,
+  });
+  expiredToken = expired.secret;
+  await t.ctx.db.execute(
+    sql`UPDATE api_tokens SET expires_at = now() - interval '1 second' WHERE id = ${expired.token.id}`,
+  );
+  const member = await signUpWithCookie(t.app, "member@allowed.test");
+  memberCookie = member.cookie;
+  memberToken = (
+    await createApiToken(member.agent, {
+      name: "Member",
+      scopes: ["health:read"],
+      expiresAt: null,
+    })
+  ).secret;
   const device = await createDevice(agent, { name: "iPhone" });
   deviceId = device.device.id;
   token = device.credentials.accessToken;
@@ -69,6 +102,29 @@ describe("/api/health/requests", () => {
       .set("Authorization", bearer(`trlk_${"A".repeat(43)}`))
       .expect(401);
     await request(t.app).get(apiPaths.healthRequests).set("Cookie", memberCookie).expect(403);
+    // A token needs an administrator as its owner and the scope: neither alone is enough.
+    await request(t.app)
+      .get(apiPaths.healthRequests)
+      .set("Authorization", bearer(memberToken))
+      .expect(403);
+    const scopeless = await request(t.app)
+      .get(apiPaths.healthRequests)
+      .set("Authorization", bearer(scopelessToken))
+      .expect(403);
+    expect(scopeless.body).toMatchObject({ error: { code: "insufficient_scope" } });
+    for (const refused of [revokedToken, expiredToken]) {
+      await request(t.app)
+        .get(apiPaths.healthRequests)
+        .set("Authorization", bearer(refused))
+        .expect(401);
+    }
+    // A session answers to the site that sends it: another site's link reads nothing with it.
+    const crossSite = await request(t.app)
+      .get(apiPaths.healthRequests)
+      .set("Cookie", adminCookie)
+      .set("Sec-Fetch-Site", "cross-site")
+      .expect(403);
+    expect(crossSite.body).toMatchObject({ error: { code: "origin_not_allowed" } });
     const admin = await request(t.app)
       .get(apiPaths.healthRequests)
       .set("Cookie", adminCookie)

@@ -62,6 +62,22 @@ describe("logging safety", () => {
     expect(redactUrl("/api/heatmap")).toBe("/api/heatmap");
   });
 
+  it("logs no query that is a value in disguise, nor a path segment that holds one", () => {
+    // An encoded `=` or `&` makes the whole query one "name" that carries coordinates.
+    expect(redactUrl("/api/osmand?lat%3D51.05%26lon%3D3.71")).toBe("/api/osmand?[redacted]");
+    expect(redactUrl("/api/osmand?51.05,3.71")).toBe("/api/osmand?[redacted]");
+    expect(redactUrl(`/api/osmand?${"a".repeat(65)}=1&ok_1.x[0]=2`)).toBe(
+      "/api/osmand?[redacted]&ok_1.x[0]",
+    );
+    // A mistyped template puts the values in the path: `;`, `=` or `?` (encoded or not) gives them away.
+    expect(redactUrl("/api/osmand;lat=51.05")).toBe("/api/[redacted]");
+    expect(redactUrl("/api/osmand%3Flat%3D51.05")).toBe("/api/[redacted]");
+    // A device token is found by its shape wherever a client puts it, and `//` stays a path.
+    const token = `trl_${"A".repeat(43)}`;
+    expect(redactUrl(`/api/whatever/${token}`)).toBe("/api/whatever/[redacted]");
+    expect(redactUrl("//api/OSMAND//x/?timestamp=1")).toBe("//api/OSMAND//x/?timestamp");
+  });
+
   it("removes one-time link and invite tokens from logged paths", () => {
     expect(redactUrl("/link/5JqNf3kP0xY")).toBe("/link/[redacted]");
     expect(redactUrl("/invite/5JqNf3kP0xY?from=mail")).toBe("/invite/[redacted]?from");

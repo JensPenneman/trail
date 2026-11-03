@@ -20,6 +20,7 @@ describe("API token templates", () => {
       "people:read",
       "shares:read",
       "audit:read",
+      "health:read",
     ]);
     // An agent reads and corrects; who looked at the account is none of its business.
     expect(apiTokenTemplates.agent).toEqual([
