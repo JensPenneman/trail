@@ -102,7 +102,7 @@ test("the server hands out the basemap's styles, tiles, fonts and sprites with t
     sprite: string;
   };
   const tiles = sources.openmaptiles.tiles[0] ?? "";
-  expect(tiles).toMatch(/^\/map\/tiles\/[0-9a-f]{16}\/\{z\}\/\{x\}\/\{y\}\.pbf$/);
+  expect(tiles).toMatch(/^https?:\/\/[^/]+\/map\/tiles\/[0-9a-f]{16}\/\{z\}\/\{x\}\/\{y\}\.pbf$/);
 
   const streets = await request.get(tiles.replace("{z}/{x}/{y}", "14/8530/5974"));
   expect(streets.status()).toBe(200);
