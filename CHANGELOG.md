@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.0](https://github.com/JensPenneman/trail/compare/v0.6.0...v0.7.0) (2026-11-03)
+
+
+### Features
+
+* **api:** per-route request timing, budgets and /api/health/requests ([#95](https://github.com/JensPenneman/trail/issues/95)) ([49fe019](https://github.com/JensPenneman/trail/commit/49fe01977f9ae42cf873fd40687c9c3904ec1be4))
+* **deploy:** give app two CPUs and gate the load report on the route budgets ([fd7f612](https://github.com/JensPenneman/trail/commit/fd7f6127bb5bdd44a34c0da00ce52872ec98532f))
+* serve the basemap from Trail (maps task 4) ([#96](https://github.com/JensPenneman/trail/issues/96)) ([5dfc579](https://github.com/JensPenneman/trail/commit/5dfc57955cb6abeb07df0107e169f2bea6f6f93b))
+
+
+### Bug Fixes
+
+* **web:** a corrected mode shows at once on a past day ([#89](https://github.com/JensPenneman/trail/issues/89)) ([a15195e](https://github.com/JensPenneman/trail/commit/a15195ead0fb3b55f1a387bde13b648b98f29fc4))
+* **web:** links name themselves with their visible text, for axe's label-content-name-mismatch ([a408a34](https://github.com/JensPenneman/trail/commit/a408a344d448fe213f8ca32759cfa02ea1ec3aa7))
+
 ## [0.6.0](https://github.com/JensPenneman/trail/compare/v0.5.1...v0.6.0) (2026-10-28)
 
 
