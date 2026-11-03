@@ -13,6 +13,7 @@ import { cachedFetch } from "../src/cache/cachedFetch";
 import { cacheKey } from "../src/cache/cacheKey";
 import { dayQueryOptions } from "../src/cache/dayQueryOptions";
 import type { CacheStore } from "../src/cache/openCacheStore";
+import { localDayRange } from "../src/time/localDayRange";
 import {
   freshIndexedDb,
   openTestStore,
@@ -158,8 +159,9 @@ describe("the persister over the store", () => {
   });
 
   it("keeps what a query fetched, packed, under the owner, with the answer's ETag", async () => {
-    const from = "2026-10-27T23:00:00.000Z";
-    const to = "2026-10-28T23:00:00.000Z";
+    // Today, whichever day the suite runs on: an answer about today is warm.
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: user.timezone }).format(Date.now());
+    const { from, to } = localDayRange(today, today, user.timezone);
     const { client, store } = await setup();
     mockApi({
       "GET /api/tracks": { status: 200, body: tracks(from, to), etag: 'W/"t1"' },

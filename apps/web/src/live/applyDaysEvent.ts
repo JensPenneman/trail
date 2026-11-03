@@ -48,11 +48,15 @@ export function applyDaysEvent(client: QueryClient, event: DaysEvent): void {
       ...data.days.filter((row) => row.deviceId !== event.deviceId || !named.has(row.date)),
       ...event.days.filter((row) => row.deviceId === event.deviceId && named.has(row.date)),
     ].sort(byDateAndDevice);
+    // Setting the data clears a stale mark (a processing change sets one, staleProcessed): the
+    // rows this event does not name may still be behind, so a digest marked stays marked.
+    const stale = query.state.isInvalidated;
     client.setQueryData<DaysResponse>(
       query.queryKey,
       { ...data, days },
       { updatedAt: query.state.dataUpdatedAt },
     );
+    if (stale) query.invalidate();
     cache?.persistNow(query.queryKey);
   }
   if (timezone === null || event.dates.length === 0) return;

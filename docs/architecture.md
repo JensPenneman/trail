@@ -3212,8 +3212,13 @@ last point; `applyDaysEvent`), keeping when they were fetched, the answers
 of those days of that device go stale (refetched where shown,
 `staleDaySlices`), an upload no longer marks every digest stale, and the
 Devices page no longer polls the day's sums. `segments` marks stale only the
-levels, timelines and Insights that overlap the window of that device, and
-its mode.
+levels, timelines, Insights and calendar digests that overlap the window of
+that device, and its mode (`staleProcessed`); a corrected mode does the same
+for its move's time at once, without waiting for the event — once: the event
+for it, before or after its answer, is the same change. The digests go
+with them because processing moves their processed stamps without a `days`
+event: one left fresh would still vouch for the days' answers as they were,
+and asking a past day again would ask the server nothing.
 
 **The copy on this device** (`apps/web/src/cache/`) keeps the signed-in
 person's own answers in IndexedDB `trail-cache`, whose version is
@@ -3307,8 +3312,10 @@ memory only.
   `processed`, a missing row, a row the answer has no stamp for never
   match) has an infinite `staleTime`; before asking for such a day,
   `cachedFetch` waits for a digest on its way, or asks one on screen again
-  first (one small request instead of the day's). A day one of the devices
-  recorded nothing on has no digest row, so it is revalidated with its ETag.
+  first (one small request instead of the day's). A digest marked stale —
+  by a processing change covering it, above — vouches for nothing until it
+  is fetched again. A day one of the devices recorded nothing on has no
+  digest row, so it is revalidated with its ETag.
 - **Purges** (`purgeCache`): signing out and deleting the account (when the
   request starts, before it is sent, waiting at most 2 s), a lost session (a
   `401` anywhere, `session-ended`, a probe that finds none), another account,
@@ -4553,7 +4560,8 @@ Car · Bus · Train · Tram · Metro · Other · Auto) is on the Me card of Peop
 for the device that reported last — one's other devices keep the mode the
 inference finds for them — and on each device's page for that device.
 `segments` events refetch the tracks at their level, the timeline and the
-current mode.
+current mode, and a correction refetches them at once (§14.1, `staleProcessed`):
+also a past day's, which the calendar's digest no longer vouches for.
 
 ### 17.7 Configuration
 

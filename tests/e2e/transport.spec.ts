@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { daysResponseSchema } from "@trail/contracts/stats";
 import {
   levelTracksResponseSchema,
   type ProcessingLevel,
@@ -17,6 +18,7 @@ import {
 import { postOverland } from "./support/postOverland";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
+import { walkAndDrive } from "./support/walkAndDrive";
 
 const day = (now = Date.now()) => ({
   from: new Date(now - 2 * 86_400_000).toISOString(),
@@ -190,6 +192,55 @@ test("levels change the tracks, and a move's mode can be put right", async ({ pa
   await expect(page.getByRole("region", { name: "Timeline" }).getByText("set by you")).toHaveCount(
     0,
   );
+});
+
+test("a past day's move shows its corrected mode at once", async ({ page, account }) => {
+  // A walk and a drive two days ago, ending at noon there: a settled day, whose stamps the
+  // calendar's digest vouches for (no request) until something says the day changed.
+  const noon = startOfToday(Date.now(), account.timezone) - 2 * 86_400_000 + 12 * 3_600_000;
+  const date = new Intl.DateTimeFormat("en-CA", { timeZone: account.timezone }).format(noon);
+  await uploadedDevice(page, "Last week's phone", walkAndDrive(noon, 0));
+  const around = {
+    from: new Date(noon - 12 * 3_600_000).toISOString(),
+    to: new Date(noon + 12 * 3_600_000).toISOString(),
+  };
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get("/api/v1/segments", { params: around });
+        const timeline = timelineResponseSchema.parse(await response.json());
+        return timeline.items.some((segment) => segment.mode === "car") && !timeline.pending;
+      },
+      { timeout: 45_000, intervals: [1_000] },
+    )
+    .toBe(true);
+  // The day's statistics summed up (ten seconds after the upload): the digest has the day's row.
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get("/api/stats/days", {
+          params: { from: date, to: date },
+        });
+        const { days } = daysResponseSchema.parse(await response.json());
+        return days.some((day) => day.points > 0 && typeof day.stamp?.processed === "string");
+      },
+      { timeout: 30_000, intervals: [1_000] },
+    )
+    .toBe(true);
+
+  await page.goto(`/?view=history&date=${date}`);
+  const timeline = page.getByRole("region", { name: "Timeline" });
+  await timeline.getByRole("button", { name: /^Details of the car from/ }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toHaveAccessibleName("Car");
+  await dialog.getByRole("button", { name: "Bus" }).click();
+  await expect(dialog.getByText("Saved: Bus.")).toBeVisible();
+  // No reload: the day's timeline is asked for again, not taken from the digest as settled.
+  await expect(dialog).toHaveAccessibleName("Bus");
+  await expect(dialog.getByText("set by you")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(timeline.getByText(/^Bus · /)).toBeVisible();
+  await expect(timeline.getByText("set by you")).toBeVisible();
 });
 
 test("a stop shows the walk within it, and a silent phone shows as no data", async ({
