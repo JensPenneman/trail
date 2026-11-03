@@ -57,24 +57,47 @@ export function batchClass(points) {
 }
 
 /**
- * The dashboard's requests (§2.4) and their p95 targets in ms (§3.2); null:
- * §3.2 names none, the run reports what it measured.
- * @type {Readonly<Record<string, { label: string, p95: number | null }>>}
+ * The dashboard's requests (§2.4) and their p95 targets in ms (§3.2), each
+ * named by the route it asks (`route`, as the request log and
+ * `/api/health/requests` name it). They are the API's request budgets
+ * (apps/api/src/requests/requestBudgets.ts, which k6 cannot read: its
+ * container sees tools/load only), and test/targets.test.mjs keeps the two
+ * equal: a route of §3.2 has §3.2's number, every other GET the default of
+ * 1 s. One class has a number of its own on a shared route: a past History
+ * day (`history_day`, §3.2's 800 ms warm), where the API's tracks routes
+ * hold today's 400 ms.
+ * @type {Readonly<Record<string, { route: string, label: string, p95: number }>>}
  */
 export const dashboardTargets = {
-  session: { label: "GET /api/auth/session", p95: 100 },
-  config: { label: "GET /api/config", p95: 100 },
-  devices: { label: "GET /api/devices", p95: 100 },
-  people: { label: "GET /api/v1/people", p95: 100 },
-  shares: { label: "GET /api/v1/shares", p95: 100 },
-  tracks_today: { label: "today's tracks at the account's level (/api/v1/tracks)", p95: 400 },
-  timeline: { label: "the timeline of a day (/api/v1/segments)", p95: 200 },
-  days: { label: "day statistics (/api/stats/days)", p95: null },
-  activity: { label: "activity (/api/stats/activity)", p95: null },
-  history_day: { label: "History, one day of one device (/api/v1/tracks)", p95: 800 },
-  heatmap: { label: "heatmap viewport (/api/heatmap)", p95: 150 },
-  insights: { label: "Insights, a month (/api/v1/insights/overview)", p95: 1000 },
-  access_log: { label: "access log (/api/v1/access-log)", p95: null },
+  session: { route: "GET /api/auth/session", label: "GET /api/auth/session", p95: 100 },
+  config: { route: "GET /api/config", label: "GET /api/config", p95: 100 },
+  devices: { route: "GET /api/devices", label: "GET /api/devices", p95: 100 },
+  people: { route: "GET /api/v1/people", label: "GET /api/v1/people", p95: 100 },
+  shares: { route: "GET /api/v1/shares", label: "GET /api/v1/shares", p95: 100 },
+  tracks_today: {
+    route: "GET /api/v1/tracks",
+    label: "GET /api/v1/tracks: today's tracks at the account's level",
+    p95: 400,
+  },
+  timeline: {
+    route: "GET /api/v1/segments",
+    label: "GET /api/v1/segments: the timeline of a day",
+    p95: 200,
+  },
+  days: { route: "GET /api/stats/days", label: "GET /api/stats/days: day statistics", p95: 1000 },
+  activity: { route: "GET /api/stats/activity", label: "GET /api/stats/activity", p95: 1000 },
+  history_day: {
+    route: "GET /api/v1/tracks",
+    label: "GET /api/v1/tracks: History, one day of one device",
+    p95: 800,
+  },
+  heatmap: { route: "GET /api/heatmap", label: "GET /api/heatmap: a viewport", p95: 150 },
+  insights: {
+    route: "GET /api/v1/insights/overview",
+    label: "GET /api/v1/insights/overview: Insights, a month",
+    p95: 1000,
+  },
+  access_log: { route: "GET /api/v1/access-log", label: "GET /api/v1/access-log", p95: 1000 },
 };
 
 /** The error budget (§3.1): shares of the ingest requests. */
@@ -135,8 +158,8 @@ export function ingestThresholds(phase) {
 }
 
 /**
- * k6 thresholds of the dashboard's requests; those without a target only make
- * k6 keep their percentiles (a threshold is what makes it keep a tag's).
+ * k6 thresholds of the dashboard's requests, the budgets divided by the
+ * calibration factor.
  * @returns {Record<string, string[]>}
  */
 export function dashboardThresholds() {
@@ -144,7 +167,7 @@ export function dashboardThresholds() {
   const thresholds = {};
   for (const [endpoint, target] of Object.entries(dashboardTargets)) {
     thresholds[`http_req_duration{kind:dashboard,endpoint:${endpoint}}`] = [
-      target.p95 === null ? "p(95)>=0" : `p(95)<=${Math.round(target.p95 / calibration.latency)}`,
+      `p(95)<=${Math.round(target.p95 / calibration.latency)}`,
     ];
   }
   return thresholds;

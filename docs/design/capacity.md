@@ -34,7 +34,7 @@ says so; milestone 0 (§7) replaces the guesses with measurements.
 
 | | i7-9750H laptop, 16 GB, Docker Desktop on WSL 2 (VM: 12 CPUs, 8.25 GB), consumer SSD, 181 GB free |
 |---|---|
-| `app` | 1 CPU, 1 GiB (`mem_limit`), V8 heap 640 MB |
+| `app` | 2 CPUs (a dashboard page's 5–10 parallel requests), 1 GiB (`mem_limit`), V8 heap 640 MB |
 | `worker` (the processing stream) | 1 CPU, 1 GiB, heap 640 MB — a second Node process; the map pieces of up to 250 MB live here, not in the API |
 | `db` (Postgres 18) | 2 GiB today; this plan asks for 3 GiB and 2 CPUs (§4.6) |
 | `backup` | 512 MiB, 1 CPU, busy about an hour a day (§4.7) |
@@ -770,7 +770,7 @@ fails a threshold is still reported — that is the point.
 
 - **Daily, on the Mac**: `tools/load/compose.yaml` runs the production stack
   (the GHCR image of the branch or a local build) with the node's caps —
-  `app` 1 CPU / 1 GiB, `worker` 1 / 1 GiB, `db` 2 / 3 GiB — and k6 in a
+  `app` 2 CPUs / 1 GiB, `worker` 1 / 1 GiB, `db` 2 / 3 GiB — and k6 in a
   container of its own on the same network, no edge (the edge's own cost is
   measured once on the node). `npm run load -- fleet-1000` runs setup, the
   fleet for one compressed day, the backlog, the dashboard scenario and the

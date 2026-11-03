@@ -17,8 +17,8 @@ services:
     # their count (docker ps --format '{{.Names}}' | grep -c '^trail-.*-dev-1$') must see this one.
     # The fixed name also keeps a second load stack from starting beside it.
     container_name: trail-load-dev-1
-    # The node's limits (docs/design/capacity.md §1): one CPU and 1 GiB (mem_limit as in production)
-    cpus: 1
+    # The node's limits (docs/design/capacity.md §1): two CPUs and 1 GiB (mem_limit as in production)
+    cpus: 2
     ports:
       # The SSE probe on the host reaches the app here, nobody else
       - "127.0.0.1:${TRAIL_LOAD_PORT:-18787}:8080"

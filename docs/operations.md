@@ -53,7 +53,7 @@ the node's:
 
 | Service | CPUs | Memory (`mem_limit`) | V8 heap (`NODE_OPTIONS`) |
 |---|---|---|---|
-| `app` | 1 | 1 GB | 640 MB |
+| `app` | 2: a dashboard page asks 5–10 things at once, which one CPU would answer one after another | 1 GB | 640 MB |
 | `worker` | 2 | 1 GB | 768 MB: a pass holds up to ~250 MB of map data per piece |
 | `db` | 2 | 2 GB | — |
 | `backup` | — | 512 MB | — |
@@ -61,6 +61,9 @@ the node's:
 Swap is capped at the same values (`memswap_limit`), so WSL does not double
 them. The caps add up to 4.5 GB in production and 4 GB more for each preview:
 the node's WSL memory must be 12 GB before the first release with the worker.
+The CPUs of `app`, `worker` and `db` add up to six, which the node's WSL VM
+(10 CPUs) holds with room for Launchway, its edge and a check; a cap is a
+ceiling, not a reservation, so the containers only take them while busy.
 The heap stays well under each container's limit, so a heap that runs out
 fails with an error in the log before the kernel would OOM-kill the
 container; a server that needs more raises a limit and its heap together.
@@ -833,6 +836,56 @@ processing queue's age, numbers only ([docs/perf/README.md](perf/README.md#what-
 docker logs --since 1h launchway-trail-app-1 2>&1 | grep '"msg":"load"'
 ```
 
+## Request latency
+
+Every request's line in the app's log carries its route pattern (`route`),
+status, duration (`ms`), the bytes it sent, whether the browser asked
+conditionally and got a 304 (`cache`: `hit` or `miss`) and the days a range
+spans (`days`) — never the URL's ids or values ([architecture.md
+§12](architecture.md#12-security)). The app also keeps, per route, the last 15
+minutes and 24 hours against the route's budget
+([architecture.md §8.10](architecture.md#810-request-budgets-and-timing)):
+
+```sh
+docker exec launchway-trail-app-1 wget -qO- http://127.0.0.1:8080/api/health/requests   # or https://trail.jenspenneman.com/api/health/requests
+docker logs --since 15m launchway-trail-app-1 2>&1 | grep '"route":"/api/v1/tracks"'       # one route's requests
+```
+
+| Route | p95 budget |
+|---|---|
+| session, configuration, devices, people, shares and incoming shares | 100 ms |
+| the timeline (`/api/v1/segments`) | 200 ms |
+| tracks (`/api/tracks`, `/api/v1/tracks`) | 400 ms |
+| heatmap | 150 ms |
+| Insights' overview | 1 s |
+| every other `GET` of the API | 1 s |
+
+The uploads are held to their own targets by batch size, from
+`ingest_log.duration_ms` ([docs/perf/README.md](perf/README.md)); the event
+stream, the export and writes have no budget.
+
+`"status":"over_budget"` names a route whose last 15 minutes had more than
+5 % of its requests over the budget (`overBudget: true`, first in the list).
+Then:
+
+1. **Which requests.** Its lines say whether a long range (`days`: History
+   allows 93), a large answer (`bytes`), stale copies (`cache: miss`), one
+   account (`account`) or a moment (`time`) makes them slow.
+2. **What else ran.** `docker stats`: `app` at its two CPUs, `db` at its two,
+   the worker busy with a backfill; the app's `load` line (event-loop p99,
+   pool `waiting`, [Logs](#logs)); the backup at 03:00; a check on the node.
+3. **The route itself.** Measure it on a copy of production in the
+   development container (restore the newest dump from `BACKUP_DIR`, replay
+   the pages' requests) and profile it (`node --cpu-prof`, `EXPLAIN (ANALYZE,
+   BUFFERS)`): rows read without an index, an answer built from more rows
+   than it shows, a query per row, work on the request path that could wait.
+4. **Not the budget.** The budgets are the capacity targets
+   ([docs/design/capacity.md](design/capacity.md) §3.2); a budget changes
+   there first, then in `apps/api/src/requests/requestBudgets.ts` and
+   `tools/load/lib/targets.js` together (a test keeps them equal).
+
+The summary is the app's memory: a restart (a deploy) begins it again.
+
 ## Load tests
 
 Load tests run on the Mac against a capped copy of this stack
@@ -887,6 +940,7 @@ Day-to-day development uses `npm run dev` instead (README).
 | `app` keeps restarting; its log says "Invalid configuration" | A value is invalid; the log names it. Fix it in Launchway and redeploy. |
 | `/api/health` answers 503 | The database is down: `docker logs launchway-trail-db-1`. |
 | `/api/health` says `"worker":"down"` (and `/api/health/processing` 503) | No worker beat for 90 s: `docker ps --filter name=launchway-trail-worker` and `docker logs launchway-trail-worker-1`. `docker restart launchway-trail-worker-1` is safe; uploads wait in the queue meanwhile (`queued`). |
+| The dashboard is slow; `/api/health/requests` says `"status":"over_budget"` | A route's last 15 minutes went over its budget: [Request latency](#request-latency) tells which requests and what to look at. |
 | `worker` is *unhealthy* | Its loop stopped writing heartbeats: the database refused them (the log says "worker heartbeat could not be written") or the process is stuck. Restart it; Docker does not on its own. |
 | `worker` restarts in a loop with `trail: unknown command "worker"` | The newer `compose.yaml` runs with an image from before the worker (a run by hand). Harmless: that image's `app` processes by itself. Deploy a release, or the older release with its own `compose.yaml`. |
 | Requests all share one client address, or the session cookie is not `Secure` | `TRUST_PROXY` does not name Launchway's edge address. |

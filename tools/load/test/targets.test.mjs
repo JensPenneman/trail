@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  budgetFor,
+  historyDayP95Ms,
+  requestBudgets,
+} from "../../../apps/api/src/requests/requestBudgets.ts";
+import {
   batchClass,
+  dashboardTargets,
   dashboardThresholds,
   ingestTargets,
   ingestThresholds,
@@ -51,8 +57,35 @@ describe("the targets", () => {
     assert.deepEqual(dashboard["http_req_duration{kind:dashboard,endpoint:people}"], [
       "p(95)<=100",
     ]);
+    // No row of §3.2: the API's budget for every other GET.
     assert.deepEqual(dashboard["http_req_duration{kind:dashboard,endpoint:activity}"], [
-      "p(95)>=0",
+      "p(95)<=1000",
     ]);
+    assert.equal(Object.keys(dashboard).length, Object.keys(dashboardTargets).length);
+  });
+});
+
+/* The dashboard's targets are the API's request budgets (docs/architecture.md §8.10): one table in
+ * the API, one here for k6, whose container cannot read the API's; their routes link them. */
+describe("the dashboard's targets", () => {
+  it("are the API's request budgets of the routes they ask", () => {
+    for (const [endpoint, target] of Object.entries(dashboardTargets)) {
+      const budget = endpoint === "history_day" ? historyDayP95Ms : budgetFor(target.route);
+      assert.equal(target.p95, budget, `${endpoint} (${target.route})`);
+      assert.ok(
+        target.label.startsWith(target.route),
+        `${endpoint}: the label starts with the route`,
+      );
+    }
+  });
+
+  it("ask every route the API holds to a budget of its own, but two the model leaves out", () => {
+    const asked = new Set(Object.values(dashboardTargets).map((target) => target.route));
+    const missing = requestBudgets
+      .map((budget) => budget.route)
+      .filter((route) => !asked.has(route));
+    // §2.4's open is nine requests; the web asks the incoming shares and the raw track beside
+    // the level's too, which the API's summary times.
+    assert.deepEqual(missing, ["GET /api/v1/shares/incoming", "GET /api/tracks"]);
   });
 });
