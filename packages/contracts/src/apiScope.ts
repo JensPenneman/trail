@@ -15,6 +15,7 @@ export const apiScopes = [
   "shares:read",
   "shares:write",
   "audit:read",
+  "health:read",
 ] as const;
 
 export const apiScopeSchema = z
@@ -39,4 +40,6 @@ export const apiScopeDescriptions: Record<ApiScope, string> = {
   "shares:write": "Start and stop sharing, hide people and manage public links.",
   "audit:read":
     "Read the data access log: who looked at or changed your data, when, how and which data — without positions.",
+  "health:read":
+    "Read the API's own request timings per route (administrators only; numbers, no positions or accounts).",
 };

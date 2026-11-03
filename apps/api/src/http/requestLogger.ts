@@ -4,6 +4,7 @@ import type { RequestHandler } from "express";
 import type { Logger } from "pino";
 import { pinoHttp } from "pino-http";
 import { serializeError } from "../logging/serializeError";
+import { requestFactsOf } from "../requests/requestTiming";
 import { redactUrl } from "./redactUrl";
 
 /* An id from a trusted proxy is kept so its logs and ours line up; anything
@@ -23,13 +24,30 @@ interface SerializedResponse {
 }
 
 /**
+ * A request's line, once it is answered, carries its timing facts
+ * (`requestTiming`: route pattern, duration, bytes, cache outcome, the
+ * account's tag, the days asked for) after pino-http's own fields
+ * (docs/architecture.md §12).
+ */
+const withFacts = (res: ServerResponse, fields: object): object => ({
+  ...fields,
+  ...requestFactsOf(res as Parameters<typeof requestFactsOf>[0]),
+});
+
+/**
  * pino-http access log with an `X-Request-Id` on every response. Only what
  * helps to follow a request is logged — never bodies (coordinates), cookies,
  * the Authorization header or token query parameters.
  */
 export function requestLogger(logger: Logger): RequestHandler {
+  // The URL holds a path's ids and a query's values (a viewport is coordinates): at `debug` only.
+  const withUrl = logger.isLevelEnabled("debug");
   return pinoHttp({
     logger,
+    // The precise duration of `requestTiming` replaces pino-http's whole milliseconds.
+    customAttributeKeys: { responseTime: "ms" },
+    customSuccessObject: (_req, res, fields) => withFacts(res, fields),
+    customErrorObject: (_req, res, _error, fields) => withFacts(res, fields),
     genReqId: (req: IncomingMessage, res: ServerResponse) => {
       const incoming = req.headers["x-request-id"];
       const id =
@@ -52,7 +70,7 @@ export function requestLogger(logger: Logger): RequestHandler {
       req: (req: SerializedRequest) => ({
         id: req.id,
         method: req.method,
-        url: typeof req.url === "string" ? redactUrl(req.url) : req.url,
+        ...(withUrl ? { url: typeof req.url === "string" ? redactUrl(req.url) : req.url } : {}),
         remoteAddress: req.remoteAddress,
         forwardedFor: req.headers?.["x-forwarded-for"],
         userAgent: req.headers?.["user-agent"],

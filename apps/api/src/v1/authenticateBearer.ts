@@ -28,7 +28,7 @@ function bearerSecret(header: string): string | null {
 }
 
 /**
- * API token authentication for `/api/v1` (docs/architecture.md §8.3). A request
+ * API token authentication for `/api/v1`, `/mcp` and `/api/health/requests` (docs/architecture.md §8.3). A request
  * whose `Authorization` header uses the Bearer scheme is a bearer request: its
  * token must have the `trlk_` shape (else no lookup) and pass
  * `ctx.apiTokens.verify`, and it then becomes the request's principal — the

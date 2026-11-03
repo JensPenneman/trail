@@ -16,6 +16,7 @@ import { IngestMeter } from "./load/ingestMeter";
 import { processingConfigWith } from "./processing/processingConfig";
 import { ProcessingService } from "./processing/processingService";
 import type { WaySource } from "./processing/waySource";
+import { RequestStats } from "./requests/requestStats";
 import { SharingState } from "./sharing/sharingState";
 import { DailyStatsScheduler } from "./stats/dailyStatsScheduler";
 import type { ApiTokenVerifier } from "./v1/apiTokens";
@@ -73,6 +74,7 @@ export function createAppContext(input: {
     dailyStats: new DailyStatsScheduler(db, logger, bus, input.dailyStatsDelayMs),
     background,
     ingestMeter: new IngestMeter(),
+    requests: new RequestStats(),
     alerts,
     apiTokens: input.apiTokens ?? new DatabaseTokenVerifier(db, background),
     processing: new ProcessingService({

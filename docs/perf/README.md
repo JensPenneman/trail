@@ -252,6 +252,7 @@ by the report, the rest by k6 and the report):
 | History, a day of a device | p95 ≤ 800 ms (warm) | §3.2 |
 | heatmap viewport | p95 ≤ 150 ms | §3.2 |
 | Insights, a month | p95 ≤ 1 s | §3.2 |
+| day statistics, activity, the access log | p95 ≤ 1 s | the API's budget for every other GET (architecture §8.10) |
 | SSE delivery | p95 ≤ 1 s, p99 ≤ 3 s | §3.2 |
 | event loop | p99 ≤ 50 ms over any minute, ≤ 200 ms ever | §3.2 |
 | app memory | RSS ≤ 700 MB, heap ≤ 450 MB | §3.3 |
@@ -268,13 +269,21 @@ writing the response and the hop between the containers, while
 median for a single point (the first `fleet-10`: 5.0 ms server side for
 uploads of under 10 records, 12.8 ms in k6 for single points), most of it
 the Mac's other work scheduling ahead of the stack's processes;
-on the node the fsync alone adds about 1.2 ms (M0). The dashboard has no
-server-side record, so its targets stay on k6's durations.
+on the node the fsync alone adds about 1.2 ms (M0). The dashboard's targets
+stay on k6's durations; the app's own view of them, per route and
+server-side, is `/api/health/requests` (architecture §8.10).
+
+The dashboard's targets are the API's request budgets, route by route: each
+entry of `dashboardTargets` names the route it asks, and
+`test/targets.test.mjs` keeps them equal to
+`apps/api/src/requests/requestBudgets.ts` (k6's container sees `tools/load`
+only, so it cannot read the API's table itself). A past History day keeps
+§3.2's 800 ms of its own; the API holds its routes to today's 400 ms.
 
 A batch is held to the row of the next larger size §3.1 names. The
-day-statistics and activity requests and the access log have no target in
-§3.2: their percentiles are reported, not judged. The dashboard's failed
-requests must stay under 0.1 %.
+day-statistics and activity requests and the access log have no row in
+§3.2: they hold the API's budget for every other GET, 1 s. The dashboard's
+failed requests must stay under 0.1 %.
 
 **Gates.** Milestone 1 holds a run to the ingest latencies (server side), the
 error budget and data loss, the dashboard's targets, SSE delivery, the event

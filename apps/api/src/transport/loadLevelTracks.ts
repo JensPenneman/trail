@@ -29,13 +29,17 @@ const rank = (level: ProcessingLevel): number => processingLevels.indexOf(level)
 const lower = (a: ProcessingLevel, b: ProcessingLevel): ProcessingLevel =>
   rank(a) <= rank(b) ? a : b;
 
-interface JoinedRow extends Record<string, unknown> {
+interface LocationRow extends Record<string, unknown> {
   recorded_at: string;
   t: number;
   lat: number;
   lon: number;
   horizontal_accuracy: number | null;
-  kept: boolean | null;
+}
+
+interface ProcessedRow extends Record<string, unknown> {
+  t: number;
+  kept: boolean;
   lat_avg: number | null;
   lon_avg: number | null;
   lat_map: number | null;
@@ -47,19 +51,27 @@ interface JoinedRow extends Record<string, unknown> {
 interface Served {
   t: number;
   level: ProcessingLevel;
-  vertices: LevelPoint[];
+  vertices: readonly LevelPoint[];
   point: LevelPoint;
   accuracy: number | null;
 }
 
+/* The vertices of every point without a way's shape before it: one array for all of them, as a
+ * day of 1 Hz points would otherwise allocate 86 400 empty ones. Never changed. */
+const noVertices: readonly LevelPoint[] = Object.freeze([]);
+
 /** The way's shape between two points with times interpolated along it. */
 function withTimes(
-  from: { lon: number; lat: number; t: number } | null,
+  from: LevelPoint | null,
   path: readonly [number, number][],
-  to: { lon: number; lat: number; t: number },
-): LevelPoint[] {
-  if (from === null || path.length === 0) return [];
-  const stops = [{ lon: from.lon, lat: from.lat }, ...path.map(([lon, lat]) => ({ lon, lat })), to];
+  to: LevelPoint,
+): readonly LevelPoint[] {
+  if (from === null || path.length === 0) return noVertices;
+  const stops = [
+    { lon: from[0], lat: from[1] },
+    ...path.map(([lon, lat]) => ({ lon, lat })),
+    { lon: to[0], lat: to[1] },
+  ];
   const lengths = [0];
   for (let index = 1; index < stops.length; index += 1) {
     const a = stops[index - 1];
@@ -71,8 +83,36 @@ function withTimes(
   const total = lengths.at(-1) ?? 0;
   return path.map(([lon, lat], index) => {
     const share = total > 0 ? (lengths[index + 1] ?? 0) / total : (index + 1) / (path.length + 1);
-    return [lon, lat, Math.round(from.t + share * (to.t - from.t))];
+    return [lon, lat, Math.round(from[2] + share * (to[2] - from[2]))];
   });
+}
+
+/**
+ * What processing made of a page of points, in their order: the processed
+ * points between its first and its last, read as a range of their primary key
+ * beside the points' own — not looked up point by point in a join, which
+ * Postgres plans as one index probe a point (a day of 1 Hz points is 86 400 of
+ * them). The raw level needs none.
+ */
+async function processedRows(
+  db: Executor,
+  deviceId: string,
+  page: readonly LocationRow[],
+  level: ProcessingLevel,
+): Promise<ProcessedRow[]> {
+  const first = page[0];
+  const last = page.at(-1);
+  if (level === "raw" || first === undefined || last === undefined) return [];
+  const rows = await db.execute<ProcessedRow>(sql`
+    SELECT extract(epoch FROM recorded_at)::float8 AS t, kept, lat_avg, lon_avg, lat_map, lon_map,
+      ${level === "averaged" ? sql`NULL::jsonb` : sql`path_map`} AS path_map
+    FROM processed_points
+    WHERE device_id = ${deviceId}
+      AND recorded_at >= ${first.recorded_at}::timestamptz
+      AND recorded_at <= ${last.recorded_at}::timestamptz
+    ORDER BY recorded_at
+  `);
+  return rows.rows;
 }
 
 /**
@@ -94,69 +134,64 @@ async function servedPoints(
   `);
   const stride = Math.max(1, Math.ceil((count.rows[0]?.count ?? 0) / holdLimit));
   const served: Served[] = [];
-  let previous: { lon: number; lat: number; t: number } | null = null;
+  let previous: LevelPoint | null = null;
   let cursor: string | null = null;
   let seen = 0;
   for (;;) {
     const after: SQL =
       cursor === null
-        ? sql`l.recorded_at >= ${range.from.toISOString()}::timestamptz`
-        : sql`l.recorded_at > ${cursor}::timestamptz`;
-    // The raw level needs nothing of processing: no join.
-    const processed: SQL =
-      level === "raw"
-        ? sql`NULL::boolean AS kept, NULL::float8 AS lat_avg, NULL::float8 AS lon_avg,
-            NULL::float8 AS lat_map, NULL::float8 AS lon_map, NULL::jsonb AS path_map
-            FROM locations l`
-        : sql`p.kept, p.lat_avg, p.lon_avg, p.lat_map, p.lon_map,
-            ${level === "averaged" ? sql`NULL::jsonb` : sql`p.path_map`} AS path_map
-            FROM locations l
-            LEFT JOIN processed_points p ON p.device_id = l.device_id AND p.recorded_at = l.recorded_at`;
-    const page: { rows: JoinedRow[] } = await db.execute<JoinedRow>(sql`
-      SELECT l.recorded_at::text, extract(epoch FROM l.recorded_at)::float8 AS t, l.lat, l.lon,
-        l.horizontal_accuracy, ${processed}
-      WHERE l.device_id = ${deviceId} AND ${after}
-        AND l.recorded_at < ${range.to.toISOString()}::timestamptz
-      ORDER BY l.recorded_at
+        ? sql`recorded_at >= ${range.from.toISOString()}::timestamptz`
+        : sql`recorded_at > ${cursor}::timestamptz`;
+    const page: { rows: LocationRow[] } = await db.execute<LocationRow>(sql`
+      SELECT recorded_at::text, extract(epoch FROM recorded_at)::float8 AS t, lat, lon,
+        horizontal_accuracy
+      FROM locations
+      WHERE device_id = ${deviceId} AND ${after}
+        AND recorded_at < ${range.to.toISOString()}::timestamptz
+      ORDER BY recorded_at
       LIMIT ${pageSize}
     `);
+    const processed = await processedRows(db, deviceId, page.rows, level);
+    // Both ordered by time, every processed point one of the page's: they merge in one pass.
+    let next = 0;
     for (const row of page.rows) {
       seen += 1;
+      while ((processed[next]?.t ?? Number.POSITIVE_INFINITY) < row.t) next += 1;
+      const done = processed[next]?.t === row.t ? processed[next] : undefined;
       const t = Math.round(row.t);
       let entry: Served | null = null;
-      const unprocessed = row.kept === null || level === "raw";
-      if (unprocessed) {
+      if (done === undefined || level === "raw") {
         if (row.horizontal_accuracy === null || row.horizontal_accuracy <= rawMaxAccuracyM) {
           entry = {
             t,
             level: "raw",
-            vertices: [],
+            vertices: noVertices,
             point: [row.lon, row.lat, t],
             accuracy: row.horizontal_accuracy,
           };
         }
-      } else if (row.kept === true && row.lat_avg !== null && row.lon_avg !== null) {
-        if (level !== "averaged" && row.lat_map !== null && row.lon_map !== null) {
-          const here = { lon: row.lon_map, lat: row.lat_map, t };
+      } else if (done.kept && done.lat_avg !== null && done.lon_avg !== null) {
+        if (level !== "averaged" && done.lat_map !== null && done.lon_map !== null) {
+          const here: LevelPoint = [done.lon_map, done.lat_map, t];
           entry = {
             t,
             level: "mapped",
-            vertices: withTimes(previous, row.path_map ?? [], here),
-            point: [row.lon_map, row.lat_map, t],
+            vertices: withTimes(previous, done.path_map ?? [], here),
+            point: here,
             accuracy: null,
           };
         } else {
           entry = {
             t,
             level: "averaged",
-            vertices: [],
-            point: [row.lon_avg, row.lat_avg, t],
+            vertices: noVertices,
+            point: [done.lon_avg, done.lat_avg, t],
             accuracy: null,
           };
         }
       }
       if (entry === null) continue;
-      previous = { lon: entry.point[0], lat: entry.point[1], t };
+      previous = entry.point;
       // Every k-th point when there are too many to hold; the way's shape and the ends always stay.
       if (stride > 1 && seen % stride !== 0 && entry.vertices.length === 0 && !ends.has(t)) {
         continue;
@@ -258,7 +293,7 @@ function piecesOfSegments(
       const entry = served[cursor];
       // A segment's line starts at its first point: the way's shape before it is the one before's.
       if (entry !== undefined && entry.t <= own) {
-        inside.push(inside.length === 0 ? { ...entry, vertices: [] } : entry);
+        inside.push(inside.length === 0 ? { ...entry, vertices: noVertices } : entry);
       }
       cursor += 1;
     }
@@ -308,18 +343,27 @@ function pieceDistance(piece: Piece): number {
   }
   let total = 0;
   let previous: LevelPoint | null = null;
-  for (const entry of piece.served) {
-    for (const point of [...entry.vertices, entry.point]) {
-      if (previous !== null) {
-        total += haversineM(
-          { lat: previous[1], lon: previous[0] },
-          { lat: point[1], lon: point[0] },
-        );
-      }
-      previous = point;
+  const step = (point: LevelPoint) => {
+    if (previous !== null) {
+      total += haversineM({ lat: previous[1], lon: previous[0] }, { lat: point[1], lon: point[0] });
     }
+    previous = point;
+  };
+  for (const entry of piece.served) {
+    for (const vertex of entry.vertices) step(vertex);
+    step(entry.point);
   }
   return total;
+}
+
+/** A piece's line: every point after the way's shape that leads to it. */
+function lineOf(piece: Piece): LevelPoint[] {
+  const line: LevelPoint[] = [];
+  for (const entry of piece.served) {
+    for (const vertex of entry.vertices) line.push(vertex);
+    line.push(entry.point);
+  }
+  return line;
 }
 
 /**
@@ -372,9 +416,7 @@ export async function loadLevelTracks(
         await servedPoints(db, device.id, query, query.level, new Set()),
       );
     }
-    const lines = pieces.map((piece) =>
-      piece.served.flatMap((entry) => [...entry.vertices, entry.point]),
-    );
+    const lines = pieces.map(lineOf);
     const total = lines.reduce((sum, line) => sum + line.length, 0);
     const kept = simplifyParts(lines, query.maxPoints);
     if (kept.reduce((sum, line) => sum + line.length, 0) < total) simplified = true;

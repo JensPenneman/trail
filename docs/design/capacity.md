@@ -32,21 +32,24 @@ says so; milestone 0 (§7) replaces the guesses with measurements.
 
 ## 1. The node and its budget
 
-| | i7-9750H laptop, 16 GB, Docker Desktop on WSL 2 (VM: 12 CPUs, 8.25 GB), consumer SSD, 181 GB free |
+| | i7-9750H laptop, 16 GB, Docker Desktop on WSL 2 (VM: 8 CPUs, 10 GB, set 28 Oct 2026), consumer SSD, 181 GB free |
 |---|---|
-| `app` | 1 CPU, 1 GiB (`mem_limit`), V8 heap 640 MB |
-| `worker` (the processing stream) | 1 CPU, 1 GiB, heap 640 MB — a second Node process; the map pieces of up to 250 MB live here, not in the API |
+| `app` | 2 CPUs (a dashboard page's 5–10 parallel requests), 1 GiB (`mem_limit`), V8 heap 640 MB |
+| `worker` (the processing stream) | 2 CPUs, 1 GiB, heap 640 MB — a second Node process; the map pieces of up to 250 MB live here, not in the API |
 | `db` (Postgres 18) | 2 GiB today; this plan asks for 3 GiB and 2 CPUs (§4.6) |
 | `backup` | 512 MiB, 1 CPU, busy about an hour a day (§4.7) |
 | Launchway's checks | one at a time, 3 GiB, 6 CPUs, 25 minutes per commit |
 | Launchway, its edge (TLS, routing), media containers | 1–2 GiB together |
 
-The VM's 8.25 GB is over-committed once a check runs beside Trail (3 + 1 + 1 +
-3 + 0.5 + 1.5 = 10 GB): the VM swaps, and the laptop's 16 GB with Windows
-needs about 4 GB for itself. Two settings are part of this plan: the VM at
-11 GB (`.wslconfig`, `memory=11GB`), and the checks at 2.5 GiB, which the test
-suites were sized for (§16, 1.9 GiB at the peak). CPU is not the constraint:
-the laptop's six cores are idle most of the day; what limits them is heat
+The VM has 8 CPUs and 10 GB (`.wslconfig`, set 28 Oct 2026). With a check at
+3 GiB beside Trail the memory is over-committed (3 + 1 + 1 + 3 + 0.5 + 1.5 =
+10 GB, and the laptop's 16 GB with Windows needs about 4 GB for itself), so
+the checks run at 2.5 GiB, which the test suites were sized for (§16, 1.9 GiB
+at the peak): 9.5 GB in a 10 GB VM. CPU: `app`, `worker` and `db` cap at 2
+each (six), and a check asks for 6; one check beside Trail already asks for
+more than the 8 CPUs, and two concurrent checks at 6 CPUs each (12) oversubscribe
+them and compete rather than fit, which is why the checks run one at a time.
+The laptop's six cores are idle most of the day; what limits them is heat
 (§8).
 
 The numbers below are for the node. The Mac that runs the daily load tests
@@ -770,7 +773,7 @@ fails a threshold is still reported — that is the point.
 
 - **Daily, on the Mac**: `tools/load/compose.yaml` runs the production stack
   (the GHCR image of the branch or a local build) with the node's caps —
-  `app` 1 CPU / 1 GiB, `worker` 1 / 1 GiB, `db` 2 / 3 GiB — and k6 in a
+  `app` 2 CPUs / 1 GiB, `worker` 1 / 1 GiB, `db` 2 / 3 GiB — and k6 in a
   container of its own on the same network, no edge (the edge's own cost is
   measured once on the node). `npm run load -- fleet-1000` runs setup, the
   fleet for one compressed day, the backlog, the dashboard scenario and the
@@ -863,7 +866,7 @@ and documentation:
 | **Thermal throttling** | the i7-9750H holds its all-core clocks for a minute, then settles 30 % lower; the morning backlog, a check and a backfill coincide at 08:00 | laptop on a stand with air; the check queue is what it is; the targets of §3 are set at the throttled clocks (M4 measures them so) |
 | **WSL 2 disk path** | fsync 3–15 ms through the VHDX on NTFS; Docker Desktop's volumes live there | the SSD helps; `synchronous_commit` stays on for ingest; the worker's commits are asynchronous; measure the fsync in M0 (`pg_test_fsync` in the `db` container) |
 | **Windows sleep and updates** | a sleeping node is the eight-hour backlog of §2.3; an update reboots at night | power settings never sleep on mains, active hours set, the morning flush is a tested scenario (`backlog.js`) and drains in minutes |
-| **VM memory** | 8.25 GB over-committed with a check beside Trail | `.wslconfig` `memory=11GB`, the checks at 2.5 GiB; swap inside the VM only as the last resort |
+| **VM memory** | 10 GB, over-committed with a check at 3 GiB beside Trail | `.wslconfig` `memory=10GB` (set), the checks at 2.5 GiB; swap inside the VM only as the last resort |
 | **GPSLogger drops points** after three failed tries | an outage longer than its retries loses data at the phone, not in Trail | the deploy stays under 30 s; `docs/trackers.md` says that GPSLogger is the one app that can lose points when the server is away for long, and suggests OwnTracks or Traccar Client for people who care |
 | **OwnTracks iOS drops on 4xx** | a bug that answers 4xx to a valid upload loses data | the ingest tests already cover every 4xx; the harness counts drops as loss; the error budget is zero |
 | **The edge** | Launchway's edge sits in front: its request body limit, idle timeout and buffering decide whether a 600 kB batch, a 100 s silent SSE stream and the `/api/events` route without compression work at 1 000 devices | verify in M4 (a 5 MB upload, a 20-minute stream); document the edge's settings in the runbook |
