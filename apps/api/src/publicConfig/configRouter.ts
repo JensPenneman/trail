@@ -4,8 +4,11 @@ import express, { type Router } from "express";
 import type { Basemap } from "../basemap/basemap";
 import type { Config } from "../config/config";
 
-/** The self-hosted styles' paths (docs/design/self-hosted-maps.md §3.3). */
-const ownStyles = { light: "/map/styles/light.json", dark: "/map/styles/dark.json" } as const;
+/** The self-hosted styles' URLs on `PUBLIC_URL`, absolute (docs/design/self-hosted-maps.md §3.3). */
+const ownStylesOf = (publicUrl: string) => ({
+  light: new URL("/map/styles/light.json", publicUrl).href,
+  dark: new URL("/map/styles/dark.json", publicUrl).href,
+});
 
 /**
  * `GET /api/config` — public runtime configuration for the web app (no
@@ -27,6 +30,7 @@ export function configRouter(config: Config, basemap: Pick<Basemap, "source">): 
     thresholds: { liveMinutes: config.liveWindowMinutes, staleHours: config.staleAfterHours },
     features: { alerts: config.alerts !== null },
   };
+  const ownStyles = ownStylesOf(config.publicUrl);
   const satellite =
     config.mapStyles.satellite === null ? {} : { satellite: config.mapStyles.satellite };
 

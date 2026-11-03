@@ -99,6 +99,7 @@ export function createAppContext(input: {
     basemap: new Basemap({
       settings: config.basemap,
       dir: config.mapData.dir,
+      publicUrl: config.publicUrl,
       assets: readMapAssets(config.webDistDir),
       logger: logger.child({ component: "basemap" }),
     }),

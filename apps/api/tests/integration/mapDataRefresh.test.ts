@@ -152,6 +152,30 @@ describe("refreshing a region", () => {
     expect(tables.imports).toEqual([]);
   });
 
+  it("pulls the basemap's region too when MAP_DATA_REGIONS does not list it, once", async () => {
+    const base = {
+      settings: loadConfig(testEnvironment({ MAP_DATA_REGIONS: "monaco", MAP_DATA_DIR: root }), {
+        webDistDir: "/nonexistent",
+      }).mapData,
+      pool,
+      logger,
+      tables: null,
+    };
+    expect(new MapDataRefresher({ ...base, basemapRegion: "luxembourg" }).regions()).toEqual([
+      "monaco",
+      "luxembourg",
+      "world",
+    ]);
+    expect(new MapDataRefresher({ ...base, basemapRegion: "monaco" }).regions()).toEqual([
+      "monaco",
+      "world",
+    ]);
+    expect(new MapDataRefresher({ ...base, basemapRegion: null }).regions()).toEqual([
+      "monaco",
+      "world",
+    ]);
+  });
+
   it("imports a rebuild of the same extract, and keeps two builds and the one in use", async () => {
     const first = build("20261027");
     fake.publish(first);

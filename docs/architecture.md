@@ -1033,7 +1033,7 @@ dashboard's private API; the public, versioned one is `/api/v1` (§8.3).
 | `POST /mcp` | API token | the MCP server (§8.6); `GET`, `DELETE` and other methods answer 405 |
 | `GET /docs` | — | the API reference page (§8.3) |
 | `GET /map/styles/light.json`, `dark.json` | — | the basemap's style for the current bundle, or a plain ground without one; `no-cache`, a strong `ETag` of its bytes (§14) |
-| `GET /map/tiles/:bundle/:z/:x/:y.pbf` | — | a vector tile as stored (`application/x-protobuf`, `Content-Encoding: gzip`; inflated for a client that takes no gzip), `204` where the archives have none, `404` for a bundle not served or numbers off the grid (z 0–14); a year, `immutable`, `ETag` the bundle's (§14) |
+| `GET /map/tiles/:bundle/:z/:x/:y.pbf` | — | a vector tile as stored (`application/x-protobuf`, `Content-Encoding: gzip`; `406` for a client that takes no gzip), `204` where the archives have none, `404` for a bundle not served or numbers off the grid (z 0–14); a year, `immutable`, `ETag` the bundle's (§14) |
 | `GET /map/assets/:hash/fonts/:stack/:range.pbf`, `…/sprites/ofm(@2x).json\|png` | — | the image's glyphs and sprite sheet; a year, `immutable`; whole files only (§14) |
 
 Ownership: every device-scoped query is filtered by the session user's
@@ -3858,7 +3858,7 @@ security ones too.
   fixture's `basemap.pmtiles` as a pulled build and from made-up fonts and
   sprites: the config's paths and the CSP's `'self'`, the styles and their
   ETag and 304, a tile of Monaco's streets byte for byte as stored (gzip,
-  read with `node:http`, which inflates nothing) and inflated for a client
+  read with `node:http`, which inflates nothing) and a `406` for a client
   without gzip, 204 at sea, 404 for another bundle and for paths off the
   grid or naming files (`..%2F` included), the fonts and sprites and
   nothing beside them, a switch to a newer build with the bundle before it

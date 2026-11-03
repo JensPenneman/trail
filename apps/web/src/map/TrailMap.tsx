@@ -27,6 +27,7 @@ import type {
   MapViewState,
 } from "./mapTypes";
 import { pointFeatures } from "./pointFeatures";
+import { createStaleBundleCheck } from "./staleBundle";
 import { trackFeatures } from "./trackFeatures";
 import { transportFeatures } from "./transportFeatures";
 import "./TrailMap.css";
@@ -235,9 +236,15 @@ export function TrailMap({
       if (!instance.hasImage(id))
         instance.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
     });
-    instance.on("error", () => {
+    const bundleGone = createStaleBundleCheck();
+    instance.on("error", (event) => {
       // Single tiles fail now and then; only a style that never loads leaves the map blank.
       if (!styleReady.current) setProblem("style");
+      // A tile of a pruned bundle: the style names the new one (at most once a minute).
+      const style = loadedStyle.current;
+      if (typeof style === "string" && styleReady.current && bundleGone(event.error)) {
+        instance.setStyle(style, { diff: true, transformStyle: absoluteSprite });
+      }
     });
     instance.on("load", () => reportView(instance));
     instance.on("moveend", () => reportView(instance));

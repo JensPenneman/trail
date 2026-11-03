@@ -1,11 +1,15 @@
 import { join } from "node:path";
-import { gunzipSync } from "node:zlib";
-import express, { type NextFunction, type Response, type Router } from "express";
+import express, {
+  type NextFunction,
+  type RequestHandler,
+  type Response,
+  type Router,
+} from "express";
 import type { Logger } from "pino";
 import { etagMatches } from "../cache/etagMatches";
 import { ipRateLimit } from "../http/ipRateLimit";
 import type { Basemap } from "./basemap";
-import { maxTileBytes } from "./basemapArchive";
+import { ArchiveClosedError } from "./basemapArchive";
 import { bundleTile } from "./basemapBundle";
 import type { StyleName } from "./basemapStyles";
 import { isGlyphRange, spriteFiles } from "./mapAssets";
@@ -34,6 +38,8 @@ export function tileCoordinates(
 }
 
 const notFound = (res: Response): void => {
+  res.removeHeader("Vary");
+  res.removeHeader("ETag");
   res.status(404).setHeader("Cache-Control", "no-store");
   res.type("text/plain").send("Not found.");
 };
@@ -59,18 +65,26 @@ function sendAsset(res: Response, path: string, type: string, next: NextFunction
 
 /**
  * `/map/*`, the basemap (docs/design/self-hosted-maps.md §3.3): public, no
- * session, its own per-address limit, mounted before compression (tiles are
- * stored gzipped; glyphs and sprites hardly compress). The styles answer
- * `no-cache` with an ETag, so that a new bundle reaches a map at its next
- * load; tiles, fonts and sprites carry the bundle's id or the assets' hash
- * in the path and are immutable. Every name in a path is checked against
- * what is open or listed — a bundle, a font stack, a sprite file — and only
- * numbers of a tile's grid go further, so no request names a file.
+ * session, its own per-address limit. Two routers, because of compression:
+ * `tiles` is mounted before it (tiles are stored gzipped and sent as they
+ * are; glyphs and sprite images hardly compress) and `documents` after it
+ * (the styles and the sprite JSON, which compress well; it also ends the
+ * `/map` paths with a 404). The styles answer `no-cache` with an ETag, so
+ * that a new bundle reaches a map at its next load; tiles, fonts and sprites
+ * carry the bundle's id or the assets' hash in the path and are immutable.
+ * Every name in a path is checked against what is open or listed — a bundle,
+ * a font stack, a sprite file — and only numbers of a tile's grid go
+ * further, so no request names a file. A tile is never inflated here: a
+ * client that takes no gzip gets a 406.
  */
-export function mapRouter(input: { basemap: Basemap; logger: Logger; perMinute: number }): Router {
+export function mapRouter(input: { basemap: Basemap; logger: Logger; perMinute: number }): {
+  tiles: Router;
+  documents: Router;
+} {
   const { basemap } = input;
-  const router = express.Router();
-  router.use(
+  const tiles = express.Router();
+  const documents = express.Router();
+  tiles.use(
     ipRateLimit({
       limit: input.perMinute,
       windowMs: 60_000,
@@ -79,7 +93,7 @@ export function mapRouter(input: { basemap: Basemap; logger: Logger; perMinute: 
     }),
   );
 
-  router.get("/styles/:file", (req, res) => {
+  documents.get("/styles/:file", (req, res) => {
     const name = styleNames[req.params.file];
     if (name === undefined) {
       notFound(res);
@@ -95,7 +109,7 @@ export function mapRouter(input: { basemap: Basemap; logger: Logger; perMinute: 
     res.type("application/json").send(style.body);
   });
 
-  router.get("/tiles/:bundle/:z/:x/:y", async (req, res) => {
+  tiles.get("/tiles/:bundle/:z/:x/:y", async (req, res) => {
     const coordinates = tileCoordinates(req.params.z, req.params.x, req.params.y);
     const bundle = /^[0-9a-f]{16}$/.test(req.params.bundle)
       ? basemap.bundle(req.params.bundle)
@@ -105,36 +119,49 @@ export function mapRouter(input: { basemap: Basemap; logger: Logger; perMinute: 
       return;
     }
     const { z, x, y } = coordinates;
-    const tile = await bundleTile(bundle, z, x, y);
-    res.setHeader("Cache-Control", immutable);
-    let etag = `"${bundle.id}"`;
+    let tile: Awaited<ReturnType<typeof bundleTile>>;
+    try {
+      tile = await bundleTile(bundle, z, x, y);
+    } catch (error) {
+      // Whatever went wrong is not the tile's answer for good: never cached.
+      if (error instanceof ArchiveClosedError) {
+        notFound(res);
+        return;
+      }
+      input.logger.warn({ err: error }, "basemap: a tile could not be read");
+      res.status(500).setHeader("Cache-Control", "no-store");
+      res.type("text/plain").send("The tile could not be read.");
+      return;
+    }
+    const etag = `"${bundle.id}"`;
     if (tile === null) {
+      res.setHeader("Cache-Control", immutable);
       res.setHeader("ETag", etag);
       res.status(etagMatches(req.get("if-none-match"), etag) ? 304 : 204).end();
       return;
     }
-    let body = tile.data;
-    let gzipped = tile.compression === "gzip";
-    if (gzipped) {
+    const gzipped = tile.compression === "gzip";
+    if (gzipped && req.acceptsEncodings("gzip") !== "gzip") {
+      // Tiles are kept gzipped and sent so: nothing is inflated on a request.
+      res.status(406).setHeader("Cache-Control", "no-store");
       res.setHeader("Vary", "Accept-Encoding");
-      // A client that takes no gzip gets the tile inflated, under an ETag of its own.
-      if (req.acceptsEncodings("gzip") !== "gzip") {
-        body = gunzipSync(body, { maxOutputLength: 8 * maxTileBytes });
-        gzipped = false;
-        etag = `"${bundle.id}-identity"`;
-      }
+      res.type("text/plain").send("This tile is served gzipped: send Accept-Encoding: gzip.");
+      return;
     }
+    // The caching headers go on only now, with the answer itself.
+    res.setHeader("Cache-Control", immutable);
     res.setHeader("ETag", etag);
+    if (gzipped) res.setHeader("Vary", "Accept-Encoding");
     if (etagMatches(req.get("if-none-match"), etag)) {
       res.status(304).end();
       return;
     }
     res.setHeader("Content-Type", "application/x-protobuf");
     if (gzipped) res.setHeader("Content-Encoding", "gzip");
-    res.send(body);
+    res.send(tile.data);
   });
 
-  router.get("/assets/:hash/fonts/:stack/:file", (req, res, next) => {
+  tiles.get("/assets/:hash/fonts/:stack/:file", (req, res, next) => {
     const { assets } = basemap;
     const { hash, stack, file } = req.params;
     if (
@@ -150,18 +177,33 @@ export function mapRouter(input: { basemap: Basemap; logger: Logger; perMinute: 
     sendAsset(res, join(assets.dir, "fonts", stack, file), "application/x-protobuf", next);
   });
 
-  router.get("/assets/:hash/sprites/:file", (req, res, next) => {
-    const { assets } = basemap;
-    const { hash, file } = req.params;
-    const known = (spriteFiles as readonly string[]).includes(file);
-    if (assets === null || hash !== assets.hash || !known) {
-      notFound(res);
-      return;
-    }
-    const type = file.endsWith(".png") ? "image/png" : "application/json";
-    sendAsset(res, join(assets.dir, "sprites", file), type, next);
-  });
+  /** A sprite file of the image: the PNGs go out as they are, the JSON after compression. */
+  const sprite = (json: boolean): RequestHandler<{ hash: string; file: string }> => {
+    return (req, res, next) => {
+      const { assets } = basemap;
+      const { hash, file } = req.params;
+      const known = (spriteFiles as readonly string[]).includes(file);
+      if (assets === null || hash !== assets.hash || !known) {
+        if (json) notFound(res);
+        else next();
+        return;
+      }
+      const isJson = !file.endsWith(".png");
+      if (isJson !== json) {
+        next();
+        return;
+      }
+      sendAsset(
+        res,
+        join(assets.dir, "sprites", file),
+        isJson ? "application/json" : "image/png",
+        next,
+      );
+    };
+  };
+  tiles.get("/assets/:hash/sprites/:file", sprite(false));
+  documents.get("/assets/:hash/sprites/:file", sprite(true));
 
-  router.use((_req, res) => notFound(res));
-  return router;
+  documents.use((_req, res) => notFound(res));
+  return { tiles, documents };
 }

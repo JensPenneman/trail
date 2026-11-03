@@ -1,12 +1,14 @@
 import { rmSync } from "node:fs";
 import { request as httpRequest, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { publicConfigSchema } from "@trail/contracts/config";
 import { healthSchema } from "@trail/contracts/health";
 import { PMTiles, ResolvedValueCache } from "pmtiles";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ArchiveFileSource } from "../../src/basemap/archiveFileSource";
+import { bundleTile } from "../../src/basemap/basemapBundle";
 import {
   emptyVolume,
   farAway,
@@ -18,6 +20,7 @@ import {
 } from "../support/basemapVolume";
 import { resetDatabase } from "../support/resetDatabase";
 import { createTestContext, type TestContext } from "../support/testContext";
+import { testOrigin } from "../support/testEnvironment";
 
 interface Answer {
   status: number;
@@ -71,42 +74,60 @@ const immutable = "public, max-age=31536000, immutable";
 const tilePath = (bundle: string, { z, x, y }: { z: number; x: number; y: number }) =>
   `/map/tiles/${bundle}/${z}/${x}/${y}.pbf`;
 
-let volume: string;
-let webDist: string;
-let t: TestContext;
-let bundle: string;
+const unknownBundle = "0123456789abcdef";
 
-beforeAll(async () => {
-  await resetDatabase();
-  volume = emptyVolume();
-  webDist = webDistWithAssets();
+/** A volume with Monaco's basemap (and, with `world`, the overview), and an app over it. */
+async function startApp(
+  options: { world?: boolean; env?: Record<string, string> } = {},
+): Promise<{ volume: string; webDist: string; t: TestContext; bundle: string }> {
+  const volume = emptyVolume();
+  const webDist = webDistWithAssets();
   placeBuild(volume, "monaco", {
     buildId: "20261027",
     files: { "basemap.pmtiles": monacoBasemap },
   });
-  t = await createTestContext({
+  if (options.world === true) {
+    placeBuild(volume, "world", {
+      buildId: "20261027",
+      files: { "basemap.pmtiles": monacoBasemap },
+    });
+  }
+  const t = await createTestContext({
     env: {
       MAP_DATA_DIR: volume,
       MAP_BASEMAP_REGION: "monaco",
       RATE_LIMIT_MAP_PER_MINUTE: "100000",
+      ...options.env,
     },
     webDistDir: webDist,
   });
-  bundle = t.ctx.basemap.state().bundle ?? "";
-});
+  return { volume, webDist, t, bundle: t.ctx.basemap.state().bundle ?? "" };
+}
 
-afterAll(async () => {
-  await t.close();
-  rmSync(volume, { recursive: true, force: true });
-  rmSync(webDist, { recursive: true, force: true });
-});
+async function stopApp(app: { volume: string; webDist: string; t: TestContext }): Promise<void> {
+  await app.t.close();
+  rmSync(app.volume, { recursive: true, force: true });
+  rmSync(app.webDist, { recursive: true, force: true });
+}
 
 describe("the basemap served from the map data volume", () => {
+  let volume: string;
+  let webDist: string;
+  let t: TestContext;
+  let bundle: string;
+
+  beforeAll(async () => {
+    await resetDatabase();
+    ({ volume, webDist, t, bundle } = await startApp({ env: { MAP_BASEMAP_FALLBACK: "false" } }));
+  });
+
+  afterAll(() => stopApp({ volume, webDist, t }));
+
   it("is what the config and the health check name, with the map origins down to 'self'", async () => {
     const config = await get(t.app, "/api/config");
     expect(publicConfigSchema.parse(JSON.parse(config.body.toString())).mapStyles).toEqual({
-      light: "/map/styles/light.json",
-      dark: "/map/styles/dark.json",
+      light: `${testOrigin}/map/styles/light.json`,
+      dark: `${testOrigin}/map/styles/dark.json`,
       basemap: "self",
     });
     const csp = String(config.headers["content-security-policy"]);
@@ -117,22 +138,30 @@ describe("the basemap served from the map data volume", () => {
   });
 
   it("serves the styles for the bundle, revalidated by ETag", async () => {
-    const light = await get(t.app, "/map/styles/light.json");
+    const light = await get(t.app, "/map/styles/light.json", { "accept-encoding": "gzip" });
     expect(light.status).toBe(200);
     expect(light.headers["content-type"]).toBe("application/json; charset=utf-8");
     expect(light.headers["cache-control"]).toBe("no-cache");
-    // Not compressed again: the whole prefix is mounted before compression.
-    expect(light.headers["content-encoding"]).toBeUndefined();
+    // Mounted after compression: gzip for a client that takes it.
+    expect(light.headers["content-encoding"]).toBe("gzip");
     const etag = String(light.headers.etag);
     expect(etag).toMatch(/^"[0-9a-f]{16}"$/);
-    const style = JSON.parse(light.body.toString()) as {
+    const style = JSON.parse(gunzipSync(light.body).toString()) as {
       sources: { openmaptiles: { tiles: string[] } };
       glyphs: string;
       sprite: string;
     };
-    expect(style.sources.openmaptiles.tiles).toEqual([`/map/tiles/${bundle}/{z}/{x}/{y}.pbf`]);
-    expect(style.glyphs).toBe(`/map/assets/${testAssets.hash}/fonts/{fontstack}/{range}.pbf`);
-    expect(style.sprite).toBe(`/map/assets/${testAssets.hash}/sprites/ofm`);
+    expect(style.sources.openmaptiles.tiles).toEqual([
+      `${testOrigin}/map/tiles/${bundle}/{z}/{x}/{y}.pbf`,
+    ]);
+    expect(style.glyphs).toBe(
+      `${testOrigin}/map/assets/${testAssets.hash}/fonts/{fontstack}/{range}.pbf`,
+    );
+    expect(style.sprite).toBe(`${testOrigin}/map/assets/${testAssets.hash}/sprites/ofm`);
+    const plainStyle = await get(t.app, "/map/styles/light.json", {
+      "accept-encoding": "identity",
+    });
+    expect(plainStyle.headers["content-encoding"]).toBeUndefined();
     const again = await get(t.app, "/map/styles/light.json", { "if-none-match": etag });
     expect(again.status).toBe(304);
     expect(again.body.length).toBe(0);
@@ -161,16 +190,18 @@ describe("the basemap served from the map data volume", () => {
     expect(cached.body.length).toBe(0);
   });
 
-  it("inflates a tile for a client that takes no gzip, under an ETag of its own", async () => {
+  it("answers 406, uncached, to a client that takes no gzip: a tile is never inflated", async () => {
     const plain = await get(t.app, tilePath(bundle, monacoStreets), {
       "accept-encoding": "identity",
     });
-    expect(plain.status).toBe(200);
+    expect(plain.status).toBe(406);
+    expect(plain.headers["cache-control"]).toBe("no-store");
     expect(plain.headers["content-encoding"]).toBeUndefined();
-    expect(plain.headers.etag).toBe(`"${bundle}-identity"`);
-    expect(plain.body).toEqual(
-      await libraryTile(monacoStreets.z, monacoStreets.x, monacoStreets.y),
-    );
+    expect(plain.headers.etag).toBeUndefined();
+    const any = await get(t.app, tilePath(bundle, monacoStreets), { "accept-encoding": "*" });
+    expect(any.status).toBe(200);
+    expect(any.headers["content-encoding"]).toBe("gzip");
+    expect(any.headers["cache-control"]).toBe(immutable);
   });
 
   it("answers 204 outside the archives, cached as long as a tile", async () => {
@@ -260,7 +291,11 @@ describe("the basemap served from the map data volume", () => {
     const now = t.ctx.basemap.state();
     expect(now.region).toBe(`monaco ${next.name}`);
     expect(now.bundle).not.toBe(before);
-    const style = JSON.parse((await get(t.app, "/map/styles/dark.json")).body.toString()) as {
+    const style = JSON.parse(
+      gunzipSync(
+        (await get(t.app, "/map/styles/dark.json", { "accept-encoding": "gzip" })).body,
+      ).toString(),
+    ) as {
       sources: { openmaptiles: { tiles: string[] } };
     };
     expect(style.sources.openmaptiles.tiles[0]).toContain(`/map/tiles/${now.bundle}/`);
@@ -271,7 +306,51 @@ describe("the basemap served from the map data volume", () => {
   });
 });
 
+describe("a look at the volume while a tile is read", () => {
+  let app: Awaited<ReturnType<typeof startApp>>;
+
+  beforeAll(async () => {
+    app = await startApp({ world: true });
+  });
+
+  afterAll(() => stopApp(app));
+
+  it("waits for the tile: the region and the overview stay open between its two reads", async () => {
+    const old = app.t.ctx.basemap.bundle(app.bundle);
+    expect(old?.world).not.toBeNull();
+    if (old === null) return;
+    // z14 far away: the region has nothing, so the overview is read after it.
+    const pending = bundleTile(old, farAway.z, farAway.x, farAway.y);
+    for (const region of ["monaco", "world"]) {
+      rmSync(join(app.volume, "regions", region), { recursive: true, force: true });
+      placeBuild(app.volume, region, {
+        buildId: "20261124",
+        files: { "basemap.pmtiles": monacoBasemap },
+      });
+    }
+    await app.t.ctx.basemap.rescan();
+    expect(app.t.ctx.basemap.state().bundle).not.toBe(app.bundle);
+    await expect(pending).resolves.toBeNull();
+    // The old bundle is gone now: 404, uncached, never a 500.
+    const gone = await get(app.t.app, tilePath(app.bundle, farAway));
+    expect(gone.status).toBe(404);
+    expect(gone.headers["cache-control"]).toBe("no-store");
+    const now = app.t.ctx.basemap.state().bundle ?? "";
+    expect((await get(app.t.app, tilePath(now, farAway))).status).toBe(204);
+  });
+});
+
 describe("the basemap without a build on the volume", () => {
+  let webDist: string;
+
+  beforeAll(() => {
+    webDist = webDistWithAssets();
+  });
+
+  afterAll(() => {
+    rmSync(webDist, { recursive: true, force: true });
+  });
+
   it("falls back to the external styles and lets the CSP reach them", async () => {
     const fallback = await createTestContext({
       env: { MAP_DATA_DIR: emptyVolume(), MAP_BASEMAP_REGION: "monaco" },
@@ -292,7 +371,7 @@ describe("the basemap without a build on the volume", () => {
       // A map that still asks for the own styles gets the plain ground, and no tile.
       const style = JSON.parse((await get(fallback.app, "/map/styles/light.json")).body.toString());
       expect(style.sources).toEqual({});
-      expect((await get(fallback.app, tilePath(bundle, monacoStreets))).status).toBe(404);
+      expect((await get(fallback.app, tilePath(unknownBundle, monacoStreets))).status).toBe(404);
     } finally {
       await fallback.close();
     }
@@ -310,8 +389,8 @@ describe("the basemap without a build on the volume", () => {
     try {
       const config = await get(plain.app, "/api/config");
       expect(JSON.parse(config.body.toString()).mapStyles).toEqual({
-        light: "/map/styles/light.json",
-        dark: "/map/styles/dark.json",
+        light: `${testOrigin}/map/styles/light.json`,
+        dark: `${testOrigin}/map/styles/dark.json`,
         basemap: "none",
       });
       expect(String(config.headers["content-security-policy"])).toContain("connect-src 'self';");
@@ -323,6 +402,11 @@ describe("the basemap without a build on the volume", () => {
   });
 
   it("uses the external styles always with MAP_BASEMAP=openfreemap", async () => {
+    const volume = emptyVolume();
+    placeBuild(volume, "monaco", {
+      buildId: "20261027",
+      files: { "basemap.pmtiles": monacoBasemap },
+    });
     const external = await createTestContext({
       env: { MAP_DATA_DIR: volume, MAP_BASEMAP_REGION: "monaco", MAP_BASEMAP: "openfreemap" },
       webDistDir: webDist,
@@ -333,23 +417,32 @@ describe("the basemap without a build on the volume", () => {
       expect(config.mapStyles.light).toBe("https://tiles.openfreemap.org/styles/liberty");
     } finally {
       await external.close();
+      rmSync(volume, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the external origins in the CSP with the fallback on, also while Trail serves its own build", async () => {
+    const app = await startApp();
+    try {
+      expect(app.t.ctx.basemap.state().source).toBe("self");
+      const config = await get(app.t.app, "/api/config");
+      expect(String(config.headers["content-security-policy"])).toContain(
+        "connect-src 'self' https://tiles.openfreemap.org;",
+      );
+    } finally {
+      await stopApp(app);
     }
   });
 });
 
 describe("the basemap's own rate limit", () => {
   it("limits /map per address on its own, and never counts against /api", async () => {
-    const limited = await createTestContext({
-      env: {
-        MAP_DATA_DIR: volume,
-        MAP_BASEMAP_REGION: "monaco",
-        RATE_LIMIT_MAP_PER_MINUTE: "3",
-        RATE_LIMIT_API_PER_MINUTE: "2",
-      },
-      webDistDir: webDist,
+    const app = await startApp({
+      env: { RATE_LIMIT_MAP_PER_MINUTE: "3", RATE_LIMIT_API_PER_MINUTE: "2" },
     });
+    const limited = app.t;
     try {
-      const id = limited.ctx.basemap.state().bundle ?? "";
+      const id = app.bundle;
       for (let index = 0; index < 3; index += 1) {
         expect((await get(limited.app, tilePath(id, monacoStreets))).status).toBe(200);
       }
@@ -359,7 +452,7 @@ describe("the basemap's own rate limit", () => {
       // The API's budget is untouched by the map's requests.
       expect((await get(limited.app, "/api/missing")).status).toBe(404);
     } finally {
-      await limited.close();
+      await stopApp(app);
     }
   });
 });

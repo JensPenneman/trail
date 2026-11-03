@@ -120,6 +120,7 @@ async function readBasemapState(ctx: CliContext): Promise<BasemapState> {
   const basemap = new Basemap({
     settings: ctx.config.basemap,
     dir: ctx.config.mapData.dir,
+    publicUrl: ctx.config.publicUrl,
     assets: readMapAssets(ctx.config.webDistDir),
     logger: ctx.logger,
   });

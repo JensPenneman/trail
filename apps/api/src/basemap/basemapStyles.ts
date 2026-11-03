@@ -34,13 +34,12 @@ const served = (style: unknown): ServedStyle => {
 /**
  * A vendored style rewritten for this server (docs/design/self-hosted-maps.md
  * §3.2): its vector source becomes the bundle's tiles, its glyphs and sprite
- * the image's assets, all as paths on Trail's own origin — every origin the
- * dashboard is opened on (`PUBLIC_URL`, `ADDITIONAL_ORIGINS`, a preview) —
- * which MapLibre's same-origin worker resolves against its own address.
+ * the image's assets, all as absolute URLs on `origin` (`PUBLIC_URL`), so
+ * that a shell which checks them as URLs accepts them.
  */
 export function renderStyle(
   name: StyleName,
-  input: { bundle: string; assets: string },
+  input: { bundle: string; assets: string; origin: string },
 ): ServedStyle {
   const style = vendoredStyles[name];
   return served({
@@ -49,14 +48,14 @@ export function renderStyle(
       ...(style["sources"] as Record<string, unknown>),
       openmaptiles: {
         type: "vector",
-        tiles: [`/map/tiles/${input.bundle}/{z}/{x}/{y}.pbf`],
+        tiles: [`${input.origin}/map/tiles/${input.bundle}/{z}/{x}/{y}.pbf`],
         minzoom: 0,
         maxzoom: maxZoom,
         attribution: basemapAttribution,
       },
     },
-    glyphs: `/map/assets/${input.assets}/fonts/{fontstack}/{range}.pbf`,
-    sprite: `/map/assets/${input.assets}/sprites/${spriteName}`,
+    glyphs: `${input.origin}/map/assets/${input.assets}/fonts/{fontstack}/{range}.pbf`,
+    sprite: `${input.origin}/map/assets/${input.assets}/sprites/${spriteName}`,
   });
 }
 

@@ -51,26 +51,22 @@ function helmetFor(mapOrigins: readonly string[], https: boolean): RequestHandle
 /**
  * Security headers of docs/architecture.md §12. HSTS and
  * `upgrade-insecure-requests` only make sense (and are only sent) on HTTPS —
- * plain HTTP on localhost/LAN must keep working. The map's origins are those
- * of `mapOrigins.external` while the map uses the external styles
- * (`usesExternalStyles`, asked per request: the basemap can arrive while the
- * server runs) and `mapOrigins.self` while Trail serves the basemap itself.
+ * plain HTTP on localhost/LAN must keep working. The map's origins come from
+ * the configuration alone, never from what the basemap serves at the moment
+ * (a build can arrive or vanish while a page is open): `mapOrigins.external`
+ * when the external styles can be used at all (`externalStyles`: the
+ * fallback is on, or the basemap is OpenFreeMap), else `mapOrigins.self`.
+ * Both start from `'self'`.
  */
 export function securityHeaders(
   mapOrigins: { self: readonly string[]; external: readonly string[] },
-  usesExternalStyles: () => boolean,
+  externalStyles: boolean,
 ): RequestHandler {
-  const self = {
-    secure: helmetFor(mapOrigins.self, true),
-    plain: helmetFor(mapOrigins.self, false),
-  };
-  const external = {
-    secure: helmetFor(mapOrigins.external, true),
-    plain: helmetFor(mapOrigins.external, false),
-  };
+  const origins = externalStyles ? mapOrigins.external : mapOrigins.self;
+  const secure = helmetFor(origins, true);
+  const plain = helmetFor(origins, false);
   return (req, res, next) => {
     res.setHeader("Permissions-Policy", permissionsPolicy);
-    const headers = usesExternalStyles() ? external : self;
-    (req.secure ? headers.secure : headers.plain)(req, res, next);
+    (req.secure ? secure : plain)(req, res, next);
   };
 }

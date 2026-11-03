@@ -76,12 +76,15 @@ export class MapDataRefresher {
   readonly #tables: RegionTables | null;
   readonly #pull: Pick<PullOptions, "download" | "freeBytes">;
   readonly #now: () => Date;
+  readonly #basemapRegion: string | null;
 
   constructor(input: {
     settings: MapDataSettings;
     pool: Pool;
     logger: Logger;
     tables: RegionTables | null;
+    /** `MAP_BASEMAP_REGION` (resolved): pulled even when `MAP_DATA_REGIONS` does not list it. */
+    basemapRegion?: string | null;
     /** For tests: a client for the fake registry, the download's patience, the free space and the clock. */
     client?: RegistryClient;
     pull?: Pick<PullOptions, "download" | "freeBytes">;
@@ -100,11 +103,21 @@ export class MapDataRefresher {
       });
     this.#pull = input.pull ?? {};
     this.#now = input.now ?? (() => new Date());
+    this.#basemapRegion = input.basemapRegion ?? null;
   }
 
-  /** The regions this node keeps: `MAP_DATA_REGIONS` and, with any of them, the world overview. */
+  /**
+   * The regions this node pulls: `MAP_DATA_REGIONS`, the basemap's region
+   * (`MAP_BASEMAP_REGION`, also when it is none of them) and, with any of
+   * them, the world overview.
+   */
   regions(): string[] {
-    const listed = [...this.settings.regions];
+    const listed = [
+      ...new Set([
+        ...this.settings.regions,
+        ...(this.#basemapRegion === null ? [] : [this.#basemapRegion]),
+      ]),
+    ];
     return listed.length === 0 ? [] : [...listed, worldRegion];
   }
 

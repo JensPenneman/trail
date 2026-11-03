@@ -708,7 +708,9 @@ from §3.1–3.5:
   directories; its `getZxy` inflates tiles, so Trail walks the directories
   itself (`findTile`, at most three deep) and reads a tile's bytes as
   Planetiler stored them, gzipped, for `Content-Encoding: gzip` (a client
-  that takes no gzip gets them inflated, under an ETag of its own). The
+  that takes no gzip gets a `406`, uncached: nothing is inflated on a request;
+  a vector source `bounds` and separate region and world sources are a
+  follow-up). The
   directories of all open archives share one cache of about 10 MB by an
   estimate of their memory, not the package's count of entries.
 - **Fonts, measured.** A stack of openmaptiles/fonts is 34.5 MB, not 10:

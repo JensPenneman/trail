@@ -46,8 +46,8 @@ import { spaRouter } from "./spaRouter";
 
 /**
  * The Express application. Order matters: the MCP server (`/mcp`) and the
- * basemap (`/map`) are mounted before compression and everything else, as
- * they set their own order; the ingest endpoints (Overland, OwnTracks, the
+ * basemap's tiles (`/map`) are mounted before compression and everything else,
+ * as they set their own order (the basemap's styles come after it); the ingest endpoints (Overland, OwnTracks, the
  * OsmAnd format) before cookies, CSRF checks and the 100 kB JSON parser;
  * health and config before the rate limiter; the public API (`/api/v1`)
  * before the dashboard's `/api` chain, as it sets its own order; unknown
@@ -70,18 +70,27 @@ export function createApp(ctx: AppContext): Express {
   });
 
   app.use(requestLogger(logger));
-  app.use(securityHeaders(config.mapOrigins, () => ctx.basemap.source() === "external"));
+  app.use(
+    securityHeaders(
+      config.mapOrigins,
+      config.basemap.fallback || config.basemap.mode === "openfreemap",
+    ),
+  );
   // Before compression and the /api chain: its own order, answers that are never compressed.
   // CORS headers come first, so that a browser client can read even a 429.
   app.use(apiPaths.mcp, noStore, mcpCorsHeaders);
   app.use(apiPaths.mcp, apiRateLimit);
   app.use(apiPaths.mcp, mcpRouter(ctx));
-  // The basemap: public, its own limit, never compressed again (tiles are stored gzipped).
-  app.use(
-    "/map",
-    mapRouter({ basemap: ctx.basemap, logger, perMinute: config.rateLimits.mapPerMinute }),
-  );
+  // The basemap: public, its own limit. Tiles are stored gzipped and sent as they are, so they
+  // come before compression; the styles and the sprite JSON are compressed with the rest.
+  const map = mapRouter({
+    basemap: ctx.basemap,
+    logger,
+    perMinute: config.rateLimits.mapPerMinute,
+  });
+  app.use("/map", map.tiles);
   app.use(compress());
+  app.use("/map", map.documents);
   app.use("/api", noStore);
 
   app.use(apiPaths.overland, overlandRouter(ctx));

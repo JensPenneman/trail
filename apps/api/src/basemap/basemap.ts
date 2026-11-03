@@ -55,6 +55,8 @@ export class Basemap {
   /** The image's fonts and sprites; null without them (the styles need them, so the fallback serves). */
   readonly assets: MapAssets | null;
   readonly #dir: string;
+  /** `PUBLIC_URL` without a trailing slash: the origin the styles' URLs are on. */
+  readonly #origin: string;
   readonly #logger: Logger;
   readonly #cache: DirectoryCache;
   readonly #rescanMs: number;
@@ -79,6 +81,8 @@ export class Basemap {
     settings: BasemapSettings;
     /** `MAP_DATA_DIR`. */
     dir: string;
+    /** `PUBLIC_URL`. */
+    publicUrl: string;
     assets: MapAssets | null;
     logger: Logger;
     /** For tests: the directory cache's size and the time between looks at the volume. */
@@ -88,6 +92,7 @@ export class Basemap {
     this.settings = input.settings;
     this.assets = input.assets;
     this.#dir = input.dir;
+    this.#origin = input.publicUrl.replace(/\/+$/, "");
     this.#logger = input.logger;
     this.#cache = new DirectoryCache(input.cacheBytes ?? defaultCacheBytes);
     this.#rescanMs = input.rescanMs ?? defaultRescanMs;
@@ -233,8 +238,16 @@ export class Basemap {
         next === null || this.assets === null
           ? null
           : {
-              light: renderStyle("light", { bundle: next.id, assets: this.assets.hash }),
-              dark: renderStyle("dark", { bundle: next.id, assets: this.assets.hash }),
+              light: renderStyle("light", {
+                bundle: next.id,
+                assets: this.assets.hash,
+                origin: this.#origin,
+              }),
+              dark: renderStyle("dark", {
+                bundle: next.id,
+                assets: this.assets.hash,
+                origin: this.#origin,
+              }),
             };
       if (next === null) {
         this.#logger.info(

@@ -19,6 +19,7 @@ const build = (region: string, digest: string): LocalBuild => ({
 function archive(name: string, zooms: readonly number[]) {
   const asked: string[] = [];
   const fake = {
+    acquire: () => () => {},
     tile: async (z: number, x: number, y: number): Promise<StoredTile | null> => {
       asked.push(`${z}/${x}/${y}`);
       return zooms.includes(z) ? { data: Buffer.from(name), compression: "gzip" } : null;
@@ -82,5 +83,36 @@ describe("bundleId", () => {
     expect(bundleId(region, world)).toBe(id);
     expect(bundleId(region, null)).not.toBe(id);
     expect(bundleId(build("belgium", `sha256:${"c".repeat(64)}`), world)).not.toBe(id);
+  });
+});
+
+describe("the archives a tile is read from", () => {
+  it("are both held before the first read, and released after it", async () => {
+    const events: string[] = [];
+    const held = (name: string): BasemapArchive =>
+      ({
+        acquire: () => {
+          events.push(`acquire ${name}`);
+          return () => events.push(`release ${name}`);
+        },
+        tile: async () => {
+          events.push(`read ${name}`);
+          return null;
+        },
+      }) as unknown as BasemapArchive;
+    const bundle: BasemapBundle = {
+      id: "0123456789abcdef",
+      region: { build: build("belgium", regionDigest), archive: held("region") },
+      world: { build: build("world", worldDigest), archive: held("world") },
+    };
+    expect(await bundleTile(bundle, 9, 1, 1)).toBeNull();
+    expect(events).toEqual([
+      "acquire region",
+      "acquire world",
+      "read region",
+      "read world",
+      "release region",
+      "release world",
+    ]);
   });
 });

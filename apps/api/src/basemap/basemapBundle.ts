@@ -44,10 +44,19 @@ export async function bundleTile(
   x: number,
   y: number,
 ): Promise<StoredTile | null> {
-  if (z <= worldZoomsUpTo) {
-    return (bundle.world ?? bundle.region).archive.tile(z, x, y);
+  // Both archives are held before the first await: a look at the volume that
+  // closes one of them between the two reads waits for this tile.
+  const releases: (() => void)[] = [];
+  try {
+    releases.push(bundle.region.archive.acquire());
+    if (bundle.world !== null) releases.push(bundle.world.archive.acquire());
+    if (z <= worldZoomsUpTo) {
+      return await (bundle.world ?? bundle.region).archive.tile(z, x, y);
+    }
+    const tile = await bundle.region.archive.tile(z, x, y);
+    if (tile !== null || bundle.world === null) return tile;
+    return await bundle.world.archive.tile(z, x, y);
+  } finally {
+    for (const release of releases) release();
   }
-  const tile = await bundle.region.archive.tile(z, x, y);
-  if (tile !== null || bundle.world === null) return tile;
-  return bundle.world.archive.tile(z, x, y);
 }

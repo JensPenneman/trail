@@ -17,6 +17,14 @@ export class ArchiveError extends Error {
   }
 }
 
+/** A read of an archive that is closed: the bundle it belonged to is gone. */
+export class ArchiveClosedError extends ArchiveError {
+  constructor() {
+    super("the archive is closed");
+    this.name = "ArchiveClosedError";
+  }
+}
+
 /** How the archive stores its tiles: what a tile's answer says in `Content-Encoding`. */
 export type TileCompression = "gzip" | "none";
 
@@ -72,7 +80,9 @@ export class BasemapArchive {
   readonly #cache: DirectoryCache;
   readonly #header: Header;
   readonly compression: TileCompression;
+  /** Reads under way and references held (`acquire`): a close waits for all of them. */
   #reads = 0;
+  #held = 0;
   #closing: (() => void) | null = null;
   #closed: Promise<void> | null = null;
 
@@ -130,7 +140,8 @@ export class BasemapArchive {
 
   /** The tile as stored, or null when the archive has none there (outside it, or empty). */
   async tile(z: number, x: number, y: number): Promise<StoredTile | null> {
-    if (this.#closing !== null) throw new ArchiveError("the archive is closed");
+    // A close asked for lets the holders of a reference go on reading.
+    if (this.#closing !== null && this.#held === 0) throw new ArchiveClosedError();
     const header = this.#header;
     if (z < header.minZoom || z > header.maxZoom) return null;
     this.#reads += 1;
@@ -154,6 +165,25 @@ export class BasemapArchive {
     } finally {
       this.#released();
     }
+  }
+
+  /**
+   * A reference for a series of reads: the file stays open until it is
+   * released, also when a close is asked for meanwhile. Throws
+   * `ArchiveClosedError` when the archive is closed already; call the result
+   * once when done.
+   */
+  acquire(): () => void {
+    if (this.#closing !== null && this.#held === 0) throw new ArchiveClosedError();
+    this.#reads += 1;
+    this.#held += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.#held -= 1;
+      this.#released();
+    };
   }
 
   /** A read is done: the last one lets a pending close go ahead. */

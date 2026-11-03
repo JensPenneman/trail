@@ -21,7 +21,13 @@ interface Style {
 
 const parse = (body: Buffer): Style => JSON.parse(body.toString("utf8")) as Style;
 const served = (name: "light" | "dark") =>
-  parse(renderStyle(name, { bundle: "0123456789abcdef", assets: "fedcba9876543210" }).body);
+  parse(
+    renderStyle(name, {
+      bundle: "0123456789abcdef",
+      assets: "fedcba9876543210",
+      origin: "https://trail.example",
+    }).body,
+  );
 
 /** scripts/map-assets.json: the font stacks the image ships glyphs of. */
 const pinned = JSON.parse(
@@ -35,12 +41,16 @@ describe("the served styles", () => {
       expect(Object.keys(style.sources)).toEqual(["openmaptiles"]);
       expect(style.sources["openmaptiles"]).toMatchObject({
         type: "vector",
-        tiles: ["/map/tiles/0123456789abcdef/{z}/{x}/{y}.pbf"],
+        tiles: ["https://trail.example/map/tiles/0123456789abcdef/{z}/{x}/{y}.pbf"],
         maxzoom: 14,
       });
       expect(style.sources["openmaptiles"]).not.toHaveProperty("url");
-      expect(style.glyphs).toBe("/map/assets/fedcba9876543210/fonts/{fontstack}/{range}.pbf");
-      expect(style.sprite).toBe(`/map/assets/fedcba9876543210/sprites/${spriteName}`);
+      expect(style.glyphs).toBe(
+        "https://trail.example/map/assets/fedcba9876543210/fonts/{fontstack}/{range}.pbf",
+      );
+      expect(style.sprite).toBe(
+        `https://trail.example/map/assets/fedcba9876543210/sprites/${spriteName}`,
+      );
       // Every layer draws from that source (or none, the background): nothing else is fetched.
       for (const layer of style.layers) {
         if (layer.source !== undefined) expect(layer.source, layer.id).toBe("openmaptiles");

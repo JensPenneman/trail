@@ -42,6 +42,7 @@ async function startBasemap(
   const basemap = new Basemap({
     settings,
     dir,
+    publicUrl: "https://trail.example",
     assets: withAssets ? assets() : null,
     logger,
     rescanMs: 3_600_000,
@@ -84,13 +85,15 @@ describe("Basemap", () => {
     const light = styleOf(basemap, "light");
     expect(light.sources["openmaptiles"]).toEqual({
       type: "vector",
-      tiles: [`/map/tiles/${state.bundle}/{z}/{x}/{y}.pbf`],
+      tiles: [`https://trail.example/map/tiles/${state.bundle}/{z}/{x}/{y}.pbf`],
       minzoom: 0,
       maxzoom: 14,
       attribution: expect.stringContaining("&copy; OpenStreetMap contributors"),
     });
-    expect(light.glyphs).toBe(`/map/assets/${testAssets.hash}/fonts/{fontstack}/{range}.pbf`);
-    expect(light.sprite).toBe(`/map/assets/${testAssets.hash}/sprites/ofm`);
+    expect(light.glyphs).toBe(
+      `https://trail.example/map/assets/${testAssets.hash}/fonts/{fontstack}/{range}.pbf`,
+    );
+    expect(light.sprite).toBe(`https://trail.example/map/assets/${testAssets.hash}/sprites/ofm`);
     expect(styleOf(basemap, "dark").sources["openmaptiles"]?.tiles).toEqual(
       light.sources["openmaptiles"]?.tiles,
     );
