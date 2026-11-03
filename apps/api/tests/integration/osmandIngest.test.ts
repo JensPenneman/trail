@@ -322,7 +322,9 @@ describe("the OsmAnd format", () => {
     for (const { token } of Object.values(devices)) expect(logged).not.toContain(token);
     expect(logged).not.toContain("51.0543");
     expect(logged).not.toContain("3.7174");
-    expect(logged).toContain("/api/osmand?token=[redacted]&lat=[redacted]");
+    // the request's line names its route, not its URL (the URL is logged at debug only)
+    expect(logged).toContain('"route":"/api/osmand"');
+    expect(logged).not.toContain("/api/osmand?");
   });
 });
 

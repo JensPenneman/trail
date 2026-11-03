@@ -964,7 +964,7 @@ Passkeys only (no passwords), SimpleWebAuthn v14 on both ends.
   the visitor's session and write their look into someone's data access
   log (§8.8).
 - **Principals.** Every request has at most one: a session (cookie) or, on
-  `/api/v1` only, an API token. Routes ask for `requireAuth` (either),
+  `/api/v1`, `/mcp` and `/api/health/requests` only, an API token. Routes ask for `requireAuth` (either),
   `requireSession` (sessions, passkeys, live events, device credentials,
   account deletion) or `requireAdmin` (an administrator's session); §8.3 has
   the details.
@@ -995,6 +995,7 @@ dashboard's private API; the public, versioned one is `/api/v1` (§8.3).
 |---|---|---|
 | `GET /api/config` | — | `config.ts` `PublicConfig`; `mapStyles.light`/`dark` are the basemap's paths (`/map/styles/…`) or the external styles' URLs, `mapStyles.basemap` says which (§14) |
 | `GET /api/health`, `GET /api/health/processing`, `GET /api/health/live` | — | `health.ts`: `{status, db, version, commit, uptimeS, processing: {worker, lastSeenS, queued}, basemap: self\|external\|none}` (§3, §14); `/api/health` 503 only when the DB is down, `/processing` also while no worker beat for 90 s; `/live` `{status: ok\|starting, version, commit, uptimeS}` never touches the DB (`starting` while the server migrates, §3) |
+| `GET /api/health/requests` | administrator (session, or an administrator's API token with `health:read`) | `health.ts` `requestsHealthSchema`: per route pattern, the last 15 minutes and 24 hours of this process's requests against their budgets, from memory (§8.10) |
 | `POST /api/overland`, `GET /api/overland` | device token | §6, §6.4 |
 | `POST /api/owntracks` | device token | §6, §6.5 |
 | `GET /api/osmand`, `POST /api/osmand` | device token | §6, §6.6 |
@@ -1227,7 +1228,8 @@ token's `deviceIds`, which therefore answers 404 like a foreign one.
 **Scopes** (`packages/contracts/src/apiScope.ts`): `profile:read`,
 `devices:read`, `devices:write`, `locations:read`, `locations:write`,
 `history:read`, `people:read`, `shares:read`, `shares:write`, `audit:read`
-(the data access log, §8.8). A route lists the
+(the data access log, §8.8), `health:read` (`GET /api/health/requests`, §8.10; the
+token's owner must be an administrator too). A route lists the
 scopes that grant access; any one of them is enough, all of them with
 `all: true`. A failure answers 403 `insufficient_scope`, naming the missing
 scopes in the message and in `WWW-Authenticate: Bearer realm="trail",
@@ -1436,8 +1438,8 @@ The credentials of `/api/v1` for scripts, apps and agents: created in Settings
   and queues presets (Overland's only, 409 for another app), never its
   credentials, its app or its deletion, which stay with
   the session. The dialog's templates (`apiTokenTemplates`): Read-only = every
-  `:read` scope, Agent = those but `audit:read` (an agent has no business
-  with who looked at the account) and `locations:write`, Full access = all.
+  `:read` scope, Agent = those but `audit:read` and `health:read` (an agent has no business
+  with who looked at the account or the server's timings) and `locations:write`, Full access = all.
   `GET /api/v1/tokens/verify` (`auth: "token"`) lets a token describe itself.
 - **Audit**: `API token created`, `changed`, `rolled` and `revoked` at info,
   with the token's and the user's id (and the scopes or the changed fields),
@@ -2038,7 +2040,7 @@ hashed for nothing. The dashboard's routers use `answerConditionally`, v1
 A 304 is a look (§8.8). Measured in the development container on a processed
 day of 9 600 points, the People open — the devices, the people, the day's
 track, its inferred tracks and its timeline: before, 14 statements, about
-90 ms and 765 kB on every open; now 22 statements and the same time and bytes
+90 ms and 765 kB on every open; now 23 statements and the same time and bytes
 cold, and warm 13 statements, about 10 ms and no body — each 304 is its
 session, its validator and nothing else (`conditionalAnswers.test.ts` keeps
 the counts). The stamps' statement is one aggregate over a union of the
@@ -2058,6 +2060,66 @@ others (its points' levels change, its stamp only through `pending`);
 wrong (the heatmap's generation does not see it; the start-up fill repairs
 missing levels first, and the daily statistics it rewrites move the stamps
 as they change).
+
+### 8.10 Request budgets and timing
+
+Every request is timed in the API itself (`apps/api/src/requests/`), from its
+arrival until its answer is handed to the network, and counted under its
+route's pattern — `GET /api/devices/:id`, never a path with its ids; a request
+that matched no route under its area (`/api/v1/*`, `/api/*`, `/assets/*`,
+`/*`), never a piece of its path. Two readers get the numbers: the request
+log, one line per request (§12), and `GET /api/health/requests`, a rolling
+summary per route.
+
+**Budgets** (`requestBudgets.ts`): the p95 a route may take server-side, from
+the dashboard's targets of
+[docs/design/capacity.md](design/capacity.md) §3.2. The load harness gates
+the same numbers: its targets (`tools/load/lib/targets.js`, which k6 reads and
+which cannot reach the API's code) name the route each of its requests asks,
+and their test keeps both tables equal.
+
+| Route | p95 | §3.2 |
+|---|---|---|
+| `GET /api/auth/session`, `/api/config`, `/api/devices`, `/api/v1/people`, `/api/v1/shares`, `/api/v1/shares/incoming` | 100 ms | devices, people, shares, session |
+| `GET /api/v1/segments` | 200 ms | the timeline of a day |
+| `GET /api/tracks`, `/api/v1/tracks` | 400 ms | today's tracks, one device, 1 Hz; a past day of History may take 800 ms warm and 3 s cold, which the harness holds its own class (`history_day`) to |
+| `GET /api/heatmap` | 150 ms | a heatmap viewport |
+| `GET /api/v1/insights/overview` | 1 s | Insights, a month |
+| every other `GET` under `/api` | 1 s | the loosest of them |
+
+Without a budget: the event stream (its length is how long a tab stays open),
+the export (§3.2 sets it a throughput), the uploads (§3.1 sets theirs by batch
+size: `ingest_log.duration_ms` keeps every upload's time, and the load report
+gates on it), the health checks, writes, and what matched no route.
+
+**The summary.** Per route a histogram per slice of time — a minute for the
+last 15 minutes, a quarter of an hour for the last 24 hours — of 62 counters,
+their bounds 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6 and 8 of every decade from
+0.1 ms to 100 s. Every budget is a bound, so the requests over a budget are
+counted exactly; p50 and p95 are placed within their bucket, a third of the
+value at most. Recording is a binary search and a few additions, nothing is
+written to the database, and a route's memory stays the same however busy it
+is (111 slices). Event streams are not counted; a request whose client left
+before the answer was out is, timed until the socket closed, and counted in
+`aborted`. At most 256 routes are kept, the rest counted as `other`. The summary is the process's own: a restart begins
+it again, and a second API process would keep its own.
+
+`GET /api/health/requests` answers `{status, version, commit, uptimeS,
+routes}`, each route `{method, route, budgetMs, overBudget, last15m,
+last24h}` and each window `{count, errors, aborted, notModified, overBudget, p50Ms,
+p95Ms, maxMs, meanBytes}`: the 5xx and 304 answers, the requests slower than
+the budget, and the bytes sent (compressed when they were). A route is over
+budget when more than 5 % of its last 15 minutes were slower than its
+budget, once it had at least 20 requests in those 15 minutes (fewer are shown
+but never judged) — and `status`
+is `over_budget` while one is; routes over budget come first. 200 from
+memory for an administrator (a session, or an API token of one; anyone else
+is refused like the other administration), behind the health checks'
+per-address limit (`RATE_LIMIT_API_PER_MINUTE`). Patterns and numbers only: no
+id, account, address or query value. What it tells anyone: how busy Trail is,
+route by route — when its people use the dashboard and how often their phones
+upload — never who, where or what they saw. What to do when a route is over
+budget: [operations.md](operations.md#request-latency).
 
 ## 9. Live updates (SSE)
 
@@ -2444,9 +2506,15 @@ codes: 0 success, 1 failure (including invalid configuration), 2 wrong usage
   query params and the `X-Share-Secret` header; coordinates, map tile keys and
   OSM ids are never logged above `debug` (the processing log keeps counts,
   times and the kind of failure, `TileFetchError.reason`). The access log keeps
-  method, redacted URL, status, client address and user agent only. The URL is
-  redacted from its parsed parts, as the routers read them (decoded,
-  case-insensitive): device tokens in `token`/`access_token`, every value of
+  one line per request once it is answered: its id, method, route pattern,
+  status, duration (`ms`), the bytes of its body as sent, whether it was
+  conditional and its cache outcome (`hit` for a 304), the days a `from`/`to`
+  range spans, an opaque tag of the account (an HMAC of its id under a key
+  each start draws anew, so it groups one process's requests of an account and
+  reads back to nobody), client address and user agent (§8.10). The URL only
+  at `debug`, since a path holds ids and a query values — a heatmap's viewport
+  is coordinates. The URL is redacted from its parsed parts, as the routers
+  read them (decoded, case-insensitive): device tokens in `token`/`access_token`, every value of
   an upload in the OsmAnd format (`/api/osmand?…`: Traccar Client's `id` and
   the coordinates), a basemap tile's zoom, column and row (where someone
   looks; `/map/*` is logged at `debug` besides), the one-time tokens of
@@ -4623,7 +4691,10 @@ Consecutive segments share their boundary point, unless a stop lasted beyond
 its last point: the point the phone resumed at is the next move's only. Each
 device is simplified to `maxPoints` with one RDP tolerance over its pieces
 (their ends always kept); over 200 000 points a device's points are thinned
-first, keeping the segments' ends. `GET
+first, keeping the segments' ends. A page of 20 000 points and the processed
+points of its time are read as two ranges of their primary keys and merged in
+order, not joined: Postgres plans that join as one index probe a point
+(behind a parallel gather), the two ranges cost half as much (§8.10). `GET
 /api/v1/segments?devices&from&to&cursor&limit` (`locations:read`,
 ≤ 93 days, keyset pages of up to 1000) is the timeline (a stop with
 `spreadM`, how far apart its points lie — derived from positions, so behind

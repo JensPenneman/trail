@@ -144,8 +144,11 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     # Explicit CPU caps (docs/operations.md, "What runs"): without one, a
-    # single process could take every CPU of the node.
-    cpus: 1
+    # single process could take every CPU of the node. Two: a page of the
+    # dashboard asks 5–10 things at once, and the JSON, compression and track
+    # simplification of each are CPU work that one CPU would do one after
+    # another.
+    cpus: 2
     mem_limit: 1g
     # no swap on top (the default doubles mem_limit on WSL)
     memswap_limit: 1g

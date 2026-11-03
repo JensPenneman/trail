@@ -44,14 +44,17 @@ const readScopes = apiScopes.filter((scope) => scope.endsWith(":read"));
 
 /**
  * Starting points of the token dialog: Read-only (every `:read` scope), Agent
- * (read, plus correcting how you travelled, but not who looked at your data:
- * an agent has no business with the data access log) and Full access (every
+ * (read, plus correcting how you travelled, but not who looked at your data or
+ * how the server performs: an agent has no business with the data access log or
+ * the administrators' request timings) and Full access (every
  * scope).
  */
 export const apiTokenTemplates = {
   "read-only": readScopes,
   agent: apiScopes.filter(
-    (scope) => (scope.endsWith(":read") && scope !== "audit:read") || scope === "locations:write",
+    (scope) =>
+      (scope.endsWith(":read") && scope !== "audit:read" && scope !== "health:read") ||
+      scope === "locations:write",
   ),
   full: [...apiScopes],
 } as const satisfies Record<string, readonly ApiScope[]>;
