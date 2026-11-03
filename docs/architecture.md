@@ -990,7 +990,7 @@ dashboard's private API; the public, versioned one is `/api/v1` (§8.3).
 |---|---|---|
 | `GET /api/config` | — | `config.ts` `PublicConfig` |
 | `GET /api/health`, `GET /api/health/processing`, `GET /api/health/live` | — | `health.ts`: `{status, db, version, commit, uptimeS, processing: {worker, lastSeenS, queued}}` (§3); `/api/health` 503 only when the DB is down, `/processing` also while no worker beat for 90 s; `/live` `{status: ok\|starting, version, commit, uptimeS}` never touches the DB (`starting` while the server migrates, §3) |
-| `GET /api/health/requests` | administrator (session or API token) | `health.ts` `requestsHealthSchema`: per route pattern, the last 15 minutes and 24 hours of this process's requests against their budgets, from memory (§8.10) |
+| `GET /api/health/requests` | administrator (session, or an administrator's API token with `health:read`) | `health.ts` `requestsHealthSchema`: per route pattern, the last 15 minutes and 24 hours of this process's requests against their budgets, from memory (§8.10) |
 | `POST /api/overland`, `GET /api/overland` | device token | §6, §6.4 |
 | `POST /api/owntracks` | device token | §6, §6.5 |
 | `GET /api/osmand`, `POST /api/osmand` | device token | §6, §6.6 |
