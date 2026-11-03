@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { inspect } from "node:util";
 import type { Logger } from "pino";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLogger } from "../../src/logging/createLogger";
 import { readArtefactLayout } from "../../src/mapdata/artefactLayout";
 import type { BlobSource } from "../../src/mapdata/downloadBlob";
@@ -33,6 +33,10 @@ import {
   monacoFiles,
   monacoFixture,
 } from "../support/fakeRegistry";
+
+// Every pull runs a real HTTP server, writes the ~660 KB fixture and fsyncs each file; that is
+// inherent to what is verified, but it is slow when two check runs share the CPUs.
+vi.setConfig({ testTimeout: 60_000 });
 
 const silent = createLogger({ level: "silent" });
 const never = new AbortController().signal;
