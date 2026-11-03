@@ -14,10 +14,10 @@ const gzipped = gzipSync(Buffer.from("a vector tile"));
 const immutable = "public, max-age=31536000, immutable";
 
 /** A router over a bundle whose region archive answers as `read` says. */
-function appOver(read: () => Promise<unknown>) {
+function appOver(read: () => Promise<unknown>, served: string = id) {
   const archive = { acquire: () => () => {}, tile: read };
   const bundle = { id, region: { archive }, world: null } as unknown as BasemapBundle;
-  const basemap = { bundle: (name: string) => (name === id ? bundle : null) } as unknown as Basemap;
+  const basemap = { bundle: (name: string) => (name === served ? bundle : null) } as unknown as Basemap;
   const { tiles, documents } = mapRouter({
     basemap,
     logger: createLogger({ level: "silent" }),
@@ -32,7 +32,7 @@ const stored = async () => ({ data: gzipped, compression: "gzip" });
 
 describe("a tile, never inflated on the request path", () => {
   it("sends the stored gzip bytes to a client that takes gzip, or anything", async () => {
-    for (const accept of ["gzip", "br, gzip;q=0.5", "*"]) {
+    for (const accept of ["gzip", "x-gzip", "br, gzip;q=0.5", "*", "gzip;q=0, *;q=0.5, x-gzip"]) {
       const answer = await request(appOver(stored))
         .get(tileUrl)
         .set("Accept-Encoding", accept)
@@ -53,11 +53,34 @@ describe("a tile, never inflated on the request path", () => {
   });
 
   it("answers 406, uncached, to a client that takes no gzip", async () => {
-    for (const accept of ["identity", "gzip;q=0"]) {
+    for (const accept of ["identity", "gzip;q=0", "*;q=0", "br, gzip;q=0, *"]) {
       const answer = await request(appOver(stored)).get(tileUrl).set("Accept-Encoding", accept);
       expect(answer.status, accept).toBe(406);
       expect(answer.headers["cache-control"]).toBe("no-store");
       expect(answer.headers["content-encoding"]).toBeUndefined();
+    }
+  });
+});
+
+describe("a tile of a request without Accept-Encoding", () => {
+  it("is the stored gzip tile: any coding is acceptable (RFC 9110 §12.5.3)", async () => {
+    // supertest sends no Accept-Encoding of its own.
+    const answer = await request(appOver(stored)).get(tileUrl);
+    expect(answer.status).toBe(200);
+    expect(answer.headers["content-encoding"]).toBe("gzip");
+  });
+});
+
+describe("a tile of a bundle that is no longer served", () => {
+  it("answers 410 with no-store for a well-formed id, 404 for a malformed one", async () => {
+    const app = appOver(stored, "ffffffffffffffff");
+    const gone = await request(app).get(tileUrl).set("Accept-Encoding", "gzip");
+    expect(gone.status).toBe(410);
+    expect(gone.headers["cache-control"]).toBe("no-store");
+    expect(gone.headers["etag"]).toBeUndefined();
+    for (const path of ["/map/tiles/0123456789ABCDEF/5/16/10.pbf", "/map/tiles/abc/5/16/10.pbf"]) {
+      const malformed = await request(app).get(path);
+      expect(malformed.status, path).toBe(404);
     }
   });
 });
@@ -72,11 +95,11 @@ describe("a tile whose archive fails", () => {
     expect(answer.headers["etag"]).toBeUndefined();
   });
 
-  it("answers 404 with no-store for an archive that was closed", async () => {
+  it("answers 410 with no-store for an archive that was closed", async () => {
     const answer = await request(appOver(() => Promise.reject(new ArchiveClosedError())))
       .get(tileUrl)
       .set("Accept-Encoding", "gzip");
-    expect(answer.status).toBe(404);
+    expect(answer.status).toBe(410);
     expect(answer.headers["cache-control"]).toBe("no-store");
   });
 });

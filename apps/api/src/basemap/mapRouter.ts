@@ -45,6 +45,34 @@ const notFound = (res: Response): void => {
   res.type("text/plain").send("Not found.");
 };
 
+/** A tile of a bundle that is no longer served: 410, so that MapLibre raises an error event (a 404 tile is drawn as empty). */
+const gone = (res: Response): void => {
+  res.removeHeader("Vary");
+  res.removeHeader("ETag");
+  res.status(410).setHeader("Cache-Control", "no-store");
+  res.type("text/plain").send("This basemap build is gone: reload the style.");
+};
+
+/**
+ * Whether `Accept-Encoding` takes gzip (RFC 9110 §12.5.3): no header at all
+ * takes any coding; `x-gzip` is gzip (§8.4.1.3); an explicit gzip entry beats
+ * `*`; `q=0` refuses.
+ */
+function takesGzip(header: string | undefined): boolean {
+  if (header === undefined) return true;
+  let star: number | null = null;
+  let gzip: number | null = null;
+  for (const part of header.split(",")) {
+    const [coding = "", ...params] = part.split(";").map((piece) => piece.trim().toLowerCase());
+    const weight = params.find((param) => /^q\s*=/.test(param));
+    const parsed = weight === undefined ? 1 : Number(weight.replace(/^q\s*=\s*/, ""));
+    const q = Number.isFinite(parsed) ? parsed : 0;
+    if (coding === "gzip" || coding === "x-gzip") gzip = Math.max(gzip ?? 0, q);
+    else if (coding === "*") star = q;
+  }
+  return (gzip ?? star ?? 0) > 0;
+}
+
 const styleNames: Readonly<Record<string, StyleName>> = {
   "light.json": "light",
   "dark.json": "dark",
@@ -123,11 +151,13 @@ export function mapRouter(input: {
 
   tiles.get("/tiles/:bundle/:z/:x/:y", async (req, res) => {
     const coordinates = tileCoordinates(req.params.z, req.params.x, req.params.y);
-    const bundle = /^[0-9a-f]{16}$/.test(req.params.bundle)
-      ? basemap.bundle(req.params.bundle)
-      : null;
-    if (coordinates === null || bundle === null) {
+    if (coordinates === null || !/^[0-9a-f]{16}$/.test(req.params.bundle)) {
       notFound(res);
+      return;
+    }
+    const bundle = basemap.bundle(req.params.bundle);
+    if (bundle === null) {
+      gone(res);
       return;
     }
     const { z, x, y } = coordinates;
@@ -137,7 +167,7 @@ export function mapRouter(input: {
     } catch (error) {
       // Whatever went wrong is not the tile's answer for good: never cached.
       if (error instanceof ArchiveClosedError) {
-        notFound(res);
+        gone(res);
         return;
       }
       input.logger.warn({ err: error }, "basemap: a tile could not be read");
@@ -153,7 +183,7 @@ export function mapRouter(input: {
       return;
     }
     const gzipped = tile.compression === "gzip";
-    if (gzipped && req.acceptsEncodings("gzip") !== "gzip") {
+    if (gzipped && !takesGzip(req.get("accept-encoding"))) {
       // Tiles are kept gzipped and sent so: nothing is inflated on a request.
       res.status(406).setHeader("Cache-Control", "no-store");
       res.setHeader("Vary", "Accept-Encoding");

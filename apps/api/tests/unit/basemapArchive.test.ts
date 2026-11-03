@@ -5,7 +5,11 @@ import { gunzipSync } from "node:zlib";
 import { PMTiles, ResolvedValueCache, type Source } from "pmtiles";
 import { describe, expect, it } from "vitest";
 import { ArchiveFileSource, ArchiveReadError } from "../../src/basemap/archiveFileSource";
-import { ArchiveError, BasemapArchive, maxTileBytes } from "../../src/basemap/basemapArchive";
+import {
+  ArchiveClosedError,
+  ArchiveError,
+  BasemapArchive, maxTileBytes,
+} from "../../src/basemap/basemapArchive";
 import { DirectoryCache } from "../../src/basemap/directoryCache";
 import { farAway, monacoBasemap, monacoStreets } from "../support/basemapVolume";
 import { writePmtiles } from "../support/pmtilesWriter";
@@ -190,6 +194,25 @@ describe("BasemapArchive on archives written by the tests", () => {
     expect(await reading).not.toBeNull();
     await closed;
     await expect(archive.tile(0, 0, 0)).rejects.toThrow(/closed/);
+  });
+
+  it("keeps the file open for a holder: its reads go on, no new holder joins, the close resolves at the release", async () => {
+    const archive = await openArchive(monacoBasemap);
+    const release = archive.acquire();
+    let closed = false;
+    const closing = archive.close().then(() => {
+      closed = true;
+    });
+    // A pending close: the holder still reads, nobody new can hold.
+    expect(await archive.tile(monacoStreets.z, monacoStreets.x, monacoStreets.y)).not.toBeNull();
+    expect(() => archive.acquire()).toThrow(ArchiveClosedError);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(closed).toBe(false);
+    release();
+    await closing;
+    expect(closed).toBe(true);
+    await expect(archive.tile(0, 0, 0)).rejects.toBeInstanceOf(ArchiveClosedError);
+    expect(() => archive.acquire()).toThrow(ArchiveClosedError);
   });
 });
 

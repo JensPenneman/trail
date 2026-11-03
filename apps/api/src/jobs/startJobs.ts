@@ -66,12 +66,13 @@ export function startJobs(ctx: AppContext): Jobs {
   // The map data of MAP_DATA_REGIONS: a look at the registry soon after the start, then
   // every MAP_DATA_REFRESH_DAYS (docs/design/self-hosted-maps.md §2.6).
   const { mapData } = ctx.config;
-  if (mapData.regions.length > 0) {
-    const refresher = createMapDataRefresher({
-      config: ctx.config,
-      pool: ctx.pool,
-      logger: ctx.logger,
-    });
+  const refresher = createMapDataRefresher({
+    config: ctx.config,
+    pool: ctx.pool,
+    logger: ctx.logger,
+  });
+  // Not MAP_DATA_REGIONS alone: a basemap region pulled for the basemap counts too.
+  if (refresher.regions().length > 0) {
     jobs.push(
       startMapDataSchedule({
         refresher: {

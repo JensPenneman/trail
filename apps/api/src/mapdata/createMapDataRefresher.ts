@@ -19,7 +19,8 @@ export function createMapDataRefresher(input: {
   const logger = input.logger.child({ component: "mapdata" });
   return new MapDataRefresher({
     settings: input.config.mapData,
-    basemapRegion: input.config.basemap.region,
+    // Only a node that serves the basemap itself pulls the basemap's region.
+    basemapRegion: input.config.basemap.mode === "self" ? input.config.basemap.region : null,
     pool: input.pool,
     logger,
     tables: loaderTables(createDatabase(input.pool), logger),

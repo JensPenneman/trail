@@ -115,4 +115,47 @@ describe("the archives a tile is read from", () => {
       "release world",
     ]);
   });
+
+  it("release the region's after a failed read, and the region's when the overview cannot be held", async () => {
+    const events: string[] = [];
+    const archiveOf = (name: string, over: Partial<Record<"acquire" | "tile", () => unknown>>) =>
+      ({
+        acquire: () => {
+          events.push(`acquire ${name}`);
+          return () => events.push(`release ${name}`);
+        },
+        tile: async () => null,
+        ...over,
+      }) as unknown as BasemapArchive;
+    const bundleWith = (region: BasemapArchive, world: BasemapArchive): BasemapBundle => ({
+      id: "0123456789abcdef",
+      region: { build: build("belgium", regionDigest), archive: region },
+      world: { build: build("world", worldDigest), archive: world },
+    });
+
+    const failure = new Error("unreadable");
+    const failing = bundleWith(
+      archiveOf("region", {
+        tile: async () => {
+          throw failure;
+        },
+      }),
+      archiveOf("world", {}),
+    );
+    await expect(bundleTile(failing, 9, 1, 1)).rejects.toBe(failure);
+    expect(events).toEqual(["acquire region", "acquire world", "release region", "release world"]);
+
+    events.length = 0;
+    const closed = new Error("closed");
+    const refusing = bundleWith(
+      archiveOf("region", {}),
+      archiveOf("world", {
+        acquire: () => {
+          throw closed;
+        },
+      }),
+    );
+    await expect(bundleTile(refusing, 9, 1, 1)).rejects.toBe(closed);
+    expect(events).toEqual(["acquire region", "release region"]);
+  });
 });

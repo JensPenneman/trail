@@ -170,11 +170,12 @@ export class BasemapArchive {
   /**
    * A reference for a series of reads: the file stays open until it is
    * released, also when a close is asked for meanwhile. Throws
-   * `ArchiveClosedError` when the archive is closed already; call the result
+   * `ArchiveClosedError` when a close is asked for already; call the result
    * once when done.
    */
   acquire(): () => void {
-    if (this.#closing !== null && this.#held === 0) throw new ArchiveClosedError();
+    // No new holder once a close is pending: the ones there are let finish.
+    if (this.#closing !== null) throw new ArchiveClosedError();
     this.#reads += 1;
     this.#held += 1;
     let released = false;

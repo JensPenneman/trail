@@ -8,7 +8,6 @@ import { healthSchema } from "@trail/contracts/health";
 import { PMTiles, ResolvedValueCache } from "pmtiles";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ArchiveFileSource } from "../../src/basemap/archiveFileSource";
-import { bundleTile } from "../../src/basemap/basemapBundle";
 import {
   emptyVolume,
   farAway,
@@ -243,9 +242,14 @@ describe("the basemap served from the map data volume", () => {
     expect((await get(t.app, tilePath(bundle, { z: 0, x: 0, y: 0 }))).status).toBe(200);
   });
 
-  it("answers 404 to another bundle and to anything that is not a tile of the grid", async () => {
+  it("answers 410 to a bundle that is not served", async () => {
+    const answer = await get(t.app, tilePath("ffffffffffffffff", monacoStreets));
+    expect(answer.status).toBe(410);
+    expect(answer.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("answers 404 to a malformed bundle and to anything that is not a tile of the grid", async () => {
     for (const path of [
-      tilePath("ffffffffffffffff", monacoStreets),
       tilePath("FFFFFFFFFFFFFFFF", monacoStreets),
       tilePath(`${bundle}0`, monacoStreets),
       `/map/tiles/${bundle}/15/17060/11948.pbf`,
@@ -335,40 +339,6 @@ describe("the basemap served from the map data volume", () => {
   });
 });
 
-describe("a look at the volume while a tile is read", () => {
-  let app: Awaited<ReturnType<typeof startApp>>;
-
-  beforeAll(async () => {
-    app = await startApp({ world: true });
-  });
-
-  afterAll(() => stopApp(app));
-
-  it("waits for the tile: the region and the overview stay open between its two reads", async () => {
-    const old = app.t.ctx.basemap.bundle(app.bundle);
-    expect(old?.world).not.toBeNull();
-    if (old === null) return;
-    // z14 far away: the region has nothing, so the overview is read after it.
-    const pending = bundleTile(old, farAway.z, farAway.x, farAway.y);
-    for (const region of ["monaco", "world"]) {
-      rmSync(join(app.volume, "regions", region), { recursive: true, force: true });
-      placeBuild(app.volume, region, {
-        buildId: "20261124",
-        files: { "basemap.pmtiles": monacoBasemap },
-      });
-    }
-    await app.t.ctx.basemap.rescan();
-    expect(app.t.ctx.basemap.state().bundle).not.toBe(app.bundle);
-    await expect(pending).resolves.toBeNull();
-    // The old bundle is gone now: 404, uncached, never a 500.
-    const gone = await get(app.t.app, tilePath(app.bundle, farAway));
-    expect(gone.status).toBe(404);
-    expect(gone.headers["cache-control"]).toBe("no-store");
-    const now = app.t.ctx.basemap.state().bundle ?? "";
-    expect((await get(app.t.app, tilePath(now, farAway))).status).toBe(204);
-  });
-});
-
 describe("the basemap without a build on the volume", () => {
   let webDist: string;
 
@@ -400,7 +370,7 @@ describe("the basemap without a build on the volume", () => {
       // A map that still asks for the own styles gets the plain ground, and no tile.
       const style = JSON.parse((await get(fallback.app, "/map/styles/light.json")).body.toString());
       expect(style.sources).toEqual({});
-      expect((await get(fallback.app, tilePath(unknownBundle, monacoStreets))).status).toBe(404);
+      expect((await get(fallback.app, tilePath(unknownBundle, monacoStreets))).status).toBe(410);
     } finally {
       await fallback.close();
     }
