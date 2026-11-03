@@ -3,11 +3,12 @@ import type { PublicConfig } from "@trail/contracts/config";
 import express, { type Router } from "express";
 import type { Basemap } from "../basemap/basemap";
 import type { Config } from "../config/config";
+import { requestOrigin } from "../http/requestOrigin";
 
-/** The self-hosted styles' URLs on `PUBLIC_URL`, absolute (docs/design/self-hosted-maps.md §3.3). */
-const ownStylesOf = (publicUrl: string) => ({
-  light: new URL("/map/styles/light.json", publicUrl).href,
-  dark: new URL("/map/styles/dark.json", publicUrl).href,
+/** The self-hosted styles' URLs on `origin`, absolute (docs/design/self-hosted-maps.md §3.3). */
+const ownStylesOf = (origin: string) => ({
+  light: new URL("/map/styles/light.json", origin).href,
+  dark: new URL("/map/styles/dark.json", origin).href,
 });
 
 /**
@@ -30,16 +31,15 @@ export function configRouter(config: Config, basemap: Pick<Basemap, "source">): 
     thresholds: { liveMinutes: config.liveWindowMinutes, staleHours: config.staleAfterHours },
     features: { alerts: config.alerts !== null },
   };
-  const ownStyles = ownStylesOf(config.publicUrl);
   const satellite =
     config.mapStyles.satellite === null ? {} : { satellite: config.mapStyles.satellite };
 
-  router.get(apiPaths.config, (_req, res) => {
+  router.get(apiPaths.config, (req, res) => {
     const source = basemap.source();
     const styles =
       source === "external"
         ? { light: config.mapStyles.light, dark: config.mapStyles.dark }
-        : ownStyles;
+        : ownStylesOf(requestOrigin(req, config.allowedOrigins, config.publicUrl));
     res.json({
       ...body,
       mapStyles: { ...styles, ...satellite, basemap: source },

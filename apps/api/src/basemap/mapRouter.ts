@@ -8,6 +8,7 @@ import express, {
 import type { Logger } from "pino";
 import { etagMatches } from "../cache/etagMatches";
 import { ipRateLimit } from "../http/ipRateLimit";
+import { requestOrigin } from "../http/requestOrigin";
 import type { Basemap } from "./basemap";
 import { ArchiveClosedError } from "./basemapArchive";
 import { bundleTile } from "./basemapBundle";
@@ -77,7 +78,15 @@ function sendAsset(res: Response, path: string, type: string, next: NextFunction
  * further, so no request names a file. A tile is never inflated here: a
  * client that takes no gzip gets a 406.
  */
-export function mapRouter(input: { basemap: Basemap; logger: Logger; perMinute: number }): {
+export function mapRouter(input: {
+  basemap: Basemap;
+  logger: Logger;
+  perMinute: number;
+  /** `PUBLIC_URL` and `ADDITIONAL_ORIGINS`: the styles' URLs are on the one a request came to. */
+  allowedOrigins: readonly string[];
+  /** `PUBLIC_URL`: the origin for any other host. */
+  publicUrl: string;
+}): {
   tiles: Router;
   documents: Router;
 } {
@@ -99,7 +108,10 @@ export function mapRouter(input: { basemap: Basemap; logger: Logger; perMinute: 
       notFound(res);
       return;
     }
-    const style = basemap.style(name);
+    const style = basemap.style(
+      name,
+      requestOrigin(req, input.allowedOrigins, input.publicUrl.replace(/\/+$/, "")),
+    );
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("ETag", style.etag);
     if (etagMatches(req.get("if-none-match"), style.etag)) {

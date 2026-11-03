@@ -72,6 +72,8 @@ export class Basemap {
   /** Every bundle served: the current one and those before it whose builds are on the volume. */
   readonly #bundles = new Map<string, BasemapBundle>();
   #styles: Record<StyleName, ServedStyle> | null = null;
+  /** The current bundle's styles on the other allowed origins, rendered when first asked for. */
+  readonly #stylesByOrigin = new Map<string, Record<StyleName, ServedStyle>>();
   #scanning: Promise<void> | null = null;
   #again = false;
   #timer: NodeJS.Timeout | null = null;
@@ -121,6 +123,7 @@ export class Basemap {
     this.#current = null;
     this.#bundles.clear();
     this.#styles = null;
+    this.#stylesByOrigin.clear();
     for (const digest of [...this.#open.keys()]) this.#close(digest);
     await Promise.all([...this.#closing]);
   }
@@ -161,9 +164,28 @@ export class Basemap {
     };
   }
 
-  /** `/map/styles/<name>.json`: the bundle's style, or the plain ground without one. */
-  style(name: StyleName): ServedStyle {
-    return this.#styles?.[name] ?? plain[name];
+  /**
+   * `/map/styles/<name>.json`: the bundle's style, or the plain ground without
+   * one. Its URLs are on `origin` (an allowed origin the caller has settled,
+   * see `requestOrigin`), by default on `PUBLIC_URL`.
+   */
+  style(name: StyleName, origin: string = this.#origin): ServedStyle {
+    const current = this.#current;
+    if (this.#styles === null || current === null || this.assets === null) return plain[name];
+    if (origin === this.#origin) return this.#styles[name];
+    let styles = this.#stylesByOrigin.get(origin);
+    if (styles === undefined) {
+      styles = this.#renderStyles(current.id, this.assets.hash, origin);
+      this.#stylesByOrigin.set(origin, styles);
+    }
+    return styles[name];
+  }
+
+  #renderStyles(bundle: string, assets: string, origin: string): Record<StyleName, ServedStyle> {
+    return {
+      light: renderStyle("light", { bundle, assets, origin }),
+      dark: renderStyle("dark", { bundle, assets, origin }),
+    };
   }
 
   /** A bundle by its id: the current one or one before it still on the volume; null for any other. */
@@ -234,21 +256,11 @@ export class Basemap {
       region === null ? null : { id: bundleId(region.build, world?.build ?? null), region, world };
     if ((next?.id ?? null) !== (this.#current?.id ?? null)) {
       this.#current = next;
+      this.#stylesByOrigin.clear();
       this.#styles =
         next === null || this.assets === null
           ? null
-          : {
-              light: renderStyle("light", {
-                bundle: next.id,
-                assets: this.assets.hash,
-                origin: this.#origin,
-              }),
-              dark: renderStyle("dark", {
-                bundle: next.id,
-                assets: this.assets.hash,
-                origin: this.#origin,
-              }),
-            };
+          : this.#renderStyles(next.id, this.assets.hash, this.#origin);
       if (next === null) {
         this.#logger.info(
           { region: this.settings.region, fallback: this.settings.fallback },

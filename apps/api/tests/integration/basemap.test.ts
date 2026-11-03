@@ -20,7 +20,7 @@ import {
 } from "../support/basemapVolume";
 import { resetDatabase } from "../support/resetDatabase";
 import { createTestContext, type TestContext } from "../support/testContext";
-import { testOrigin } from "../support/testEnvironment";
+import { otherOrigin, testOrigin } from "../support/testEnvironment";
 
 interface Answer {
   status: number;
@@ -135,6 +135,35 @@ describe("the basemap served from the map data volume", () => {
     expect(csp).toContain("connect-src 'self';");
     const health = await get(t.app, "/api/health");
     expect(healthSchema.parse(JSON.parse(health.body.toString())).basemap).toBe("self");
+  });
+
+  it("puts the style's and the config's URLs on the origin of the request when it is allowed, else on PUBLIC_URL", async () => {
+    const urlsOf = async (host: string) => {
+      const style = JSON.parse(
+        (
+          await get(t.app, "/map/styles/light.json", { host, "accept-encoding": "identity" })
+        ).body.toString(),
+      ) as {
+        sources: { openmaptiles: { tiles: string[] } };
+        glyphs: string;
+        sprite: string;
+      };
+      const config = JSON.parse(
+        (await get(t.app, "/api/config", { host, "accept-encoding": "identity" })).body.toString(),
+      ) as {
+        mapStyles: { light: string };
+      };
+      return [
+        style.sources.openmaptiles.tiles[0],
+        style.glyphs,
+        style.sprite,
+        config.mapStyles.light,
+      ];
+    };
+    const additional = await urlsOf(new URL(otherOrigin).host);
+    for (const url of additional) expect(url?.startsWith(`${otherOrigin}/`)).toBe(true);
+    const unknown = await urlsOf("evil.example");
+    for (const url of unknown) expect(url?.startsWith(`${testOrigin}/`)).toBe(true);
   });
 
   it("serves the styles for the bundle, revalidated by ETag", async () => {

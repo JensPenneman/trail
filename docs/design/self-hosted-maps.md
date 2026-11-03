@@ -575,11 +575,12 @@ Two measures:
   attribution OpenFreeMap's TileJSON supplies today, which MapLibre's
   control shows —, `glyphs` becomes
   `/map/assets/<hash>/fonts/{fontstack}/{range}.pbf`, `sprite`
-  `/map/assets/<hash>/sprites/ofm`. Relative URLs keep the map same-origin
-  on every allowed origin (`PUBLIC_URL`, `ADDITIONAL_ORIGINS`, a preview);
-  MapLibre's worker, which fetches the tiles, resolves them against its own
-  same-origin script (task 4 checks this in the dev server and the build;
-  the fallback is to render them absolute from the request's origin). An
+  `/map/assets/<hash>/sprites/ofm`, all absolute (a shell that checks them
+  as URLs refuses relative ones; MapLibre's worker resolves them against
+  none). They are on the origin the request came to when that is `PUBLIC_URL`
+  or one of `ADDITIONAL_ORIGINS` (so `connect-src 'self'` holds on every
+  allowed origin), otherwise on `PUBLIC_URL`; `/api/config` names the styles
+  by the same rule. An
   update of the vendored styles is a pull request of its own, read in the
   diff, like a Biome release (§2 house rules). `apps/web/tests/support/
   basemapLayers.ts` imports the vendored files, so the placement tests and

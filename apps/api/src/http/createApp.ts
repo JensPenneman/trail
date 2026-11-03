@@ -87,6 +87,8 @@ export function createApp(ctx: AppContext): Express {
     basemap: ctx.basemap,
     logger,
     perMinute: config.rateLimits.mapPerMinute,
+    allowedOrigins: config.allowedOrigins,
+    publicUrl: config.publicUrl,
   });
   app.use("/map", map.tiles);
   app.use(compress());

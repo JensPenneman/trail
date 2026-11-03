@@ -176,6 +176,41 @@ describe("refreshing a region", () => {
     ]);
   });
 
+  it("pulls the basemap's region without importing it: only MAP_DATA_REGIONS are imported", async () => {
+    fake.publish(build("20261027"));
+    const config = loadConfig(testEnvironment({ MAP_DATA_REGIONS: "monaco", MAP_DATA_DIR: root }), {
+      webDistDir: "/nonexistent",
+    });
+    const map = new MapDataRefresher({
+      settings: config.mapData,
+      pool,
+      logger,
+      tables,
+      basemapRegion: "luxembourg",
+      client: new RegistryClient({
+        reference: { host: fake.host, repository: fake.repository },
+        credentials: null,
+        logger,
+        scheme: "http",
+        blobHosts: [fake.blobHost],
+        wait: async () => {},
+      }),
+      pull: {
+        download: { attempts: 2, idleTimeoutMs: 2000, wait: async () => {} },
+        freeBytes: async () => 1e12,
+      },
+    });
+    fake.publish(makeArtefact({ region: "luxembourg", buildId: "20261027", files: monacoFiles() }));
+    expect(map.regions()).toEqual(["monaco", "luxembourg", "world"]);
+    const data = await map.refresh("monaco", never);
+    const basemap = await map.refresh("luxembourg", never);
+    expect(data).toMatchObject({ tables: "imported", failures: [] });
+    expect(basemap).toMatchObject({ tables: "none", imported: null, failures: [] });
+    expect(basemap.pulled).not.toBeNull();
+    expect(basemap.build?.region).toBe("luxembourg");
+    expect(tables.imports).toEqual([{ dir: data.build?.dir, digest: data.build?.digest }]);
+  });
+
   it("imports a rebuild of the same extract, and keeps two builds and the one in use", async () => {
     const first = build("20261027");
     fake.publish(first);

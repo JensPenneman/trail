@@ -40,8 +40,8 @@ export interface RefreshOutcome {
   keptNewer: boolean;
   /**
    * The tables: `imported` now, `current` (they hold the build already),
-   * `unavailable` (no loader in this version), `none` (the world overview,
-   * which is never imported), or null when there is no build to import.
+   * `unavailable` (no loader in this version), `none` (the world overview and a
+   * basemap-only region, which are never imported), or null when there is no build to import.
    */
   tables: "imported" | "current" | "unavailable" | "none" | null;
   imported: RegionImport | null;
@@ -109,7 +109,8 @@ export class MapDataRefresher {
   /**
    * The regions this node pulls: `MAP_DATA_REGIONS`, the basemap's region
    * (`MAP_BASEMAP_REGION`, also when it is none of them) and, with any of
-   * them, the world overview.
+   * them, the world overview. Only `MAP_DATA_REGIONS` are imported into the
+   * map tables; the others are pulled for the basemap.
    */
   regions(): string[] {
     const listed = [
@@ -239,6 +240,9 @@ export class MapDataRefresher {
     if (build !== null) keep.add(build.digest);
     let keepNewest = keptBuilds;
     if (region === worldRegion) {
+      outcome.tables = build === null ? null : "none";
+    } else if (!this.settings.regions.includes(region)) {
+      // Pulled for the basemap alone (MAP_BASEMAP_REGION): no map tables.
       outcome.tables = build === null ? null : "none";
     } else if (this.#tables === null) {
       outcome.tables = build === null ? null : "unavailable";

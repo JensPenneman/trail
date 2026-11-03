@@ -22,6 +22,8 @@ function appOver(read: () => Promise<unknown>) {
     basemap,
     logger: createLogger({ level: "silent" }),
     perMinute: 100_000,
+    allowedOrigins: ["https://trail.example"],
+    publicUrl: "https://trail.example",
   });
   return express().set("etag", false).use("/map", tiles, documents);
 }
