@@ -8,7 +8,7 @@
 # files. Node is always the current LTS: the tag stays `lts-alpine` and
 # Dependabot moves the pinned digest when a new image is published.
 
-FROM --platform=$BUILDPLATFORM node:lts-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS manifests
+FROM --platform=$BUILDPLATFORM node:lts-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS manifests
 WORKDIR /app
 # Only the manifests, so the install layers stay cached until a package.json
 # or the lockfile changes. npm ci needs every workspace manifest to validate
@@ -22,7 +22,7 @@ COPY packages/contracts/package.json packages/contracts/
 # the files scripts/map-assets.json pins by SHA-256, downloaded in a layer of
 # their own that only a change of the two files below invalidates, so an image
 # build fetches them once per change rather than once per commit.
-FROM --platform=$BUILDPLATFORM node:lts-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS map-assets
+FROM --platform=$BUILDPLATFORM node:lts-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS map-assets
 WORKDIR /app
 COPY scripts/map-assets.mjs scripts/map-assets.json scripts/
 RUN TRAIL_MAP_ASSETS_CACHE=/map-assets node scripts/map-assets.mjs download
@@ -50,7 +50,7 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     && rm -rf node_modules/@trail \
     && find node_modules -name '*.node' -exec sh -c 'printf "native addon in the runtime dependencies: %s\n" "$@" >&2; exit 1' sh {} +
 
-FROM node:lts-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS runtime
+FROM node:lts-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS runtime
 ENV NODE_ENV=production \
     PORT=8080
 WORKDIR /app
