@@ -115,6 +115,23 @@ const storedStops = async (deviceId: string) =>
     `)
   ).rows;
 
+/**
+ * Works a device's queue out until nothing of it is left. The worker's own run (woken by the
+ * upload's NOTIFY) can take a pass alongside `flush`, and `flush` returns once nothing is due while
+ * that pass is still at work, so the older part of a split job may not be stored yet: each round
+ * waits for the run in progress, and the queue being empty says every pass has committed.
+ */
+async function settle(deviceId: string): Promise<void> {
+  for (let round = 0; round < 10; round += 1) {
+    await t.ctx.processing.flush();
+    const queued = await t.ctx.db.execute<{ count: number }>(
+      sql`SELECT count(*)::int AS count FROM processing_queue WHERE device_id = ${deviceId}`,
+    );
+    if (queued.rows[0]?.count === 0) return;
+  }
+  throw new Error(`the queue of device ${deviceId} did not empty`);
+}
+
 /** Calls a tool and parses its structured content with the tool's own output schema. */
 async function call<S extends z.ZodType>(
   name: string,
@@ -432,7 +449,8 @@ describe("stops of one stay", () => {
       seed: 121,
     });
     await upload(device.token, days);
-    await t.ctx.processing.flush();
+    // Three days span more than one pass takes (36 h): the older part is a second pass.
+    await settle(device.id);
     const stops = await storedStops(device.id);
     expect(stops.length).toBeGreaterThan(1);
     const answer = deviceModeResponseSchema.parse(
