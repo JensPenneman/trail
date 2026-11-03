@@ -245,7 +245,6 @@ export function targetRows(context) {
     ),
   );
   for (const [endpoint, target] of Object.entries(dashboardTargets)) {
-    if (target.p95 === null) continue;
     const values = metric(day, `http_req_duration{kind:dashboard,endpoint:${endpoint}}`);
     const limit = target.p95 / calibration.latency;
     rows.push(
@@ -949,7 +948,7 @@ export function renderReport(context) {
           show(values?.["p(95)"], 1),
           show(values?.["p(99)"], 1),
           show(values?.["max"], 1),
-          target.p95 === null ? "—" : `${target.p95} ms`,
+          `${target.p95} ms`,
         ];
       }),
     ),
