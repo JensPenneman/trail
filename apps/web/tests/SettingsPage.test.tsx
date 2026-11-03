@@ -37,19 +37,15 @@ describe("Settings on a phone", () => {
     expect(row("Profile")).toHaveAttribute("href", "/settings/profile");
     expect(row("Profile")).toHaveAccessibleName(expect.stringContaining("Jens"));
     expect(row("Devices")).toHaveAttribute("href", "/settings/devices");
-    await waitFor(() => expect(row("Devices")).toHaveAccessibleName(expect.stringContaining("2")));
-    await waitFor(() => expect(row("Passkeys")).toHaveAccessibleName(expect.stringContaining("1")));
-    await waitFor(() => expect(row("Browsers")).toHaveAccessibleName(expect.stringContaining("2")));
-    await waitFor(() => expect(row("Sharing")).toHaveAccessibleName(expect.stringContaining("1")));
+    await waitFor(() => expect(row("Devices")).toHaveAccessibleName("Devices 2"));
+    await waitFor(() => expect(row("Passkeys")).toHaveAccessibleName("Passkeys 1"));
+    await waitFor(() => expect(row("Browsers")).toHaveAccessibleName("Browsers 2"));
+    await waitFor(() => expect(row("Sharing")).toHaveAccessibleName("Sharing 1"));
     await waitFor(() =>
       expect(row("Public links")).toHaveAccessibleName(expect.stringContaining("1 active")),
     );
-    await waitFor(() =>
-      expect(row("API tokens")).toHaveAccessibleName(expect.stringContaining("1")),
-    );
-    await waitFor(() =>
-      expect(row("Notifications")).toHaveAccessibleName(expect.stringContaining("On")),
-    );
+    await waitFor(() => expect(row("API tokens")).toHaveAccessibleName("API tokens 1"));
+    await waitFor(() => expect(row("Notifications")).toHaveAccessibleName("Notifications On"));
     await waitFor(() =>
       expect(row("About")).toHaveAccessibleName(expect.stringContaining("0.1.0")),
     );
@@ -104,7 +100,7 @@ describe("Settings on a phone", () => {
     const { router } = renderSettings("/settings");
     const search = await screen.findByRole("searchbox", { name: "Search Settings" });
     // The devices come with the list: search knows them once it has loaded.
-    await waitFor(() => expect(row("Devices")).toHaveAccessibleName(expect.stringContaining("2")));
+    await waitFor(() => expect(row("Devices")).toHaveAccessibleName("Devices 2"));
     await person.type(search, "iphone");
     const results = screen.getByRole("list", { name: "Results" });
     expect(within(results).getByRole("link", { name: /^iPhone 16/ })).toHaveAttribute(
@@ -118,7 +114,7 @@ describe("Settings on a phone", () => {
     await person.type(search, "car-old");
     const byKey = within(screen.getByRole("list", { name: "Results" })).getAllByRole("link");
     expect(byKey).toHaveLength(1);
-    expect(byKey[0]).toHaveAccessibleName(expect.stringContaining("Car"));
+    expect(byKey[0]).toHaveAccessibleName("Car Account › Devices");
     await person.clear(search);
     await person.type(search, "car{Enter}");
     expect(await heading("Car")).toBeInTheDocument();

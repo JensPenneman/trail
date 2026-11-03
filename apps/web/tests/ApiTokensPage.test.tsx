@@ -315,7 +315,9 @@ describe("Settings › MCP", () => {
     expect(await heading("MCP")).toBeInTheDocument();
     expect(screen.getByLabelText("Server address")).toHaveValue(`${window.location.origin}/mcp`);
     expect(screen.getByText("Authorization: Bearer trlk_…")).toBeInTheDocument();
-    const guide = screen.getByRole("link", { name: /^MCP guide \(opens in a new tab\)/ });
+    const guide = screen.getByRole("link", {
+      name: "MCP guide The tools, their limits, privacy and troubleshooting (opens in a new tab)",
+    });
     expect(guide).toHaveAttribute("href", mcpGuideUrl);
     expect(guide).toHaveAttribute("target", "_blank");
     const person = userEvent.setup();

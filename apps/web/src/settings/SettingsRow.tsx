@@ -136,6 +136,7 @@ export function SettingsRow(props: SettingsRowProps) {
   const labelId = `${id}-label`;
   const detailId = `${id}-detail`;
   const valueId = `${id}-value`;
+  const newTabId = `${id}-new-tab`;
   const readOnly = useReadOnly();
   const off =
     (props.kind === "action" || props.kind === "switch" || props.kind === "select") &&
@@ -145,7 +146,14 @@ export function SettingsRow(props: SettingsRowProps) {
   const hasValue = value !== undefined && value !== null;
   // The name starts with the label and holds all the visible text of the row (WCAG 2.5.3, Label
   // in Name); only the reason a row is off is left to the description.
-  const nameIds = [labelId, props.detail === undefined ? null : detailId, hasValue ? valueId : null]
+  // The hidden "(opens in a new tab)" hint goes last, so the visible text stays one run.
+  const opensInNewTab = props.kind === "external" && props.newTab === true;
+  const nameIds = [
+    labelId,
+    props.detail === undefined ? null : detailId,
+    hasValue ? valueId : null,
+    opensInNewTab ? newTabId : null,
+  ]
     .filter((part) => part !== null)
     .join(" ");
   const describedBy = off ? offlineReasonId : undefined;
@@ -210,12 +218,6 @@ export function SettingsRow(props: SettingsRowProps) {
             <span className="settings-row__text">
               <span className="settings-row__label" id={labelId}>
                 {props.label}
-                {props.newTab === true ? (
-                  <>
-                    {" "}
-                    <span className="visually-hidden">(opens in a new tab)</span>
-                  </>
-                ) : null}
               </span>
               {props.detail === undefined ? null : (
                 <span className="settings-row__detail" id={detailId}>
@@ -223,6 +225,12 @@ export function SettingsRow(props: SettingsRowProps) {
                   {props.detail}
                 </span>
               )}
+              {props.newTab === true ? (
+                <span className="visually-hidden" id={newTabId}>
+                  {" "}
+                  (opens in a new tab)
+                </span>
+              ) : null}
             </span>
             {shownValue}
             <Icon name="external" className="settings-row__chevron" />

@@ -34,7 +34,9 @@ test.describe("MCP server", () => {
     // Settings › MCP: how to connect, and the Agent template a click away.
     await page.goto("/settings/mcp");
     await expect(
-      page.getByRole("link", { name: "MCP guide (opens in a new tab)" }),
+      page.getByRole("link", {
+        name: "MCP guide The tools, their limits, privacy and troubleshooting (opens in a new tab)",
+      }),
     ).toHaveAttribute("href", /docs\/mcp\.md$/);
     await expect(page.getByRole("textbox", { name: "Server address" })).toHaveValue(
       new URL(apiPaths.mcp, page.url()).href,

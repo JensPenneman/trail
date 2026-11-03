@@ -34,27 +34,37 @@ function looksOf(actions: PersonSummary["actions"]): Record<LookKind, number> {
 export const shownName = (name: string, fallback: string): string =>
   name.trim() === "" ? fallback : name;
 
-/**
- * What one person did with your data, in a sentence: "Ana looked at your
- * live position 14 times and your history twice, last on Tuesday at 18:03."
- * Live updates their open page received count apart from their looks.
- */
-export function viewerSentence(person: PersonSummary, format: Formatter, now: number): string {
+/** What one person did, without their name: "looked at your live position 14 times, last today at 18:03." */
+function viewerClause(person: PersonSummary, format: Formatter, now: number): string {
   const looks = looksOf(person.actions);
-  const name = shownName(person.displayName, "Someone");
   const seen = [
     looks.position > 0 ? `your live position ${timesText(looks.position, format)}` : null,
     looks.history > 0 ? `your history ${timesText(looks.history, format)}` : null,
     looks.other > 0 ? `other data ${timesText(looks.other, format)}` : null,
   ].filter((part) => part !== null);
   const live = looks.live > 0 ? counted(looks.live, "live update", "live updates", format) : null;
-  const sentence =
+  const clause =
     seen.length > 0
-      ? `${name} looked at ${format.list(seen)}${live === null ? "" : `, and received ${live}`}`
+      ? `looked at ${format.list(seen)}${live === null ? "" : `, and received ${live}`}`
       : live !== null
-        ? `${name} received ${live} of your position`
-        : `${name} looked at you ${timesText(person.events, format)}`;
-  return `${sentence}, ${lastText(person.lastAt, format, now)}.`;
+        ? `received ${live} of your position`
+        : `looked at you ${timesText(person.events, format)}`;
+  return `${clause}, ${lastText(person.lastAt, format, now)}.`;
+}
+
+/**
+ * What one person did with your data, in a sentence: "Ana looked at your
+ * live position 14 times and your history twice, last on Tuesday at 18:03."
+ * Live updates their open page received count apart from their looks.
+ */
+export function viewerSentence(person: PersonSummary, format: Formatter, now: number): string {
+  return `${shownName(person.displayName, "Someone")} ${viewerClause(person, format, now)}`;
+}
+
+/** The same sentence for a row that already shows the name: "Looked at your live position …". */
+export function viewerDetail(person: PersonSummary, format: Formatter, now: number): string {
+  const clause = viewerClause(person, format, now);
+  return `${clause.charAt(0).toUpperCase()}${clause.slice(1)}`;
 }
 
 /** "Opened 2 times by 1 visitor, last today at 09:12." */

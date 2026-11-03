@@ -14,7 +14,7 @@ import {
   sessionSentence,
   shownName,
   tokenSentence,
-  viewerSentence,
+  viewerDetail,
 } from "../../accessLog/viewerSentence";
 import { StatTile } from "../../charts/StatTile";
 import { StatTiles } from "../../charts/StatTiles";
@@ -119,7 +119,7 @@ function ViewerLists({
               icon="user"
               tone="green"
               label={shownName(person.displayName, "Someone")}
-              detail={viewerSentence(person, format, now)}
+              detail={viewerDetail(person, format, now)}
             />
           ))}
         </SettingsGroup>

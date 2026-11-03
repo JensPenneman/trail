@@ -126,7 +126,7 @@ test("someone you share with who reads your track is under People, with what the
   const history = countOf(looks.actions, ["getPersonTrack"]);
   const live = countOf(looks.actions, ["live.position"]);
   expect(position).toBeGreaterThan(0);
-  const sentence = `${friendAccount.displayName} looked at your live position ${times(position)} and your history ${times(history)}${live > 0 ? `, and received ${live} live update${live === 1 ? "" : "s"}` : ""}, last today at ${clock(looks.lastAt, account.timezone)}.`;
+  const sentence = `Looked at your live position ${times(position)} and your history ${times(history)}${live > 0 ? `, and received ${live} live update${live === 1 ? "" : "s"}` : ""}, last today at ${clock(looks.lastAt, account.timezone)}.`;
 
   await page.goto("/settings/privacy/viewers");
   await expect(title(page, "Who viewed you")).toBeVisible();

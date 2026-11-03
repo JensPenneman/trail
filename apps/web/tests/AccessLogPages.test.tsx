@@ -118,7 +118,7 @@ describe("Settings › Who viewed you", () => {
     const people = screen.getByRole("list", { name: "People" });
     const ana = within(people).getByRole("link", { name: /^Ana Bell/ });
     expect(ana).toHaveAccessibleName(
-      /Ana Bell looked at your live position 14 times and your history twice, and received 30 live updates, last today at \d{2}:\d{2}\.$/,
+      /Ana Bell Looked at your live position 14 times and your history twice, and received 30 live updates, last today at \d{2}:\d{2}\.$/,
     );
     expect(ana).toHaveAttribute(
       "href",
