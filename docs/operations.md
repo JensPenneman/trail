@@ -60,10 +60,13 @@ the node's:
 
 Swap is capped at the same values (`memswap_limit`), so WSL does not double
 them. The caps add up to 4.5 GB in production and 4 GB more for each preview:
-the node's WSL memory must be 12 GB before the first release with the worker.
+the node's WSL VM has 10 GB (set 28 Oct 2026).
 The CPUs of `app`, `worker` and `db` add up to six, which the node's WSL VM
-(10 CPUs) holds with room for Launchway, its edge and a check; a cap is a
-ceiling, not a reservation, so the containers only take them while busy.
+(8 CPUs) holds with two to spare for Launchway and its edge; a Launchway check
+asks for 6 CPUs, so one check beside Trail already competes for them, and two
+concurrent checks at 6 CPUs each oversubscribe the 8 CPUs: they compete rather
+than fit, so run one at a time. A cap is a ceiling, not a reservation, so the
+containers only take CPUs while busy.
 The heap stays well under each container's limit, so a heap that runs out
 fails with an error in the log before the kernel would OOM-kill the
 container; a server that needs more raises a limit and its heap together.
@@ -846,8 +849,11 @@ spans (`days`) — never the URL's ids or values ([architecture.md
 minutes and 24 hours against the route's budget
 ([architecture.md §8.10](architecture.md#810-request-budgets-and-timing)):
 
+The summary is for administrators: send an API token whose owner is one
+(`TRAIL_ADMIN_TOKEN` below); without it the answer is 401.
+
 ```sh
-docker exec launchway-trail-app-1 wget -qO- http://127.0.0.1:8080/api/health/requests   # or https://trail.jenspenneman.com/api/health/requests
+docker exec launchway-trail-app-1 wget -qO- --header "Authorization: Bearer $TRAIL_ADMIN_TOKEN" http://127.0.0.1:8080/api/health/requests   # or https://trail.jenspenneman.com/api/health/requests
 docker logs --since 15m launchway-trail-app-1 2>&1 | grep '"route":"/api/v1/tracks"'       # one route's requests
 ```
 

@@ -990,7 +990,7 @@ dashboard's private API; the public, versioned one is `/api/v1` (§8.3).
 |---|---|---|
 | `GET /api/config` | — | `config.ts` `PublicConfig` |
 | `GET /api/health`, `GET /api/health/processing`, `GET /api/health/live` | — | `health.ts`: `{status, db, version, commit, uptimeS, processing: {worker, lastSeenS, queued}}` (§3); `/api/health` 503 only when the DB is down, `/processing` also while no worker beat for 90 s; `/live` `{status: ok\|starting, version, commit, uptimeS}` never touches the DB (`starting` while the server migrates, §3) |
-| `GET /api/health/requests` | — | `health.ts` `requestsHealthSchema`: per route pattern, the last 15 minutes and 24 hours of this process's requests against their budgets, from memory (§8.10) |
+| `GET /api/health/requests` | administrator (session or API token) | `health.ts` `requestsHealthSchema`: per route pattern, the last 15 minutes and 24 hours of this process's requests against their budgets, from memory (§8.10) |
 | `POST /api/overland`, `GET /api/overland` | device token | §6, §6.4 |
 | `POST /api/owntracks` | device token | §6, §6.5 |
 | `GET /api/osmand`, `POST /api/osmand` | device token | §6, §6.6 |
@@ -2087,11 +2087,12 @@ gates on it), the health checks, writes, and what matched no route.
 last 15 minutes, a quarter of an hour for the last 24 hours — of 62 counters,
 their bounds 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6 and 8 of every decade from
 0.1 ms to 100 s. Every budget is a bound, so the requests over a budget are
-counted exactly; p50 and p95 are placed within their bucket, a quarter of the
+counted exactly; p50 and p95 are placed within their bucket, a third of the
 value at most. Recording is a binary search and a few additions, nothing is
 written to the database, and a route's memory stays the same however busy it
-is (111 slices). Event streams are not counted, nor requests whose client left
-before the answer was out. The summary is the process's own: a restart begins
+is (111 slices). Event streams are not counted; a request whose client left
+before the answer was out is, timed until the socket closed, and counted in
+`aborted`. At most 256 routes are kept, the rest counted as `other`. The summary is the process's own: a restart begins
 it again, and a second API process would keep its own.
 
 `GET /api/health/requests` answers `{status, version, commit, uptimeS,
@@ -2100,9 +2101,11 @@ last24h}` and each window `{count, errors, notModified, overBudget, p50Ms,
 p95Ms, maxMs, meanBytes}`: the 5xx and 304 answers, the requests slower than
 the budget, and the bytes sent (compressed when they were). A route is over
 budget when more than 5 % of its last 15 minutes were slower than its
-budget — its p95 is over it, however few requests there were — and `status`
-is `over_budget` while one is; routes over budget come first. Always 200, from
-memory; public like the other health checks, for a monitor, and behind their
+budget, once it had at least 20 requests in those 15 minutes (fewer are shown
+but never judged) — and `status`
+is `over_budget` while one is; routes over budget come first. 200 from
+memory for an administrator (a session, or an API token of one; anyone else
+is refused like the other administration), behind the health checks'
 per-address limit (`RATE_LIMIT_API_PER_MINUTE`). Patterns and numbers only: no
 id, account, address or query value. What it tells anyone: how busy Trail is,
 route by route — when its people use the dashboard and how often their phones
