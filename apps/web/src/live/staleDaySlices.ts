@@ -20,11 +20,15 @@ export interface Span {
   to: number;
 }
 
+/** Resources whose keys hold local dates (`from` and `to` inclusive) rather than instants. */
+const keyedByDate = new Set(["insights", "days"]);
+
 /**
  * Marks stale the answers of `resources` that cover the device and overlap
- * one of the spans — ranges of instants, or (Insights) local dates with an
- * open end for "until today" — and refetches those on screen. What a change
- * names is all that is asked for again, not every level track in memory.
+ * one of the spans — ranges of instants, or local dates (Insights, with an
+ * open end for "until today", and the calendar's digests) — and refetches
+ * those on screen. What a change names is all that is asked for again, not
+ * every level track in memory.
  */
 export function staleDaySlices(
   client: QueryClient,
@@ -46,7 +50,7 @@ export function staleDaySlices(
       const params = paramsOf(query);
       if (params === undefined || !coversDevice(params, change.deviceId)) return false;
       const { from, to } = params;
-      if (resource === "insights") {
+      if (keyedByDate.has(resource)) {
         // Local dates, either end open; without a zone nothing can be ruled out.
         if (localSpans === null) return true;
         return localSpans.some(

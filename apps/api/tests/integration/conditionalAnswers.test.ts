@@ -4,7 +4,11 @@ import { apiPaths } from "@trail/contracts/apiPaths";
 import type { DayStamp } from "@trail/contracts/cacheStamp";
 import { daysResponseSchema } from "@trail/contracts/stats";
 import { tracksResponseSchema } from "@trail/contracts/track";
-import { segmentResponseSchema, timelineResponseSchema } from "@trail/contracts/transport";
+import {
+  levelTracksResponseSchema,
+  segmentResponseSchema,
+  timelineResponseSchema,
+} from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Agent } from "../support/authFlows";
@@ -558,5 +562,95 @@ describe("a stay across days", () => {
     );
     const resummed = await overview(summedTag).expect(200);
     expect(resummed.headers["etag"]).not.toBe(summedTag);
+  });
+});
+
+describe("a corrected mode", () => {
+  it("moves the answers of its day and the digest's stamp at once, of a move Trail is unsure of too", async () => {
+    // The drive's first move as an unsure inference leaves it: a guess below 0.6, nobody's mode.
+    const move = timelineResponseSchema
+      .parse((await owner.get(apiPaths.v1.segments.root).query(drivingDay).expect(200)).body)
+      .items.find((item) => item.kind === "move");
+    const inferred = move?.modeInferred;
+    if (
+      move === undefined ||
+      inferred === null ||
+      inferred === undefined ||
+      inferred === "unknown"
+    ) {
+      throw new Error("The drive has no move with a mode");
+    }
+    await t.ctx.db.execute(sql`
+      UPDATE mode_overrides SET revoked_at = now() WHERE device_id = ${deviceId} AND revoked_at IS NULL
+    `);
+    await t.ctx.db.execute(sql`
+      UPDATE segments SET review = true, confidence = 0.52, mode_user = NULL, mode = mode_inferred,
+        features = features - 'override'
+      WHERE id = ${move.id}
+    `);
+    // What History shows of the day: its timeline, its tracks at a level, the month's digest.
+    const asked = [
+      { path: apiPaths.v1.segments.root, query: drivingDay },
+      { path: apiPaths.v1.tracks, query: { ...drivingDay, level: "inferred" } },
+      { path: apiPaths.statsDays, query: { from: "2026-10-01", to: "2026-10-31" } },
+    ];
+    const look = async (etags?: readonly string[]) => {
+      const answers = [];
+      for (const [index, { path, query }] of asked.entries()) {
+        const request = owner.get(path).query(query);
+        const etag = etags?.[index];
+        // An ETag from before a change never comes back 304.
+        answers.push(
+          await (etag === undefined ? request : request.set("If-None-Match", etag)).expect(200),
+        );
+      }
+      const [timeline, levels, days] = answers;
+      const segment = timelineResponseSchema
+        .parse(timeline?.body)
+        .items.find((item) => item.id === move.id);
+      const piece = levelTracksResponseSchema
+        .parse(levels?.body)
+        .segments.find((item) => item.id === move.id);
+      const stamp = daysResponseSchema
+        .parse(days?.body)
+        .days.find((day) => day.date === "2026-10-26")?.stamp;
+      return {
+        etags: answers.map((answer) => answer.headers["etag"] ?? ""),
+        shown: [segment, piece].map((item) => ({
+          modeUser: item?.modeUser,
+          needsReview: item?.needsReview,
+        })),
+        stamp,
+      };
+    };
+    const unsure = await look();
+    expect(unsure.shown).toEqual([
+      { modeUser: null, needsReview: true },
+      { modeUser: null, needsReview: true },
+    ]);
+
+    // "Yes, it was": the inferred mode, set by the person; asked again at once, with the ETags.
+    await owner
+      .put(apiPaths.v1.segments.mode(move.id))
+      .set("Origin", testOrigin)
+      .send({ mode: inferred })
+      .expect(200);
+    const confirmed = await look(unsure.etags);
+    expect(confirmed.shown).toEqual([
+      { modeUser: inferred, needsReview: false },
+      { modeUser: inferred, needsReview: false },
+    ]);
+    // What the browser compares a settled day with: the processed stamp moved, the recorded one not.
+    expect(confirmed.stamp?.processed).not.toBe(unsure.stamp?.processed);
+    expect(confirmed.stamp?.raw).toBe(unsure.stamp?.raw);
+
+    // Reset to detected: unsure again, at once.
+    await owner.delete(apiPaths.v1.segments.mode(move.id)).set("Origin", testOrigin).expect(200);
+    const reset = await look(confirmed.etags);
+    expect(reset.shown).toEqual([
+      { modeUser: null, needsReview: true },
+      { modeUser: null, needsReview: true },
+    ]);
+    expect(reset.stamp?.processed).not.toBe(confirmed.stamp?.processed);
   });
 });
