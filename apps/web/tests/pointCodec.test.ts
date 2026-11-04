@@ -89,6 +89,25 @@ describe("pointCodec", () => {
     ).toBe(true);
   });
 
+  it("gives level points the width of 3 plus the values asked for, nullable after the time", () => {
+    const level: [number, number, number, ...(number | null)[]][] = [
+      [3.71, 51.03, 1_793_000_000, 12.5, null],
+      [3.72, 51.04, 1_793_000_009, null, 8],
+    ];
+    const packed = packLevelPoints(level, 2);
+    expect(packed.width).toBe(5);
+    expect(unpackLevelPoints(packed)).toEqual(level);
+    expect(z.array(levelPointSchema).safeParse(unpackLevelPoints(packed)).success).toBe(true);
+    // None asked: three columns, as before; a damaged first column is no answer.
+    expect(packLevelPoints([[1, 2, 3]]).width).toBe(3);
+    const damaged = new Float64Array(packed.packed);
+    damaged[0] = Number.NaN;
+    expect(
+      z.array(levelPointSchema).safeParse(unpackLevelPoints({ ...packed, packed: damaged.buffer }))
+        .success,
+    ).toBe(false);
+  });
+
   it("refuses heat cells it did not make, the old 64-bit float ones included", () => {
     const packed = packHeatCells([
       [1, 2, 3],
@@ -110,7 +129,9 @@ describe("pointCodec", () => {
     expect(unpackTrackPoints([[1, 2, 3, 4, 5, 6]])).toBeNull();
     expect(unpackTrackPoints({ ...packed, n: 2 })).toBeNull();
     expect(unpackTrackPoints({ ...packed, width: 3 })).toBeNull();
-    expect(unpackLevelPoints(packed)).toBeNull();
+    // A level's points have three columns and at most three values after them.
+    expect(unpackLevelPoints({ ...packed, width: 7, packed: new ArrayBuffer(56) })).toBeNull();
+    expect(unpackLevelPoints({ ...packed, width: 2, packed: new ArrayBuffer(16) })).toBeNull();
     expect(unpackTrackPoints({ ...packed, packed: new ArrayBuffer(40) })).toBeNull();
   });
 

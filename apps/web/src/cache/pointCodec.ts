@@ -100,21 +100,34 @@ export function unpackTrackPoints(value: unknown): unknown[] | null {
   return rows;
 }
 
-export const packLevelPoints = (points: readonly LevelPoint[]): PackedRows => packRows(points, 3);
+/**
+ * `[lon, lat, t, …values]` of a level's tracks: 3 + `values` columns (what `values=` asked for,
+ * none by default), the values nullable.
+ */
+export const packLevelPoints = (points: readonly LevelPoint[], values = 0): PackedRows =>
+  packRows(points, 3 + values);
 
-/** Three numbers, none of them nullable: level points and heat cells. */
-function unpackTriples(value: unknown): unknown[] | null {
-  const columns = columnsOf(value, 3);
+/**
+ * The points of a level's tracks for the contract's schema to check, or null when `value` is not
+ * what `packLevelPoints` made. The width is the entry's own: 3 plus the values it was asked for.
+ */
+export function unpackLevelPoints(value: unknown): unknown[] | null {
+  if (typeof value !== "object" || value === null || !("width" in value)) return null;
+  const { width } = value;
+  if (typeof width !== "number" || !Number.isInteger(width) || width < 3 || width > 6) return null;
+  const columns = columnsOf(value, width);
   if (columns === null) return null;
-  const [first, second, third] = columns as [Float64Array, Float64Array, Float64Array];
-  const rows: unknown[] = new Array(first.length);
-  for (let index = 0; index < first.length; index += 1) {
-    rows[index] = [first[index], second[index], third[index]];
+  const [lon, lat, t] = columns as [Float64Array, Float64Array, Float64Array];
+  const rows: unknown[] = new Array(lon.length);
+  for (let index = 0; index < lon.length; index += 1) {
+    const row: (number | null)[] = [lon[index] as number, lat[index] as number, t[index] as number];
+    for (let column = 3; column < width; column += 1) {
+      row.push(orNull((columns[column] as Float64Array)[index] as number));
+    }
+    rows[index] = row;
   }
   return rows;
 }
-
-export const unpackLevelPoints = (value: unknown): unknown[] | null => unpackTriples(value);
 
 const maxCellValue = 0xffff_ffff;
 

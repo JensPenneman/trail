@@ -7,10 +7,18 @@ import {
 } from "../src/map/pathColour/pathColours";
 
 describe("what the paths can be coloured by", () => {
-  it("is mode, device, speed and time at Transport, without mode elsewhere", () => {
-    expect(pathColoursFor("inferred")).toEqual(["mode", "device", "speed", "time"]);
+  it("is mode, device, speed, time, altitude, accuracy and confidence at Transport, without mode and confidence elsewhere", () => {
+    expect(pathColoursFor("inferred")).toEqual([
+      "mode",
+      "device",
+      "speed",
+      "time",
+      "altitude",
+      "accuracy",
+      "confidence",
+    ]);
     for (const level of ["raw", "averaged", "mapped"] as const) {
-      expect(pathColoursFor(level)).toEqual(["device", "speed", "time"]);
+      expect(pathColoursFor(level)).toEqual(["device", "speed", "time", "altitude", "accuracy"]);
     }
   });
 
@@ -21,7 +29,8 @@ describe("what the paths can be coloured by", () => {
 
   it("reads only the names it knows", () => {
     expect(parsePathColour("speed")).toBe("speed");
-    for (const bad of [null, "", "altitude", "Speed"]) expect(parsePathColour(bad)).toBeNull();
+    expect(parsePathColour("confidence")).toBe("confidence");
+    for (const bad of [null, "", "height", "Speed"]) expect(parsePathColour(bad)).toBeNull();
   });
 });
 

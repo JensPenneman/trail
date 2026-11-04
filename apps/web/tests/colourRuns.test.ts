@@ -5,6 +5,7 @@ import {
   classColour,
   colourLevelTracks,
   colourTracks,
+  confidenceClass,
   runsOf,
 } from "../src/map/pathColour/colourRuns";
 import type { PathColouring } from "../src/map/pathColour/pathColours";
@@ -158,8 +159,85 @@ function levelResponse(level: LevelTracksResponse["level"]): LevelTracksResponse
   } as unknown as LevelTracksResponse;
 }
 
+describe("the confidence of a move", () => {
+  const move = (extra: Record<string, unknown>) =>
+    confidenceClass({
+      kind: "move",
+      confidence: 0.9,
+      needsReview: false,
+      modeUser: null,
+      ...extra,
+    });
+
+  it("is sure from 0.8, fairly sure up to it, unsure under 0.5 or when to review, and sure when chosen", () => {
+    expect(move({})).toBe(0);
+    expect(move({ confidence: 0.8 })).toBe(0);
+    expect(move({ confidence: 0.79 })).toBe(2);
+    expect(move({ confidence: 0.5 })).toBe(2);
+    expect(move({ confidence: 0.49 })).toBe(4);
+    expect(move({ needsReview: true })).toBe(4);
+    expect(move({ confidence: 0.3, modeUser: "train" })).toBe(0);
+    expect(move({ confidence: null })).toBeNull();
+    expect(
+      confidenceClass({ kind: "stop", confidence: 1, needsReview: false, modeUser: null }),
+    ).toBeNull();
+  });
+});
+
 describe("colourLevelTracks", () => {
   const device = () => "#112233";
+
+  it("colours a whole move by the confidence of its mode, a stop keeping its own", () => {
+    const response = levelResponse("inferred");
+    const [move, stop] = response.segments;
+    if (move === undefined || stop === undefined) throw new Error("no segments");
+    const coloured = colourLevelTracks(
+      {
+        ...response,
+        segments: [{ ...move, confidence: 0.6, needsReview: false } as never, stop],
+      },
+      colouring("confidence"),
+      device,
+    );
+    expect(coloured.segments).toHaveLength(2);
+    expect(coloured.segments[0]?.color).toBe(speedRamp.light[2]);
+    expect(coloured.segments[1]?.color).toBeUndefined();
+  });
+
+  it("reads the altitude and the accuracy from the column the query asked them in", () => {
+    const response = levelResponse("averaged");
+    const [segment] = response.segments;
+    if (segment === undefined) throw new Error("no segment");
+    // Asked as `values=accuracy,altitude`: accuracy in column 3, altitude in column 4.
+    const points = [
+      [3.7, 51, 1_793_000_000, 4, 120],
+      [3.7001, 51, 1_793_000_010, 4, 8],
+      [3.7002, 51, 1_793_000_020, 120, 8],
+    ] as never;
+    const asked = {
+      ...response,
+      values: ["accuracy", "altitude"],
+      segments: [{ ...segment, points }],
+    };
+    const byAccuracy = colourLevelTracks(asked as never, colouring("accuracy"), device);
+    expect(byAccuracy.segments.map((piece) => piece.color)).toEqual([
+      speedRamp.light[0],
+      speedRamp.light[4],
+    ]);
+    const scaled = { ...colouring("altitude"), scale: [5, 10, 15, 20] };
+    const byAltitude = colourLevelTracks(asked as never, scaled, device);
+    expect(byAltitude.segments.map((piece) => piece.color)).toEqual([
+      speedRamp.light[4],
+      speedRamp.light[1],
+    ]);
+    // Not asked for: nothing to class, the unknown grey.
+    const none = colourLevelTracks(
+      { ...response, segments: [{ ...segment, points }] } as never,
+      colouring("accuracy"),
+      device,
+    );
+    expect(none.segments.every((piece) => piece.color === modePalette.light.unknown)).toBe(true);
+  });
 
   it("keeps the segments by mode, and by device at the levels that are device lines already", () => {
     const inferred = levelResponse("inferred");

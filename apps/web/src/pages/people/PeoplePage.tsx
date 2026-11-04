@@ -89,7 +89,7 @@ export function PeoplePage() {
     clearLens,
     releaseCamera,
   } = useMapSearch();
-  const { heat: heatMeasure, setHeat } = useHeatChoice();
+  const { heat: heatMeasure, setHeat, mode: heatMode, setMode: setHeatMode } = useHeatChoice();
   const { level, setLevel } = useTrackLevel();
   const mapStyle = useMapStyle();
   const config = useConfig();
@@ -221,6 +221,7 @@ export function PeoplePage() {
     today,
     measure: heatMeasure,
     period: search.heatPeriod,
+    mode: heatMode,
     onClearLens: () => {
       clearLens();
       // The chip goes with it: focus stays on the map's controls instead of falling to the page.
@@ -420,6 +421,8 @@ export function PeoplePage() {
           period={search.heatPeriod}
           onPeriod={setHeatPeriod}
           today={today}
+          mode={heatMode}
+          onMode={setHeatMode}
         />
       ) : null}
       {transport === null ? null : (

@@ -23,8 +23,41 @@ function metresBetween(a: PathPoint, b: PathPoint): number {
   return 2 * earthRadiusM * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-/** Where a raw point carries the phone's own speed (`[lon, lat, t, speed, …]`). */
+/** Where a raw point carries the phone's own speed, accuracy and altitude (`[lon, lat, t, speed, accuracy, altitude]`). */
 export const rawSpeedColumn = 3;
+export const rawAccuracyColumn = 4;
+export const rawAltitudeColumn = 5;
+
+/** Horizontal accuracy in metres: 10 or better, up to 25, 50, 100, worse (class 4: the strongest). */
+export const accuracyEdges: readonly number[] = [10, 25, 50, 100];
+
+/** The class of a value over `edges` it exceeds: 0 up to `edges.length`. */
+export function classAbove(value: number, edges: readonly number[]): number {
+  let index = 0;
+  for (const edge of edges) if (value > edge) index += 1;
+  return index;
+}
+
+/**
+ * Where the five classes of the altitude begin, in whole metres of a step of 1, 2 or 5 times a
+ * power of ten, so that what is drawn spans them: four edges from the lowest altitude's step.
+ * Null when nothing drawn has an altitude.
+ */
+export function altitudeScale(values: Iterable<number>): readonly number[] | null {
+  let low = Number.POSITIVE_INFINITY;
+  let high = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (value < low) low = value;
+    if (value > high) high = value;
+  }
+  if (!Number.isFinite(low)) return null;
+  const wanted = Math.max(1, (high - low) / 5);
+  const power = 10 ** Math.floor(Math.log10(wanted));
+  const step =
+    [1, 2, 5, 10].map((factor) => factor * power).find((size) => size >= wanted) ?? wanted;
+  const start = Math.floor(low / step) * step;
+  return [1, 2, 3, 4].map((count) => start + count * step);
+}
 
 /**
  * The speed of each interval, m/s, null where none can be told. Points with a speed column (the
@@ -116,10 +149,35 @@ export function timeClassOf(t: number, timeZone: string): number {
 /** The class of each interval of a path coloured by speed (null: unknown) or by time of day. */
 export function edgeClasses(
   points: readonly PathPoint[],
-  options: { by: "speed" | "time"; speedColumn: number | null; onFoot: boolean; timeZone: string },
+  options: {
+    by: "speed" | "time" | "altitude" | "accuracy";
+    /** Where the points carry the phone's own speed; null: distance over time. */
+    speedColumn: number | null;
+    /** Where they carry the altitude or the accuracy, for those colourings. */
+    valueColumn?: number | null;
+    /** The edges of the altitude's classes. */
+    scale?: readonly number[];
+    onFoot: boolean;
+    timeZone: string;
+  },
 ): (number | null)[] {
   if (options.by === "time") {
     return points.slice(0, -1).map((point) => timeClassOf(point[2], options.timeZone));
+  }
+  if (options.by === "altitude" || options.by === "accuracy") {
+    const column = options.valueColumn ?? null;
+    if (column === null) return points.slice(0, -1).map(() => null);
+    return points.slice(0, -1).map((point, index) => {
+      const readings = [point[column], points[index + 1]?.[column]].filter(
+        (value): value is number => typeof value === "number",
+      );
+      if (readings.length === 0) return null;
+      // An interval is as inaccurate as its worse end, and as high as its ends on average.
+      if (options.by === "accuracy") return classAbove(Math.max(...readings), accuracyEdges);
+      if (options.scale === undefined) return null;
+      const mean = readings.reduce((sum, value) => sum + value, 0) / readings.length;
+      return speedClassOf(mean, options.scale);
+    });
   }
   const bands = options.onFoot ? paceBands : speedBands;
   return smoothed(edgeSpeeds(points, options.speedColumn)).map((speed) =>

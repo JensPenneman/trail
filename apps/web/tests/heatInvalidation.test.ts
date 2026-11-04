@@ -10,6 +10,7 @@ const params = (overrides: Partial<HeatmapParams> = {}): HeatmapParams => ({
   zoom: 12,
   deviceIds: null,
   heat: "points",
+  mode: null,
   from: null,
   to: null,
   ...overrides,

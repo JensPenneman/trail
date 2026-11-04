@@ -23,6 +23,14 @@ interface PathLegendProps {
   devices: readonly LegendDevice[];
 }
 
+/** What the grey stretches say, by the colourings that class every stretch of a path. */
+const unknownWords: Partial<Record<PathLegendModel["by"], string>> = {
+  speed: "Speed not known",
+  altitude: "Altitude not known",
+  accuracy: "Accuracy not known",
+  confidence: "No mode to be sure of",
+};
+
 /**
  * The map legend of Map options: what each colour is, for the colourings that have classes — the
  * modes, the devices and people, the times of day — and the line styles the map draws over them
@@ -31,7 +39,7 @@ interface PathLegendProps {
  */
 export function PathLegend({ legend, devices }: PathLegendProps) {
   const headingId = useId();
-  const { review, stopPaths, gaps, stops, unknownSpeed } = legend.lineStyles;
+  const { review, stopPaths, gaps, stops, unknownClass } = legend.lineStyles;
   if (legend.by === "mode") {
     return <ModeLegend modes={legend.modes} review={review} stopPaths={stopPaths} gaps={gaps} />;
   }
@@ -40,7 +48,7 @@ export function PathLegend({ legend, devices }: PathLegendProps) {
   );
   const hasClasses = legend.by === "time" || (legend.by === "device" && drawn.length > 0);
   const stopRow = stops && legend.by !== "device";
-  const unknownRow = unknownSpeed && legend.by === "speed";
+  const unknownRow = unknownClass && unknownWords[legend.by] !== undefined;
   if (!hasClasses && !stopRow && !unknownRow && !review && !stopPaths && !gaps) return null;
   return (
     <section className="mode-legend" aria-labelledby={headingId}>
@@ -77,7 +85,7 @@ export function PathLegend({ legend, devices }: PathLegendProps) {
         {unknownRow ? (
           <li className="mode-legend__item">
             <ModeSwatch mode="unknown" />
-            Speed not known
+            {unknownWords[legend.by]}
           </li>
         ) : null}
         {review ? (

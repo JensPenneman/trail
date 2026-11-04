@@ -1,4 +1,8 @@
-import { type HeatMeasure, heatPeriodMeasures } from "@trail/contracts/heatmap";
+import {
+  type HeatMeasure,
+  heatMovementMeasures,
+  heatPeriodMeasures,
+} from "@trail/contracts/heatmap";
 import type { HeatmapParams } from "../api/queryKeys";
 import type { MapViewState } from "./mapTypes";
 
@@ -18,6 +22,8 @@ export function heatmapParamsFor(
     heat: HeatMeasure;
     /** The period asked for, `from` and `to` together; null: all time (the default period). */
     period: { from: string; to: string } | null;
+    /** One mode's moves (time on the move, speed, top speed); null: every mode. */
+    mode?: string | null;
   } = { heat: "points", period: null },
 ): HeatmapParams {
   const [west, south, east, north] = view.bounds;
@@ -38,5 +44,6 @@ export function heatmapParamsFor(
     heat: choice.heat,
     from: period?.from ?? null,
     to: period?.to ?? null,
+    mode: heatMovementMeasures.has(choice.heat) ? (choice.mode ?? null) : null,
   };
 }

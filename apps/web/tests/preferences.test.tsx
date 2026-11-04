@@ -175,7 +175,14 @@ describe("Settings › Preferences", () => {
         within(heat)
           .getAllByRole("option")
           .map((option) => option.textContent),
-      ).toEqual(["Points recorded", "Time spent at places", "Visits to places"]);
+      ).toEqual([
+        "Points recorded",
+        "Time spent at places",
+        "Visits to places",
+        "Time on the move",
+        "Average speed",
+        "Top speed",
+      ]);
       await person.selectOptions(heat, "visits");
       expect(await screen.findByText("Heat by saved: Visits to places.")).toBeInTheDocument();
       // The browser follows the account again.

@@ -1,6 +1,15 @@
-import { type HeatMeasure, heatPeriodMeasures } from "@trail/contracts/heatmap";
+import {
+  type HeatMeasure,
+  heatMovementMeasures,
+  heatPeriodMeasures,
+} from "@trail/contracts/heatmap";
 import type { Formatter } from "../../../format/createFormatter";
-import { countLadders, durationLadders, type HeatLadder } from "../../../map/heatScale";
+import {
+  countLadders,
+  durationLadders,
+  type HeatLadder,
+  speedLadders,
+} from "../../../map/heatScale";
 
 /** What the Heat controls and key say of each measure (docs/architecture.md §14). */
 interface HeatMeasureInfo {
@@ -27,6 +36,24 @@ export const heatMeasureInfo: Readonly<Record<HeatMeasure, HeatMeasureInfo>> = {
     ends: ["Less", "More"],
     ladders: durationLadders,
   },
+  moving: {
+    option: "Time on the move",
+    title: "Time on the move in each square",
+    ends: ["Less", "More"],
+    ladders: durationLadders,
+  },
+  speed: {
+    option: "Average speed",
+    title: "Average speed in each square",
+    ends: ["Slower", "Faster"],
+    ladders: speedLadders,
+  },
+  topspeed: {
+    option: "Top speed",
+    title: "Top speed in each square",
+    ends: ["Slower", "Faster"],
+    ladders: speedLadders,
+  },
   visits: {
     option: "Visits to places",
     title: "Visits to places in each square",
@@ -36,14 +63,26 @@ export const heatMeasureInfo: Readonly<Record<HeatMeasure, HeatMeasureInfo>> = {
 };
 
 /** The measures "Heat by" offers, in order. */
-export const heatChoices: readonly HeatMeasure[] = ["points", "time", "visits"];
+export const heatChoices: readonly HeatMeasure[] = [
+  "points",
+  "time",
+  "visits",
+  "moving",
+  "speed",
+  "topspeed",
+];
+
+/** The measures of movement: they take a mode and count what the per-day cells hold. */
+export const hasMode = (heat: HeatMeasure): boolean => heatMovementMeasures.has(heat);
 
 /** Whether the measure covers a period (all but the points). */
 export const hasPeriod = (heat: HeatMeasure): boolean => heatPeriodMeasures.has(heat);
 
 /** A value of the measure in words: "1,820 points", "3 hr 20 min", "12 visits". */
 export function valueText(heat: HeatMeasure, value: number, format: Formatter): string {
-  if (heat === "time") return format.duration(value);
+  if (heat === "time" || heat === "moving") return format.duration(value);
+  // Speeds are told in cm/s.
+  if (heat === "speed" || heat === "topspeed") return format.speed(value / 100);
   if (heat === "visits") return `${format.count(value)} ${value === 1 ? "visit" : "visits"}`;
   return `${format.count(value)} ${value === 1 ? "point" : "points"}`;
 }
@@ -77,7 +116,12 @@ export function classLabels(
 ): string[] {
   return starts.map((start, index) => {
     const next = starts[index + 1];
-    if (heat === "time") {
+    if (heat === "speed" || heat === "topspeed") {
+      const kmh = (value: number) => Math.round((value / 100) * 3.6);
+      if (next === undefined) return `${kmh(start)} km/h or more`;
+      return index === 0 ? `under ${kmh(next)} km/h` : `${kmh(start)}–${kmh(next)}`;
+    }
+    if (heat === "time" || heat === "moving") {
       if (next === undefined) return `${format.roundDuration(start)} or more`;
       return index === 0
         ? `under ${format.roundDuration(next)}`

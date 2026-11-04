@@ -15,7 +15,15 @@ export const mapStyleSchema = z.enum(mapStyles);
 export type MapStyle = z.infer<typeof mapStyleSchema>;
 
 /** What the paths on the map are coloured by (the options a level supports; the rest are skipped). */
-export const pathColours = ["mode", "device", "speed", "time"] as const;
+export const pathColours = [
+  "mode",
+  "device",
+  "speed",
+  "time",
+  "altitude",
+  "accuracy",
+  "confidence",
+] as const;
 export const pathColourSchema = z.enum(pathColours);
 export type PathColour = z.infer<typeof pathColourSchema>;
 

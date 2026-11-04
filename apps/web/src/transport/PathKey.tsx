@@ -11,6 +11,11 @@ interface PathKeyProps {
 export function PathKey({ legend, id }: PathKeyProps) {
   if (legend.key === null) return null;
   return (
-    <MapKey id={id} title={legend.key.title} items={legend.key.steps} ends={legend.key.ends} />
+    <MapKey
+      id={id}
+      title={legend.key.title}
+      items={legend.key.steps}
+      {...(legend.key.ends === undefined ? {} : { ends: legend.key.ends })}
+    />
   );
 }

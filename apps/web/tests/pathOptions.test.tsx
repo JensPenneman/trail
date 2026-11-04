@@ -31,13 +31,23 @@ describe("Colour by", () => {
     await openOptions(person);
     const select = await screen.findByRole("combobox", { name: "Colour by" });
     expect(select).toHaveValue("mode");
-    expect(optionsOf(select)).toEqual(["Mode", "Device", "Speed", "Time of day"]);
+    expect(optionsOf(select)).toEqual([
+      "Mode",
+      "Device",
+      "Speed",
+      "Time of day",
+      "Altitude",
+      "Accuracy",
+      "Mode confidence",
+    ]);
     await person.click(screen.getByRole("radio", { name: "Raw" }));
     await waitFor(() =>
       expect(optionsOf(screen.getByRole("combobox", { name: "Colour by" }))).toEqual([
         "Device",
         "Speed",
         "Time of day",
+        "Altitude",
+        "Accuracy",
       ]),
     );
     // A preference that Raw cannot show is skipped, not rewritten.
@@ -65,6 +75,33 @@ describe("Colour by", () => {
     renderPage(<PeoplePage />, { url: "/?view=history&person=me&color=device", user });
     await userEvent.setup().click(screen.getByRole("button", { name: /Map options/ }));
     expect(await screen.findByRole("combobox", { name: "Colour by" })).toHaveValue("device");
+  });
+});
+
+describe("what the level's tracks are asked for", () => {
+  const trackCalls = (calls: { path: string; url?: string }[]) =>
+    calls.filter((call) => call.path === "/api/v1/tracks");
+
+  it("is the altitude or the accuracy for those colourings only, and nothing else", async () => {
+    for (const [colour, values] of [
+      ["accuracy", "accuracy"],
+      ["altitude", "altitude"],
+      ["speed", null],
+      ["device", null],
+      ["confidence", null],
+    ] as const) {
+      const { calls } = mockApi(standardRoutes());
+      const view = renderPage(<PeoplePage />, {
+        url: `/?view=history&person=me&level=averaged&color=${colour}`,
+        user,
+      });
+      await waitFor(() => expect(trackCalls(calls).length).toBeGreaterThan(0));
+      for (const call of trackCalls(calls)) {
+        const asked = new URL(call.url ?? "", "http://x").searchParams.get("values");
+        expect(asked).toBe(values);
+      }
+      view.unmount();
+    }
   });
 });
 

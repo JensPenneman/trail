@@ -26,6 +26,7 @@ describe("map helpers", () => {
       heat: "points",
       from: null,
       to: null,
+      mode: null,
     });
     // A period belongs to the measures that have one; points are all time.
     const view = { bounds: [3.5, 51, 3.7, 51.1], zoom: 12 } as const;

@@ -91,7 +91,7 @@ const levelTracks: Pick<Codec, "pack" | "unpack"> = {
       ...response,
       segments: response.segments.map((segment) => ({
         ...segment,
-        points: packLevelPoints(segment.points),
+        points: packLevelPoints(segment.points, response.values?.length ?? 0),
       })),
     };
   },

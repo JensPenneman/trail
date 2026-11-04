@@ -7,11 +7,16 @@ export const pathColourLabels: Readonly<Record<PathColour, string>> = {
   device: "Device",
   speed: "Speed",
   time: "Time of day",
+  altitude: "Altitude",
+  accuracy: "Accuracy",
+  confidence: "Mode confidence",
 };
 
 /** The options a level supports: Transport colours by mode too; the others have no modes to show. */
 export function pathColoursFor(level: ProcessingLevel): readonly PathColour[] {
-  return level === "inferred" ? ["mode", "device", "speed", "time"] : ["device", "speed", "time"];
+  return level === "inferred"
+    ? ["mode", "device", "speed", "time", "altitude", "accuracy", "confidence"]
+    : ["device", "speed", "time", "altitude", "accuracy"];
 }
 
 /** What a level is coloured by when nobody chose: Transport by mode, the rest by device. */
@@ -44,6 +49,15 @@ export function resolvePathColour(
   return defaultPathColour(level);
 }
 
+/**
+ * What a level's tracks have to be asked for (`values=` on `/api/v1/tracks`) to colour by `by`:
+ * the altitude or the accuracy of each point. The raw level has both already, and speed is worked
+ * out from the points.
+ */
+export function levelValuesFor(by: PathColour): readonly ("altitude" | "accuracy")[] {
+  return by === "altitude" || by === "accuracy" ? [by] : [];
+}
+
 /** How the lines are coloured now: what by, on which map, in which zone. */
 export interface PathColouring {
   by: PathColour;
@@ -53,4 +67,6 @@ export interface PathColouring {
   timeZone: string;
   /** Every move drawn is on foot: the speed key and bands are paces. */
   onFoot?: boolean;
+  /** For the altitude: where its classes begin, in metres, from what is drawn. */
+  scale?: readonly number[];
 }

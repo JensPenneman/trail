@@ -79,16 +79,55 @@ describe("the legend of a colouring", () => {
       stopPaths: false,
       gaps: true,
       stops: false,
-      unknownSpeed: false,
+      unknownClass: false,
     });
   });
 
   it("says when a stop and a stretch of unknown speed are drawn", () => {
     const legend = pathLegend(
       colouring("speed"),
-      { ...drawn, stops: true, unknownSpeed: true },
+      { ...drawn, stops: true, unknownClass: true },
       format,
     );
-    expect(legend.lineStyles).toMatchObject({ stops: true, unknownSpeed: true });
+    expect(legend.lineStyles).toMatchObject({ stops: true, unknownClass: true });
+  });
+
+  it("has the accuracy key in fixed metres, better to worse, on the ramp", () => {
+    const key = pathLegend(colouring("accuracy"), drawn, format).key;
+    expect(key?.title).toBe("Accuracy");
+    expect(key?.steps.map((step) => step.label)).toEqual([
+      "10 m or better",
+      "10–25 m",
+      "25–50 m",
+      "50–100 m",
+      "worse than 100 m",
+    ]);
+    expect(key?.steps.map((step) => step.color)).toEqual(speedRamp.light);
+    expect(key?.ends).toEqual(["Better", "Worse"]);
+  });
+
+  it("has the altitude key from the edges of what is drawn, and none before anything is", () => {
+    const key = pathLegend(colouring("altitude", { scale: [20, 40, 60, 80] }), drawn, format).key;
+    expect(key?.title).toBe("Altitude");
+    expect(key?.steps.map((step) => step.label)).toEqual([
+      "under 20 m",
+      "20–40",
+      "40–60",
+      "60–80",
+      "80 m or more",
+    ]);
+    expect(key?.ends).toEqual(["Lower", "Higher"]);
+    expect(pathLegend(colouring("altitude"), drawn, format).key).toBeNull();
+  });
+
+  it("has three steps of the ramp, 1, 3 and 5, for the confidence of a mode", () => {
+    const key = pathLegend(colouring("confidence"), drawn, format).key;
+    expect(key?.title).toBe("Mode confidence");
+    expect(key?.steps.map((step) => step.label)).toEqual(["Sure", "Fairly sure", "Unsure"]);
+    expect(key?.steps.map((step) => step.color)).toEqual([
+      speedRamp.light[0],
+      speedRamp.light[2],
+      speedRamp.light[4],
+    ]);
   });
 });
