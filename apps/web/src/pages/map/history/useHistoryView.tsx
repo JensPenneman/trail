@@ -506,7 +506,8 @@ export function useHistoryView({
       return;
     }
     // Where it stopped: the state it stopped in, or, once it is off, the last one it was in.
-    const stoppedAt = playback.status === "off" ? before : playback;
+    const stoppedAt =
+      playback.status === "off" ? before : { day: playback.day, clock: playback.clock };
     setScrub({
       key: `${stoppedAt.day}|${stoppedAt.day}|${selected?.key ?? "everyone"}|${own?.deviceIds?.join(",") ?? "all"}`,
       value: stoppedAt.clock,
