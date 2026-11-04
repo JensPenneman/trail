@@ -2926,36 +2926,51 @@ count among them, since they lead to signed-in pages.
   them.
 
   **The people list** — Find My for Trail (§8.5): people, not their
-  devices. The h1 stays "People"; beside it an icon-only **Share my
-  location** (a plus), shown once someone shares with you. Then the notices
-  of people who started sharing while the page was open, the view's part
-  (History's summary, Heat's totals), and a list named "People": **Me**
-  first, then everyone who shares with you, each a row that is one router
-  link to their detail (`PersonRow`; its name is all it says, in order, and
-  it has no heading). A row reads in two lines (`PersonSummary`, the row
-  variant): the avatar and the name (an ellipsis rather than a line more),
-  with a battery glyph where the share includes it — the gauge, red when
-  low, "Battery 58%" by name — and the distance on the right; then how fresh
-  — "Live" while the position is within the live window (its time on hover
-  and in the detail), else "40 min ago" — and what they are doing, broken
-  only between its parts. A coarse share always says how coarse ("Cycling ·
-  within about 5 km") and marks its distance "≈" (read "about"): it is to
-  the centre of a cell, as the map draws a circle rather than a spot. Me's
-  row: your initials in the accent ring and what you are doing now
+  devices, and nothing else. The sidebar shows one level at a time
+  (`PeoplePanel`): the root, the Hidden list, or a person's page; each level
+  below the root has its own history step, a back link and a heading that
+  takes the focus (`PanelLevel`, `usePanelFocus`), and leaving it returns the
+  focus to the row that opened it (`data-person`, `data-row`). The root has
+  the h1 "People" with an icon-only **Share my location** (a plus), always
+  there. Under it one folded status row when people started sharing while the
+  page was open ("Ana shares their location with you", "Ana and Bob share…",
+  "Ana, Bob and 3 others share…"), with one **Dismiss** for all
+  (`ShareConfirmations`). Then **Me** in a list of its own, then, only when
+  someone shares, the group **Sharing with you** (its h2 names the list):
+  live now by name, then by when they were last seen, newest first, then those
+  with no location by name (`orderPeople`; a row moves only when someone goes
+  live or stale). From eight people the group has a search, "Search people",
+  that ignores case and accents (`fold`, shared with Settings' search) and
+  filters only those rows; no match says "No one called “x”", and what a search
+  found is announced after a short pause. Last, a row **Hidden (n)** while
+  someone is hidden: it opens `?list=hidden`, where each person has a button
+  "Show X again" and the small print of what hiding means, and "Nobody is
+  hidden" when none is. The root carries no description of the view, no
+  History summary, no Heat totals, no "You share with N people" line and no
+  card for when nobody shares: the view's description is the map's accessible
+  text, and with nobody sharing the root is just the Me row. Rows are one
+  router link each to their page (`PersonRow`; its name is all it says, in
+  order, and it has no heading) and are laid out lazily
+  (`content-visibility: auto`). A row reads in two lines (`PersonSummary`,
+  the row variant): the avatar and the name (an ellipsis rather than a line
+  more), with a battery glyph where the share includes it — the gauge, red
+  when low, "Battery 58%" by name — and the distance on the right; then how
+  fresh — "Live" while the position is within the live window (its time on
+  hover and in the detail), else "40 min ago" — and what they are doing,
+  broken only between its parts. A coarse share always says how coarse
+  ("Cycling · within about 5 km") and marks its distance "≈" (read "about"):
+  it is to the centre of a cell, as the map draws a circle rather than a
+  spot. Me's row: your initials in the accent ring and what you are doing now
   (`describeMe`) from the device that reported last (`latestOwnDevice`: the
   newest position, else the latest upload) — the stop or move of its current
   mode (§17.5: "At the same place since 08:12", "Cycling · 18 km/h"), else
   its Overland trip or motion as for anyone (`describeActivity`), without a
   speed once the position is older than the live window, "No recent
   location" past the stale window; with no device yet "Connect your first
-  phone" (Add a device: `/settings/devices?add=1`) under the row. After the
-  rows: the people you hid under **Hidden (n)**, to be shown again, and a
-  quiet line "You share with N people" — with how many signed up and wait
-  for a confirmation — that leads to Settings › Sharing, where the outgoing
-  shares are changed, stopped and confirmed. Where nobody shares with you
-  yet there is one card instead of the icon and the line: "Nobody shares
-  with you yet", what to do, the primary **Share my location** and the
-  sharing line.
+  phone" (Add a device: `/settings/devices?add=1`) under the row. On phones
+  the sheet's peek is measured (`usePeekHeight`): down to the end of the Me
+  row at the root and of the header on a person's page, at most 45 % of the
+  screen.
 
   **The detail** replaces the list (`PersonPanel`): a back link ("Back to
   People"), the name as an h2 with the row's two lines, and what the view

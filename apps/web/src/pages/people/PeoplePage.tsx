@@ -10,7 +10,6 @@ import {
 import { useSearchParams } from "react-router";
 import { DocumentTitle } from "../../app/DocumentTitle";
 import { useStickyBanner } from "../../app/StickyBannerContext";
-import { useReadOnly } from "../../app/useReadOnly";
 import { useSessionUser } from "../../app/useSessionUser";
 import { useDeviceColors } from "../../devices/useDeviceColors";
 import { LazyTrailMap } from "../../map/LazyTrailMap";
@@ -25,9 +24,7 @@ import { useNow } from "../../time/useNow";
 import { LevelControl } from "../../transport/LevelControl";
 import { ModeLegend } from "../../transport/ModeLegend";
 import { useTrackLevel } from "../../transport/useTrackLevel";
-import { Button } from "../../ui/Button";
 import { Icon } from "../../ui/Icon";
-import { PageHeader } from "../../ui/PageHeader";
 import { useMediaQuery } from "../../ui/useMediaQuery";
 import { useScrollableFocus } from "../../ui/useScrollableFocus";
 import { DeviceFilter, type DeviceFilterGroup } from "../map/DeviceFilter";
@@ -38,15 +35,15 @@ import { MapOptions } from "../map/MapOptions";
 import { MapOverlay } from "../map/MapOverlay";
 import type { MapPerson } from "../map/MapPerson";
 import { MapStyleControl } from "../map/MapStyleControl";
-import { withPerson } from "../map/mapSearchUpdates";
+import { withList, withPerson } from "../map/mapSearchUpdates";
 import { type MapView, shownView, viewsFor } from "../map/mapViews";
 import { me } from "../map/me";
 import { resolveMapSelection } from "../map/resolveMapSelection";
 import { useMapSearch } from "../map/useMapSearch";
-import { PeopleList } from "./PeopleList";
-import { PersonPanel } from "./PersonPanel";
+import { PeoplePanel } from "./PeoplePanel";
 import { usePanelFocus } from "./usePanelFocus";
-import { shareOfflineId, useSharingActions } from "./useSharingActions";
+import { usePeekHeight } from "./usePeekHeight";
+import { useSharingActions } from "./useSharingActions";
 import "./PeoplePage.css";
 
 const defaultThresholds = { liveMinutes: 15, staleHours: 12 };
@@ -92,7 +89,6 @@ export function PeoplePage() {
   const now = useNow(15_000);
   const wide = useMediaQuery(besideThePanel);
   const scrollable = useScrollableFocus();
-  const readOnly = useReadOnly();
   const thresholds = config.data?.thresholds ?? defaultThresholds;
   const [viewport, setViewport] = useState<MapViewState | null>(null);
   // Where the floating controls end, measured: they wrap on narrow screens.
@@ -211,9 +207,12 @@ export function PeoplePage() {
 
   // Beside the map the panel scrolls by itself: another view or person starts at its top.
   const panel = useRef<HTMLElement | null>(null);
+  // The level shown, for the focus that follows it: someone's key, `list:hidden`, or the root.
+  const levelKey = selectedKey ?? (search.list === "hidden" ? "list:hidden" : null);
   const focusRef = usePanelFocus(
-    selectedKey,
-    available.some((person) => person.key === selectedKey),
+    levelKey,
+    levelKey?.startsWith("list:") === true ||
+      available.some((person) => person.key === selectedKey),
     selection.implied,
   );
   const panelRef = useCallback(
@@ -258,6 +257,7 @@ export function PeoplePage() {
     element.addEventListener("focusin", onStageFocus);
     return () => element.removeEventListener("focusin", onStageFocus);
   }, []);
+  usePeekHeight(panel, levelKey, !wide);
   const toTop = () => {
     if (panel.current !== null) panel.current.scrollTop = 0;
   };
@@ -268,6 +268,7 @@ export function PeoplePage() {
   const [params] = useSearchParams();
   const linkTo = (person: string) => `?${withPerson(params, person).toString()}`;
   const backTo = `?${withPerson(params, null).toString()}`;
+  const hiddenTo = `?${withList(params, "hidden").toString()}`;
 
   // Devices to choose among, when there are several: the selected person's; in Heat one's own,
   // whoever is selected (nobody's else is offered there). Choosing some selects Me (adoptPerson).
@@ -296,14 +297,6 @@ export function PeoplePage() {
   // Which devices draw only matters when some do not: it shows on the button, as the map shows less.
   const note =
     deviceCount > 1 && shownCount < deviceCount ? `${shownCount} of ${deviceCount} devices` : null;
-
-  // The view's part of the list and of every detail, with the label that names it.
-  const viewPanel =
-    content.panel === null ? null : (
-      <section className="map-page__details" aria-label={content.panelLabel}>
-        {content.panel}
-      </section>
-    );
 
   // The history slider: over the foot of the map beside the panel, first in the sheet on phones.
   const foot = content.foot === null ? null : <div className="map-page__foot">{content.foot}</div>;
@@ -374,6 +367,10 @@ export function PeoplePage() {
           {content.chip}
         </div>
         {wide ? foot : null}
+        {/* What the view says of itself, for those who cannot see the map. */}
+        {content.description === null || content.description === undefined ? null : (
+          <div className="visually-hidden">{content.description}</div>
+        )}
       </div>
 
       {/* Phones: the room the map shows through; presses fall on the map under it. */}
@@ -382,62 +379,30 @@ export function PeoplePage() {
         <span className="map-page__snap map-page__snap--peek" />
         <span className="map-page__snap map-page__snap--half" data-detent="half" />
       </div>
-      <section className="map-page__panel" aria-labelledby="people-page-title" ref={panelRef}>
-        <span className="map-page__grabber" aria-hidden="true" />
-        {wide ? null : foot}
-        <div className="map-page__top">
-          <PageHeader
-            title="People"
-            titleId="people-page-title"
-            description={content.description}
-            actions={
-              // Not while the list is known to be empty: the card says so and has the button.
-              people.isSuccess && everyone.length === 0 ? undefined : (
-                <Button
-                  variant="ghost"
-                  icon="plus"
-                  iconOnly
-                  disabled={readOnly}
-                  aria-describedby={readOnly ? shareOfflineId : undefined}
-                  onClick={() => sharing.openShare()}
-                >
-                  Share my location
-                </Button>
-              )
-            }
-          />
-          {sharing.offlineReason}
-        </div>
-        <div className="map-page__body">
-          {selectedKey === null ? (
-            <PeopleList
-              people={people}
-              devices={devices}
-              personColors={personColors}
-              now={now}
-              thresholds={thresholds}
-              linkTo={linkTo}
-              panel={viewPanel}
-              sharing={sharing}
-            />
-          ) : (
-            <PersonPanel
-              selected={selectedKey}
-              backTo={backTo}
-              name={user.displayName}
-              devices={devices}
-              people={people}
-              personColors={personColors}
-              now={now}
-              thresholds={thresholds}
-              content={content}
-              period={wherePeriod}
-              sharing={sharing}
-              onLeave={leavePerson}
-            />
-          )}
-        </div>
-      </section>
+      <PeoplePanel
+        panelRef={panelRef}
+        foot={wide ? null : foot}
+        at={
+          selectedKey !== null
+            ? { level: "person", selected: selectedKey }
+            : search.list === "hidden"
+              ? { level: "hidden" }
+              : { level: "root" }
+        }
+        people={people}
+        devices={devices}
+        personColors={personColors}
+        now={now}
+        thresholds={thresholds}
+        linkTo={linkTo}
+        hiddenTo={hiddenTo}
+        backTo={backTo}
+        name={user.displayName}
+        content={content}
+        period={wherePeriod}
+        sharing={sharing}
+        onLeave={leavePerson}
+      />
       {sharing.dialogs}
       {content.dialog}
     </div>

@@ -186,11 +186,6 @@
   .map-page .maplibregl-ctrl-bottom-left {
     padding-left: var(--safe-left);
   }
-
-  /* MapLibre's zoom buttons sit below the bar, which spans the map. */
-  .map-page .maplibregl-ctrl-top-right {
-    margin-top: var(--overlay-end);
-  }
 }
 
 @media (min-width: 64rem) {

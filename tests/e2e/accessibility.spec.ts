@@ -31,7 +31,8 @@ test.describe("accessibility", () => {
     // Every page and section one after the other, each scanned by axe: a long walk.
     test.slow();
     await expect(page.getByRole("heading", { name: "Connect your first phone" })).toBeVisible();
-    await expect(page.getByText("Nobody shares with you yet")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Share my location" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Sharing with you" })).toHaveCount(0);
     await expectAccessible(page, "People's list without devices or anyone who shares");
     // Me's detail without a device: the way to adding one.
     await open(page, "/?person=me", "People", "Connect your first phone");
@@ -51,11 +52,11 @@ test.describe("accessibility", () => {
     await open(page, "/?person=me", "People", "Timeline");
     await expect(page.getByRole("heading", { name: "Your devices" })).toBeVisible();
     await expectAccessible(page, "People's Live in Me's detail");
-    await open(page, "/?view=history", "People", "30 points");
+    await open(page, "/?view=history", "People", "Me");
     await expectAccessible(page, "People's History overview");
     await open(page, "/?view=history&person=me", "People", "Visits");
     await expectAccessible(page, "People's History in Me's detail");
-    await open(page, "/?view=heat", "People", "Busiest places in view");
+    await open(page, "/?view=heat&person=me", "People", "Busiest places in view");
     await expect(page.getByText(/^\d+ points$/).first()).toBeVisible();
     await expectAccessible(page, "People's Heat");
     // Settings › Devices, a device's page and the pages of its parts.

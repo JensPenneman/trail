@@ -86,7 +86,7 @@ test("the old addresses of History and Explore, and deep links, open the right v
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`/\\?view=history&date=${yesterday}&level=raw$`));
 
-  await page.goto(`/?view=history&from=${weekAgo}&to=${today}`);
+  await page.goto(`/?view=history&person=me&from=${weekAgo}&to=${today}`);
   await openPeriodPicker(page);
   await expect(page.getByRole("radio", { name: "Period" })).toBeChecked();
   await expect(page.getByRole("region", { name: "Summary", exact: true })).toContainText(

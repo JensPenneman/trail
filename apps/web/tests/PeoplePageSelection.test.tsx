@@ -79,7 +79,7 @@ describe("the overview, nobody selected", () => {
   it("is what a link from before the single selection means with several people", async () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { url: `/?people=me,${ids.ana}`, user });
-    expect(await screen.findByRole("list", { name: "People" })).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Me" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Me" })).toBeNull();
   });
 });
@@ -100,7 +100,7 @@ describe("selecting a person", () => {
     await act(async () => {
       await router.navigate(-1);
     });
-    expect(await screen.findByRole("list", { name: "People" })).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Me" })).toBeInTheDocument();
   });
 
   it("draws someone else's track alone, in Live, with everyone's markers kept", async () => {
@@ -276,7 +276,7 @@ describe("Heat's device filter", () => {
     await person.click(car);
     expect(router.state.location.search).toBe(`?view=heat&devices=${ids.phone}`);
     expect(car).toHaveFocus();
-    expect(screen.getByRole("list", { name: "People" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Me" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Me" })).toBeNull();
     await waitFor(() =>
       expect(
@@ -293,7 +293,7 @@ describe("Heat's device filter", () => {
     expect(live).toBeChecked();
     expect(live).toHaveFocus();
     await waitFor(() => expect(router.state.location.search).toBe(""));
-    expect(screen.getByRole("list", { name: "People" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Me" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Me" })).toBeNull();
   });
 });
@@ -302,10 +302,13 @@ describe("History's overview and selections", () => {
   it("draws one's own tracks and everyone's with a history share, and skips the rest of one's own", async () => {
     const api = mockApi(withHistoryOfAna());
     renderPage(<PeoplePage />, { url: "/?view=history", user });
-    const summary = await screen.findByRole("region", { name: "Summary" });
-    expect(await within(summary).findByText("Ana Bell · Ana’s iPhone")).toBeInTheDocument();
-    expect(within(summary).getByText("iPhone 16")).toBeInTheDocument();
-    expect(map()).toHaveAccessibleName(/^Map of the tracks for/);
+    await screen.findByRole("list", { name: "Me" });
+    // The root has no summary: what History shows of the people is the map's, and their pages'.
+    expect(screen.queryByRole("region", { name: "Summary" })).toBeNull();
+    expect(await screen.findByRole("img", { name: /^Map of the tracks for/ })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.calls.map((call) => call.path)).toContain(`/api/v1/people/${ids.ana}/track`),
+    );
     // Only Ana shares history; bob is a live-only share and asks for nothing.
     const asked = api.calls.map((call) => call.path);
     expect(asked.filter((path) => path.endsWith("/track"))).toEqual([

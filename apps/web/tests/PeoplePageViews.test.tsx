@@ -76,7 +76,7 @@ describe("the People page, Live", () => {
       },
     });
     renderPage(<PeoplePage />, { user });
-    const list = screen.getByRole("list", { name: "People" });
+    const list = screen.getByRole("list", { name: "Me" });
     expect(await within(list).findByText("Your devices could not be loaded")).toBeInTheDocument();
     expect(within(list).getByText("Database down")).toBeInTheDocument();
     expect(within(list).getByRole("button", { name: "Try again" })).toBeInTheDocument();
@@ -213,7 +213,7 @@ describe("the People page, History", () => {
 describe("the People page, Heat", () => {
   it("summarises everything recorded and hands the heatmap its place", async () => {
     mockApi(standardRoutes());
-    renderPage(<PeoplePage />, { url: "/?view=heat", user });
+    renderPage(<PeoplePage />, { url: "/?view=heat&person=me", user });
     expect(view("Heat")).toBeChecked();
     // 184,322 + 41,207 points over both devices.
     expect(await screen.findByText("225,529")).toBeInTheDocument();

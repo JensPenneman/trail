@@ -93,7 +93,7 @@ test("the People page with someone who shares fits a 320 px wide screen", async 
     ["/?person=me", "Timeline", "Me"],
     [`/?person=${friend.account.id}`, "Where they’ve been", name],
     [`/?view=history&person=${friend.account.id}`, `${name} · ${friend.device.name}`, name],
-    ["/?view=history", `${name} · ${friend.device.name}`, null],
+    ["/", name, null],
     ["/?view=heat&person=me", "Your devices", "Me"],
   ] as const) {
     await page.goto(path);
@@ -101,7 +101,7 @@ test("the People page with someone who shares fits a 320 px wide screen", async 
     // The list, or the detail of the person the address names.
     await expect(
       detail === null
-        ? page.getByRole("list", { name: "People", exact: true })
+        ? page.getByRole("list", { name: "Sharing with you", exact: true })
         : page.getByRole("region", { name: detail, exact: true }),
     ).toBeVisible();
     await expect(page.getByText(loaded).first()).toBeVisible();

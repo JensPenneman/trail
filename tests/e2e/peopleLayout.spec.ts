@@ -157,11 +157,12 @@ test("on a phone the sheet scrolls over a map that stays, with its detents", asy
   expect(uncovered).not.toBeNull();
 
   // Selecting a person lifts it to the half detent.
-  await page.getByRole("list", { name: "People", exact: true }).getByRole("link").first().click();
+  await page.getByRole("list", { name: "Me", exact: true }).getByRole("link").first().click();
   const half = await page.evaluate(() => {
     const marker = document.querySelector("[data-detent=half]")?.getBoundingClientRect().top ?? 0;
     const padding = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop);
-    return marker + window.scrollY - padding;
+    // A peek taller than half the view leaves nothing to lift: the detent is the peek itself.
+    return Math.max(0, marker + window.scrollY - padding);
   });
   await page.waitForFunction((target) => Math.abs(window.scrollY - target) < 3, half);
 });
@@ -194,7 +195,7 @@ test("a press on the map with the sheet at half leaves the sheet where it is", a
   test.skip(testInfo.project.name !== "iphone", "the sheet is for phones");
   await uploadedDevice(page, "Half phone", overlandBatch(account.timezone));
   await page.goto("/");
-  await page.getByRole("list", { name: "People", exact: true }).getByRole("link").first().click();
+  await page.getByRole("list", { name: "Me", exact: true }).getByRole("link").first().click();
   await page.waitForFunction(() => window.scrollY > 100);
   // Settled: the scroll position stops changing.
   let at = -1;
@@ -226,11 +227,13 @@ test("the sheet's whole content can be scrolled to, clear of the header and the 
 }, testInfo) => {
   test.skip(testInfo.project.name !== "iphone", "the sheet is for phones");
   await uploadedDevice(page, "Reach phone", overlandBatch(account.timezone));
-  // Nobody shares with this account: the card with Share my location ends a sheet that is
-  // longer than the screen, and it is the control a person taps to start.
-  await page.goto("/");
-  const share = page.getByRole("button", { name: "Share my location" });
-  await expect(share).toBeVisible();
+  // Me's page is longer than the screen: its last row ends the sheet, and is what a person
+  // scrolls to.
+  await page.goto("/?person=me");
+  const panel = page.locator(".map-page__panel");
+  const rows = panel.locator("a[href], button");
+  await expect(page.getByRole("heading", { level: 2, name: "Me", exact: true })).toBeVisible();
+  const share = rows.last();
   const settled = async () => {
     let last = -1;
     await expect
@@ -249,9 +252,7 @@ test("the sheet's whole content can be scrolled to, clear of the header and the 
       return hit !== null && element.contains(hit);
     });
   const viewHeight = (await page.viewportSize())?.height ?? 0;
-  expect(await page.locator(".map-page__panel").evaluate((e) => e.scrollHeight)).toBeGreaterThan(
-    viewHeight * 0.6,
-  );
+  expect(await panel.evaluate((e) => e.scrollHeight)).toBeGreaterThan(viewHeight * 0.6);
 
   // Brought into view the way a person scrolls to it: a snap point must not pull the end of a
   // long sheet back, under the tab bar.
@@ -260,7 +261,7 @@ test("the sheet's whole content can be scrolled to, clear of the header and the 
   expect(await reachable(share)).toBe(true);
 
   // The first control, with the sheet lifted towards the header: not under it.
-  const first = page.getByRole("list", { name: "People", exact: true }).getByRole("link").first();
+  const first = rows.first();
   await page.evaluate(() => window.scrollTo(0, 400));
   await settled();
   expect(await reachable(first)).toBe(true);

@@ -10,6 +10,8 @@ export interface MapSearch {
   person: string | null;
   /** The devices shown of the selected person; null shows all of them. */
   devices: readonly string[] | null;
+  /** A level of the sidebar below the root (`?list=hidden`); only where nobody is selected. */
+  list: "hidden" | null;
   /** The History view's day or period (kept while another view is shown). */
   period: Omit<HistorySelection, "deviceIds">;
 }
@@ -47,9 +49,11 @@ function parsePerson(params: URLSearchParams): string | null {
 export function parseMapSearch(params: URLSearchParams, today: string): MapSearch {
   const view = params.get("view");
   const { deviceIds, ...period } = parseHistorySelection(params, today);
+  const person = parsePerson(params);
   return {
     view: isMapView(view) ? view : "live",
-    person: parsePerson(params),
+    person,
+    list: person === null && params.get("list") === "hidden" ? "hidden" : null,
     devices: deviceIds,
     period,
   };

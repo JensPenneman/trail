@@ -300,7 +300,7 @@ test("a token's API and MCP calls are counted apart, with what it did on its pag
 test("your own browsing stays out of the log until you switch it on", async ({ page, account }) => {
   await uploadedDevice(page, "Own phone", overlandBatch(account.timezone));
   // Browsing of one's own: the tracks of the day.
-  await page.goto("/?view=history");
+  await page.goto("/?view=history&person=me");
   await expect(page.getByRole("region", { name: "Summary", exact: true })).toContainText(
     "Own phone",
   );
