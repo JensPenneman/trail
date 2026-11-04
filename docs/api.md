@@ -375,15 +375,16 @@ is true while recorded points of the period still wait for processing.
   `mode` or all. Shares are of the distance with map data (`mappedM`): moves
   without it — map data switched off or not fetched yet — count towards
   `distanceM` only.
-- `GET /api/v1/insights/ways` (`locations:read`) — the 50 roads travelled
+- `GET /api/v1/insights/ways` (`locations:read`) — the 25 roads travelled
   most, by the name OpenStreetMap gives them, for one `mode` or all: the
-  `distanceM`, its `share` of the distance on named roads (`namedM`), how
-  many `ways` of OpenStreetMap make it up and the rough position of its
-  centre (`lat`, `lon`, three decimals). Ways of one name in the same or
-  touching cells of about 38 km (zoom 10) are one road; the same name in
-  another town is another. Moves without map data, or not worked out again
-  yet after an upgrade, count towards `distanceM` only. The answer has an
-  `ETag`, which also follows the map data.
+  `distanceM` and the number of `moves` on each, with `mappedM` (the distance
+  of the moves with map data) and `namedM` (the part of it on named roads).
+  Ways of one name within about 10 km of each other are one road, the same
+  name further away another. Names and distances only; a road name says where
+  you were, hence `locations:read`. `modes` lists every mode moved in,
+  whatever `mode` asks for. `pending` is true while moves still wait for
+  their ways to be worked out after an upgrade. The answer has an `ETag`,
+  which also follows the map data and that fill.
 
 ## Errors
 

@@ -145,7 +145,7 @@ export interface MoveFeatures {
   /**
    * The metres travelled on each OSM way, `[wayId, metres]`, most first: only ways of 25 m or
    * more, at most 64, half of each interval counting for each of its end points as for
-   * `wayKinds`. Null exactly when `ways` is (no map data); absent from before inferred version 4.
+   * `wayKinds`. Null exactly when `ways` is (no map data); absent from before the feature backfill reached the move (processingFeatureVersions).
    */
   wayTotals?: readonly (readonly [number, number])[] | null;
   /** Shares of the distance near tram tracks, cycleways and footways (they run beside roads). */

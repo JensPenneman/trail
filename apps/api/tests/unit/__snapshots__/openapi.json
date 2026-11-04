@@ -2121,7 +2121,7 @@
       "get": {
         "operationId": "getInsightsWays",
         "summary": "Get the named roads you travelled",
-        "description": "The roads you travelled most over a period of local days, for one transport mode or all of them, by the name OpenStreetMap gives them: ways of one name that lie together are one road, the same name in another town another. Each road has the distance, its share of the distance on named roads and the rough position of its centre (three decimals), so it needs `locations:read`. Moves without map data, or not worked out again yet after an upgrade, count towards `distanceM` only.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "description": "The 25 roads you travelled most over a period of local days, for one transport mode or all of them, by the name OpenStreetMap gives them, with the distance and the number of moves on each. Ways of one name that lie within about 10 km of each other are one road, the same name further away another. Names and distances only, but a road name says where you were, so it needs `locations:read`. `mappedM` is the distance of moves with map data; moves without it count towards nothing, and `pending` is true while moves still wait for their ways to be worked out after an upgrade.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
         "tags": [
           "Insights"
         ],
@@ -6792,11 +6792,11 @@
               "train"
             ]
           },
-          "distanceM": {
+          "mappedM": {
             "type": "number",
             "minimum": 0,
-            "description": "Distance of the moves counted, metres.",
-            "example": 412380
+            "description": "The distance of the moves counted that have map data, metres.",
+            "example": 377910
           },
           "namedM": {
             "type": "number",
@@ -6805,11 +6805,12 @@
             "example": 116020
           },
           "ways": {
+            "maxItems": 25,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/InsightsWayRow"
             },
-            "description": "The 50 roads travelled most, longest first."
+            "description": "The 25 roads travelled most, longest first."
           },
           "pending": {
             "type": "boolean",
@@ -6822,7 +6823,7 @@
           "period",
           "mode",
           "modes",
-          "distanceM",
+          "mappedM",
           "namedM",
           "ways",
           "pending"
@@ -6848,43 +6849,19 @@
             "description": "Metres travelled on it.",
             "example": 8240
           },
-          "share": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "Its part of the distance on named roads, 0 to 1.",
-            "example": 0.071
-          },
-          "ways": {
+          "moves": {
             "type": "integer",
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991,
-            "description": "How many ways of OpenStreetMap it is made of.",
-            "example": 3
-          },
-          "lat": {
-            "type": "number",
-            "minimum": -90,
-            "maximum": 90,
-            "description": "Latitude of its centre, three decimals: roads of one name are told apart by where they are.",
-            "example": 51.021
-          },
-          "lon": {
-            "type": "number",
-            "minimum": -180,
-            "maximum": 180,
-            "description": "Longitude of its centre.",
-            "example": 4.482
+            "description": "How many moves were on it.",
+            "example": 14
           }
         },
         "required": [
           "name",
           "kind",
           "distanceM",
-          "share",
-          "ways",
-          "lat",
-          "lon"
+          "moves"
         ],
         "additionalProperties": false,
         "description": "One named road you travelled on."

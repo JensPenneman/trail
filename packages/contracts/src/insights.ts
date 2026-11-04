@@ -480,21 +480,10 @@ export const insightsWayRowSchema = z
       .meta({ description: "The road's name from OpenStreetMap.", example: "Kleine Beer" }),
     kind: wayKindSchema.meta({ description: "The kind of way of the longest part of it." }),
     distanceM: distanceM("Metres travelled on it.", 8_240),
-    share: share("Its part of the distance on named roads, 0 to 1.", 0.071),
-    ways: z.number().int().positive().meta({
-      description: "How many ways of OpenStreetMap it is made of.",
-      example: 3,
+    moves: z.number().int().positive().meta({
+      description: "How many moves were on it.",
+      example: 14,
     }),
-    lat: z.number().min(-90).max(90).meta({
-      description:
-        "Latitude of its centre, three decimals: roads of one name are told apart by where they are.",
-      example: 51.021,
-    }),
-    lon: z
-      .number()
-      .min(-180)
-      .max(180)
-      .meta({ description: "Longitude of its centre.", example: 4.482 }),
   })
   .meta({ id: "InsightsWayRow", description: "One named road you travelled on." });
 export type InsightsWayRow = z.infer<typeof insightsWayRowSchema>;
@@ -508,10 +497,10 @@ export const insightsWaysSchema = z
       .nullable()
       .meta({ description: "The mode asked for; null: every mode." }),
     modes: modesPresentSchema,
-    distanceM: distanceM("Distance of the moves counted, metres.", 412_380),
+    mappedM: distanceM("The distance of the moves counted that have map data, metres.", 377_910),
     namedM: distanceM("The part of it on roads with a name, metres.", 116_020),
-    ways: z.array(insightsWayRowSchema).meta({
-      description: "The 50 roads travelled most, longest first.",
+    ways: z.array(insightsWayRowSchema).max(25).meta({
+      description: "The 25 roads travelled most, longest first.",
     }),
     pending: pendingSchema,
   })

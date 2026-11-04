@@ -4,6 +4,7 @@ import { insightsWaysSchema } from "@trail/contracts/insights";
 import { sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { runFeatureBackfill } from "../../src/processing/featureBackfill";
 import { type Agent, agentFor, signUp, signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
 import { FakeApiTokens, tokenPrincipal } from "../support/fakeApiTokens";
@@ -39,7 +40,7 @@ async function move(
   started: string,
   ended: string,
   distanceM: number,
-  wayTotals: [number, number][] | null,
+  wayTotals: [number, number][] | null | undefined,
 ) {
   await t.ctx.db.execute(sql`
     INSERT INTO segments (device_id, started_at, ended_at, kind, mode, mode_inferred, confidence,
@@ -48,7 +49,7 @@ async function move(
     VALUES (${deviceId}, ${started}::timestamptz, ${ended}::timestamptz, 'move', ${mode}, ${mode},
       0.9, ${distanceM}, ${(Date.parse(ended) - Date.parse(started)) / 1000}, 6, 10, 51, 3.7,
       51.01, 3.71, 51.005, 3.705,
-      ${JSON.stringify({ speed: { median: 18 }, ...(wayTotals === null ? {} : { wayTotals }) })}::jsonb, 4)
+      ${JSON.stringify({ speed: { median: 18 }, ...(wayTotals === undefined ? {} : { wayTotals }) })}::jsonb, 3)
   `);
 }
 
@@ -107,8 +108,8 @@ beforeAll(async () => {
     [101, 1000],
     [105, 500],
   ]);
-  // A move from before the totals were stored, and one of the stranger's.
-  await move(bike, "cycling", "2026-10-22T09:00:00Z", "2026-10-22T10:00:00Z", 4000, null);
+  // A move the feature backfill has not reached yet, and one of the stranger's.
+  await move(bike, "cycling", "2026-10-22T09:00:00Z", "2026-10-22T10:00:00Z", 4000, undefined);
   await move(foreign, "car", "2026-10-20T09:00:00Z", "2026-10-20T10:00:00Z", 50_000, [
     [101, 50_000],
   ]);
@@ -128,36 +129,45 @@ describe("GET /api/v1/insights/ways", () => {
     const answer = await parsed();
     expect(answer.mode).toBeNull();
     expect(answer.modes).toEqual(["walking", "cycling"]);
-    expect(answer.distanceM).toBe(15_500);
+    // The moves with map data; the one waiting for its totals counts for nothing yet.
+    expect(answer.mappedM).toBe(11_500);
     // 101 + 103 in Brussels (8000), 102 in Liège (2000), 105 (500); 104 has no name.
     expect(answer.namedM).toBe(10_500);
-    expect(answer.ways.map((row) => [row.name, row.distanceM, row.ways])).toEqual([
+    expect(answer.ways.map((row) => [row.name, row.distanceM, row.moves])).toEqual([
       ["Rue de la Gare", 8000, 2],
       ["Rue de la Gare", 2000, 1],
       ["Ring", 500, 1],
     ]);
-    expect(answer.ways[0]).toMatchObject({ kind: "residential", share: 0.762 });
-    expect(answer.ways[0]?.lat).toBeCloseTo(50.85, 3);
-    expect(answer.ways[1]?.lon).toBeCloseTo(5.57, 3);
+    expect(answer.ways[0]).toMatchObject({ kind: "residential" });
     expect(answer.ways[2]).toMatchObject({ kind: "motorway" });
+    expect(answer.pending).toBe(true);
   });
 
-  it("takes one mode when asked, and answers for no map data with nothing named", async () => {
+  it("holds names and distances only, no position", async () => {
+    const body = (await ways().expect(200)).body as { ways: object[] };
+    for (const row of body.ways) {
+      expect(Object.keys(row).sort()).toEqual(["distanceM", "kind", "moves", "name"]);
+    }
+    expect(JSON.stringify(body)).not.toMatch(/\d\.\d{3,}/);
+  });
+
+  it("takes one mode when asked, and still lists every mode moved in", async () => {
     const walking = await parsed({ mode: "walking" });
     expect(walking.mode).toBe("walking");
-    expect(walking.ways.map((row) => [row.name, row.distanceM])).toEqual([
-      ["Rue de la Gare", 1000],
-      ["Ring", 500],
+    expect(walking.modes).toEqual(["walking", "cycling"]);
+    expect(walking.ways.map((row) => [row.name, row.distanceM, row.moves])).toEqual([
+      ["Rue de la Gare", 1000, 1],
+      ["Ring", 500, 1],
     ]);
     const car = await parsed({ mode: "car", devices: drive });
-    expect(car).toMatchObject({ distanceM: 0, namedM: 0, ways: [], modes: [] });
+    expect(car).toMatchObject({ mappedM: 0, namedM: 0, ways: [], modes: [], pending: false });
   });
 
   it("counts a move on the days it was on, and no other", async () => {
     const day = await parsed({ from: "2026-10-20", to: "2026-10-20", devices: bike });
-    expect(day.distanceM).toBe(10_000);
+    expect(day).toMatchObject({ mappedM: 10_000, pending: false });
     const other = await parsed({ from: "2026-10-21", to: "2026-10-21", devices: bike });
-    expect(other).toMatchObject({ distanceM: 0, ways: [] });
+    expect(other).toMatchObject({ mappedM: 0, ways: [] });
   });
 
   it("keeps to the owner's devices: a foreign one is a 404, never counted", async () => {
@@ -200,7 +210,7 @@ describe("who may read it", () => {
           .expect(200)
       ).body,
     );
-    expect(answer.distanceM).toBe(1500);
+    expect(answer.mappedM).toBe(1500);
     await request(t.app)
       .get(apiPaths.v1.insights.ways)
       .query({ ...week, devices: bike })
@@ -259,5 +269,96 @@ describe("the metres on each way that processing stores", () => {
         row.distance_m + 1,
       );
     }
+  });
+});
+
+describe("the feature backfill", () => {
+  interface Stored {
+    id: string;
+    totals: [number, number][] | null;
+    version: number;
+    computed_at: string;
+  }
+  const stored = async (deviceId: string): Promise<Stored[]> =>
+    (
+      await t.ctx.db.execute<Stored & Record<string, unknown>>(sql`
+        SELECT id, features->'wayTotals' AS totals, version, computed_at::text AS computed_at
+        FROM segments WHERE device_id = ${deviceId}::uuid AND kind = 'move' ORDER BY started_at
+      `)
+    ).rows;
+
+  it("fills the totals of stored moves from their processed points, once, without touching their stamps", async () => {
+    const motorway = await createDevice(owner, { name: "Backfilled" });
+    await uploadJourney(t.app, motorway.credentials.accessToken, motorwayDrive());
+    await t.ctx.background.drain(5000);
+    await t.ctx.processing.flush();
+    const before = await stored(motorway.device.id);
+    expect(before.length).toBeGreaterThan(0);
+    const measured = before.flatMap((row) => row.totals ?? []);
+    expect(measured.length).toBeGreaterThan(0);
+    await t.ctx.db.execute(sql`
+      UPDATE segments SET features = features - 'wayTotals' WHERE device_id = ${motorway.device.id}::uuid
+    `);
+    const answer = () =>
+      ways({ devices: motorway.device.id, from: "2026-10-26", to: "2026-10-26" })
+        .expect(200)
+        .then((response) => insightsWaysSchema.parse(response.body));
+    expect((await answer()).pending).toBe(true);
+
+    const run = await runFeatureBackfill(t.ctx.db, { pauseMs: 0 });
+    expect(run).toMatchObject({ features: ["wayTotals"], complete: true });
+    expect(run.moves).toBeGreaterThanOrEqual(before.length);
+    const after = await stored(motorway.device.id);
+    expect(after.map((row) => [row.id, row.version, row.computed_at])).toEqual(
+      before.map((row) => [row.id, row.version, row.computed_at]),
+    );
+    for (const [index, row] of after.entries()) {
+      const expected = new Map(before[index]?.totals ?? []);
+      const ids = (totals: [number, number][] | null | undefined) =>
+        (totals ?? []).map(([id]) => id).sort((x, y) => x - y);
+      expect(ids(row.totals)).toEqual(ids(before[index]?.totals));
+      for (const [id, metres] of row.totals ?? []) {
+        expect(metres).toBeGreaterThanOrEqual(25);
+        expect(Math.abs(metres - (expected.get(id) ?? 0))).toBeLessThanOrEqual(
+          Math.max(5, (expected.get(id) ?? 0) * 0.05),
+        );
+      }
+    }
+    expect((await answer()).pending).toBe(false);
+
+    // Recorded as done: a later start finds nothing to fill, even for a move lacking the totals.
+    const state = await t.ctx.db.execute<{ value: unknown }>(
+      sql`SELECT value FROM processing_state WHERE key = 'features'`,
+    );
+    expect(state.rows[0]?.value).toEqual({ versions: { wayTotals: 1 } });
+    expect(await runFeatureBackfill(t.ctx.db, { pauseMs: 0 })).toMatchObject({
+      features: [],
+      moves: 0,
+    });
+  });
+
+  it("stops when asked and resumes at the moves that still lack the totals", async () => {
+    await t.ctx.db.execute(sql`DELETE FROM processing_state WHERE key = 'features'`);
+    await t.ctx.db.execute(
+      sql`UPDATE segments SET features = features - 'wayTotals' WHERE kind = 'move'`,
+    );
+    const controller = new AbortController();
+    const first = await runFeatureBackfill(t.ctx.db, {
+      pauseMs: 0,
+      signal: controller.signal,
+      onDay: () => controller.abort(),
+    });
+    expect(first.complete).toBe(false);
+    expect(first.days).toBe(1);
+    const lacking = await t.ctx.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM segments WHERE kind = 'move' AND NOT features ? 'wayTotals'`,
+    );
+    expect(lacking.rows[0]?.n).toBeGreaterThan(0);
+    const rest = await runFeatureBackfill(t.ctx.db, { pauseMs: 0 });
+    expect(rest.complete).toBe(true);
+    const done = await t.ctx.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM segments WHERE kind = 'move' AND NOT features ? 'wayTotals'`,
+    );
+    expect(done.rows[0]?.n).toBe(0);
   });
 });

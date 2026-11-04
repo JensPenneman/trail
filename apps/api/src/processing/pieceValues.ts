@@ -51,6 +51,9 @@ function intervalM(from: PiecePoint, to: PiecePoint): number {
  * The ways' metres of a piece: the whole move's, in the share the piece's distance is of the
  * move's (what is known of where on the move they were is its points, which a piece has no more of).
  */
+/** A way counts in a piece from this many metres, as in a move (extractFeatures.ts). */
+const minWayM = 25;
+
 function wayTotalsOf(
   features: Record<string, unknown>,
   distanceM: number,
@@ -65,7 +68,7 @@ function wayTotalsOf(
         Array.isArray(entry) && typeof entry[0] === "number" && typeof entry[1] === "number"
           ? round(entry[1] * factor, 1)
           : 0;
-      return metres > 0 ? [[entry[0], metres]] : [];
+      return metres >= minWayM ? [[entry[0], metres]] : [];
     }),
   };
 }

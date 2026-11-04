@@ -27,11 +27,22 @@ import type { FromLevel } from "./processingQueue";
  *   last of its own was (`features.spreadM`, `features.lastPointT`), and a
  *   quick toggle runs until the first stop of ten minutes or more, or the
  *   first move of another kind of travel (on foot, by bike, by vehicle).
- * - inferred 4: `features.wayTotals`, the metres on each way of a mapped move
- *   (Insights › named roads). Re-inferred at start-up from the stored mapped
- *   points, without map matching, like version 3.
  */
-export const processingVersions = { averaged: 1, mapped: 1, inferred: 4 } as const;
+export const processingVersions = { averaged: 1, mapped: 1, inferred: 3 } as const;
 
 /** A version per level, as `processing_state` records them. */
 export type ProcessingVersions = Readonly<Record<FromLevel, number>>;
+
+/**
+ * Features of the stored segments that are filled in afterwards, from rows already derived, without
+ * working the history out again (processing/featureBackfill.ts, docs/architecture.md §17.4): the
+ * version of each, as `processing_state` records it under `features`. New windows write them from
+ * the pipeline; a bump runs the fill once more over the history.
+ *
+ * - wayTotals 1: `features.wayTotals`, the metres on each way of a mapped move (Insights › named
+ *   roads), from the stored processed points.
+ */
+export const processingFeatureVersions = { wayTotals: 1 } as const;
+
+/** A feature of the segments that the backfill fills in. */
+export type ProcessingFeature = keyof typeof processingFeatureVersions;

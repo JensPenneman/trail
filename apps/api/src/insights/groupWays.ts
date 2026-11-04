@@ -7,6 +7,8 @@ export interface NamedWay {
   metres: number;
   lat: number;
   lon: number;
+  /** The moves (their indexes in the period's list) that were on it. */
+  moves: readonly number[];
 }
 
 export interface WayGroup {
@@ -16,11 +18,15 @@ export interface WayGroup {
   /** The metre-weighted centre of the group's ways. */
   lat: number;
   lon: number;
-  ways: number;
+  /** How many moves were on any of its ways. */
+  moves: number;
 }
 
-/** The zoom of the cells that keep apart roads of the same name in different towns (~38 km wide). */
-const groupZoom = 10;
+/**
+ * The zoom of the cells that keep apart roads of the same name: about 10 km wide at 51° N, so the
+ * same name in villages 20 km apart is two roads, and in neighbouring villages one.
+ */
+const groupZoom = 12;
 
 function cellOf(lat: number, lon: number): { x: number; y: number } {
   const n = 2 ** groupZoom;
@@ -72,7 +78,7 @@ export function groupWays(ways: readonly NamedWay[]): WayGroup[] {
         metres,
         lat: members.reduce((sum, way) => sum + way.lat * way.metres, 0) / metres,
         lon: members.reduce((sum, way) => sum + way.lon * way.metres, 0) / metres,
-        ways: members.length,
+        moves: new Set(members.flatMap((way) => way.moves)).size,
       });
     }
   }
