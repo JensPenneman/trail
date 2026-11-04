@@ -75,7 +75,7 @@ export interface MapTransportSegment {
 
 /** The heatmap's cells as the API sends them and the scale that colours them. */
 export interface MapHeat {
-  /** `[lon, lat, count]` of each cell's centre. */
+  /** `[x, y, value]` of each cell: the tile of `cellZoom` and its points, seconds or visits. */
   cells: readonly (readonly [number, number, number])[];
   /** The slippy-map level of the cells: a cell is that level's tile. */
   cellZoom: number;

@@ -14,7 +14,15 @@ test("Heat draws the heatmap of every point and lists the busiest places", async
   const heatmap = page.waitForResponse((response) => response.url().includes("/api/heatmap?"));
   await page.goto("/?view=heat");
   // The cells in view: the camera starts around the phone's latest position.
-  const { cells, cellZoom } = heatmapResponseSchema.parse(await (await heatmap).json());
+  const answer = heatmapResponseSchema.parse(await (await heatmap).json());
+  const { cells, cellZoom } = answer;
+  // Points, all time: tiles of the cell zoom with whole counts, nothing pending.
+  expect(answer).toMatchObject({ heat: "points", period: null, pending: false, truncated: false });
+  for (const [x, y] of cells) {
+    expect(Number.isInteger(x) && Number.isInteger(y)).toBe(true);
+    expect(x).toBeLessThan(2 ** cellZoom);
+    expect(y).toBeLessThan(2 ** cellZoom);
+  }
   const counted = cells.reduce((sum, [, , count]) => sum + count, 0);
   expect(counted).toBeGreaterThan(0);
   expect(counted).toBeLessThanOrEqual(30);

@@ -140,12 +140,16 @@ export function standardRoutes() {
     "GET /api/heatmap": {
       status: 200,
       body: {
+        heat: "points",
         cellZoom: 15,
         cells: [
-          [3.527, 50.985, 9000],
-          [3.718, 51.048, 6400],
+          // The tiles of zoom 15 that hold Ghent's west and east ends.
+          [16722, 10976, 9000],
+          [16730, 10970, 6400],
         ],
         truncated: false,
+        period: null,
+        pending: false,
       },
     },
     "GET /api/locations": {

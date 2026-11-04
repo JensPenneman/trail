@@ -95,6 +95,27 @@ describe("createFormatter", () => {
     ).toBe("yesterday");
   });
 
+  it("formats paces as minutes and seconds a kilometre, and none without speed", () => {
+    const format = createFormatter("en-GB", "Europe/Brussels");
+    expect(format.pace(1000 / 390)).toBe("6:30 /km");
+    expect(format.pace(1000 / 330)).toBe("5:30 /km");
+    expect(format.pace(1000 / 3605)).toBe("60:05 /km");
+    expect(format.pace(0)).toBe("—");
+    expect(format.pace(Number.NaN)).toBe("—");
+  });
+
+  it("names the round durations of a key, and any other as a duration", () => {
+    const format = createFormatter("en-GB", "Europe/Brussels");
+    expect(format.roundDuration(60)).toBe("1 min");
+    expect(format.roundDuration(3600)).toBe("1 hr");
+    expect(format.roundDuration(86_400)).toBe("1 day");
+    expect(format.roundDuration(2 * 86_400)).toBe("2 days");
+    expect(format.roundDuration(604_800)).toBe("1 wk");
+    expect(format.roundDuration(4 * 604_800)).toBe("4 wks");
+    expect(format.roundDuration(12_000)).toBe(format.duration(12_000));
+    expect(format.roundDuration(0)).toBe(format.duration(0));
+  });
+
   it("formats durations with the largest sensible units", () => {
     const format = brussels();
     expect(format.duration(45)).toBe("45 secs");

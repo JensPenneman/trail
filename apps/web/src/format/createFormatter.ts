@@ -31,6 +31,10 @@ export interface Formatter {
   onDay(instant: number | string, now: number): string;
   /** 1 hr 12 min */
   duration(seconds: number): string;
+  /** 1 min, 3 hr, 1 day, 2 wks — the round durations of a key; any other as `duration` */
+  roundDuration(seconds: number): string;
+  /** 6:30 /km — the time a kilometre takes at a speed in m/s; "—" without speed */
+  pace(metresPerSecond: number): string;
   /** 850 m, 12.3 km */
   distance(metres: number): string;
   /** 32 km/h */
@@ -183,6 +187,16 @@ export function createFormatter(locale: string, timeZone: string): Formatter {
     unit: "minute",
     unitDisplay: "short",
   });
+  const days = new Intl.NumberFormat(locale, {
+    style: "unit",
+    unit: "day",
+    unitDisplay: "long",
+  });
+  const weeks = new Intl.NumberFormat(locale, {
+    style: "unit",
+    unit: "week",
+    unitDisplay: "short",
+  });
   const seconds = new Intl.NumberFormat(locale, {
     style: "unit",
     unit: "second",
@@ -214,6 +228,17 @@ export function createFormatter(locale: string, timeZone: string): Formatter {
     maximumFractionDigits: 0,
   });
   const currentYear = new Date().getUTCFullYear();
+
+  const duration = (totalSeconds: number): string => {
+    const rounded = Math.max(0, Math.round(totalSeconds));
+    if (rounded < 60) return seconds.format(rounded);
+    const totalMinutes = Math.round(rounded / 60);
+    const wholeHours = Math.floor(totalMinutes / 60);
+    const restMinutes = totalMinutes % 60;
+    if (wholeHours === 0) return minutes.format(restMinutes);
+    if (restMinutes === 0) return hours.format(wholeHours);
+    return `${hours.format(wholeHours)} ${minutes.format(restMinutes)}`;
+  };
 
   return {
     locale,
@@ -259,15 +284,17 @@ export function createFormatter(locale: string, timeZone: string): Formatter {
         ? `on ${zonedDate.format(time)}`
         : `on ${zonedDateWithYear.format(time)}`;
     },
-    duration: (totalSeconds) => {
-      const rounded = Math.max(0, Math.round(totalSeconds));
-      if (rounded < 60) return seconds.format(rounded);
-      const totalMinutes = Math.round(rounded / 60);
-      const wholeHours = Math.floor(totalMinutes / 60);
-      const restMinutes = totalMinutes % 60;
-      if (wholeHours === 0) return minutes.format(restMinutes);
-      if (restMinutes === 0) return hours.format(wholeHours);
-      return `${hours.format(wholeHours)} ${minutes.format(restMinutes)}`;
+    duration,
+    roundDuration: (totalSeconds) => {
+      const rounded = Math.round(totalSeconds);
+      if (rounded > 0 && rounded % 604_800 === 0) return weeks.format(rounded / 604_800);
+      if (rounded > 0 && rounded % 86_400 === 0) return days.format(rounded / 86_400);
+      return duration(totalSeconds);
+    },
+    pace: (metresPerSecond) => {
+      if (!(metresPerSecond > 0)) return "—";
+      const perKm = Math.round(1000 / metresPerSecond);
+      return `${Math.floor(perKm / 60)}:${String(perKm % 60).padStart(2, "0")} /km`;
     },
     distance: (value) => {
       // Rounded first, so 999.6 m becomes "1.0 km" rather than "1,000 m".

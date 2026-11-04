@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { heatFeatures } from "../src/map/heatFeatures";
 import { heatRamp } from "../src/map/heatRamp";
-import { heatClassOf, heatScale, heatShadeOf } from "../src/map/heatScale";
+import {
+  countLadders,
+  durationLadders,
+  heatClassOf,
+  heatScale,
+  heatShadeOf,
+} from "../src/map/heatScale";
+import { cellCentre, cellEdges } from "../src/map/heatTiles";
 
 /** `count` cells of every value, for a distribution of a given shape. */
 const spread = (...groups: (readonly [value: number, cells: number])[]) =>
@@ -79,21 +86,84 @@ describe("heatScale", () => {
   });
 });
 
+describe("heatScale by time spent", () => {
+  const minute = 60;
+  const hour = 3600;
+  const day = 86_400;
+  const scale = (...values: number[]) => heatScale(values, durationLadders).starts;
+
+  it("steps by round times, the finest series that fits six classes", () => {
+    // The finest series would need seven classes here; the next one fits five.
+    expect(scale(2 * minute, 7 * minute, 40 * minute, 90 * minute, 3 * hour)).toEqual([
+      2 * minute,
+      5 * minute,
+      15 * minute,
+      hour,
+      3 * hour,
+    ]);
+    // A short range keeps the finest series.
+    expect(scale(2 * minute, 4 * minute, 12 * minute)).toEqual([
+      2 * minute,
+      5 * minute,
+      10 * minute,
+    ]);
+  });
+
+  it("gives way to coarser series over longer ranges, down to one that always fits", () => {
+    const wide = scale(minute, 20 * minute, 5 * hour, 2 * day, 30 * day);
+    expect(wide.length).toBeLessThanOrEqual(6);
+    expect(wide[0]).toBe(minute);
+    // Every start is a round time of some series.
+    const round = new Set(durationLadders.flatMap((ladder) => ladder.startsUpTo(40 * day)));
+    for (const start of wide) expect(round.has(start)).toBe(true);
+    expect(scale(30, 40 * 7 * day)).toEqual(
+      [30, minute, hour, day, 7 * day].filter((v) => v <= 40 * 7 * day),
+    );
+  });
+
+  it("keeps the busiest few per cent in the top class and counts as before", () => {
+    expect(heatScale([1, 3, 7, 12, 25, 40], countLadders).starts).toEqual([1, 2, 5, 10, 20]);
+    expect(heatScale([1, 3, 7, 12, 25, 40]).starts).toEqual([1, 2, 5, 10, 20]);
+  });
+});
+
+describe("heat tiles", () => {
+  const tiles = 2 ** 12;
+  const lonOf = (column: number) => (column / tiles) * 360 - 180;
+  const latOf = (row: number) =>
+    (Math.atan(Math.sinh(Math.PI * (1 - (2 * row) / tiles))) * 180) / Math.PI;
+
+  it("gives the edges and the centre of a tile, with an inset", () => {
+    const edges = cellEdges(2090, 1370, 12);
+    expect(edges.west).toBeCloseTo(lonOf(2090), 9);
+    expect(edges.east).toBeCloseTo(lonOf(2091), 9);
+    expect(edges.north).toBeCloseTo(latOf(1370), 9);
+    expect(edges.south).toBeCloseTo(latOf(1371), 9);
+    const [lon, lat] = cellCentre(2090, 1370, 12);
+    expect(lon).toBeCloseTo(lonOf(2090.5), 9);
+    expect(lat).toBeCloseTo(latOf(1370.5), 9);
+    expect(cellEdges(2090, 1370, 12, 0.25).west).toBeCloseTo(lonOf(2090.25), 9);
+  });
+
+  it("keeps the first and last columns of the world apart", () => {
+    expect(cellEdges(0, 0, 6).west).toBeCloseTo(-180, 9);
+    expect(cellEdges(63, 0, 6).east).toBeCloseTo(180, 9);
+  });
+});
+
 describe("heatFeatures", () => {
   const tiles = 2 ** 12;
   const lonOf = (column: number) => (column / tiles) * 360 - 180;
   const latOf = (row: number) =>
     (Math.atan(Math.sinh(Math.PI * (1 - (2 * row) / tiles))) * 180) / Math.PI;
-  // The centre of tile (2090, 1370) at z12: Ghent.
-  const centre = [lonOf(2090.5), latOf(1370.5)] as const;
+  // Tile (2090, 1370) at z12: Ghent.
   const heat = (count: number) => ({
-    cells: [[centre[0], centre[1], count] as const],
+    cells: [[2090, 1370, count] as const],
     cellZoom: 12,
     scale: { starts: [1, 10, 100] },
   });
   const ring = (zoom: number) =>
     heatFeatures(heat(50), zoom).features[0]?.geometry.coordinates[0] ?? [];
-
   it("draws nothing without cells", () => {
     expect(heatFeatures(null, 7).features).toEqual([]);
   });
@@ -121,6 +191,19 @@ describe("heatFeatures", () => {
   it("keeps the squares visible on cells far smaller than meant", () => {
     // Far zoomed out the gap stays a fifth of the cell at most.
     expect(ring(2)[0]?.[0]).toBeCloseTo(lonOf(2090 + 0.1), 9);
+  });
+
+  it("draws cells on both sides of the antimeridian from their tiles", () => {
+    const world = {
+      cells: [[0, 1370, 5] as const, [tiles - 1, 1370, 5] as const],
+      cellZoom: 12,
+      scale: { starts: [1] },
+    };
+    const [west, east] = heatFeatures(world, 7).features.map(
+      (feature) => feature.geometry.coordinates[0]?.[0]?.[0] ?? 0,
+    );
+    expect(west).toBeCloseTo(-180, 0);
+    expect(east).toBeCloseTo(180, 0);
   });
 
   it("gives each square the ramp step of its class", () => {

@@ -75,13 +75,33 @@ describe("pointCodec", () => {
     ];
     expect(unpackLevelPoints(packLevelPoints(level))).toEqual(level);
     const cells: [number, number, number][] = [
-      [3.7104, 51.0362, 12],
-      [3.7116, 51.0371, 1],
+      [1_048_575, 524_288, 12],
+      [133_773, 87_718, 4_294_967_295],
+      [0, 0, 1],
     ];
-    expect(unpackHeatCells(packHeatCells(cells))).toEqual(cells);
+    const packed = packHeatCells(cells);
+    // Whole numbers as 32-bit unsigned: 12 bytes a cell.
+    expect(packed.packed.byteLength).toBe(cells.length * 12);
+    expect(unpackHeatCells(packed)).toEqual(cells);
+    expect(unpackHeatCells(packHeatCells([]))).toEqual([]);
     expect(
       z.array(levelPointSchema).safeParse(unpackLevelPoints(packLevelPoints(level))).success,
     ).toBe(true);
+  });
+
+  it("refuses heat cells it did not make, the old 64-bit float ones included", () => {
+    const packed = packHeatCells([
+      [1, 2, 3],
+      [4, 5, 6],
+    ]);
+    expect(unpackHeatCells(null)).toBeNull();
+    expect(unpackHeatCells({ ...packed, n: 3 })).toBeNull();
+    expect(unpackHeatCells({ ...packed, width: 2 })).toBeNull();
+    // An entry from before: 24 bytes a cell, column after column.
+    const old = new Float64Array([3.71, 3.72, 51.03, 51.04, 12, 7]);
+    expect(unpackHeatCells({ packed: old.buffer, n: 2, width: 3 })).toBeNull();
+    // Level points are 64-bit rows, not these.
+    expect(unpackHeatCells(packLevelPoints([[1, 2, 3]]))).toBeNull();
   });
 
   it("refuses what it did not make", () => {

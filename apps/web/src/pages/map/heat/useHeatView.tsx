@@ -5,6 +5,7 @@ import { useFormatter } from "../../../format/useFormatter";
 import { boundsOf } from "../../../map/boundsOf";
 import { heatmapParamsFor } from "../../../map/heatmapParamsFor";
 import { heatScale } from "../../../map/heatScale";
+import { cellCentre } from "../../../map/heatTiles";
 import type { Bounds, MapHeat, MapViewState } from "../../../map/mapTypes";
 import { useDays } from "../../../queries/useDays";
 import { useHeatmap } from "../../../queries/useHeatmap";
@@ -120,9 +121,21 @@ export function useHeatView({
   useEffect(() => {
     if (!framesCamera || dataBounds !== null || heatmap.data === undefined) return;
     if (heatmap.data.cells.length === 0) return;
-    setDataBounds(boundsOf(heatmap.data.cells.map(([lon, lat]) => [lon, lat] as const)));
+    const { cells: found, cellZoom } = heatmap.data;
+    setDataBounds(boundsOf(found.map(([x, y]) => cellCentre(x, y, cellZoom))));
   }, [framesCamera, heatmap.data, dataBounds]);
-  const busiest = useMemo(() => [...cells].sort((a, b) => b[2] - a[2]).slice(0, 5), [cells]);
+  // The five busiest cells, as the places they centre on.
+  const busiest = useMemo(
+    () =>
+      [...cells]
+        .sort((a, b) => b[2] - a[2])
+        .slice(0, 5)
+        .map(([x, y, count]) => {
+          const [lon, lat] = cellCentre(x, y, shown?.cellZoom ?? 0);
+          return { lon, lat, count };
+        }),
+    [cells, shown?.cellZoom],
+  );
 
   if (!active) return inactiveView;
 
@@ -233,7 +246,7 @@ export function useHeatView({
             </p>
           ) : (
             <PlainList ordered className="row-list card card--flush">
-              {busiest.map(([lon, lat, count]) => (
+              {busiest.map(({ lon, lat, count }) => (
                 <li key={`${lon},${lat}`} className="row-list__item">
                   <div className="row-list__main">
                     <p className="row-list__title">{format.count(count)} points</p>

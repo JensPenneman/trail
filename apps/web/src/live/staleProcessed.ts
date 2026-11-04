@@ -17,6 +17,17 @@ const processed = new Set(["level-tracks", "timeline", "insights"]);
  */
 const digests = new Set(["days"]);
 
+/**
+ * The heat of time spent and visits is made of the stops processing works out (the heat of points
+ * is not): these answers go stale with any change, the ones on screen are asked for again.
+ */
+export function invalidateStopHeat(client: QueryClient): Promise<void> {
+  return client.invalidateQueries({
+    queryKey: queryKeys.all.heatmap,
+    predicate: (query) => (query.queryKey[1] as { heat?: string } | undefined)?.heat !== "points",
+  });
+}
+
 /** A stretch of a device's history that processing changed, as the `segments` event names it. */
 export interface ProcessedChange {
   deviceId: string;
@@ -79,4 +90,5 @@ export function staleProcessed(client: QueryClient, change: ProcessedChange, by:
   void staleDaySlices(client, digests, slice);
   void staleDaySlices(client, processed, slice);
   void client.invalidateQueries({ queryKey: queryKeys.deviceMode(change.deviceId) });
+  void invalidateStopHeat(client);
 }
