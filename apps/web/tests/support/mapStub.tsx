@@ -6,8 +6,24 @@ const loadedView = { bounds: [3.4, 50.9, 3.9, 51.1] as const, zoom: 11 };
 
 /** jsdom has no WebGL; page tests check what is handed to the map instead. */
 export function MapStub(props: TrailMapProps) {
-  const { onViewChange } = props;
-  useEffect(() => onViewChange?.(loadedView), [onViewChange]);
+  const { onViewChange, initialView } = props;
+  // As a real map reports its view once loaded: where it was told to start, else Ghent.
+  useEffect(() => {
+    if (initialView === undefined) {
+      onViewChange?.(loadedView);
+      return;
+    }
+    const [lon, lat] = initialView.center;
+    // Symmetric around the centre in the map's own (Mercator) space, as a real map's bounds are.
+    const y = (degrees: number) => Math.log(Math.tan(Math.PI / 4 + (degrees * Math.PI) / 360));
+    const degrees = (value: number) =>
+      ((2 * Math.atan(Math.exp(value)) - Math.PI / 2) * 180) / Math.PI;
+    const half = (y(lat + 0.1) - y(lat - 0.1)) / 2;
+    onViewChange?.({
+      bounds: [lon - 0.2, degrees(y(lat) - half), lon + 0.2, degrees(y(lat) + half)],
+      zoom: initialView.zoom,
+    });
+  }, [onViewChange, initialView]);
   return (
     <div
       role="img"
@@ -17,7 +33,9 @@ export function MapStub(props: TrailMapProps) {
       data-tracks={props.tracks?.length ?? 0}
       data-transport={props.transport?.length ?? 0}
       data-positions={props.positions?.length ?? 0}
+      aria-describedby={props.describedBy}
       data-heat={props.heat?.cells.length ?? 0}
+      data-initial-view={JSON.stringify(props.initialView ?? null)}
       data-fit={props.fit?.key ?? ""}
       data-fit-bounds={JSON.stringify(props.fit?.bounds ?? null)}
       data-focus={props.focus?.key ?? ""}

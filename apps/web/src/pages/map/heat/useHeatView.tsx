@@ -1,18 +1,25 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
-import { useEffect, useMemo, useState } from "react";
+import type { HeatMeasure } from "@trail/contracts/heatmap";
+import { useEffect, useId, useMemo, useState } from "react";
+import { useFormatter } from "../../../format/useFormatter";
 import { boundsOf } from "../../../map/boundsOf";
 import { heatmapParamsFor } from "../../../map/heatmapParamsFor";
 import { heatScale } from "../../../map/heatScale";
 import { heatPlaces } from "../../../map/heatTiles";
 import type { Bounds, MapHeat, MapViewState } from "../../../map/mapTypes";
 import { useHeatmap } from "../../../queries/useHeatmap";
+import { Button } from "../../../ui/Button";
 import { Spinner } from "../../../ui/Spinner";
 import { useDebouncedValue } from "../../../ui/useDebouncedValue";
 import { inactiveView, type MapViewContent } from "../MapViewContent";
 import type { MapSelection } from "../resolveMapSelection";
 import { HeatDetails } from "./HeatDetails";
 import { HeatLegend } from "./HeatLegend";
+import { HeatLens } from "./HeatLens";
+import { hasPeriod, heatMeasureInfo } from "./heatMeasures";
+import type { HeatPeriod } from "./heatPeriod";
+import { periodDetail, periodLabel } from "./lensLabel";
 
 export interface HeatViewInput {
   active: boolean;
@@ -27,6 +34,12 @@ export interface HeatViewInput {
   framesCamera: boolean;
   dark: boolean;
   today: string;
+  /** What Heat counts (`useHeatChoice`). */
+  measure: HeatMeasure;
+  /** The period in the address; null: all time. */
+  period: HeatPeriod | null;
+  /** Takes the lens (measure, period) off the address. */
+  onClearLens: () => void;
 }
 
 /**
@@ -44,7 +57,12 @@ export function useHeatView({
   framesCamera,
   dark,
   today,
+  measure,
+  period,
+  onClearLens,
 }: HeatViewInput): MapViewContent {
+  const format = useFormatter();
+  const keyId = useId();
   const [focus, setFocus] = useState<{
     key: string;
     lon: number;
@@ -55,7 +73,9 @@ export function useHeatView({
   const deviceIds = selection.own?.deviceIds ?? null;
   const settledView = useDebouncedValue(viewport, 300);
   const heatmap = useHeatmap(
-    !active || settledView === null ? null : heatmapParamsFor(settledView, deviceIds),
+    !active || settledView === null
+      ? null
+      : heatmapParamsFor(settledView, deviceIds, { heat: measure, period }),
   );
   // Opened here: start where the devices are now, else the map's default view.
   const initialBounds = useMemo(
@@ -78,7 +98,10 @@ export function useHeatView({
         : {
             cells: shown.cells,
             cellZoom: shown.cellZoom,
-            scale: heatScale(shown.cells.map(([, , count]) => count)),
+            scale: heatScale(
+              shown.cells.map(([, , value]) => value),
+              heatMeasureInfo[shown.heat].ladders,
+            ),
           },
     [shown],
   );
@@ -92,11 +115,38 @@ export function useHeatView({
 
   if (!active) return inactiveView;
 
+  // What the answer on screen says it covers, not what was asked for: a measure or period just
+  // chosen shows "Loading…" under its own title until its cells arrive.
+  const filtered = hasPeriod(measure) && period !== null;
+  const answered = shown ?? null;
+  const periodText =
+    answered?.period != null
+      ? periodDetail(answered.period, !filtered && hasPeriod(answered.heat), format)
+      : answered === null
+        ? null
+        : "All time";
+  const empty = answered !== null && answered.cells.length === 0;
+  const keyStatus = heatmap.isError
+    ? "The heatmap could not be loaded"
+    : answered === null
+      ? "Loading…"
+      : empty
+        ? hasPeriod(answered.heat)
+          ? "Nothing in view for this period"
+          : "Nothing in view"
+        : null;
+
   return {
     title: "Heatmap",
     map: {
-      label:
-        "Heatmap of all recorded points in view: everywhere your devices have been. The busiest places are under Heat on your page.",
+      label: `Heatmap of ${
+        (answered?.heat ?? measure) === "points"
+          ? "all recorded points"
+          : (answered?.heat ?? measure) === "time"
+            ? "time spent at places"
+            : "visits to places"
+      } in view: everywhere your devices have been. The busiest places are under Heat on your page.`,
+      describedBy: keyId,
       heat,
       ...(framesCamera
         ? {
@@ -112,7 +162,8 @@ export function useHeatView({
         : {}),
       focus,
     },
-    controls: null,
+    controls:
+      filtered && period !== null ? <HeatLens period={period} onClear={onClearLens} /> : null,
     transport: null,
     chip: heatmap.isFetching ? (
       <p className="map-page__chip" aria-hidden="true">
@@ -120,7 +171,29 @@ export function useHeatView({
       </p>
     ) : null,
     // The key of the squares' colours, small over the map's bottom-left corner.
-    legend: heat === null ? null : <HeatLegend scale={heat.scale} dark={dark} />,
+    legend: (
+      <HeatLegend
+        id={keyId}
+        heat={answered?.heat ?? measure}
+        scale={heat === null || empty ? null : heat.scale}
+        detail={periodText}
+        dark={dark}
+        status={keyStatus}
+        truncated={answered?.truncated === true}
+        pending={answered?.pending === true}
+        retry={
+          heatmap.isError ? (
+            <Button
+              variant="ghost"
+              onClick={() => void heatmap.refetch()}
+              busy={heatmap.isFetching}
+            >
+              Retry
+            </Button>
+          ) : null
+        }
+      />
+    ),
     foot: null,
     timeline: null,
     timelineLabel: "",
@@ -130,6 +203,7 @@ export function useHeatView({
         deviceIds={deviceIds}
         today={today}
         heatmap={heatmap}
+        periodText={answered?.period == null ? null : periodLabel(answered.period, format)}
         onShow={(place) => setFocus({ key: `${place.lon},${place.lat}:${Date.now()}`, ...place })}
       />
     ),

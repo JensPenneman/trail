@@ -390,6 +390,8 @@ export const settingsNodes = [
       "light",
       "satellite",
       "level",
+      "heat",
+      "colour",
       "own activity",
       "offline",
       "cache",
@@ -401,6 +403,16 @@ export const settingsNodes = [
         label: "Detail of the tracks",
         anchor: "map",
         keywords: ["level", "raw", "averaged", "mapped", "transport"],
+      },
+      {
+        label: "Heat by",
+        anchor: "map",
+        keywords: ["heatmap", "points", "time", "visits", "places"],
+      },
+      {
+        label: "Colour paths by",
+        anchor: "map",
+        keywords: ["colour", "color", "speed", "device", "mode", "time of day", "lines"],
       },
       { label: "Your own activity", anchor: "access-log", keywords: ["access log"] },
       {

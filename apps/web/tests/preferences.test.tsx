@@ -163,6 +163,38 @@ describe("Settings › Preferences", () => {
     );
   });
 
+  it("saves what the heatmap counts and what the paths are coloured by", async () => {
+    window.localStorage.setItem("trail.heat", "time");
+    try {
+      const person = userEvent.setup();
+      const { calls } = renderSignedIn(<PreferencesPage />, "/settings/preferences", user);
+      const heat = await screen.findByRole("combobox", { name: "Heat by" });
+      expect(heat).toHaveValue("points");
+      expect(
+        within(heat)
+          .getAllByRole("option")
+          .map((option) => option.textContent),
+      ).toEqual(["Points recorded", "Time spent at places", "Visits to places"]);
+      await person.selectOptions(heat, "visits");
+      expect(await screen.findByText("Heat by saved: Visits to places.")).toBeInTheDocument();
+      // The browser follows the account again.
+      expect(window.localStorage.getItem("trail.heat")).toBeNull();
+      const colour = screen.getByRole("combobox", { name: "Colour paths by" });
+      expect(colour).toHaveValue("mode");
+      await person.selectOptions(colour, "time");
+      expect(await screen.findByText("Colour paths by saved: Time of day.")).toBeInTheDocument();
+      await waitFor(() =>
+        expect(calls.filter((call) => call.method === "PATCH").map((call) => call.body)).toEqual([
+          { preferences: { heat: "visits" } },
+          { preferences: { color: "time" } },
+        ]),
+      );
+      expect(screen.getByRole("combobox", { name: "Heat by" })).toHaveValue("visits");
+    } finally {
+      window.localStorage.clear();
+    }
+  });
+
   it("switches the own activity of the access log", async () => {
     const person = userEvent.setup();
     const { calls } = renderSignedIn(<PreferencesPage />, "/settings/preferences", user);

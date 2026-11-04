@@ -1,4 +1,5 @@
-import type { Preferences } from "@trail/contracts/preferences";
+import { heatMeasures } from "@trail/contracts/heatmap";
+import { type Preferences, pathColours } from "@trail/contracts/preferences";
 import { processingLevels } from "@trail/contracts/transport";
 import { useState } from "react";
 import { useSessionUser } from "../../app/useSessionUser";
@@ -14,12 +15,27 @@ import { SettingsRow } from "../../settings/SettingsRow";
 import { levelLabels } from "../../transport/LevelControl";
 import { ErrorState } from "../../ui/ErrorState";
 import { useAnnounce } from "../../ui/useAnnounce";
+import { heatMeasureInfo } from "../map/heat/heatMeasures";
 
 const isLevel = (value: string): value is (typeof processingLevels)[number] =>
   (processingLevels as readonly string[]).includes(value);
 
+const colourLabels: Readonly<Record<Preferences["color"], string>> = {
+  mode: "Mode",
+  device: "Device",
+  speed: "Speed",
+  time: "Time of day",
+};
+
+const isHeat = (value: string): value is Preferences["heat"] =>
+  (heatMeasures as readonly string[]).includes(value);
+const isColour = (value: string): value is Preferences["color"] =>
+  (pathColours as readonly string[]).includes(value);
+
 /** What is said once a change is saved. */
 function savedText(change: Partial<Preferences>): string {
+  if (change.heat !== undefined) return `Heat by saved: ${heatMeasureInfo[change.heat].option}.`;
+  if (change.color !== undefined) return `Colour paths by saved: ${colourLabels[change.color]}.`;
   if (change.mapStyle !== undefined) return `Map style saved: ${mapStyleLabels[change.mapStyle]}.`;
   if (change.level !== undefined)
     return `Detail of the tracks saved: ${levelLabels[change.level]}.`;
@@ -36,6 +52,8 @@ function settled(
   const next = { ...pending };
   if (change.mapStyle !== undefined && next.mapStyle === change.mapStyle) delete next.mapStyle;
   if (change.level !== undefined && next.level === change.level) delete next.level;
+  if (change.heat !== undefined && next.heat === change.heat) delete next.heat;
+  if (change.color !== undefined && next.color === change.color) delete next.color;
   if (change.showOwnActivity !== undefined && next.showOwnActivity === change.showOwnActivity) {
     delete next.showOwnActivity;
   }
@@ -106,6 +124,33 @@ export function PreferencesPage() {
           options={processingLevels.map((level) => ({ value: level, label: levelLabels[level] }))}
           onChange={(value) => {
             if (isLevel(value)) save({ level: value });
+          }}
+        />
+        <SettingsRow
+          kind="select"
+          icon="target"
+          tone="orange"
+          label="Heat by"
+          detail="What the squares of the heatmap count: points, the time spent at places or the visits to them."
+          selected={preferences.heat}
+          options={["points", "time", "visits"].map((value) => ({
+            value,
+            label: heatMeasureInfo[value as "points" | "time" | "visits"].option,
+          }))}
+          onChange={(value) => {
+            if (isHeat(value)) save({ heat: value });
+          }}
+        />
+        <SettingsRow
+          kind="select"
+          icon="route"
+          tone="green"
+          label="Colour paths by"
+          detail="What the lines of the tracks are coloured by, where the level of the tracks offers it."
+          selected={preferences.color}
+          options={pathColours.map((value) => ({ value, label: colourLabels[value] }))}
+          onChange={(value) => {
+            if (isColour(value)) save({ color: value });
           }}
         />
       </SettingsGroup>

@@ -240,7 +240,9 @@ describe("the People page, Heat", () => {
 describe("the People page, Heat, places from tiles", () => {
   it("lists the busiest places at the centres of their tiles and frames the camera on them", async () => {
     mockApi(standardRoutes());
-    renderPage(<PeoplePage />, { url: "/?view=heat", user });
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: "/?view=heat&person=me", user });
+    await openGroup(person, "Heat: totals, busiest places");
     const busiest = await screen.findByRole("region", { name: "Busiest places in view" });
     // The fixture's tiles of zoom 15 decode to these centres, busiest first: a tile read as a
     // longitude and latitude would show 16,705 and 10,972 here.
@@ -259,11 +261,9 @@ describe("the People page, Heat, places from tiles", () => {
     expect(bounds[2]).toBeCloseTo(3.7189, 3);
     expect(bounds[3]).toBeCloseTo(51.0448, 3);
     // "Show" flies to the centre of the tile.
-    await userEvent
-      .setup()
-      .click(
-        within(items[0] as HTMLElement).getByRole("button", { name: "Show this place on the map" }),
-      );
+    await person.click(
+      within(items[0] as HTMLElement).getByRole("button", { name: "Show this place on the map" }),
+    );
     await waitFor(() => expect(map.getAttribute("data-focus-at")).not.toBe("null"));
     const at = JSON.parse(map.getAttribute("data-focus-at") ?? "null") as number[];
     expect(at[0]).toBeCloseTo(3.5321, 3);
