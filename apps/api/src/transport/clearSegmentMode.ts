@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import type { Database } from "../db/database";
 import { toIso } from "../db/toIso";
 import type { DeviceAccess } from "../devices/deviceAccess";
-import { lockDeviceProcessing } from "../processing/deviceLock";
+import { correctionTransaction } from "../processing/deviceLock";
 import { enqueueWindow } from "../processing/processingQueue";
 import { assertMoveOver } from "./assertMoveOver";
 import { findSegment } from "./findSegment";
@@ -25,8 +25,7 @@ export async function clearSegmentMode(
   options: { queue: boolean },
 ): Promise<{ segment: Segment; revoked: { from: Date; to: Date }[] }> {
   const found = await findSegment(db, access, segmentId);
-  return db.transaction(async (tx) => {
-    await lockDeviceProcessing(tx, found.device_id);
+  return correctionTransaction(db, found.device_id, async (tx) => {
     const segment = await findSegment(tx, access, segmentId, { forUpdate: true });
     await assertMoveOver(tx, segment);
     const override = segment.features["override"];

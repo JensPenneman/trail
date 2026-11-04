@@ -15,7 +15,7 @@ export const setSegmentMode = defineRoute(
     path: "/api/v1/segments/{id}/mode",
     operationId: "setSegmentMode",
     summary: "Set a move's mode",
-    description: `Corrects the transport mode of a move: the mode applies to the move's time and wins over the inference, also when the history is processed again. The inferred mode stays visible as \`modeInferred\`. Setting the mode it already has changes nothing. A stop has no mode, and a move still under way cannot be set until it is over (${moveOverHint}): \`409\`. For the move you are on, use \`POST /api/v1/devices/{id}/mode\`.`,
+    description: `Corrects the transport mode of a move: the mode applies to the move's time and wins over the inference, also when the history is processed again. The inferred mode stays visible as \`modeInferred\`. Setting the mode it already has changes nothing. A stop has no mode, and a move still under way cannot be set until it is over (${moveOverHint}): \`409\`. While a long pass over the device's data runs it waits up to 10 seconds for it, then answers \`409\` (try again). For the move you are on, use \`POST /api/v1/devices/{id}/mode\`.`,
     tags: ["Timeline"],
     // The answer carries the segment or the current mode: location data.
     auth: { scopes: ["locations:read", "locations:write"], all: true },

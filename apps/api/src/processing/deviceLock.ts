@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
-import type { Executor } from "../db/database";
+import type { Database, Executor, Transaction } from "../db/database";
+import { errorCodes } from "../db/errorChain";
+import { HttpError } from "../http/httpError";
 
 /**
  * The per-device lock of processing (docs/architecture.md §17.4), held for the
@@ -10,4 +12,36 @@ export async function lockDeviceProcessing(tx: Executor, deviceId: string): Prom
   await tx.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`trail.processing:${deviceId}`}, 0))`,
   );
+}
+
+/** How long a person's correction waits for a pass over the device's data before it asks to retry. */
+export const correctionLockWaitMs = 10_000;
+
+/** What the person is told when the wait ran out (the web app shows it beside a retry). */
+export const stillProcessingMessage = "Still processing this device's data, try again in a moment.";
+
+/**
+ * A transaction that takes the device's processing lock but waits for it only
+ * `waitMs` (and for the rows it then locks, the same): a correction made while
+ * a long pass runs answers `409` and a retry instead of hanging for the pass.
+ */
+export async function correctionTransaction<T>(
+  db: Database,
+  deviceId: string,
+  body: (tx: Transaction) => Promise<T>,
+  waitMs: number = correctionLockWaitMs,
+): Promise<T> {
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT set_config('lock_timeout', ${`${waitMs}ms`}, true)`);
+      await lockDeviceProcessing(tx, deviceId);
+      return body(tx);
+    });
+  } catch (error) {
+    // 55P03: lock_not_available, what `lock_timeout` raises.
+    if (errorCodes(error).includes("55P03")) {
+      throw new HttpError(409, "conflict", stillProcessingMessage);
+    }
+    throw error;
+  }
 }

@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import type { Database } from "../db/database";
 import type { DeviceAccess } from "../devices/deviceAccess";
 import { HttpError } from "../http/httpError";
-import { lockDeviceProcessing } from "../processing/deviceLock";
+import { correctionTransaction } from "../processing/deviceLock";
 import { assertMoveOver } from "./assertMoveOver";
 import { findSegment } from "./findSegment";
 import { type SegmentRow, segmentColumns, toSegment } from "./segmentRow";
@@ -26,8 +26,7 @@ export async function setSegmentMode(
   if (found.kind === "stop") {
     throw new HttpError(409, "conflict", "A stop has no transport mode; set the mode of a move.");
   }
-  return db.transaction(async (tx) => {
-    await lockDeviceProcessing(tx, found.device_id);
+  return correctionTransaction(db, found.device_id, async (tx) => {
     // Read again under the lock: a window processed meanwhile may have replaced it.
     const segment = await findSegment(tx, access, segmentId, { forUpdate: true });
     await assertMoveOver(tx, segment);

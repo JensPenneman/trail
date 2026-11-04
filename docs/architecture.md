@@ -206,7 +206,9 @@ and the API none of the worker's:
   3 s later, as before.
 - **Per-device advisory locks** (`deviceLock.ts`) are the cluster's: a pass in
   the worker and a deletion or a corrected mode in the API exclude each other
-  across processes.
+  across processes. A correction (a move's mode set or reset) waits for the
+  lock at most 10 s (`lock_timeout`, `correctionTransaction`) and then answers
+  `409` to be tried again, instead of hanging behind a long pass.
 - **`segments` events cross with `NOTIFY`**: the pass ends with
   `pg_notify('trail_processing', …)` inside its transaction, and the API's
   listener republishes the message on its bus (§9) — in role `all` too, so

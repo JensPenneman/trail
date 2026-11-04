@@ -10,6 +10,7 @@ import {
 import { sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { lockDeviceProcessing } from "../../src/processing/deviceLock";
 import { type Agent, agentFor, signUp, signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
 import { FakeApiTokens, tokenPrincipal } from "../support/fakeApiTokens";
@@ -378,6 +379,50 @@ describe("PUT and DELETE /api/v1/segments/{id}/mode", () => {
     // Resetting again is harmless.
     await owner.delete(apiPaths.v1.segments.mode(move.id)).set("Origin", testOrigin).expect(200);
   });
+
+  it("answers 409 to try again when a long pass holds the device, and works once it is over", async () => {
+    const move = await trainMove();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked: () => void = () => undefined;
+    const taken = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    // A pass in flight: the device's processing lock, held in a transaction of its own.
+    const pass = t.ctx.db.transaction(async (tx) => {
+      await lockDeviceProcessing(tx, train);
+      locked();
+      await held;
+    });
+    try {
+      await taken;
+      for (const call of [
+        () =>
+          owner
+            .put(apiPaths.v1.segments.mode(move.id))
+            .set("Origin", testOrigin)
+            .send({ mode: "metro" }),
+        () => owner.delete(apiPaths.v1.segments.mode(move.id)).set("Origin", testOrigin),
+      ]) {
+        const refused = await call().expect(409);
+        expect(errorOf(refused.body)).toMatchObject({
+          code: "conflict",
+          message: "Still processing this device's data, try again in a moment.",
+        });
+      }
+    } finally {
+      release();
+      await pass;
+    }
+    await owner
+      .put(apiPaths.v1.segments.mode(move.id))
+      .set("Origin", testOrigin)
+      .send({ mode: "metro" })
+      .expect(200);
+    await owner.delete(apiPaths.v1.segments.mode(move.id)).set("Origin", testOrigin).expect(200);
+  }, 60_000);
 
   it("refuses a stop, an unknown mode, foreign ids and missing scopes", async () => {
     const { items } = await timeline(owner, { devices: train });
