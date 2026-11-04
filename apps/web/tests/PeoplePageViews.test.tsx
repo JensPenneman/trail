@@ -170,6 +170,35 @@ describe("the People page, History", () => {
     expect(screen.getByRole("button", { name: /choose another day/ })).toHaveFocus();
   });
 
+  it("opens the calendar from an empty day with focus on the day shown", async () => {
+    const empty = ({ url }: { url: URL }) => {
+      const from = url.searchParams.get("from") ?? "2026-09-12T00:00:00Z";
+      const to = url.searchParams.get("to") ?? "2026-09-13T00:00:00Z";
+      return { from, to };
+    };
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/tracks": (request: { url: URL }) => ({
+        status: 200,
+        body: { ...empty(request), tracks: [] },
+      }),
+      "GET /api/v1/tracks": (request: { url: URL }) => ({
+        status: 200,
+        body: { ...empty(request), level: "raw", segments: [] },
+      }),
+      "GET /api/v1/segments": {
+        status: 200,
+        body: { items: [], nextCursor: null, pending: false },
+      },
+    });
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: "/?view=history&person=me&date=2026-09-12", user });
+    await person.click(await screen.findByRole("button", { name: "Find a day with data" }));
+    const day = await screen.findByRole("button", { name: /Saturday, 12 September 2026/ });
+    expect(day).toHaveAttribute("aria-pressed", "true");
+    expect(day).toHaveFocus();
+  });
+
   it("shows a period from a deep link", async () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { url: "/?view=history&from=2026-09-01&to=2026-09-07", user });

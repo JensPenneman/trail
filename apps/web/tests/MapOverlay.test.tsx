@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -95,6 +95,22 @@ describe("MapOptions", () => {
     await user.click(screen.getByRole("button", { name: "Elsewhere" }));
     expect(button).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: "Elsewhere" })).toHaveFocus();
+  });
+
+  it("ignores an Escape that belongs to a dialog", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        {options}
+        <div role="dialog" aria-label="A dialog">
+          <button type="button">In the dialog</button>
+        </div>
+      </>,
+    );
+    const button = screen.getByRole("button", { name: /^Map options/ });
+    await user.click(button);
+    fireEvent.keyDown(screen.getByRole("button", { name: "In the dialog" }), { key: "Escape" });
+    expect(button).toHaveAttribute("aria-expanded", "true");
   });
 
   it("stays open for a press inside", async () => {

@@ -2,6 +2,7 @@ import { type ReactNode, useId, useRef, useState } from "react";
 import { Icon } from "../../ui/Icon";
 import { useDismiss } from "../../ui/useDismiss";
 import "./MapOptions.css";
+import "./MapPopover.css";
 
 interface MapOptionsProps {
   /** What is left out while a filter is on ("1 of 2 devices"), shown on the button. */

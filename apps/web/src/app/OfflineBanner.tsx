@@ -8,13 +8,14 @@ import "./OfflineBanner.css";
  * Explains why nothing updates while the device has no network, and why
  * nothing can be changed: the controls that would are off and point here.
  */
-export function OfflineBanner() {
+export function OfflineBanner({ sticky = false }: { sticky?: boolean }) {
   const online = useOnline();
   const banner = useRef<HTMLDivElement | null>(null);
-  // The page's own layout (the map's top edge, the sheet's detents) starts under the banner.
+  // On a page that asks for it (the People page) the banner is sticky and its height is
+  // published: the map's top edge and the sheet's detents start under it.
   useEffect(() => {
     const element = banner.current;
-    if (element === null) return undefined;
+    if (element === null || !sticky) return undefined;
     const root = document.documentElement;
     const publish = () => root.style.setProperty("--banner-height", `${element.offsetHeight}px`);
     publish();
@@ -24,10 +25,14 @@ export function OfflineBanner() {
       observer.disconnect();
       root.style.removeProperty("--banner-height");
     };
-  }, [online]);
+  }, [online, sticky]);
   if (online) return null;
   return (
-    <div className="offline-banner" role="status" ref={banner}>
+    <div
+      className={sticky ? "offline-banner offline-banner--sticky" : "offline-banner"}
+      role="status"
+      ref={banner}
+    >
       <Icon name="warning" />
       <span id={offlineReasonId}>
         You’re offline. Trail shows what it kept and catches up when you reconnect; until then

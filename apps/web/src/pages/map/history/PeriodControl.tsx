@@ -50,6 +50,8 @@ export function PeriodControl({
   );
   useEffect(() => {
     if (!open || !focusIn) return;
+    // Opened from the sheet, which a lifted sheet would cover the popover with: lower it first.
+    if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: "instant" });
     const target =
       popover.current?.querySelector<HTMLElement>('[aria-pressed="true"]') ??
       popover.current?.querySelector<HTMLElement>("button, input");

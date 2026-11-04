@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useLayoutEffect, useRef } from "react";
 import type { MapView } from "./mapViews";
 import { ViewSwitch } from "./ViewSwitch";
 import "./MapOverlay.css";
@@ -30,7 +30,8 @@ export function MapOverlay({
   onMeasure,
 }: MapOverlayProps) {
   const root = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
+  // Before paint: the zoom buttons, the chip and the popovers are placed from it.
+  useLayoutEffect(() => {
     const element = root.current;
     if (element === null || typeof ResizeObserver === "undefined") return undefined;
     const measure = () => onMeasure(element.offsetTop + element.offsetHeight);

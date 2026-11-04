@@ -17,8 +17,7 @@
   /* svh: the browser's toolbar collapsing while the sheet lifts must not resize the detents. */
   --sheet-peek: min(9rem, 22svh);
   --sheet-view: calc(100svh - var(--map-top) - var(--map-bottom-gap));
-  /* Where the floating controls end, from the map's top edge; set by the page, which measures it. */
-  --overlay-end: 3.5rem;
+  /* --overlay-end, where the floating controls end from the map's top edge, is set by the page. */
 
   position: relative;
   min-width: 0;
@@ -163,7 +162,8 @@
   .map-page__panel {
     position: relative;
     z-index: 2;
-    min-height: var(--sheet-view);
+    /* lvh: with the toolbar collapsed the sheet must still reach the full detent. */
+    min-height: calc(100lvh - var(--map-top) - var(--map-bottom-gap));
     border-start-start-radius: var(--radius-xl);
     border-start-end-radius: var(--radius-xl);
     background: var(--color-bg);
@@ -177,6 +177,16 @@
     margin: var(--space-2) auto 0;
     border-radius: var(--radius-pill);
     background: var(--color-border-strong);
+  }
+
+  /* MapLibre's corners keep clear of a landscape phone's sensor housing. */
+  .map-page .maplibregl-ctrl-top-right,
+  .map-page .maplibregl-ctrl-bottom-right {
+    padding-right: var(--safe-right);
+  }
+
+  .map-page .maplibregl-ctrl-bottom-left {
+    padding-left: var(--safe-left);
   }
 
   /* MapLibre's zoom buttons sit below the bar, which spans the map. */

@@ -1,6 +1,15 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type FocusEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useSearchParams } from "react-router";
 import { DocumentTitle } from "../../app/DocumentTitle";
+import { useStickyBanner } from "../../app/StickyBannerContext";
 import { useReadOnly } from "../../app/useReadOnly";
 import { useSessionUser } from "../../app/useSessionUser";
 import { useDeviceColors } from "../../devices/useDeviceColors";
@@ -60,6 +69,7 @@ const besideThePanel = "(min-width: 64rem)";
  * What the devices send is Settings › Devices'.
  */
 export function PeoplePage() {
+  useStickyBanner();
   const user = useSessionUser();
   const {
     search,
@@ -227,10 +237,15 @@ export function PeoplePage() {
   }, [selectedKey, wide, reducedMotion]);
   // Focus on the bar, the map or its buttons, which a lifted sheet covers: lower the sheet to its
   // peek, so what has focus can be seen (WCAG 2.4.11).
-  const lowerSheet = () => {
-    if (!wide && window.scrollY > 0) {
-      window.scrollTo({ top: 0, behavior: reducedMotion ? "instant" : "smooth" });
+  const lowerSheet = (event: FocusEvent<HTMLElement>) => {
+    if (wide || window.scrollY <= 0 || panel.current === null) return;
+    // Only the keyboard (or a screen reader) is lost behind the sheet; a press on the map or a
+    // button at half is the person's own placement. And only what the sheet covers.
+    if (!event.target.matches(":focus-visible")) return;
+    if (event.target.getBoundingClientRect().top < panel.current.getBoundingClientRect().top) {
+      return;
     }
+    window.scrollTo({ top: 0, behavior: reducedMotion ? "instant" : "smooth" });
   };
   const toTop = () => {
     if (panel.current !== null) panel.current.scrollTop = 0;

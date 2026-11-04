@@ -9,6 +9,7 @@ import { ConnectionIndicator } from "./ConnectionIndicator";
 import { FreshnessIndicator } from "./FreshnessIndicator";
 import { OfflineBanner } from "./OfflineBanner";
 import { PrimaryNav } from "./PrimaryNav";
+import { StickyBannerContext } from "./StickyBannerContext";
 import { useDeviceStatusAnnouncements } from "./useDeviceStatusAnnouncements";
 import { useRouteFocus } from "./useRouteFocus";
 import "./AppShell.css";
@@ -16,6 +17,7 @@ import "./AppShell.css";
 /** The signed-in frame: header with navigation, the live event stream, and the page. */
 export function AppShell() {
   const [liveStore] = useState(createLiveStore);
+  const [stickyBanner, setStickyBanner] = useState(false);
   useServerEvents(liveStore);
   useRouteFocus();
   useDeviceStatusAnnouncements();
@@ -41,10 +43,12 @@ export function AppShell() {
         {navigation.state === "loading" ? (
           <div className="route-progress" aria-hidden="true" />
         ) : null}
-        <OfflineBanner />
-        <main id="main" className="app-main" tabIndex={-1}>
-          <Outlet />
-        </main>
+        <OfflineBanner sticky={stickyBanner} />
+        <StickyBannerContext value={setStickyBanner}>
+          <main id="main" className="app-main" tabIndex={-1}>
+            <Outlet />
+          </main>
+        </StickyBannerContext>
         <ScrollRestoration />
       </div>
     </LiveStoreContext>

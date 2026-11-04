@@ -147,12 +147,20 @@ test("on a phone the sheet scrolls over a map that stays, with its detents", asy
   // Focus on what the sheet covers lowers it to peek.
   await page.getByRole("button", { name: "Zoom in" }).focus();
   await page.waitForFunction(() => window.scrollY === 0);
+  // And the button is uncovered afterwards.
+  const zoomBox = await box(page.getByRole("button", { name: "Zoom in" }));
+  const uncovered = await page.evaluate(
+    ([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest(".maplibregl-ctrl-zoom-in"),
+    [zoomBox.x + zoomBox.width / 2, zoomBox.y + zoomBox.height / 2],
+  );
+  expect(uncovered).not.toBeNull();
 
   // Selecting a person lifts it to the half detent.
   await page.getByRole("list", { name: "People", exact: true }).getByRole("link").first().click();
   const half = await page.evaluate(() => {
     const marker = document.querySelector("[data-detent=half]")?.getBoundingClientRect().top ?? 0;
-    return marker + window.scrollY - 56;
+    const padding = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop);
+    return marker + window.scrollY - padding;
   });
   await page.waitForFunction((target) => Math.abs(window.scrollY - target) < 3, half);
 });
@@ -166,14 +174,8 @@ test("the controls and the zoom buttons clear each other on a 375 px screen", as
   await uploadedDevice(page, "Narrow phone", overlandBatch(account.timezone));
   await page.goto("/?view=history&person=me");
   await expect(mapView(page, "History")).toBeChecked();
-  const lowest = async () => {
-    const parts = [
-      await box(bar(page)),
-      await box(page.getByRole("button", { name: /, choose another day$/ })),
-    ];
-    return Math.max(...parts.map((part) => part.y + part.height));
-  };
-  const controlsEnd = await lowest();
+  const overlay = await box(page.locator(".map-overlay"));
+  const controlsEnd = overlay.y + overlay.height;
   const zoom = await box(page.getByRole("button", { name: "Zoom in" }));
   expect(zoom.y).toBeGreaterThanOrEqual(controlsEnd - 1);
   // The popover stays above the sheet.
@@ -182,4 +184,21 @@ test("the controls and the zoom buttons clear each other on a 375 px screen", as
   const sheetTop = (await box(page.locator(".map-page__panel"))).y;
   expect(popover.y + popover.height).toBeLessThanOrEqual(sheetTop + 1);
   await expectAccessible(page, "the period popover on a narrow phone");
+});
+
+test("a press on the map with the sheet at half leaves the sheet where it is", async ({
+  page,
+  account,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "iphone", "the sheet is for phones");
+  await uploadedDevice(page, "Half phone", overlandBatch(account.timezone));
+  await page.goto("/");
+  await page.getByRole("list", { name: "People", exact: true }).getByRole("link").first().click();
+  await page.waitForFunction(() => window.scrollY > 100);
+  await page.waitForTimeout(800);
+  const at = await page.evaluate(() => window.scrollY);
+  const map = await box(canvas(page));
+  await page.mouse.click(map.x + map.width / 2, map.y + map.height / 3);
+  await page.waitForTimeout(600);
+  expect(await page.evaluate(() => window.scrollY)).toBe(at);
 });

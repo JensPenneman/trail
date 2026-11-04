@@ -2872,8 +2872,9 @@ count among them, since they lead to signed-in pages.
   under the bar, whose height is measured into `--overlay-end` since it wraps
   on narrow screens), the "Updating" chip sits top centre (under the bar where
   the screen is not wide enough for both), the map fits tracks under the
-  controls (`fit.inset`: below the bar, left of the zoom column on phones), and History's time
-  slider floats at the map's foot (first block of the sheet on phones). The
+  controls (`fit.inset`: below the bar, left of the zoom column on phones),
+  and History's time slider floats at the map's foot (first block of the
+  sheet on phones). The
   DOM order is the controls, the map, then the panel, so the keyboard meets
   them in that order.
 
@@ -2918,8 +2919,9 @@ count among them, since they lead to signed-in pages.
   (`scroll-snap-type: y proximity`, `overscroll-behavior: none`). Selecting a
   person lifts the sheet to the half detent (at once under reduced motion),
   and focus on the bar, the map or its buttons, which a lifted sheet covers,
-  lowers it to peek. The map starts under the header and, offline, under the
-  sticky offline banner (`--banner-height`); the detents use `svh`, so the
+  lowers it to peek, for keyboard focus on what the sheet covers only (not a
+  press on the map). The map starts under the header and, offline, under the
+  offline banner, which is sticky on this page alone (`--banner-height`); the detents use `svh`, so the
   browser's collapsing toolbar does not move them.
 
   **The people list** — Find My for Trail (§8.5): people, not their
