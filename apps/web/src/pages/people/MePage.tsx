@@ -1,6 +1,6 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useId } from "react";
 import { Link } from "react-router";
 import { useFormatter } from "../../format/useFormatter";
 import { PersonSummary } from "../../people/PersonSummary";
@@ -11,10 +11,12 @@ import "../../ui/BackLink.css";
 import { Icon } from "../../ui/Icon";
 import { SectionLevel } from "../../ui/SectionTitle";
 import type { MapViewContent } from "../map/MapViewContent";
+import type { Groups } from "./groupState";
 import { MeDetails } from "./MeDetails";
 import { sharingSummary } from "./sharingSummary";
 import { useMeSummary } from "./useMeSummary";
 import type { SharingActions } from "./useSharingActions";
+import "./PersonPage.css";
 
 interface MePageProps {
   /** The root: the page's address without the selection. */
@@ -27,6 +29,7 @@ interface MePageProps {
   thresholds: { liveMinutes: number; staleHours: number };
   content: MapViewContent;
   sharing: SharingActions;
+  groups: Groups;
   /** History's slider on phones: right under the header, so the sheet's peek does not hold it. */
   foot: ReactNode;
 }
@@ -48,15 +51,15 @@ export function MePage({
   thresholds,
   content,
   sharing,
+  groups,
   foot,
 }: MePageProps) {
   const titleId = useId();
   const format = useFormatter();
   const summary = useMeSummary(devices, now, thresholds);
-  const [opened, setOpened] = useState<Readonly<Record<string, boolean>>>({ Timeline: true });
   const group = (title: string) => ({
-    open: opened[title] === true,
-    onOpenChange: (open: boolean) => setOpened((current) => ({ ...current, [title]: open })),
+    open: groups.isOpen(title),
+    onOpenChange: (open: boolean) => groups.set(title, open),
   });
   const timelineGroup = (
     <SettingsDisclosureGroup title="Timeline" {...group("Timeline")}>
@@ -66,6 +69,13 @@ export function MePage({
   const count = devices.data?.length;
   const shares = sharing.shares.data;
   const sharesLine = shares === undefined ? undefined : sharingSummary(shares, format.count);
+  // The row says what it knows: the line, or that it is loading, or why it could not be.
+  const sharingDetail =
+    sharesLine !== undefined
+      ? `${sharesLine.line}${sharesLine.toConfirm === null ? "" : ` · ${sharesLine.toConfirm}`}`
+      : sharing.shares.isError
+        ? "Could not be loaded"
+        : "Loading…";
 
   return (
     <section className="person-panel" aria-labelledby={titleId}>
@@ -112,16 +122,7 @@ export function MePage({
               dataRow="devices"
             />
           )}
-          <SettingsRow
-            kind="link"
-            to="/settings/sharing"
-            label="Sharing"
-            {...(sharesLine === undefined
-              ? {}
-              : {
-                  detail: `${sharesLine.line}${sharesLine.toConfirm === null ? "" : ` · ${sharesLine.toConfirm}`}`,
-                })}
-          />
+          <SettingsRow kind="link" to="/settings/sharing" label="Sharing" detail={sharingDetail} />
         </SettingsGroup>
       </SectionLevel>
     </section>

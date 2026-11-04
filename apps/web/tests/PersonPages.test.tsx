@@ -7,6 +7,7 @@ import { mockApi } from "./support/mockApi";
 import { openGroup } from "./support/openGroup";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
+import { withHistoryOfAna } from "./support/withHistoryOfAna";
 
 vi.mock("../src/map/LazyTrailMap", async () => ({
   LazyTrailMap: (await import("./support/mapStub")).MapStub,
@@ -150,5 +151,51 @@ describe("someone else's page", () => {
       expect(within(page).getByRole("button", { name: "Share back with bob" })).toBeInTheDocument(),
     );
     expect(within(page).queryByText(/^You share with bob/)).toBeNull();
+  });
+
+  it("folds their History summary, opens it on a click, and says nothing recorded at the map's foot", async () => {
+    mockApi(withHistoryOfAna());
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: `/?person=${ids.ana}&view=history`, user });
+    const page = await screen.findByRole("region", { name: "Ana Bell" });
+    const summary = await within(page).findByRole("button", { name: "Summary" });
+    expect(expanded(summary)).toBe(false);
+    expect(within(page).queryByRole("region", { name: "Summary" })).toBeNull();
+    await person.click(summary);
+    const region = await within(page).findByRole("region", { name: "Summary" });
+    expect(await within(region).findByText("Ana Bell · Ana’s iPhone")).toBeInTheDocument();
+    // Headings inside the group are under its own (h3 -> h4): none is a sibling of the button's.
+    expect(within(page).getByRole("heading", { level: 3, name: "Summary" })).toBeInTheDocument();
+  });
+
+  it("says at the map's foot, not in the page, what someone's day lacks", async () => {
+    mockApi({
+      ...withHistoryOfAna(),
+      [`GET /api/v1/people/${ids.ana}/track`]: ({ url }) => ({
+        status: 200,
+        body: { from: url.searchParams.get("from"), to: url.searchParams.get("to"), tracks: [] },
+      }),
+    });
+    renderPage(<PeoplePage />, { url: `/?person=${ids.ana}&view=history`, user });
+    // On phones the foot is the first block of the page's sheet; beside the map it floats over
+    // the map. Either way it is not in a group: the Summary group has no such card.
+    expect(await screen.findByText(/^Nothing recorded on/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Summary" })).toBeNull();
+    expect(
+      screen.getByText("Only what Ana Bell shares with you appears here."),
+    ).toBeInTheDocument();
+  });
+
+  it("says at the map's foot that someone's tracks could not be loaded", async () => {
+    mockApi({
+      ...withHistoryOfAna(),
+      [`GET /api/v1/people/${ids.ana}/track`]: {
+        status: 503,
+        body: { error: { code: "unavailable", message: "Database down" } },
+      },
+    });
+    renderPage(<PeoplePage />, { url: `/?person=${ids.ana}&view=history`, user });
+    expect(await screen.findByText("Tracks of people could not be loaded")).toBeInTheDocument();
+    expect(screen.getByText("Database down")).toBeInTheDocument();
   });
 });

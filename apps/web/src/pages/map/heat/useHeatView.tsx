@@ -6,6 +6,8 @@ import { heatmapParamsFor } from "../../../map/heatmapParamsFor";
 import { heatScale } from "../../../map/heatScale";
 import type { Bounds, MapHeat, MapViewState } from "../../../map/mapTypes";
 import { useHeatmap } from "../../../queries/useHeatmap";
+import { ErrorState } from "../../../ui/ErrorState";
+import { Notice } from "../../../ui/Notice";
 import { Spinner } from "../../../ui/Spinner";
 import { useDebouncedValue } from "../../../ui/useDebouncedValue";
 import { inactiveView, type MapViewContent } from "../MapViewContent";
@@ -120,7 +122,25 @@ export function useHeatView({
     ) : null,
     // The key of the squares' colours, small over the map's bottom-left corner.
     legend: heat === null ? null : <HeatLegend scale={heat.scale} dark={dark} />,
-    foot: null,
+    // What could go wrong with the heatmap itself, at the map's foot whoever is selected.
+    foot:
+      !heatmap.isError && heatmap.data?.truncated !== true ? null : (
+        <>
+          {heatmap.isError ? (
+            <ErrorState
+              title="The heatmap could not be loaded"
+              error={heatmap.error}
+              onRetry={() => void heatmap.refetch()}
+              retrying={heatmap.isFetching}
+            />
+          ) : null}
+          {heatmap.data?.truncated === true ? (
+            <Notice tone="info" title="Showing the busiest places only">
+              <p>This view holds more cells than one map can draw. Zoom in to see every place.</p>
+            </Notice>
+          ) : null}
+        </>
+      ),
     timeline: null,
     timelineLabel: "",
     meGroup: (
