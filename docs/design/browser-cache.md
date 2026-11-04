@@ -208,7 +208,7 @@ per device the same way.
   while the browser was closed. In memory the existing rules hold:
   `forgetShareInCache` on `share` events, `gcTime: 0` for person tracks,
   keys that carry the share's id and history. A warm open paints one's own
-  map at once; the cards of others fill from `GET /api/v1/people`, which
+  map at once; the rows of others fill from `GET /api/v1/people`, which
   `main.tsx` starts together with the session probe, so on a healthy server
   they arrive with the first paint anyway. Putting them on disk behind a
   second toggle, with a purge list from the server, is an open question (§9),
@@ -592,19 +592,19 @@ the public shell only).
 
 ### 6.1 What the person sees first
 
-A warm open of People paints the header, the Me card with the day so far,
-the map with today's track and the latest own positions from the store, and
+A warm open of People paints the header, Me's row (and, opened, Me's detail
+with the day so far), the map with today's track and the latest own positions from the store, and
 a **freshness line** in the page head (`FreshnessIndicator`, next to the
 connection indicator): "Updated 3 min ago" while the store's copy is on
 screen, "Updating…" while a revalidation runs, "Live" once the stream is
 open and the live queries are fresh, "Offline · as of 10:32" when the
-browser is offline. The cards of others show their skeletons until the
+browser is offline. The rows of others show their skeletons until the
 people answer. History's existing "Updating" chip and the dimmed refetch of
 Insights keep their roles; a settled day shows no chip at all.
 
 ### 6.2 The live window rule
 
-"Live" on a card, a pulsing marker, a speed on the Me card: all of it is
+"Live" on a card, a pulsing marker, a speed on Me's row: all of it is
 decided from the position's own time (`lastSeenAt`, `recordedAt`) against
 the clock (`deviceStatus`, `describeMe`), never from when the data was
 fetched — so a copy fetched an hour ago cannot show Live, since nothing in
@@ -618,7 +618,7 @@ the freshness line announces state changes only, at most once a minute.
 
 Read-only. The banner is already there ("You're offline. Trail shows what
 it had loaded…"); with the store it shows what it had kept, too. Every
-mutation (the quick toggle, a mode correction, shares, settings, tokens) is
+mutation (a mode correction, shares, settings, tokens) is
 disabled with the reason: uploads are the phones' job, a toggle "from now"
 set offline means nothing an hour later, and a correction queued offline
 would meet a recompute on arrival. No write queue, no conflicts. Online again
@@ -723,7 +723,7 @@ store through `page.evaluate` (`indexedDB.open("trail-cache")`), and a
   yesterday, wait for the `days` event (the calendar dot changes), step to it
   again: one full request.
 - **Offline and back.** `context.setOffline(true)`: the banner, the data
-  stays, the quick toggle and Share my location are disabled with the reason,
+  stays, Share my location is disabled with the reason,
   reload still shows the page (the service worker) with "Offline · as of …";
   `setOffline(false)`: "Updating…", then "Live", a stream reconnect with
   `after` (the request's URL).
