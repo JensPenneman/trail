@@ -25,6 +25,7 @@ let owner: Agent;
 let phone = "";
 let tracker = "";
 let foreign = "";
+let car = "";
 let ownerId = "";
 
 const ownerEmail = "first@example.com";
@@ -70,6 +71,7 @@ beforeAll(async () => {
   await signUp(stranger, new SoftwareAuthenticator(), "stranger@allowed.test");
   phone = (await createDevice(owner, { name: "Phone" })).device.id;
   tracker = (await createDevice(owner, { name: "Tracker" })).device.id;
+  car = (await createDevice(owner, { name: "Car" })).device.id;
   foreign = (await createDevice(stranger, { name: "Stranger's phone" })).device.id;
   const user = await t.ctx.db.execute<{ id: string }>(
     sql`SELECT id FROM users WHERE email = ${ownerEmail}`,
@@ -88,6 +90,9 @@ beforeAll(async () => {
     lon: station.lon,
   });
   await stop(phone, "2026-10-23T12:00:00Z", "2026-10-23T14:00:00Z", street);
+  // The car was at the street once too, in the morning of the 22nd; at the time of the phone's stay
+  // there (23rd, 12:00Z) it was on the motorway, three points on a way called Snelweg.
+  await stop(car, "2026-10-22T08:00:00Z", "2026-10-22T08:30:00Z", street);
   // The stranger's own stay at home, which the owner never sees.
   await stop(foreign, "2026-10-20T08:00:00Z", "2026-10-20T20:00:00Z", home);
 
@@ -105,6 +110,22 @@ beforeAll(async () => {
   await t.ctx.db.execute(sql`
     INSERT INTO processed_points (device_id, recorded_at, kept, lat_avg, lon_avg, way_id, version)
     VALUES (${phone}, '2026-10-23T11:59:30Z', true, ${street.lat}, ${street.lon}, 777, 1)
+  `);
+  for (const second of [10, 20, 40]) {
+    await t.ctx.db.execute(sql`
+      INSERT INTO locations (device_id, recorded_at, lat, lon)
+      VALUES (${car}, ${`2026-10-23T11:59:${second}Z`}::timestamptz, 51.5, 4.5)
+    `);
+    await t.ctx.db.execute(sql`
+      INSERT INTO processed_points (device_id, recorded_at, kept, lat_avg, lon_avg, way_id, version)
+      VALUES (${car}, ${`2026-10-23T11:59:${second}Z`}::timestamptz, true, 51.5, 4.5, 888, 1)
+    `);
+  }
+  await t.ctx.db.execute(sql`
+    INSERT INTO osm_ways (id, source, kind, tags, nodes, geometry, min_lat, min_lon, max_lat,
+      max_lon, fetched_at)
+    VALUES (888, 'overpass', 'motorway', '{"name":"Snelweg","highway":"motorway"}'::jsonb,
+      '{3,4}'::bigint[], ''::bytea, 51.4, 4.4, 51.6, 4.6, ${fetchedAt}::timestamptz)
   `);
   await t.ctx.db.execute(sql`
     INSERT INTO osm_ways (id, source, kind, tags, nodes, geometry, min_lat, min_lon, max_lat,
@@ -143,7 +164,7 @@ describe("GET /api/v1/insights/places", () => {
     const answer = await places();
     expect(answer.timezone).toBe("Europe/Brussels");
     expect(answer.period.days).toBe(7);
-    expect(answer.totals).toEqual({ places: 3, durationS: 21.5 * 3600 + 3 * 3600, visits: 5 });
+    expect(answer.totals).toEqual({ places: 3, durationS: 21.5 * 3600 + 3.5 * 3600, visits: 6 });
     const [homePlace, streetPlace, stationPlace] = answer.places;
     // Home: 12 h joined + 9 h + the half hour next door, folded in.
     expect(homePlace).toMatchObject({
@@ -156,8 +177,9 @@ describe("GET /api/v1/insights/places", () => {
     expect(homePlace?.centre[0]).toBeCloseTo(home.lon, 3);
     expect(homePlace?.centre[1]).toBeCloseTo(home.lat, 3);
     expect(streetPlace).toMatchObject({
-      durationS: 2 * 3600,
-      visits: 1,
+      durationS: 2.5 * 3600,
+      visits: 2,
+      // Named after the road the phone was on, not the motorway the car was on at that moment.
       name: { text: "Kerkstraat", source: "road", kind: null, distanceM: 0 },
     });
     expect(stationPlace).toMatchObject({
@@ -247,7 +269,18 @@ describe("GET /api/v1/insights/place", () => {
   });
 
   it("refuses a key that is no cell of the grid", async () => {
-    for (const bad of ["abc", "1", "999999.1", "262144.0", "1.2.3", "../1.1", "-1.1"]) {
+    for (const bad of [
+      "abc",
+      "1",
+      "999999.1",
+      "262144.0",
+      "1.2.3",
+      "../1.1",
+      "-1.1",
+      "01.2",
+      "1.02",
+      "00.0",
+    ]) {
       await owner
         .get(apiPaths.v1.insights.place)
         .query({ ...week, place: bad })
@@ -311,7 +344,8 @@ describe("who may read Places", () => {
           .expect(200)
       ).body,
     );
-    expect(answer.totals.durationS).toBeLessThanOrEqual(11 * 3600);
+    // The same as the session's answer for that device: nothing of the others' leaks in.
+    expect(answer).toEqual(await places({ ...week, devices: tracker }));
     await request(t.app)
       .get(apiPaths.v1.insights.places)
       .query({ ...week, devices: phone })

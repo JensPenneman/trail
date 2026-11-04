@@ -149,6 +149,37 @@ describe("folding neighbouring cells", () => {
     ]);
   });
 
+  it("orders cells by their joined time: two devices at once are not twice as much", () => {
+    // The home cell: two devices for the same 3 hours (3 h joined, 6 h summed). The cell next to
+    // it: 4 hours. By joined time the neighbour claims home; by a plain sum home would.
+    const groups = groupPlaces(
+      [
+        stay("a", "2026-10-26T06:00:00Z", "2026-10-26T09:00:00Z", centreOf(0, 0)),
+        stay("b", "2026-10-26T06:00:00Z", "2026-10-26T09:00:00Z", centreOf(0, 0)),
+        stay("a", "2026-10-26T10:00:00Z", "2026-10-26T14:00:00Z", centreOf(1, 0)),
+      ],
+      window,
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.key).toBe(`${x + 1}.${y}`);
+    expect(groups[0]?.durationMs).toBe(7 * hour);
+  });
+
+  it("keeps each stay's device and its real arrival and departure, clipped or not", () => {
+    const { window: day } = period("2026-10-26", "2026-10-26");
+    const [group] = groupPlaces(
+      [
+        stay("a", "2026-10-25T20:00:00Z", "2026-10-26T01:00:00Z"),
+        stay("b", "2026-10-26T06:00:00Z", "2026-10-26T07:00:00Z"),
+      ],
+      day,
+    );
+    expect(group?.stays).toEqual([
+      { deviceId: "a", startMs: at("2026-10-25T20:00:00Z"), endMs: at("2026-10-26T01:00:00Z") },
+      { deviceId: "b", startMs: at("2026-10-26T06:00:00Z"), endMs: at("2026-10-26T07:00:00Z") },
+    ]);
+  });
+
   it("resolves any folded cell to its place", () => {
     const groups = groupPlaces(
       [
