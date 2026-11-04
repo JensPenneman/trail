@@ -23,8 +23,6 @@ const assetsSchema = z.object({
 export interface MapAssets {
   /** In the URLs: a new set of assets is a new URL, so every file is cached for good. */
   hash: string;
-  /** The font stacks there are glyphs for. */
-  fonts: ReadonlySet<string>;
   /**
    * The glyph file of a font stack and range as a URL names them, or null. The
    * answer is a path listed when the assets were read, found by looking the
@@ -68,7 +66,6 @@ export function readMapAssets(webDistDir: string): MapAssets | null {
   }
   return {
     hash: parsed.hash,
-    fonts: new Set(parsed.fonts),
     fontFile: (stack, file) => fontFiles.get(`${stack}/${file}`) ?? null,
     spriteFile: (file) => spriteMap.get(file) ?? null,
   };
