@@ -34,7 +34,7 @@ export const apiScopeDescriptions: Record<ApiScope, string> = {
     "Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline, Insights › Places).",
   "locations:write": "Correct how you travelled (transport mode overrides).",
   "history:read":
-    "Read trips, daily statistics, activity and insights: the history without coordinates (Insights › Places needs `locations:read`).",
+    "Read trips, daily statistics, activity and insights: the history without coordinates (Insights › Places needs locations:read).",
   "people:read": "See the people who share their location with you.",
   "shares:read": "List your shares, the ones you receive and your public links.",
   "shares:write": "Start and stop sharing, hide people and manage public links.",

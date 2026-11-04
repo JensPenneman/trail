@@ -289,6 +289,57 @@ describe("GET /api/v1/insights/place", () => {
   });
 });
 
+describe("names from stops", () => {
+  const range = { from: "2026-09-07", to: "2026-09-13" };
+  const lonely = { lat: 50.9, lon: 4.2 };
+  const twice = { lat: 50.8, lon: 4.3 };
+
+  it("takes no stop more than 150 m away, and of one stop held by two sources the newest", async () => {
+    await stop(tracker, "2026-09-08T10:00:00Z", "2026-09-08T12:00:00Z", lonely);
+    await stop(tracker, "2026-09-09T10:00:00Z", "2026-09-09T11:00:00Z", {
+      lat: twice.lat + 15 / 111_195,
+      lon: twice.lon,
+    });
+    // A second build of the map data lives in a partition of its own.
+    await t.ctx.db.execute(
+      sql`CREATE TABLE IF NOT EXISTS osm_pois_build PARTITION OF osm_pois FOR VALUES IN ('belgium@20260902-abcd1234')`,
+    );
+    const insert = (
+      id: string,
+      source: string,
+      at: { lat: number; lon: number },
+      name: string,
+      fetched: string,
+    ) =>
+      t.ctx.db.execute(sql`
+        INSERT INTO osm_pois (id, source, kind, lat, lon, name, z, x, y, fetched_at)
+        VALUES (${id}, ${source}, 'station', ${at.lat}, ${at.lon}, ${name}, 14,
+          ${tileX(at.lon)}, ${tileY(at.lat)}, ${fetched}::timestamptz)
+      `);
+    // 200 m north of the first place, in the same tile; the second place's stop in two builds.
+    await insert(
+      "n10",
+      "overpass",
+      { lat: lonely.lat + 200 / 111_195, lon: lonely.lon },
+      "Too Far",
+      "2026-09-01T00:00:00Z",
+    );
+    await insert("n11", "overpass", twice, "Old Name", "2026-09-01T00:00:00Z");
+    await insert("n11", "belgium@20260902-abcd1234", twice, "New Name", "2026-09-02T00:00:00Z");
+    const answer = insightsPlacesSchema.parse(
+      (
+        await owner
+          .get(apiPaths.v1.insights.places)
+          .query({ ...range, devices: tracker })
+          .expect(200)
+      ).body,
+    );
+    const [far, both] = answer.places;
+    expect(far?.name).toBeNull();
+    expect(both?.name).toMatchObject({ text: "New Name", source: "stop" });
+  });
+});
+
 describe("ETags", () => {
   const ask = (etag?: string) => {
     const pending = owner.get(apiPaths.v1.insights.places).query(week);
