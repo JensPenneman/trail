@@ -84,7 +84,7 @@ describe("the facts on a mode's rows", () => {
 
   it("names the busiest weekday and hour", () => {
     // The fixture's busiest weekday is Wednesday, at 08:00.
-    expect(whenFact(cycling(), format)).toBe("Mostly Wednesdays · 08:00");
+    expect(whenFact(cycling(), format)).toBe("Mostly Wednesdays · busiest at 08:00");
     const quiet = cycling({
       byHour: modeInsights().byHour.map((entry) => ({ ...entry, durationS: 0 })),
     });

@@ -54,7 +54,7 @@ function Body({ mode, label, state, up }: ModeContext) {
             value={format.distance(first.distanceM)}
             detail={moveDay(first.startedAt, format)}
           />
-          <SettingsGroup>
+          <SettingsGroup title="The longest">
             {longest.map((move) => (
               <SettingsRow
                 key={move.segmentId}

@@ -56,6 +56,13 @@ export function RoadsScreen() {
             <p>Choose another period, or another device.</p>
           </EmptyState>
         </div>
+      ) : roads.data.mappedM > 0 && (top === null || top === undefined) ? (
+        <Notice tone="info" title="Off the map">
+          <p>
+            The map data holds no road or railway near these moves, so there is no kind of way to
+            name.
+          </p>
+        </Notice>
       ) : roads.data.mappedM <= 0 || top === null || top === undefined ? (
         <Notice tone="info" title="No map data for these moves">
           <p>

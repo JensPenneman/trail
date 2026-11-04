@@ -28,7 +28,7 @@ function Hero({ insights }: { insights: InsightsMode }) {
       <InsightsHero
         label="On railway track"
         value={format.percent(insights.rail.share)}
-        detail={`${format.count(halts)} halts at ${mode === "tram" ? "tram stops" : "stations"}${perRide}`}
+        detail={`${format.count(halts)} ${halts === 1 ? "halt" : "halts"} at ${mode === "tram" ? "tram stops" : "stations"}${perRide}`}
       />
     );
   }
@@ -88,6 +88,13 @@ function Body({ mode, label, state, up }: ModeContext) {
           <p>
             Trail lays moves onto OpenStreetMap's roads and railways once it has the map of their
             area. It may still be fetching it, or the server works without map data.
+          </p>
+        </Notice>
+      ) : family === "road" && topKind(insights.data) === null ? (
+        <Notice tone="info" title="Off the map">
+          <p>
+            The map data holds no road or path near these moves, so there is no kind of road to
+            name.
           </p>
         </Notice>
       ) : (

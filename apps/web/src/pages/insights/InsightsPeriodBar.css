@@ -101,6 +101,11 @@
   min-width: 0;
 }
 
+/* The options are the last button of the row: their popover grows towards the start. */
+.insights-popover__body.insights-popover__body--end {
+  inset-inline: auto 0;
+}
+
 .insights-popover__body {
   position: absolute;
   inset-block-start: calc(100% + var(--space-2));
@@ -131,7 +136,8 @@
     position: relative;
   }
 
-  .insights-popover__body {
+  .insights-popover__body,
+  .insights-popover__body.insights-popover__body--end {
     inset-inline: 0;
     width: auto;
     max-width: none;

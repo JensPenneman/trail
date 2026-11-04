@@ -46,10 +46,14 @@ function busiestTimes(
   return name === undefined ? null : { weekday: name, hour: insights.byHour[hour]?.hour ?? 0 };
 }
 
-/** "Mostly Mondays · 08:00" */
+/**
+ * "Mostly Mondays · busiest at 08:00": the weekday and the hour are each the
+ * mode's busiest, which need not be the busiest hour of that weekday, so the
+ * two are not worded as one time.
+ */
 export function whenFact(insights: InsightsMode, format: Formatter): string | null {
   const times = busiestTimes(insights, format);
-  return times === null ? null : `Mostly ${times.weekday}s · ${pad(times.hour)}:00`;
+  return times === null ? null : `Mostly ${times.weekday}s · busiest at ${pad(times.hour)}:00`;
 }
 
 /** "62% on cycleways", "94% on railway track", "80% on ferry routes"; null without map data or for modes without a family. */

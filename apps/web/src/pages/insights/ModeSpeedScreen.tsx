@@ -60,7 +60,7 @@ function Body({ mode, label, state, up }: ModeContext) {
           />
           <SpeedHistogram insights={insights.data} />
           {fastest === null ? null : (
-            <SettingsGroup>
+            <SettingsGroup title="Fastest">
               <SettingsRow
                 kind="away"
                 to={moveOnMap(fastest, insights.data.timezone)}

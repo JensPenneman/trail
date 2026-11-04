@@ -48,6 +48,12 @@ async function processed(page: Page): Promise<void> {
     .toEqual(["walking", "car"]);
 }
 
+/** The last day of a month `2026-10`, as a date. */
+const lastDayOf = (month: string): string => {
+  const [year = 0, number = 1] = month.split("-").map(Number);
+  return `${month}-${new Date(Date.UTC(year, number, 0)).getUTCDate()}`;
+};
+
 /** The ISO week (`2026-W45`) of a local date. */
 function isoWeek(date: string): string {
   const day = new Date(`${date}T12:00:00Z`);
@@ -121,7 +127,7 @@ test("Insights: the summary, its period, a mode, when you travel and roads", asy
   const overview = insightsOverviewSchema.parse(
     await (
       await page.request.get("/api/v1/insights/overview", {
-        params: { from: `${month}-01`, to: `${month}-28` },
+        params: { from: `${month}-01`, to: lastDayOf(month) },
       })
     ).json(),
   );
@@ -419,10 +425,10 @@ test.describe("on a 320 px wide screen", () => {
       ["/insights/transport/car", "Car", "Distance per day"],
       ["/insights/time", "When you travel", "Time on the move by weekday and hour"],
       ["/insights/roads", "Roads", "No map data for these moves"],
-      ["/insights/transport/walking/time", "When", "Time by walking by weekday and hour"],
-      ["/insights/transport/walking/roads", "Roads", "No map data for these moves"],
-      ["/insights/transport/walking/speed", "Speed", "Moves by speed"],
-      ["/insights/transport/walking/moves", "Longest moves", "Longest move"],
+      ["/insights/transport/car/time", "When", "Time by car by weekday and hour"],
+      ["/insights/transport/car/roads", "Roads", "No map data for these moves"],
+      ["/insights/transport/car/speed", "Speed", "Moves by speed"],
+      ["/insights/transport/car/moves", "Longest moves", "Longest move"],
     ] as const) {
       await page.goto(`${path}?period=${month}`);
       await expect(
