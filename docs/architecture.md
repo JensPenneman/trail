@@ -2845,11 +2845,13 @@ count among them, since they lead to signed-in pages.
     day, `usePlaybackAnnouncer` the day changes and the end. The bar
     (`PlayerBar`, region "Playback") and the strip of what each device was
     doing (`NowStrip`, "At this moment") are presentational. For the map,
-    `tracksToMap` and `levelTracksToMap` take an `until` (the cursor) and
-    give what lies after it as `dimmed` tracks, segments and points, which
-    `ensureTrailLayers` draws at 0.3 opacity (0.5 under
-    `prefers-contrast: more`); a line is cut at the cursor with
-    `splitTrackAt`, the two parts meeting at its interpolated position.
+    `tracksToMap`, `levelTracksToMap` and `useTransportMap` take an `until`
+    (the cursor, rounded by `splitTime` so that the split moves four times a
+    second at most) and give what lies after it as `dimmed` tracks and
+    Transport segments (a connector or stop after it whole, a move cut at the
+    cursor by `splitTrackAt` into two halves that keep its id); the caller
+    dims visit dots with `MapPoint.dimmed`. `ensureTrailLayers` draws them at
+    0.3 opacity (0.5 under `prefers-contrast: more`).
   - **Heat** — all-time heatmap (`/api/heatmap` for the view once the map
     has stood still for 300 ms, its box rounded outward to a thousandth of a
     degree and its zoom to a whole level, so that small moves hit the
