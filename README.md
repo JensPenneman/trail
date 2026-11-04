@@ -51,11 +51,11 @@ and every pull request gets a preview deployment of its own.
   pauses at stops and the phone's motion sensor. A timeline per day, one-click
   corrections that survive every recomputation, and, for the API and MCP clients, a "now I'm on the train" toggle
   ([docs/transport.md](docs/transport.md)).
-- **Insights**: how you travelled in a period — distance, time on the move,
-  moves, stops and active days against the period before, the mix of modes
-  and its days, weeks or months, each mode's speeds, longest and fastest
-  moves and the kinds of road it took, and the hours of the week you travel —
-  with accessible charts drawn without a chart library.
+- **Insights**: how you travelled in a week, month or year — distance, time
+  on the move and moves against the period before, the mix of modes by day,
+  week or month, each mode on a screen of its own, the kinds of road you took
+  and the hours of the week you travel — with accessible charts drawn without
+  a chart library.
 - **Sharing**: share your location with family and friends in the spirit of
   Find My — one way, for an hour, until the end of the day, a week or until
   you stop, precisely or only roughly (about 500 m or 5 km), with or without
@@ -90,7 +90,7 @@ and every pull request gets a preview deployment of its own.
   your eyes only: **Who viewed you** in Settings ("Ana looked at your live
   position 14 times and your history twice, last on Tuesday at 18:03", per
   day, a page per person, link and token), the filterable **Access log**,
-  the use of each token, link and share on its page, and a card on Insights
+  the use of each token, link and share on its page
   (`GET /api/v1/access-log`, a summary per 7, 30 or 90 days).
 - **MCP server**: agents connect to `/mcp` with an API token and ask where
   the devices are, where they were at a time, the timeline of stops and
