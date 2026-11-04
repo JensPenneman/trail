@@ -71,10 +71,11 @@ function takesGzip(header: string | undefined): boolean {
   return (gzip ?? star ?? 0) > 0;
 }
 
-const styleNames: Readonly<Record<string, StyleName>> = {
-  "light.json": "light",
-  "dark.json": "dark",
-};
+// A Map: a request names `constructor` or `__proto__` as readily as a file, and a plain object has them.
+const styleNames: ReadonlyMap<string, StyleName> = new Map([
+  ["light.json", "light"],
+  ["dark.json", "dark"],
+]);
 
 /** A file of the image's map assets: immutable, as `/assets/*`, and never in parts. */
 function sendAsset(res: Response, path: string, type: string, next: NextFunction): void {
@@ -129,7 +130,7 @@ export function mapRouter(input: {
   );
 
   documents.get("/styles/:file", (req, res) => {
-    const name = styleNames[req.params.file];
+    const name = styleNames.get(req.params.file);
     if (name === undefined) {
       notFound(res);
       return;

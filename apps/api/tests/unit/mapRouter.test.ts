@@ -136,6 +136,52 @@ describe("a tile URL that names no bundle", () => {
   });
 });
 
+describe("an asset URL the registry does not list", () => {
+  it("answers 404 with no-store, and the lookups were asked exactly what the URL named", async () => {
+    const fontFile = vi.fn((_stack: string, _file: string): string | null => null);
+    const spriteFile = vi.fn((_file: string): string | null => null);
+    const basemap = {
+      bundle: () => null,
+      assets: { hash: "0123456789abcdef", fontFile, spriteFile },
+    } as unknown as Basemap;
+    const { tiles, documents } = mapRouter({
+      basemap,
+      logger: createLogger({ level: "silent" }),
+      perMinute: 100_000,
+      allowedOrigins: ["https://trail.example"],
+      publicUrl: "https://trail.example",
+    });
+    const app = express().set("etag", false).use("/map", tiles, documents);
+    const base = "/map/assets/0123456789abcdef";
+    const font = await request(app).get(`${base}/fonts/Noto%20Sans%20Regular/0-255.pbf`);
+    const traversal = await request(app).get(`${base}/fonts/%2e%2e/%2e%2e%2fx.pbf`);
+    const png = await request(app).get(`${base}/sprites/nope.png`);
+    const json = await request(app).get(`${base}/sprites/nope.json`);
+    for (const answer of [font, traversal, png, json]) {
+      expect(answer.status).toBe(404);
+      expect(answer.headers["cache-control"]).toBe("no-store");
+    }
+    expect(fontFile.mock.calls).toEqual([
+      ["Noto Sans Regular", "0-255.pbf"],
+      ["..", "../x.pbf"],
+    ]);
+    // The PNG route passes on to the document router, which asks again for the JSON ones.
+    expect(spriteFile.mock.calls.map(([name]) => name)).toContain("nope.json");
+    expect(spriteFile.mock.calls.map(([name]) => name)).toContain("nope.png");
+  });
+});
+
+describe("a style URL", () => {
+  it("answers 404 with no-store for names an object has but the styles do not", async () => {
+    const app = appOver(stored);
+    for (const name of ["constructor", "__proto__", "toString", "hasOwnProperty", "other.json"]) {
+      const answer = await request(app).get(`/map/styles/${name}`);
+      expect(answer.status, name).toBe(404);
+      expect(answer.headers["cache-control"], name).toBe("no-store");
+    }
+  });
+});
+
 describe("the map assets", () => {
   it("name the files they were read with, and nothing a request makes up", () => {
     const dist = webDistWithAssets();
