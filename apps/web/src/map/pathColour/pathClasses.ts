@@ -23,12 +23,19 @@ function metresBetween(a: PathPoint, b: PathPoint): number {
   return 2 * earthRadiusM * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+/** Where a raw point carries the phone's own speed (`[lon, lat, t, speed, …]`). */
+export const rawSpeedColumn = 3;
+
 /**
- * The speed of each interval, m/s, null where none can be told. Raw points carry the phone's own
- * speed: the mean of the non-null ones at both ends, else distance over time; the other levels
- * have distance over time. An interval without time takes its neighbour's.
+ * The speed of each interval, m/s, null where none can be told. Points with a speed column (the
+ * raw level: `speedColumn` is its index) carry the phone's own speed: the mean of the non-null ones
+ * at both ends, else distance over time; points without have distance over time. An interval
+ * without time takes its neighbour's.
  */
-export function edgeSpeeds(points: readonly PathPoint[], raw: boolean): (number | null)[] {
+export function edgeSpeeds(
+  points: readonly PathPoint[],
+  speedColumn: number | null,
+): (number | null)[] {
   const speeds: (number | null)[] = [];
   for (let index = 0; index + 1 < points.length; index += 1) {
     const from = points[index];
@@ -36,8 +43,8 @@ export function edgeSpeeds(points: readonly PathPoint[], raw: boolean): (number 
     if (from === undefined || to === undefined) continue;
     const dt = to[2] - from[2];
     let speed: number | null = null;
-    if (raw) {
-      const own = [from[3], to[3]].filter(
+    if (speedColumn !== null) {
+      const own = [from[speedColumn], to[speedColumn]].filter(
         (value): value is number => typeof value === "number" && value >= 0,
       );
       if (own.length > 0) speed = own.reduce((sum, value) => sum + value, 0) / own.length;
@@ -78,14 +85,14 @@ export function speedClassOf(speed: number, bands: readonly number[]): number {
 
 const hourCache = new Map<string, Map<number, number>>();
 
-/** The local hour (0–23) of an instant in `timeZone`, worked out once per UTC hour. */
+/** The local hour (0–23) of an instant in `timeZone`, worked out once per quarter of an hour (zones are off by whole quarters). */
 function localHour(t: number, timeZone: string): number {
   let hours = hourCache.get(timeZone);
   if (hours === undefined) {
     hours = new Map();
     hourCache.set(timeZone, hours);
   }
-  const key = Math.floor(t / 3600);
+  const key = Math.floor(t / 900);
   const known = hours.get(key);
   if (known !== undefined) return known;
   const hour = Number(
@@ -109,13 +116,13 @@ export function timeClassOf(t: number, timeZone: string): number {
 /** The class of each interval of a path coloured by speed (null: unknown) or by time of day. */
 export function edgeClasses(
   points: readonly PathPoint[],
-  options: { by: "speed" | "time"; raw: boolean; onFoot: boolean; timeZone: string },
+  options: { by: "speed" | "time"; speedColumn: number | null; onFoot: boolean; timeZone: string },
 ): (number | null)[] {
   if (options.by === "time") {
     return points.slice(0, -1).map((point) => timeClassOf(point[2], options.timeZone));
   }
   const bands = options.onFoot ? paceBands : speedBands;
-  return smoothed(edgeSpeeds(points, options.raw)).map((speed) =>
+  return smoothed(edgeSpeeds(points, options.speedColumn)).map((speed) =>
     speed === null ? null : speedClassOf(speed, bands),
   );
 }

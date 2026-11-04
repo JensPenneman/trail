@@ -3097,22 +3097,30 @@ count among them, since they lead to signed-in pages.
   does not offer is skipped, never rewritten (Raw with `color=mode` is by
   device). Choosing replaces the entry and is remembered; saving the
   preference forgets it. Speed and time of day cut each path into runs of one
-  class (`runsOf`: the runs share their boundary points, nothing crosses a
-  recording gap); the same pieces keep their segment's id and review mark at
-  Transport, a stop keeping its stationary colour. The speed of an interval
+  class (`runsOf`: the runs share their boundary points); a raw track is cut at
+  a recording gap, a move or piece of a level is one line as under Mode (a
+  pause inside it is a stretch of some speed); the same pieces keep their
+  segment's id and review mark at Transport, a stop keeping its stationary
+  colour. Time of day is told per quarter of an hour (zones off by half or
+  three quarters of an hour). The speed of an interval
   is the phone's own at Raw (the mean of both ends, else distance over time),
   distance over time at the other levels, the median of three intervals;
   bands under 6, 6–15, 15–30, 30–70 and 70 km/h and more, or — where every
-  move drawn is on foot — paces of 12:00, 9:00, 7:00 and 5:30 per km. Time of
+  move drawn is on foot (and no unprocessed piece of track, which may be a
+  drive) — paces of 12:00, 9:00, 7:00 and 5:30 per km. Time of
   day is the hour the interval began in the account's zone: night 22–06,
   morning 06–12, afternoon 12–18, evening 18–22. The five steps of the ramp
   and the four tones (`pathPalette`) are validated by computation (contrast of
   3:1 or more on the map's grounds, steps in order of lightness, neighbours
   told apart also under protan, deutan and tritan simulation:
   `pathPalette.test.ts`). The "Map legend" names the classes of the colouring
-  (the modes, the devices and people drawn, the times of day) and the line
-  styles over it; the speed key floats over the map's bottom-left corner
-  (`PathKey`, in the slot of the Heat key), five steps, slower to faster. Other
+  (the modes, the devices and each sharer drawn on the overview by name, the
+  times of day) and the line styles over it, the stops and the stretches of
+  unknown speed among them; the speed key floats over the map's bottom-left
+  corner (`PathKey`, in the slot of the Heat key, the canvas described by it),
+  five steps, slower to faster, stacked above History's slider on a wide map
+  (the slider's measured height, `--foot-height`). The colouring and the legend
+  are worked out once per data, the playback cursor only cuts the lines. Other
   people's tracks keep their person colour under every option.
 
   History's row is ‹ **Previous day** · the date ▾ · **Next day** › ·

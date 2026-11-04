@@ -26,11 +26,31 @@ const timestamp = (seconds: number) =>
  * their speeds and the phone's motion readings — the suite's server has none.
  */
 export function walkAndDrive(now = Date.now(), endsAgoS = 120): OverlandBatch {
-  const legs: Leg[] = [
-    { seconds: 12 * 60, every: 2, east: 1.4, north: 0, motion: ["walking"] },
-    { seconds: 5 * 60, every: 10, east: 0, north: 0, motion: ["stationary"] },
-    { seconds: 15 * 60, every: 2, east: 0, north: 13.9, motion: ["driving"] },
-  ];
+  return batchOf(
+    [
+      { seconds: 12 * 60, every: 2, east: 1.4, north: 0, motion: ["walking"] },
+      { seconds: 5 * 60, every: 10, east: 0, north: 0, motion: ["stationary"] },
+      { seconds: 15 * 60, every: 2, east: 0, north: 13.9, motion: ["driving"] },
+    ],
+    now,
+    endsAgoS,
+  );
+}
+
+/** Two walks of twelve minutes with five minutes standing between: every move is on foot. */
+export function walksOnly(now = Date.now(), endsAgoS = 120): OverlandBatch {
+  return batchOf(
+    [
+      { seconds: 12 * 60, every: 2, east: 1.4, north: 0, motion: ["walking"] },
+      { seconds: 5 * 60, every: 10, east: 0, north: 0, motion: ["stationary"] },
+      { seconds: 12 * 60, every: 2, east: 0, north: 1.4, motion: ["walking"] },
+    ],
+    now,
+    endsAgoS,
+  );
+}
+
+function batchOf(legs: Leg[], now: number, endsAgoS: number): OverlandBatch {
   const total = legs.reduce((sum, leg) => sum + leg.seconds, 0);
   let t = Math.floor(now / 1000) - endsAgoS - total;
   let x = 0;

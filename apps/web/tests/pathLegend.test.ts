@@ -74,6 +74,21 @@ describe("the legend of a colouring", () => {
     const legend = pathLegend(colouring("device"), drawn, format);
     expect(legend.deviceIds).toEqual(["a", "b", "a"]);
     expect(legend.modes).toEqual(new Set(["walking"]));
-    expect(legend.lineStyles).toEqual({ review: true, stopPaths: false, gaps: true });
+    expect(legend.lineStyles).toEqual({
+      review: true,
+      stopPaths: false,
+      gaps: true,
+      stops: false,
+      unknownSpeed: false,
+    });
+  });
+
+  it("says when a stop and a stretch of unknown speed are drawn", () => {
+    const legend = pathLegend(
+      colouring("speed"),
+      { ...drawn, stops: true, unknownSpeed: true },
+      format,
+    );
+    expect(legend.lineStyles).toMatchObject({ stops: true, unknownSpeed: true });
   });
 });

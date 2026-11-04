@@ -1,5 +1,5 @@
 import type { ProcessingLevel, TransportMode } from "@trail/contracts/transport";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import type { RangeParams } from "../api/queryKeys";
 import { useFormatter } from "../format/useFormatter";
 import type { MapTrack, MapTransportSegment } from "../map/mapTypes";
@@ -58,9 +58,15 @@ export function useTransportMap(
   );
   const { dark, device, colouring } = colors;
   const data = levelTracks.data;
-  return useMemo(() => {
-    const pending =
-      level !== "raw" && range !== null && (levelTracks.isPending || levelTracks.isPlaceholderData);
+  const pending =
+    level !== "raw" && range !== null && (levelTracks.isPending || levelTracks.isPlaceholderData);
+  const mode = useCallback(
+    (value: TransportMode) => modePalette[dark ? "dark" : "light"][value],
+    [dark],
+  );
+  // The colouring, the layers it makes and the legend depend on the data, not on the playback
+  // cursor: they are worked out once for the data; the cursor only cuts the coloured lines.
+  const coloured = useMemo(() => {
     const asked: PathColouring = colouring ?? {
       by: level === "inferred" ? "mode" : "device",
       dark,
@@ -68,6 +74,12 @@ export function useTransportMap(
     };
     if (level === "raw" || range === null || data === undefined) {
       return {
+        response: null,
+        layers: null,
+        modes: new Set<TransportMode>(),
+        review: false,
+        stopPaths: false,
+        gaps: false,
         legend: pathLegend(
           asked,
           {
@@ -79,76 +91,99 @@ export function useTransportMap(
           },
           format,
         ),
-        tracks: raw,
-        transport: [],
-        modes: new Set<TransportMode>(),
-        review: false,
-        stopPaths: false,
-        gaps: false,
-        available: level === "raw" ? "raw" : null,
-        pending,
-        fetching: levelTracks.isFetching,
       };
     }
     const palette = modePalette[dark ? "dark" : "light"];
-    const modes = new Set<TransportMode>();
-    let review = false;
+    const found = new Set<TransportMode>();
+    let seenReview = false;
     let moves = 0;
     let onFoot = true;
     for (const segment of data.segments) {
-      if (segment.kind === "stop") modes.add("stationary");
+      if (segment.kind === "stop") found.add("stationary");
+      // Points not processed yet may be driving: no paces while some are drawn.
+      else if (segment.kind === "track") onFoot = false;
       else if (segment.kind === "move") {
-        modes.add(segment.mode ?? "unknown");
+        found.add(segment.mode ?? "unknown");
         moves += 1;
         if (segment.mode !== "walking" && segment.mode !== "running") onFoot = false;
       }
-      if (segment.needsReview) review = true;
+      if (segment.needsReview) seenReview = true;
     }
     // Paces where every move drawn is on foot; elsewhere speeds.
     const colouredBy: PathColouring = {
       ...asked,
       onFoot: data.level === "inferred" && moves > 0 && onFoot,
     };
-    const layers = levelTracksToMap(
-      colourLevelTracks(data, colouredBy, device),
-      { device, mode: (mode) => palette[mode] },
-      until,
-    );
+    const response = colourLevelTracks(data, colouredBy, device);
+    const layers = levelTracksToMap(response, { device, mode: (value) => palette[value] });
+    const inferred = data.level === "inferred";
+    const modes = inferred ? found : new Set<TransportMode>();
+    const review = inferred && seenReview;
     const stopPaths = layers.transport.some(showsPath);
     const gaps = layers.transport.some((segment) => segment.kind === "gap");
     return {
-      ...layers,
+      response,
+      layers,
+      modes,
+      review,
+      stopPaths,
+      gaps,
       legend: pathLegend(
         colouredBy,
         {
           deviceIds: [...new Set(data.segments.map((segment) => segment.deviceId))],
-          modes: data.level === "inferred" ? modes : new Set<TransportMode>(),
-          review: data.level === "inferred" && review,
+          modes,
+          review,
           stopPaths,
           gaps,
+          stops: found.has("stationary"),
+          unknownSpeed:
+            colouredBy.by === "speed" &&
+            response.segments.some(
+              (segment) => segment.kind !== "stop" && segment.color === palette.unknown,
+            ),
         },
         format,
       ),
-      modes: data.level === "inferred" ? modes : new Set<TransportMode>(),
-      review: data.level === "inferred" && review,
+    };
+  }, [level, range, data, raw, dark, device, colouring, format]);
+  const { response, layers: whole, modes, review, stopPaths, gaps, legend } = coloured;
+  // Only the cursor cuts: without one the layers are the whole.
+  const layers = useMemo(
+    () =>
+      response === null || whole === null
+        ? null
+        : until === undefined
+          ? whole
+          : levelTracksToMap(response, { device, mode }, until),
+    [response, whole, device, mode, until],
+  );
+  return useMemo(
+    () => ({
+      ...(layers ?? { tracks: raw, transport: [] }),
+      modes,
+      review,
       stopPaths,
       gaps,
-      available: data.availableLevel,
+      legend,
+      available:
+        level === "raw" ? "raw" : response === null ? null : (data?.availableLevel ?? null),
       pending,
       fetching: levelTracks.isFetching,
-    };
-  }, [
-    level,
-    range,
-    data,
-    raw,
-    dark,
-    device,
-    colouring,
-    format,
-    until,
-    levelTracks.isPending,
-    levelTracks.isPlaceholderData,
-    levelTracks.isFetching,
-  ]);
+    }),
+    [
+      layers,
+      raw,
+      modes,
+      review,
+      stopPaths,
+      gaps,
+      legend,
+      level,
+      response,
+      data,
+      pending,
+      levelTracks.isFetching,
+    ],
+  );
 }
