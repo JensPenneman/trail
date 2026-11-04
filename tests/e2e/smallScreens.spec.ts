@@ -108,7 +108,11 @@ test("the People page with someone who shares fits a 320 px wide screen", async 
     await expect(page.getByText(loaded).first()).toBeVisible();
     // The wide parts are in the folded groups: open them all before measuring.
     const folded = page.locator(".settings-group__toggle[aria-expanded=false]");
-    while ((await folded.count()) > 0) await folded.first().click();
+    const groups = await folded.count();
+    for (let opened = 0; opened < groups; opened++) {
+      await folded.first().click({ timeout: 10_000 });
+      await expect(folded).toHaveCount(groups - opened - 1, { timeout: 10_000 });
+    }
     expect(await overflow(page), path).toBe(0);
   }
   // Their detail and Me's, with each device and the terms of the share: they fit too.

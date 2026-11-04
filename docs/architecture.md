@@ -3032,7 +3032,9 @@ count among them, since they lead to signed-in pages.
   small over the map's bottom-left corner (`legend`), and what History has to
   say of a day with nothing recorded ("Nothing recorded on …", with "Find a day
   with data") or of tracks that could not be loaded is at the map's foot, where
-  the slider would be.
+  the slider would be. Heat's own foot holds its error (with Retry) and the
+  notice that the heatmap was truncated, whoever is selected, and on wide
+  screens the key stacks above whatever the foot holds (`--foot-height`).
   For someone who shares: **where they've been** (`WhereTheyveBeen`): the day
   — Today in Live, History's day, or History's period — with Previous and
   Next day (in Live a day back is History's, one step of the history,

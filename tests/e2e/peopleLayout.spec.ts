@@ -158,8 +158,9 @@ test("on a phone the sheet scrolls over a map that stays, with its detents", asy
 
   // Selecting a person lifts it to the half detent.
   await page.getByRole("list", { name: "Me", exact: true }).getByRole("link").first().click();
-  // The half detent is below the peek (the peek is capped below half the view), and the sheet
-  // comes to rest on it once the page has settled; the detent moves while the content loads.
+  // The half detent is below the peek (the peek is capped below half the view). The person's
+  // header sets a new peek just after the lift, which moves the detent: the sheet follows it and
+  // comes to rest on it.
   const detent = () => {
     const marker = document.querySelector("[data-detent=half]")?.getBoundingClientRect().top ?? 0;
     const padding = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop);
@@ -222,7 +223,7 @@ test("a press on the map with the sheet at half leaves the sheet where it is", a
   await uploadedDevice(page, "Half phone", overlandBatch(account.timezone));
   await page.goto("/");
   await page.getByRole("list", { name: "Me", exact: true }).getByRole("link").first().click();
-  await page.waitForFunction(() => window.scrollY > 100);
+  await page.waitForFunction(() => window.scrollY > 0);
   // Settled: the page stops changing size (the content loads and the sheet re-snaps) and the
   // scroll position stops moving, for a whole second.
   let at = -1;
