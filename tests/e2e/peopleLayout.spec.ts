@@ -219,3 +219,44 @@ test("a press on the map with the sheet at half leaves the sheet where it is", a
   );
   expect(await page.evaluate(() => window.scrollY)).toBe(at);
 });
+
+test("the sheet's whole content can be scrolled to, clear of the header and the tab bar", async ({
+  page,
+  account,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "iphone", "the sheet is for phones");
+  await uploadedDevice(page, "Reach phone", overlandBatch(account.timezone));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
+  const settled = async () => {
+    let last = -1;
+    await expect
+      .poll(async () => {
+        const now = await page.evaluate(() => window.scrollY);
+        const same = now === last;
+        last = now;
+        return same;
+      })
+      .toBe(true);
+  };
+  const reachable = (locator: ReturnType<Page["locator"]>) =>
+    locator.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      return hit !== null && element.contains(hit);
+    });
+
+  // The last control of the sheet, scrolled to the end of the page (snapping must not pull
+  // the end of a long sheet back under the tab bar).
+  const last = page.getByRole("button", { name: "Share my location" });
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await settled();
+  expect(await reachable(last)).toBe(true);
+
+  // The first control, with the sheet lifted to the header: under the header it is not.
+  const first = page.getByRole("list", { name: "People", exact: true }).getByRole("link").first();
+  await first.scrollIntoViewIfNeeded();
+  await page.evaluate(() => window.scrollTo(0, 400));
+  await settled();
+  expect(await reachable(first)).toBe(true);
+});

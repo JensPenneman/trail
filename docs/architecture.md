@@ -2915,7 +2915,7 @@ count among them, since they lead to signed-in pages.
   (no cooperative gestures), and the list or detail is a **bottom sheet** made
   of the page's own scroll, in CSS only: a transparent spacer that lets
   presses through to the map, then the sheet with a decorative grabber, and
-  three detents (peek, half, full) as scroll-snap points
+  two detents (peek and half) as scroll-snap points, free scrolling above them
   (`scroll-snap-type: y proximity`, `overscroll-behavior: none`). Selecting a
   person lifts the sheet to the half detent (at once under reduced motion),
   and focus on the bar, the map or its buttons, which a lifted sheet covers,

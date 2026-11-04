@@ -244,7 +244,7 @@ export function PeoplePage() {
     const target = event.target;
     if (!(target instanceof HTMLElement) || !target.matches(":focus-visible")) return;
     // Covered when less than a target's height of it shows above the sheet (the map's canvas
-    // is covered by all but a strip at the full detent).
+    // is covered by all but a strip once the sheet is lifted to the top).
     const rect = target.getBoundingClientRect();
     const sheetTop = panel.current.getBoundingClientRect().top;
     if (Math.min(rect.bottom, sheetTop) - rect.top >= 44) return;
@@ -381,7 +381,6 @@ export function PeoplePage() {
       <div className="map-page__snaps" aria-hidden="true" ref={snaps}>
         <span className="map-page__snap map-page__snap--peek" />
         <span className="map-page__snap map-page__snap--half" data-detent="half" />
-        <span className="map-page__snap map-page__snap--full" />
       </div>
       <section className="map-page__panel" aria-labelledby="people-page-title" ref={panelRef}>
         <span className="map-page__grabber" aria-hidden="true" />
