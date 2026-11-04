@@ -140,6 +140,21 @@ describe("Heat's options", () => {
 
 describe("the custom period's form", () => {
   it("shows the dates of the address when it opens, and marks both ends when they disagree", async () => {
+    // The clock stands at 14:00 on the account's today, whatever the hour the suite runs at.
+    const localToday = new Intl.DateTimeFormat("en-CA", { timeZone: user.timezone }).format(
+      new Date(),
+    );
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: new Date(`${localToday}T12:00:00Z`) });
+    try {
+      await customPeriodForm(localToday);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+async function customPeriodForm(today: string) {
+  {
     mockApi(heatRoutes());
     const person = userEvent.setup();
     renderPage(<PeoplePage />, {
@@ -160,8 +175,8 @@ describe("the custom period's form", () => {
     expect(await screen.findByText("From must not be after To.")).toBeInTheDocument();
     expect(screen.getByLabelText("From")).toBeInvalid();
     expect(screen.getByLabelText("To")).toBeInvalid();
-  });
-});
+  }
+}
 
 describe("Heat's key", () => {
   const keyList = (name: string) => screen.findByRole("list", { name });
