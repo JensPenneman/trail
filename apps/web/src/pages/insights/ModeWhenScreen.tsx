@@ -1,6 +1,7 @@
 import { HeatGrid } from "../../charts/HeatGrid";
 import { useFormatter } from "../../format/useFormatter";
 import { useInsightsTime } from "../../queries/useInsightsTime";
+import { EmptyState } from "../../ui/EmptyState";
 import { ErrorState } from "../../ui/ErrorState";
 import { LoadingBlock } from "../../ui/LoadingBlock";
 import { Skeleton } from "../../ui/Skeleton";
@@ -36,6 +37,12 @@ function Body({ mode, label, state, up }: ModeContext) {
           onRetry={() => void time.refetch()}
           retrying={time.isFetching}
         />
+      ) : grid.total <= 0 ? (
+        <div className="card">
+          <EmptyState icon="calendar" title={`No ${lower} in this period`}>
+            <p>Choose another period, or another device.</p>
+          </EmptyState>
+        </div>
       ) : (
         <>
           <InsightsHero

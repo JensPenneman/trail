@@ -339,10 +339,10 @@ test.describe("on a 320 px wide screen", () => {
       ["/insights/transport/car", "Car", "Distance per day"],
       ["/insights/time", "When you travel", "Time on the move by weekday and hour"],
       ["/insights/roads", "Roads", "No map data for these moves"],
-      ["/insights/transport/walking/time", "When", "Time by walking by weekday and hour"],
-      ["/insights/transport/walking/roads", "Roads", "No map data for these moves"],
-      ["/insights/transport/walking/speed", "Speed", "Moves by speed"],
-      ["/insights/transport/walking/moves", "Longest moves", "Longest move"],
+      ["/insights/transport/car/time", "When", "Time by car by weekday and hour"],
+      ["/insights/transport/car/roads", "Roads", "No map data for these moves"],
+      ["/insights/transport/car/speed", "Speed", "Moves by speed"],
+      ["/insights/transport/car/moves", "Longest moves", "Longest move"],
     ] as const) {
       await page.goto(`${path}?period=${month}`);
       await expect(

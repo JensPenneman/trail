@@ -96,7 +96,7 @@ function Body({ mode, label, state, up }: ModeContext) {
             )}
           />
           <ModeTrend insights={insights.data} />
-          <SettingsGroup>
+          <SettingsGroup title="Details">
             <SettingsRow
               kind="link"
               to={to("time")}
@@ -126,7 +126,7 @@ function Body({ mode, label, state, up }: ModeContext) {
             <SettingsRow
               kind="link"
               to={to("moves")}
-              icon="altitude"
+              icon="route"
               tone="purple"
               label="Longest moves"
               value={longestFact(insights.data, format)}

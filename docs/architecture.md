@@ -3061,7 +3061,9 @@ count among them, since they lead to signed-in pages.
   its path. Coming back to the summary hands focus to the row that was left
   (`data-route-focus`; not for the list beside the screens, where the
   new screen's h1 takes focus whichever way one goes and the row left must
-  not take it back), going in to the new screen's h1. Every screen has the title
+  not take it back), going in to the new screen's h1. One exception: pressing
+  a mode's row in the list from one of the mode's parts goes up a level, so
+  focus goes to the row of the part left on the mode's screen. Every screen has the title
   "<screen> · Insights" and a notice while processing has work in the period
   ("Processing is still catching up"). Choosing another period or other devices
   is announced politely once its answer is there ("October 2026: 66 km");
@@ -3109,7 +3111,7 @@ count among them, since they lead to signed-in pages.
   - **A mode** (`/insights/transport/:mode`) — the mode's distance (time,
     moves, typical speed beneath) against the same mode in the period before,
     the distance over the period as a line, and rows to its parts, each with
-    what it says (`modeFacts.ts`): When ("Mostly Mondays · 08:00"), Roads
+    what it says (`modeFacts.ts`): When ("Mostly Mondays · busiest at 08:00"), Roads
     ("62% on cycleways", "94% on railway track", "80% on ferry routes"; no
     row for planes and the other modes not laid onto the map), Speed
     ("Typically 17 km/h") and Longest moves ("23.4 km · Tue 7 Oct"). No
@@ -3137,7 +3139,8 @@ count among them, since they lead to signed-in pages.
     is most.
   - **Roads** (`/insights/roads`) — the kind of way with the most distance as
     the hero, the distance by kind of way, and how much of the distance map
-    data covers; a notice where it covers none.
+    data covers; a notice where it covers none, and another where everything
+    it covers is off the map. The chart by group of ways of before is gone.
 
   The charts (`apps/web/src/charts/`, no library): `BarChart` (stacked or
   grouped, columns or horizontal bars; one series may give each row its own
