@@ -93,7 +93,7 @@ describe("preferences", () => {
       heat: "visits",
       color: "speed",
     });
-    for (const bad of [{ heat: "speed" }, { color: "altitude" }]) {
+    for (const bad of [{ heat: "sped" }, { color: "altitude" }]) {
       expect(updateMeRequestSchema.safeParse({ preferences: bad }).success).toBe(false);
     }
     expect(updateMeRequestSchema.parse({ preferences: { heat: "time", color: "device" } })).toEqual(

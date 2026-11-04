@@ -2,6 +2,7 @@ import { z } from "zod";
 import { localDateSchema } from "./datetime";
 import { ordered, spanMessage, withinSpan } from "./period";
 import { deviceIdsParamSchema } from "./query";
+import { transportModeSchema } from "./transport";
 
 /** `bbox=west,south,east,north` in degrees. */
 export const bboxParamSchema = z
@@ -20,14 +21,24 @@ export const bboxParamSchema = z
  * What a heatmap counts: recorded points, the time spent at places (stops), or the visits to them.
  * Time and visits cover a period of local days; points are all time.
  */
-export const heatMeasures = ["points", "time", "visits"] as const;
+export const heatMeasures = ["points", "time", "visits", "moving", "speed", "topspeed"] as const;
 export const heatMeasureSchema = z.enum(heatMeasures);
 export type HeatMeasure = z.infer<typeof heatMeasureSchema>;
 
-/** The measures that cover a period (`from`, `to`). */
+/** The measures that cover a period (`from`, `to`): every one but the points. */
 export const heatPeriodMeasures: ReadonlySet<HeatMeasure> = new Set<HeatMeasure>([
   "time",
   "visits",
+  "moving",
+  "speed",
+  "topspeed",
+]);
+
+/** The measures of the time on the move (per mode, from the per-day cells): they take a `mode`. */
+export const heatMovementMeasures: ReadonlySet<HeatMeasure> = new Set<HeatMeasure>([
+  "moving",
+  "speed",
+  "topspeed",
 ]);
 
 /**
@@ -47,6 +58,8 @@ export const heatmapQuerySchema = z
     heat: heatMeasureSchema.default("points"),
     from: localDateSchema.optional(),
     to: localDateSchema.optional(),
+    /** Only the moves in this mode (time on the move, speed, top speed); every mode when left out. */
+    mode: transportModeSchema.optional(),
   })
   .refine(
     (query) =>
@@ -56,6 +69,10 @@ export const heatmapQuerySchema = z
       message: "A period needs heat=time or heat=visits",
     },
   )
+  .refine((query) => query.mode === undefined || heatMovementMeasures.has(query.heat), {
+    path: ["mode"],
+    message: "A mode needs heat=moving, speed or topspeed",
+  })
   .refine(ordered, { message: "`to` must not be before `from`", path: ["to"] })
   .refine(withinSpan, { message: spanMessage, path: ["to"] });
 export type HeatmapQueryInput = z.input<typeof heatmapQuerySchema>;
@@ -73,6 +90,8 @@ export const heatmapResponseSchema = z.object({
       z.number().int().positive(),
     ]),
   ),
+  /** The mode the cells are of (time on the move, speed, top speed); null: every mode. */
+  mode: transportModeSchema.nullable().default(null),
   /** True when the viewport held more cells than the response limit. */
   truncated: z.boolean(),
   /** The local days of time and visits; null: all time (points). */

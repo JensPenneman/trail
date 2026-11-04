@@ -55,7 +55,30 @@ describe("the heatmap contract", () => {
         .success,
     ).toBe(true);
     expect(heatmapQuerySchema.safeParse({ ...base, heat: "visits" }).success).toBe(true);
-    expect(heatmapQuerySchema.safeParse({ ...base, heat: "speed" }).success).toBe(false);
+    expect(heatmapQuerySchema.safeParse({ ...base, heat: "bogus" }).success).toBe(false);
+    for (const heat of ["moving", "speed", "topspeed"]) {
+      expect(
+        heatmapQuerySchema.safeParse({ ...base, heat, from: "2026-10-01", to: "2026-10-31" })
+          .success,
+      ).toBe(true);
+    }
+  });
+
+  it("takes a mode for the measures of movement only", () => {
+    expect(heatmapQuerySchema.safeParse({ ...base, heat: "moving", mode: "cycling" }).success).toBe(
+      true,
+    );
+    expect(heatmapQuerySchema.safeParse({ ...base, heat: "topspeed", mode: "train" }).success).toBe(
+      true,
+    );
+    for (const heat of ["points", "time", "visits"]) {
+      expect(heatmapQuerySchema.safeParse({ ...base, heat, mode: "cycling" }).success, heat).toBe(
+        false,
+      );
+    }
+    expect(
+      heatmapQuerySchema.safeParse({ ...base, heat: "moving", mode: "skateboard" }).success,
+    ).toBe(false);
   });
 
   it("keeps a period ordered and within three years", () => {

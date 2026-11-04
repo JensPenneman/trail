@@ -4,7 +4,9 @@ import type { Database } from "../db/database";
 import { devices } from "../db/schema/devices";
 import { locations } from "../db/schema/locations";
 import { toIso } from "../db/toIso";
+import { heatDaysOf } from "../heatmap/heatDaysOf";
 import { rebuildHeatCells } from "../heatmap/rebuildHeatCells";
+import { rebuildHeatDays } from "../heatmap/rebuildHeatDays";
 import { tripDays } from "../history/tripTouches";
 import { visitDays } from "../history/visitTouches";
 import { localDate } from "../lib/localDate";
@@ -98,6 +100,8 @@ export async function deleteLocationRange(
     }
     // Visits and trips feed the inference too (stops, Overland's trip mode).
     const touched = deletedPoints + visits.rows.length + trips.rows.length;
+    // The days whose per-day heat cells the deletion changes: the range and the segments removed.
+    let heatSpan = { from: input.from, to: input.to };
     if (touched > 0) {
       const removed = await tx.execute<{ first: string | null; last: string | null }>(sql`
         WITH removed AS (
@@ -110,6 +114,10 @@ export async function deleteLocationRange(
       `);
       const extent = removed.rows[0];
       if (extent?.first != null && extent.last != null) {
+        heatSpan = {
+          from: new Date(Math.min(input.from.getTime(), Date.parse(toIso(extent.first)))),
+          to: new Date(Math.max(input.to.getTime(), Date.parse(toIso(extent.last)))),
+        };
         for (const day of spannedLocalDays(instant(extent.first), instant(extent.last), timezone)) {
           changed.add(day);
         }
@@ -129,6 +137,12 @@ export async function deleteLocationRange(
     let recomputed: string[] = [];
     if (deletedPoints > 0) {
       await rebuildHeatCells(tx, deviceId);
+      await rebuildHeatDays(
+        tx,
+        deviceId,
+        timezone,
+        heatDaysOf(heatSpan.from, heatSpan.to, timezone),
+      );
 
       const cached = device?.lastRecordedAt ?? null;
       const cacheDeleted = cached !== null && cached >= input.from && cached < input.to;

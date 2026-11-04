@@ -239,6 +239,7 @@ describe("heatmap", () => {
       .expect(200);
     expect(heatmapResponseSchema.parse(pacific.body)).toEqual({
       heat: "points",
+      mode: null,
       cellZoom: 8,
       cells: [],
       truncated: false,
