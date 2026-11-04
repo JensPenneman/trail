@@ -8,6 +8,13 @@ import { heatCellsRebuilt } from "./heatGeneration";
 import { levelsToRebuild } from "./levelsToRebuild";
 import { rebuildHeatDays } from "./rebuildHeatDays";
 
+/**
+ * The levels are compared over the last days only (the index on `(device_id, day)` serves it): a
+ * scan of every row of every device would read some half a million a device over three years at
+ * each start. A level missing older days is made whole by `trail recompute`.
+ */
+const recentDays = 90;
+
 interface TotalRow extends Record<string, unknown> {
   device_id: string;
   timezone: string;
@@ -34,6 +41,7 @@ export async function fillHeatDayLevels(
     FROM heat_days h
     JOIN devices d ON d.id = h.device_id
     JOIN users u ON u.id = d.user_id
+    WHERE h.day >= (current_date - ${recentDays}::int)
     GROUP BY h.device_id, u.timezone, h.z, d.created_at
     ORDER BY d.created_at, h.device_id
   `);

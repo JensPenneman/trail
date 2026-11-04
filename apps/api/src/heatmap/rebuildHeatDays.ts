@@ -53,7 +53,7 @@ export async function rebuildHeatDays(
     ), tagged AS (
       SELECT o.lat, o.lon, o.speed_avg, (o.recorded_at AT TIME ZONE ${timezone})::date AS day,
         CASE WHEN s.ended_at >= o.recorded_at
-          THEN (CASE s.kind WHEN 'move' THEN s.mode ELSE 'stationary' END)
+          THEN (CASE s.kind WHEN 'move' THEN coalesce(s.mode, 'unknown') ELSE 'stationary' END)
           ELSE 'unknown' END AS mode,
         s.ended_at >= o.recorded_at AND s.kind = 'move' AND o.next_at IS NOT NULL
           AND extract(epoch FROM o.next_at - o.recorded_at) <= ${heatDayMaxIntervalS} AS moving,

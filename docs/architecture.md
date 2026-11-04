@@ -418,8 +418,9 @@ data that a later fix may still recover.
 
 **heat_days** — the heatmap's time on the move and speed, per local day:
 PK `(device_id, z, x, y, day, mode)`, `z` ∈ {12, 15, 18}; `points`,
-`move_s` (the seconds to the next kept point inside a move, each at most
-600 s), `distance_m`, `speed_s` (speed times those seconds), `max_speed`,
+`move_s` (the seconds to the next kept point inside a move; an interval over
+600 s, a recording gap, is left out whole rather than cut, as scaling a gap
+would invent movement), `distance_m`, `speed_s` (speed times those seconds), `max_speed`,
 `computed_at`; `mode` is the move's, `stationary` in a stop and `unknown`
 outside any segment (a check lists the twelve); index `(device_id, day)`;
 cascades with the device. A derived table (migration 0012): made by
@@ -428,8 +429,11 @@ statement per set of days — the interval from a kept point to the next
 belongs to the first one's cell, day (in the owner's zone) and mode, the
 mode found by carrying the latest segment start forward over the points,
 positions the mapped ones else the averaged. About 125 to 500 rows a
-device-day; a pass for a day of 20 000 points takes about 130 ms (dev
-container), logged as `heatDaysMs` with the pass.
+device-day. A rebuild of a day of 20 000 points takes about 130 ms (dev
+container); a pass does not do it: once it has committed, its touched days are
+scheduled in `HeatDaysScheduler`, a debounced run (15 s) that rebuilds them in a
+transaction of its own under the device's processing lock, so an error there is
+logged and never rolls back or retries a pass.
 
 **heat_cells** — pre-aggregated all-time density for the heatmap: PK
 `(device_id, z, x, y)`; `count` (int), `first_at`, `last_at`. `z` ∈ {6, 9, 12,
@@ -2368,7 +2372,9 @@ runs in the worker (§3) — or in the API's process too, in role `all`.
 - once, 5 s after the start — the heat levels of every device whose totals
   disagree are rebuilt from its points (`fillHeatLevels`, §8.2), and a level
   of `heat_days` that misses points is made again with the device's others
-  (`fillHeatDayLevels`; the heatmap's ETags move). A shutdown
+  (`fillHeatDayLevels`, comparing the last 90 days only so that a start does
+  not scan every row; older gaps are `trail recompute`'s; the heatmap's ETags
+  move). A shutdown
   does not wait for it: it is cancelled and rolls back.
 - every minute — the API's `load` log line at `info` (docs/perf/README.md): the
   minute's event-loop delay (p50, p99, max), the pool (connections, idle,

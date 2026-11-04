@@ -6,7 +6,11 @@
  */
 export const heatDayZooms = [12, 15, 18] as const;
 
-/** No interval to the next kept point counts for more than this many seconds (a recording gap). */
+/**
+ * An interval to the next kept point counts only up to this many seconds: a longer one is a
+ * recording gap and is left out whole, not cut to this — scaling its distance and speed over a gap
+ * would invent movement.
+ */
 export const heatDayMaxIntervalS = 600;
 
 /** The stored level a cell zoom is read from, and the zoom the cells are then answered at. */

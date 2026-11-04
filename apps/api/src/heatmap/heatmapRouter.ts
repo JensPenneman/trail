@@ -60,11 +60,13 @@ export function heatmapRouter(ctx: AppContext): Router {
       });
     } else if (heatMovementMeasures.has(query.heat)) {
       // Time on the move, speed and top speed: the per-day cells, of one mode or every one.
-      const scope = await insightsScope(ctx.db, auth, {
-        from: query.from,
-        to: query.to,
-        devices: query.deviceIds,
-      });
+      const scope = await insightsScope(
+        ctx.db,
+        auth,
+        { from: query.from, to: query.to, devices: query.deviceIds },
+        undefined,
+        { hours: false },
+      );
       const range = { startMs: scope.start.getTime(), endMs: scope.end.getTime() };
       const etag = weakEtag(auth.user.id, apiPaths.heatmap, [
         {
@@ -95,7 +97,7 @@ export function heatmapRouter(ctx: AppContext): Router {
           period: { from: scope.period.from, to: scope.period.to },
           pending:
             (await hasPendingWork(ctx.db, scope.deviceIds, scope.start, scope.end)) ||
-            (await heatDaysMissing(ctx.db, scope.deviceIds, scope.period)),
+            (await heatDaysMissing(ctx.db, scope.deviceIds, scope.period, scope.timezone)),
         };
         return body;
       });

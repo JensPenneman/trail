@@ -1,6 +1,7 @@
 import { setImmediate as yieldToEvents } from "node:timers/promises";
 import type { Logger } from "pino";
 import type { Database } from "../db/database";
+import { HeatDaysScheduler } from "../heatmap/heatDaysScheduler";
 import { sweepMapBuilds } from "../mapdata/sweepMapBuilds";
 import { enqueueBackfill, enqueueCatchUp } from "./backfill";
 import { runFeatureBackfill } from "./featureBackfill";
@@ -42,6 +43,7 @@ export class ProcessingWorker {
   readonly #fetcher: TileFetcher | null;
   readonly #delayMs: number;
   readonly #abort = new AbortController();
+  readonly #heatDays: HeatDaysScheduler;
   #timer: NodeJS.Timeout | undefined;
   #poll: NodeJS.Timeout | undefined;
   #mapPass: NodeJS.Timeout | undefined;
@@ -67,6 +69,7 @@ export class ProcessingWorker {
     this.#config = input.config;
     this.#fetcher = input.fetcher;
     this.#delayMs = input.delayMs ?? defaultDelayMs;
+    this.#heatDays = new HeatDaysScheduler(input.db, input.logger);
   }
 
   /** Passes done and the raw points they read since the start. */
@@ -119,7 +122,10 @@ export class ProcessingWorker {
       await this.#fetching;
       const processed = await this.#processReady({ draining: true });
       const fetched = await this.#fetchTiles();
-      if (processed === 0 && fetched === 0) return;
+      if (processed === 0 && fetched === 0) {
+        await this.#heatDays.flush();
+        return;
+      }
     }
   }
 
@@ -131,6 +137,9 @@ export class ProcessingWorker {
     clearInterval(this.#mapPass);
     this.#abort.abort();
     await Promise.allSettled([this.#running, this.#fetching]);
+    // The days a pass touched last are rebuilt before the process goes.
+    await this.#heatDays.flush().catch(() => undefined);
+    this.#heatDays.stop();
   }
 
   async #run(): Promise<void> {
@@ -186,6 +195,7 @@ export class ProcessingWorker {
           now: new Date(),
         });
         if (outcome !== null) {
+          this.#heatDays.schedule(outcome.deviceId, outcome.heatDays);
           this.#totals.passes += 1;
           this.#totals.points += outcome.points;
           this.#logger.info(
@@ -196,7 +206,6 @@ export class ProcessingWorker {
               points: outcome.points,
               segments: outcome.segments,
               missingTiles: outcome.missingTiles.length,
-              heatDaysMs: outcome.heatDaysMs,
               reason: rows[0]?.reason,
               priority: this.#lastPriority,
               split: outcome.split,

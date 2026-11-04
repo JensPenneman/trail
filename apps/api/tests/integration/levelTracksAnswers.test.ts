@@ -54,7 +54,8 @@ function hashOf(body: unknown): string {
     [drive, "drive"],
   ]);
   const text = JSON.stringify(body, (key, value: unknown) => {
-    if (key === "stamps") return undefined;
+    // `values` echoes the query and is pinned apart: the rest of the answer is what it was.
+    if (key === "stamps" || key === "values") return undefined;
     if (typeof value === "string" && /^[0-9a-f-]{36}$/.test(value)) {
       if (!names.has(value)) names.set(value, `id${names.size}`);
       return names.get(value);
@@ -66,6 +67,15 @@ function hashOf(body: unknown): string {
 
 describe("the level tracks", () => {
   it("are the answers they were, at every level, simplified or not", async () => {
+    // The values asked for are echoed; none asked, none listed.
+    expect(
+      (
+        await owner
+          .get(apiPaths.v1.tracks)
+          .query({ ...day, level: "raw" })
+          .expect(200)
+      ).body.values,
+    ).toEqual([]);
     const hashes: Record<string, string> = {};
     for (const level of ["raw", "averaged", "mapped", "inferred"]) {
       for (const maxPoints of [8000, 300]) {
@@ -82,15 +92,15 @@ describe("the level tracks", () => {
       .expect(200);
     hashes["inferred commute"] = hashOf(one.body);
     expect(hashes).toEqual({
-      "raw 8000": "28ad6512769fa33e",
-      "raw 300": "2001257666bf84d7",
-      "averaged 8000": "ad66d50633c30b97",
-      "averaged 300": "bea203d0d0154e84",
-      "mapped 8000": "ead1d3cc739d42d6",
-      "mapped 300": "1c1f6af439c4b1de",
-      "inferred 8000": "ce3e34f110ffe026",
-      "inferred 300": "8c531d410a974f84",
-      "inferred commute": "41353bac57dd5baf",
+      "raw 8000": "3d6fb3c7acb0d46a",
+      "raw 300": "998db2ea32f68b59",
+      "averaged 8000": "358431328275b87b",
+      "averaged 300": "7e204cf31175b678",
+      "mapped 8000": "c7ab3abaf1c18dbe",
+      "mapped 300": "11ee18dbf0300745",
+      "inferred 8000": "57ad6bacf62ce3ab",
+      "inferred 300": "0a8bc3b61f0030e9",
+      "inferred commute": "90ca9f5ceb00abfd",
     });
   });
 });

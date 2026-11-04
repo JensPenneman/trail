@@ -1,6 +1,18 @@
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import type { Executor } from "../db/database";
 import { heatGeneration } from "./heatGeneration";
+
+/**
+ * A kept processed point in the local day of the daily statistics row `row`, a range of the
+ * primary key. A day of nothing but dropped points (fixes too inaccurate to keep) has no cells to
+ * make, so it is not "missing" either.
+ */
+export const keptPointInDay = (row: SQL, timezone: SQL): SQL => sql`EXISTS (
+  SELECT 1 FROM processed_points p
+  WHERE p.device_id = ${row}.device_id AND p.kept
+    AND p.recorded_at >= (${row}.date::timestamp AT TIME ZONE ${timezone})
+    AND p.recorded_at < ((${row}.date + 1)::timestamp AT TIME ZONE ${timezone})
+)`;
 
 interface Row extends Record<string, unknown> {
   rows: number;
@@ -40,6 +52,7 @@ export async function heatDaysMissing(
   db: Executor,
   deviceIds: readonly string[],
   period: { from: string; to: string },
+  timezone: string,
 ): Promise<boolean> {
   if (deviceIds.length === 0) return false;
   const result = await db.execute<{ missing: boolean }>(sql`
@@ -47,6 +60,7 @@ export async function heatDaysMissing(
       SELECT 1 FROM daily_stats s
       WHERE s.device_id = ANY(${sql.param(deviceIds)}::uuid[]) AND s.points > 0
         AND s.date BETWEEN ${period.from}::date AND ${period.to}::date
+        AND ${keptPointInDay(sql`s`, sql`${timezone}`)}
         AND NOT EXISTS (SELECT 1 FROM heat_days h WHERE h.device_id = s.device_id AND h.day = s.date)
     ) AS missing
   `);

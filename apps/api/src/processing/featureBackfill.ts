@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { sql } from "drizzle-orm";
 import type { Database, Executor } from "../db/database";
+import { keptPointInDay } from "../heatmap/heatDaysValidator";
 import { rebuildHeatDays } from "../heatmap/rebuildHeatDays";
 import { lockDeviceProcessing } from "./deviceLock";
 import { type ProcessingFeature, processingFeatureVersions } from "./processingVersion";
@@ -152,10 +153,11 @@ const wayTotalsFill: FeatureFill<number> = {
 const heatDaysFill: FeatureFill<string> = {
   async devicesLacking(db) {
     const result = await db.execute<{ id: string }>(sql`
-      SELECT d.id FROM devices d
+      SELECT d.id FROM devices d JOIN users u ON u.id = d.user_id
       WHERE EXISTS (
         SELECT 1 FROM daily_stats s
         WHERE s.device_id = d.id AND s.points > 0
+          AND ${keptPointInDay(sql`s`, sql`u.timezone`)}
           AND NOT EXISTS (SELECT 1 FROM heat_days h WHERE h.device_id = s.device_id AND h.day = s.date)
       )
     `);
@@ -164,7 +166,9 @@ const heatDaysFill: FeatureFill<string> = {
   async next(db, deviceId, before) {
     const result = await db.execute<{ day: string }>(sql`
       SELECT s.date::text AS day FROM daily_stats s
+      JOIN devices d ON d.id = s.device_id JOIN users u ON u.id = d.user_id
       WHERE s.device_id = ${deviceId}::uuid AND s.points > 0
+        AND ${keptPointInDay(sql`s`, sql`u.timezone`)}
         ${before === null ? sql`` : sql`AND s.date < ${before}::date`}
         AND NOT EXISTS (SELECT 1 FROM heat_days h WHERE h.device_id = s.device_id AND h.day = s.date)
       ORDER BY s.date DESC

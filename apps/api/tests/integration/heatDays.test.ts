@@ -29,8 +29,9 @@ let owner: Agent;
 let device = "";
 const logger = pino({ level: "silent" });
 
-const day1 = "2026-10-20";
-const day2 = "2026-10-21";
+/** Two recent days: the levels are compared over the last 90 days. */
+const day1 = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
+const day2 = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
 const instant = (day: string, time: string) => `${day}T${time}Z`;
 const zone = "UTC";
 
@@ -151,7 +152,7 @@ describe("what a pass writes", () => {
     await rebuild([day2]);
     expect(await totals(18)).toEqual(before);
     expect(await stamp(day1)).toBe(firstDay);
-    await rebuild(["2026-10-30"]);
+    await rebuild([new Date(Date.now() - 20 * 86_400_000).toISOString().slice(0, 10)]);
     expect(await totals(18)).toEqual(before);
   });
 
@@ -182,7 +183,7 @@ describe("what a pass writes", () => {
       SELECT day::text AS day, sum(points)::int AS points FROM heat_days
       WHERE device_id = ${device}::uuid AND z = 12 AND mode = 'car' GROUP BY day ORDER BY day
     `);
-    expect(days.rows).toEqual([{ day: "2026-10-21", points: 5 }]);
+    expect(days.rows).toEqual([{ day: day2, points: 5 }]);
     await from(owner, "patch", apiPaths.me.root, { timezone: zone }).expect(200);
     await t.ctx.background.drain(5000);
     expect((await totals(12, day2))["car"]).toMatchObject({ points: 3 });
@@ -329,6 +330,105 @@ describe("what the start-up restores", () => {
     expect(heatGeneration()).toBeGreaterThan(before);
     // Nothing to do when the levels agree.
     expect(await fillHeatDayLevels(t.ctx.db, logger)).toEqual({ devices: 0, complete: true });
+  });
+});
+
+describe("what is left out of a day", () => {
+  it("counts a move without a mode as unknown and does not stop on it", async () => {
+    const other = (await createDevice(owner, { name: "Legacy" })).device.id;
+    const at = instant(day1, "06:00:00");
+    for (const [i, time] of ["06:00:00", "06:01:00"].entries()) {
+      await t.ctx.db.execute(sql`
+        INSERT INTO locations (device_id, recorded_at, lat, lon)
+        VALUES (${other}::uuid, ${instant(day1, time)}::timestamptz, 50.5, ${4 + i * 0.001})`);
+      await t.ctx.db.execute(sql`
+        INSERT INTO processed_points (device_id, recorded_at, kept, lat_avg, lon_avg, speed_avg, version)
+        VALUES (${other}::uuid, ${instant(day1, time)}::timestamptz, true, 50.5, ${4 + i * 0.001}, 3, 1)`);
+    }
+    await t.ctx.db.execute(sql`
+      INSERT INTO segments (device_id, started_at, ended_at, kind, mode, mode_inferred, confidence,
+        distance_m, duration_s, max_speed, point_count, start_lat, start_lon, end_lat, end_lon,
+        centroid_lat, centroid_lon, features, version)
+      VALUES (${other}::uuid, ${at}::timestamptz, ${instant(day1, "06:01:00")}::timestamptz, 'move',
+        NULL, NULL, NULL, 70, 60, 3, 2, 50.5, 4, 50.5, 4.001, 50.5, 4.0005, '{}'::jsonb, 3)`);
+    await t.ctx.db.transaction((tx) => rebuildHeatDays(tx, other, zone, [day1]));
+    const { rows } = await t.ctx.db.execute<{ mode: string; move_s: number }>(sql`
+      SELECT mode, sum(move_s)::int AS move_s FROM heat_days
+      WHERE device_id = ${other}::uuid AND z = 12 GROUP BY mode`);
+    expect(rows).toEqual([{ mode: "unknown", move_s: 60 }]);
+  });
+
+  it("is not pending, and not made again, for a day of points that were all dropped", async () => {
+    const dim = (await createDevice(owner, { name: "Dim" })).device.id;
+    for (const time of ["09:00:00", "09:01:00"]) {
+      await t.ctx.db.execute(sql`
+        INSERT INTO locations (device_id, recorded_at, lat, lon, horizontal_accuracy)
+        VALUES (${dim}::uuid, ${instant(day1, time)}::timestamptz, 50.2, 4.2, 900)`);
+      await t.ctx.db.execute(sql`
+        INSERT INTO processed_points (device_id, recorded_at, kept, lat_avg, lon_avg, version)
+        VALUES (${dim}::uuid, ${instant(day1, time)}::timestamptz, false, 50.2, 4.2, 1)`);
+    }
+    await t.ctx.db.transaction((tx) => rebuildDailyStats(tx, dim, zone));
+    const days = await t.ctx.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM daily_stats WHERE device_id = ${dim}::uuid AND points > 0`,
+    );
+    expect(days.rows[0]?.n).toBe(1);
+    const url = `${apiPaths.heatmap}?bbox=3.6,50.0,4.5,51.2&zoom=10&heat=moving&deviceIds=${dim}&from=${day1}&to=${day2}`;
+    expect(heatmapResponseSchema.parse((await owner.get(url).expect(200)).body).pending).toBe(
+      false,
+    );
+    await t.ctx.db.execute(sql`DELETE FROM processing_state WHERE key = 'features'`);
+    const run = await runFeatureBackfill(t.ctx.db, { pauseMs: 0 });
+    expect(run.features).toContain("heatDays");
+    const rows = await t.ctx.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM heat_days WHERE device_id = ${dim}::uuid`,
+    );
+    expect(rows.rows[0]?.n).toBe(0);
+    // Nothing lacks any more, so a start does not look again.
+    expect((await runFeatureBackfill(t.ctx.db, { pauseMs: 0 })).features).not.toContain("heatDays");
+  });
+});
+
+describe("days of 23 and 25 hours", () => {
+  const brussels = "Europe/Brussels";
+  const day = async (deviceId: string, date: string) =>
+    (
+      await t.ctx.db.execute<{ points: number }>(sql`
+        SELECT coalesce(sum(points), 0)::int AS points FROM heat_days
+        WHERE device_id = ${deviceId}::uuid AND z = 12 AND day = ${date}::date`)
+    ).rows[0]?.points ?? 0;
+
+  it("cuts a day where summer time ends, 25 hours, and where it begins, 23 hours", async () => {
+    const dst = (await createDevice(owner, { name: "Clock" })).device.id;
+    // 25 October 2026: the 25th runs from 22:00Z on the 24th to 23:00Z on the 25th.
+    // 29 March 2026: the 29th runs from 23:00Z on the 28th to 22:00Z on the 29th.
+    const times = [
+      "2026-10-24T21:59:00Z",
+      "2026-10-24T22:00:00Z",
+      "2026-10-25T00:30:00Z",
+      "2026-10-25T22:59:00Z",
+      "2026-10-25T23:00:00Z",
+      "2026-03-28T22:59:00Z",
+      "2026-03-28T23:00:00Z",
+      "2026-03-29T21:59:00Z",
+      "2026-03-29T22:00:00Z",
+    ];
+    for (const [i, at] of times.entries()) {
+      await t.ctx.db.execute(sql`
+        INSERT INTO locations (device_id, recorded_at, lat, lon)
+        VALUES (${dst}::uuid, ${at}::timestamptz, 50.1, ${4 + i * 0.01})`);
+      await t.ctx.db.execute(sql`
+        INSERT INTO processed_points (device_id, recorded_at, kept, lat_avg, lon_avg, version)
+        VALUES (${dst}::uuid, ${at}::timestamptz, true, 50.1, ${4 + i * 0.01}, 1)`);
+    }
+    await t.ctx.db.transaction((tx) => rebuildHeatDays(tx, dst, brussels, "all"));
+    // The edges just inside the day are the day's, the ones just outside the neighbours'.
+    expect(await day(dst, "2026-10-24")).toBe(1);
+    expect(await day(dst, "2026-10-25")).toBe(3);
+    expect(await day(dst, "2026-10-26")).toBe(1);
+    expect(await day(dst, "2026-03-28")).toBe(1);
+    expect(await day(dst, "2026-03-29")).toBe(2);
+    expect(await day(dst, "2026-03-30")).toBe(1);
   });
 });
 

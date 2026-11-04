@@ -23,7 +23,7 @@ const modes = sql.raw(
  * moved there, derived from the processed points and the segments' modes
  * (docs/architecture.md §5, `rebuildHeatDays`). `mode` is the move's, `stationary` in a stop and
  * `unknown` outside any segment; `move_s` sums the intervals to the next kept point inside a move
- * (at most 600 s each), `speed_s` the speed times those seconds.
+ * (an interval over 600 s, a recording gap, is left out), `speed_s` the speed times those seconds.
  */
 export const heatDays = pgTable(
   "heat_days",
