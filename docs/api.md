@@ -379,8 +379,8 @@ is true while recorded points of the period still wait for processing.
   most, by the name OpenStreetMap gives them, for one `mode` or all: the
   `distanceM` and the number of `moves` on each, with `mappedM` (the distance
   of the moves with map data) and `namedM` (the part of it on named roads).
-  Ways of one name within about 10 km of each other are one road, the same
-  name further away another. Names and distances only; a road name says where
+  Ways of one name in the same or touching cells of about 6 km are one road,
+  the same name further away another. Names and distances only; a road name says where
   you were, hence `locations:read`. `modes` lists every mode moved in,
   whatever `mode` asks for. `pending` is true while moves still wait for
   their ways to be worked out after an upgrade. The answer has an `ETag`,

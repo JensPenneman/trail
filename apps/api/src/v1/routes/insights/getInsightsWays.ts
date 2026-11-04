@@ -12,7 +12,7 @@ export const getInsightsWays = defineRoute(
     operationId: "getInsightsWays",
     summary: "Get the named roads you travelled",
     description:
-      "The 25 roads you travelled most over a period of local days, for one transport mode or all of them, by the name OpenStreetMap gives them, with the distance and the number of moves on each. Ways of one name that lie within about 10 km of each other are one road, the same name further away another. Names and distances only, but a road name says where you were, so it needs `locations:read`. `mappedM` is the distance of moves with map data; moves without it count towards nothing, and `pending` is true while moves still wait for their ways to be worked out after an upgrade.",
+      "The 25 roads you travelled most over a period of local days, for one transport mode or all of them, by the name OpenStreetMap gives them, with the distance and the number of moves on each. Ways of one name in the same or touching cells of about 6 km are one road, the same name further away another. Names and distances only, but a road name says where you were, so it needs `locations:read`. `mappedM` is the distance of moves with map data; moves without it count towards nothing, and `pending` is true while moves still wait for their ways to be worked out after an upgrade.",
     tags: ["Insights"],
     auth: { scopes: ["locations:read"] },
     request: { query: insightsModeFilterQuerySchema },

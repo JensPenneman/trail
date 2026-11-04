@@ -4,12 +4,13 @@ import { insightsWaysSchema } from "@trail/contracts/insights";
 import { sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { lockDeviceProcessing } from "../../src/processing/deviceLock";
 import { runFeatureBackfill } from "../../src/processing/featureBackfill";
 import { type Agent, agentFor, signUp, signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
 import { FakeApiTokens, tokenPrincipal } from "../support/fakeApiTokens";
 import { FixtureWaySource } from "../support/fixtureWaySource";
-import { motorwayDrive } from "../support/journeys";
+import { bikeRide, motorwayDrive, sparseTrain, tramRide, walkInTown } from "../support/journeys";
 import { uploadJourney } from "../support/overlandPoints";
 import { resetDatabase } from "../support/resetDatabase";
 import { SoftwareAuthenticator } from "../support/softwareAuthenticator";
@@ -287,20 +288,32 @@ describe("the feature backfill", () => {
       `)
     ).rows;
 
-  it("fills the totals of stored moves from their processed points, once, without touching their stamps", async () => {
-    const motorway = await createDevice(owner, { name: "Backfilled" });
-    await uploadJourney(t.app, motorway.credentials.accessToken, motorwayDrive());
+  it("fills the totals of stored moves as the pipeline counts them, once, without touching their stamps", async () => {
+    // Curved and sparse journeys, not a straight line: intervals follow the way's shape between
+    // matched points, or the chord where a point is not matched.
+    const journeys = [
+      ["Town", walkInTown],
+      ["Train", sparseTrain],
+      ["Tram", tramRide],
+      ["Bike", bikeRide],
+    ] as const;
+    const devices: string[] = [];
+    for (const [name, journey] of journeys) {
+      const made = await createDevice(owner, { name: `Backfilled ${name}` });
+      await uploadJourney(t.app, made.credentials.accessToken, journey());
+      devices.push(made.device.id);
+    }
     await t.ctx.background.drain(5000);
     await t.ctx.processing.flush();
-    const before = await stored(motorway.device.id);
-    expect(before.length).toBeGreaterThan(0);
-    const measured = before.flatMap((row) => row.totals ?? []);
-    expect(measured.length).toBeGreaterThan(0);
+    const before = (await Promise.all(devices.map(stored))).flat();
+    expect(before.length).toBeGreaterThanOrEqual(journeys.length);
+    expect(before.flatMap((row) => row.totals ?? []).length).toBeGreaterThan(0);
     await t.ctx.db.execute(sql`
-      UPDATE segments SET features = features - 'wayTotals' WHERE device_id = ${motorway.device.id}::uuid
+      UPDATE segments SET features = features - 'wayTotals'
+      WHERE device_id = ANY(${sql.param(devices)}::uuid[])
     `);
     const answer = () =>
-      ways({ devices: motorway.device.id, from: "2026-10-26", to: "2026-10-26" })
+      ways({ devices: devices.join(","), from: "2026-10-26", to: "2026-10-26" })
         .expect(200)
         .then((response) => insightsWaysSchema.parse(response.body));
     expect((await answer()).pending).toBe(true);
@@ -308,20 +321,18 @@ describe("the feature backfill", () => {
     const run = await runFeatureBackfill(t.ctx.db, { pauseMs: 0 });
     expect(run).toMatchObject({ features: ["wayTotals"], complete: true });
     expect(run.moves).toBeGreaterThanOrEqual(before.length);
-    const after = await stored(motorway.device.id);
+    const after = (await Promise.all(devices.map(stored))).flat();
     expect(after.map((row) => [row.id, row.version, row.computed_at])).toEqual(
       before.map((row) => [row.id, row.version, row.computed_at]),
     );
+    // The same ways with the same metres, to the pipeline's rounding of a tenth.
     for (const [index, row] of after.entries()) {
       const expected = new Map(before[index]?.totals ?? []);
-      const ids = (totals: [number, number][] | null | undefined) =>
-        (totals ?? []).map(([id]) => id).sort((x, y) => x - y);
-      expect(ids(row.totals)).toEqual(ids(before[index]?.totals));
+      expect([...(row.totals ?? [])].map(([id]) => id).sort((x, y) => x - y)).toEqual(
+        [...expected.keys()].sort((x, y) => x - y),
+      );
       for (const [id, metres] of row.totals ?? []) {
-        expect(metres).toBeGreaterThanOrEqual(25);
-        expect(Math.abs(metres - (expected.get(id) ?? 0))).toBeLessThanOrEqual(
-          Math.max(5, (expected.get(id) ?? 0) * 0.05),
-        );
+        expect(Math.abs(metres - (expected.get(id) ?? Number.NaN))).toBeLessThanOrEqual(0.15);
       }
     }
     expect((await answer()).pending).toBe(false);
@@ -360,5 +371,51 @@ describe("the feature backfill", () => {
       sql`SELECT count(*)::int AS n FROM segments WHERE kind = 'move' AND NOT features ? 'wayTotals'`,
     );
     expect(done.rows[0]?.n).toBe(0);
+  });
+
+  it("starts again for a move left lacking after the marker, and gives way to the device's pass and to another fill", async () => {
+    const [victim] = (
+      await t.ctx.db.execute<{ id: string; device_id: string }>(
+        sql`SELECT id, device_id FROM segments WHERE kind = 'move' LIMIT 1`,
+      )
+    ).rows;
+    if (victim === undefined) throw new Error("no move");
+    const lacks = async () =>
+      (
+        await t.ctx.db.execute<{ n: number }>(
+          sql`SELECT count(*)::int AS n FROM segments WHERE id = ${victim.id}::uuid AND NOT features ? 'wayTotals'`,
+        )
+      ).rows[0]?.n === 1;
+    await t.ctx.db.execute(
+      sql`UPDATE segments SET features = features - 'wayTotals' WHERE id = ${victim.id}::uuid`,
+    );
+    expect(await lacks()).toBe(true);
+
+    // The device's processing lock is held (a pass at work): the fill waits for it.
+    let filling: Promise<unknown> = Promise.resolve();
+    await t.ctx.db.transaction(async (tx) => {
+      await lockDeviceProcessing(tx, victim.device_id);
+      filling = runFeatureBackfill(t.ctx.db, { pauseMs: 0 });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(await lacks()).toBe(true);
+    });
+    expect(await filling).toMatchObject({ features: ["wayTotals"], complete: true });
+    expect(await lacks()).toBe(false);
+
+    // Another process holds the fill: this one leaves it.
+    await t.ctx.db.execute(
+      sql`UPDATE segments SET features = features - 'wayTotals' WHERE id = ${victim.id}::uuid`,
+    );
+    let skipped: unknown = null;
+    await t.ctx.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended('trail.feature-backfill', 0))`,
+      );
+      skipped = await runFeatureBackfill(t.ctx.db, { pauseMs: 0 });
+    });
+    expect(skipped).toMatchObject({ complete: false, skipped: true });
+    expect(await lacks()).toBe(true);
+    expect(await runFeatureBackfill(t.ctx.db, { pauseMs: 0 })).toMatchObject({ complete: true });
+    expect(await lacks()).toBe(false);
   });
 });

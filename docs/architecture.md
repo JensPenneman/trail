@@ -1800,15 +1800,18 @@ coordinates: times, distances, speeds, way kinds and segment ids). Contracts:
   over the period's hours like the roads, adds the ways up (the longest 20 000
   are looked up), takes the newest row of `osm_ways` with a `name` for each,
   and makes roads of them: the ways of one name whose bounding-box centres lie
-  in one zoom-12 cell (about 10 km) or touching ones (union-find over the 8
-  neighbours) are one road. Villages of one name 10 km apart or less therefore
-  merge, and a chain of touching cells can merge a wider area; the same name
-  20 km or more away is another road. The answer is `{ mappedM, namedM, ways
+  in one zoom-12 cell (about 6 km wide at 51° N) or touching ones (union-find
+  over the 8 neighbours) are one road. Villages of one name in touching cells
+  therefore merge, and a chain of touching cells can merge a wider area; the
+  same name two cells (12 km) or more away is another road. The answer is `{ mappedM, namedM, ways
   [≤ 25: name, kind (the longest way's), distanceM, moves] }`: the centres
   serve the grouping on the server and are not answered. `mappedM` is the
   distance of moves with map data, `namedM` the part on named roads, `moves`
   the distinct moves on any of a road's ways. `pending` is also true while a
-  move in the period lacks its totals.
+  move in the period lacks its totals; the web refetches named roads while
+  `pending` and otherwise goes by the ETag, since the fill changes no day
+  stamp. `features` grows by up to about 1.3 KB per move (64 ways; about
+  0.5 KB measured on seeded moves), read with the move's other features.
   The threat model: names of roads the owner (or a token with `locations:read`
   for those devices) travelled and metres, no time of day, no position, no
   person; a road name says where one was, hence `locations:read`; devices go
@@ -4711,20 +4714,23 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
 - **Feature backfill.** A feature that can be derived from rows already stored
   needs no new level: `processingFeatureVersions` (`processingVersion.ts`)
   lists them, `processing_state` key `features` records the version each was
-  filled in at, and at start-up the worker runs `runFeatureBackfill` apart
-  from the queue, held off while a pass is at work. For each feature whose
-  version is old it fills, device by device and UTC day, newest first, the
-  moves that lack it with one SQL statement from the stored processed points
-  (nothing is loaded, no map data, no matching) and changes neither
-  `version` nor `computed_at`. Progress is in the segments themselves, so an
-  interrupted run resumes by finding what is left; the version is recorded
-  when none is. `wayTotals` 1 (Insights › named roads) is the first: the
-  kept points of the move, the haversine distance between consecutive ones
-  (mapped position, else averaged), half to each end point's way, the rules
-  of `extractFeatures`, so it differs from the pipeline's by the shape of the
-  way between points. Measured in the dev container on 10 000 moves of 40
-  points: 4.8 s, about 2 000 moves (80 000 points) per second. The heat days
-  of the map are planned on the same mechanism.
+  filled in at, and at every start the worker runs `runFeatureBackfill` apart
+  from the queue, held off while a pass of its own is at work. It fills the
+  features whose version is old, and any a move still lacks (the partial index
+  `segments_move_lacking_totals_idx` lists them, empty once done), so a move
+  left behind never stays `pending`. Device by device and UTC day, newest
+  first, one transaction per day under the device's processing lock (a live
+  pass never overlaps it) and an advisory lock for the fill (one process fills
+  at a time; another leaves it), one SQL statement from the stored processed
+  points: nothing is loaded, no map data, no matching, and neither `version`
+  nor `computed_at` changes; a move that has the feature by then is left
+  alone. `wayTotals` 1 (Insights › named roads) counts as the pipeline does:
+  each interval between kept points along `path_map` when both ends are mapped,
+  else the chord of the averaged points, half to each end point's way, ways of
+  25 m or more, to 0.1 m (the test compares it with the pipeline's own totals
+  on curved and sparse journeys). Measured in the dev container on 10 000
+  moves of 40 points: 5.6 s, about 1 800 moves (70 000 points) per second.
+  The heat days of the map are planned on the same mechanism.
 - `trail reprocess [--device <id>] [--from <iso> --to <iso>] [--from-level
   averaged|mapped|inferred]` queues the range in day windows, then processes
   them itself with the map data already cached; tiles still missing are left

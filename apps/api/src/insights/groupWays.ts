@@ -23,8 +23,8 @@ export interface WayGroup {
 }
 
 /**
- * The zoom of the cells that keep apart roads of the same name: about 10 km wide at 51° N, so the
- * same name in villages 20 km apart is two roads, and in neighbouring villages one.
+ * The zoom of the cells that keep apart roads of the same name: about 6 km wide at 51° N, so the
+ * same name two cells (12 km) apart is two roads, and in touching cells one.
  */
 const groupZoom = 12;
 

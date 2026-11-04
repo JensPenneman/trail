@@ -61,6 +61,10 @@ export const segments = pgTable(
     index("segments_device_id_ended_at_idx").on(table.deviceId, table.endedAt),
     // The API's catch-up after a lost listening connection reads by it (docs/architecture.md §9).
     index("segments_computed_at_idx").on(table.computedAt),
+    // Moves still waiting for a feature the backfill fills (processing/featureBackfill.ts); empty once it is done.
+    index("segments_move_lacking_totals_idx")
+      .on(table.deviceId, table.startedAt)
+      .where(sql`${table.kind} = 'move' AND NOT ${table.features} ? 'wayTotals'`),
     check("segments_kind_check", sql`${table.kind} IN ('stop', 'move')`),
     check("segments_mode_check", sql`${table.mode} IN (${modes})`),
     check("segments_mode_inferred_check", sql`${table.modeInferred} IN (${modes})`),

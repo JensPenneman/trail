@@ -1,26 +1,49 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { sql } from "drizzle-orm";
 import type { Database, Executor } from "../db/database";
+import { lockDeviceProcessing } from "./deviceLock";
 import { type ProcessingFeature, processingFeatureVersions } from "./processingVersion";
 
 /** The days a move's metres per way are counted over: one device and one UTC day per statement. */
 const dayMs = 86_400_000;
 
+/** The great-circle distance in metres between two points given as SQL expressions in radians. */
+const haversine = (lat1: string, lon1: string, lat2: string, lon2: string): string =>
+  `2 * 6371008.8 * asin(sqrt(least(1, power(sin((${lat2} - ${lat1}) / 2), 2) + cos(${lat1}) * cos(${lat2}) * power(sin((${lon2} - ${lon1}) / 2), 2))))`;
+
 /**
  * Fills `features.wayTotals` of the moves that lack it, `device`'s from `[fromMs, toMs)` by start,
- * from the stored processed points (docs/architecture.md §17.4): the kept points of the move, the
- * distance between consecutive ones (their mapped position, else the averaged one; haversine),
- * half of each step to each end point's way, ways of 25 m or more, longest first, at most 64 — the
- * rules of `extractFeatures`, in SQL. A move with map data (`wayKinds`) gets the array, any other
+ * from the stored processed points (docs/architecture.md §17.4), as the pipeline counts them
+ * (`moveSeries`, `extractFeatures`): each interval between consecutive kept points is measured
+ * along the way's shape (`path_map`'s vertices) when both ends are mapped, else as the chord
+ * between the averaged points; half of it goes to each end point's way; ways of 25 m or more,
+ * longest first, at most 64, to 0.1 m. A move with map data (`wayKinds`) gets the array, any other
  * `null`, as the pipeline writes them. Nothing else of the segment changes: not `version`, not
- * `computed_at`. Returns the moves filled.
+ * `computed_at`. A move that has the key by the time the update runs (a pass wrote it) is left as
+ * it is. The caller holds the device's processing lock. Returns the moves filled.
  */
-async function fillWayTotals(
+export async function fillWayTotals(
   db: Executor,
   deviceId: string,
   fromMs: number,
   toMs: number,
 ): Promise<number> {
+  const along = sql.raw(`(
+    SELECT coalesce(sum(${haversine("v.prev_lat", "v.prev_lon", "v.lat", "v.lon")}), 0)
+    FROM (
+      SELECT lat, lon, lag(lat) OVER (ORDER BY ord) AS prev_lat, lag(lon) OVER (ORDER BY ord) AS prev_lon
+      FROM (
+        SELECT 0 AS ord, o.map_lat AS lat, o.map_lon AS lon
+        UNION ALL
+        SELECT e.ord::int, radians((e.vertex->>1)::float8), radians((e.vertex->>0)::float8)
+        FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.path_map) = 'array' THEN o.path_map ELSE '[]'::jsonb END)
+          WITH ORDINALITY AS e(vertex, ord)
+        UNION ALL
+        SELECT 1000000, o.cur_map_lat, o.cur_map_lon
+      ) vertices
+    ) v
+    WHERE v.prev_lat IS NOT NULL
+  )`);
   const result = await db.execute(sql`
     WITH moves AS (
       SELECT s.id, s.device_id, s.started_at, s.ended_at,
@@ -32,24 +55,27 @@ async function fillWayTotals(
         AND NOT s.features ? 'wayTotals'
     ),
     points AS (
-      SELECT m.id, p.recorded_at, p.way_id,
-        radians(coalesce(p.lat_map, p.lat_avg)) AS lat, radians(coalesce(p.lon_map, p.lon_avg)) AS lon
+      SELECT m.id, p.recorded_at, p.way_id, radians(p.lat_avg) AS lat, radians(p.lon_avg) AS lon,
+        radians(p.lat_map) AS map_lat, radians(p.lon_map) AS map_lon, p.path_map
       FROM moves m
       JOIN processed_points p ON p.device_id = m.device_id AND p.kept
         AND p.recorded_at >= m.started_at AND p.recorded_at <= m.ended_at
       WHERE m.mapped
     ),
+    ordered AS (
+      SELECT id, way_id, lat, lon, map_lat AS cur_map_lat, map_lon AS cur_map_lon, path_map,
+        lag(way_id) OVER w AS prev_way, lag(lat) OVER w AS prev_lat, lag(lon) OVER w AS prev_lon,
+        lag(map_lat) OVER w AS map_lat, lag(map_lon) OVER w AS map_lon
+      FROM points
+      WINDOW w AS (PARTITION BY id ORDER BY recorded_at)
+    ),
     steps AS (
-      SELECT id, way_id, prev_way,
-        CASE WHEN prev_lat IS NULL THEN NULL ELSE
-          2 * 6371000 * asin(sqrt(least(1, power(sin((lat - prev_lat) / 2), 2)
-            + cos(lat) * cos(prev_lat) * power(sin((lon - prev_lon) / 2), 2)))) END AS metres
-      FROM (
-        SELECT id, way_id, lat, lon, lag(way_id) OVER w AS prev_way,
-          lag(lat) OVER w AS prev_lat, lag(lon) OVER w AS prev_lon
-        FROM points
-        WINDOW w AS (PARTITION BY id ORDER BY recorded_at)
-      ) ordered
+      SELECT o.id, o.way_id, o.prev_way,
+        CASE WHEN o.prev_lat IS NULL THEN NULL
+          WHEN o.map_lat IS NOT NULL AND o.map_lon IS NOT NULL
+            AND o.cur_map_lat IS NOT NULL AND o.cur_map_lon IS NOT NULL THEN ${along}
+          ELSE ${sql.raw(haversine("o.prev_lat", "o.prev_lon", "o.lat", "o.lon"))} END AS metres
+      FROM ordered o
     ),
     halves AS (
       SELECT id, way_id AS way, metres / 2 AS m FROM steps WHERE way_id IS NOT NULL AND metres IS NOT NULL
@@ -72,7 +98,7 @@ async function fillWayTotals(
     SET features = s.features || jsonb_build_object('wayTotals',
       CASE WHEN m.mapped THEN coalesce(k.totals, '[]'::jsonb) ELSE 'null'::jsonb END)
     FROM moves m LEFT JOIN packed k ON k.id = m.id
-    WHERE s.id = m.id
+    WHERE s.id = m.id AND NOT s.features ? 'wayTotals'
   `);
   return result.rowCount ?? 0;
 }
@@ -94,7 +120,7 @@ async function newestLacking(
   return result.rows[0]?.at ?? null;
 }
 
-/** The devices with a move that lacks the feature (one index probe per device). */
+/** The devices with a move that lacks the feature (the partial index `segments_move_lacking_totals_idx`). */
 async function devicesLacking(db: Executor): Promise<string[]> {
   const result = await db.execute<{ id: string }>(sql`
     SELECT d.id FROM devices d
@@ -118,14 +144,19 @@ interface StateRow extends Record<string, unknown> {
   value: { versions?: Partial<Record<ProcessingFeature, number>> } | null;
 }
 
-/** The features whose recorded version is not the current one. */
+/**
+ * The features to fill: those whose recorded version is not the current one, and — whatever the
+ * marker says — those with a move that still lacks them (one a lost race or an older process left
+ * behind), so that nothing stays `pending` for good.
+ */
 async function featuresToFill(db: Executor): Promise<ProcessingFeature[]> {
   const state = await db.execute<StateRow>(sql`
     SELECT value FROM processing_state WHERE key = 'features'
   `);
   const recorded = state.rows[0]?.value?.versions ?? {};
+  const lacking = (await devicesLacking(db)).length > 0;
   return (Object.keys(processingFeatureVersions) as ProcessingFeature[]).filter(
-    (feature) => recorded[feature] !== processingFeatureVersions[feature],
+    (feature) => recorded[feature] !== processingFeatureVersions[feature] || lacking,
   );
 }
 
@@ -148,16 +179,21 @@ export interface FeatureBackfillRun {
   days: number;
   /** False when stopped before every device was done: it resumes at the next start. */
   complete: boolean;
+  /** Another process holds the fill: this one left it to it. */
+  skipped?: true;
 }
 
 /**
  * The start-up fill of features of the stored segments (docs/architecture.md §17.4), the cheap
- * counterpart of the level backfill: for each feature whose recorded version is old, every device's
- * moves that lack it are filled one device-day at a time, newest first, from rows already derived
- * (SQL only: no points loaded, no map data, no matching, no change to the segments' versions or
- * stamps). Progress is in the segments themselves, so an interrupted run resumes by finding the
- * rest; the version is recorded when none is left, so it runs once. Between days it gives way:
- * `busy` (a processing pass is at work) holds it off, and it pauses `pauseMs`.
+ * counterpart of the level backfill: for each feature to fill, every device's moves that lack it
+ * are filled one device-day at a time, newest first, from rows already derived (SQL only: no points
+ * loaded, no map data, no matching, no change to the segments' versions or stamps). Each day is a
+ * transaction under the device's processing lock, so a live pass never overlaps it, and under an
+ * advisory lock for the fill itself, so that one process fills at a time: another that finds it
+ * taken leaves the rest to it. Progress is in the segments themselves (a partial index lists the
+ * moves still lacking), so an interrupted run resumes by finding what is left, and so does every
+ * start; the version is recorded when none is left. Between days it gives way: `busy` (a pass of
+ * this process is at work) holds it off, and it pauses `pauseMs`.
  */
 export async function runFeatureBackfill(
   db: Database,
@@ -181,7 +217,15 @@ export async function runFeatureBackfill(
         const next = await newestLacking(db, deviceId, before);
         if (next === null) break;
         const dayStart = Math.floor(next / dayMs) * dayMs;
-        const moves = await fills[feature](db, deviceId, dayStart, dayStart + dayMs);
+        const moves = await db.transaction(async (tx) => {
+          const lock = await tx.execute<{ taken: boolean }>(
+            sql`SELECT pg_try_advisory_xact_lock(hashtextextended('trail.feature-backfill', 0)) AS taken`,
+          );
+          if (lock.rows[0]?.taken !== true) return null;
+          await lockDeviceProcessing(tx, deviceId);
+          return fills[feature](tx, deviceId, dayStart, dayStart + dayMs);
+        });
+        if (moves === null) return { ...run, complete: false, skipped: true };
         run.moves += moves;
         run.days += 1;
         options.onDay?.({ deviceId, moves });
