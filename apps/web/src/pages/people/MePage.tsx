@@ -1,6 +1,6 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
-import { useId, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { Link } from "react-router";
 import { useFormatter } from "../../format/useFormatter";
 import { PersonSummary } from "../../people/PersonSummary";
@@ -27,6 +27,8 @@ interface MePageProps {
   thresholds: { liveMinutes: number; staleHours: number };
   content: MapViewContent;
   sharing: SharingActions;
+  /** History's slider on phones: right under the header, so the sheet's peek does not hold it. */
+  foot: ReactNode;
 }
 
 /**
@@ -46,6 +48,7 @@ export function MePage({
   thresholds,
   content,
   sharing,
+  foot,
 }: MePageProps) {
   const titleId = useId();
   const format = useFormatter();
@@ -85,6 +88,7 @@ export function MePage({
             ? {}
             : { detail: `${format.count(count)} ${count === 1 ? "device" : "devices"}` })}
         />
+        {foot}
         <MeDetails devices={devices} summary={summary} />
 
         {content.timeline === null ? null : content.timelineLabel === "" ? (

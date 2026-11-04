@@ -36,11 +36,14 @@ interface PeoplePanelProps {
   /** Someone's page, the Hidden level, and the root, as addresses. */
   linkTo: (person: string) => string;
   hiddenTo: string;
-  /** The root, from a level or a page of its own; Me's page, from its devices. */
+  /** The root, from someone's page. */
   backTo: string;
-  /** Me's devices, a level of Me's page; and Me's page itself. */
+  /** The level above a level (the root from Hidden, Me's page from its devices), choices kept. */
+  levelBackTo: string;
+  /** Me's devices, a level of Me's page. */
   devicesTo: string;
-  meTo: string;
+  query: string;
+  onQuery: (query: string) => void;
   name: string;
   content: MapViewContent;
   period: WhereTheyveBeenPeriod | null;
@@ -65,8 +68,10 @@ export function PeoplePanel({
   linkTo,
   hiddenTo,
   backTo,
+  levelBackTo,
   devicesTo,
-  meTo,
+  query,
+  onQuery,
   name,
   content,
   period,
@@ -77,7 +82,6 @@ export function PeoplePanel({
   return (
     <section className="map-page__panel" aria-labelledby="people-page-title" ref={panelRef}>
       <span className="map-page__grabber" aria-hidden="true" />
-      {foot}
       <div className="map-page__top">
         <PageHeader
           title="People"
@@ -107,15 +111,30 @@ export function PeoplePanel({
             thresholds={thresholds}
             linkTo={linkTo}
             hiddenTo={hiddenTo}
+            query={query}
+            onQuery={onQuery}
+            foot={foot}
           />
         ) : at.level === "hidden" ? (
-          <HiddenPeople backTo={backTo} />
+          <>
+            {foot}
+            <HiddenPeople backTo={levelBackTo} />
+          </>
         ) : at.level === "devices" ? (
-          <DevicesLevel backTo={meTo} devices={devices} now={now} thresholds={thresholds} />
+          <>
+            {foot}
+            <DevicesLevel
+              backTo={levelBackTo}
+              devices={devices}
+              now={now}
+              thresholds={thresholds}
+            />
+          </>
         ) : at.selected === me ? (
           <MePage
             backTo={backTo}
             devicesTo={devicesTo}
+            foot={foot}
             name={name}
             devices={devices}
             now={now}
@@ -134,6 +153,7 @@ export function PeoplePanel({
             content={content}
             period={period}
             sharing={sharing}
+            foot={foot}
             onLeave={onLeave}
           />
         )}

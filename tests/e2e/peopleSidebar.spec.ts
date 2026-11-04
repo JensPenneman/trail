@@ -56,7 +56,9 @@ test("the Hidden level opens from its row, takes the focus and gives it back", a
   const name = friend.account.displayName;
   await page.goto("/");
   await sharingList(page)
-    .getByRole("link", { name: new RegExp(`^${name}`) })
+    .getByRole("link", {
+      name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`),
+    })
     .click();
   await page.getByRole("button", { name: `Hide ${name}` }).click();
   const row = page.getByRole("link", { name: "Hidden (1)" });
@@ -91,4 +93,30 @@ test("on a phone the peek shows Me, above the tab bar", async ({ page, account }
   if (sheet === null) throw new Error("no sheet");
   expect(sheet.y).toBeLessThan(row.y);
   expect(tabBar.y - (row.y + row.height)).toBeLessThan(120);
+});
+
+test("in History the peek still ends under the Me row, with the slider right below it", async ({
+  page,
+  account,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "iphone", "the sheet is for phones");
+  await uploadedDevice(page, "History peek phone", overlandBatch(account.timezone));
+  await page.goto("/?view=history");
+  const me = meList(page).getByRole("link", { name: /^Me(\s|$)/ });
+  await expect(me).toBeVisible();
+  const slider = page.getByRole("slider", { name: "Position at" });
+  await expect(slider).toBeAttached();
+  const tabBar = await page.locator(".primary-nav").boundingBox();
+  const row = await me.boundingBox();
+  const sliderBox = await slider.boundingBox();
+  if (tabBar === null || row === null || sliderBox === null) throw new Error("not on the page");
+  // Me is in the peek; the slider is under it, below the fold until the sheet is lifted.
+  expect(row.y + row.height).toBeLessThanOrEqual(tabBar.y);
+  expect(sliderBox.y).toBeGreaterThan(row.y + row.height - 1);
+  // The half detent is below the peek, so lifting the sheet shows the slider.
+  const lifted = await page.evaluate(() => {
+    document.querySelector("[data-detent=half]")?.scrollIntoView({ block: "start" });
+    return window.scrollY;
+  });
+  expect(lifted).toBeGreaterThan(0);
 });

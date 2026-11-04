@@ -1,6 +1,6 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { Person } from "@trail/contracts/person";
-import { useId, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { Link } from "react-router";
 import { useFormatter } from "../../format/useFormatter";
 import { appleMapsUrl, googleMapsUrl } from "../../people/mapLinks";
@@ -38,6 +38,8 @@ interface PersonPageProps {
   /** The day or period their track is for; null where the view draws no tracks of others (Heat). */
   period: WhereTheyveBeenPeriod | null;
   sharing: SharingActions;
+  /** History's slider on phones: right under the header, so the sheet's peek does not hold it. */
+  foot: ReactNode;
   /** Leaves the page for the root (after hiding someone). */
   onLeave: (key: string) => void;
 }
@@ -59,6 +61,7 @@ export function PersonPage({
   content,
   period,
   sharing,
+  foot,
   onLeave,
 }: PersonPageProps) {
   const titleId = useId();
@@ -119,6 +122,7 @@ export function PersonPage({
             format,
           )}
         />
+        {foot}
         {period === null ? null : (
           <WhereTheyveBeen
             person={person}

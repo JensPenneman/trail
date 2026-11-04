@@ -116,6 +116,38 @@ describe("the root of the sidebar", () => {
     expect(screen.queryByRole("list", { name: "Sharing with you" })).toBeNull();
   });
 
+  it("says what a search found after a short pause, in the live region", async () => {
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/people": { status: 200, body: { people: crowd(8, ["José Álvarez", "Zoë"]) } },
+    });
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { user });
+    const search = await screen.findByRole("searchbox", { name: "Search people" });
+    // Real timers: the pause is 600 ms, and a key does not say anything before it.
+    await person.type(search, "jose");
+    expect(screen.queryByText("1 person")).toBeNull();
+    expect(await screen.findByText("1 person", {}, { timeout: 2000 })).toBeInTheDocument();
+    await person.clear(search);
+    await person.type(search, "zzz");
+    expect(
+      await screen.findAllByText("No one called “zzz”", {}, { timeout: 2000 }),
+    ).not.toHaveLength(0);
+  });
+
+  it("keeps the search when someone's page is opened and closed again", async () => {
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/people": { status: 200, body: { people: crowd(8, ["José Álvarez"]) } },
+    });
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { user });
+    await person.type(await screen.findByRole("searchbox", { name: "Search people" }), "jose");
+    await person.click(await screen.findByRole("link", { name: /^José Álvarez/ }));
+    await person.click(await screen.findByRole("link", { name: "Back to People" }));
+    expect(await screen.findByRole("searchbox", { name: "Search people" })).toHaveValue("jose");
+  });
+
   it("folds the people who started sharing into one row with one Dismiss", async () => {
     mockApi({
       ...standardRoutes(),

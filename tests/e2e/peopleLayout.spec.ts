@@ -161,9 +161,10 @@ test("on a phone the sheet scrolls over a map that stays, with its detents", asy
   const half = await page.evaluate(() => {
     const marker = document.querySelector("[data-detent=half]")?.getBoundingClientRect().top ?? 0;
     const padding = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop);
-    // A peek taller than half the view leaves nothing to lift: the detent is the peek itself.
-    return Math.max(0, marker + window.scrollY - padding);
+    return marker + window.scrollY - padding;
   });
+  // The peek is capped below half the view, so there is a half detent to lift the sheet to.
+  expect(half).toBeGreaterThan(0);
   await page.waitForFunction((target) => Math.abs(window.scrollY - target) < 3, half);
 });
 
@@ -266,3 +267,35 @@ test("the sheet's whole content can be scrolled to, clear of the header and the 
   await settled();
   expect(await reachable(first)).toBe(true);
 });
+
+for (const [width, height] of [
+  [320, 568],
+  [390, 664],
+] as const) {
+  test(`the bar stops before the zoom buttons on a ${width} x ${height} screen, in History`, async ({
+    page,
+    account,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "iphone", "the phone layout");
+    await page.setViewportSize({ width, height });
+    await uploadedDevice(page, "Small phone", overlandBatch(account.timezone));
+    await page.goto("/?view=history&person=me");
+    await expect(mapView(page, "History")).toBeChecked();
+    const overlay = await box(page.locator(".map-overlay"));
+    const zoom = await box(page.getByRole("button", { name: "Zoom in" }));
+    const sheetTop = (await box(page.locator(".map-page__panel"))).y;
+    // The zoom column is beside the bar, never under it, and the bar ends above the sheet.
+    expect(zoom.x).toBeGreaterThanOrEqual(overlay.x + overlay.width - 1);
+    expect(overlay.y + overlay.height).toBeLessThan(sheetTop);
+    const hit = await page.evaluate(
+      ([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest(".maplibregl-ctrl-zoom-in"),
+      [zoom.x + zoom.width / 2, zoom.y + zoom.height / 2],
+    );
+    expect(hit).not.toBeNull();
+    // Map options open: the popover is above the sheet, or scrolls within a few rows.
+    await openMapOptions(page);
+    const popover = await box(page.locator(".map-options__body"));
+    expect(popover.height).toBeGreaterThanOrEqual(11 * 16 - 1);
+    await expectAccessible(page, `Map options on a ${width} px screen`);
+  });
+}
