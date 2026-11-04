@@ -270,14 +270,16 @@ export interface PeriodComparison {
   /** The days compared: all of the period before, or as many of its first days as this one has had. */
   from: string;
   to: string;
-  /** The period is still going on, so only the same days of the one before count. */
+  /** The period is the current one, so only the same days of the one before count. */
   partial: boolean;
 }
 
 export function comparisonOf(period: InsightsPeriod, today: string): PeriodComparison | null {
   if (period.kind === "all" || period.kind === "custom") return null;
   const before = calendarPeriod(period.kind, addDays(period.first, -1), today);
-  const partial = period.current && today < period.last;
+  // The clip to the length of the period before does the rest: the last day of a month has had
+  // 28 days of a February, not all of the January.
+  const partial = period.current;
   const elapsed = daysBetween(period.first, today) + 1;
   const to = partial ? minDate(before.last, addDays(before.first, elapsed - 1)) : before.last;
   return {

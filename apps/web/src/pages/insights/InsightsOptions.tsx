@@ -17,7 +17,8 @@ export function InsightsOptions({ state }: { state: InsightsPeriodState }) {
   const devices = useDevices();
   const colors = useDeviceColors();
   const popoverId = useId();
-  const advanced = useDisclosure();
+  // A filter that is on is not to be hidden: the choice opens at once.
+  const advanced = useDisclosure(state.devices !== null);
   const [open, setOpen] = useState(false);
   const own = devices.data ?? [];
   if (own.length < 2) return null;

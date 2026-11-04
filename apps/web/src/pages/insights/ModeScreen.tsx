@@ -34,7 +34,12 @@ export function ModeScreen() {
   const format = useFormatter();
   const insights = useInsightsMode(mode, state.query());
   const overview = useInsightsOverview(state.query(), { enabled: mode !== null });
-  const comparison = useInsightsComparison(state, overview.data, { enabled: mode !== null });
+  // The comparison belongs to the period the answers are of, not to the one they replace.
+  const comparison = useInsightsComparison(
+    state,
+    insights.isPlaceholderData || overview.isPlaceholderData ? undefined : overview.data,
+    { enabled: mode !== null },
+  );
   const label = mode === null ? "Unknown mode" : transportModeInfo[mode].label;
   const up = { to: insightsLink(insightsRootPath, state.params), label: "Insights", always: false };
 

@@ -2,6 +2,7 @@ import { useId, useMemo } from "react";
 import { BarChart } from "../../charts/BarChart";
 import { useFormatter } from "../../format/useFormatter";
 import { useInsightsRoads } from "../../queries/useInsightsRoads";
+import { transportModeInfo } from "../../transport/transportModes";
 import { EmptyState } from "../../ui/EmptyState";
 import { ErrorState } from "../../ui/ErrorState";
 import { LoadingBlock } from "../../ui/LoadingBlock";
@@ -65,6 +66,9 @@ export function RoadsScreen() {
         </Notice>
       ) : (
         <>
+          {mode === null ? null : (
+            <p className="muted">Counting {transportModeInfo[mode].label.toLowerCase()} only.</p>
+          )}
           <section className="section" aria-labelledby={kindsId}>
             <h2 className="section__title" id={kindsId}>
               By kind of way

@@ -32,9 +32,9 @@ interface LinkRow extends RowLook {
   /** Names the row for the one that comes back to it (`data-row`): focus returns there. */
   dataRow?: string;
   /**
-   * Whether coming back to the screen the row opens hands focus to this row
-   * (the default). Off for a list that stands beside the screens: a row of it
-   * that is pressed has the focus already.
+   * Whether coming back from the screen the row opens hands focus to this row
+   * (the default). Off for a list that stands beside the screens: there the
+   * screen's title takes focus, and a row must not take it back.
    */
   returnFocus?: boolean;
 }
