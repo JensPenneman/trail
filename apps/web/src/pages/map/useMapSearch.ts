@@ -1,7 +1,7 @@
 import { startTransition, useCallback, useMemo, useOptimistic } from "react";
 import { useSearchParams } from "react-router";
 import { useToday } from "../../time/useToday";
-import { withDay, withDevices, withPeople, withRange, withView } from "./mapSearchUpdates";
+import { withDay, withDevices, withPerson, withRange, withView } from "./mapSearchUpdates";
 import type { MapView } from "./mapViews";
 import { type MapSearch, parseMapSearch } from "./parseMapSearch";
 
@@ -9,7 +9,8 @@ export interface MapSearchControls {
   search: MapSearch;
   today: string;
   setView: (view: MapView) => void;
-  setPeople: (people: readonly string[], devicesOf: (person: string) => readonly string[]) => void;
+  /** Selects someone (`me` or a user id), or nobody. */
+  setPerson: (person: string | null) => void;
   setDevices: (deviceIds: readonly string[] | null) => void;
   showDay: (date: string) => void;
   /** History on a day, from another view: one step of the history for both. */
@@ -29,7 +30,7 @@ export function useMapSearch(): MapSearchControls {
   // The router applies a new URL in a transition; until then the controls show the choice made
   // (a checkbox bound to the URL would otherwise flick back for a moment).
   const [view, showView] = useOptimistic(parsed.view);
-  const [chosen, showChosen] = useOptimistic({ people: parsed.people, devices: parsed.devices });
+  const [chosen, showChosen] = useOptimistic({ person: parsed.person, devices: parsed.devices });
   const search = useMemo(() => ({ ...parsed, ...chosen, view }), [parsed, chosen, view]);
 
   const update = useCallback(
@@ -46,14 +47,13 @@ export function useMapSearch(): MapSearchControls {
       }),
     [setParams, showView],
   );
-  const setPeople = useCallback(
-    (people: readonly string[], devicesOf: (person: string) => readonly string[]) =>
+  const setPerson = useCallback(
+    (person: string | null) =>
       startTransition(() => {
-        const devices = parseMapSearch(withPeople(params, people, devicesOf), today).devices;
-        showChosen({ people, devices });
-        update((current) => withPeople(current, people, devicesOf));
+        showChosen({ person, devices: null });
+        update((current) => withPerson(current, person));
       }),
-    [params, today, update, showChosen],
+    [update, showChosen],
   );
   const setDevices = useCallback(
     (deviceIds: readonly string[] | null) =>
@@ -79,5 +79,5 @@ export function useMapSearch(): MapSearchControls {
     (from: string, to: string) => update((current) => withRange(current, from, to)),
     [update],
   );
-  return { search, today, setView, setPeople, setDevices, showDay, showHistoryDay, showRange };
+  return { search, today, setView, setPerson, setDevices, showDay, showHistoryDay, showRange };
 }

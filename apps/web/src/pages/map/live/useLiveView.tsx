@@ -3,7 +3,7 @@ import type { DeviceSummary } from "@trail/contracts/device";
 import { deviceStatus } from "@trail/contracts/deviceStatus";
 import type { Person } from "@trail/contracts/person";
 import type { ProcessingLevel } from "@trail/contracts/transport";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { DeviceColors } from "../../../devices/useDeviceColors";
 import { useFormatter } from "../../../format/useFormatter";
 import { liveWindowOpen } from "../../../live/liveWindowOpen";
@@ -33,7 +33,7 @@ export interface LiveViewInput {
   active: boolean;
   selection: MapSelection;
   devices: UseQueryResult<DeviceSummary[]>;
-  /** The selected people who share with the signed-in person. */
+  /** Everyone who shares with the signed-in person: their positions are always on the map. */
   people: readonly Person[];
   /** Device and person colours for the map's background. */
   colors: DeviceColors;
@@ -49,12 +49,11 @@ export interface LiveViewInput {
 type Focus = { key: string; lon: number; lat: number; zoom: number };
 
 /**
- * Live: where everyone shown is right now and today's tracks, updated live
- * from the event stream, the people chosen as their shares allow. Its panel
- * is one's own day so far — today's timeline of stops and moves, under the Me
- * card — while the signed-in person is on the map; what proves that the
- * phones keep sending is Settings › Devices'. Asks for nothing while another
- * view is shown.
+ * Live: where everyone is right now, from the event stream, as their shares
+ * allow — the overview draws positions only and asks for no track at all.
+ * Selecting Me adds today's own track at the chosen level and one's day so far
+ * (the timeline of stops and moves); selecting someone else adds their track
+ * for today, in their colour. Asks for nothing while another view is shown.
  */
 export function useLiveView({
   active,
@@ -76,23 +75,30 @@ export function useLiveView({
   // Every "show" is a camera move of its own, even to a place shown before.
   const focusCount = useRef(0);
 
+  const selected = selection.selected;
+  const meSelected = selected?.key === me;
+  const other =
+    selected === null || meSelected
+      ? null
+      : (people.find((p) => p.userId === selected.key) ?? null);
   const own = selection.own;
   const { connection } = useLiveState();
   // A marker pulses only while what it shows may be called live (liveWindowOpen).
   const windowOpen = liveWindowOpen(connection, devices.dataUpdatedAt, now, thresholds.liveMinutes);
   const day = useMemo(() => localDayRange(today, today, timeZone), [today, timeZone]);
+  // Nobody's track is drawn in the overview: no range, no request (docs/architecture.md §14).
   const range = useMemo(
-    () => (!active || own === null ? null : { ...day, deviceIds: own.deviceIds }),
-    [active, own, day],
+    () => (!active || !meSelected || own === null ? null : { ...day, deviceIds: own.deviceIds }),
+    [active, meSelected, own, day],
   );
   const tracks = useTracks(range);
-  // Today's stops and moves: the timeline under the Me card, and the lines at Transport.
+  // Today's stops and moves: one's day so far, and the lines at Transport.
   const timeline = useTimeline(range);
   // A query switched off can still hand out the data it had: nothing of it is shown then.
   const trackList = range === null ? undefined : tracks.data?.tracks;
   const requests = useMemo(
-    () => (active ? personTrackRequests(people, selection.devicesOf, day) : []),
-    [active, people, selection, day],
+    () => (active && other !== null ? personTrackRequests([other], selection.devicesOf, day) : []),
+    [active, other, selection, day],
   );
   const personTracks = usePersonTracks(requests);
   const trackStates = useMemo(
@@ -100,14 +106,10 @@ export function useLiveView({
     [requests, personTracks],
   );
 
-  const shown = useMemo(
-    () =>
-      own === null
-        ? []
-        : (devices.data ?? []).filter(
-            (device) => own.deviceIds === null || own.deviceIds.includes(device.id),
-          ),
-    [devices.data, own],
+  // Everyone's position stays on the map, whoever is selected.
+  const ownDevices = useMemo(
+    () => (devices.data ?? []).filter((device) => selection.devicesOf(me).includes(device.id)),
+    [devices.data, selection],
   );
 
   const rawTracks = useMemo(() => tracksToMap(trackList ?? [], colors.hex), [trackList, colors]);
@@ -121,9 +123,13 @@ export function useLiveView({
   );
   const segments = range === null ? undefined : timeline.data?.items;
   const shownSegment = segments?.find((segment) => segment.id === openSegment) ?? null;
-  const positions = useMemo<MapPosition[]>(
-    () => [
-      ...shown.flatMap((device) =>
+  const isLive = useCallback(
+    (recordedAt: string) => now - Date.parse(recordedAt) <= thresholds.liveMinutes * 60_000,
+    [now, thresholds],
+  );
+  const ownPositions = useMemo<MapPosition[]>(
+    () =>
+      ownDevices.flatMap((device) =>
         device.lastLocation === null
           ? []
           : [
@@ -140,14 +146,30 @@ export function useLiveView({
               },
             ],
       ),
-      ...personPositions(
-        people,
-        selection.devicesOf,
-        personColors,
-        (recordedAt) => now - Date.parse(recordedAt) <= thresholds.liveMinutes * 60_000,
-      ),
-    ],
-    [shown, colors, people, selection, personColors, now, thresholds, windowOpen],
+    [ownDevices, colors, now, thresholds, windowOpen],
+  );
+  const peoplePositions = useMemo(
+    () => personPositions(people, selection.devicesOf, personColors, isLive),
+    [people, selection, personColors, isLive],
+  );
+  const positions = useMemo(
+    () => [...ownPositions, ...peoplePositions],
+    [ownPositions, peoplePositions],
+  );
+  // The overview frames everybody; a selection frames that person, their track and positions.
+  const framed = useMemo(
+    () =>
+      selected === null
+        ? positions
+        : meSelected
+          ? ownPositions
+          : personPositions(
+              people.filter((person) => person.userId === selected.key),
+              selection.devicesOf,
+              personColors,
+              isLive,
+            ),
+    [selected, meSelected, positions, ownPositions, people, selection, personColors, isLive],
   );
   const bounds = useMemo(
     () =>
@@ -156,16 +178,15 @@ export function useLiveView({
         ...transport.transport.flatMap((segment) => segment.line),
         ...peopleTracks.flatMap((track) => track.segments.flat()),
         // A coarse share's whole circle: its centre alone would pass for an exact spot.
-        ...positions.flatMap(positionExtent),
+        ...framed.flatMap(positionExtent),
       ]),
-    [transport, peopleTracks, positions],
+    [transport, peopleTracks, framed],
   );
 
   // A camera move belongs to the moment it was asked for: back in Live, it is not made again.
   if (!active && focus !== null) setFocus(null);
   if (!active) return inactiveView;
 
-  const meShown = selection.people.some((person) => person.key === me);
   const allDevices = devices.data ?? [];
   const peopleLocated = people
     .filter((person) =>
@@ -175,43 +196,42 @@ export function useLiveView({
       ),
     )
     .map((person) => person.displayName);
-  const mineLocated = shown.some((device) => device.lastLocation !== null);
-  const whose =
-    peopleLocated.length === 0
-      ? "your latest position"
-      : mineLocated
-        ? `your latest position and that of ${format.list(peopleLocated)}`
-        : `the latest position of ${format.list(peopleLocated)}`;
-  // Whom the view is about: you, the people chosen, or both.
-  const who = [...(meShown ? ["you"] : []), ...people.map((person) => person.displayName)];
+  const mineLocated = ownDevices.some((device) => device.lastLocation !== null);
+  const everyone = [...(mineLocated ? ["you"] : []), ...peopleLocated];
   const deviceName = (deviceId: string) =>
-    shown.length > 1 ? (shown.find((device) => device.id === deviceId)?.name ?? null) : null;
+    ownDevices.length > 1
+      ? (ownDevices.find((device) => device.id === deviceId)?.name ?? null)
+      : null;
+
+  const subject = meSelected ? "you" : (other?.displayName ?? "everyone");
+  const whereTheyAre = everyone.length === 0 ? null : format.list(everyone);
+  const label =
+    whereTheyAre === null
+      ? "Map. Nobody shown has reported a position yet."
+      : selected === null
+        ? `Map of where everyone is now: ${whereTheyAre}. The same is said in the list.`
+        : `Map of ${meSelected ? "your track" : `${other?.displayName ?? "their"}’s track`} today and where everyone is now: ${whereTheyAre}. The same is said in the list.`;
 
   return {
     title: "Live",
     description: (
       <p>
-        {who.length === 0
-          ? "Where everyone is now"
-          : `Where ${format.list(who)} ${who.length === 1 && who[0] !== "you" ? "is" : "are"} now`}
+        {`Where ${subject} ${subject === "you" ? "are" : "is"} now`}
         {" · "}
         {format.day(today)}
       </p>
     ),
     map: {
-      label:
-        !mineLocated && peopleLocated.length === 0
-          ? "Map. Nobody shown has reported a position yet."
-          : `Map of today’s tracks and ${whose}. The same is said on the cards.`,
+      label,
       tracks: [...transport.tracks, ...peopleTracks],
       transport: transport.transport,
       selectedSegmentId: shownSegment?.id ?? null,
       onSegmentClick: setOpenSegment,
       positions,
-      // Framed once both the positions and today's tracks are known, never on partial data.
+      // Framed once both the positions and the selected person's track are known, never on partial data.
       fit: {
-        key: fitKey(today, today, [
-          ...shown.map((device) => device.id),
+        key: fitKey("live", selected?.key ?? null, [
+          ...ownDevices.map((device) => device.id),
           ...people.flatMap((person) => selection.devicesOf(person.userId)),
         ]),
         bounds:
@@ -226,13 +246,14 @@ export function useLiveView({
       focus,
     },
     controls: null,
-    transport: !meShown || allDevices.length === 0 ? null : transport,
+    transport: !meSelected || allDevices.length === 0 ? null : transport,
     chip: null,
     foot: null,
-    panelLabel: "Your day so far",
-    // Right under the Me card, while the map shows the signed-in person and they have devices.
-    panel:
-      !meShown || allDevices.length === 0 ? null : (
+    panelLabel: "",
+    panel: null,
+    mineLabel: "Your day so far",
+    mine:
+      !meSelected || allDevices.length === 0 ? null : (
         <>
           {own === null ? (
             <p className="muted">

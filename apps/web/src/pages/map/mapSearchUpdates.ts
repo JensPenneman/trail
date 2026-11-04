@@ -1,6 +1,4 @@
 import type { MapView } from "./mapViews";
-import { me } from "./me";
-import { parsePeople } from "./parseMapSearch";
 
 /*
  * The changes the map's controls make to the People page's URL. Each keeps
@@ -27,29 +25,16 @@ export function withDevices(
 }
 
 /**
- * Other people. A device filter in place keeps applying to the people who
- * stay; someone who joins shows all their devices, someone who leaves takes
- * theirs along, and a filter that ends up covering everything is dropped.
+ * Selects someone, or nobody (null: the overview). The device filter belongs
+ * to one person and goes; so do the legacy `people` and a move opened by link.
  */
-export function withPeople(
-  params: URLSearchParams,
-  people: readonly string[],
-  devicesOf: (person: string) => readonly string[],
-): URLSearchParams {
+export function withPerson(params: URLSearchParams, person: string | null): URLSearchParams {
   const next = new URLSearchParams(params);
-  const before = parsePeople(params);
-  const filter = params.get("devices");
-  if (filter !== null && filter !== "") {
-    const leaving = new Set(before.filter((person) => !people.includes(person)).flatMap(devicesOf));
-    const joining = people.filter((person) => !before.includes(person)).flatMap(devicesOf);
-    const kept = filter.split(",").filter((id) => id !== "" && !leaving.has(id));
-    const devices = [...new Set([...kept, ...joining])];
-    const everything = people.flatMap(devicesOf).every((id) => devices.includes(id));
-    if (devices.length === 0 || everything) next.delete("devices");
-    else next.set("devices", devices.join(","));
-  }
-  if (people.length === 1 && people[0] === me) next.delete("people");
-  else next.set("people", people.join(","));
+  next.delete("people");
+  next.delete("devices");
+  next.delete("segment");
+  if (person === null) next.delete("person");
+  else next.set("person", person);
   return next;
 }
 
