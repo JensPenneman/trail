@@ -218,4 +218,40 @@ describe("the Hidden level", () => {
     expect(await screen.findByText("Nobody is hidden.")).toBeInTheDocument();
     await waitFor(() => expect(hidden).toBe(false));
   });
+
+  it("moves the focus to the next button once the pressed row is gone, then to the heading", async () => {
+    const shown = new Set<string>();
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/shares/incoming": () => ({
+        status: 200,
+        body: {
+          shares: [
+            ...(shown.has(ids.anaShare) ? [] : [hiddenShare(ids.anaShare, "Cleo")]),
+            ...(shown.has(ids.bobShare) ? [] : [hiddenShare(ids.bobShare, "Dan")]),
+          ],
+        },
+      }),
+      [`POST /api/v1/shares/incoming/${ids.anaShare}/unhide`]: () => {
+        shown.add(ids.anaShare);
+        return { status: 200, body: { share: hiddenShare(ids.anaShare, "Cleo") } };
+      },
+      [`POST /api/v1/shares/incoming/${ids.bobShare}/unhide`]: () => {
+        shown.add(ids.bobShare);
+        return { status: 200, body: { share: hiddenShare(ids.bobShare, "Dan") } };
+      },
+    });
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: "/?list=hidden", user });
+    await person.click(await screen.findByRole("button", { name: "Show Cleo again" }));
+    // Cleo's row goes; the focus is on Dan's button, which took its place.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Show Dan again" })).toHaveFocus(),
+    );
+    await person.click(screen.getByRole("button", { name: "Show Dan again" }));
+    expect(await screen.findByText("Nobody is hidden.")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 2, name: "Hidden" })).toHaveFocus(),
+    );
+  });
 });

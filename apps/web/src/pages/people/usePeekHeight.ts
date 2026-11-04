@@ -31,7 +31,16 @@ export function usePeekHeight(
         ?.closest<HTMLElement>(".person-summary") ??
       null;
     const watched = new Set<Element>();
-    const resized = new ResizeObserver(() => measure());
+    // One measure per frame, however many changes came: rows re-order and readouts move often.
+    let frame = 0;
+    const schedule = () => {
+      if (frame !== 0) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    };
+    const resized = new ResizeObserver(schedule);
     const watch = (element: Element | null) => {
       if (element === null || watched.has(element)) return;
       watched.add(element);
@@ -42,6 +51,13 @@ export function usePeekHeight(
       if (end === null) {
         page.style.removeProperty("--sheet-peek");
         return;
+      }
+      // What has left the page is no longer watched.
+      for (const element of watched) {
+        if (!element.isConnected) {
+          resized.unobserve(element);
+          watched.delete(element);
+        }
       }
       // Everything above the end and the end itself can change the height without the sheet's.
       watch(sheet);
@@ -55,9 +71,10 @@ export function usePeekHeight(
     }
     measure();
     // What appears or goes (the slider, a notice, the setup card) is a change of the tree.
-    const changed = new MutationObserver(measure);
+    const changed = new MutationObserver(schedule);
     changed.observe(sheet, { childList: true, subtree: true });
     return () => {
+      cancelAnimationFrame(frame);
       resized.disconnect();
       changed.disconnect();
       page.style.removeProperty("--sheet-peek");

@@ -304,7 +304,8 @@ export function PeoplePage() {
   const note =
     deviceCount > 1 && shownCount < deviceCount ? `${shownCount} of ${deviceCount} devices` : null;
 
-  // The history slider: over the foot of the map beside the panel, first in the sheet on phones.
+  // The history slider: over the foot of the map beside the panel, in the sheet on phones right
+  // under the Me row or the person's header (so not in the sheet's peek).
   const foot = content.foot === null ? null : <div className="map-page__foot">{content.foot}</div>;
   const options = (
     <MapOptions note={note}>

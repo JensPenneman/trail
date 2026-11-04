@@ -1,5 +1,6 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
+import type { ReactNode } from "react";
 import { ErrorState } from "../../ui/ErrorState";
 import { ConnectFirstPhone } from "./MeDetails";
 import { MyDevices } from "./MyDevices";
@@ -11,13 +12,16 @@ interface DevicesLevelProps {
   devices: UseQueryResult<DeviceSummary[]>;
   now: number;
   thresholds: { liveMinutes: number; staleHours: number };
+  /** History's slider on phones, right under the heading. */
+  foot: ReactNode;
 }
 
 /** One's devices, a level of Me's page (`?person=me&list=devices`): each with how it last reported. */
-export function DevicesLevel({ backTo, devices, now, thresholds }: DevicesLevelProps) {
+export function DevicesLevel({ backTo, devices, now, thresholds, foot }: DevicesLevelProps) {
   const list = devices.data ?? [];
   return (
     <PanelLevel title="Your devices" backTo={backTo} backLabel="Me">
+      {foot}
       {devices.isError ? (
         <ErrorState
           title="Your devices could not be loaded"
