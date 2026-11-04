@@ -1,4 +1,5 @@
 import {
+  moveOverHint,
   segmentParamsSchema,
   segmentResponseSchema,
   setSegmentModeRequestSchema,
@@ -14,8 +15,7 @@ export const setSegmentMode = defineRoute(
     path: "/api/v1/segments/{id}/mode",
     operationId: "setSegmentMode",
     summary: "Set a move's mode",
-    description:
-      "Corrects the transport mode of a move: the mode applies to the move's time and wins over the inference, also when the history is processed again. The inferred mode stays visible as `modeInferred`. Setting the mode it already has changes nothing. A stop has no mode, and a move that is still under way cannot be set until it is over (a later segment exists, or it ended 10 minutes ago with nothing queued after it): `409`.",
+    description: `Corrects the transport mode of a move: the mode applies to the move's time and wins over the inference, also when the history is processed again. The inferred mode stays visible as \`modeInferred\`. Setting the mode it already has changes nothing. A stop has no mode: \`409\`. So is a move that is still under way, until it is over (${moveOverHint}); for the move you are on, use \`POST /api/v1/devices/{id}/mode\`.`,
     tags: ["Timeline"],
     // The answer carries the segment or the current mode: location data.
     auth: { scopes: ["locations:read", "locations:write"], all: true },

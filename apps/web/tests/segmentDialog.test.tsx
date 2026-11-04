@@ -1,62 +1,87 @@
-import { screen } from "@testing-library/react";
-import type { DeviceMode, Segment } from "@trail/contracts/transport";
+import { act, screen } from "@testing-library/react";
+import type { Segment } from "@trail/contracts/transport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { queryKeys } from "../src/api/queryKeys";
 import { SegmentDialog } from "../src/transport/SegmentDialog";
-import { automatic, ids, timeline } from "./support/fixtures";
+import { ids, timeline } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
-import { renderPage } from "./support/renderPage";
+import { createTestQueryClient, renderPage } from "./support/renderPage";
 
 const now = new Date("2026-10-27T11:00:00.000Z");
-const modeOf = `GET /api/v1/devices/${ids.phone}/mode`;
 
-/** The train ride, ended `endedAgoS` seconds ago. */
+/** The train ride, ended `endedAgoS` seconds ago and corrected by the person. */
 function ride(endedAgoS: number): Segment {
   const move = timeline("2026-10-27T00:00:00.000Z").find((segment) => segment.kind === "move");
   if (move === undefined) throw new Error("the fixture has no move");
   const endedAt = new Date(now.getTime() - endedAgoS * 1000);
   return {
     ...move,
+    modeUser: "bus",
     endedAt: endedAt.toISOString(),
     startedAt: new Date(endedAt.getTime() - move.durationS * 1000).toISOString(),
   };
 }
 
-const current = { mode: "train", setByUser: false, since: now.toISOString() } as const;
-const going: DeviceMode = { override: null, current: { ...current, segmentId: ids.train } };
-
-function show(segment: Segment) {
-  renderPage(<SegmentDialog segment={segment} deviceName="iPhone 16" onClose={() => undefined} />);
+/** Renders the dialog alone, with the day's timeline in the cache as the map's view holds it. */
+function show(segment: Segment, ...after: Segment[]) {
+  const queryClient = createTestQueryClient();
+  queryClient.setQueryData(
+    queryKeys.timeline({
+      from: "2026-10-27T00:00:00.000Z",
+      to: "2026-10-28T00:00:00.000Z",
+      deviceIds: null,
+    }),
+    { items: [segment, ...after], pending: false },
+  );
+  return renderPage(
+    <SegmentDialog segment={segment} deviceName="iPhone 16" onClose={() => undefined} />,
+    { queryClient },
+  );
 }
+
+const picker = () => screen.queryByRole("group", { name: "Change mode" });
 
 describe("SegmentDialog and a move that is still going on", () => {
   beforeEach(() => {
-    vi.useFakeTimers({ toFake: ["Date"], now });
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"], now });
   });
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("says it is still under way instead of offering the picker", async () => {
-    const api = mockApi({ [modeOf]: { status: 200, body: { mode: going } } });
+  it("says it is still under way instead of the picker, the question and Reset", () => {
+    const api = mockApi({});
     show(ride(60));
-    expect(await screen.findByText("Still under way")).toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: "Change mode" })).not.toBeInTheDocument();
+    expect(screen.getByText("Still under way")).toBeInTheDocument();
+    expect(screen.getByText(/can be set or reset once this move is over/)).toBeInTheDocument();
+    expect(picker()).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Yes,/ })).not.toBeInTheDocument();
-    expect(api.calls.filter((call) => call.path.endsWith("/mode"))).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Reset to detected" })).not.toBeInTheDocument();
+    expect(api.calls).toHaveLength(0);
   });
 
-  it("offers the picker once the device is on another segment", async () => {
-    const other: DeviceMode = { override: null, current: { ...current, segmentId: ids.stop } };
-    mockApi({ [modeOf]: { status: 200, body: { mode: other } } });
-    show(ride(60));
-    expect(await screen.findByRole("group", { name: "Change mode" })).toBeEnabled();
+  it("offers the picker and Reset once a later segment of the device is there", () => {
+    const move = ride(60);
+    const stop: Segment = { ...move, id: ids.stop, kind: "stop", startedAt: move.endedAt };
+    show(move, stop);
+    expect(picker()).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Reset to detected" })).toBeEnabled();
     expect(screen.queryByText("Still under way")).not.toBeInTheDocument();
   });
 
-  it("asks nothing for a move that ended ten minutes ago or earlier", async () => {
-    const api = mockApi({ [modeOf]: { status: 200, body: { mode: automatic } } });
-    show(ride(601));
-    expect(await screen.findByRole("group", { name: "Change mode" })).toBeEnabled();
-    expect(api.calls.filter((call) => call.path.endsWith("/mode"))).toHaveLength(0);
+  it("offers the picker for a move that ended long ago", () => {
+    show(ride(31 * 60));
+    expect(picker()).toBeEnabled();
+    expect(screen.queryByText("Still under way")).not.toBeInTheDocument();
+  });
+
+  it("turns into the picker when the silence reaches thirty minutes", () => {
+    show(ride(29 * 60));
+    expect(screen.getByText("Still under way")).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(2 * 60 * 1000);
+    });
+    expect(screen.queryByText("Still under way")).not.toBeInTheDocument();
+    expect(picker()).toBeEnabled();
   });
 });

@@ -319,10 +319,11 @@ People (and agents) can put a mode right, with `locations:write` and
 - `PUT /api/v1/segments/{id}/mode` with `{ "mode": "train" }` sets a move's
   mode; it wins over the inference, also when the history is worked out
   again. `DELETE` on the same path hands the move back to the inference.
-  Both wait until the move is over: while it is still under way (no later
-  segment of the device yet, and it ended less than 10 minutes ago or a
-  window is still queued after it) they answer `409`, because the correction
-  would cover the move only as far as it has come.
+  Both wait until the move is over: while it is still under way they answer
+  `409`, because the correction would cover the move only as far as it has
+  come. A move is over once a later segment of the device exists, or 30
+  minutes passed since its last point and no point after it waits to be
+  processed. For the move you are on, use the next call.
 - `POST /api/v1/devices/{id}/mode` with `{ "mode": "train" }` says how the
   device travels from now on — until `until`, if given, the first detected
   stop of 10 minutes or more, or — after a stop — a move Trail reads as

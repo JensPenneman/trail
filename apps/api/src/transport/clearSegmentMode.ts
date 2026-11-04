@@ -14,8 +14,8 @@ import { type SegmentRow, segmentColumns, toSegment } from "./segmentRow";
  * override that set it is revoked — a quick toggle with it, for all the moves
  * it covered — and the segment shows the inferred mode at once. The span is
  * queued for the inference again (`queue`), which re-applies older overrides
- * and joins the parts an override had cut. Without an override nothing changes. A move still under way is refused
- * (`assertMoveOver`): 409.
+ * and joins the parts an override had cut. Without an override nothing
+ * changes. A move still under way is refused (`assertMoveOver`): 409.
  * Returns the segment and the revoked spans.
  */
 export async function clearSegmentMode(

@@ -1,4 +1,4 @@
-import type { ChosenMode, Segment } from "@trail/contracts/transport";
+import { type ChosenMode, moveOverHint, type Segment } from "@trail/contracts/transport";
 import { useId, useState } from "react";
 import { useReadOnly } from "../app/useReadOnly";
 import { useFormatter } from "../format/useFormatter";
@@ -33,7 +33,7 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
   const format = useFormatter();
   const change = useSegmentModeChange(segment.id);
   const readOnly = useReadOnly();
-  const { underWay, checking } = useMoveUnderWay(segment);
+  const underWay = useMoveUnderWay(segment);
   const offlineId = useId();
   const [saved, setSaved] = useState<string | null>(null);
   const move = segment.kind === "move";
@@ -135,7 +135,7 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
                     variant="primary"
                     icon="check"
                     busy={change.isPending}
-                    disabled={readOnly || checking}
+                    disabled={readOnly}
                     aria-describedby={readOnly ? offlineId : undefined}
                     onClick={() => apply(confirmable)}
                   >
@@ -148,10 +148,7 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
             ) : null}
             {underWay ? (
               <Notice tone="info" title="Still under way">
-                <p>
-                  The mode can be set once this move is over, after a stop or ten minutes without
-                  new points.
-                </p>
+                <p>The mode can be set or reset once this move is over, {moveOverHint}.</p>
               </Notice>
             ) : (
               <>
@@ -165,7 +162,7 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
                   <ModePicker
                     label="Change mode"
                     current={segment.modeUser}
-                    disabled={change.isPending || readOnly || checking}
+                    disabled={change.isPending || readOnly}
                     onPick={apply}
                   />
                 </section>
@@ -173,7 +170,7 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
                   <Button
                     icon="refresh"
                     busy={change.isPending}
-                    disabled={readOnly || checking}
+                    disabled={readOnly}
                     aria-describedby={readOnly ? offlineId : undefined}
                     onClick={() => apply(null)}
                   >
