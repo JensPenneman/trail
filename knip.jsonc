@@ -19,7 +19,7 @@
     },
     "apps/web": {
       // playback/index.ts is the engine's door: nothing imports it until the History view is wired
-      // to it (playback wiring, "PR B2"); remove it from this list then.
+      // to it (the player's wiring in the History view); remove it from this list then.
       "entry": ["tests/**/*.{ts,tsx}", "*.config.ts", "src/pages/map/history/playback/index.ts"],
       "project": ["src/**", "tests/**"]
     },

@@ -31,7 +31,8 @@ export interface TransportMap {
  * `/api/v1/tracks`, until they arrive the raw ones. A null range asks for
  * nothing (a view that is not shown). `colors` are those of the map's
  * background, which need not be the page's. `until` (epoch seconds: the
- * playback cursor) dims what lies after it; `raw` is then the caller's to cut.
+ * playback cursor, rounded by `splitTime` so that the split moves four times a
+ * second at most) dims what lies after it; `raw` is then the caller's to cut.
  */
 export function useTransportMap(
   range: RangeParams | null,

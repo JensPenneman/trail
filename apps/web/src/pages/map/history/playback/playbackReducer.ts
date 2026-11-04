@@ -24,6 +24,11 @@ export interface PlaybackState {
   skipStops: boolean;
   /** Wall-clock milliseconds until which a skipped stop is shown before the jump; null when not held. */
   holdUntil: number | null;
+  /**
+   * A press of "Previous move" or "Next move" that went to another day, whose
+   * moves are not in yet: resolved to that day's last or first move once they are.
+   */
+  pendingMove: -1 | 1 | null;
 }
 
 /**
@@ -40,7 +45,11 @@ export interface PlaybackWorld {
   /** Moves and quiet stretches of the day the clock is in. */
   moves: readonly Interval[];
   quiet: readonly Interval[];
-  /** Whether a day's tracks are in. */
+  /**
+   * Whether a day has what `moves` and `quiet` are made from: its tracks, and
+   * for one's own the timeline (placeholder data is not loaded). With only one
+   * of them in, the whole day would look quiet and "Skip stops" would jump over it.
+   */
   loaded: (day: string) => boolean;
   /** The last recorded moment; null while unknown. */
   end: number | null;
@@ -55,6 +64,7 @@ export type PlaybackAction =
   | { type: "seek"; clock: number; world: PlaybackWorld }
   | { type: "step"; direction: -1 | 1; world: PlaybackWorld }
   | { type: "stepMove"; direction: -1 | 1; world: PlaybackWorld }
+  | { type: "resolveMove"; world: PlaybackWorld }
   | { type: "setRate"; rate: PlaybackRate }
   | { type: "setSkipStops"; on: boolean }
   | { type: "dayLoaded"; day: string }
@@ -69,6 +79,7 @@ export const initialPlayback: PlaybackState = {
   rate: 5,
   skipStops: false,
   holdUntil: null,
+  pendingMove: null,
 };
 
 /** How long a skipped stop shows before the clock jumps over it. */
@@ -85,18 +96,21 @@ const running = (state: PlaybackState, world: PlaybackWorld): PlaybackStatus =>
 function moveTo(state: PlaybackState, clock: number, world: PlaybackWorld): PlaybackState {
   const to = clamp(clock, state.start, world.end ?? Number.POSITIVE_INFINITY);
   const day = dayOf(to, world.timeZone);
-  const moved = { ...state, clock: to, day, holdUntil: null };
+  const moved = { ...state, clock: to, day, holdUntil: null, pendingMove: null };
   if (state.status === "playing" || state.status === "loading") {
     return { ...moved, status: running(moved, world) };
   }
-  // A paused or ended player stays so; ended reopens as paused once moved back.
-  return { ...moved, status: state.status === "ended" ? "paused" : state.status };
+  // A paused player stays so; an ended one reopens as paused once moved back from the end,
+  // and stays ended at it (Play then starts over).
+  const atEnd = world.end !== null && to >= world.end;
+  return { ...moved, status: state.status === "ended" && !atEnd ? "paused" : state.status };
 }
 
 /** The quiet stretch the clock is in, when it is one "Skip stops" jumps over. */
 function skippable(clock: number, world: PlaybackWorld): Interval | null {
   const found = world.quiet.find((q) => clock >= q.from && clock < q.to);
-  return found !== undefined && found.to - found.from > skippableQuietS ? found : null;
+  // What is left of the stretch counts: a seek into its last seconds has nothing to skip.
+  return found !== undefined && found.to - clock > skippableQuietS ? found : null;
 }
 
 /**
@@ -141,22 +155,42 @@ function tick(
   return settled;
 }
 
-/** A move's start strictly after / before `clock`, a second's tolerance so that a press leaves the one it is on. */
+/**
+ * A move's start strictly after / before `clock` (a second's tolerance, so that a press leaves
+ * the one it is on). With none left on the day it goes on to the next or previous day with data
+ * and remembers the direction: that day's moves are not known yet, and the press is finished
+ * with them (`resolveMove`), so that it lands on a move rather than in a quiet stretch.
+ */
 function stepMove(state: PlaybackState, direction: -1 | 1, world: PlaybackWorld): PlaybackState {
   const edge = 1;
   if (direction === 1) {
     const next = world.moves.find((move) => move.from > state.clock + edge);
     if (next !== undefined) return moveTo(state, next.from, world);
     const day = nextDayWithData(world.days, state.day);
-    return day === null ? state : moveTo(state, dayBounds(day, world.timeZone).start, world);
+    return day === null
+      ? state
+      : { ...moveTo(state, dayBounds(day, world.timeZone).start, world), pendingMove: 1 };
   }
   const before = [...world.moves].reverse().find((move) => move.from < state.clock - edge);
   if (before !== undefined) return moveTo(state, before.from, world);
   const day = previousDayWithData(world.days, state.day);
-  // The previous day's moves are not in yet: its last second, whose "previous move" is one more press.
-  return day === null || dayBounds(day, world.timeZone).end - 1 < state.start
-    ? moveTo(state, state.start, world)
-    : moveTo(state, dayBounds(day, world.timeZone).end - 1, world);
+  if (day === null || dayBounds(day, world.timeZone).end - 1 < state.start) {
+    return moveTo(state, state.start, world);
+  }
+  return { ...moveTo(state, dayBounds(day, world.timeZone).end - 1, world), pendingMove: -1 };
+}
+
+/** Finishes a move step that crossed days, now that the day it landed on is in. */
+function resolveMove(state: PlaybackState, world: PlaybackWorld): PlaybackState {
+  const { pendingMove: direction } = state;
+  if (direction === null || state.status === "off" || !world.loaded(state.day)) return state;
+  const target =
+    direction === 1
+      ? world.moves.find((move) => move.from >= state.clock)
+      : [...world.moves].reverse().find((move) => move.from <= state.clock);
+  if (target !== undefined) return moveTo(state, target.from, world);
+  // The day has no move: on to the one after it (or before), as a press would.
+  return stepMove({ ...state, pendingMove: null }, direction, world);
 }
 
 export function playbackReducer(state: PlaybackState, action: PlaybackAction): PlaybackState {
@@ -181,13 +215,19 @@ export function playbackReducer(state: PlaybackState, action: PlaybackAction): P
       }
       const from =
         state.status === "ended"
-          ? { ...state, day: state.startDay, clock: state.start, holdUntil: null }
+          ? {
+              ...state,
+              day: state.startDay,
+              clock: state.start,
+              holdUntil: null,
+              pendingMove: null,
+            }
           : state;
       return { ...from, status: running(from, action.world) };
     }
     case "pause":
       return state.status === "playing" || state.status === "loading"
-        ? { ...state, status: "paused", holdUntil: null }
+        ? { ...state, status: "paused", holdUntil: null, pendingMove: null }
         : state;
     case "toggle":
       if (state.status === "playing" || state.status === "loading") {
@@ -204,6 +244,8 @@ export function playbackReducer(state: PlaybackState, action: PlaybackAction): P
         : moveTo(state, state.clock + action.direction * state.rate * 60, action.world);
     case "stepMove":
       return state.status === "off" ? state : stepMove(state, action.direction, action.world);
+    case "resolveMove":
+      return resolveMove(state, action.world);
     case "setRate":
       return { ...state, rate: action.rate };
     case "setSkipStops":

@@ -5,7 +5,7 @@ import { splitTrackAt } from "./splitTrackAt";
 
 /**
  * API tracks → drawable segments (split at recording gaps) in each device's
- * colour. With `until` (epoch seconds: the playback cursor) a track becomes
+ * colour. With `until` (epoch seconds: the playback cursor, rounded by `splitTime`) a track becomes
  * what was played by then and, dimmed, what is still ahead.
  */
 export function tracksToMap(
@@ -31,11 +31,12 @@ export function tracksToMap(
       if (cut.ahead.length > 0) ahead.push(cut.ahead);
     }
     const color = colorOf(track.deviceId);
+    // The faded part first: where a route doubles back, the played line is drawn over it.
     return [
-      ...(played.length === 0 ? [] : [{ id: track.deviceId, color, segments: played }]),
       ...(ahead.length === 0
         ? []
         : [{ id: track.deviceId, color, segments: ahead, dimmed: true as const }]),
+      ...(played.length === 0 ? [] : [{ id: track.deviceId, color, segments: played }]),
     ];
   });
 }

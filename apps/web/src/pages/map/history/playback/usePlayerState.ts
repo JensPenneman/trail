@@ -22,6 +22,8 @@ export interface PlayerControls {
   setRate: (rate: PlaybackRate) => void;
   setSkipStops: (on: boolean) => void;
   dayLoaded: (day: string) => void;
+  /** Finishes a move step that crossed days once that day's moves are in. */
+  resolveMove: () => void;
   tick: (elapsedMs: number, now: number) => void;
 }
 
@@ -61,6 +63,7 @@ export function usePlayerState(): Player {
       setRate: (rate) => dispatch({ type: "setRate", rate }),
       setSkipStops: (on) => dispatch({ type: "setSkipStops", on }),
       dayLoaded: (day) => dispatch({ type: "dayLoaded", day }),
+      resolveMove: () => act((known) => ({ type: "resolveMove", world: known })),
       tick: (elapsedMs, now) => act((known) => ({ type: "tick", elapsedMs, now, world: known })),
     };
   }, []);

@@ -144,9 +144,26 @@ export function previousDayWithData(days: readonly string[], day: string): strin
 /**
  * Where playback ends: the last point of the final day once that day's track
  * is in, until then the days endpoint's first guess (its latest `lastAt`).
+ * Unknown while the list of days is incomplete: its latest day is then only
+ * the window's last, and an end taken from it would stop playback there.
  */
-export function endOf(guess: number | null, finalDayLast: number | null): number | null {
-  return finalDayLast ?? guess;
+export function endOf(
+  guess: number | null,
+  finalDayLast: number | null,
+  daysComplete: boolean,
+): number | null {
+  return daysComplete ? (finalDayLast ?? guess) : null;
+}
+
+/**
+ * The cursor as the map's split is made from it: rounded down to a quarter of
+ * the playback minutes that pass in a second, so that the tracks are cut
+ * four times a second at most however often the clock moves. Pass this, not
+ * the clock, as `until` to `tracksToMap`, `levelTracksToMap` and `useTransportMap`.
+ */
+export function splitTime(clock: number, rate: PlaybackRate): number {
+  const step = (rate * 60) / 4;
+  return Math.floor(clock / step) * step;
 }
 
 /** "Moving" or "Still", from a speed in m/s (for someone whose timeline Trail does not serve). */

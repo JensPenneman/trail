@@ -80,4 +80,9 @@
   .player-bar {
     border-color: CanvasText;
   }
+
+  /* The slim track is a background, which forced colours take away: the native slider instead. */
+  .player-bar__range {
+    appearance: auto;
+  }
 }

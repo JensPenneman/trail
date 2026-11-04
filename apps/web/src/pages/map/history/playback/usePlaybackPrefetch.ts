@@ -7,14 +7,16 @@ import { useTimeline } from "../../../../queries/useTimeline";
 import { useTracks } from "../../../../queries/useTracks";
 import { useVisits } from "../../../../queries/useVisits";
 import { localDayRange } from "../../../../time/localDayRange";
-import { dayBounds, nextDayWithData } from "./playbackModel";
+import { dayBounds, type Interval, nextDayWithData } from "./playbackModel";
 
 /** The share of a day after which the next one is loaded. */
 const prefetchAt = 0.9;
 
 /**
  * Loads the next day with data while the current one plays, from 90 % of the
- * way through it (21:36), so that midnight finds it in. Queries must stay
+ * way through it (21:36), so that midnight finds it in — or, with Skip stops
+ * on, once no move is left in the day: the night after the last one is jumped
+ * over in half a second, long before 21:36. Queries must stay
  * mounted to keep their data — a sharer's tracks are not cached once off
  * screen — so this hook mounts them, rather than prefetching: the day's
  * tracks and, at a level other than raw, its level tracks, with its
@@ -28,6 +30,8 @@ export function usePlaybackPrefetch({
   days,
   timeZone,
   level,
+  moves,
+  skipStops,
   me,
   personRequest,
 }: {
@@ -38,14 +42,18 @@ export function usePlaybackPrefetch({
   days: readonly string[];
   timeZone: string;
   level: ProcessingLevel;
+  /** The moves of the day (empty until they are known). */
+  moves: readonly Interval[];
+  skipStops: boolean;
   /** One's own devices (null for all) when the person played is oneself; null for someone else. */
   me: { deviceIds: readonly string[] | null } | null;
   /** Someone else's track request for a day's `[from, to)`; null for oneself or no request. */
   personRequest: ((range: { from: string; to: string }) => PersonTrackRequest | null) | null;
 }): { nextDay: string | null } {
   const { start, end } = dayBounds(day, timeZone);
-  const next =
-    active && clock >= start + (end - start) * prefetchAt ? nextDayWithData(days, day) : null;
+  const lateInDay = clock >= start + (end - start) * prefetchAt;
+  const nothingLeftToSee = skipStops && moves.length > 0 && moves.every((move) => move.to <= clock);
+  const next = active && (lateInDay || nothingLeftToSee) ? nextDayWithData(days, day) : null;
   const range = useMemo(
     () => (next === null ? null : localDayRange(next, next, timeZone)),
     [next, timeZone],

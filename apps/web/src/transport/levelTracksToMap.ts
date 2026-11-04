@@ -13,8 +13,9 @@ import { splitTrackAt } from "../map/splitTrackAt";
  * went before it resumed — more than 25 m away. Nobody vanishes from the map.
  * The other levels give tracks in device colours, as the raw level always did.
  * With `until` (epoch seconds: the playback cursor) everything after it is
- * dimmed: a line is cut at the cursor into what was played and what is ahead,
- * a stop or connector after it is dimmed whole.
+ * dimmed: a line is cut at the cursor into what was played and what is ahead
+ * (both halves keep the segment's id), a stop or connector after it is dimmed
+ * whole. The cursor is the caller's to round (`splitTime`).
  */
 export function levelTracksToMap(
   response: LevelTracksResponse,
@@ -44,13 +45,14 @@ export function levelTracksToMap(
     return {
       tracks: [...byDevice].flatMap(([deviceId, { played, ahead }]) => {
         const color = colors.device(deviceId);
+        // The faded part first, so that the played line is drawn over it.
         return [
-          ...(played.length === 0 && until !== undefined
-            ? []
-            : [{ id: deviceId, color, segments: played }]),
           ...(ahead.length === 0
             ? []
             : [{ id: deviceId, color, segments: ahead, dimmed: true as const }]),
+          ...(played.length === 0 && until !== undefined
+            ? []
+            : [{ id: deviceId, color, segments: played }]),
         ];
       }),
       transport: [],
@@ -75,6 +77,7 @@ export function levelTracksToMap(
         metresBetween([before[0], before[1]], [first[0], first[1]]) > visibleGapM
       ) {
         transport.push({
+          ...(until !== undefined && first[2] > until ? { dimmed: true as const } : {}),
           id: `gap-${segment.deviceId}-${index}`,
           selectable: false,
           kind: "gap",
@@ -114,10 +117,10 @@ export function levelTracksToMap(
       );
     } else {
       const cut = splitTrackAt(segment.points, until);
+      // The same id on both halves: a click on either is the segment, and a selection lights both.
+      // The faded half goes first, so that the played line is drawn over it.
+      if (cut.ahead.length > 0) transport.push({ ...entry, line: cut.ahead, dimmed: true });
       if (cut.played.length > 0) transport.push({ ...entry, line: cut.played });
-      if (cut.ahead.length > 0) {
-        transport.push({ ...entry, id: `${entry.id}:ahead`, line: cut.ahead, dimmed: true });
-      }
     }
   }
   return { tracks: [], transport };

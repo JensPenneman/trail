@@ -1,4 +1,4 @@
-// biome-ignore-all lint/performance/noBarrelFile: the one door B2's wiring imports through
+// biome-ignore-all lint/performance/noBarrelFile: the one door the History view imports the player through
 // The playback engine's one door: the History view's wiring imports from here.
 export { type NowEntry, NowStrip } from "./NowStrip";
 export { PlayerBar } from "./PlayerBar";
@@ -11,6 +11,7 @@ export {
   type PlaybackRate,
   playbackRates,
   quietIntervals,
+  splitTime,
 } from "./playbackModel";
 export {
   type PlaybackState,

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useFormatter } from "../../../../format/useFormatter";
 import { localDateOf } from "../../../../time/localDateOf";
 import { Button } from "../../../../ui/Button";
@@ -56,6 +57,12 @@ export function PlayerBar({
   const format = useFormatter();
   const day = localDateOf(clock * 1000, format.timeZone);
   const playing = status === "playing" || status === "loading";
+  // What the slider says when read: the moment of the last input, or of the pause. While the clock
+  // runs it would be a new sentence thirty times a second to a screen reader on the slider; the
+  // day changes and the end are announced on their own.
+  const [spoken, setSpoken] = useState(clock);
+  if (!playing && spoken !== clock) setSpoken(clock);
+  const spokenDay = localDateOf(spoken * 1000, format.timeZone);
   // The slider counts whole minutes from the epoch; the clock is a second more precise.
   const first = Math.ceil(start / 60);
   const last = Math.max(first, Math.floor((end ?? clock) / 60));
@@ -79,7 +86,7 @@ export function PlayerBar({
             Next move
           </Button>
         </div>
-        <output className="player-bar__readout">
+        <output className="player-bar__readout" aria-live="off">
           {format.day(day)} · {format.time(clock * 1000)}
         </output>
         <Button variant="ghost" icon="close" onClick={onExit}>
@@ -90,12 +97,16 @@ export function PlayerBar({
         type="range"
         className="player-bar__range"
         aria-label="Position at"
-        aria-valuetext={`${format.dayLong(day)}, ${format.time(clock * 1000)}`}
+        aria-valuetext={`${format.dayLong(spokenDay)}, ${format.time(spoken * 1000)}`}
         min={first}
         max={last}
         step={1}
         value={minute}
-        onChange={(event) => onSeek(Number(event.currentTarget.value) * 60)}
+        onChange={(event) => {
+          const seconds = Number(event.currentTarget.value) * 60;
+          setSpoken(seconds);
+          onSeek(seconds);
+        }}
       />
       <div className="player-bar__row player-bar__row--settings">
         <SegmentedControl
@@ -109,11 +120,10 @@ export function PlayerBar({
         />
         <Switch label="Skip stops" checked={skipStops} onChange={onSkipStops} />
       </div>
-      {status === "loading" ? (
-        <p className="visually-hidden" role="status">
-          Loading the next day
-        </p>
-      ) : null}
+      {/* Mounted all along, so that the words are announced when they arrive. */}
+      <p className="visually-hidden" role="status">
+        {status === "loading" ? `Loading ${format.dayLong(day)}` : ""}
+      </p>
     </section>
   );
 }
