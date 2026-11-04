@@ -2,6 +2,7 @@ import { expect, type Page } from "@playwright/test";
 import { expectAccessible } from "./support/expectAccessible";
 import { overlandBatch } from "./support/overlandBatch";
 import { sharingFriend } from "./support/sharingFriend";
+import { openGroup } from "./support/mapControls";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
 
@@ -50,13 +51,20 @@ test.describe("accessibility", () => {
     await expectAccessible(page, "People's list");
     // Me's detail: the day so far and each device, the way to Settings › Devices.
     await open(page, "/?person=me", "People", "Timeline");
-    await expect(page.getByRole("heading", { name: "Your devices" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /^Your devices/ })).toBeVisible();
     await expectAccessible(page, "People's Live in Me's detail");
+    await page.getByRole("link", { name: /^Your devices/ }).click();
+    await expect(page.getByRole("heading", { level: 2, name: "Your devices" })).toBeVisible();
+    await expectAccessible(page, "Me's devices level");
     await open(page, "/?view=history", "People", "Me");
     await expectAccessible(page, "People's History overview");
-    await open(page, "/?view=history&person=me", "People", "Visits");
-    await expectAccessible(page, "People's History in Me's detail");
-    await open(page, "/?view=heat&person=me", "People", "Busiest places in view");
+    await open(page, "/?view=history&person=me", "People", "Summary, visits and trips");
+    await openGroup(page, "Summary, visits and trips");
+    await expect(page.getByRole("region", { name: "Visits" })).toBeVisible();
+    await expectAccessible(page, "People's History in Me's detail, group open");
+    await open(page, "/?view=heat&person=me", "People", "Heat: totals, busiest places");
+    await openGroup(page, "Heat: totals, busiest places");
+    await expect(page.getByRole("region", { name: "Busiest places in view" })).toBeVisible();
     await expect(page.getByText(/^\d+ points$/).first()).toBeVisible();
     await expectAccessible(page, "People's Heat");
     // Settings › Devices, a device's page and the pages of its parts.

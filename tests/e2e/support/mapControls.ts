@@ -42,3 +42,14 @@ export async function openPeriodPicker(page: Page): Promise<void> {
   if ((await date.getAttribute("aria-expanded")) === "false") await date.click();
   await expect(page.getByRole("group", { name: "Show one day or a period" })).toBeVisible();
 }
+
+/**
+ * A folded group of a person's page ("Summary, visits and trips", "Heat: totals, busiest places",
+ * "Summary", a person's devices): its button, pressed if the group is closed.
+ */
+export async function openGroup(page: Page, name: string | RegExp): Promise<void> {
+  const button = page.getByRole("button", { name, ...(typeof name === "string" ? { exact: true } : {}) });
+  await expect(button).toBeVisible();
+  if ((await button.getAttribute("aria-expanded")) === "false") await button.click();
+  await expect(button).toHaveAttribute("aria-expanded", "true");
+}

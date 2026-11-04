@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { expectAccessible } from "./support/expectAccessible";
-import { localDate, mapView, openMapOptions } from "./support/mapControls";
+import { localDate, mapView, openGroup, openMapOptions } from "./support/mapControls";
 import { overlandBatch, withBattery } from "./support/overlandBatch";
 import { postOverland } from "./support/postOverland";
 import { sharingFriend } from "./support/sharingFriend";
@@ -138,6 +138,8 @@ test("a person's detail shows them alone, with only what their share allows", as
       url.searchParams.get("view") === "history" &&
       url.searchParams.get("person") === historian.account.id,
   );
+  // Their summary is a folded group of their page.
+  await openGroup(page, "Summary");
   await expect(summary.getByRole("listitem")).toHaveCount(1);
   await expect(summary).toContainText(`${historianName} · ${historian.device.name}`);
   await expect(summary).not.toContainText("My phone");
@@ -194,20 +196,24 @@ test("a person's detail shows them alone, with only what their share allows", as
   await meRow(page).click();
   await expect(page).toHaveURL((url) => url.searchParams.get("person") === "me");
   await expect(detail(page, "Me")).toBeVisible();
+  // The timeline is open; the summary, visits and trips are one folded group.
+  await expect(page.getByRole("region", { name: "Timeline", exact: true })).toBeVisible();
+  await openGroup(page, "Summary, visits and trips");
   await expect(summary).toContainText("My phone");
   for (const name of ownOnly) {
     await expect(page.getByRole("region", { name, exact: true }), name).toBeVisible();
   }
   await openMapOptions(page);
   await expect(page.getByRole("group", { name: "Detail of the tracks" })).toBeVisible();
-  // Always: the devices, in the detail and not behind a button.
-  await expect(detail(page, "Me").getByRole("link", { name: "My phone" })).toBeVisible();
+  // The devices are a level of Me's page, one row away.
+  await expect(detail(page, "Me").getByRole("link", { name: /^Your devices/ })).toBeVisible();
   await expectAccessible(page, "History in Me's detail");
   await mapView(page, "Live").click();
   await expect(myDay(page).getByRole("heading", { name: "Timeline" })).toBeVisible();
   await expectAccessible(page, "Live in Me's detail");
   await mapView(page, "Heat").click();
   await expect(page).toHaveURL(/[?&]view=heat/);
+  await openGroup(page, "Heat: totals, busiest places");
   await expect(
     page.getByRole("region", { name: "Busiest places in view" }).getByRole("listitem").first(),
   ).toContainText(/\d+ points/);

@@ -94,7 +94,7 @@ test("the People page with someone who shares fits a 320 px wide screen", async 
     [`/?person=${friend.account.id}`, "Where they’ve been", name],
     [`/?view=history&person=${friend.account.id}`, `${name} · ${friend.device.name}`, name],
     ["/", name, null],
-    ["/?view=heat&person=me", "Your devices", "Me"],
+    ["/?view=heat&person=me", "Heat: totals, busiest places", "Me"],
   ] as const) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
@@ -112,7 +112,7 @@ test("the People page with someone who shares fits a 320 px wide screen", async 
   await expect(page.getByText("Last 7 days")).toBeVisible();
   expect(await overflow(page), "their detail").toBe(0);
   await page.goto("/?view=history&person=me");
-  await expect(page.getByRole("heading", { name: "Your devices" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Your devices/ })).toBeVisible();
   expect(await overflow(page), "Me's detail").toBe(0);
 });
 

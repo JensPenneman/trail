@@ -106,6 +106,7 @@ test("someone you share with who reads your track is under People, with what the
 
   // They open your history on their People page: a look at you and at your track.
   await friend.page.goto(`/?view=history&person=${account.id}`);
+  await friend.page.getByRole("button", { name: "Summary", exact: true }).click();
   await expect(friend.page.getByRole("region", { name: "Summary", exact: true })).toContainText(
     `${account.displayName} · ${phone.name}`,
   );
@@ -301,6 +302,7 @@ test("your own browsing stays out of the log until you switch it on", async ({ p
   await uploadedDevice(page, "Own phone", overlandBatch(account.timezone));
   // Browsing of one's own: the tracks of the day.
   await page.goto("/?view=history&person=me");
+  await page.getByRole("button", { name: "Summary, visits and trips", exact: true }).click();
   await expect(page.getByRole("region", { name: "Summary", exact: true })).toContainText(
     "Own phone",
   );

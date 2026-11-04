@@ -2873,8 +2873,9 @@ count among them, since they lead to signed-in pages.
   is measured into `--overlay-end`), the "Updating" chip sits top centre (under the bar where
   the screen is not wide enough for both), the map fits tracks under the
   controls (`fit.inset`: below the bar, left of the zoom column on phones),
-  and History's time slider floats at the map's foot (first block of the
-  sheet on phones). The
+  and History's time slider floats at the map's foot (in the sheet on phones,
+  right under the Me row or the person's header, not in the peek), with
+  Heat's key at its bottom-left. The
   DOM order is the controls, the map, then the panel, so the keyboard meets
   them in that order.
 
@@ -2951,10 +2952,8 @@ count among them, since they lead to signed-in pages.
   to the next such button, or to the heading when none is left), and "Nobody
   is hidden" when none is. The root carries no description of the view, no
   History summary, no Heat totals, no "You share with N people" line and no
-  card for when nobody shares: the view's description stays on the page only
-  as a visually hidden block next to the map (the person pages that follow
-  fold it into the map's accessible label), and with nobody sharing the root is
-  just the Me row. Rows are one
+  card for when nobody shares: what a view says of itself is the map's
+  accessible label, and with nobody sharing the root is just the Me row. Rows are one
   router link each to their page (`PersonRow`; its name is all it says, in
   order, and it has no heading) and are laid out lazily
   (`content-visibility: auto`). A row reads in two lines (`PersonSummary`,
@@ -2980,16 +2979,31 @@ count among them, since they lead to signed-in pages.
   of the sheet's view, so that selecting someone has a half detent to lift
   the sheet to; History's slider sits right under what is measured, not in it.
 
-  **The detail** replaces the list (`PersonPanel`): a back link ("Back to
-  People"), the name as an h2 with the row's two lines, and what the view
-  and the person have. For **Me**: the view's part (Live: "Your day so far";
-  History: the summary, timeline, visits and trips), then, always, **Your
-  devices** (`MyDevices`: each by name, linked to its page in Settings ›
-  Devices, with when it last reported a position — "Waiting for the first
-  upload" before it did — battery, that position with its accuracy, movement
-  ("Last reported movement" once it is not live) and trip, and the way to
-  Settings › Devices), the hint with the way to the device's setup while no
-  device has uploaded, and "Connect your first phone" when there is none.
+  **The pages** replace the root (`MePage`, `PersonPage`; the groups are
+  `SettingsDisclosureGroup`: a heading with a button inside it, `aria-expanded`
+  and `aria-controls`, its content rendered only while it is open): a back
+  link ("Back to People"), the name as an h2 with the row's two lines (Me's
+  also says "2 devices"), History's slider under it on phones, and the groups
+  and rows of the person. **Me's page**: the hint with the way to the device's
+  setup while no device has uploaded, and "Connect your first phone" when
+  there is none; the group **Timeline**, open (Live: today, in a region "Your
+  day so far"; History: the day or period); the view's other group, folded —
+  History's "Summary, visits and trips" (the regions keep their names), Heat's
+  "Heat: totals, busiest places", whose 12-month totals are asked for only once
+  it is opened; a row **Your devices** with their count, which opens a level
+  of the page (`?person=me&list=devices`: a back link "Back to Me", the h2 "Your
+  devices" in focus, then `MyDevices`: each by name, linked to its page in
+  Settings › Devices, with when it last reported a position — "Waiting for the
+  first upload" before it did — battery, that position with its accuracy,
+  movement ("Last reported movement" once it is not live) and trip, and the way
+  to Settings › Devices); and a row **Sharing** ("You share with 2 people · 1
+  waits for you to confirm") to Settings › Sharing. A group stays as one left it
+  while the view changes. What the views say about the map is the map's
+  accessible label (no description line in the sidebar); Heat's key floats
+  small over the map's bottom-left corner (`legend`), and what History has to
+  say of a day with nothing recorded ("Nothing recorded on …", with "Find a day
+  with data") or of tracks that could not be loaded is at the map's foot, where
+  the slider would be.
   For someone who shares: **where they've been** (`WhereTheyveBeen`): the day
   — Today in Live, History's day, or History's period — with Previous and
   Next day (in Live a day back is History's, one step of the history,
@@ -3004,15 +3018,16 @@ count among them, since they lead to signed-in pages.
   recorded", read "14.9 km, from 06:30 to 07:15"), "Nothing recorded on Mon
   26 Oct", "Shares the last 7 days only" where the server moved the start up,
   "Shares no device right now"; a share without history says "Shares live
-  location only" and is asked for nothing. Then the view's part (History's
-  summary of their tracks) and `PersonDetails`: each shared device (updated,
-  doing, battery, accuracy, trip, distance — "Not shared" where the share
-  leaves battery and activity out, "—" where it includes them but nothing
-  recent is known), what they share (precision, where they've been, battery
-  and activity, until, since), Apple Maps and Google Maps links, Share back —
-  or, when you share with them, "You share with <name>" and Stop
-  (`StopShareDialog`) — and Hide, which returns to the list and is announced
-  ("Ana is hidden. Show them again under Hidden."). Each person has a colour
+  location only" and is asked for nothing. Then, folded, History's group **Summary** (their tracks, device
+  by device) and the group **Devices (n) · What <name> shares with you**
+  (`PersonDevices`: each shared device — updated, doing, battery, accuracy,
+  trip, distance, "Not shared" where the share leaves battery and activity out,
+  "—" where it includes them but nothing recent is known; `ShareTerms`:
+  precision, where they've been, battery and activity, until, since). Last the
+  rows of what can be done: "Open in Apple Maps" and "Open in Google Maps" (new
+  tab), Share back — or, when you share with them, "You share with <name>"
+  and Stop (`StopShareDialog`) — and "Hide <name>", which returns to the
+  root and is announced ("Ana is hidden. Show them again under Hidden."). Each person has a colour
   from `personPalette`, a second ring beside the device colours, assigned in
   the order they started sharing. **Share my location** (`ShareDialog`):
   address (with the people who share with you as suggestions), devices,

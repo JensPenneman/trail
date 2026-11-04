@@ -1,13 +1,7 @@
 import { expect } from "@playwright/test";
 import { publicConfigSchema } from "@trail/contracts/config";
 import { expectAccessible } from "./support/expectAccessible";
-import {
-  localDate,
-  mapView,
-  openDeviceFilter,
-  openMapOptions,
-  openPeriodPicker,
-} from "./support/mapControls";
+import { localDate, mapView, openDeviceFilter, openGroup, openMapOptions, openPeriodPicker } from "./support/mapControls";
 import { overlandBatch } from "./support/overlandBatch";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
@@ -34,6 +28,7 @@ test("Live, History and Heat share one map and keep their place in the URL", asy
 
   await mapView(page, "History").click();
   await expect(page).toHaveURL(/\/\?person=me&view=history$/);
+  await openGroup(page, "Summary, visits and trips");
   await expect(page.getByRole("region", { name: "Summary", exact: true })).toContainText(
     "30 points",
   );
@@ -45,6 +40,7 @@ test("Live, History and Heat share one map and keep their place in the URL", asy
   await mapView(page, "Heat").click();
   await expect(page).toHaveURL(/\/\?person=me&view=heat$/);
   await expect(canvas).toHaveAccessibleName(/^Heatmap of all recorded points/);
+  await openGroup(page, "Heat: totals, busiest places");
   await expect(
     page.getByRole("region", { name: "Busiest places in view" }).getByRole("listitem").first(),
   ).toContainText(/\d+ points/);
@@ -89,6 +85,7 @@ test("the old addresses of History and Explore, and deep links, open the right v
   await page.goto(`/?view=history&person=me&from=${weekAgo}&to=${today}`);
   await openPeriodPicker(page);
   await expect(page.getByRole("radio", { name: "Period" })).toBeChecked();
+  await openGroup(page, "Summary, visits and trips");
   await expect(page.getByRole("region", { name: "Summary", exact: true })).toContainText(
     "Linked phone",
   );
@@ -115,10 +112,12 @@ test("the device filter, folded away in Map options, narrows every view and stay
   await expect(filter.getByRole("checkbox", { name: "Kept phone" })).toBeDisabled();
 
   await mapView(page, "History").click();
+  await openGroup(page, "Summary, visits and trips");
   const summary = page.getByRole("region", { name: "Summary", exact: true });
   await expect(summary.getByRole("listitem")).toHaveCount(1);
   await expect(summary).toContainText("Kept phone");
   await page.reload();
+  await openGroup(page, "Summary, visits and trips");
   await expect(summary.getByRole("listitem")).toHaveCount(1);
   await expect(mapView(page, "History")).toBeChecked();
 });
