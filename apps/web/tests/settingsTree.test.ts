@@ -152,6 +152,14 @@ describe("search in Settings", () => {
     expect(found("sign out")[0]?.[0]).toBe("Sign out");
   });
 
+  it("leads from Insights to who viewed you, which moved out of it", () => {
+    expect(found("insights")[0]).toEqual([
+      "Who viewed you",
+      "Privacy & data",
+      "/settings/privacy/viewers",
+    ]);
+  });
+
   it("finds by other words, best matches of the name first", () => {
     expect(found("gpx").map(([label]) => label)).toEqual(["Your data", "Export"]);
     expect(found("ntfy").map(([label]) => label)).toEqual(["Notifications"]);

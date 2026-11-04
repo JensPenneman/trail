@@ -26,7 +26,6 @@ import {
   viewerSentence,
 } from "../src/accessLog/viewerSentence";
 import { createFormatter } from "../src/format/createFormatter";
-import { topViewerText } from "../src/pages/insights/WhoViewedYouCard";
 import { settingsBadgeValue } from "../src/settings/settingsBadges";
 import { accessLine, busySummary, emptySummary } from "./support/accessLogFixtures";
 import { ids, user } from "./support/fixtures";
@@ -369,14 +368,9 @@ describe("the summary on other pages", () => {
     expect(viewerCount(busySummary(30, now))).toBe(3);
   });
 
-  it("tells whether anyone but you looked, and who most", () => {
+  it("tells whether anyone but you looked", () => {
     const busy = busySummary(30, now);
     expect(othersLooked(busy)).toBe(true);
     expect(othersLooked({ ...emptySummary(30, now), own: busy.own })).toBe(false);
-    expect(topViewerText(busy, format)).toBe("Ana Bell looked most often: 46 times.");
-    expect(topViewerText({ ...busy, people: [] }, format)).toBe(
-      "Your token “Home Assistant” was used most often: 14 times.",
-    );
-    expect(topViewerText(emptySummary(30, now), format)).toBeNull();
   });
 });
