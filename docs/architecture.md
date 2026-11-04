@@ -2770,8 +2770,10 @@ count among them, since they lead to signed-in pages.
   draw: the page has one `TrailMap` for all three, so switching views keeps
   the map — no new canvas, style or tiles. The camera frames what is drawn
   when that changes (another person, day or other devices: the fit key is
-  `live|<who>|<devices>` in Live, the period in History), never merely
-  because the view did; Heat frames it only when the page opened on it. A
+  `live|<who>|<devices>` in Live, `<period>|<who>|<devices>` in History),
+  never merely because a control that changes nothing drawn was used; Live
+  and History draw different things, so switching between them frames anew.
+  Heat frames it only when the page opened on it. A
   camera move of a view (a visit, trip or move shown) belongs to its view and
   period: another view or another day — from the controls, a person's
   detail or Back — drops it, so neither the view shown again nor a return to
@@ -2862,18 +2864,16 @@ count among them, since they lead to signed-in pages.
     stop). Heatmaps cover one's own devices only, so Heat is offered while
     nobody or Me is selected.
 
-  The head holds the controls the views share, in this order: **people**
-  (Me and everyone who shares with me, plus Everyone — a checkbox for all,
-  "mixed" while some are chosen — once two or more share; somebody always
-  stays chosen), the **map style** (Auto, which follows the system's light
+  The head holds the controls the views share, in this order: the **map
+  style** (Auto, which follows the system's light
   or dark setting, Light, Dark, and Satellite when the server has imagery;
   remembered in localStorage `trail.mapStyle`, else the account's
   preference, a dark or satellite map drawing Trail's lines and dots in their
   dark-background steps whatever the page's scheme), the tracks' **level**
   with the mode legend (Live and History, with Me), and last, folded under
   **Advanced** (a disclosure, open when the address sets a filter), the
-  **device filter** (grouped by person; someone else's devices in their
-  colour from `personPalette`): which devices draw is seldom what one looks
+  **device filter** (the devices of the person selected, in Heat one's
+  own; someone else's in their colour from `personPalette`): which devices draw is seldom what one looks
   for. The style and the level resolve in the same order: the address
   (`?style=`, `?level=`) › the choice last made on this browser › the
   account's preference (Settings › Preferences) › Auto and Transport. On

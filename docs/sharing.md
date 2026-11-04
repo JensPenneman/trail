@@ -20,7 +20,7 @@ account on your server there are **public links**.
      position over time would give away more than you chose.
    - **Battery and activity**: your phone's battery, and whether you are
      walking, cycling, driving or on a train — as Trail works it out, or as
-     you set it through the API or the assistant
+     you set it through the API or an MCP client
      ([transport.md](transport.md)).
    - **For how long**: one hour, until the end of the day (midnight in your
      time zone), a week, or until you stop it.
@@ -85,9 +85,10 @@ doing, its battery, accuracy, trip and distance; what they share (how
 precisely, their history, battery and activity, until when, since when);
 **Apple Maps**, **Google Maps**, **Share back** (or **Stop**, when you share
 with them too) and **Hide**. The map shows where everyone is, and draws the
-track of whoever you chose, as far as their share allows; without a choice it
-shows only where everyone is now (and, in History, the tracks of everyone who
-shares theirs), and asks nobody's track.
+track of whoever you chose, as far as their share allows. Without a choice,
+Live shows only where everyone is now and asks nobody's track; History's
+overview reads the track of everyone who shares their history (each look is in
+their access log).
 
 **Where they've been**: in Live their track today ("14.9 km · 06:30 –
 07:15"), with the day before a tap away — it opens History on that day, where

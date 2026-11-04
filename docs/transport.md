@@ -99,7 +99,7 @@ sure, especially between a car and a train.
   was, the speeds, distance and time. Pick the right mode under Change mode;
   the move shows "set by you" from then on. Reset to detected hands it back to
   Trail. For a move marked as unsure, "Yes" confirms Trail's guess.
-- **From now on**: this one is for the API and the assistant only; the web
+- **From now on**: this one is for the API and MCP clients only; the web
   app has no control for it. Setting a mode for a device
   (`POST /api/v1/devices/{id}/mode`, [api.md](api.md); the MCP tool
   `set_transport_mode`, [mcp.md](mcp.md)) holds until you stop for 10

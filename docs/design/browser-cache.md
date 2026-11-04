@@ -593,7 +593,7 @@ the public shell only).
 ### 6.1 What the person sees first
 
 A warm open of People paints the header, Me's row (and, opened, Me's detail
-with the day so far), the map with today's track and the latest own positions from the store, and
+with the day so far), the map with the latest positions from the store (and, with Me selected, today's track), and
 a **freshness line** in the page head (`FreshnessIndicator`, next to the
 connection indicator): "Updated 3 min ago" while the store's copy is on
 screen, "Updating…" while a revalidation runs, "Live" once the stream is
@@ -604,13 +604,13 @@ Insights keep their roles; a settled day shows no chip at all.
 
 ### 6.2 The live window rule
 
-"Live" on a card, a pulsing marker, a speed on Me's row: all of it is
+"Live" on a row, a pulsing marker, a speed on Me's row: all of it is
 decided from the position's own time (`lastSeenAt`, `recordedAt`) against
 the clock (`deviceStatus`, `describeMe`), never from when the data was
 fetched — so a copy fetched an hour ago cannot show Live, since nothing in
 it is newer than the copy. The rule the cache adds: while the stream is not
-open and the newest answer is older than the live window (15 min), the Me
-card and the markers show the time ("as of 10:32") instead of "Live", and
+open and the newest answer is older than the live window (15 min), Me's row
+and the markers show the time ("as of 10:32") instead of "Live", and
 the head says so. `RelativeTime` ticks on screen; the `aria-live` region of
 the freshness line announces state changes only, at most once a minute.
 
