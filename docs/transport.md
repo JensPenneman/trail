@@ -98,7 +98,9 @@ sure, especially between a car and a train.
   in the Timeline under the map. The dialog shows the mode, how sure Trail
   was, the speeds, distance and time. Pick the right mode under Change mode;
   the move shows "set by you" from then on. Reset to detected hands it back to
-  Trail. For a move marked as unsure, "Yes" confirms Trail's guess.
+  Trail. For a move marked as unsure, "Yes" confirms Trail's guess. A move
+  that is still going on says "Still under way" instead: it can be put right
+  once it is over, after a stop or 10 minutes without new points.
 - **From now on**: your own card, **Me**, on the People page has a row
   *Now: Walk · Bike · Car · Bus · Train · Tram · Metro · Other · Auto*. Tap
   the mode you are switching to — getting on a train, say — and it holds

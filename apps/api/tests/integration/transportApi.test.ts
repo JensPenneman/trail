@@ -439,6 +439,82 @@ describe("PUT and DELETE /api/v1/segments/{id}/mode", () => {
   });
 });
 
+describe("a move that is still under way", () => {
+  /** A device whose only move ended `endedAgoS` seconds ago, with nothing recorded after it. */
+  async function recentMove(endedAgoS: number) {
+    const phone = await createDevice(owner, { name: `Under way ${endedAgoS}` });
+    await uploadJourney(t.app, phone.credentials.accessToken, motorwayDrive(morning + 12 * 3600));
+    await t.ctx.background.drain(5000);
+    await t.ctx.processing.flush();
+    const moves = await t.ctx.db.execute<{ id: string; ended_at: string }>(sql`
+      SELECT id, ended_at::text FROM segments
+      WHERE device_id = ${phone.device.id} AND kind = 'move' ORDER BY started_at LIMIT 1
+    `);
+    const move = moves.rows[0];
+    if (move === undefined) throw new Error("the drive has no move");
+    await t.ctx.db.execute(sql`
+      DELETE FROM segments WHERE device_id = ${phone.device.id} AND id <> ${move.id}
+    `);
+    await t.ctx.db.execute(sql`
+      UPDATE segments SET
+        started_at = now() - make_interval(secs => ${endedAgoS} + duration_s),
+        ended_at = now() - make_interval(secs => ${endedAgoS})
+      WHERE id = ${move.id}
+    `);
+    return { deviceId: phone.device.id, id: move.id };
+  }
+
+  const put = (id: string) =>
+    owner.put(apiPaths.v1.segments.mode(id)).set("Origin", testOrigin).send({ mode: "car" });
+  const del = (id: string) => owner.delete(apiPaths.v1.segments.mode(id)).set("Origin", testOrigin);
+
+  it("refuses to set or reset a move that ended a minute ago", async () => {
+    const move = await recentMove(60);
+    const set = await put(move.id).expect(409);
+    expect(errorOf(set.body)).toMatchObject({ code: "conflict" });
+    expect(errorOf(set.body).message).toContain("still under way");
+    await del(move.id).expect(409);
+    const stored = await t.ctx.db.execute(sql`
+      SELECT 1 FROM mode_overrides WHERE device_id = ${move.deviceId}
+    `);
+    expect(stored.rows).toEqual([]);
+  });
+
+  it("refuses a move that ended long ago while a window over what came after it is queued", async () => {
+    const move = await recentMove(1200);
+    await t.ctx.db.execute(sql`
+      INSERT INTO processing_queue (device_id, from_at, to_at, reason, missing_tiles)
+      VALUES (${move.deviceId}, now() - interval '5 minutes', now() - interval '1 minute', 'ingest',
+        '[]'::jsonb)
+    `);
+    await put(move.id).expect(409);
+    await del(move.id).expect(409);
+    await t.ctx.db.execute(sql`DELETE FROM processing_queue WHERE device_id = ${move.deviceId}`);
+    await put(move.id).expect(200);
+    await del(move.id).expect(200);
+  });
+
+  it("allows a move that ended ten minutes ago with nothing queued", async () => {
+    const move = await recentMove(601);
+    await put(move.id).expect(200);
+    await del(move.id).expect(200);
+  });
+
+  it("allows a move once a stop follows it, however recent", async () => {
+    const move = await recentMove(60);
+    await put(move.id).expect(409);
+    await t.ctx.db.execute(sql`
+      INSERT INTO segments (device_id, kind, started_at, ended_at, distance_m, duration_s, point_count,
+        start_lat, start_lon, end_lat, end_lon, centroid_lat, centroid_lon, features, version)
+      SELECT device_id, 'stop', ended_at, ended_at + interval '30 seconds', 0, 30, 3,
+        end_lat, end_lon, end_lat, end_lon, end_lat, end_lon, '{}'::jsonb, version
+      FROM segments WHERE id = ${move.id}
+    `);
+    await put(move.id).expect(200);
+    await del(move.id).expect(200);
+  });
+});
+
 describe("GET and POST /api/v1/devices/{id}/mode", () => {
   it("toggles the mode from now on, idempotently, and ends it", async () => {
     const path = apiPaths.v1.devices.mode(drive);

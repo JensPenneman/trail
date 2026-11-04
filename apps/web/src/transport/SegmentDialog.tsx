@@ -13,6 +13,7 @@ import { OfflineReason } from "../ui/OfflineReason";
 import { ModePicker } from "./ModePicker";
 import { segmentTitle } from "./segmentTitle";
 import { transportModeInfo } from "./transportModes";
+import { useMoveUnderWay } from "./useMoveUnderWay";
 import "./SegmentDialog.css";
 
 interface SegmentDialogProps {
@@ -32,6 +33,7 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
   const format = useFormatter();
   const change = useSegmentModeChange(segment.id);
   const readOnly = useReadOnly();
+  const { underWay, checking } = useMoveUnderWay(segment);
   const offlineId = useId();
   const [saved, setSaved] = useState<string | null>(null);
   const move = segment.kind === "move";
@@ -124,7 +126,7 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
 
         {move ? (
           <>
-            {segment.needsReview && inferred !== null && confirmable !== null ? (
+            {segment.needsReview && !underWay && inferred !== null && confirmable !== null ? (
               <Notice
                 tone="info"
                 title={`Was this ${inferred.phrase}?`}
@@ -133,7 +135,7 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
                     variant="primary"
                     icon="check"
                     busy={change.isPending}
-                    disabled={readOnly}
+                    disabled={readOnly || checking}
                     aria-describedby={readOnly ? offlineId : undefined}
                     onClick={() => apply(confirmable)}
                   >
@@ -144,30 +146,41 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
                 <p>Trail is not sure. Confirm it, or pick the right mode below.</p>
               </Notice>
             ) : null}
-            <section className="segment-dialog__change" aria-label="Change mode">
-              <h3 className="segment-dialog__heading">Change mode</h3>
-              {readOnly ? (
-                <OfflineReason id={offlineId}>
-                  You’re offline: the mode can be corrected once you reconnect.
-                </OfflineReason>
-              ) : null}
-              <ModePicker
-                label="Change mode"
-                current={segment.modeUser}
-                disabled={change.isPending || readOnly}
-                onPick={apply}
-              />
-            </section>
-            {segment.modeUser === null ? null : (
-              <Button
-                icon="refresh"
-                busy={change.isPending}
-                disabled={readOnly}
-                aria-describedby={readOnly ? offlineId : undefined}
-                onClick={() => apply(null)}
-              >
-                Reset to detected
-              </Button>
+            {underWay ? (
+              <Notice tone="info" title="Still under way">
+                <p>
+                  The mode can be set once this move is over, after a stop or ten minutes without
+                  new points.
+                </p>
+              </Notice>
+            ) : (
+              <>
+                <section className="segment-dialog__change" aria-label="Change mode">
+                  <h3 className="segment-dialog__heading">Change mode</h3>
+                  {readOnly ? (
+                    <OfflineReason id={offlineId}>
+                      You’re offline: the mode can be corrected once you reconnect.
+                    </OfflineReason>
+                  ) : null}
+                  <ModePicker
+                    label="Change mode"
+                    current={segment.modeUser}
+                    disabled={change.isPending || readOnly || checking}
+                    onPick={apply}
+                  />
+                </section>
+                {segment.modeUser === null ? null : (
+                  <Button
+                    icon="refresh"
+                    busy={change.isPending}
+                    disabled={readOnly || checking}
+                    aria-describedby={readOnly ? offlineId : undefined}
+                    onClick={() => apply(null)}
+                  >
+                    Reset to detected
+                  </Button>
+                )}
+              </>
             )}
             {change.isError ? (
               <Notice tone="danger" role="alert" title="The mode could not be saved">

@@ -343,6 +343,15 @@ export type LevelTracksResponse = z.infer<typeof levelTracksResponseSchema>;
  */
 export const toggleEndingStopS = 600;
 
+/**
+ * A move can be corrected once it is over: a later segment of the device
+ * exists, or it ended this long ago (seconds) and no window is waiting to be
+ * processed over what came after it. Until then a correction would store the
+ * span as it is now and split the move as it grows (docs/architecture.md
+ * §17.5).
+ */
+export const moveOverAfterS = 600;
+
 /** What ends a toggle besides its `until`, as the API's descriptions say it. */
 const endingStop = `the first stop of ${toggleEndingStopS / 60} minutes or more, or — after a stop — a move Trail reads as another kind of travel (on foot, by bike, by vehicle)`;
 

@@ -4628,7 +4628,17 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   the move's span and sets `mode_user` at once (the same mode again changes
   nothing). `DELETE` revokes the override that set the segment (a toggle with
   it, for every move it covered), shows the inferred mode at once and queues
-  the span for the inference again. A stop has no mode (409).
+  the span for the inference again. A stop has no mode (409). Both refuse a
+  move that is still under way (409, `assertMoveOver`, run under the device
+  lock on the row read there): a correction stores the span as it is, and a
+  move that keeps growing would be cut by `applyOverrides` with the rest
+  keeping the inferred mode. A move is over once a later segment of the
+  device exists (a stop, or a move after a recording gap), or it ended
+  `moveOverAfterS` (600 s) ago and no `processing_queue` row overlaps
+  `(ended_at, now]` (the queue is read directly, so windows waiting for map
+  tiles count too). The dialog (§17.6) asks `GET .../mode` only for a move
+  that ended less than that ago and shows "Still under way" while the
+  device's current segment is it.
 - `POST /api/v1/devices/{id}/mode { mode, until? }` is the quick toggle: a
   `toggle` override from now until `until`, the first detected stop of ten
   minutes or more (`toggleEndingStopS`: changing trains or waiting at the
