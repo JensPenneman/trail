@@ -5,6 +5,7 @@ import { toIso } from "../db/toIso";
 import type { DeviceAccess } from "../devices/deviceAccess";
 import { lockDeviceProcessing } from "../processing/deviceLock";
 import { enqueueWindow } from "../processing/processingQueue";
+import { assertMoveOver } from "./assertMoveOver";
 import { findSegment } from "./findSegment";
 import { type SegmentRow, segmentColumns, toSegment } from "./segmentRow";
 
@@ -13,7 +14,8 @@ import { type SegmentRow, segmentColumns, toSegment } from "./segmentRow";
  * override that set it is revoked — a quick toggle with it, for all the moves
  * it covered — and the segment shows the inferred mode at once. The span is
  * queued for the inference again (`queue`), which re-applies older overrides
- * and joins the parts an override had cut. Without an override nothing changes.
+ * and joins the parts an override had cut. Without an override nothing
+ * changes. A move still under way is refused (`assertMoveOver`): 409.
  * Returns the segment and the revoked spans.
  */
 export async function clearSegmentMode(
@@ -26,6 +28,7 @@ export async function clearSegmentMode(
   return db.transaction(async (tx) => {
     await lockDeviceProcessing(tx, found.device_id);
     const segment = await findSegment(tx, access, segmentId, { forUpdate: true });
+    await assertMoveOver(tx, segment);
     const override = segment.features["override"];
     const overrideId =
       typeof override === "object" &&

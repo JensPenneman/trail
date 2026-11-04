@@ -4629,7 +4629,22 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   the move's span and sets `mode_user` at once (the same mode again changes
   nothing). `DELETE` revokes the override that set the segment (a toggle with
   it, for every move it covered), shows the inferred mode at once and queues
-  the span for the inference again. A stop has no mode (409).
+  the span for the inference again. A stop has no mode (409). Both refuse a
+  move that is still under way (409, `assertMoveOver`, run under the device
+  lock on the row read there): a correction stores the span as it is, and a
+  move that keeps growing would be cut by `applyOverrides` with the rest
+  keeping the inferred mode. A move is over once a later segment of the
+  device exists (a stop, or a move after a recording gap), or `moveOverAfterS`
+  (1800 s, in the contracts; the pipeline's `stops.gapSplitS` reads the same
+  value, so the two cannot drift) passed since its last point and no `locations`
+  row of the device after it lacks a `processed_points` row. The queue is not
+  the test: rows waiting for map tiles, and the window a reset queues, re-read
+  the same points, while an upload committed but not yet queued still counts.
+  Points a phone sends late (offline while moving: a train without signal, a
+  flight) can still extend a move that was over; nothing on the server sees
+  them coming. The dialog (§17.6) shows "Still under way" for a move that ended less than
+  that ago and is its device's latest item in the timelines it holds (the
+  device's mode `current` ends after 15 minutes, too soon).
 - `POST /api/v1/devices/{id}/mode { mode, until? }` is the quick toggle: a
   `toggle` override from now until `until`, the first detected stop of ten
   minutes or more (`toggleEndingStopS`: changing trains or waiting at the
@@ -4751,7 +4766,8 @@ device more than a minute apart. A click on a segment — or "Details" in the
 day's timeline list next to the visits and trips — opens its dialog: the mode
 with its icon, "set by you", the confidence, average and top speed, distance
 and duration, "Was this …?" for moves to review, Change mode and Reset to
-detected; a stop's says how long it lasted, where, and, when it spread
+detected ("Still under way" in their place for a move that is not over,
+§17.5); a stop's says how long it lasted, where, and, when it spread
 (`spreadM` of the timeline's segment over 25 m), how far one moved within it.
 Nothing changes at the other levels. The quick toggle (Now: Walk · Bike ·
 Car · Bus · Train · Tram · Metro · Other · Auto) is on the Me card of People,
