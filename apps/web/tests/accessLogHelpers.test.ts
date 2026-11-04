@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { actionLabel, lookKindOf } from "../src/accessLog/accessActions";
+import { actionChoices, actionLabel, lookKindOf } from "../src/accessLog/accessActions";
 import {
   actorDetail,
   groupByDay,
@@ -176,6 +176,12 @@ describe("the sentences of Who viewed you", () => {
     expect(
       ["listPeople", "getPerson", "getPersonTrack", "live.position", "getTracks"].map(lookKindOf),
     ).toEqual(["position", "position", "history", "live", "other"]);
+    expect(lookKindOf("getPersonDays")).toBe("history");
+    expect(actionLabel("getPersonDays", "people")).toBe("Which days you recorded");
+    expect(actionLabel("getPersonDays", "api")).toBe("The days of someone who shares with you");
+    expect(
+      actionChoices.flatMap((group) => group.actions.map((choice) => choice.action)),
+    ).toContain("getPersonDays");
     expect(actionLabel("getPersonTrack", "people")).toBe("Your history");
     expect(actionLabel("getPersonTrack", "api")).toBe("The history of someone who shares with you");
     expect(actionLabel("mcp.get_timeline", "mcp")).toBe("Timeline");

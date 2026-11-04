@@ -7060,7 +7060,7 @@
                   "type": "integer",
                   "exclusiveMinimum": 0,
                   "maximum": 9007199254740991,
-                  "description": "Points recorded that day, inside the shared history.",
+                  "description": "Points recorded that day, inside the shared history: every recorded point counts, including ones the track leaves out as too inaccurate, so a day can show no track.",
                   "example": 1066
                 },
                 "firstAt": {
@@ -7085,7 +7085,7 @@
               ],
               "additionalProperties": false
             },
-            "description": "The days with points, oldest first, one entry per day and shared device. No positions."
+            "description": "The days with points, oldest first, one entry per day and shared device; at most one per day of the history (up to 365) and device. No positions."
           }
         },
         "required": [

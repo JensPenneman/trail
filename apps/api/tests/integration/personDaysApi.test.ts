@@ -199,6 +199,41 @@ describe("who may ask", () => {
     await days().expect(200);
   });
 
+  it("is a 404 for a share that was stopped or has expired, and no days for one without devices", async () => {
+    const share = async (email: string) =>
+      shareResponseSchema.parse(
+        (
+          await from(owner.agent, "post", apiPaths.v1.shares.root, {
+            email,
+            precision: "precise",
+            duration: "indefinitely",
+            deviceIds: [phone],
+            historyDays: 7,
+          }).expect(201)
+        ).body,
+      ).share.id;
+    const stopped = await account("stopped@allowed.test");
+    const expiring = await account("expiring@allowed.test");
+    const bare = await account("bare@allowed.test");
+    const stoppedId = await share(stopped.email);
+    const expiringId = await share(expiring.email);
+    const bareId = await share(bare.email);
+    // Its only device is gone (deleted): the share stays, with nothing to show.
+    await t.ctx.db.execute(
+      sql`UPDATE shares SET device_ids = ARRAY['0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60']::uuid[] WHERE id = ${bareId}`,
+    );
+    await days(stopped.agent).expect(200);
+    await days(expiring.agent).expect(200);
+    await from(owner.agent, "delete", apiPaths.v1.shares.one(stoppedId)).expect(204);
+    await days(stopped.agent).expect(404);
+    await t.ctx.db.execute(
+      sql`UPDATE shares SET expires_at = now() - interval '1 second' WHERE id = ${expiringId}`,
+    );
+    await days(expiring.agent).expect(404);
+    const empty = personDaysResponseSchema.parse((await days(bare.agent).expect(200)).body);
+    expect(empty.days).toEqual([]);
+  });
+
   it("follows a shorter history: one day shares fewer days", async () => {
     await from(owner.agent, "patch", apiPaths.v1.shares.one(shareId), { historyDays: 1 }).expect(
       200,

@@ -467,8 +467,11 @@ toggle, else the latest stop or move while it is recent) come along when
   (`timezone`), not in yours: that is where their daily totals are made, and
   everyone who looks sees the same days. The window runs from the day their
   history begins in, counted from the history's start on that first day (so
-  nothing older shows), to their today. The answer has an `ETag`. The people you look at see in their [access log](#access-log) that you
-  looked, when and at what — not from where or with which token.
+  nothing older shows), to their today. The points are all that were
+  recorded, including ones the track leaves out as too inaccurate, so a day
+  can be listed and show no track. The answer has an `ETag`. The people you
+  look at see in their [access log](#access-log) that you looked, when and at
+  what — not from where or with which token.
 - `GET`, `POST /api/v1/shares` and `PATCH`, `DELETE /api/v1/shares/{id}`
   manage your own shares: listing needs `shares:read`, stopping
   `shares:write`, starting and changing `shares:write` and `locations:read`.

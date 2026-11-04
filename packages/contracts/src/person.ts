@@ -207,7 +207,8 @@ export const personDaysResponseSchema = z
           date: localDateSchema.meta({ description: "A local day of theirs." }),
           deviceId: z.uuid().meta({ description: "One of their shared devices." }),
           points: z.number().int().positive().meta({
-            description: "Points recorded that day, inside the shared history.",
+            description:
+              "Points recorded that day, inside the shared history: every recorded point counts, including ones the track leaves out as too inaccurate, so a day can show no track.",
             example: 1066,
           }),
           firstAt: instant("The first of them."),
@@ -216,7 +217,7 @@ export const personDaysResponseSchema = z
       )
       .meta({
         description:
-          "The days with points, oldest first, one entry per day and shared device. No positions.",
+          "The days with points, oldest first, one entry per day and shared device; at most one per day of the history (up to 365) and device. No positions.",
       }),
   })
   .meta({
