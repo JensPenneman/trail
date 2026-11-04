@@ -1,6 +1,10 @@
 import type { PlaceSummary } from "@trail/contracts/insights";
 import type { Formatter } from "../../format/createFormatter";
 
+/** "9 visits", "1 visit". */
+export const visitsText = (visits: number, count: (value: number) => string): string =>
+  `${count(visits)} ${visits === 1 ? "visit" : "visits"}`;
+
 /** Within this a place is the stop; within the next, near it (metres). */
 const atStopM = 30;
 

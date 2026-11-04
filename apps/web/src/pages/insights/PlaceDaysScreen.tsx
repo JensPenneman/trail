@@ -10,7 +10,7 @@ import { InsightsHero } from "./InsightsHero";
 import { InsightsScreen } from "./InsightsScreen";
 import { dayOnMap, insightsLink, placeLink } from "./insightsLinks";
 import { periodPhrase } from "./insightsPeriod";
-import { placeLabel } from "./placeLabel";
+import { placeLabel, visitsText } from "./placeLabel";
 import { usePlace } from "./usePlace";
 import "./PlaceDaysScreen.css";
 
@@ -20,11 +20,16 @@ import "./PlaceDaysScreen.css";
  * come into view.
  */
 export function PlaceDaysScreen() {
-  const { state, key, query } = usePlace();
+  const { state, key, query, listed } = usePlace();
   const format = useFormatter();
   const data = query.data;
   const place = data?.place ?? null;
-  const name = place === null ? "Place" : placeLabel(place, format).title;
+  const name =
+    place !== null
+      ? placeLabel(place, format).title
+      : listed === undefined
+        ? "Place"
+        : placeLabel(listed, format).title;
   const places = insightsLink("/insights/places", state.params);
   const up = {
     to: key === null ? places : placeLink("/insights/place", state.params, key),
@@ -95,7 +100,7 @@ export function PlaceDaysScreen() {
                   kind="away"
                   to={dayOnMap(day.date)}
                   label={format.day(day.date)}
-                  value={`${format.duration(day.durationS)} · ${day.visits} ${day.visits === 1 ? "visit" : "visits"}`}
+                  value={`${format.duration(day.durationS)} · ${visitsText(day.visits, format.count)}`}
                 />
               ))}
             </SettingsGroup>

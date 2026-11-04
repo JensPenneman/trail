@@ -4335,11 +4335,14 @@ security ones too.
   without map data, on both projects: the summary with the list beside it
   or after the chart, units and steps of the period and a custom range in
   its popover, an old `7d` address, a chart by keyboard — one tab stop, arrow
-  keys, the tooltip and Escape —, a mode's screen from its row and the way
+  keys, the tooltip and Escape —, places (a stay worked out into a place, named
+  "Unnamed place" without map data, then the place, its days and a day in
+  History, and focus back on the row of the place), a mode's screen from its row and the way
   back to the row, its Speed, When, Roads and Longest moves (a move opening
   History's dialog), the old When address with a mode redirecting, roads
   without map data, axe
-  on every screen and the open popover, and every screen at 320 px), the access log with what the server really recorded
+  on every screen and the open popover, and every screen — Places, a place and
+  its days included — at 320 px), the access log with what the server really recorded
   (`accessLog.spec.ts`: someone with a precise share and history reads your
   track in their browser and is under People with the sentence the summary's
   numbers make, on their page hour by hour and on the share's page; a public

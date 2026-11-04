@@ -1118,6 +1118,136 @@ describe("places", () => {
     );
   });
 
+  it("names the place in its title from the list it came from, before its own answer is there", async () => {
+    const browser = userEvent.setup();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+    mockApi({
+      ...placeRoutes(),
+      "GET /api/v1/insights/place": async () => {
+        await held;
+        return { status: 200, body: placeAnswer() };
+      },
+    });
+    renderInsights("/insights/places?period=2026-10");
+    await browser.click(await screen.findByRole("link", { name: /^Near Korenmarkt / }));
+    // The answer is held: the title that takes focus is already the name.
+    const title = await screen.findByRole("heading", { level: 1, name: "Near Korenmarkt" });
+    await waitFor(() => expect(title).toHaveFocus());
+    release();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Gent-Sint-Pieters" }),
+    ).toBeVisible();
+  });
+
+  it("numbers the places of the chart that are called the same", async () => {
+    const [first, , , unnamed] = placesAnswer().places;
+    if (first === undefined || unnamed === undefined) throw new Error("no places");
+    mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/places": {
+        status: 200,
+        body: placesAnswer({
+          places: [unnamed, { ...unnamed, key: "134500.89300" }, first],
+        }),
+      },
+    });
+    renderInsights("/insights/places?period=2026-10");
+    const chart = await screen.findByRole("figure", { name: "Time at your top places" });
+    expect(within(chart).getByRole("img", { name: "Unnamed place" })).toBeInTheDocument();
+    expect(within(chart).getByRole("img", { name: "Unnamed place (2)" })).toBeInTheDocument();
+  });
+
+  it("says first and last here as facts", async () => {
+    mockApi(placeRoutes());
+    renderInsights(`/insights/place?period=2026-10&place=${placeKeys.station}`);
+    const first = await screen.findByText("First here");
+    expect(first.tagName).toBe("DT");
+    expect(first.closest("dl")).toHaveTextContent(/Last here/);
+  });
+
+  it("keeps the key of the address when the answer's place is another cell's: the days and the way back use it", async () => {
+    const folded = "134218.89013";
+    mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/place": {
+        status: 200,
+        // The place the address's cell was folded into: another key, the same place.
+        body: placeAnswer(),
+      },
+    });
+    renderInsights(`/insights/place?period=2026-10&place=${folded}`);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Gent-Sint-Pieters" }),
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "All 9 days" })).toHaveAttribute(
+      "href",
+      `/insights/place/days?period=2026-10&place=${folded}`,
+    );
+    expect(screen.getByRole("heading", { name: "Days" })).toBeVisible();
+  });
+
+  it("goes back from the days to the place with the key of the address", async () => {
+    const folded = "134218.89013";
+    mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/place": { status: 200, body: placeAnswer() },
+    });
+    renderInsights(`/insights/place/days?period=2026-10&place=${folded}`);
+    expect(await screen.findByRole("link", { name: "Back to Gent-Sint-Pieters" })).toHaveAttribute(
+      "href",
+      `/insights/place?period=2026-10&place=${folded}`,
+    );
+  });
+
+  it.each([
+    [
+      "Places",
+      "/insights/places?period=2026-10",
+      "GET /api/v1/insights/places",
+      () => placesAnswer({ pending: true }),
+    ],
+    [
+      "a place",
+      `/insights/place?period=2026-10&place=${placeKeys.station}`,
+      "GET /api/v1/insights/place",
+      () => placeAnswer({ pending: true }),
+    ],
+  ])("says so while processing catches up: %s", async (_what, url, route, body) => {
+    mockApi({ ...octoberRoutes(), [route]: { status: 200, body: body() } });
+    renderInsights(url);
+    expect(await screen.findByText("Processing is still catching up")).toBeVisible();
+  });
+
+  it.each([
+    [
+      "Places",
+      "/insights/places?period=2026-10",
+      "GET /api/v1/insights/places",
+      () => placesAnswer(),
+    ],
+    [
+      "a place",
+      `/insights/place?period=2026-10&place=${placeKeys.station}`,
+      "GET /api/v1/insights/place",
+      () => placeAnswer(),
+    ],
+  ])("asks again when %s could not be loaded", async (_what, url, route, body) => {
+    const browser = userEvent.setup();
+    let failing = true;
+    mockApi({
+      ...octoberRoutes(),
+      [route]: () => (failing ? { status: 500, body: {} } : { status: 200, body: body() }),
+    });
+    renderInsights(url);
+    expect(await screen.findByText("Insights could not be loaded")).toBeVisible();
+    failing = false;
+    await browser.click(screen.getByRole("button", { name: /retry|try again/i }));
+    await waitFor(() => expect(screen.queryByText("Insights could not be loaded")).toBeNull());
+  });
+
   it("goes back to the row of the place among the others, with focus there", async () => {
     const browser = userEvent.setup();
     mockApi(placeRoutes());

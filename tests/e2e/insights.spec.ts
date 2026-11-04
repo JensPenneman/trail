@@ -355,6 +355,10 @@ test("Insights: places, a place and its days, and the day in History", async ({
   const tiles = page.getByRole("group", { name: "Totals" });
   await expect(tiles).toContainText(/\d+ visits?/);
   await expect(page.getByRole("figure", { name: "Time at your top places" })).toBeVisible();
+  // This server has no map data, so nothing names the place: its coordinates tell it.
+  await expect(
+    page.getByRole("region", { name: "Places" }).getByText("Unnamed place").first(),
+  ).toBeVisible();
   await expectAccessible(page, "Places");
 
   // A place: the title takes focus; its days lead to History.
@@ -411,6 +415,45 @@ test("Insights: places, a place and its days, and the day in History", async ({
 
 test.describe("on a 320 px wide screen", () => {
   test.use({ viewport: { width: 320, height: 640 } });
+
+  test("Places, a place and its days fit and stay accessible", async ({ page, account }) => {
+    test.slow();
+    expect(account.timezone).toBe("Europe/Brussels");
+    await uploadedDevice(page, "Narrow stayer", stayAndWalk());
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get("/api/v1/insights/places");
+          const body = (await response.json()) as { totals?: { places?: number } };
+          return body.totals?.places ?? 0;
+        },
+        { timeout: 45_000, intervals: [1_000] },
+      )
+      .toBeGreaterThan(0);
+    const { month } = await journeyPeriods(page);
+    await page.goto(`/insights/places?period=${month}`);
+    // Nothing names the place without map data: its coordinates, which are the widest row.
+    await expect(page.getByText("Unnamed place").first()).toBeVisible();
+    await page
+      .getByRole("link", { name: /^Unnamed place/ })
+      .first()
+      .click();
+    await expect(page).toHaveURL(/\/insights\/place\?period=[\d-]+&place=\d+\.\d+$/);
+    const key = new URL(page.url()).searchParams.get("place") ?? "";
+    for (const [path, heading] of [
+      [`/insights/places?period=${month}`, "Places"],
+      [`/insights/place?period=${month}&place=${key}`, "Unnamed place"],
+      [`/insights/place/days?period=${month}&place=${key}`, "Days"],
+    ] as const) {
+      await page.goto(path);
+      await expect(
+        page.getByRole("heading", { level: 1, name: heading, exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole("group", { name: "Totals" })).toBeVisible();
+      expect(await overflow(page), path).toBe(0);
+      await expectAccessible(page, `${path} at 320 px`);
+    }
+  });
 
   test("Insights fit and stay accessible", async ({ page, account }) => {
     test.slow();

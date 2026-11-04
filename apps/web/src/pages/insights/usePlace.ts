@@ -1,5 +1,7 @@
-import { placeKeySchema } from "@trail/contracts/insights";
+import { useQueryClient } from "@tanstack/react-query";
+import { type InsightsPlaces, placeKeySchema } from "@trail/contracts/insights";
 import { useSearchParams } from "react-router";
+import { queryKeys } from "../../api/queryKeys";
 import { useInsightsPlace } from "../../queries/useInsightsPlace";
 import { useInsightsPeriod } from "./useInsightsPeriod";
 
@@ -14,5 +16,10 @@ export function usePlace() {
   const parsed = placeKeySchema.safeParse(params.get("place"));
   const key = parsed.success ? parsed.data : null;
   const query = useInsightsPlace(key, state.query());
-  return { state, key, query };
+  // The list of places the person came from, if it is at hand: it names the place before its own
+  // answer has come, so the title that takes focus on opening is the name and not "Place".
+  const listed = useQueryClient()
+    .getQueryData<InsightsPlaces>(queryKeys.insightsPlaces(state.query()))
+    ?.places.find((place) => place.key === key);
+  return { state, key, query, listed };
 }

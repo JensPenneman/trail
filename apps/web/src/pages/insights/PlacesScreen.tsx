@@ -15,14 +15,11 @@ import { axisFormats } from "./insightsFormat";
 import { insightsRootPath } from "./insightsLevels";
 import { insightsLink, placeLink } from "./insightsLinks";
 import { periodPhrase } from "./insightsPeriod";
-import { placeLabel } from "./placeLabel";
+import { placeLabel, visitsText } from "./placeLabel";
 import { useInsightsPeriod } from "./useInsightsPeriod";
 
 /** The chart shows the places that stand out; the rows below list them all. */
 const chartPlaces = 8;
-
-const visitsText = (visits: number, count: (value: number) => string) =>
-  `${count(visits)} ${visits === 1 ? "visit" : "visits"}`;
 
 /**
  * Places (`/insights/places`): where the stops of the period add up — how many
@@ -105,11 +102,19 @@ function PlacesChart({
   axes: ReturnType<typeof axisFormats>;
 }) {
   const format = useFormatter();
-  const rows = data.places.slice(0, chartPlaces).map((place) => ({
-    key: place.key,
-    label: placeLabel(place, format).title,
-    values: [place.durationS],
-  }));
+  // Two places can be called the same ("Unnamed place", "Near X"): the chart has no row to tell them
+  // by, so the later ones are numbered.
+  const seen = new Map<string, number>();
+  const rows = data.places.slice(0, chartPlaces).map((place) => {
+    const title = placeLabel(place, format).title;
+    const count = (seen.get(title) ?? 0) + 1;
+    seen.set(title, count);
+    return {
+      key: place.key,
+      label: count === 1 ? title : `${title} (${count})`,
+      values: [place.durationS],
+    };
+  });
   return (
     <BarChart
       title="Time at your top places"

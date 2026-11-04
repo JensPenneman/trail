@@ -12,6 +12,7 @@ import {
   speedFact,
   whenFact,
 } from "../src/pages/insights/modeFacts";
+import { placeLabel } from "../src/pages/insights/placeLabel";
 import { modeInsights } from "./support/insightsFixtures";
 
 const format = createFormatter("en-GB", "Europe/Brussels");
@@ -175,5 +176,37 @@ describe("the facts on a mode's rows", () => {
     expect(placeLink("/insights/place/days", new URLSearchParams(), "1.2")).toBe(
       "/insights/place/days?place=1.2",
     );
+  });
+});
+
+describe("what a place is called", () => {
+  const centre: [number, number] = [3.7104, 51.0362];
+  const stop = (distanceM: number) => ({
+    centre,
+    name: { text: "Korenmarkt", source: "stop" as const, kind: "tram_stop" as const, distanceM },
+  });
+
+  it.each([
+    [0, "Korenmarkt"],
+    [12, "Korenmarkt"],
+    // The stop itself up to 30 m; near it from there to 150 m.
+    [30, "Korenmarkt"],
+    [31, "Near Korenmarkt"],
+    [150, "Near Korenmarkt"],
+  ])("a stop %i m away is %s", (distanceM, title) => {
+    expect(placeLabel(stop(distanceM), format)).toEqual({ title, detail: null });
+  });
+
+  it("is the road where a stay was on one, and the coordinates where there is no name", () => {
+    expect(
+      placeLabel(
+        { centre, name: { text: "Kerkstraat", source: "road", kind: null, distanceM: 0 } },
+        format,
+      ),
+    ).toEqual({ title: "Kerkstraat", detail: null });
+    expect(placeLabel({ centre, name: null }, format)).toEqual({
+      title: "Unnamed place",
+      detail: "51.0362° N, 3.7104° E",
+    });
   });
 });

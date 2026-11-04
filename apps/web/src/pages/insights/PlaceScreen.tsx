@@ -3,7 +3,7 @@ import { BarChart } from "../../charts/BarChart";
 import { describeExtremes } from "../../charts/summaries";
 import { useFormatter } from "../../format/useFormatter";
 import { SettingsGroup } from "../../settings/SettingsGroup";
-import { SettingsRow } from "../../settings/SettingsRow";
+import { SettingsFact, SettingsRow } from "../../settings/SettingsRow";
 import { EmptyState } from "../../ui/EmptyState";
 import { ErrorState } from "../../ui/ErrorState";
 import { LinkButton } from "../../ui/LinkButton";
@@ -15,14 +15,11 @@ import { InsightsScreen } from "./InsightsScreen";
 import { axisFormats } from "./insightsFormat";
 import { dayOnMap, insightsLink, placeLink } from "./insightsLinks";
 import { periodPhrase } from "./insightsPeriod";
-import { placeLabel } from "./placeLabel";
+import { placeLabel, visitsText } from "./placeLabel";
 import { usePlace } from "./usePlace";
 
 /** The days listed on the place's own screen; the rest are behind "All N days". */
 const latestDays = 7;
-
-const visitsText = (visits: number, count: (value: number) => string) =>
-  `${count(visits)} ${visits === 1 ? "visit" : "visits"}`;
 
 /**
  * One place (`/insights/place?place=`): the time spent there in the period,
@@ -31,13 +28,13 @@ const visitsText = (visits: number, count: (value: number) => string) =>
  * to that place; the address keeps the key it was given.
  */
 export function PlaceScreen() {
-  const { state, key, query } = usePlace();
+  const { state, key, query, listed } = usePlace();
   const format = useFormatter();
   const axes = useMemo(() => axisFormats(format), [format]);
   const data = query.data;
   const place = data?.place ?? null;
   const label = place === null ? null : placeLabel(place, format);
-  const title = label?.title ?? "Place";
+  const title = label?.title ?? (listed === undefined ? "Place" : placeLabel(listed, format).title);
   const up = {
     to: insightsLink("/insights/places", state.params),
     label: "Places",
@@ -128,17 +125,13 @@ export function PlaceScreen() {
                   : "Month"
             }
           />
-          <SettingsGroup>
-            <SettingsRow
-              kind="plain"
-              label="First here"
-              value={format.dateTime(query.data.place.firstAt)}
-            />
-            <SettingsRow
-              kind="plain"
-              label="Last here"
-              value={format.dateTime(query.data.place.lastAt)}
-            />
+          <SettingsGroup variant="facts">
+            <SettingsFact label="First here">
+              {format.dateTime(query.data.place.firstAt)}
+            </SettingsFact>
+            <SettingsFact label="Last here">
+              {format.dateTime(query.data.place.lastAt)}
+            </SettingsFact>
           </SettingsGroup>
           <SettingsGroup title="Days">
             {query.data.days.slice(0, latestDays).map((day) => (
