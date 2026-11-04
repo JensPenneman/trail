@@ -3207,6 +3207,14 @@ count among them, since they lead to signed-in pages.
     by mode in the modes' fixed order, past seven modes the smallest folding
     into "Other modes" (`foldModes`). No moves: "No moves in October 2026",
     the patterns stay.
+    Under it the group "On the map" has one away row, "Where you spent time",
+    which opens the People map in Heat with the period and devices of the
+    screen (`insightsLens.ts`: `/?view=heat&heat=time&from=F&to=T[&devices=…]`,
+    a current period to today, all of the history without `from` and `to`) as a
+    new step of the history. The map's chip that names the lens and the Back
+    that returns here belong to the heat view; a mode's "Where you went" and a
+    place's "Show on the map" wait for its second slice and for the map's
+    camera parameter.
   - **A mode** (`/insights/transport/:mode`) — the mode's distance (time,
     moves, typical speed beneath) against the same mode in the period before,
     the distance over the period as a line, and rows to its parts, each with

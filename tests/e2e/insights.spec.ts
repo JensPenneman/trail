@@ -149,6 +149,22 @@ test("Insights: the summary, its period, a mode, when you travel and roads", asy
   }
   await expectAccessible(page, "the Insights summary");
 
+  // Where the time went: the People map opens in Heat with the period; Back comes here again.
+  await page.getByRole("link", { name: "Where you spent time" }).click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === "/" &&
+      url.searchParams.get("view") === "heat" &&
+      url.searchParams.get("heat") === "time" &&
+      url.searchParams.get("from") === `${month}-01`,
+  );
+  await expect(
+    page.getByRole("group", { name: "Map view" }).getByRole("radio", { name: "Heat" }),
+  ).toBeChecked();
+  await page.goBack();
+  await expect(page).toHaveURL(here("/insights"));
+  await expect(page.getByRole("heading", { level: 1, name: "Insights" })).toBeVisible();
+
   // A chart by keyboard: one tab stop, the arrow keys move along its marks.
   await page.getByRole("radio", { name: "Month" }).focus();
   for (let step = 0; step < 8; step += 1) {
