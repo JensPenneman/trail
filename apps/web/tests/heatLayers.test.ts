@@ -85,13 +85,17 @@ describe("ensureTrailLayers in OpenFreeMap's styles", () => {
       const namesBelow = layers.filter((layer, index) => index < last && isText(layer));
       expect(shapesAbove.map((layer) => layer.id)).toEqual([]);
       expect(namesBelow.map((layer) => layer.id)).toEqual([]);
-      // Heat stays the lowest of them, circles stay on top.
+      // Heat stays the lowest of them, circles stay above everything else.
       expect(layers[first]?.id).toBe("trail-heat");
-      expect(layers.at(-1)?.type).toBe("circle");
+      expect(layers.slice(-3).map((layer) => layer.id)).toEqual([
+        "trail-transport-stops",
+        "trail-visits",
+        "trail-cursors",
+      ]);
     });
   }
 
-  it("keeps the order when called again, also after the style toggled to dark", () => {
+  it("keeps the order when called again, also with the theme flipped", () => {
     const layers: FakeLayer[] = asStyleLayers(darkLayers);
     const map = fakeMap(layers);
     ensureTrailLayers(map, false);
@@ -99,6 +103,41 @@ describe("ensureTrailLayers in OpenFreeMap's styles", () => {
     ensureTrailLayers(map, true);
     ensureTrailLayers(map, true);
     expect(layers.map((layer) => layer.id)).toEqual(once);
+  });
+
+  it("places everything again after the style is swapped for the other one", () => {
+    const layers: FakeLayer[] = asStyleLayers(libertyLayers);
+    ensureTrailLayers(fakeMap(layers), false);
+    // A new style drops Trail's layers and sources; the map object stays.
+    layers.splice(0, layers.length, ...asStyleLayers(darkLayers));
+    ensureTrailLayers(fakeMap(layers), true);
+
+    const trail = layers.flatMap((layer, index) => (isTrailShape(layer) ? [index] : []));
+    const first = Math.min(...trail);
+    const last = Math.max(...trail);
+    expect(
+      layers.filter(
+        (layer, index) =>
+          index > first && !layer.id.startsWith("trail-") && layer.type !== "symbol",
+      ),
+    ).toEqual([]);
+    expect(layers.filter((layer, index) => index < last && isText(layer))).toEqual([]);
+    expect(layers.filter((layer) => layer.id.startsWith("trail-heat"))).toHaveLength(1);
+  });
+
+  it("raises the names under the circles when the style ends in a shape", () => {
+    const layers: FakeLayer[] = [
+      { id: "names", type: "symbol", layout: { "text-field": "{name}" } },
+      { id: "ground", type: "fill" },
+    ];
+    ensureTrailLayers(fakeMap(layers), false);
+    expect(layers.at(-1)?.id).toBe("trail-cursors");
+    expect(layers.findIndex((layer) => layer.id === "names")).toBeLessThan(
+      layers.findIndex((layer) => layer.id === "trail-transport-stops"),
+    );
+    expect(layers.findIndex((layer) => layer.id === "names")).toBeGreaterThan(
+      layers.findIndex((layer) => layer.id === "trail-transport-line"),
+    );
   });
 
   it("puts everything on top of a raster style", () => {

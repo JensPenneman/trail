@@ -12,14 +12,14 @@ const showsText = (layer: StyleLayer): boolean =>
   "text-field" in layer.layout;
 
 /**
- * Where Trail's fills and lines (the heatmap's squares, tracks, transport) go in a style (docs/architecture.md §14): over
- * every area, road, building and boundary, which would cut them apart,
- * and under every name. `beforeId` is the layer to add them below — the first
- * of the symbols after the style's last layer that is not one (none: on top);
- * `raise` the names a style draws earlier, to be moved over them in
- * their order (OpenFreeMap's dark style draws its water names under its
- * buildings and its road names under its boundaries). Trail's own layers are
- * left out.
+ * Where Trail's fills and lines (the heatmap's squares, tracks, transport) go
+ * in a style (docs/architecture.md §14): over every area, road, building and
+ * boundary, which would cut them apart, and under every name. `beforeId` is
+ * the layer to add them below — the first of the symbols after the style's
+ * last layer that is not one (none: on top); `raise` the names a style draws
+ * earlier, to be moved over them in their order (OpenFreeMap's dark style
+ * draws its water names under its buildings and its road names under its
+ * boundaries). Trail's own layers are left out.
  */
 export function dataLayerPlacement(layers: readonly StyleLayer[]): {
   beforeId: string | undefined;

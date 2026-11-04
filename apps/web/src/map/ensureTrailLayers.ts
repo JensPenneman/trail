@@ -261,6 +261,11 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
   map.setPaintProperty("trail-cursors", "circle-stroke-color", surface);
 
   // Last, once Trail's other layers are in: the names a style draws under its roads and
-  // boundaries go over Trail's fills and lines. Only on a fresh style, so a repeat call moves nothing.
-  if (fresh) for (const id of placement.raise) map.moveLayer(id, placement.beforeId);
+  // boundaries go over Trail's fills and lines, but under the circles (a style whose last
+  // layer is a shape has no `beforeId`). Only on a fresh style, so a repeat call moves nothing.
+  if (fresh) {
+    for (const id of placement.raise) {
+      map.moveLayer(id, placement.beforeId ?? "trail-transport-stops");
+    }
+  }
 }
