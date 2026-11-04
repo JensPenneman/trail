@@ -166,12 +166,27 @@ test("on a phone the sheet scrolls over a map that stays, with its detents", asy
     return marker + window.scrollY - padding;
   };
   expect(await page.evaluate(detent)).toBeGreaterThan(0);
-  // Lifted to the half detent at least (it may rest a little above while the content settles).
-  await page.waitForFunction(() => {
-    const marker = document.querySelector("[data-detent=half]")?.getBoundingClientRect().top ?? 0;
-    const padding = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop);
-    return window.scrollY >= marker + window.scrollY - padding - 3;
-  });
+  // The page settles (the content loads and the sheet re-snaps), and the sheet rests on the half
+  // detent, not higher: a lift to the top would be the focus scrolling the heading into view.
+  let at = -1;
+  let height = -1;
+  let steady = 0;
+  await expect
+    .poll(
+      async () => {
+        const now = await page.evaluate(() => [
+          window.scrollY,
+          document.documentElement.scrollHeight,
+        ]);
+        steady = now[0] === at && now[1] === height ? steady + 1 : 0;
+        at = now[0] ?? -1;
+        height = now[1] ?? -1;
+        return steady >= 4;
+      },
+      { intervals: [250] },
+    )
+    .toBe(true);
+  expect(Math.abs(at - (await page.evaluate(detent)))).toBeLessThan(3);
 });
 
 test("the controls and the zoom buttons clear each other on a 375 px screen", async ({

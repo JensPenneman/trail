@@ -71,23 +71,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.person-details__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.person-details__back {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: var(--target);
-  padding: 0 var(--space-2);
-  color: var(--color-text-2);
-  font-size: var(--text-s);
-}
-
 .person-details__more {
   display: inline-flex;
   align-items: center;

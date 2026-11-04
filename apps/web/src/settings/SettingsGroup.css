@@ -389,6 +389,14 @@
   min-width: 0;
 }
 
+@media (forced-colors: active) {
+  .settings-group__toggle:hover,
+  .settings-group__toggle:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .settings-group__chevron {
     transition: none;

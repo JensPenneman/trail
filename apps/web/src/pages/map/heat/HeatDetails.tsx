@@ -8,7 +8,6 @@ import { addDays } from "../../../time/addDays";
 import { Button } from "../../../ui/Button";
 import { ErrorState } from "../../../ui/ErrorState";
 import { LoadingBlock } from "../../../ui/LoadingBlock";
-import { Notice } from "../../../ui/Notice";
 import { PlainList } from "../../../ui/PlainList";
 import { SectionTitle } from "../../../ui/SectionTitle";
 import { Skeleton } from "../../../ui/Skeleton";
@@ -30,7 +29,8 @@ interface HeatDetailsProps {
 /**
  * What Heat says in numbers, in Me's "Heat" group: the totals (points ever
  * recorded; days, distance and earliest day of the last 12 months) and the
- * busiest places in view. It is rendered only while the group is open, so the
+ * busiest places in view. (Whether the heatmap could be loaded, or is cut to its
+ * busiest places, is said at the map's foot, whoever is selected.) It is rendered only while the group is open, so the
  * 12-month request is made only then.
  */
 export function HeatDetails({ devices, deviceIds, today, heatmap, onShow }: HeatDetailsProps) {
@@ -61,20 +61,6 @@ export function HeatDetails({ devices, deviceIds, today, heatmap, onShow }: Heat
 
   return (
     <>
-      {heatmap.isError ? (
-        <ErrorState
-          title="The heatmap could not be loaded"
-          error={heatmap.error}
-          onRetry={() => void heatmap.refetch()}
-          retrying={heatmap.isFetching}
-        />
-      ) : null}
-      {heatmap.data?.truncated === true ? (
-        <Notice tone="info" title="Showing the busiest places only">
-          <p>This view holds more cells than one map can draw. Zoom in to see every place.</p>
-        </Notice>
-      ) : null}
-
       <section className="section" aria-labelledby={totalsId}>
         <SectionTitle id={totalsId}>Totals</SectionTitle>
         {devices.isPending || days.isPending ? (

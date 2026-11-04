@@ -111,7 +111,7 @@ export function DayTimeline({
         <ErrorState title="The timeline could not be loaded" error={error} onRetry={onRetry} />
       ) : (segments ?? []).length === 0 ? (
         <div className="card">
-          <EmptyState icon="route" title="No stops or moves yet" nested>
+          <EmptyState icon="route" title="No stops or moves yet" nested={regionLabel === undefined}>
             <p>
               Trail works out where you stopped and how you travelled shortly after the points
               arrive.

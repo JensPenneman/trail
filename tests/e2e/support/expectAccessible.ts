@@ -18,7 +18,9 @@ export async function expectAccessible(
   { keepScroll = false }: { keepScroll?: boolean } = {},
 ): Promise<void> {
   // On phones the page is scanned with the sheet at its peek, as a person first sees it: a sheet
-  // that happens to be half lifted covers the map's controls and the header's links partly.
+  // that happens to be half lifted covers the map's controls and the header's links partly. The
+  // scroll is put back afterwards, so the scan changes nothing for the steps that follow.
+  const before = await page.evaluate(() => window.scrollY);
   if (!keepScroll) await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForFunction(() =>
     document
@@ -36,5 +38,6 @@ export async function expectAccessible(
     help: violation.help,
     nodes: violation.nodes.map((node) => `${node.target.join(" ")}: ${node.failureSummary ?? ""}`),
   }));
+  if (!keepScroll && before > 0) await page.evaluate((y) => window.scrollTo(0, y), before);
   expect(violations, `accessibility of ${what}`).toEqual([]);
 }

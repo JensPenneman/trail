@@ -100,6 +100,10 @@ export function PeoplePage() {
   const sharing = useSharingActions(people.data ?? []);
   // What the people are searched for: kept here, so going to someone's page and back keeps it.
   const [query, setQuery] = useState("");
+  // The folded groups that are open, kept here so that a level of a page and back finds them.
+  const [openGroups, setOpenGroups] = useState<Readonly<Record<string, boolean>>>({
+    "me:Timeline": true,
+  });
 
   const available = useMemo<MapPerson[]>(
     () => [
@@ -283,6 +287,23 @@ export function PeoplePage() {
       document.querySelector<HTMLElement>("[data-play]")?.focus({ preventScroll: true });
     }
   }, [playing, wide]);
+
+  // Beside the map History's foot floats over the map's bottom-left corner too: the key of what
+  // the map draws stacks above it (`--foot-height`).
+  const hasFoot = content.foot !== null;
+  useEffect(() => {
+    const page = stage.current?.closest<HTMLElement>(".map-page");
+    const element = stage.current?.querySelector<HTMLElement>(".map-page__foot");
+    if (!hasFoot || page == null || element == null || !wide) return undefined;
+    const publish = () => page.style.setProperty("--foot-height", `${element.offsetHeight}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      page.style.removeProperty("--foot-height");
+    };
+  }, [wide, hasFoot]);
   const toTop = () => {
     if (panel.current !== null) panel.current.scrollTop = 0;
   };
@@ -437,6 +458,11 @@ export function PeoplePage() {
         content={content}
         period={wherePeriod}
         sharing={sharing}
+        groups={{
+          isOpen: (title) => openGroups[`${selectedKey ?? ""}:${title}`] === true,
+          set: (title, open) =>
+            setOpenGroups((current) => ({ ...current, [`${selectedKey ?? ""}:${title}`]: open })),
+        }}
         onLeave={leavePerson}
       />
       {sharing.dialogs}

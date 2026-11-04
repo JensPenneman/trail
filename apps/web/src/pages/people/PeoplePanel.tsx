@@ -10,6 +10,7 @@ import { PageHeader } from "../../ui/PageHeader";
 import type { MapViewContent } from "../map/MapViewContent";
 import { me } from "../map/me";
 import { DevicesLevel } from "./DevicesLevel";
+import type { Groups } from "./groupState";
 import { HiddenPeople } from "./HiddenPeople";
 import { MePage } from "./MePage";
 import { PeopleRoot } from "./PeopleRoot";
@@ -52,6 +53,8 @@ interface PeoplePanelProps {
   content: MapViewContent;
   period: WhereTheyveBeenPeriod | null;
   sharing: SharingActions;
+  /** Which folded groups of the page shown are open. */
+  groups: Groups;
   onLeave: (key: string) => void;
 }
 
@@ -82,6 +85,7 @@ export function PeoplePanel({
   content,
   period,
   sharing,
+  groups,
   onLeave,
 }: PeoplePanelProps) {
   const readOnly = useReadOnly();
@@ -142,6 +146,7 @@ export function PeoplePanel({
             thresholds={thresholds}
             content={content}
             sharing={sharing}
+            groups={groups}
           />
         ) : (
           <PersonPage
@@ -154,6 +159,7 @@ export function PeoplePanel({
             content={content}
             period={period}
             sharing={sharing}
+            groups={groups}
             foot={foot}
             onLeave={onLeave}
           />

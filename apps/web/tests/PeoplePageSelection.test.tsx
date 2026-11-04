@@ -3,11 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { paramsOf } from "./support/addressParams";
-import { ana, bob, ids, tracks, user } from "./support/fixtures";
+import { ana, bob, ids, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { openGroup } from "./support/openGroup";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
+import { anaWithHistory, trackOfAna, withHistoryOfAna } from "./support/withHistoryOfAna";
 
 vi.mock("../src/map/LazyTrailMap", async () => ({
   LazyTrailMap: (await import("./support/mapStub")).MapStub,
@@ -34,24 +35,6 @@ async function whereBeen(name: string): Promise<HTMLElement> {
 }
 const tracksAsked = (api: { calls: { path: string }[] }) =>
   api.calls.filter((call) => /^\/api\/(v1\/)?tracks$|\/track$/.test(call.path));
-/** Ana shares precisely with seven days of history; bob approximately, live only. */
-const anaWithHistory = () => ana({ share: { ...ana().share, historyDays: 7 } });
-const trackOfAna = ({ url }: { url: URL }) => {
-  const answer = tracks(url.searchParams.get("from") ?? "", url.searchParams.get("to") ?? "");
-  return {
-    status: 200,
-    body: {
-      ...answer,
-      tracks: answer.tracks.map((track) => ({ ...track, deviceId: ids.anaPhone })),
-    },
-  };
-};
-const withHistoryOfAna = () => ({
-  ...standardRoutes(),
-  "GET /api/v1/people": { status: 200, body: { people: [anaWithHistory(), bob()] } },
-  [`GET /api/v1/people/${ids.ana}/track`]: trackOfAna,
-});
-
 describe("the overview, nobody selected", () => {
   it("shows everyone's position and asks for no track, level or timeline at all", async () => {
     const api = mockApi(withHistoryOfAna());
