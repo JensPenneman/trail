@@ -16,6 +16,10 @@ const round = (value: number, digits = 3): number => {
   return Math.round(value * factor) / factor;
 };
 
+/** A way counts in a move's totals from this many metres, and at most this many ways are kept. */
+const minWayM = 25;
+const maxWayTotals = 64;
+
 /** The position of `other` in `wayKinds`, which a point without a way kind counts towards. */
 const otherKind = wayKinds.indexOf("other");
 
@@ -69,6 +73,7 @@ export function extractFeatures(
   const weights: number[] = [];
   const shares = emptyShares();
   const kindDistances = new Float64Array(wayKinds.length);
+  const wayDistances = new Map<number, number>();
   let sharedDistance = 0;
   let nearTram = 0;
   let nearCycleway = 0;
@@ -95,6 +100,9 @@ export function extractFeatures(
       const to = series.wayKindAt[k] ?? otherKind;
       kindDistances[from] = (kindDistances[from] ?? 0) + half;
       kindDistances[to] = (kindDistances[to] ?? 0) + half;
+      for (const id of [series.wayIdAt[k - 1] ?? 0, series.wayIdAt[k] ?? 0]) {
+        if (id > 0) wayDistances.set(id, (wayDistances.get(id) ?? 0) + half);
+      }
       sharedDistance += distance;
     }
     nearTram += half * ((series.nearTram[k - 1] ?? 0) + (series.nearTram[k] ?? 0));
@@ -146,6 +154,15 @@ export function extractFeatures(
     ways = emptyShares();
   }
   const kinds = series.mapped ? kindShares(kindDistances, sharedDistance) : null;
+  // The metres on each way, most first; short stretches (a crossing, a snap to a side road) and
+  // all but the longest 64 are left out.
+  const wayTotals = series.mapped
+    ? [...wayDistances]
+        .filter(([, metres]) => metres >= minWayM)
+        .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+        .slice(0, maxWayTotals)
+        .map(([id, metres]) => [id, round(metres, 1)] as const)
+    : null;
 
   let dwells: StopCounts | null = null;
   let ends: StopCounts | null = null;
@@ -240,6 +257,7 @@ export function extractFeatures(
     accelerationVariance,
     ways,
     wayKinds: kinds,
+    wayTotals,
     near: hasMap
       ? { tram: nearShare(nearTram), cycleway: nearShare(nearCycleway), foot: nearShare(nearFoot) }
       : null,

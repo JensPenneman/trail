@@ -149,9 +149,9 @@ needs them all. A signed-in session holds every scope.
 | `profile:read` | Read the account's name and time zone. |
 | `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |
 | `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |
-| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |
+| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline, Insights › Places and Named roads). |
 | `locations:write` | Correct how you travelled (transport mode overrides). |
-| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates. |
+| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates (Insights › Places and Named roads need locations:read). |
 | `people:read` | See the people who share their location with you. |
 | `shares:read` | List your shares, the ones you receive and your public links. |
 | `shares:write` | Start and stop sharing, hide people and manage public links. |
@@ -209,7 +209,7 @@ like its token, is changed in the dashboard only.
 
 The answers that are expensive to build, or large, carry a weak `ETag`:
 `GET /api/v1/tracks`, `GET /api/v1/segments`, `GET /api/v1/stats/days`,
-`GET /api/v1/people` and the four `GET /api/v1/insights/…`. Send it back as
+`GET /api/v1/people` and every `GET /api/v1/insights/…`. Send it back as
 `If-None-Match` with the same request, and while nothing the answer is made
 of has changed, the answer is `304 Not Modified` with no body — the copy you
 have is current. Otherwise you get the full answer with a new `ETag`.
@@ -342,8 +342,10 @@ correction or new data, read the timeline again.
 
 Insights are statistics of how you travelled, worked out from the stops and
 moves of the timeline — never from coordinates, so they need `history:read`
-only. A period is a range of local days in the account's time zone: `from`
-and `to` (both included, at most three years apart). Leave out `to` for today
+only; the exception is Places, below, which holds a centre per place and needs
+`locations:read`. A period is a range of local days in the account's time
+zone: `from` and `to` (both included, at most three years apart). Leave out
+`to` for today
 and `from` for the first day with stops or moves; `devices` narrows them to
 some devices. A move across the period's edge, or across midnight, counts in
 each day (and hour) with the part of its distance and time that falls there;
@@ -375,6 +377,47 @@ is true while recorded points of the period still wait for processing.
   `mode` or all. Shares are of the distance with map data (`mappedM`): moves
   without it — map data switched off or not fetched yet — count towards
   `distanceM` only.
+- `GET /api/v1/insights/ways` (`locations:read`) — the 25 roads travelled
+  most, by the name OpenStreetMap gives them, for one `mode` or all: the
+  `distanceM` and the number of `moves` on each, with `mappedM` (the distance
+  of the moves with map data) and `namedM` (the part of it on named roads).
+  Ways of one name in the same or touching cells of about 6 km are one road,
+  the same name further away another. Names and distances only; a road name says where
+  you were, hence `locations:read`. `modes` lists every mode moved in,
+  whatever `mode` asks for. `pending` is true while moves still wait for
+  their ways to be worked out after an upgrade. The answer has an `ETag`,
+  which also follows the map data and that fill.
+
+### Places
+
+`locations:read`, not `history:read`: these answers hold the centre of each
+place to four decimals (about 10 m), the same precision the timeline's stops
+give a token with that scope. A token with only `history:read` gets a `403`.
+They cover your own devices (or the token's); another person's device is a
+`404`, and nothing of anyone's share is ever in them. The period is as above.
+
+- `GET /api/v1/insights/places` — where the stops of the period add up. A
+  place is a cell of about 100 m (zoom 18 of the Web Mercator grid), with the
+  up to eight cells around it that have stops folded in (3 × 3 at most, the
+  one with most time claiming first). Each place has its `key`, its `centre`
+  (`[lon, lat]`, time-weighted), the time spent (`durationS`, your devices
+  joined, not added), `visits` (stays that started there in the period),
+  `days`, `firstAt` and `lastAt`, and a `name` from map data: a public
+  transport stop or airport within 150 m (`source: "stop"`, with its `kind`
+  and `distanceM`; the web app says "at" within 30 m, "near" beyond), else
+  the named road the device was on in the minute before it arrived and after
+  it left (`source: "road"`), else `null`. The fifty places with most time
+  come in `places`, the rest added up in `rest`, all of them in `totals`.
+- `GET /api/v1/insights/place?place=KEY` — one place: `place` (as above, with
+  the number of `cells` folded in), the time there per step (`series`), and
+  the days with time there, newest first (`days`: time, visits, first and last
+  moment). `KEY` is a key from the list (`x.y`, the cell's column and row);
+  a cell folded into a neighbour's place gives that place, and a key without
+  stays in the period gives `place: null`. The key is a query parameter and
+  never part of the path.
+
+Both answer with an `ETag` that also changes when the map data does (a new
+build or a refreshed tile may name a place differently).
 
 ## Errors
 

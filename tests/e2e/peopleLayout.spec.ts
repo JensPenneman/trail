@@ -120,6 +120,7 @@ test("on a phone the sheet scrolls over a map that stays, with its detents", asy
   account,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "iphone", "the sheet is for phones");
+  // Smooth scroll, as most people have it: the half detent is asserted once the sheet has settled.
   await uploadedDevice(page, "Sheet phone", overlandBatch(account.timezone));
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
@@ -188,6 +189,18 @@ test("on a phone the sheet scrolls over a map that stays, with its detents", asy
     )
     .toBe(true);
   expect(Math.abs(at - (await page.evaluate(detent)))).toBeLessThan(3);
+  // It stays there: a sheet that passes through half on its way elsewhere, or falls back, fails.
+  await page.evaluate(
+    () =>
+      new Promise<void>((done) => {
+        let frames = 0;
+        const next = () => (++frames >= 10 ? done() : requestAnimationFrame(next));
+        requestAnimationFrame(next);
+      }),
+  );
+  expect(
+    Math.abs((await page.evaluate(() => window.scrollY)) - (await page.evaluate(detent))),
+  ).toBeLessThan(3);
 });
 
 test("the controls and the zoom buttons clear each other on a 375 px screen", async ({
@@ -220,6 +233,9 @@ test("a press on the map with the sheet at half leaves the sheet where it is", a
   account,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "iphone", "the sheet is for phones");
+  // With reduced motion the sheet goes to its place at once (the product's own path): the press
+  // on the map is judged against a position that does not depend on a scroll in flight.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await uploadedDevice(page, "Half phone", overlandBatch(account.timezone));
   await page.goto("/");
   await page.getByRole("list", { name: "Me", exact: true }).getByRole("link").first().click();
@@ -299,7 +315,26 @@ test("the sheet's whole content can be scrolled to, clear of the header and the 
 
   // The first control, with the sheet lifted towards the header: not under it.
   const first = rows.first();
-  await page.evaluate(() => window.scrollTo(0, 400));
+  // The sheet's content has loaded (the timeline arrives late and changes the page's height).
+  let height = -1;
+  let steady = 0;
+  await expect
+    .poll(
+      async () => {
+        const now = await page.evaluate(() => document.documentElement.scrollHeight);
+        steady = now === height ? steady + 1 : 0;
+        height = now;
+        return steady >= 4;
+      },
+      { intervals: [250] },
+    )
+    .toBe(true);
+  // Lifted as far as the sheet goes: its top is at the header (the page's scroll padding).
+  await page.evaluate(() => {
+    const top = document.querySelector(".map-page__panel")?.getBoundingClientRect().top ?? 0;
+    const padding = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop);
+    window.scrollTo(0, window.scrollY + top - padding);
+  });
   await settled();
   expect(await reachable(first)).toBe(true);
 });

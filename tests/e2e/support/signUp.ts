@@ -10,6 +10,9 @@ export async function signUp(page: Page, email: string): Promise<SessionUser> {
   await page.goto("/login");
   await page.getByLabel("Email address").fill(email);
   await page.getByRole("button", { name: "Continue" }).click();
+  // The ceremony's milestones, each awaited on its own: the page leaves the sign-in address once
+  // the server has accepted the passkey, and then the People page shows.
+  await expect(page).toHaveURL((url) => url.pathname !== "/login");
   await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
   return currentUser(page);
 }
