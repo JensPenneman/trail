@@ -57,6 +57,9 @@ function appWith(level: LogLevel = "info"): { app: Express; stats: RequestStats 
   v1.get("/devices/:id", (_req, res) => {
     res.json({ name: "iPhone" });
   });
+  v1.get("/insights/place", (_req, res) => {
+    res.json({ place: null });
+  });
   v1.get("/devices/:id/fail", () => {
     throw new Error("broken");
   });
@@ -154,6 +157,28 @@ describe("the request log line", () => {
     const logged = JSON.stringify(lines);
     for (const value of ["3.712", "51.012", "51.065", "bbox", deviceId, "2026-10-1", "zoom"]) {
       expect(logged).not.toContain(value);
+    }
+  });
+
+  it("keeps the place key of an Insights request out of the line, at info and at debug", async () => {
+    const key = "134217.89012";
+    for (const level of ["info", "debug"] as const) {
+      lines = [];
+      const { app } = appWith(level);
+      await request(app)
+        .get(`/api/v1/insights/place?place=${key}&from=2026-10-01&to=2026-10-31`)
+        .set("X-Request-Id", `request-place-${level}`)
+        .set("x-signed-in", "yes")
+        .expect(200);
+      await settle();
+      const logged = JSON.stringify(lines);
+      expect(logged).not.toContain(key);
+      expect(logged).not.toContain("134217");
+      expect(logged).not.toContain("2026-10-");
+      if (level === "debug") {
+        // Only the names of the parameters: a developer sees that a place was asked for.
+        expect(logged).toContain("/api/v1/insights/place?place&from&to");
+      }
     }
   });
 
