@@ -1,5 +1,6 @@
 import type { DeviceSummary } from "@trail/contracts/device";
 import { deviceStatus } from "@trail/contracts/deviceStatus";
+import { useId } from "react";
 import { Link } from "react-router";
 import { describeMovement } from "../../devices/describeMovement";
 import { devicePath, devicesPath } from "../../devices/devicePaths";
@@ -10,6 +11,7 @@ import { BatteryIndicator } from "../../ui/BatteryIndicator";
 import { Icon } from "../../ui/Icon";
 import { PlainList } from "../../ui/PlainList";
 import { RelativeTime } from "../../ui/RelativeTime";
+import "../../people/PersonDetails.css";
 
 interface MyDevicesProps {
   devices: readonly DeviceSummary[];
@@ -18,17 +20,20 @@ interface MyDevicesProps {
 }
 
 /**
- * The Me card, opened up: each of one's devices with when it last reported
+ * Me's devices, in their detail: each of one's devices with when it last reported
  * a position, its battery, that position with its accuracy, its movement and
  * trip — each linking to its page — and the way to Settings › Devices, where
  * the uploads are.
  */
 export function MyDevices({ devices, now, thresholds }: MyDevicesProps) {
   const format = useFormatter();
+  const titleId = useId();
   return (
-    <div className="person-details">
+    <section className="person-details" aria-labelledby={titleId}>
       <div className="person-details__part">
-        <h3 className="person-details__title">Your devices</h3>
+        <h3 className="person-details__title" id={titleId}>
+          Your devices
+        </h3>
         <PlainList className="person-details__devices">
           {devices.map((device) => {
             const location = device.lastLocation;
@@ -89,6 +94,6 @@ export function MyDevices({ devices, now, thresholds }: MyDevicesProps) {
         <span>Uploads, activity and settings of your devices</span>
         <Icon name="chevronRight" />
       </Link>
-    </div>
+    </section>
   );
 }

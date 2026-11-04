@@ -25,15 +25,16 @@ and every pull request gets a preview deployment of its own.
 - **Passkeys only**: no passwords. Several people per server, invites,
   one-time links to add a passkey on another device or address.
 - **People, the home page**: one map with three views — **Live** (where
-  everyone is now and today's tracks, updated over server-sent events, with
-  your day so far as a timeline), **History** (tracks per day or date range
+  everyone is now, updated over server-sent events, and the track of whoever
+  you select, and your day so far), **History** (tracks per day or date range
   with distance, visits and trips, and a time scrubber) and **Heat** (an
   all-time heatmap) — and beside it you and everyone who shares with you, a
-  card each in the style of Find My: where they are, what they are doing and
-  how fresh that is in two lines, where they have been while they are on the
-  map, and everything else one tap away under Details. Show anyone on the
-  map, alone or together, as far as their share allows, on a light, dark or
-  (where the server has imagery) satellite map. Everything it shows is in its
+  row each in the style of Find My: where they are, what they are doing and
+  how fresh that is in two lines. Choose a row for the detail — where they
+  have been, the devices and the terms of their share, and for you the day
+  so far, visits, trips and devices — and the map draws what their share
+  allows of them, on a light, dark or (where the server has imagery)
+  satellite map. Everything it shows is in its
   address, so a view can be bookmarked or shared.
 - **Opens at once, also offline**: the browser keeps a copy of your own data
   and paints your map, your day and your devices from it before the server
@@ -48,8 +49,8 @@ and every pull request gets a preview deployment of its own.
   stops and moves, each move with its mode (walking, cycling, car, bus, tram,
   metro, train, boat, plane …) worked out from speed, the ways followed,
   pauses at stops and the phone's motion sensor. A timeline per day, one-click
-  corrections that survive every recomputation, and a quick "now I'm on the
-  train" toggle ([docs/transport.md](docs/transport.md)).
+  corrections that survive every recomputation, and, for the API and MCP clients, a "now I'm on the train" toggle
+  ([docs/transport.md](docs/transport.md)).
 - **Insights**: how you travelled in a period — distance, time on the move,
   moves, stops and active days against the period before, the mix of modes
   and its days, weeks or months, each mode's speeds, longest and fastest

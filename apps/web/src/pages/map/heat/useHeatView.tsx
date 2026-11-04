@@ -14,11 +14,11 @@ import { ErrorState } from "../../../ui/ErrorState";
 import { LoadingBlock } from "../../../ui/LoadingBlock";
 import { Notice } from "../../../ui/Notice";
 import { PlainList } from "../../../ui/PlainList";
+import { SectionTitle } from "../../../ui/SectionTitle";
 import { Skeleton } from "../../../ui/Skeleton";
 import { Spinner } from "../../../ui/Spinner";
 import { useDebouncedValue } from "../../../ui/useDebouncedValue";
 import { inactiveView, type MapViewContent } from "../MapViewContent";
-import { me } from "../me";
 import type { MapSelection } from "../resolveMapSelection";
 import { HeatLegend } from "./HeatLegend";
 import "./HeatView.css";
@@ -44,7 +44,7 @@ export interface HeatViewInput {
 /**
  * Heat: everywhere the devices have been, as a heatmap of all recorded
  * points, with totals and the busiest places in view. Heatmaps cover the
- * signed-in person's own devices only. Asks for nothing while another view
+ * signed-in person's own devices only (Heat is offered while nobody or Me is selected). Asks for nothing while another view
  * is shown.
  */
 export function useHeatView({
@@ -130,7 +130,6 @@ export function useHeatView({
     (device) => deviceIds === null || deviceIds.includes(device.id),
   );
   const totalPoints = selectedDevices.reduce((sum, device) => sum + device.counts.total, 0);
-  const othersSelected = selection.people.some((person) => person.key !== me);
 
   return {
     title: "Heatmap",
@@ -160,16 +159,12 @@ export function useHeatView({
       </p>
     ) : null,
     foot: null,
+    mine: null,
+    mineLabel: "",
     panelLabel: "Totals and busiest places",
     panel: (
       <>
         {heat === null ? null : <HeatLegend scale={heat.scale} dark={dark} />}
-        {othersSelected ? (
-          <Notice tone="info" title="Your own devices only">
-            <p>The heatmap covers the points of your devices; nobody shares theirs for it.</p>
-          </Notice>
-        ) : null}
-
         {heatmap.isError ? (
           <ErrorState
             title="The heatmap could not be loaded"
@@ -185,9 +180,7 @@ export function useHeatView({
         ) : null}
 
         <section className="section" aria-labelledby={totalsId}>
-          <h2 className="section__title" id={totalsId}>
-            Totals
-          </h2>
+          <SectionTitle id={totalsId}>Totals</SectionTitle>
           {devices.isPending || days.isPending ? (
             <LoadingBlock label="Loading totals">
               <Skeleton height="6rem" />
@@ -227,9 +220,7 @@ export function useHeatView({
         </section>
 
         <section className="section" aria-labelledby={busiestId}>
-          <h2 className="section__title" id={busiestId}>
-            Busiest places in view
-          </h2>
+          <SectionTitle id={busiestId}>Busiest places in view</SectionTitle>
           {heatmap.data === undefined ? (
             <LoadingBlock label="Loading places">
               <Skeleton height="3rem" />

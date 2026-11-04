@@ -1,4 +1,5 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { user } from "./support/fixtures";
@@ -19,26 +20,20 @@ describe("the People page offline", () => {
     mockApi(standardRoutes());
     const onLine = vi.spyOn(navigator, "onLine", "get");
     renderPage(<PeoplePage />, { user });
-    const me = screen.getByRole("region", { name: "Me" });
-    const chips = await within(me).findByRole("group", { name: "Now:" });
-    expect(within(chips).getByRole("button", { name: "Auto", pressed: true })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Share my location" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Share my location" })).toBeEnabled();
 
     onLine.mockReturnValue(false);
     window.dispatchEvent(new Event("offline"));
-    expect(
-      await within(chips).findByRole("button", { name: "Auto", pressed: true }),
-    ).toBeDisabled();
-    expect(chips).toHaveAccessibleDescription(
-      /You’re offline: how you travel can be set once you reconnect\./,
-    );
-    const share = screen.getByRole("button", { name: "Share my location" });
-    expect(share).toBeDisabled();
+    const share = await screen.findByRole("button", { name: "Share my location" });
+    await waitFor(() => expect(share).toBeDisabled());
     expect(share).toHaveAccessibleDescription(
       "You’re offline: whom you share with can be changed once you reconnect.",
     );
-    // Looking around still works.
-    expect(within(me).getByRole("button", { name: "Show on map" })).toBeEnabled();
+    // Looking around still works: a row opens its detail.
+    await userEvent.setup().click(screen.getByRole("link", { name: /^Me/ }));
+    expect(await screen.findByRole("region", { name: "Me" })).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("link", { name: "Back to People" }));
+    expect(await screen.findByRole("list", { name: "People" })).toBeInTheDocument();
 
     onLine.mockReturnValue(true);
     window.dispatchEvent(new Event("online"));

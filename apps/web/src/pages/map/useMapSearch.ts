@@ -1,7 +1,7 @@
-import { startTransition, useCallback, useMemo, useOptimistic } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useOptimistic, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { useToday } from "../../time/useToday";
-import { withDay, withDevices, withPeople, withRange, withView } from "./mapSearchUpdates";
+import { withDay, withDevices, withPerson, withRange, withView } from "./mapSearchUpdates";
 import type { MapView } from "./mapViews";
 import { type MapSearch, parseMapSearch } from "./parseMapSearch";
 
@@ -9,7 +9,17 @@ export interface MapSearchControls {
   search: MapSearch;
   today: string;
   setView: (view: MapView) => void;
-  setPeople: (people: readonly string[], devicesOf: (person: string) => readonly string[]) => void;
+  /**
+   * Writes the selection an older link implies (`?segment=`, `?devices=`) into
+   * the address, in place of its entry, so that closing a move or ticking all
+   * devices again keeps the detail. Does nothing while a choice is on its way.
+   */
+  adoptPerson: (person: string) => void;
+  /**
+   * Leaves the detail of `person` for the list, in place of its entry — if the
+   * address still names them when this runs (hiding someone answers late).
+   */
+  leavePerson: (person: string) => void;
   setDevices: (deviceIds: readonly string[] | null) => void;
   showDay: (date: string) => void;
   /** History on a day, from another view: one step of the history for both. */
@@ -29,31 +39,53 @@ export function useMapSearch(): MapSearchControls {
   // The router applies a new URL in a transition; until then the controls show the choice made
   // (a checkbox bound to the URL would otherwise flick back for a moment).
   const [view, showView] = useOptimistic(parsed.view);
-  const [chosen, showChosen] = useOptimistic({ people: parsed.people, devices: parsed.devices });
+  const [chosen, showChosen] = useOptimistic({ person: parsed.person, devices: parsed.devices });
   const search = useMemo(() => ({ ...parsed, ...chosen, view }), [parsed, chosen, view]);
 
   const update = useCallback(
-    (change: (current: URLSearchParams) => URLSearchParams) =>
-      setParams((current) => change(current), { preventScrollReset: true }),
+    (change: (current: URLSearchParams) => URLSearchParams, replace = false) =>
+      setParams((current) => change(current), { preventScrollReset: true, replace }),
     [setParams],
   );
   const setView = useCallback(
     (next: MapView) =>
       startTransition(() => {
         showView(next);
+        // Leaving Heat drops its device filter (withView); the page must not imply Me from it for
+        // the first render either.
+        if (withView(params, next).get("devices") !== params.get("devices")) {
+          showChosen((current) => ({ ...current, devices: null }));
+        }
         // Another view is another screen: on phones the page starts from the top.
         setParams((current) => withView(current, next));
       }),
-    [setParams, showView],
+    [params, setParams, showView, showChosen],
   );
-  const setPeople = useCallback(
-    (people: readonly string[], devicesOf: (person: string) => readonly string[]) =>
-      startTransition(() => {
-        const devices = parseMapSearch(withPeople(params, people, devicesOf), today).devices;
-        showChosen({ people, devices });
-        update((current) => withPeople(current, people, devicesOf));
-      }),
-    [params, today, update, showChosen],
+  const settled =
+    chosen.person === parsed.person && chosen.devices === parsed.devices && view === parsed.view;
+  // The latest address, for answers that arrive late (set after rendering, never during).
+  const latest = useRef(params);
+  useEffect(() => {
+    latest.current = params;
+  }, [params]);
+  const leavePerson = useCallback(
+    (person: string) => {
+      if (latest.current.get("person") !== person) return;
+      update((current) => withPerson(current, null), true);
+    },
+    [update],
+  );
+  const adoptPerson = useCallback(
+    (person: string) => {
+      if (!settled || params.get("person") === person) return;
+      update((current) => {
+        const next = new URLSearchParams(current);
+        next.delete("people");
+        next.set("person", person);
+        return next;
+      }, true);
+    },
+    [params, update, settled],
   );
   const setDevices = useCallback(
     (deviceIds: readonly string[] | null) =>
@@ -79,5 +111,15 @@ export function useMapSearch(): MapSearchControls {
     (from: string, to: string) => update((current) => withRange(current, from, to)),
     [update],
   );
-  return { search, today, setView, setPeople, setDevices, showDay, showHistoryDay, showRange };
+  return {
+    search,
+    today,
+    setView,
+    adoptPerson,
+    leavePerson,
+    setDevices,
+    showDay,
+    showHistoryDay,
+    showRange,
+  };
 }

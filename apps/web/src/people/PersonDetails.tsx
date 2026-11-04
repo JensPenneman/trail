@@ -12,6 +12,7 @@ import { RelativeTime } from "../ui/RelativeTime";
 import { describeActivity } from "./describeActivity";
 import { appleMapsUrl, googleMapsUrl } from "./mapLinks";
 import { primaryDevice } from "./primaryDevice";
+import "./PersonDetails.css";
 
 interface PersonDetailsProps {
   person: Person;
@@ -25,7 +26,7 @@ interface PersonDetailsProps {
 }
 
 /**
- * A person's card, opened up: each device they share as the share shows it
+ * A person's detail, below what the view says of them: each device they share as the share shows it
  * (updated, what it is doing, battery, accuracy, trip, distance), what the
  * share includes and until when, and the rest of what can be done — open the
  * spot in Apple or Google Maps, share back or stop, hide them.
@@ -51,9 +52,9 @@ export function PersonDetails({
   return (
     <div className="person-details">
       <div className="person-details__part">
-        <h4 className="person-details__title">
+        <h3 className="person-details__title">
           {person.devices.length === 1 ? "Device" : "Devices"}
-        </h4>
+        </h3>
         {person.devices.length === 0 ? (
           <p className="muted">{person.displayName} shares no device with you right now.</p>
         ) : (
@@ -121,7 +122,7 @@ export function PersonDetails({
       </div>
 
       <div className="person-details__part">
-        <h4 className="person-details__title">What {person.displayName} shares</h4>
+        <h3 className="person-details__title">What {person.displayName} shares</h3>
         <dl className="person-details__facts">
           <div>
             <dt>Precision</dt>

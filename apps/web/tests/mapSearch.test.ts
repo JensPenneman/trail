@@ -3,7 +3,7 @@ import type { MapPerson } from "../src/pages/map/MapPerson";
 import {
   withDay,
   withDevices,
-  withPeople,
+  withPerson,
   withRange,
   withView,
 } from "../src/pages/map/mapSearchUpdates";
@@ -17,23 +17,21 @@ const bob = "0199a0f2-22d5-7f1c-8d2e-3a6b9f5c8b71";
 const parse = (search: string) => parseMapSearch(new URLSearchParams(search), today);
 
 describe("the People page's URL", () => {
-  it("defaults to Live, the signed-in person, every device and today", () => {
+  it("defaults to Live, nobody selected, every device and today", () => {
     expect(parse("")).toEqual({
       view: "live",
-      people: ["me"],
+      person: null,
       devices: null,
       period: { mode: "day", from: today, to: today },
     });
   });
 
-  it("reads the view, the people, the devices and History's day or period", () => {
+  it("reads the view, the person, the devices and History's day or period", () => {
     expect(
-      parse(
-        `view=history&people=me,${anna.toUpperCase()}&devices=a,b&from=2026-10-01&to=2026-10-07`,
-      ),
+      parse(`view=history&person=${anna.toUpperCase()}&devices=a,b&from=2026-10-01&to=2026-10-07`),
     ).toEqual({
       view: "history",
-      people: ["me", anna],
+      person: anna,
       devices: ["a", "b"],
       period: { mode: "range", from: "2026-10-01", to: "2026-10-07" },
     });
@@ -46,8 +44,8 @@ describe("the People page's URL", () => {
 
   it("falls back instead of failing on hand-edited links", () => {
     expect(parse("view=explore").view).toBe("live");
-    expect(parse(`people=,nobody,${anna},${anna}`).people).toEqual([anna]);
-    expect(parse("people=nobody").people).toEqual(["me"]);
+    expect(parse("person=nobody").person).toBeNull();
+    expect(parse(`person=nobody&people=${anna}`).person).toBe(anna);
     expect(parse("date=2099-01-01").period.from).toBe(today);
   });
 
@@ -56,9 +54,7 @@ describe("the People page's URL", () => {
     expect(withView(start, "history").toString()).toBe(
       "date=2026-10-20&devices=a&level=raw&style=dark&view=history",
     );
-    expect(withView(new URLSearchParams("view=heat&devices=a"), "live").toString()).toBe(
-      "devices=a",
-    );
+    expect(withView(new URLSearchParams("view=heat&devices=a"), "live").toString()).toBe("");
     expect(withDevices(start, null).toString()).toBe("date=2026-10-20&level=raw&style=dark");
     expect(withDevices(start, ["a", "b"]).get("devices")).toBe("a,b");
     expect(withDay(start, "2026-10-19", today).get("date")).toBe("2026-10-19");
@@ -68,46 +64,52 @@ describe("the People page's URL", () => {
     );
   });
 
-  it("keeps a device filter fitting when people come and go", () => {
-    const devicesOf = (person: string) =>
-      ({ me: ["phone", "car"], [anna]: ["anna-phone"], [bob]: ["bob-phone", "bob-watch"] })[
-        person
-      ] ?? [];
-    // Nobody filtered: nothing to adjust.
-    expect(withPeople(new URLSearchParams(), ["me", anna], devicesOf).toString()).toBe(
-      `people=me%2C${anna}`,
+  it("reads links from before the single selection", () => {
+    // One person selects them; several mean the overview.
+    expect(parse(`people=${anna}`).person).toBe(anna);
+    expect(parse(`people=me,${anna},${anna}`).person).toBeNull();
+    expect(parse("people=me").person).toBe("me");
+    expect(parse(`people=,nobody,${anna},${anna}`).person).toBe(anna);
+    // A link to one move is a link to one's own.
+    expect(parse("view=history&segment=abc").person).toBe("me");
+    expect(parse(`segment=abc&person=${anna}`).person).toBe(anna);
+    expect(parse("segment=abc&people=me,x").person).toBe("me");
+  });
+
+  it("leaves Heat's device filter behind when nobody is selected, and keeps it with a person", () => {
+    const heat = new URLSearchParams("view=heat&devices=a");
+    expect(withView(heat, "live").toString()).toBe("");
+    expect(withView(heat, "history").toString()).toBe("view=history");
+    expect(withView(new URLSearchParams("view=heat&person=me&devices=a"), "live").toString()).toBe(
+      "person=me&devices=a",
     );
-    // Someone who joins shows all their devices; someone who leaves takes theirs along.
-    const filtered = new URLSearchParams(`people=me,${anna}&devices=phone,anna-phone`);
-    expect(withPeople(filtered, ["me", bob], devicesOf).get("devices")).toBe(
-      "phone,bob-phone,bob-watch",
+    // From another view the filter stays: it is a person's there.
+    expect(withView(new URLSearchParams("devices=a"), "heat").toString()).toBe(
+      "devices=a&view=heat",
     );
-    // A filter that covers everything left is dropped, and Me alone is the default.
-    expect(withPeople(filtered, ["me"], devicesOf).get("devices")).toBe("phone");
+  });
+
+  it("selects one person at a time and drops what belongs to the last", () => {
+    const start = new URLSearchParams(
+      `view=history&date=2026-10-20&level=raw&style=dark&devices=a&people=me,${anna}&segment=s`,
+    );
+    expect(withPerson(start, anna).toString()).toBe(
+      `view=history&date=2026-10-20&level=raw&style=dark&person=${anna}`,
+    );
+    // Back to the overview takes the move along, or its link would select Me again.
     expect(
-      withPeople(
-        new URLSearchParams(`people=me,${anna}&devices=phone,car`),
-        ["me"],
-        devicesOf,
-      ).toString(),
-    ).toBe("");
-    expect(
-      withPeople(
-        new URLSearchParams(`people=me,${anna}&devices=anna-phone`),
-        ["me"],
-        devicesOf,
-      ).has("devices"),
-    ).toBe(false);
+      withPerson(new URLSearchParams(`person=me&segment=s&from=2026-10-01`), null).toString(),
+    ).toBe("from=2026-10-01");
   });
 });
 
 describe("the views there are", () => {
-  it("offer Heat with the signed-in person only, whose heatmap it is", () => {
+  it("offer Heat while nobody or the signed-in person is selected, whose heatmap it is", () => {
     expect(viewsFor(true)).toEqual(["live", "history", "heat"]);
     expect(viewsFor(false)).toEqual(["live", "history"]);
   });
 
-  it("show Live for Heat without Me, and Heat again with Me", () => {
+  it("show Live for Heat with someone else selected, and Heat again with Me", () => {
     expect(shownView("heat", false)).toBe("live");
     expect(shownView("heat", true)).toBe("heat");
     expect(shownView("history", false)).toBe("history");
@@ -128,36 +130,72 @@ describe("the map's selection", () => {
     { key: anna, name: "Anna", devices: [{ id: "anna-phone", name: "Anna's iPhone" }] },
   ];
 
-  it("shows the signed-in person's devices, all of them unless filtered", () => {
-    const all = resolveMapSelection({ people: ["me"], devices: null }, people, true);
-    expect(all.people.map((person) => person.key)).toEqual(["me"]);
-    expect(all.own).toEqual({ deviceIds: null });
-    expect(all.devicesOf("me")).toEqual(["phone", "car"]);
-    const filtered = resolveMapSelection({ people: ["me"], devices: ["car"] }, people, true);
-    expect(filtered.own).toEqual({ deviceIds: ["car"] });
-    expect(filtered.filter).toEqual(["car"]);
+  it("selects nobody in the overview, which still shows everyone's devices", () => {
+    const overview = resolveMapSelection({ person: null, devices: null }, people, true);
+    expect(overview.selected).toBeNull();
+    expect(overview.own).toEqual({ deviceIds: null });
+    expect(overview.devicesOf("me")).toEqual(["phone", "car"]);
+    expect(overview.devicesOf(anna)).toEqual(["anna-phone"]);
   });
 
-  it("shows other people with the devices they share, and nothing of one's own when left out", () => {
-    const selection = resolveMapSelection(
-      { people: [anna], devices: ["anna-phone"] },
-      people,
-      true,
-    );
-    expect(selection.people.map((person) => person.key)).toEqual([anna]);
+  it("shows the signed-in person's devices, all of them unless filtered", () => {
+    const all = resolveMapSelection({ person: "me", devices: null }, people, true);
+    expect(all.selected?.key).toBe("me");
+    expect(all.own).toEqual({ deviceIds: null });
+    expect(all.devicesOf("me")).toEqual(["phone", "car"]);
+    const filtered = resolveMapSelection({ person: "me", devices: ["car"] }, people, true);
+    expect(filtered.own).toEqual({ deviceIds: ["car"] });
+    expect(filtered.filter).toEqual(["car"]);
+    expect(filtered.devicesOf(anna)).toEqual(["anna-phone"]);
+  });
+
+  it("shows someone else with the devices they share, and none of one's own tracks", () => {
+    const selection = resolveMapSelection({ person: anna, devices: null }, people, true);
+    expect(selection.selected?.key).toBe(anna);
     expect(selection.devicesOf(anna)).toEqual(["anna-phone"]);
-    expect(selection.own).toBeNull();
+    // One's own devices are not asked for: the heatmap and the tracks follow Me.
+    expect(selection.own).toEqual({ deviceIds: null });
+    // The filter is the selected person's: another person's device ids do not count.
     expect(
-      resolveMapSelection({ people: ["me", anna], devices: ["anna-phone"] }, people, true).own,
+      resolveMapSelection({ person: anna, devices: ["phone"] }, people, true).filter,
     ).toBeNull();
   });
 
+  it("selects the owner of the devices a link names", () => {
+    expect(
+      resolveMapSelection({ person: null, devices: ["car"] }, people, true).selected?.key,
+    ).toBe("me");
+    expect(
+      resolveMapSelection({ person: null, devices: ["anna-phone"] }, people, true).selected?.key,
+    ).toBe(anna);
+    // Devices of several people: no one owner, the overview.
+    expect(
+      resolveMapSelection({ person: null, devices: ["car", "anna-phone"] }, people, true).selected,
+    ).toBeNull();
+    // While loading, a device's own page most likely links to one's own.
+    expect(resolveMapSelection({ person: null, devices: ["car"] }, [], false).selected?.key).toBe(
+      "me",
+    );
+  });
+
+  it("applies a device filter to one's own devices in Heat and selects nobody", () => {
+    const heat = resolveMapSelection({ person: null, devices: ["car"] }, people, true, true);
+    expect(heat.selected).toBeNull();
+    expect(heat.filter).toEqual(["car"]);
+    expect(heat.own).toEqual({ deviceIds: ["car"] });
+    expect(heat.devicesOf("me")).toEqual(["car"]);
+    expect(heat.devicesOf(anna)).toEqual(["anna-phone"]);
+    // Anyone else's device is no filter of one's heatmap.
+    expect(
+      resolveMapSelection({ person: null, devices: ["anna-phone"] }, people, true, true).own,
+    ).toEqual({ deviceIds: null });
+  });
+
   it("drops what nobody knows once everything has loaded, and keeps it until then", () => {
-    const pending = resolveMapSelection({ people: [bob], devices: ["gone"] }, people, false);
-    expect(pending.people).toEqual([]);
-    expect(pending.own).toBeNull();
-    const loaded = resolveMapSelection({ people: [bob], devices: ["gone"] }, people, true);
-    expect(loaded.people.map((person) => person.key)).toEqual(["me"]);
+    const pending = resolveMapSelection({ person: bob, devices: ["gone"] }, people, false);
+    expect(pending.selected?.key).toBe(bob);
+    const loaded = resolveMapSelection({ person: bob, devices: ["gone"] }, people, true);
+    expect(loaded.selected).toBeNull();
     expect(loaded.filter).toBeNull();
     expect(loaded.own).toEqual({ deviceIds: null });
   });

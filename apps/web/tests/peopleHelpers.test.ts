@@ -1,7 +1,6 @@
 import type { TransportMode } from "@trail/contracts/transport";
 import { describe, expect, it } from "vitest";
 import { createFormatter } from "../src/format/createFormatter";
-import { everyoneToggled, selectionShowing } from "../src/pages/people/peopleSelection";
 import { sharingSummary } from "../src/pages/people/sharingSummary";
 import { assignPersonColors } from "../src/people/assignPersonColors";
 import { describeActivity } from "../src/people/describeActivity";
@@ -266,21 +265,6 @@ describe("people helpers", () => {
     expect(devicesText(null, devices, format)).toBe("All devices");
     expect(devicesText([], devices, format)).toBe("No devices");
     expect(devicesText(["w", "p"], devices, format)).toBe("Phone and Watch");
-  });
-
-  it("show someone alone from their card, unless the map shows them already", () => {
-    expect(selectionShowing(["me"], "ana")).toEqual(["ana"]);
-    expect(selectionShowing(["ana", "bob"], "me")).toEqual(["me"]);
-    // On the map already, alone or with others: the camera moves, the choice stays.
-    expect(selectionShowing(["me", "ana"], "ana")).toBeNull();
-    expect(selectionShowing(["ana"], "ana")).toBeNull();
-  });
-
-  it("show everyone, and the signed-in person alone again", () => {
-    const everyone = ["me", "ana", "bob"];
-    expect(everyoneToggled(["me"], everyone)).toEqual(everyone);
-    expect(everyoneToggled(["ana"], everyone)).toEqual(everyone);
-    expect(everyoneToggled(["bob", "ana", "me"], everyone)).toEqual(["me"]);
   });
 
   it("say with how many people one shares, and who waits for a confirmation", () => {

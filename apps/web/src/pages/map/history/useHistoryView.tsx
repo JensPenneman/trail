@@ -31,6 +31,7 @@ import { Skeleton } from "../../../ui/Skeleton";
 import { Spinner } from "../../../ui/Spinner";
 import { fitKey } from "../fitKey";
 import { inactiveView, type MapViewContent } from "../MapViewContent";
+import { withPerson } from "../mapSearchUpdates";
 import { me } from "../me";
 import type { MapSearch } from "../parseMapSearch";
 import { personTrackRequests } from "../personTrackRequests";
@@ -49,7 +50,7 @@ export interface HistoryViewInput {
   period: MapSearch["period"];
   selection: MapSelection;
   devices: UseQueryResult<DeviceSummary[]>;
-  /** The selected people who share with the signed-in person. */
+  /** Everyone who shares with the signed-in person. */
   people: readonly Person[];
   /** Device and person colours for the map's background. */
   colors: DeviceColors;
@@ -66,12 +67,12 @@ type Focus = { key: string; lon: number; lat: number; zoom: number };
 
 /**
  * History: where the devices have been, a day or a period of tracks at a level
- * of calculation, with a time slider, per-device totals, the timeline of stops
- * and moves, visits and trips — all driven by the URL. The people chosen show
- * their tracks where their shares include history, and their cards say what
- * they share of it (`personTracks`); levels, the timeline, visits and trips
- * are one's own, so they are there only while the signed-in person is chosen.
- * Asks for nothing while another view is shown.
+ * of calculation, with a time slider and totals, all driven by the URL. The
+ * overview draws one's own tracks and those of everyone whose share includes
+ * history; selecting someone shows theirs alone, and their detail says what they
+ * share of it (`personTracks`). Levels, the timeline, visits and trips are one's
+ * own, so they are there only while Me is selected. Asks for nothing while
+ * another view is shown.
  */
 export function useHistoryView({
   active,
@@ -94,7 +95,15 @@ export function useHistoryView({
   // A link to one move (`&segment=<id>`, Insights' "Show on the map") opens its details
   // once the day's timeline has it; closing them drops the parameter.
   const [params, setParams] = useSearchParams();
-  const linkedSegment = active ? params.get("segment") : null;
+  const selected = selection.selected;
+  const meSelected = selected?.key === me;
+  const other =
+    selected === null || meSelected
+      ? null
+      : (people.find((person) => person.userId === selected.key) ?? null);
+  // One's own tracks are drawn in the overview and for Me; the rest is Me's alone.
+  const drawsOwn = selected === null || meSelected;
+  const linkedSegment = active && meSelected ? params.get("segment") : null;
   const closeSegment = () => {
     setOpenSegment(null);
     if (linkedSegment === null) return;
@@ -107,10 +116,20 @@ export function useHistoryView({
       { replace: true },
     );
   };
+  // A move clicked on the map in the overview opens in Me's detail, where the timeline is.
+  const openFromMap = (id: string) => {
+    if (meSelected) setOpenSegment(id);
+    else
+      setParams((current) => {
+        const next = withPerson(current, me);
+        next.set("segment", id);
+        return next;
+      });
+  };
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [browsing, setBrowsing] = useState<{ anchor: string; month: string } | null>(null);
   const [scrub, setScrub] = useState<{ key: string; value: number } | null>(null);
-  // A camera move belongs to its period: another day — from the controls, a person's card or
+  // A camera move belongs to its period: another day — from the controls, a person's detail or
   // the history's Back — drops it, and it is never made again.
   const [focus, setFocus] = useState<(Focus & { period: string }) | null>(null);
   // Every "show" is a camera move of its own, even to a place shown before.
@@ -127,23 +146,29 @@ export function useHistoryView({
     [period.from, period.to, timeZone],
   );
   const range = useMemo(
-    () => (!active || own === null ? null : { ...bounded, deviceIds: own.deviceIds }),
-    [active, own, bounded],
+    () => (!active || !drawsOwn || own === null ? null : { ...bounded, deviceIds: own.deviceIds }),
+    [active, drawsOwn, own, bounded],
+  );
+  // Visits, trips and the timeline load only with Me selected; the overview skips them.
+  const mineRange = meSelected ? range : null;
+  const drawnPeople = useMemo(
+    () => (meSelected ? [] : other !== null ? [other] : selected === null ? people : []),
+    [meSelected, other, selected, people],
   );
   const requests = useMemo(
-    () => (active ? personTrackRequests(people, selection.devicesOf, bounded) : []),
-    [active, people, selection, bounded],
+    () => (active ? personTrackRequests(drawnPeople, selection.devicesOf, bounded) : []),
+    [active, drawnPeople, selection, bounded],
   );
   const personTracks = usePersonTracks(requests);
   const trackStates = useMemo(
     () => personTrackStates(requests, personTracks),
     [requests, personTracks],
   );
-  const periodKey = `${period.from}|${period.to}|${own?.deviceIds?.join(",") ?? "all"}`;
+  const periodKey = `${period.from}|${period.to}|${selected?.key ?? "everyone"}|${own?.deviceIds?.join(",") ?? "all"}`;
   const tracks = useTracks(range);
-  const visits = useVisits(range);
-  const trips = useTrips(range);
-  const timeline = useTimeline(range);
+  const visits = useVisits(mineRange);
+  const trips = useTrips(mineRange);
+  const timeline = useTimeline(mineRange);
 
   // The calendar follows the shown day unless the person browses to another month.
   const calendarMonth =
@@ -188,7 +213,7 @@ export function useHistoryView({
       ),
     [requests, personTracks.data],
   );
-  const visitList = range === null ? undefined : visits.data;
+  const visitList = mineRange === null ? undefined : visits.data;
   const rawTracks = useMemo(() => tracksToMap(trackList, colors.hex), [trackList, colors]);
   const transport = useTransportMap(range, level, rawTracks, { dark, device: colors.hex });
   const peopleTracks = useMemo(
@@ -203,7 +228,7 @@ export function useHistoryView({
     }
     return byDevice;
   }, [people]);
-  const segments = range === null ? undefined : timeline.data?.items;
+  const segments = mineRange === null ? undefined : timeline.data?.items;
   const shownSegment =
     segments?.find((segment) => segment.id === (openSegment ?? linkedSegment)) ?? null;
   const visitPoints = useMemo<MapPoint[]>(
@@ -291,22 +316,21 @@ export function useHistoryView({
   if (focus !== null && (!active || focus.period !== periodKey)) setFocus(null);
   if (!active) return inactiveView;
 
-  // Levels, the timeline, visits and trips exist for one's own devices only.
-  const meShown = selection.people.some((person) => person.key === me);
+  // The devices really drawn: one's own while their tracks are, and those of the people asked for.
   const shownIds = [
-    ...deviceList
-      .filter(
-        (device) => own !== null && (own.deviceIds === null || own.deviceIds.includes(device.id)),
-      )
-      .map((device) => device.id),
-    ...people.flatMap((person) => selection.devicesOf(person.userId)),
+    ...(drawsOwn && own !== null
+      ? deviceList
+          .filter((device) => own.deviceIds === null || own.deviceIds.includes(device.id))
+          .map((device) => device.id)
+      : []),
+    ...requests.flatMap((request) => request.deviceIds),
   ];
   const periodLabel =
     period.mode === "day"
       ? format.dayLong(period.from)
       : `${format.day(period.from)} – ${format.day(period.to)}`;
   const hasData = allTracks.length > 0;
-  const withHistory = people.filter(sharesHistory);
+  const withHistory = drawnPeople.filter(sharesHistory);
   const nameOf = (deviceId: string) => {
     const shared = owners.get(deviceId);
     if (shared !== undefined) return `${shared.person.displayName} · ${shared.name}`;
@@ -323,8 +347,8 @@ export function useHistoryView({
       ? (deviceList.find((device) => device.id === deviceId)?.name ?? "Removed device")
       : null;
   const day = period.mode === "day" ? period.from : null;
-  // Nobody with history and none of one's own: nothing to say here, their cards say why.
-  const quiet = !meShown && withHistory.length === 0 && personTracks.error === null;
+  // Nobody with history and none of one's own: nothing to say here, their detail says why.
+  const quiet = !drawsOwn && withHistory.length === 0 && personTracks.error === null;
   const showsCalendar = calendarOpen && period.mode === "day";
 
   return {
@@ -332,24 +356,27 @@ export function useHistoryView({
     description: period.mode === "range" ? periodLabel : undefined,
     map: {
       label: hasData
-        ? meShown
+        ? meSelected
           ? `Map of the tracks for ${periodLabel}. Totals, the timeline, visits and trips are listed on this page.`
-          : `Map of the tracks for ${periodLabel}. Their totals are listed on this page.`
-        : meShown
+          : selected === null
+            ? `Map of the tracks for ${periodLabel}. Totals are listed on this page.`
+            : `Map of ${other?.displayName ?? "their"}’s tracks for ${periodLabel}. Their totals are listed on this page.`
+        : drawsOwn
           ? `Map. Nothing was recorded for ${periodLabel}.`
           : `Map. Nothing to show for ${periodLabel}.`,
       tracks: [...transport.tracks, ...peopleTracks],
       transport: transport.transport,
       selectedSegmentId: shownSegment?.id ?? null,
-      onSegmentClick: setOpenSegment,
+      onSegmentClick: openFromMap,
       visits: visitPoints,
       cursors,
       fit: {
-        key: fitKey(period.from, period.to, shownIds),
+        key: fitKey(`${period.from}..${period.to}`, selected?.key ?? null, shownIds),
         // Tracks placeholder data belongs to the previous period until the new one arrives.
         bounds:
           devices.isPending ||
-          (range !== null && (tracks.isPending || tracks.isPlaceholderData || visits.isPending)) ||
+          (range !== null && (tracks.isPending || tracks.isPlaceholderData)) ||
+          (mineRange !== null && visits.isPending) ||
           transport.pending ||
           personTracks.pending
             ? null
@@ -393,7 +420,7 @@ export function useHistoryView({
         ) : null}
       </>
     ),
-    transport: meShown ? transport : null,
+    transport: drawsOwn ? transport : null,
     chip:
       (tracks.isFetching && !tracks.isPending) ||
       (transport.fetching && !transport.pending) ||
@@ -413,7 +440,7 @@ export function useHistoryView({
           onChange={(value) => setScrub({ key: periodKey, value })}
         />
       ),
-    panelLabel: "Totals, visits and trips",
+    panelLabel: "Totals",
     panel: quiet ? null : (
       <>
         {personTracks.error === null ? null : (
@@ -438,8 +465,8 @@ export function useHistoryView({
             swatchOf={swatchOf}
             withDate={withDate}
           />
-        ) : !meShown ? (
-          // Someone else alone: their tracks, or their cards say why there are none.
+        ) : !drawsOwn ? (
+          // Someone else alone: their tracks, or their detail says why there are none.
           withHistory.length === 0 ? null : personTracks.pending ? (
             <LoadingBlock label="Loading tracks">
               <Skeleton height="4.5rem" />
@@ -485,64 +512,61 @@ export function useHistoryView({
             </EmptyState>
           </div>
         )}
+      </>
+    ),
+    mineLabel: "Timeline, visits and trips",
+    mine: !meSelected ? null : (
+      <>
+        <DayTimeline
+          segments={segments}
+          pending={timeline.data?.pending ?? false}
+          loading={timeline.isPending}
+          error={timeline.isError ? timeline.error : null}
+          onRetry={() => void timeline.refetch()}
+          deviceName={deviceName}
+          day={day}
+          onOpen={(segment) => {
+            setOpenSegment(segment.id);
+            focusOn(
+              { lon: segment.centroid.lon, lat: segment.centroid.lat, zoom: 13 },
+              `segment:${segment.id}`,
+            );
+          }}
+        />
 
-        {meShown ? (
-          <>
-            <DayTimeline
-              segments={segments}
-              pending={timeline.data?.pending ?? false}
-              loading={timeline.isPending}
-              error={timeline.isError ? timeline.error : null}
-              onRetry={() => void timeline.refetch()}
-              deviceName={deviceName}
-              day={day}
-              onOpen={(segment) => {
-                setOpenSegment(segment.id);
-                focusOn(
-                  { lon: segment.centroid.lon, lat: segment.centroid.lat, zoom: 13 },
-                  `segment:${segment.id}`,
-                );
-              }}
-            />
+        <VisitList
+          visits={visitList}
+          loading={visits.isPending}
+          error={visits.isError ? visits.error : null}
+          onRetry={() => void visits.refetch()}
+          devices={deviceList}
+          slotOf={colors.slot}
+          day={day}
+          onShow={(visit) => {
+            focusOn({ lon: visit.lon, lat: visit.lat, zoom: 15 }, `visit:${visit.recordedAt}`);
+            const arrived = visit.arrivedAt ?? visit.recordedAt;
+            setScrub({ key: periodKey, value: Math.floor(Date.parse(arrived) / 1000) });
+          }}
+        />
 
-            <VisitList
-              visits={visitList}
-              loading={visits.isPending}
-              error={visits.isError ? visits.error : null}
-              onRetry={() => void visits.refetch()}
-              devices={deviceList}
-              slotOf={colors.slot}
-              day={day}
-              onShow={(visit) => {
-                focusOn({ lon: visit.lon, lat: visit.lat, zoom: 15 }, `visit:${visit.recordedAt}`);
-                const arrived = visit.arrivedAt ?? visit.recordedAt;
-                setScrub({ key: periodKey, value: Math.floor(Date.parse(arrived) / 1000) });
-              }}
-            />
-
-            <TripList
-              trips={range === null ? undefined : trips.data}
-              loading={trips.isPending}
-              error={trips.isError ? trips.error : null}
-              onRetry={() => void trips.refetch()}
-              devices={deviceList}
-              slotOf={colors.slot}
-              day={day}
-              onShow={(trip) => {
-                const time = Math.floor(Date.parse(trip.startedAt) / 1000);
-                setScrub({ key: periodKey, value: time });
-                const track = trackList.find((candidate) => candidate.deviceId === trip.deviceId);
-                const position = track === undefined ? null : positionAt(track.points, time);
-                if (position !== null) {
-                  focusOn(
-                    { lon: position.lon, lat: position.lat, zoom: 14 },
-                    `trip:${trip.startedAt}`,
-                  );
-                }
-              }}
-            />
-          </>
-        ) : null}
+        <TripList
+          trips={mineRange === null ? undefined : trips.data}
+          loading={trips.isPending}
+          error={trips.isError ? trips.error : null}
+          onRetry={() => void trips.refetch()}
+          devices={deviceList}
+          slotOf={colors.slot}
+          day={day}
+          onShow={(trip) => {
+            const time = Math.floor(Date.parse(trip.startedAt) / 1000);
+            setScrub({ key: periodKey, value: time });
+            const track = trackList.find((candidate) => candidate.deviceId === trip.deviceId);
+            const position = track === undefined ? null : positionAt(track.points, time);
+            if (position !== null) {
+              focusOn({ lon: position.lon, lat: position.lat, zoom: 14 }, `trip:${trip.startedAt}`);
+            }
+          }}
+        />
       </>
     ),
     personTracks: trackStates,

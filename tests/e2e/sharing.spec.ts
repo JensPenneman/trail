@@ -43,11 +43,9 @@ test("someone you share with sees you live, may hide you, and loses you when you
   await expect(youShareWith(page).getByText("Sees you")).toBeVisible();
 
   await friend.page.goto("/");
-  const card = friend.page.getByRole("article", { name: account.displayName });
-  // Who and how fresh at a glance, with the battery; the phone itself in Details.
-  await expect(card.getByRole("img", { name: "Battery 77%" })).toBeVisible();
-  await card.getByRole("button", { name: "Details" }).click();
-  await expect(card.getByText("Sharer’s phone")).toBeVisible();
+  const row = friend.page.getByRole("link", { name: new RegExp(`^${account.displayName}(\\s|$)`) });
+  // Who and how fresh at a glance, with the battery; the phone itself in the detail.
+  await expect(row.getByRole("img", { name: "Battery 77%" })).toBeVisible();
   await expectAccessible(friend.page, "People with someone who shares");
   await expect(friend.page.getByText("Live updates on")).toBeAttached();
   // Survives only if the page is not reloaded.
@@ -59,17 +57,25 @@ test("someone you share with sees you live, may hide you, and loses you when you
     withBattery(overlandBatch(account.timezone), 0.42),
   );
   expect(later.status()).toBe(200);
-  await expect(card.getByRole("img", { name: "Battery 42%" })).toBeVisible();
+  await expect(row.getByRole("img", { name: "Battery 42%" })).toBeVisible();
   expect(await friend.page.evaluate(() => Reflect.get(window, "trailE2eSamePage"))).toBe(true);
 
+  await row.click();
+  const card = friend.page.getByRole("region", { name: account.displayName, exact: true });
+  await expect(card.getByText("Sharer’s phone")).toBeVisible();
+  // Hiding leaves the detail for the list, and says so.
   await card.getByRole("button", { name: `Hide ${account.displayName}` }).click();
   await expect(card).toBeHidden();
+  await expect(row).toBeHidden();
   await expect(friend.page.getByText("Hidden (1)")).toBeVisible();
+  await expect(
+    friend.page.getByText(`${account.displayName} is hidden. Show them again under Hidden.`),
+  ).toBeAttached();
   // The sharer sees it at once, through their own live stream.
   await expect(youShareWith(page).getByText("Hid you")).toBeVisible();
   await friend.page.getByText("Hidden (1)").click();
   await friend.page.getByRole("button", { name: `Show ${account.displayName} again` }).click();
-  await expect(card).toBeVisible();
+  await expect(row).toBeVisible();
 
   // Each person has a page of their own in Settings › Sharing; stopping is there.
   await youShareWith(page).getByRole("link", { name: friendAccount.displayName }).click();
@@ -80,7 +86,7 @@ test("someone you share with sees you live, may hide you, and loses you when you
     .getByRole("dialog", { name: `Stop sharing with ${friendAccount.displayName}?` })
     .getByRole("button", { name: "Stop sharing" })
     .click();
-  await expect(card).toBeHidden();
+  await expect(row).toBeHidden();
   await expect(friend.page.getByText("Nobody shares with you yet")).toBeVisible();
   expect(await friend.page.evaluate(() => Reflect.get(window, "trailE2eSamePage"))).toBe(true);
   await friend.page.reload();

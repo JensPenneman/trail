@@ -1,16 +1,19 @@
 import type { ReactNode } from "react";
 import { useFormatter } from "../format/useFormatter";
 import { RelativeTime } from "../ui/RelativeTime";
-import { OnMapBadge } from "./OnMapBadge";
 import { PersonAvatar } from "./PersonAvatar";
 import "./PersonSummary.css";
 
 interface PersonSummaryProps {
   /** The heading: their name, or "Me". */
   title: string;
-  titleId: string;
-  /** h2 for Me, a part of the page; h3 for a card in the list of people. */
-  level: 2 | 3;
+  /** The detail heading's id, for the region it names. */
+  titleId?: string;
+  /**
+   * `2`: the heading of a person's detail, which takes focus when it opens;
+   * `row`: no heading, the name is a part of the link around it in the list.
+   */
+  level: 2 | "row";
   /** Whose initials the avatar shows, in which colour (`me`: the accent). */
   avatar: { name: string; slot: number | "me" };
   /**
@@ -25,8 +28,6 @@ interface PersonSummaryProps {
   distance?: ReactNode;
   /** Right of the name, before the distance: the battery, when their share includes it. */
   battery?: ReactNode;
-  /** Whether the map shows them now. */
-  onMap: boolean;
 }
 
 /**
@@ -34,7 +35,8 @@ interface PersonSummaryProps {
  * battery glyph and how far on the right — "Ana Bell … ▮ 1.8 km" — then how
  * fresh and what they are doing: "Live · Cycling · 16 km/h" while the
  * position is live (its time on hover and in Details), "40 min ago · Walking"
- * after. A long name ends in an ellipsis rather than taking a line more.
+ * after. In the list it is a row without a heading; in a person's detail it
+ * carries the h2. A long name ends in an ellipsis rather than taking a line more.
  */
 export function PersonSummary({
   title,
@@ -45,16 +47,18 @@ export function PersonSummary({
   doing,
   distance,
   battery,
-  onMap,
 }: PersonSummaryProps) {
   const format = useFormatter();
-  const Heading = level === 2 ? "h2" : "h3";
   return (
     <div className="person-summary">
       <PersonAvatar name={avatar.name} slot={avatar.slot} />
-      <Heading className="person-summary__name" id={titleId}>
-        {title}
-      </Heading>
+      {level === "row" ? (
+        <span className="person-summary__name">{title}</span>
+      ) : (
+        <h2 className="person-summary__name" id={titleId} tabIndex={-1} data-person-heading>
+          {title}
+        </h2>
+      )}
       {battery === undefined && distance === undefined ? null : (
         <div className="person-summary__aside">
           {battery === undefined ? null : (
@@ -96,11 +100,6 @@ export function PersonSummary({
         )}
         {doing === null ? null : <span className="person-summary__doing">{unbroken(doing)}</span>}
       </p>
-      {onMap ? (
-        <div className="person-summary__badge">
-          <OnMapBadge />
-        </div>
-      ) : null}
     </div>
   );
 }

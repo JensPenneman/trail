@@ -1,8 +1,8 @@
 /**
- * What the camera frames: a period and the devices drawn. Views showing the
- * same (Live, and History on today) share it, so switching between them keeps
- * the camera; another day or other devices frame anew.
+ * What the camera frames: a view's period, whose data and the devices drawn.
+ * Another person, day or other devices frame anew; the same ones keep the
+ * camera where the person left it.
  */
-export function fitKey(from: string, to: string, deviceIds: readonly string[]): string {
-  return `${from}..${to}|${[...deviceIds].sort().join(",")}`;
+export function fitKey(scope: string, who: string | null, deviceIds: readonly string[]): string {
+  return `${scope}|${who ?? "everyone"}|${[...deviceIds].sort().join(",")}`;
 }

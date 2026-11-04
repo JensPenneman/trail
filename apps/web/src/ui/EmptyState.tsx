@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { type ReactNode, use } from "react";
 import { Icon } from "./Icon";
 import type { IconName } from "./iconPaths";
+import { SectionLevel } from "./SectionTitle";
 import "./EmptyState.css";
 
 interface EmptyStateProps {
@@ -10,10 +11,21 @@ interface EmptyStateProps {
   action?: ReactNode;
   /** Heading level inside the page outline. */
   level?: 2 | 3;
+  /** Under the section title around it, one level down from the sections' own. */
+  nested?: boolean;
 }
 
-export function EmptyState({ icon, title, children, action, level = 2 }: EmptyStateProps) {
-  const Heading = level === 2 ? "h2" : "h3";
+export function EmptyState({
+  icon,
+  title,
+  children,
+  action,
+  level,
+  nested = false,
+}: EmptyStateProps) {
+  // Unless the page says which, a level under whatever it sits in (a detail's parts are h3).
+  const sections = use(SectionLevel);
+  const Heading = `h${level ?? (nested ? sections + 1 : sections)}` as "h2" | "h3" | "h4";
   return (
     <div className="empty-state">
       <span className="empty-state__icon">

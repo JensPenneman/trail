@@ -118,7 +118,9 @@ test("Insights: the overview, a mode, when you travel and roads", async ({ page,
     .getByRole("link", { name: /^Show on the map/ })
     .first()
     .click();
-  await expect(page).toHaveURL(/\/\?view=history&date=\d{4}-\d{2}-\d{2}&segment=[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(
+    /\/\?view=history&date=\d{4}-\d{2}-\d{2}&segment=[0-9a-f-]{36}&person=me$/,
+  );
   const dialog = page.getByRole("dialog", { name: "Car" });
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Close" }).click();

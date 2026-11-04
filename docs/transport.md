@@ -101,19 +101,20 @@ sure, especially between a car and a train.
   Trail. For a move marked as unsure, "Yes" confirms Trail's guess. A move
   that is still going on says "Still under way" instead: it can be put right
   once it is over, after a stop or 30 minutes without new points. For the ride
-  you are on, use "From now on" below.
-- **From now on**: your own card, **Me**, on the People page has a row
-  *Now: Walk · Bike · Car · Bus · Train · Tram · Metro · Other · Auto*. Tap
-  the mode you are switching to — getting on a train, say — and it holds
-  until you stop for 10 minutes or more, or — after a stop — Trail sees you
-  travel another way (on foot, by bike, in a vehicle): changing trains does
-  not end it, cycling home from the station does. The ride you set it for is
-  yours all the way, whatever Trail reads in it: a stretch read as a car
-  stays your bike ride, and the walk to the platform takes your train.
-  Auto hands it back to Trail; Other has every mode.
-  It sets the phone that reported last, which the row names; a second
-  device (a tracker in the car, say) is not changed, and its own page in
-  **Settings › Devices** has the same row, for it.
+  you are on, use "From now on" below (API and MCP clients).
+- **From now on**: this one is for the API and MCP clients only; the web
+  app has no control for it. Setting a mode for a device
+  (`POST /api/v1/devices/{id}/mode`, [api.md](api.md); the MCP tool
+  `set_transport_mode`, [mcp.md](mcp.md)) holds until you stop for 10
+  minutes or more, or — after a stop — Trail sees you travel another way (on
+  foot, by bike, in a vehicle): changing trains does not end it, cycling home
+  from the station does. The ride you set it for is yours all the way,
+  whatever Trail reads in it: a stretch read as a car stays your bike ride,
+  and the walk to the platform takes your train. A mode of `null` hands it
+  back to Trail. It sets the one device it names; a second device (a tracker
+  in the car, say) is not changed. **Me** on the People page says what it
+  sets ("By train"), like any other mode. In the app, put a move right once
+  it is over, as above.
 
 What you set always wins: Trail keeps it when it works your history out
 again, and the statistics count it.

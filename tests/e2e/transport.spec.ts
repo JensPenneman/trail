@@ -12,7 +12,6 @@ import {
   type OverlandBatch,
   type OverlandFeature,
   overlandBatch,
-  pastBatch,
   startOfToday,
 } from "./support/overlandBatch";
 import { postOverland } from "./support/postOverland";
@@ -131,7 +130,7 @@ test("levels change the tracks, and a move's mode can be put right", async ({ pa
     ).size;
   expect(await distinct("raw")).toBeGreaterThan(await distinct("averaged"));
 
-  await page.goto("/?view=history");
+  await page.goto("/?view=history&person=me");
   await openMapOptions(page);
   const level = page.getByRole("group", { name: "Detail of the tracks" });
   await expect(level.getByRole("radio", { name: "Transport" })).toBeChecked();
@@ -162,7 +161,7 @@ test("levels change the tracks, and a move's mode can be put right", async ({ pa
   await expect(level.getByRole("radio", { name: "Raw" })).toBeChecked();
   await expect(page).toHaveURL(/level=raw/);
   // The choice is remembered on this browser.
-  await page.goto("/?view=history");
+  await page.goto("/?view=history&person=me");
   await openMapOptions(page);
   await expect(page.getByRole("radio", { name: "Raw" })).toBeChecked();
   await page.getByRole("radio", { name: "Transport" }).click();
@@ -228,7 +227,7 @@ test("a past day's move shows its corrected mode at once", async ({ page, accoun
     )
     .toBe(true);
 
-  await page.goto(`/?view=history&date=${date}`);
+  await page.goto(`/?view=history&person=me&date=${date}`);
   const timeline = page.getByRole("region", { name: "Timeline" });
   await timeline.getByRole("button", { name: /^Details of the car from/ }).click();
   const dialog = page.getByRole("dialog");
@@ -258,7 +257,7 @@ test("a stop shows the walk within it, and a silent phone shows as no data", asy
   const moves = tracks.segments.filter((segment) => segment.kind === "move");
   expect(moves.length).toBeGreaterThanOrEqual(3);
 
-  await page.goto("/?view=history");
+  await page.goto("/?view=history&person=me");
   const timeline = page.getByRole("region", { name: "Timeline" });
   await expect(timeline.getByText(/^No data · 4[45] mins$/)).toBeVisible();
   const legend = page.getByRole("region", { name: "Map legend" });
@@ -273,44 +272,4 @@ test("a stop shows the walk within it, and a silent phone shows as no data", asy
   await expectAccessible(page, "a stop's dialog");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
-});
-
-test("the quick toggle on the Me card says how you travel from now on", async ({
-  page,
-  account,
-}) => {
-  // Nothing recorded after the toggle: a ride of another kind after it would end it.
-  const commuter = await uploadedDevice(
-    page,
-    "Commuter",
-    pastBatch(overlandBatch(account.timezone)),
-  );
-  await page.goto("/");
-  const me = page.getByRole("region", { name: "Me", exact: true });
-  const chips = me.getByRole("group", { name: "Now:" });
-  await expect(chips).toHaveAccessibleDescription(
-    "Until you stop for 10 minutes or more or travel another way, for Commuter.",
-  );
-  await expect(chips.getByRole("button", { name: /^Auto/, pressed: true })).toBeVisible();
-  await chips.getByRole("button", { name: "Train" }).click();
-  await expect(chips.getByRole("button", { name: "Train", pressed: true })).toBeVisible();
-  // What Me is doing follows: by train now (no-break spaces keep its words together).
-  await expect(me.getByText(/^By\strain/)).toBeVisible();
-  await expectAccessible(page, "People with the quick toggle");
-
-  await page.reload();
-  const again = me.getByRole("group", { name: "Now:" });
-  await expect(again.getByRole("button", { name: "Train", pressed: true })).toBeVisible();
-  await again.getByRole("button", { name: "Other" }).click();
-  const other = page.getByRole("dialog", { name: "How are you travelling?" });
-  await other.getByRole("button", { name: "Boat" }).click();
-  await expect(again.getByRole("button", { name: "Other: Boat", pressed: true })).toBeVisible();
-
-  // The same device's page has the same toggle, set to the same.
-  await page.goto(`/settings/devices/${commuter.id}`);
-  await expect(page.getByRole("heading", { level: 2, name: "Travelling now" })).toBeVisible();
-  const onItsPage = page.getByRole("group", { name: "Now:" });
-  await expect(onItsPage.getByRole("button", { name: "Other: Boat", pressed: true })).toBeVisible();
-  await onItsPage.getByRole("button", { name: /^Auto/ }).click();
-  await expect(onItsPage.getByRole("button", { name: /^Auto/, pressed: true })).toBeVisible();
 });

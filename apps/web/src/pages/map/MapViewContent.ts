@@ -28,11 +28,20 @@ export interface MapViewContent {
   /** Below the map on phones, over its foot on wide screens: History's time slider. */
   foot: ReactNode;
   panelLabel: string;
-  /** The view's details: Live's (one's day so far) right under the Me card, the others' above it. */
+  /**
+   * The view's part of the list and of every detail: History's summary, Heat's
+   * legend and totals. Null for a view with nothing to say about people at large.
+   */
   panel: ReactNode;
   /**
-   * The tracks of the people shown whose share includes history, for the
-   * view's day or period, by user id: what their cards say of where they have
+   * The view's part of Me's detail only, since it is one's own (Live's day so
+   * far, History's timeline, visits and trips); null for the others.
+   */
+  mine: ReactNode;
+  mineLabel: string;
+  /**
+   * The track of the person selected, if their share includes history, for the
+   * view's day or period, by user id: what their detail says of where they have
    * been. Nobody else is in it.
    */
   personTracks: ReadonlyMap<string, PersonTrackState>;
@@ -50,6 +59,8 @@ export const inactiveView: MapViewContent = {
   foot: null,
   panelLabel: "",
   panel: null,
+  mine: null,
+  mineLabel: "",
   personTracks: new Map(),
   dialog: null,
 };

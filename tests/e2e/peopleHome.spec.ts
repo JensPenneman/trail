@@ -7,24 +7,24 @@ import { sharingFriend } from "./support/sharingFriend";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
 
-const meCard = (page: Page) => page.getByRole("region", { name: "Me", exact: true });
-const personCard = (page: Page, name: string) =>
-  page.getByRole("region", { name: "Sharing with you" }).getByRole("article", { name });
-const onTheMap = (card: Locator) => card.getByText("On the map", { exact: true });
+const peopleList = (page: Page) => page.getByRole("list", { name: "People", exact: true });
+const meRow = (page: Page) => peopleList(page).getByRole("link", { name: /^Me(\s|$)/ });
+/** The row of someone: the name, then a space or the end, so a longer name does not match. */
+const personRow = (page: Page, name: string) =>
+  peopleList(page).getByRole("link", {
+    name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`),
+  });
+/** A person's detail replaces the list; the region is named by their name. */
+const detail = (page: Page, name: string) => page.getByRole("region", { name, exact: true });
 const ownOnly = ["Timeline", "Visits", "Trips"] as const;
-/** One's own day so far, right under the Me card in Live while Me is on the map. */
+/** One's own day so far, in Me's detail in Live. */
 const myDay = (page: Page) => page.getByRole("region", { name: "Your day so far" });
-/** What a card on the map says of where they have been: the part under its heading. */
-const whereBeen = (card: Locator) =>
-  card
-    .locator("div", { has: card.page().getByRole("heading", { name: "Where they’ve been" }) })
+/** What a detail says of where the person has been: the part under its heading. */
+const whereBeen = (view: Locator) =>
+  view
+    .locator("div", { has: view.page().getByRole("heading", { name: "Where they’ve been" }) })
     .last();
-/** Opens a card's Details: what it holds follows its button. */
-async function details(card: Locator): Promise<void> {
-  const button = card.getByRole("button", { name: "Details" });
-  await button.click();
-  await expect(button).toHaveAttribute("aria-expanded", "true");
-}
+const backToList = (page: Page) => page.getByRole("link", { name: "Back to People" });
 
 /** The tracks of people the page asks for: only precise shares with history may be asked. */
 function trackRequests(page: Page): string[] {
@@ -36,7 +36,7 @@ function trackRequests(page: Page): string[] {
   return asked;
 }
 
-test("a person's card shows them alone, with only what their share allows", async ({
+test("a person's detail shows them alone, with only what their share allows", async ({
   page,
   account,
   openBrowser,
@@ -53,77 +53,94 @@ test("a person's card shows them alone, with only what their share allows", asyn
     historyDays: null,
   });
   const asked = trackRequests(page);
+  const historianName = historian.account.displayName;
+  const roughName = rough.account.displayName;
 
-  // Home: Me first, a person on the map with their day so far, then everyone who shares, as people.
+  // Home: the list, Me first, then everyone who shares, as people. Nobody is selected, so the
+  // map shows where everyone is and nothing is asked of anyone's track.
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
-  await expect(onTheMap(meCard(page))).toBeVisible();
   // The fixture's phone is on a bike ride at 18 km/h, 90 seconds ago.
-  await expect(meCard(page).getByText(/18\skm\/h$/)).toBeVisible();
-  await expect(meCard(page).getByText("Live", { exact: true })).toBeVisible();
-  await expect(myDay(page).getByRole("heading", { name: "Timeline" })).toBeVisible();
-  await expect(page.getByRole("article", { name: "My phone" })).toHaveCount(0);
-  const historianCard = personCard(page, historian.account.displayName);
-  const roughCard = personCard(page, rough.account.displayName);
-  await expect(historianCard.getByText(/18\skm\/h$/)).toBeVisible();
-  // Their devices and the terms of their share are in Details, closed at first.
-  await expect(historianCard.getByText(historian.device.name)).toHaveCount(0);
-  await details(historianCard);
-  await expect(historianCard.getByText(historian.device.name)).toBeVisible();
-  await expect(historianCard.getByText("Last 7 days")).toBeVisible();
-  await details(roughCard);
-  await expect(roughCard.getByText("Approximate location, within about 500 m")).toBeVisible();
-  await expect(onTheMap(historianCard)).toHaveCount(0);
-  await expect(onTheMap(roughCard)).toHaveCount(0);
-  await expect(page.locator(".map-person")).toHaveCount(0);
-  await expectAccessible(page, "People with two people who share");
+  await expect(meRow(page).getByText(/18\skm\/h$/)).toBeVisible();
+  await expect(meRow(page).getByText("Live", { exact: true })).toBeVisible();
+  await expect(peopleList(page).getByRole("link")).toHaveCount(3);
+  await expect(personRow(page, historianName).getByText(/18\skm\/h$/)).toBeVisible();
+  await expect(page.getByText(historian.device.name)).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "My phone" })).toHaveCount(0);
+  await expect(myDay(page)).toHaveCount(0);
+  await expect(page.locator(".maplibregl-canvas")).toHaveAccessibleName(
+    /^Map of where everyone is now/,
+  );
+  await expect(page.locator(".map-person")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Share my location" })).toBeVisible();
+  await expectAccessible(page, "People's list with two people who share");
   if (testInfo.project.name === "desktop") {
     // Beside the map only the panel scrolls, never the page itself.
     expect(
       await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight),
     ).toBeLessThanOrEqual(0);
   }
+  expect(asked).toEqual([]);
 
-  // Someone who shares roughly and live only, alone: where they are, nothing of one's own.
-  await roughCard.getByRole("button", { name: "Show on map" }).click();
-  await expect(page).toHaveURL(new RegExp(`/\\?people=${rough.account.id}$`));
-  await expect(onTheMap(roughCard)).toBeVisible();
-  await expect(onTheMap(meCard(page))).toHaveCount(0);
+  // Someone who shares roughly and live only: where they are, nothing of one's own.
+  await personRow(page, roughName).click();
+  await expect(page).toHaveURL(new RegExp(`/\\?person=${rough.account.id}$`));
+  await expect(page.getByRole("heading", { level: 2, name: roughName })).toBeFocused();
+  await expect(peopleList(page)).toHaveCount(0);
   await expect(myDay(page)).toHaveCount(0);
-  await expect(whereBeen(roughCard)).toContainText("Shares live location only");
-  await expect(page.locator(".map-person")).toHaveCount(1);
+  await expect(whereBeen(detail(page, roughName))).toContainText("Shares live location only");
+  // Their devices and the terms of their share are right in the detail.
+  await expect(detail(page, roughName).getByText(rough.device.name)).toBeVisible();
+  await expect(
+    detail(page, roughName).getByText("Approximate location, within about 500 m"),
+  ).toBeVisible();
+  // Everyone's markers stay on the map; the camera and the label follow the person.
+  await expect(page.locator(".map-person")).toHaveCount(2);
   await expect(page.locator(".maplibregl-canvas")).toHaveAccessibleName(
-    new RegExp(`latest position of ${rough.account.displayName}`),
+    /^Map of where everyone is now/,
   );
   await expect(mapView(page, "Heat")).toHaveCount(0);
   await openMapOptions(page);
   await expect(page.getByRole("group", { name: "Map style" })).toBeVisible();
   await expect(page.getByRole("group", { name: "Detail of the tracks" })).toHaveCount(0);
-  await expectAccessible(page, "Live with someone else alone");
+  await expectAccessible(page, "Live with someone else selected");
 
   await mapView(page, "History").click();
   await expect(page).toHaveURL(/[?&]view=history/);
-  await expect(whereBeen(roughCard)).toContainText("Shares live location only");
+  await expect(whereBeen(detail(page, roughName))).toContainText("Shares live location only");
   for (const name of ["Summary", ...ownOnly]) {
     await expect(page.getByRole("region", { name, exact: true }), name).toHaveCount(0);
   }
   await expectAccessible(page, "History of someone who shares none");
 
+  // Back to the list: the focus returns to the row. History's overview draws everyone who shares
+  // history: their track and one's own, but not one's own timeline, visits and trips.
+  await backToList(page).click();
+  await expect(personRow(page, roughName)).toBeFocused();
+  await expect(page).toHaveURL(/\/\?view=history$/);
+  const summary = page.getByRole("region", { name: "Summary", exact: true });
+  await expect(summary).toContainText(`${historianName} · ${historian.device.name}`);
+  await expect(summary).toContainText("My phone");
+  for (const name of ownOnly) {
+    await expect(page.getByRole("region", { name, exact: true }), name).toHaveCount(0);
+  }
+  await expect(page.getByRole("slider", { name: "Position at" })).toBeVisible();
+  expect(new Set(asked)).toEqual(new Set([`/api/v1/people/${historian.account.id}/track`]));
+  await expectAccessible(page, "History's overview");
+
   // Someone who shares their history, alone: their track, still nothing of one's own.
-  await historianCard.getByRole("button", { name: "Show on map" }).click();
+  await personRow(page, historianName).click();
   await expect(page).toHaveURL(
     (url) =>
       url.searchParams.get("view") === "history" &&
-      url.searchParams.get("people") === historian.account.id,
+      url.searchParams.get("person") === historian.account.id,
   );
-  const summary = page.getByRole("region", { name: "Summary", exact: true });
   await expect(summary.getByRole("listitem")).toHaveCount(1);
-  await expect(summary).toContainText(
-    `${historian.account.displayName} · ${historian.device.name}`,
-  );
+  await expect(summary).toContainText(`${historianName} · ${historian.device.name}`);
+  await expect(summary).not.toContainText("My phone");
   await expect(page.getByRole("slider", { name: "Position at" })).toBeVisible();
-  // Their card says where they have been today, and steps through the days.
-  const theirDay = whereBeen(historianCard);
+  // Their detail says where they have been today, and steps through the days.
+  const theirDay = whereBeen(detail(page, historianName));
   await expect(theirDay.getByText("Today", { exact: true })).toBeVisible();
   await expect(theirDay).toContainText(/\d+(\.\d)? km · \d\d:\d\d – \d\d:\d\d/);
   await expect(theirDay.getByRole("button", { name: "Next day" })).toHaveAttribute(
@@ -135,7 +152,6 @@ test("a person's card shows them alone, with only what their share allows", asyn
   }
   await expect(page.getByRole("group", { name: "Detail of the tracks" })).toHaveCount(0);
   await expectAccessible(page, "History of someone who shares it");
-  expect(new Set(asked)).toEqual(new Set([`/api/v1/people/${historian.account.id}/track`]));
   // Live has their day too; a day back is History's.
   await mapView(page, "Live").click();
   await expect(theirDay.getByText("Today", { exact: true })).toBeVisible();
@@ -166,28 +182,35 @@ test("a person's card shows them alone, with only what their share allows", asyn
     },
   );
   expect(changed.status()).toBe(200);
-  await expect(whereBeen(historianCard)).toContainText("Shares live location only");
+  await expect(whereBeen(detail(page, historianName))).toContainText("Shares live location only");
   await expect(summary).toHaveCount(0);
   expect(asked).toEqual([]);
 
-  // Me again: one's own tracks, timeline, visits, trips, levels and heatmap are back.
-  await meCard(page).getByRole("button", { name: "Show on map" }).click();
-  await expect(page).toHaveURL(/\/\?view=history$/);
-  await expect(onTheMap(meCard(page))).toBeVisible();
+  // Me: one's own tracks, timeline, visits, trips, levels and heatmap are there.
+  await backToList(page).click();
+  await meRow(page).click();
+  await expect(page).toHaveURL((url) => url.searchParams.get("person") === "me");
+  await expect(detail(page, "Me")).toBeVisible();
   await expect(summary).toContainText("My phone");
   for (const name of ownOnly) {
     await expect(page.getByRole("region", { name, exact: true }), name).toBeVisible();
   }
   await expect(page.getByRole("group", { name: "Detail of the tracks" })).toBeVisible();
+  // Always: the devices, in the detail and not behind a button.
+  await expect(detail(page, "Me").getByRole("link", { name: "My phone" })).toBeVisible();
+  await expectAccessible(page, "History in Me's detail");
+  await mapView(page, "Live").click();
+  await expect(myDay(page).getByRole("heading", { name: "Timeline" })).toBeVisible();
+  await expectAccessible(page, "Live in Me's detail");
   await mapView(page, "Heat").click();
-  await expect(page).toHaveURL(/\/\?view=heat$/);
+  await expect(page).toHaveURL(/[?&]view=heat/);
   await expect(
     page.getByRole("region", { name: "Busiest places in view" }).getByRole("listitem").first(),
   ).toContainText(/\d+ points/);
   await expectAccessible(page, "Heat on the People page");
 });
 
-test("everyone at once, a card kept live, and sharing back and stopping from it", async ({
+test("the list kept live, and sharing back and stopping from a detail", async ({
   page,
   account,
   openBrowser,
@@ -205,36 +228,25 @@ test("everyone at once, a card kept live, and sharing back and stopping from it"
     historyDays: null,
   });
   const nearName = near.account.displayName;
+  const farName = far.account.displayName;
 
   await page.goto("/");
-  const nearCard = personCard(page, nearName);
-  const farCard = personCard(page, far.account.displayName);
+  const nearRow = personRow(page, nearName);
+  const farRow = personRow(page, farName);
   // A battery glyph where the share includes it.
-  await expect(nearCard.getByRole("img", { name: "Battery 77%" })).toBeVisible();
+  await expect(nearRow.getByRole("img", { name: "Battery 77%" })).toBeVisible();
   // An area share: no speed is shared, only roughly where.
   // Always how roughly, and a distance that says it is about that much.
   await expect(
-    farCard.getByText(/^(On\sa\sbike\sride|Cycling)\s·\swithin\sabout\s5\skm$/),
+    farRow.getByText(/^(On\sa\sbike\sride|Cycling)\s·\swithin\sabout\s5\skm$/),
   ).toBeVisible();
-  await expect(farCard.getByText(/km$/).first()).toContainText("≈");
-  await details(farCard);
-  await expect(farCard.getByText("Area only, within about 5 km")).toBeVisible();
+  await expect(farRow.getByText(/km$/).first()).toContainText("≈");
   await expect(page.getByText("Live updates on")).toBeAttached();
+  await farRow.click();
+  await expect(detail(page, farName).getByText("Area only, within about 5 km")).toBeVisible();
+  await backToList(page).click();
 
-  // Everyone at once, and Me alone again.
-  const everyone = page.getByRole("button", { name: "Show everyone" });
-  await expect(everyone).toHaveAttribute("aria-pressed", "false");
-  await everyone.click();
-  await expect(everyone).toHaveAttribute("aria-pressed", "true");
-  await expect(onTheMap(nearCard)).toBeVisible();
-  await expect(onTheMap(farCard)).toBeVisible();
-  await expect(onTheMap(meCard(page))).toBeVisible();
-  await expect(page.locator(".map-person")).toHaveCount(2);
-  const shown = new URL(page.url()).searchParams.get("people")?.split(",") ?? [];
-  expect(new Set(shown)).toEqual(new Set(["me", near.account.id, far.account.id]));
-  await expectAccessible(page, "Live with everyone on the map");
-
-  // Their next upload reaches their card while the page stays open.
+  // Their next upload reaches their row while the page stays open.
   await page.evaluate(() => Reflect.set(window, "trailE2eSamePage", true));
   const next = await postOverland(
     request,
@@ -242,14 +254,13 @@ test("everyone at once, a card kept live, and sharing back and stopping from it"
     withBattery(overlandBatch(near.account.timezone), 0.42),
   );
   expect(next.status()).toBe(200);
-  await expect(nearCard.getByRole("img", { name: "Battery 42%" })).toBeVisible();
+  await expect(nearRow.getByRole("img", { name: "Battery 42%" })).toBeVisible();
   expect(await page.evaluate(() => Reflect.get(window, "trailE2eSamePage"))).toBe(true);
-  await everyone.click();
-  await expect(page).toHaveURL((url) => url.pathname === "/" && url.search === "");
 
-  // Share back from their card's Details, and stop again from it.
-  await details(nearCard);
-  await nearCard.getByRole("button", { name: `Share back with ${nearName}` }).click();
+  // Share back from their detail, and stop again from it.
+  await nearRow.click();
+  const nearDetail = detail(page, nearName);
+  await nearDetail.getByRole("button", { name: `Share back with ${nearName}` }).click();
   const dialog = page.getByRole("dialog", { name: "Share my location" });
   await expect(dialog.getByLabel("Email address")).toHaveValue(near.account.email);
   await dialog.getByRole("button", { name: "Share", exact: true }).click();
@@ -257,27 +268,30 @@ test("everyone at once, a card kept live, and sharing back and stopping from it"
     .getByRole("dialog", { name: `Sharing with ${nearName}` })
     .getByRole("button", { name: "Done" })
     .click();
-  await expect(nearCard.getByText(`You share with ${nearName}`)).toBeVisible();
-  await expect(page.getByRole("link", { name: /^You share with 1 person/ })).toBeVisible();
-  await nearCard
+  await expect(nearDetail.getByText(`You share with ${nearName}`)).toBeVisible();
+  await expectAccessible(page, "a person's detail");
+  await nearDetail
     .getByRole("button", { name: `Stop sharing your location with ${nearName}` })
     .click();
   const stop = page.getByRole("dialog", { name: `Stop sharing with ${nearName}?` });
   await expectAccessible(page, "the stop-sharing dialog");
   await stop.getByRole("button", { name: "Stop sharing" }).click();
-  await expect(nearCard.getByRole("button", { name: `Share back with ${nearName}` })).toBeVisible();
+  await expect(
+    nearDetail.getByRole("button", { name: `Share back with ${nearName}` }),
+  ).toBeVisible();
+
+  // The quiet line under the list says whom one shares with, and leads to Settings › Sharing.
+  await backToList(page).click();
   await expect(page.getByRole("link", { name: /^You share with nobody/ })).toBeVisible();
 
-  // A link to someone alone (the old People page's Show on map) shows them alone.
+  // A link from before the single selection (the old People page's Show on map) selects them.
   await page.goto(`/?view=live&people=${far.account.id}`);
-  await expect(onTheMap(farCard)).toBeVisible();
+  await expect(detail(page, farName)).toBeVisible();
   await expect(myDay(page)).toHaveCount(0);
-  await expect(page.locator(".map-person")).toHaveCount(1);
+  await expect(page.locator(".map-person")).toHaveCount(2);
   await expect(page.locator(".maplibregl-canvas")).toHaveAccessibleName(
-    new RegExp(`latest position of ${far.account.displayName}`),
+    /^Map of where everyone is now/,
   );
-  // Shown already: Show on map moves the camera and keeps the choice.
-  await farCard.getByRole("button", { name: "Show on map" }).click();
-  await expect(page).toHaveURL(new RegExp(`/\\?view=live&people=${far.account.id}$`));
-  await expect(onTheMap(farCard)).toBeVisible();
+  // The focus stays where the page put it: nothing moves for a link that opens a detail.
+  await expect(page.getByRole("heading", { level: 2, name: farName })).not.toBeFocused();
 });

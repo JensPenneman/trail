@@ -1,0 +1,38 @@
+/* The way up to the page a screen belongs to (Settings' pages, a person's detail). */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 0.125rem;
+  max-width: 100%;
+  min-height: var(--target);
+  padding: 0 var(--space-2) 0 var(--space-1);
+  border-radius: var(--radius-m);
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--color-accent-hover);
+  text-decoration: none;
+}
+
+.back-link__icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  stroke-width: 2.25;
+}
+
+.back-link__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (forced-colors: active) {
+  .back-link:hover {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

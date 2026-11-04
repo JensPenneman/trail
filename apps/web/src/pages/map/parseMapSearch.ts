@@ -3,12 +3,12 @@ import { parseHistorySelection } from "./history/parseHistorySelection";
 import { isMapView, type MapView } from "./mapViews";
 import { me } from "./me";
 
-/** What the People page's map shows, as its URL says (`/?view=…&people=…&devices=…&date=…`). */
+/** What the People page's map shows, as its URL says (`/?view=…&person=…&devices=…&date=…`). */
 export interface MapSearch {
   view: MapView;
-  /** `me` and the user ids of people sharing with the signed-in person; never empty. */
-  people: readonly string[];
-  /** The devices shown; null shows every device of the selected people. */
+  /** `me` or the user id of the one person selected; null is the overview, nobody selected. */
+  person: string | null;
+  /** The devices shown of the selected person; null shows all of them. */
   devices: readonly string[] | null;
   /** The History view's day or period (kept while another view is shown). */
   period: Omit<HistorySelection, "deviceIds">;
@@ -16,13 +16,26 @@ export interface MapSearch {
 
 const userId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** `?people=` as written, without what cannot be a person; Me when nobody is left. */
-export function parsePeople(params: URLSearchParams): readonly string[] {
-  const people = (params.get("people") ?? "")
-    .split(",")
-    .map((part) => part.trim().toLowerCase())
-    .filter((part) => part === me || userId.test(part));
-  return people.length === 0 ? [me] : [...new Set(people)];
+const isPerson = (value: string): boolean => value === me || userId.test(value);
+
+/**
+ * The person selected. `?person=` is the one parameter; links from before the
+ * single selection still work: `?people=` with one person selects them (several
+ * mean the overview), and `?segment=` alone is a link to one of one's own moves.
+ */
+function parsePerson(params: URLSearchParams): string | null {
+  const person = (params.get("person") ?? "").trim().toLowerCase();
+  if (isPerson(person)) return person;
+  const people = [
+    ...new Set(
+      (params.get("people") ?? "")
+        .split(",")
+        .map((part) => part.trim().toLowerCase())
+        .filter(isPerson),
+    ),
+  ];
+  if (people.length > 0) return people.length === 1 ? (people[0] ?? null) : null;
+  return params.has("segment") ? me : null;
 }
 
 /**
@@ -36,7 +49,7 @@ export function parseMapSearch(params: URLSearchParams, today: string): MapSearc
   const { deviceIds, ...period } = parseHistorySelection(params, today);
   return {
     view: isMapView(view) ? view : "live",
-    people: parsePeople(params),
+    person: parsePerson(params),
     devices: deviceIds,
     period,
   };

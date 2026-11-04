@@ -36,35 +36,7 @@
 }
 
 .settings-back {
-  display: inline-flex;
   grid-column: 1;
-  align-items: center;
-  justify-self: start;
-  gap: 0.125rem;
-  max-width: 100%;
-  min-height: var(--target);
-  padding: 0 var(--space-2) 0 var(--space-1);
-  border-radius: var(--radius-m);
-  color: var(--color-accent);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.settings-back:hover {
-  color: var(--color-accent-hover);
-  text-decoration: none;
-}
-
-.settings-back__icon {
-  width: 1.5rem;
-  height: 1.5rem;
-  stroke-width: 2.25;
-}
-
-.settings-back__label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .settings-page__compact-title {

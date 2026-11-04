@@ -6,10 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../src/api/queryKeys";
 import { applyServerEvent } from "../src/live/applyServerEvent";
 import { createLiveStore } from "../src/live/createLiveStore";
-import { DevicePage } from "../src/pages/device/DevicePage";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { localDayRange } from "../src/time/localDayRange";
-import { automatic, car, dayStamp, ids, levelTracks, timeline, user } from "./support/fixtures";
+import { dayStamp, ids, levelTracks, timeline, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { createTestQueryClient, renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
@@ -25,7 +24,7 @@ afterEach(() => {
 describe("the Transport level on History", () => {
   it("draws stops and moves by mode, with a legend and the day's timeline", async () => {
     mockApi(standardRoutes());
-    renderPage(<PeoplePage />, { url: "/?view=history", user });
+    renderPage(<PeoplePage />, { url: "/?view=history&person=me", user });
     const level = screen.getByRole("group", { name: "Detail of the tracks" });
     expect(within(level).getByRole("radio", { name: "Transport" })).toBeChecked();
     await waitFor(() =>
@@ -46,9 +45,9 @@ describe("the Transport level on History", () => {
   it("keeps the level in the URL and remembers it", async () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
-    const { router } = renderPage(<PeoplePage />, { url: "/?view=history", user });
+    const { router } = renderPage(<PeoplePage />, { url: "/?view=history&person=me", user });
     await person.click(screen.getByRole("radio", { name: "Raw" }));
-    expect(router.state.location.search).toBe("?view=history&level=raw");
+    expect(router.state.location.search).toBe("?view=history&person=me&level=raw");
     expect(window.localStorage.getItem("trail.level")).toBe("raw");
     const map = () => screen.getByRole("img", { name: /^Map/ });
     await waitFor(() => expect(map()).toHaveAttribute("data-transport", "0"));
@@ -71,7 +70,7 @@ describe("the Transport level on History", () => {
       },
     });
     const person = userEvent.setup();
-    renderPage(<PeoplePage />, { url: "/?view=history", user });
+    renderPage(<PeoplePage />, { url: "/?view=history&person=me", user });
     await person.click(await screen.findByRole("button", { name: /Details of the train/ }));
     const dialog = await screen.findByRole("dialog", { name: "Train" });
     expect(within(dialog).getByText("Was this a train ride?")).toBeInTheDocument();
@@ -142,7 +141,7 @@ describe("the Transport level on History", () => {
     queryClient.setQueryData(queryKeys.session, user);
     const person = userEvent.setup();
     const { liveStore } = renderPage(<PeoplePage />, {
-      url: `/?view=history&date=${date}`,
+      url: `/?view=history&person=me&date=${date}`,
       user,
       queryClient,
     });
@@ -195,7 +194,7 @@ describe("continuity at the Transport level", () => {
         },
       }),
     });
-    renderPage(<PeoplePage />, { url: "/?view=history", user });
+    renderPage(<PeoplePage />, { url: "/?view=history&person=me", user });
     const list = screen.getByRole("region", { name: "Timeline" });
     expect(await within(list).findByText(/^No data · 42 min/)).toBeInTheDocument();
     // Between the train and the walk (with their times), and nowhere else.
@@ -205,7 +204,7 @@ describe("continuity at the Transport level", () => {
     expect(rows[2]).toMatch(/07:38 – 08:20$/);
   });
 
-  it("says so on Live too, in the day under the Me card", async () => {
+  it("says so on Live too, in Me's day so far", async () => {
     mockApi({
       ...standardRoutes(),
       "GET /api/v1/segments": ({ url }: { url: URL }) => ({
@@ -217,7 +216,7 @@ describe("continuity at the Transport level", () => {
         },
       }),
     });
-    renderPage(<PeoplePage />, { user });
+    renderPage(<PeoplePage />, { url: "/?person=me", user });
     const list = await screen.findByRole("region", { name: "Timeline" });
     expect(await within(list).findByText(/^No data · 42 min/)).toBeInTheDocument();
     const rows = [...list.querySelectorAll("li")].map((row) => row.textContent ?? "");
@@ -237,7 +236,7 @@ describe("continuity at the Transport level", () => {
       }),
     });
     const person = userEvent.setup();
-    renderPage(<PeoplePage />, { url: "/?view=history", user });
+    renderPage(<PeoplePage />, { url: "/?view=history&person=me", user });
     await person.click(await screen.findByRole("button", { name: /Details of the stop/ }));
     const dialog = await screen.findByRole("dialog", { name: "Stop" });
     expect(within(dialog).getByText("Moved within")).toBeInTheDocument();
@@ -280,7 +279,7 @@ describe("continuity at the Transport level", () => {
         return { status: 200, body: { ...response, segments: [spread, move, later] } };
       },
     });
-    renderPage(<PeoplePage />, { url: "/?view=history", user });
+    renderPage(<PeoplePage />, { url: "/?view=history&person=me", user });
     // The map is handed the connector too: the stop, two moves and the gap between them.
     await waitFor(() =>
       expect(document.querySelector("[data-transport]")).toHaveAttribute("data-transport", "4"),
@@ -304,74 +303,16 @@ describe("a link to one move", () => {
     const dialog = await screen.findByRole("dialog", { name: "Train" });
     expect(within(dialog).getByText("Was this a train ride?")).toBeInTheDocument();
     await person.click(within(dialog).getByRole("button", { name: "Close" }));
-    await waitFor(() => expect(router.state.location.search).toBe("?view=history"));
+    // The link implied Me: the address says so now, so Me's detail stays when the move closes.
+    await waitFor(() => expect(router.state.location.search).toBe("?view=history&person=me"));
     expect(screen.queryByRole("dialog", { name: "Train" })).toBeNull();
+    expect(await screen.findByRole("region", { name: "Me" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Timeline" })).toBeInTheDocument();
   });
 });
 
-describe("the quick toggle on the Me card", () => {
-  it("sets the mode of the device that reported last from now on, and Auto again", async () => {
-    let mode = automatic;
-    const api = mockApi({
-      ...standardRoutes(),
-      [`GET /api/v1/devices/${ids.phone}/mode`]: () => ({ status: 200, body: { mode } }),
-      [`POST /api/v1/devices/${ids.phone}/mode`]: ({ body }) => {
-        const chosen = (body as { mode: "train" | null }).mode;
-        mode =
-          chosen === null
-            ? automatic
-            : {
-                override: {
-                  id: "019a2000-0000-7000-8000-000000000001",
-                  deviceId: ids.phone,
-                  kind: "toggle",
-                  mode: chosen,
-                  from: new Date().toISOString(),
-                  until: null,
-                  source: "ui",
-                  createdAt: new Date().toISOString(),
-                },
-                current: {
-                  mode: chosen,
-                  setByUser: true,
-                  since: new Date().toISOString(),
-                  segmentId: null,
-                },
-              };
-        return { status: 200, body: { mode } };
-      },
-    });
-    const person = userEvent.setup();
-    renderPage(<PeoplePage />, { user });
-    const me = screen.getByRole("region", { name: "Me" });
-    const chips = await within(me).findByRole("group", { name: "Now:" });
-    expect(
-      await within(chips).findByRole("button", { name: "Auto", pressed: true }),
-    ).toBeInTheDocument();
-    await person.click(within(chips).getByRole("button", { name: "Train" }));
-    expect(api.calls.find((call) => call.method === "POST")?.body).toEqual({ mode: "train" });
-    expect(
-      await within(chips).findByRole("button", { name: "Train", pressed: true }),
-    ).toBeInTheDocument();
-    await person.click(within(chips).getByRole("button", { name: "Other" }));
-    expect(
-      await screen.findByRole("dialog", { name: "How are you travelling?" }),
-    ).toBeInTheDocument();
-    await person.click(screen.getByRole("button", { name: "Boat" }));
-    expect(api.calls.filter((call) => call.method === "POST").at(-1)?.body).toEqual({
-      mode: "boat",
-    });
-    await person.click(within(chips).getByRole("button", { name: /^Other/ }));
-    await person.keyboard("{Escape}");
-    await person.click(within(chips).getByRole("button", { name: "Auto" }));
-    expect(api.calls.filter((call) => call.method === "POST").at(-1)?.body).toEqual({ mode: null });
-    // Every press went to the phone, the device that reported last.
-    expect(api.calls.filter((call) => call.method === "POST").map((call) => call.path)).toEqual(
-      Array(3).fill(`/api/v1/devices/${ids.phone}/mode`),
-    );
-  });
-
-  it("says what Me is doing from the mode it sets", async () => {
+describe("what Me is doing", () => {
+  it("is said by the mode in force, in Me's row, without a speed", async () => {
     const train = {
       override: null,
       current: { mode: "train", setByUser: true, since: new Date().toISOString(), segmentId: null },
@@ -381,31 +322,16 @@ describe("the quick toggle on the Me card", () => {
       [`GET /api/v1/devices/${ids.phone}/mode`]: { status: 200, body: { mode: train } },
     });
     renderPage(<PeoplePage />, { user });
-    const me = screen.getByRole("region", { name: "Me" });
+    const me = await screen.findByRole("link", { name: /^Me/ });
     // The phone stands still at the station: a train, as the toggle says, without a speed.
     expect(await within(me).findByText("By train")).toBeInTheDocument();
   });
 
-  it("is on each device's page too, for that device", async () => {
-    const api = mockApi({
-      ...standardRoutes(),
-      [`GET /api/devices/${ids.car}`]: { status: 200, body: { device: car() } },
-      [`POST /api/v1/devices/${ids.car}/mode`]: { status: 200, body: { mode: automatic } },
-    });
-    const person = userEvent.setup();
-    renderPage(<DevicePage />, {
-      path: "/settings/devices/:deviceId",
-      url: `/settings/devices/${ids.car}`,
-      user,
-    });
-    expect(
-      await screen.findByRole("heading", { level: 2, name: "Travelling now" }),
-    ).toBeInTheDocument();
-    const chips = screen.getByRole("group", { name: "Now:" });
-    await person.click(await within(chips).findByRole("button", { name: "Car" }));
-    expect(api.calls.find((call) => call.method === "POST")?.path).toBe(
-      `/api/v1/devices/${ids.car}/mode`,
-    );
+  it("has no toggle in the app any more: the mode is the API's and MCP clients' to set", async () => {
+    mockApi(standardRoutes());
+    renderPage(<PeoplePage />, { url: "/?person=me", user });
+    await screen.findByRole("region", { name: "Me" });
+    expect(screen.queryByRole("group", { name: "Now:" })).toBeNull();
   });
 });
 

@@ -105,7 +105,7 @@ test("someone you share with who reads your track is under People, with what the
   const share = shareResponseSchema.parse(await shared.json()).share;
 
   // They open your history on their People page: a look at you and at your track.
-  await friend.page.goto(`/?view=history&people=${account.id}`);
+  await friend.page.goto(`/?view=history&person=${account.id}`);
   await expect(friend.page.getByRole("region", { name: "Summary", exact: true })).toContainText(
     `${account.displayName} · ${phone.name}`,
   );
