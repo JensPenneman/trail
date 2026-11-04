@@ -16,11 +16,6 @@ interface MeDetailsProps {
   summary: ReturnType<typeof useMeSummary>;
 }
 
-/**
- * The rest of Me's detail, after what the view says of one's day: one's
- * devices, always (no longer behind a Details button), the hint when the
- * first upload is awaited, and the way to adding a device when there is none.
- */
 /** The way to adding a device, under Me's row in the list and in Me's detail. */
 export function ConnectFirstPhone({ level }: { level: 2 | 3 }) {
   return (
@@ -42,6 +37,11 @@ export function ConnectFirstPhone({ level }: { level: 2 | 3 }) {
   );
 }
 
+/**
+ * The rest of Me's detail, after what the view says of one's day: one's
+ * devices, always (no longer behind a Details button), the hint when the
+ * first upload is awaited, and the way to adding a device when there is none.
+ */
 export function MeDetails({ devices, now, thresholds, summary }: MeDetailsProps) {
   const list = devices.data ?? [];
   const { latest, waiting } = summary;

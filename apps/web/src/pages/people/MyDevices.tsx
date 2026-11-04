@@ -1,5 +1,6 @@
 import type { DeviceSummary } from "@trail/contracts/device";
 import { deviceStatus } from "@trail/contracts/deviceStatus";
+import { useId } from "react";
 import { Link } from "react-router";
 import { describeMovement } from "../../devices/describeMovement";
 import { devicePath, devicesPath } from "../../devices/devicePaths";
@@ -26,10 +27,13 @@ interface MyDevicesProps {
  */
 export function MyDevices({ devices, now, thresholds }: MyDevicesProps) {
   const format = useFormatter();
+  const titleId = useId();
   return (
-    <section className="person-details" aria-label="Your devices">
+    <section className="person-details" aria-labelledby={titleId}>
       <div className="person-details__part">
-        <h3 className="person-details__title">Your devices</h3>
+        <h3 className="person-details__title" id={titleId}>
+          Your devices
+        </h3>
         <PlainList className="person-details__devices">
           {devices.map((device) => {
             const location = device.lastLocation;

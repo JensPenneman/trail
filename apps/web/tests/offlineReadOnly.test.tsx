@@ -1,4 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { user } from "./support/fixtures";
@@ -28,8 +29,11 @@ describe("the People page offline", () => {
     expect(share).toHaveAccessibleDescription(
       "You’re offline: whom you share with can be changed once you reconnect.",
     );
-    // Looking around still works: the rows are links.
-    expect(screen.getByRole("link", { name: /^Me/ })).toBeInTheDocument();
+    // Looking around still works: a row opens its detail.
+    await userEvent.setup().click(screen.getByRole("link", { name: /^Me/ }));
+    expect(await screen.findByRole("region", { name: "Me" })).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("link", { name: "Back to People" }));
+    expect(await screen.findByRole("list", { name: "People" })).toBeInTheDocument();
 
     onLine.mockReturnValue(true);
     window.dispatchEvent(new Event("online"));

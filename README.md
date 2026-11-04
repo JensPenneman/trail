@@ -25,8 +25,8 @@ and every pull request gets a preview deployment of its own.
 - **Passkeys only**: no passwords. Several people per server, invites,
   one-time links to add a passkey on another device or address.
 - **People, the home page**: one map with three views — **Live** (where
-  everyone is now, updated over server-sent events, and the track and the day
-  so far of whoever you select), **History** (tracks per day or date range
+  everyone is now, updated over server-sent events, and the track of whoever
+  you select, and your day so far), **History** (tracks per day or date range
   with distance, visits and trips, and a time scrubber) and **Heat** (an
   all-time heatmap) — and beside it you and everyone who shares with you, a
   row each in the style of Find My: where they are, what they are doing and
@@ -49,7 +49,7 @@ and every pull request gets a preview deployment of its own.
   stops and moves, each move with its mode (walking, cycling, car, bus, tram,
   metro, train, boat, plane …) worked out from speed, the ways followed,
   pauses at stops and the phone's motion sensor. A timeline per day, one-click
-  corrections that survive every recomputation, and, for the API and the assistant, a "now I'm on the train" toggle
+  corrections that survive every recomputation, and, for the API and MCP clients, a "now I'm on the train" toggle
   ([docs/transport.md](docs/transport.md)).
 - **Insights**: how you travelled in a period — distance, time on the move,
   moves, stops and active days against the period before, the mix of modes

@@ -3,6 +3,7 @@ import { useId } from "react";
 import { useFormatter } from "../../../format/useFormatter";
 import { DeviceSwatch } from "../../../ui/DeviceSwatch";
 import { PlainList } from "../../../ui/PlainList";
+import { SectionTitle } from "../../../ui/SectionTitle";
 import "./PeriodSummary.css";
 
 interface PeriodSummaryProps {
@@ -23,9 +24,7 @@ export function PeriodSummary({ tracks, nameOf, swatchOf, withDate }: PeriodSumm
 
   return (
     <section className="section" aria-labelledby={headingId}>
-      <h2 className="section__title" id={headingId}>
-        Summary
-      </h2>
+      <SectionTitle id={headingId}>Summary</SectionTitle>
       <PlainList className="period-summary card card--flush">
         {withData.map((track) => (
           <li key={track.deviceId} className="period-summary__row">

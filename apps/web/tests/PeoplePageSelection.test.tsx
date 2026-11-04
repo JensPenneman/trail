@@ -131,6 +131,21 @@ describe("selecting a person", () => {
     expect(await within(bob).findByText("Shares live location only")).toBeInTheDocument();
     expect(map()).toHaveAttribute("data-tracks", "0");
     expect(tracksAsked(api)).toEqual([]);
+    // No track is drawn, so the map does not promise one.
+    expect(map()).toHaveAccessibleName(/^Map of where everyone is now/);
+  });
+
+  it("keeps Share my location when the people could not be loaded", async () => {
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/people": {
+        status: 503,
+        body: { error: { code: "unavailable", message: "Database down" } },
+      },
+    });
+    renderPage(<PeoplePage />, { user });
+    expect(await screen.findByText("People could not be loaded")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Share my location" })).toBeEnabled();
   });
 
   it("draws one's own track and day so far with Me, and offers Heat and the levels", async () => {
@@ -418,6 +433,24 @@ describe("where the selected person has been", () => {
     expect(map().getAttribute("data-focus")).toMatch(/^visit:/);
     await person.click(await screen.findByRole("button", { name: "Previous day" }));
     await waitFor(() => expect(map()).toHaveAttribute("data-focus", ""));
+  });
+
+  it("does not make a visit's camera move again back on its day either (Back)", async () => {
+    mockApi(withHistoryOfAna());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, {
+      url: "/?view=history&person=me",
+      user,
+    });
+    await person.click(await screen.findByRole("button", { name: /Show this visit on the map/ }));
+    expect(map().getAttribute("data-focus")).toMatch(/^visit:/);
+    await person.click(await screen.findByRole("button", { name: "Previous day" }));
+    await waitFor(() => expect(map()).toHaveAttribute("data-focus", ""));
+    await act(async () => {
+      await router.navigate(-1);
+    });
+    await waitFor(() => expect(router.state.location.search).not.toMatch(/date=/));
+    expect(map().getAttribute("data-focus")).not.toMatch(/^visit:/);
   });
 
   it("is only there while they are selected", async () => {

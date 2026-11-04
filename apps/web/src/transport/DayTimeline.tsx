@@ -8,6 +8,7 @@ import { ErrorState } from "../ui/ErrorState";
 import { Icon } from "../ui/Icon";
 import { LoadingBlock } from "../ui/LoadingBlock";
 import { PlainList } from "../ui/PlainList";
+import { SectionTitle } from "../ui/SectionTitle";
 import { Skeleton } from "../ui/Skeleton";
 import { ModeSwatch } from "./ModeSwatch";
 import { segmentTitle } from "./segmentTitle";
@@ -78,9 +79,7 @@ export function DayTimeline({
   return (
     <section className="section" aria-labelledby={headingId}>
       <div className="section__header">
-        <h2 className="section__title" id={headingId}>
-          Timeline
-        </h2>
+        <SectionTitle id={headingId}>Timeline</SectionTitle>
         {pending ? (
           <p className="section__description" role="status">
             Still being worked out…

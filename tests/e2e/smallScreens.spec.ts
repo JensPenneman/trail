@@ -88,16 +88,22 @@ test("the People page with someone who shares fits a 320 px wide screen", async 
     historyDays: 7,
   });
   const name = friend.account.displayName;
-  for (const [path, loaded] of [
-    ["/", name],
-    ["/?person=me", "Timeline"],
-    [`/?person=${friend.account.id}`, "Where they’ve been"],
-    [`/?view=history&person=${friend.account.id}`, `${name} · ${friend.device.name}`],
-    ["/?view=history", `${name} · ${friend.device.name}`],
-    ["/?view=heat&person=me", "Your devices"],
+  for (const [path, loaded, detail] of [
+    ["/", name, null],
+    ["/?person=me", "Timeline", "Me"],
+    [`/?person=${friend.account.id}`, "Where they’ve been", name],
+    [`/?view=history&person=${friend.account.id}`, `${name} · ${friend.device.name}`, name],
+    ["/?view=history", `${name} · ${friend.device.name}`, null],
+    ["/?view=heat&person=me", "Your devices", "Me"],
   ] as const) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
+    // The list, or the detail of the person the address names.
+    await expect(
+      detail === null
+        ? page.getByRole("list", { name: "People", exact: true })
+        : page.getByRole("region", { name: detail, exact: true }),
+    ).toBeVisible();
     await expect(page.getByText(loaded).first()).toBeVisible();
     expect(await overflow(page), path).toBe(0);
   }

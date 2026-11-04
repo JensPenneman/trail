@@ -10,6 +10,7 @@ import { EmptyState } from "../../../ui/EmptyState";
 import { ErrorState } from "../../../ui/ErrorState";
 import { LoadingBlock } from "../../../ui/LoadingBlock";
 import { PlainList } from "../../../ui/PlainList";
+import { SectionTitle } from "../../../ui/SectionTitle";
 import { Skeleton } from "../../../ui/Skeleton";
 
 interface TripListProps {
@@ -51,9 +52,7 @@ export function TripList({
 
   return (
     <section className="section" aria-labelledby={headingId}>
-      <h2 className="section__title" id={headingId}>
-        Trips
-      </h2>
+      <SectionTitle id={headingId}>Trips</SectionTitle>
       {loading ? (
         <LoadingBlock label="Loading trips">
           <Skeleton height="4rem" />

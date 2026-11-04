@@ -172,7 +172,7 @@ describe("switching views", () => {
     await waitFor(() => expect(canvas).toHaveAttribute("data-positions", "3"));
 
     await person.click(view("History"));
-    expect(router.state.location.search).toBe(`?devices=${ids.phone}&view=history`);
+    expect(router.state.location.search).toBe(`?devices=${ids.phone}&person=me&view=history`);
     expect(await screen.findByRole("slider", { name: "Position at" })).toBeInTheDocument();
     expect(map()).toBe(canvas);
     await person.click(screen.getByRole("button", { name: "Previous day" }));

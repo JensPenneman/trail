@@ -10,7 +10,13 @@ export interface MapSearchControls {
   today: string;
   setView: (view: MapView) => void;
   /** Selects someone (`me` or a user id), or nobody. */
-  setPerson: (person: string | null) => void;
+  setPerson: (person: string | null, options?: { replace?: boolean }) => void;
+  /**
+   * Writes the selection an older link implies (`?segment=`, `?devices=`) into
+   * the address, in place of its entry, so that closing a move or ticking all
+   * devices again keeps the detail. Does nothing while a choice is on its way.
+   */
+  adoptPerson: (person: string) => void;
   setDevices: (deviceIds: readonly string[] | null) => void;
   showDay: (date: string) => void;
   /** History on a day, from another view: one step of the history for both. */
@@ -34,8 +40,8 @@ export function useMapSearch(): MapSearchControls {
   const search = useMemo(() => ({ ...parsed, ...chosen, view }), [parsed, chosen, view]);
 
   const update = useCallback(
-    (change: (current: URLSearchParams) => URLSearchParams) =>
-      setParams((current) => change(current), { preventScrollReset: true }),
+    (change: (current: URLSearchParams) => URLSearchParams, replace = false) =>
+      setParams((current) => change(current), { preventScrollReset: true, replace }),
     [setParams],
   );
   const setView = useCallback(
@@ -48,12 +54,25 @@ export function useMapSearch(): MapSearchControls {
     [setParams, showView],
   );
   const setPerson = useCallback(
-    (person: string | null) =>
+    (person: string | null, options?: { replace?: boolean }) =>
       startTransition(() => {
         showChosen({ person, devices: null });
-        update((current) => withPerson(current, person));
+        update((current) => withPerson(current, person), options?.replace === true);
       }),
     [update, showChosen],
+  );
+  const settled = chosen.person === parsed.person && chosen.devices === parsed.devices;
+  const adoptPerson = useCallback(
+    (person: string) => {
+      if (!settled || params.get("person") === person) return;
+      update((current) => {
+        const next = new URLSearchParams(current);
+        next.delete("people");
+        next.set("person", person);
+        return next;
+      }, true);
+    },
+    [settled, params, update],
   );
   const setDevices = useCallback(
     (deviceIds: readonly string[] | null) =>
@@ -79,5 +98,15 @@ export function useMapSearch(): MapSearchControls {
     (from: string, to: string) => update((current) => withRange(current, from, to)),
     [update],
   );
-  return { search, today, setView, setPerson, setDevices, showDay, showHistoryDay, showRange };
+  return {
+    search,
+    today,
+    setView,
+    setPerson,
+    adoptPerson,
+    setDevices,
+    showDay,
+    showHistoryDay,
+    showRange,
+  };
 }

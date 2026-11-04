@@ -2770,8 +2770,10 @@ count among them, since they lead to signed-in pages.
   draw: the page has one `TrailMap` for all three, so switching views keeps
   the map — no new canvas, style or tiles. The camera frames what is drawn
   when that changes (another person, day or other devices: the fit key is
-  `live|<who>|<devices>` in Live, the period in History), never merely
-  because the view did; Heat frames it only when the page opened on it. A
+  `live|<who>|<devices>` in Live, `<period>|<who>|<devices>` in History),
+  never merely because a control that changes nothing drawn was used; Live
+  and History draw different things, so switching between them frames anew.
+  Heat frames it only when the page opened on it. A
   camera move of a view (a visit, trip or move shown) belongs to its view and
   period: another view or another day — from the controls, a person's
   detail or Back — drops it, so neither the view shown again nor a return to
