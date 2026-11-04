@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { localDateSchema } from "./datetime";
 import { batterySchema, devicePublicSchema, positionSchema } from "./devicePublic";
 import { deviceIdsParamSchema } from "./query";
 import { shareHistoryDaysSchema, sharePrecisionSchema } from "./share";
@@ -181,3 +182,45 @@ export const personTrackResponseSchema = z.object({
   tracks: z.array(trackSchema).meta({ description: "One track per shared device." }),
 });
 export type PersonTrackResponse = z.infer<typeof personTrackResponseSchema>;
+
+/** `GET /api/v1/people/{userId}/days` */
+export const personDaysResponseSchema = z
+  .object({
+    timezone: z.string().meta({
+      description:
+        "The time zone of the person whose days these are (their account's): the days are theirs, as their own days are, wherever you are.",
+      example: "Europe/Brussels",
+    }),
+    window: z
+      .object({
+        from: localDateSchema.meta({
+          description:
+            "The first day of the shared history (the day the history window begins in).",
+          example: "2026-10-20",
+        }),
+        to: localDateSchema.meta({ description: "Today, their day.", example: "2026-10-27" }),
+      })
+      .meta({ description: "The local days looked at: the share's history up to today." }),
+    days: z
+      .array(
+        z.object({
+          date: localDateSchema.meta({ description: "A local day of theirs." }),
+          deviceId: z.uuid().meta({ description: "One of their shared devices." }),
+          points: z.number().int().positive().meta({
+            description: "Points recorded that day, inside the shared history.",
+            example: 1066,
+          }),
+          firstAt: instant("The first of them."),
+          lastAt: instant("The last of them."),
+        }),
+      )
+      .meta({
+        description:
+          "The days with points, oldest first, one entry per day and shared device. No positions.",
+      }),
+  })
+  .meta({
+    id: "PersonDays",
+    description: "The days a person recorded something, within the history they share.",
+  });
+export type PersonDaysResponse = z.infer<typeof personDaysResponseSchema>;

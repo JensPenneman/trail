@@ -90,6 +90,7 @@ export const apiPaths = {
       root: "/api/v1/people",
       one: (userId: string) => `/api/v1/people/${id(userId)}`,
       track: (userId: string) => `/api/v1/people/${id(userId)}/track`,
+      days: (userId: string) => `/api/v1/people/${id(userId)}/days`,
     },
     shares: {
       root: "/api/v1/shares",
