@@ -19,9 +19,7 @@ interface PathOptionsProps {
  * person colour under every one, which "Device or person" says when it is drawn.
  */
 export function PathOptions({ colour, options, onChange, legend, devices }: PathOptionsProps) {
-  const people = devices.some(
-    (device) => device.palette === "person" && legend.deviceIds.includes(device.id),
-  );
+  const people = devices.some((device) => device.palette === "person" && device.drawn === true);
   return (
     <div className="path-options">
       <SelectField

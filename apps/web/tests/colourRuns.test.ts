@@ -185,6 +185,27 @@ describe("colourLevelTracks", () => {
     expect(coloured.segments.find((segment) => segment.kind === "stop")?.color).toBeUndefined();
   });
 
+  it("draws a move with a pause inside it as one line, as Mode does: no cut at the pause", () => {
+    const response = levelResponse("inferred");
+    const move = response.segments[0];
+    if (move === undefined) throw new Error("no move");
+    const slow = [
+      [3.7, 51, 1_793_000_000],
+      [3.70002, 51, 1_793_000_010],
+      [3.70004, 51, 1_793_001_500],
+      [3.70006, 51, 1_793_001_510],
+    ] as never;
+    const coloured = colourLevelTracks(
+      { ...response, segments: [{ ...move, points: slow }] },
+      colouring("speed"),
+      device,
+    );
+    const lines = coloured.segments.filter((segment) => segment.kind === "move");
+    expect(lines.flatMap((segment) => segment.points).length).toBeGreaterThanOrEqual(4);
+    expect(lines[0]?.points[0]?.[2]).toBe(1_793_000_000);
+    expect(lines.at(-1)?.points.at(-1)?.[2]).toBe(1_793_001_510);
+  });
+
   it("splits the pieces of track of the other levels the same way", () => {
     const coloured = colourLevelTracks(levelResponse("mapped"), colouring("time"), device);
     expect(coloured.segments.length).toBeGreaterThanOrEqual(1);

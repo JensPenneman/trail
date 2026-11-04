@@ -23,7 +23,15 @@ export interface PathLegendModel {
   /** The modes drawn, for the mode colouring's legend. */
   modes: ReadonlySet<TransportMode>;
   /** A line style the map uses on top of the colour: a move to review, the path within a stop, a gap. */
-  lineStyles: { review: boolean; stopPaths: boolean; gaps: boolean };
+  lineStyles: {
+    review: boolean;
+    stopPaths: boolean;
+    gaps: boolean;
+    /** A stop is drawn (grey under the colourings that colour moves only). */
+    stops: boolean;
+    /** A stretch whose speed cannot be told is drawn in the unknown grey. */
+    unknownSpeed: boolean;
+  };
 }
 
 const bandLabels = (onFoot: boolean, format: Formatter): string[] => {
@@ -51,6 +59,8 @@ export function pathLegend(
     review: boolean;
     stopPaths: boolean;
     gaps: boolean;
+    stops?: boolean;
+    unknownSpeed?: boolean;
   },
   format: Formatter,
 ): PathLegendModel {
@@ -64,7 +74,7 @@ export function pathLegend(
             label,
             color: speedRamp[scheme][index] ?? "",
           })),
-          ends: (onFoot ? ["Slower", "Faster"] : ["Slower", "Faster"]) as readonly [string, string],
+          ends: ["Slower", "Faster"] as readonly [string, string],
         }
       : null;
   const classes =
@@ -85,6 +95,12 @@ export function pathLegend(
     classes,
     deviceIds: [...drawn.deviceIds],
     modes: drawn.modes,
-    lineStyles: { review: drawn.review, stopPaths: drawn.stopPaths, gaps: drawn.gaps },
+    lineStyles: {
+      review: drawn.review,
+      stopPaths: drawn.stopPaths,
+      gaps: drawn.gaps,
+      stops: drawn.stops === true,
+      unknownSpeed: drawn.unknownSpeed === true,
+    },
   };
 }

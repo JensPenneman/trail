@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
-import { user } from "./support/fixtures";
+import { ana, bob, ids, tracks, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
@@ -102,6 +102,33 @@ describe("the legends of the colourings", () => {
     const legend = await screen.findByRole("region", { name: "Map legend" });
     expect(within(legend).getAllByRole("listitem").length).toBeGreaterThan(0);
     expect(within(legend).queryByText("Train")).not.toBeInTheDocument();
+  });
+
+  it("lists a sharer drawn in the overview by name, and calls the choice Device or person", async () => {
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/people": {
+        status: 200,
+        body: { people: [ana({ share: { ...ana().share, historyDays: 7 } }), bob()] },
+      },
+      [`GET /api/v1/people/${ids.ana}/track`]: ({ url }: { url: URL }) => {
+        const answer = tracks(url.searchParams.get("from") ?? "", url.searchParams.get("to") ?? "");
+        return {
+          status: 200,
+          body: {
+            ...answer,
+            tracks: answer.tracks.map((track) => ({ ...track, deviceId: ids.anaPhone })),
+          },
+        };
+      },
+    });
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: "/?view=history&color=device", user });
+    await openOptions(person);
+    const select = await screen.findByRole("combobox", { name: "Colour by" });
+    await waitFor(() => expect(optionsOf(select)).toContain("Device or person"));
+    const legend = screen.getByRole("region", { name: "Map legend" });
+    expect(within(legend).getByText("Ana Bell")).toBeInTheDocument();
   });
 
   it("keeps the lines' colours to Colour by for every level: nothing when someone else is selected", async () => {

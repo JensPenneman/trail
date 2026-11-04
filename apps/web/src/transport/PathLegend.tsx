@@ -13,6 +13,8 @@ export interface LegendDevice {
   name: string;
   slot: number;
   palette: "device" | "person";
+  /** Known to be on the map (a person's, whose tracks the legend model does not list). */
+  drawn?: boolean;
 }
 
 interface PathLegendProps {
@@ -29,13 +31,17 @@ interface PathLegendProps {
  */
 export function PathLegend({ legend, devices }: PathLegendProps) {
   const headingId = useId();
-  const { review, stopPaths, gaps } = legend.lineStyles;
+  const { review, stopPaths, gaps, stops, unknownSpeed } = legend.lineStyles;
   if (legend.by === "mode") {
     return <ModeLegend modes={legend.modes} review={review} stopPaths={stopPaths} gaps={gaps} />;
   }
-  const drawn = devices.filter((device) => legend.deviceIds.includes(device.id));
+  const drawn = devices.filter(
+    (device) => device.drawn === true || legend.deviceIds.includes(device.id),
+  );
   const hasClasses = legend.by === "time" || (legend.by === "device" && drawn.length > 0);
-  if (!hasClasses && !review && !stopPaths && !gaps) return null;
+  const stopRow = stops && legend.by !== "device";
+  const unknownRow = unknownSpeed && legend.by === "speed";
+  if (!hasClasses && !stopRow && !unknownRow && !review && !stopPaths && !gaps) return null;
   return (
     <section className="mode-legend" aria-labelledby={headingId}>
       <h2 className="visually-hidden" id={headingId}>
@@ -62,6 +68,18 @@ export function PathLegend({ legend, devices }: PathLegendProps) {
               </li>
             ))
           : null}
+        {stopRow ? (
+          <li className="mode-legend__item">
+            <ModeSwatch mode="stationary" />
+            Stop
+          </li>
+        ) : null}
+        {unknownRow ? (
+          <li className="mode-legend__item">
+            <ModeSwatch mode="unknown" />
+            Speed not known
+          </li>
+        ) : null}
         {review ? (
           <li className="mode-legend__item">
             <ModeSwatch mode="unknown" dashed />
