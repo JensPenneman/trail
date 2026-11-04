@@ -225,7 +225,10 @@ describe("the list of screens", () => {
     });
     renderInsights("/insights/transport/train?period=2026-10", { wide: true });
     const nav = await screen.findByRole("navigation", { name: "Insights" });
-    expect(await within(nav).findByRole("link", { name: /^Summary/ })).toHaveTextContent("66.0 km");
+    // The summary's row gets its distance when the overview is there.
+    await waitFor(() =>
+      expect(within(nav).getByRole("link", { name: /^Summary/ })).toHaveTextContent("66.0 km"),
+    );
     expect(within(nav).getByRole("link", { name: /^Train/ })).toHaveAttribute(
       "aria-current",
       "page",
