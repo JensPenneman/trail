@@ -85,12 +85,15 @@ export const apiPaths = {
       mode: (mode: string) => `/api/v1/insights/modes/${id(mode)}`,
       time: "/api/v1/insights/time",
       roads: "/api/v1/insights/roads",
+      places: "/api/v1/insights/places",
+      place: "/api/v1/insights/place",
       ways: "/api/v1/insights/ways",
     },
     people: {
       root: "/api/v1/people",
       one: (userId: string) => `/api/v1/people/${id(userId)}`,
       track: (userId: string) => `/api/v1/people/${id(userId)}/track`,
+      days: (userId: string) => `/api/v1/people/${id(userId)}/days`,
     },
     shares: {
       root: "/api/v1/shares",

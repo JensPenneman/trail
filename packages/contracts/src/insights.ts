@@ -6,7 +6,8 @@ import { transportModeSchema, wayKinds } from "./transport";
 /*
  * Insights (docs/architecture.md §8.7): statistics of how the account's owner
  * travelled, worked out from the stops and moves of the timeline over local
- * days in the account's time zone. No coordinates anywhere: `history:read`.
+ * days in the account's time zone. No coordinates anywhere: `history:read` —
+ * except Places, whose answers hold the centre of a place and need `locations:read`.
  */
 
 /** A request covers at most this many years. */
@@ -472,6 +473,187 @@ export const insightsRoadsSchema = z
   })
   .meta({ id: "InsightsRoads", description: "The roads and railways you travelled on." });
 export type InsightsRoads = z.infer<typeof insightsRoadsSchema>;
+
+/*
+ * Places (docs/architecture.md §8.7): where the owner's stops add up. A place
+ * is a Web Mercator cell of zoom 18 (about 100 m at 51° N, which also holds a
+ * building), with the up to eight cells around it that have stops folded in.
+ * These answers hold a centre per place: `locations:read`.
+ */
+
+/** A place's key: the cell it is centred on (or, folded, the cell that claimed the others). */
+export const placeKeySchema = z
+  .string()
+  .regex(/^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})$/)
+  .refine(
+    (key) => {
+      const [x = 0, y = 0] = key.split(".").map(Number);
+      return x < 2 ** 18 && y < 2 ** 18;
+    },
+    { message: "Not a cell of the zoom-18 grid" },
+  )
+  .meta({
+    id: "InsightsPlaceKey",
+    description:
+      "The zoom-18 Web Mercator cell `x.y` a place's stays centre on. Keys are the places' own: take them from `GET /api/v1/insights/places`; a cell folded into a neighbour's place resolves to that place.",
+    example: "134217.89012",
+  });
+export type PlaceKey = z.infer<typeof placeKeySchema>;
+
+/** Query of `GET /api/v1/insights/place`. */
+export const insightsPlaceQuerySchema = z
+  .object({
+    ...queryShape,
+    place: placeKeySchema,
+  })
+  .refine(ordered, { message: "`to` must not be before `from`", path: ["to"] })
+  .refine(withinSpan, { message: spanMessage, path: ["to"] });
+export type InsightsPlaceQueryInput = z.input<typeof insightsPlaceQuerySchema>;
+
+export const placeNameKinds = [
+  "station",
+  "halt",
+  "tram_stop",
+  "subway_station",
+  "bus_stop",
+  "ferry_terminal",
+  "aerodrome",
+] as const;
+
+/** What a place is called, from map data: a stop within 150 m, else the road its stays were on. */
+export const placeNameSchema = z
+  .object({
+    text: z
+      .string()
+      .min(1)
+      .max(200)
+      .meta({ description: "The name.", example: "Gent-Sint-Pieters" }),
+    source: z.enum(["stop", "road"]).meta({
+      description:
+        "`stop`: a public transport stop or airport nearby. `road`: the most used named way the device was on when it arrived and left.",
+      example: "stop",
+    }),
+    kind: z.enum(placeNameKinds).nullable().meta({
+      description: "The stop's kind; null for a road.",
+      example: "station",
+    }),
+    distanceM: distanceM(
+      "From the place's centre to the stop, metres (0 for a road). Within 30 m the place is the stop; within 150 m it is near it.",
+      12,
+    ),
+  })
+  .nullable()
+  .meta({
+    id: "InsightsPlaceName",
+    description: "A name for the place from map data, or null when there is none.",
+  });
+export type PlaceName = z.infer<typeof placeNameSchema>;
+
+const lonLat = z.tuple([z.number(), z.number()]);
+
+export const placeSummarySchema = z
+  .object({
+    key: placeKeySchema,
+    centre: lonLat.meta({
+      description: "`[lon, lat]`, time-weighted over the stays and rounded to four decimals.",
+      example: [3.7104, 51.0362],
+    }),
+    name: placeNameSchema,
+    durationS: durationS(
+      "Time spent here in the period, seconds; devices joined, not added.",
+      41_000,
+    ),
+    visits: z.number().int().nonnegative().meta({
+      description: "Stays that started here in the period (devices joined).",
+      example: 9,
+    }),
+    days: z.number().int().nonnegative().meta({
+      description: "Local days with time here.",
+      example: 7,
+    }),
+    firstAt: z.iso.datetime().meta({ description: "When time here first began in the period." }),
+    lastAt: z.iso.datetime().meta({ description: "When time here last ended in the period." }),
+  })
+  .meta({
+    id: "InsightsPlaceSummary",
+    description: "One place and what the stays there add up to.",
+  });
+export type PlaceSummary = z.infer<typeof placeSummarySchema>;
+
+const placeRest = z.object({
+  places: z.number().int().nonnegative(),
+  durationS: durationS("Seconds at the places beyond the first fifty.", 12_000),
+  visits: z.number().int().nonnegative(),
+});
+
+/** `GET /api/v1/insights/places` */
+export const insightsPlacesSchema = z
+  .object({
+    timezone: timezoneSchema,
+    period: insightsPeriodSchema,
+    totals: z
+      .object({
+        places: z.number().int().nonnegative().meta({ example: 42 }),
+        durationS: durationS("Seconds at all places.", 2_300_000),
+        visits: z.number().int().nonnegative().meta({ example: 312 }),
+      })
+      .meta({ id: "InsightsPlacesTotals", description: "All the places of the period." }),
+    places: z
+      .array(placeSummarySchema)
+      .max(50)
+      .meta({ description: "The fifty places with most time, most first (ties by key)." }),
+    rest: placeRest.meta({
+      id: "InsightsPlacesRest",
+      description: "The places beyond the first fifty, added up.",
+    }),
+    pending: pendingSchema,
+  })
+  .meta({ id: "InsightsPlaces", description: "Where the stops of a period add up." });
+export type InsightsPlaces = z.infer<typeof insightsPlacesSchema>;
+
+/** `GET /api/v1/insights/place` */
+export const insightsPlaceSchema = z
+  .object({
+    timezone: timezoneSchema,
+    period: insightsSeriesPeriodSchema,
+    place: placeSummarySchema
+      .extend({
+        cells: z.number().int().min(1).max(9).meta({
+          description: "Cells folded into the place: 1 to 9.",
+          example: 1,
+        }),
+      })
+      .nullable()
+      .meta({ description: "The place; null when the period has no stay there." }),
+    series: z
+      .array(
+        z.object({
+          bucket: localDateSchema,
+          durationS: durationS("Seconds here in the step.", 3600),
+          visits: z.number().int().nonnegative(),
+        }),
+      )
+      .meta({ description: "One entry per step of `period.buckets`, in order." }),
+    days: z
+      .array(
+        z.object({
+          date: localDateSchema,
+          durationS: durationS("Seconds here on the day.", 33_120),
+          visits: z
+            .number()
+            .int()
+            .nonnegative()
+            .meta({ description: "Stays that began that day." }),
+          firstAt: z.iso.datetime(),
+          lastAt: z.iso.datetime(),
+        }),
+      )
+      .max(1096)
+      .meta({ description: "Days with time here, newest first." }),
+    pending: pendingSchema,
+  })
+  .meta({ id: "InsightsPlace", description: "One place over a period." });
+export type InsightsPlace = z.infer<typeof insightsPlaceSchema>;
 
 export const insightsWayRowSchema = z
   .object({

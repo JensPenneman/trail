@@ -22,7 +22,7 @@ const haversine = (lat1: string, lon1: string, lat2: string, lon2: string): stri
  * `computed_at`. A move that has the key by the time the update runs (a pass wrote it) is left as
  * it is. The caller holds the device's processing lock. Returns the moves filled.
  */
-export async function fillWayTotals(
+async function fillWayTotals(
   db: Executor,
   deviceId: string,
   fromMs: number,

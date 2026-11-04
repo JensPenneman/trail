@@ -33,5 +33,5 @@ compose.yaml
 lefthook.yml
 lefthook-local.yml
 commitlint.config.mjs
-knip.json
+knip.jsonc
 biome.jsonc

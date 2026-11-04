@@ -73,21 +73,6 @@ async function namedWays(db: Executor, ids: readonly number[]): Promise<Map<numb
 }
 
 /**
- * What the names of the ways depend on, beside the moves (`insightsValidator`): the map data in
- * the database — the ready builds of the regions and the fetched tiles.
- */
-export async function mapStamp(db: Executor): Promise<unknown> {
-  const result = await db.execute<{ builds: string | null; tiles: number; fetched: string | null }>(
-    sql`
-      SELECT (SELECT string_agg(digest, ',' ORDER BY digest) FROM osm_regions WHERE status = 'ready') AS builds,
-        (SELECT count(*)::int FROM osm_tiles WHERE status = 'ok') AS tiles,
-        (SELECT max(fetched_at)::text FROM osm_tiles WHERE status = 'ok') AS fetched
-    `,
-  );
-  return result.rows[0] ?? null;
-}
-
-/**
  * `GET /api/v1/insights/ways`: the roads travelled, by name (docs/architecture.md §8.7), from every
  * mode's moves (for `modes`) of which `mode`'s are counted. Names and distances only: the position
  * of a way serves the grouping and is not answered.

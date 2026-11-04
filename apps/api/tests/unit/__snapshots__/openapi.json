@@ -2117,6 +2117,207 @@
         }
       }
     },
+    "/api/v1/insights/places": {
+      "get": {
+        "operationId": "getInsightsPlaces",
+        "summary": "Get the places you spent time at",
+        "description": "Where the stops of a period of local days add up: places are cells of about 100 m (zoom 18 of the Web Mercator grid; neighbouring cells with stops fold into one place, 3 × 3 at most), each with the time spent there (your devices joined), its visits (stays that started there in the period), its days, the span of them and the time-weighted centre of the stays to four decimals — about 10 m — which is why it needs `locations:read`. A place is named from map data where there is a public transport stop within 150 m or a named road under the device when it arrived and left. The fifty places with most time come with the rest added up. Only your own devices, or the ones the token may reach (another's is a 404).\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "tags": [
+          "Insights"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`.",
+              "example": "2026-09-28",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "Last local day, included. Left out: today. At most three years after `from`.",
+              "example": "2026-10-27",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "Last local day, included. Left out: today. At most three years after `from`."
+          },
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Where the stops of a period add up.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightsPlaces"
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/insights/place": {
+      "get": {
+        "operationId": "getInsightsPlace",
+        "summary": "Get one place over a period",
+        "description": "One place from `GET /api/v1/insights/places`, named by its `place` key: the time spent there per day, week or month, and the days with time there, newest first, each with its time, visits and first and last moment. A cell folded into a neighbour's place resolves to that place; a key with no stay in the period gives `place: null`. The key is a query parameter, never part of the path. `locations:read`, like the list: the answer holds the place's centre.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "tags": [
+          "Insights"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`.",
+              "example": "2026-09-28",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "Last local day, included. Left out: today. At most three years after `from`.",
+              "example": "2026-10-27",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "Last local day, included. Left out: today. At most three years after `from`."
+          },
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "place",
+            "schema": {
+              "$ref": "#/components/schemas/InsightsPlaceKey"
+            },
+            "required": true,
+            "description": "The zoom-18 Web Mercator cell `x.y` a place's stays centre on. Keys are the places' own: take them from `GET /api/v1/insights/places`; a cell folded into a neighbour's place resolves to that place."
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One place over a period.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightsPlace"
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/insights/ways": {
       "get": {
         "operationId": "getInsightsWays",
@@ -2574,6 +2775,78 @@
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/people/{userId}/days": {
+      "get": {
+        "operationId": "getPersonDays",
+        "summary": "Get the days a person recorded",
+        "description": "Which days a person recorded something, within the history they share with you: per shared device and local day, the points and the first and last time — no positions. The days are the person's own, in their account's time zone (`timezone`), because that is where their daily totals are cut; the window runs from the day their shared history begins in, counted from there on that first day, to today. A person without a share with history for you (or one you hid) is 404. They see in their data access log that you looked, with the window, not the days. The answer has an `ETag` that changes when their points or the share do.\n\n**Access:** an API token with the scope `people:read`, or a signed-in session.",
+        "tags": [
+          "People"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "people:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The person's account id.",
+              "example": "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60"
+            },
+            "required": true,
+            "description": "The person's account id."
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The days a person recorded something, within the history they share.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonDays"
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -3736,6 +4009,12 @@
         ],
         "description": "How the device travelled. `stationary` is standing still; `unknown` means the evidence was too weak to decide.",
         "example": "train"
+      },
+      "InsightsPlaceKey": {
+        "type": "string",
+        "pattern": "^(0|[1-9]\\d{0,5})\\.(0|[1-9]\\d{0,5})$",
+        "description": "The zoom-18 Web Mercator cell `x.y` a place's stays centre on. Keys are the places' own: take them from `GET /api/v1/insights/places`; a cell folded into a neighbour's place resolves to that place.",
+        "example": "134217.89012"
       },
       "CreateShareRequest": {
         "type": "object",
@@ -6758,6 +7037,436 @@
         "description": "Kinds of way grouped: `motorway` (motorways and trunk roads), `road` (primary to track), `cycleway`, `foot` (footways and paths), `rail`, `tram` (tram and light rail), `subway`, `ferry`, `none` (off every mapped way).",
         "example": "road"
       },
+      "InsightsPlaces": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "The account's time zone, which the days follow.",
+            "example": "Europe/Brussels"
+          },
+          "period": {
+            "$ref": "#/components/schemas/InsightsPeriod"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/InsightsPlacesTotals"
+          },
+          "places": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightsPlaceSummary"
+            },
+            "description": "The fifty places with most time, most first (ties by key)."
+          },
+          "rest": {
+            "$ref": "#/components/schemas/InsightsPlacesRest"
+          },
+          "pending": {
+            "type": "boolean",
+            "description": "Recorded points of the period still wait for processing: the numbers may still change.",
+            "example": false
+          }
+        },
+        "required": [
+          "timezone",
+          "period",
+          "totals",
+          "places",
+          "rest",
+          "pending"
+        ],
+        "additionalProperties": false,
+        "description": "Where the stops of a period add up."
+      },
+      "InsightsPlacesTotals": {
+        "type": "object",
+        "properties": {
+          "places": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "example": 42
+          },
+          "durationS": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Seconds at all places.",
+            "example": 2300000
+          },
+          "visits": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "example": 312
+          }
+        },
+        "required": [
+          "places",
+          "durationS",
+          "visits"
+        ],
+        "additionalProperties": false,
+        "description": "All the places of the period."
+      },
+      "InsightsPlaceSummary": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/InsightsPlaceKey"
+          },
+          "centre": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "items": false,
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "`[lon, lat]`, time-weighted over the stays and rounded to four decimals.",
+            "example": [
+              3.7104,
+              51.0362
+            ]
+          },
+          "name": {
+            "$ref": "#/components/schemas/InsightsPlaceName"
+          },
+          "durationS": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Time spent here in the period, seconds; devices joined, not added.",
+            "example": 41000
+          },
+          "visits": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Stays that started here in the period (devices joined).",
+            "example": 9
+          },
+          "days": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Local days with time here.",
+            "example": 7
+          },
+          "firstAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When time here first began in the period."
+          },
+          "lastAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When time here last ended in the period."
+          }
+        },
+        "required": [
+          "key",
+          "centre",
+          "name",
+          "durationS",
+          "visits",
+          "days",
+          "firstAt",
+          "lastAt"
+        ],
+        "additionalProperties": false,
+        "description": "One place and what the stays there add up to."
+      },
+      "InsightsPlaceName": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "The name.",
+                "example": "Gent-Sint-Pieters"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "stop",
+                  "road"
+                ],
+                "description": "`stop`: a public transport stop or airport nearby. `road`: the most used named way the device was on when it arrived and left.",
+                "example": "stop"
+              },
+              "kind": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "station",
+                      "halt",
+                      "tram_stop",
+                      "subway_station",
+                      "bus_stop",
+                      "ferry_terminal",
+                      "aerodrome"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The stop's kind; null for a road.",
+                "example": "station"
+              },
+              "distanceM": {
+                "type": "number",
+                "minimum": 0,
+                "description": "From the place's centre to the stop, metres (0 for a road). Within 30 m the place is the stop; within 150 m it is near it.",
+                "example": 12
+              }
+            },
+            "required": [
+              "text",
+              "source",
+              "kind",
+              "distanceM"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "A name for the place from map data, or null when there is none."
+      },
+      "InsightsPlacesRest": {
+        "type": "object",
+        "properties": {
+          "places": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "durationS": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Seconds at the places beyond the first fifty.",
+            "example": 12000
+          },
+          "visits": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "places",
+          "durationS",
+          "visits"
+        ],
+        "additionalProperties": false,
+        "description": "The places beyond the first fifty, added up."
+      },
+      "InsightsPlace": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "The account's time zone, which the days follow.",
+            "example": "Europe/Brussels"
+          },
+          "period": {
+            "$ref": "#/components/schemas/InsightsSeriesPeriod"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "$ref": "#/components/schemas/InsightsPlaceKey"
+                  },
+                  "centre": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "description": "`[lon, lat]`, time-weighted over the stays and rounded to four decimals.",
+                    "example": [
+                      3.7104,
+                      51.0362
+                    ]
+                  },
+                  "name": {
+                    "$ref": "#/components/schemas/InsightsPlaceName"
+                  },
+                  "durationS": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Time spent here in the period, seconds; devices joined, not added.",
+                    "example": 41000
+                  },
+                  "visits": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Stays that started here in the period (devices joined).",
+                    "example": 9
+                  },
+                  "days": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Local days with time here.",
+                    "example": 7
+                  },
+                  "firstAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When time here first began in the period."
+                  },
+                  "lastAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When time here last ended in the period."
+                  },
+                  "cells": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9,
+                    "description": "Cells folded into the place: 1 to 9.",
+                    "example": 1
+                  }
+                },
+                "required": [
+                  "key",
+                  "centre",
+                  "name",
+                  "durationS",
+                  "visits",
+                  "days",
+                  "firstAt",
+                  "lastAt",
+                  "cells"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The place; null when the period has no stay there."
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "bucket": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                },
+                "durationS": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Seconds here in the step.",
+                  "example": 3600
+                },
+                "visits": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "bucket",
+                "durationS",
+                "visits"
+              ],
+              "additionalProperties": false
+            },
+            "description": "One entry per step of `period.buckets`, in order."
+          },
+          "days": {
+            "maxItems": 1096,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                },
+                "durationS": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Seconds here on the day.",
+                  "example": 33120
+                },
+                "visits": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Stays that began that day."
+                },
+                "firstAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "lastAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "date",
+                "durationS",
+                "visits",
+                "firstAt",
+                "lastAt"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Days with time here, newest first."
+          },
+          "pending": {
+            "type": "boolean",
+            "description": "Recorded points of the period still wait for processing: the numbers may still change.",
+            "example": false
+          }
+        },
+        "required": [
+          "timezone",
+          "period",
+          "place",
+          "series",
+          "days",
+          "pending"
+        ],
+        "additionalProperties": false,
+        "description": "One place over a period."
+      },
       "InsightsWays": {
         "type": "object",
         "properties": {
@@ -7148,6 +7857,95 @@
         ],
         "additionalProperties": false,
         "description": "What the device is doing."
+      },
+      "PersonDays": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "The time zone of the person whose days these are (their account's): the days are theirs, as their own days are, wherever you are.",
+            "example": "Europe/Brussels"
+          },
+          "window": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                "description": "The first day of the shared history (the day the history window begins in).",
+                "example": "2026-10-20"
+              },
+              "to": {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                "description": "Today, their day.",
+                "example": "2026-10-27"
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ],
+            "additionalProperties": false,
+            "description": "The local days looked at: the share's history up to today."
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                  "description": "A local day of theirs."
+                },
+                "deviceId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "One of their shared devices."
+                },
+                "points": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Points recorded that day, inside the shared history: every recorded point counts, including ones the track leaves out as too inaccurate, so a day can show no track.",
+                  "example": 1066
+                },
+                "firstAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "The first of them.",
+                  "example": "2026-10-26T08:41:07.000Z"
+                },
+                "lastAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "The last of them.",
+                  "example": "2026-10-26T08:41:07.000Z"
+                }
+              },
+              "required": [
+                "date",
+                "deviceId",
+                "points",
+                "firstAt",
+                "lastAt"
+              ],
+              "additionalProperties": false
+            },
+            "description": "The days with points, oldest first, one entry per day and shared device; at most one per day of the history (up to 365) and device. No positions."
+          }
+        },
+        "required": [
+          "timezone",
+          "window",
+          "days"
+        ],
+        "additionalProperties": false,
+        "description": "The days a person recorded something, within the history they share."
       },
       "OutgoingShare": {
         "type": "object",
@@ -9058,7 +9856,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "trlk_…",
-        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline, Insights › Named roads). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates (Named roads need locations:read). |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |\n| `audit:read` | Read the data access log: who looked at or changed your data, when, how and which data — without positions. |\n| `health:read` | Read the API's own request timings per route (administrators only; numbers, no positions or accounts). |"
+        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline, Insights › Places and Named roads). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates (Insights › Places and Named roads need locations:read). |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |\n| `audit:read` | Read the data access log: who looked at or changed your data, when, how and which data — without positions. |\n| `health:read` | Read the API's own request timings per route (administrators only; numbers, no positions or accounts). |"
       }
     }
   }

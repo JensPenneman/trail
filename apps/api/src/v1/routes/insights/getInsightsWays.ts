@@ -1,6 +1,7 @@
 import { insightsModeFilterQuerySchema, insightsWaysSchema } from "@trail/contracts/insights";
 import { countMovesLacking, loadMoveWays } from "../../../insights/loadMoveWays";
-import { loadWays, mapStamp } from "../../../insights/loadWays";
+import { loadWays } from "../../../insights/loadWays";
+import { mapStamp } from "../../../insights/mapStamp";
 import { defineRoute } from "../../defineRoute";
 import { answerInsights } from "./answerInsights";
 
