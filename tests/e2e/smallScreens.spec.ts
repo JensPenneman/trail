@@ -8,13 +8,6 @@ import { uploadedDevice } from "./support/uploadedDevice";
 const overflow = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
-/**
- * The page does not scroll sideways once it has laid out. A page that is still filling in (a
- * table arriving, fonts swapping) is wider for a moment under load; one that stays wider fails.
- */
-const fits = (page: Page, what: string) =>
-  expect.poll(() => overflow(page), { message: what }).toBe(0);
-
 test.use({ viewport: { width: 320, height: 640 } });
 
 test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account }) => {
@@ -57,29 +50,29 @@ test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account 
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1, name: heading, exact: true })).toBeVisible();
     await expect(page.getByText(loaded).first()).toBeVisible();
-    await fits(page, path);
+    expect(await overflow(page), path).toBe(0);
   }
   await page.goto("/settings/devices?add=1");
   await page.getByRole("dialog").getByLabel("Name").fill("Narrow phone");
   await page.getByRole("dialog").getByRole("button", { name: "Add device" }).click();
   await expect(page.getByRole("dialog", { name: "Set up Narrow phone" })).toBeVisible();
-  await fits(page, "the setup dialog");
+  expect(await overflow(page), "the setup dialog").toBe(0);
 
   // OwnTracks' setup: long URLs, a link per platform, two lists of settings.
   await page.goto("/settings/devices?add=1");
   const form = page.getByRole("dialog", { name: "Add a device" });
   await form.getByLabel("Name").fill("Narrow Pixel");
   await form.getByRole("radio", { name: /^OwnTracks/ }).check();
-  await fits(page, "the add-device form with its apps");
+  expect(await overflow(page), "the add-device form with its apps").toBe(0);
   await form.getByRole("button", { name: "Add device" }).click();
   const setup = page.getByRole("dialog", { name: "Set up Narrow Pixel" });
   await expect(setup.getByRole("link", { name: "Open in OwnTracks" })).toBeVisible();
-  await fits(page, "OwnTracks' setup");
+  expect(await overflow(page), "OwnTracks' setup").toBe(0);
   await setup.getByRole("radio", { name: "Significant changes" }).check();
-  await fits(page, "OwnTracks' setup for an iPhone saving battery");
+  expect(await overflow(page), "OwnTracks' setup for an iPhone saving battery").toBe(0);
   await setup.getByRole("radio", { name: "Android" }).check();
   await expect(setup.getByText("Recommended OwnTracks settings on Android")).toBeVisible();
-  await fits(page, "OwnTracks' setup for Android");
+  expect(await overflow(page), "OwnTracks' setup for Android").toBe(0);
 });
 
 test("the People page with someone who shares fits a 320 px wide screen", async ({
@@ -112,19 +105,19 @@ test("the People page with someone who shares fits a 320 px wide screen", async 
         : page.getByRole("region", { name: detail, exact: true }),
     ).toBeVisible();
     await expect(page.getByText(loaded).first()).toBeVisible();
-    await fits(page, path);
+    expect(await overflow(page), path).toBe(0);
   }
   // Their detail and Me's, with each device and the terms of the share: they fit too.
   await page.goto(`/?view=history&person=${friend.account.id}`);
   await expect(page.getByText("Last 7 days")).toBeVisible();
-  await fits(page, "their detail");
+  expect(await overflow(page), "their detail").toBe(0);
   await page.goto("/?view=history&person=me");
   await expect(page.getByRole("heading", { name: "Your devices" })).toBeVisible();
-  await fits(page, "Me's detail");
+  expect(await overflow(page), "Me's detail").toBe(0);
 });
 
 test("the sign-in page fits a 320 px wide screen", { tag: "@signed-out" }, async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByRole("heading", { level: 1, name: "Sign in" })).toBeVisible();
-  await fits(page, "the sign-in page");
+  expect(await overflow(page)).toBe(0);
 });

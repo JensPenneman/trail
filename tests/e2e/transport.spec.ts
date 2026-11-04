@@ -167,6 +167,9 @@ test("levels change the tracks, and a move's mode can be put right", async ({ pa
   await page.getByRole("radio", { name: "Transport" }).click();
   await expect(page.getByRole("radio", { name: "Transport" })).toBeChecked();
 
+  // A correction takes the device's processing lock, so it waits behind whatever is being worked
+  // out: it is made once nothing is.
+  await processed(page);
   // Open the ride, call it a bus ride, then hand it back to the inference.
   await page.getByRole("button", { name: /^Details of the cycling from/ }).click();
   // The dialog is named after the mode, which changes below: find it by role alone.
