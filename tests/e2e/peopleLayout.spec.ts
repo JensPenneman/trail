@@ -158,12 +158,15 @@ test("on a phone the sheet scrolls over a map that stays, with its detents", asy
 
   // Selecting a person lifts it to the half detent.
   await page.getByRole("list", { name: "People", exact: true }).getByRole("link").first().click();
-  const half = await page.evaluate(() => {
-    const marker = document.querySelector("[data-detent=half]")?.getBoundingClientRect().top ?? 0;
+  // The half detent is where its marker is once the detail has laid out, which is after the press:
+  // the target is measured again with every frame, not once.
+  await page.waitForFunction(() => {
+    const marker = document.querySelector("[data-detent=half]");
+    if (marker === null) return false;
     const padding = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop);
-    return marker + window.scrollY - padding;
+    const target = marker.getBoundingClientRect().top + window.scrollY - padding;
+    return Math.abs(window.scrollY - target) < 3;
   });
-  await page.waitForFunction((target) => Math.abs(window.scrollY - target) < 3, half);
 });
 
 test("the controls and the zoom buttons clear each other on a 375 px screen", async ({
