@@ -2852,14 +2852,15 @@ count among them, since they lead to signed-in pages.
     (OKLab × 100), at least 7.0 and 6.6 for protanopia and 8.9 and 7.9 for
     deuteranopia. The squares lie over every area, road, building and
     boundary of the basemap, which would otherwise cut them apart, and under
-    every name (`heatLayerPlacement`): below the first of the symbols after
+    every name (`dataLayerPlacement`): below the first of the symbols after
     the style's last other layer, with the names a style draws earlier
     moved over the squares (OpenFreeMap's dark style draws its water names
-    under its buildings and its road names under its boundaries), once
-    Trail's lines are in under the style's first symbol. The key
-    (`HeatLegend`) is that scale: "Points recorded in each square", a
-    swatch and the counts of every class, "Rarely" and "Often" at its ends
-    as a visual cue only; it follows the view, as the squares do. Nothing in
+    under its buildings and its road names under its boundaries). Trail's
+    other fills and lines (tracks, transport, accuracy) take the same
+    place, above the heat layer, so no road or building of any style draws
+    over a track. The key (`HeatLegend`) is that scale: "Points recorded in
+    each square", a swatch and the counts of every class, "Rarely" and
+    "Often" at its ends as a visual cue only; it follows the view, as the squares do. Nothing in
     the heatmap moves (no transitions, so nothing for reduced motion to
     stop). Heatmaps cover one's own devices only, so Heat is offered while
     nobody or Me is selected.
@@ -4007,9 +4008,9 @@ security ones too.
   `isSignedInPath`, the precedence of the map's defaults, the heatmap's
   scale, classes and squares (`heatHelpers.test.ts`) and where its layer
   goes in the two basemap styles, their layers read from the vendored files
-  (`heatLayers.test.ts`: over every shape, under every name, Trail's lines
-  where they were), and the sprite made absolute (`absoluteSprite.test.ts`)
-  have unit tests of their own; Settings itself renders through its real routes
+  (`heatLayers.test.ts`: every Trail fill and line over every shape and
+  under every name, heat lowest, circles on top), and the sprite made
+  absolute (`absoluteSprite.test.ts`) have unit tests of their own; Settings itself renders through its real routes
   (`renderSettings`, phone or wide screen) for the list, search, going
   deeper and back with focus, and every page — Settings › Devices among them:
   its cards, each the way to its device and back with the focus on it, a
@@ -4651,7 +4652,22 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   the move's span and sets `mode_user` at once (the same mode again changes
   nothing). `DELETE` revokes the override that set the segment (a toggle with
   it, for every move it covered), shows the inferred mode at once and queues
-  the span for the inference again. A stop has no mode (409).
+  the span for the inference again. A stop has no mode (409). Both refuse a
+  move that is still under way (409, `assertMoveOver`, run under the device
+  lock on the row read there): a correction stores the span as it is, and a
+  move that keeps growing would be cut by `applyOverrides` with the rest
+  keeping the inferred mode. A move is over once a later segment of the
+  device exists (a stop, or a move after a recording gap), or `moveOverAfterS`
+  (1800 s, in the contracts; the pipeline's `stops.gapSplitS` reads the same
+  value, so the two cannot drift) passed since its last point and no `locations`
+  row of the device after it lacks a `processed_points` row. The queue is not
+  the test: rows waiting for map tiles, and the window a reset queues, re-read
+  the same points, while an upload committed but not yet queued still counts.
+  Points a phone sends late (offline while moving: a train without signal, a
+  flight) can still extend a move that was over; nothing on the server sees
+  them coming. The dialog (§17.6) shows "Still under way" for a move that ended less than
+  that ago and is its device's latest item in the timelines it holds (the
+  device's mode `current` ends after 15 minutes, too soon).
 - `POST /api/v1/devices/{id}/mode { mode, until? }` is the toggle (the web app
   has no control for it any more; the API and the MCP tool `set_transport_mode` do): a
   `toggle` override from now until `until`, the first detected stop of ten
@@ -4774,7 +4790,8 @@ device more than a minute apart. A click on a segment — or "Details" in the
 day's timeline list next to the visits and trips — opens its dialog: the mode
 with its icon, "set by you", the confidence, average and top speed, distance
 and duration, "Was this …?" for moves to review, Change mode and Reset to
-detected; a stop's says how long it lasted, where, and, when it spread
+detected ("Still under way" in their place for a move that is not over,
+§17.5); a stop's says how long it lasted, where, and, when it spread
 (`spreadM` of the timeline's segment over 25 m), how far one moved within it.
 Nothing changes at the other levels. The toggle ("from now on", §17.5) is
 the API's and the MCP tool's; the web app shows what it sets in Me's row but

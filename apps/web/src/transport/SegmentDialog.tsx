@@ -1,4 +1,4 @@
-import type { ChosenMode, Segment } from "@trail/contracts/transport";
+import { type ChosenMode, moveOverHint, type Segment } from "@trail/contracts/transport";
 import { useId, useState } from "react";
 import { useReadOnly } from "../app/useReadOnly";
 import { useFormatter } from "../format/useFormatter";
@@ -13,6 +13,7 @@ import { OfflineReason } from "../ui/OfflineReason";
 import { ModePicker } from "./ModePicker";
 import { segmentTitle } from "./segmentTitle";
 import { transportModeInfo } from "./transportModes";
+import { useMoveUnderWay } from "./useMoveUnderWay";
 import "./SegmentDialog.css";
 
 interface SegmentDialogProps {
@@ -32,6 +33,7 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
   const format = useFormatter();
   const change = useSegmentModeChange(segment.id);
   const readOnly = useReadOnly();
+  const underWay = useMoveUnderWay(segment);
   const offlineId = useId();
   const [saved, setSaved] = useState<string | null>(null);
   const move = segment.kind === "move";
@@ -124,7 +126,7 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
 
         {move ? (
           <>
-            {segment.needsReview && inferred !== null && confirmable !== null ? (
+            {segment.needsReview && !underWay && inferred !== null && confirmable !== null ? (
               <Notice
                 tone="info"
                 title={`Was this ${inferred.phrase}?`}
@@ -144,30 +146,38 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
                 <p>Trail is not sure. Confirm it, or pick the right mode below.</p>
               </Notice>
             ) : null}
-            <section className="segment-dialog__change" aria-label="Change mode">
-              <h3 className="segment-dialog__heading">Change mode</h3>
-              {readOnly ? (
-                <OfflineReason id={offlineId}>
-                  You’re offline: the mode can be corrected once you reconnect.
-                </OfflineReason>
-              ) : null}
-              <ModePicker
-                label="Change mode"
-                current={segment.modeUser}
-                disabled={change.isPending || readOnly}
-                onPick={apply}
-              />
-            </section>
-            {segment.modeUser === null ? null : (
-              <Button
-                icon="refresh"
-                busy={change.isPending}
-                disabled={readOnly}
-                aria-describedby={readOnly ? offlineId : undefined}
-                onClick={() => apply(null)}
-              >
-                Reset to detected
-              </Button>
+            {underWay ? (
+              <Notice tone="info" title="Still under way">
+                <p>The mode can be set or reset once this move is over, {moveOverHint}.</p>
+              </Notice>
+            ) : (
+              <>
+                <section className="segment-dialog__change" aria-label="Change mode">
+                  <h3 className="segment-dialog__heading">Change mode</h3>
+                  {readOnly ? (
+                    <OfflineReason id={offlineId}>
+                      You’re offline: the mode can be corrected once you reconnect.
+                    </OfflineReason>
+                  ) : null}
+                  <ModePicker
+                    label="Change mode"
+                    current={segment.modeUser}
+                    disabled={change.isPending || readOnly}
+                    onPick={apply}
+                  />
+                </section>
+                {segment.modeUser === null ? null : (
+                  <Button
+                    icon="refresh"
+                    busy={change.isPending}
+                    disabled={readOnly}
+                    aria-describedby={readOnly ? offlineId : undefined}
+                    onClick={() => apply(null)}
+                  >
+                    Reset to detected
+                  </Button>
+                )}
+              </>
             )}
             {change.isError ? (
               <Notice tone="danger" role="alert" title="The mode could not be saved">

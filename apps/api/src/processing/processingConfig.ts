@@ -1,3 +1,5 @@
+import { moveOverAfterS } from "@trail/contracts/transport";
+
 /**
  * Every threshold of the processing pipeline (docs/architecture.md §17) in one
  * typed object. The stages take it as an argument, so tests can vary it, and
@@ -217,7 +219,8 @@ export const defaultProcessingConfig: ProcessingConfig = {
     mergeRadiusM: 80,
     mergeMoveMaxS: 300,
     visitRadiusM: 150,
-    gapSplitS: 1800,
+    // Shared with the API: a move is over, and can be corrected, after this much silence.
+    gapSplitS: moveOverAfterS,
     gapKeepSpeedMs: 10,
     walkMinS: 30,
     walkSpeedMs: 0.6,
