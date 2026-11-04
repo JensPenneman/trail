@@ -221,7 +221,9 @@ describe("a link that implies a person", () => {
     await waitFor(() =>
       expect(router.state.location.search).toBe(`?devices=${ids.anaPhone}&person=${ids.ana}`),
     );
-    expect(await screen.findByRole("region", { name: "Ana Bell" })).toBeInTheDocument();
+    const heading = await screen.findByRole("heading", { level: 2, name: "Ana Bell" });
+    // Nobody asked for it: the focus stays where the page put it.
+    expect(heading).not.toHaveFocus();
     expect(router.state.historyAction).toBe("REPLACE");
   });
 
@@ -243,6 +245,16 @@ describe("Heat's device filter", () => {
     await person.click(car);
     expect(router.state.location.search).toBe(`?view=heat&devices=${ids.phone}`);
     expect(car).toHaveFocus();
+    // Leaving Heat leaves its filter: it would imply Me, and the switch would be lost.
+    const live = within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", {
+      name: "Live",
+    });
+    await person.click(live);
+    expect(live).toBeChecked();
+    expect(live).toHaveFocus();
+    await waitFor(() => expect(router.state.location.search).toBe(""));
+    expect(screen.getByRole("list", { name: "People" })).toBeInTheDocument();
+    expect(router.state.location.search).toBe("");
     expect(screen.getByRole("list", { name: "People" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Me" })).toBeNull();
     await waitFor(() =>

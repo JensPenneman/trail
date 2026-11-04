@@ -8,6 +8,10 @@ import type { MapView } from "./mapViews";
 
 export function withView(params: URLSearchParams, view: MapView): URLSearchParams {
   const next = new URLSearchParams(params);
+  // Heat's device filter is one's own devices' with nobody selected: it does not follow to the
+  // other views, where `?devices=` alone would imply Me.
+  const selecting = params.has("person") || params.has("people") || params.has("segment");
+  if (params.get("view") === "heat" && view !== "heat" && !selecting) next.delete("devices");
   if (view === "live") next.delete("view");
   else next.set("view", view);
   return next;

@@ -194,6 +194,7 @@ export function PeoplePage() {
   const focusRef = usePanelFocus(
     selectedKey,
     available.some((person) => person.key === selectedKey),
+    selection.implied,
   );
   const panelRef = useCallback(
     (element: HTMLElement | null) => {

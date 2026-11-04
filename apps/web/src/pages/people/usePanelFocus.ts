@@ -13,14 +13,21 @@ import { useCallback, useEffect, useRef } from "react";
 export function usePanelFocus(
   selectedKey: string | null,
   resolved: boolean,
+  implied: boolean,
 ): (element: HTMLElement | null) => void {
   const root = useRef<HTMLElement | null>(null);
-  const previous = useRef({ key: selectedKey, resolved });
+  const previous = useRef({ key: selectedKey, resolved, implied });
   useEffect(() => {
     const before = previous.current;
+    // A selection the page worked out itself (a guess, then the owner) is no move of the person's.
+    if (implied && selectedKey !== null) {
+      previous.current = { key: selectedKey, resolved: true, implied: true };
+      return;
+    }
     previous.current = {
       key: selectedKey,
       resolved: resolved || (before.key === selectedKey && before.resolved),
+      implied,
     };
     if (before.key === selectedKey) return;
     const panel = root.current;
@@ -28,12 +35,12 @@ export function usePanelFocus(
     const target =
       selectedKey !== null
         ? panel.querySelector<HTMLElement>("[data-person-heading]")
-        : before.resolved
+        : before.resolved && !before.implied
           ? (panel.querySelector<HTMLElement>(`[data-person="${before.key}"]`) ??
             panel.querySelector<HTMLElement>("[data-page-title]"))
           : null;
     target?.focus();
-  }, [selectedKey, resolved]);
+  }, [selectedKey, resolved, implied]);
   return useCallback((element: HTMLElement | null) => {
     root.current = element;
   }, []);

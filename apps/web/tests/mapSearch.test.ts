@@ -54,9 +54,7 @@ describe("the People page's URL", () => {
     expect(withView(start, "history").toString()).toBe(
       "date=2026-10-20&devices=a&level=raw&style=dark&view=history",
     );
-    expect(withView(new URLSearchParams("view=heat&devices=a"), "live").toString()).toBe(
-      "devices=a",
-    );
+    expect(withView(new URLSearchParams("view=heat&devices=a"), "live").toString()).toBe("");
     expect(withDevices(start, null).toString()).toBe("date=2026-10-20&level=raw&style=dark");
     expect(withDevices(start, ["a", "b"]).get("devices")).toBe("a,b");
     expect(withDay(start, "2026-10-19", today).get("date")).toBe("2026-10-19");
@@ -76,6 +74,19 @@ describe("the People page's URL", () => {
     expect(parse("view=history&segment=abc").person).toBe("me");
     expect(parse(`segment=abc&person=${anna}`).person).toBe(anna);
     expect(parse("segment=abc&people=me,x").person).toBe("me");
+  });
+
+  it("leaves Heat's device filter behind when nobody is selected, and keeps it with a person", () => {
+    const heat = new URLSearchParams("view=heat&devices=a");
+    expect(withView(heat, "live").toString()).toBe("");
+    expect(withView(heat, "history").toString()).toBe("view=history");
+    expect(withView(new URLSearchParams("view=heat&person=me&devices=a"), "live").toString()).toBe(
+      "person=me&devices=a",
+    );
+    // From another view the filter stays: it is a person's there.
+    expect(withView(new URLSearchParams("devices=a"), "heat").toString()).toBe(
+      "devices=a&view=heat",
+    );
   });
 
   it("selects one person at a time and drops what belongs to the last", () => {

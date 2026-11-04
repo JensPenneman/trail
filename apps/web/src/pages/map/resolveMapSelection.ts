@@ -6,6 +6,8 @@ import type { MapSearch } from "./parseMapSearch";
 export interface MapSelection {
   /** The person selected, as the page knows them; null is the overview, nobody selected. */
   selected: MapPerson | null;
+  /** Whether a device filter alone implied the selection, rather than the address naming them. */
+  implied: boolean;
   /** The device filter as it applies to the selected person; null when all their devices show. */
   filter: readonly string[] | null;
   /**
@@ -85,5 +87,5 @@ export function resolveMapSelection(
       : ownShown.length === 0
         ? null
         : { deviceIds: ownShown };
-  return { selected, filter, devicesOf, own };
+  return { selected, implied: selected !== null && search.person === null, filter, devicesOf, own };
 }

@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useMemo, useOptimistic } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useOptimistic, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { useToday } from "../../time/useToday";
 import { withDay, withDevices, withPerson, withRange, withView } from "./mapSearchUpdates";
@@ -56,13 +56,18 @@ export function useMapSearch(): MapSearchControls {
       }),
     [setParams, showView],
   );
-  const settled = chosen.person === parsed.person && chosen.devices === parsed.devices;
+  const settled =
+    chosen.person === parsed.person && chosen.devices === parsed.devices && view === parsed.view;
+  // The latest address, for answers that arrive late (set after rendering, never during).
+  const latest = useRef(params);
+  useEffect(() => {
+    latest.current = params;
+  }, [params]);
   const leavePerson = useCallback(
-    (person: string) =>
-      update(
-        (current) => (current.get("person") === person ? withPerson(current, null) : current),
-        true,
-      ),
+    (person: string) => {
+      if (latest.current.get("person") !== person) return;
+      update((current) => withPerson(current, null), true);
+    },
     [update],
   );
   const adoptPerson = useCallback(
