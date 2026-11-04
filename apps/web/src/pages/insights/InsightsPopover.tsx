@@ -9,12 +9,15 @@ export function InsightsPopover({
   open,
   onOpenChange,
   popoverId,
+  align = "start",
   button,
   children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   popoverId: string;
+  /** Which edge of its button the popover lines up with: the last button of a row, the end. */
+  align?: "start" | "end";
   /** The button, given what it needs to point at the popover. */
   button: (props: {
     ref: RefObject<HTMLButtonElement | null>;
@@ -48,7 +51,7 @@ export function InsightsPopover({
         onClick: () => onOpenChange(!open),
       })}
       {open ? (
-        <div className="insights-popover__body" id={popoverId}>
+        <div className={`insights-popover__body insights-popover__body--${align}`} id={popoverId}>
           {children(done)}
         </div>
       ) : null}
