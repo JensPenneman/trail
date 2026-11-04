@@ -78,6 +78,13 @@
       "when": 1793723608067,
       "tag": "0010_health_read_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793822439571,
+      "tag": "0012_heat_days",
+      "breakpoints": true
     }
   ]
 }

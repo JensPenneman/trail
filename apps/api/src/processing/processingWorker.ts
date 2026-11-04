@@ -194,6 +194,7 @@ export class ProcessingWorker {
               points: outcome.points,
               segments: outcome.segments,
               missingTiles: outcome.missingTiles.length,
+              heatDaysMs: outcome.heatDaysMs,
               reason: rows[0]?.reason,
               priority: this.#lastPriority,
               split: outcome.split,

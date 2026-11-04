@@ -16,6 +16,7 @@ import { HttpError } from "../http/httpError";
 import { parseBody } from "../http/parseInput";
 import { announceAccountGone } from "../sharing/announceAccountGone";
 import { sharesOfAccount } from "../sharing/sharesOfAccount";
+import { rebuildUserHeatDays } from "../heatmap/rebuildUserHeatDays";
 import { rebuildUserDailyStats } from "../stats/rebuildUserDailyStats";
 
 /** `GET/PATCH/DELETE /api/me` — profile, preferences and account deletion. */
@@ -50,6 +51,8 @@ export function meRouter(ctx: AppContext): Router {
       // Days are local calendar days: a new time zone moves every day boundary.
       ctx.background.run("rebuild daily stats after a time zone change", async () => {
         await rebuildUserDailyStats(ctx.db, user.id);
+        // The per-day heat cells are cut in local days too.
+        await rebuildUserHeatDays(ctx.db, user.id, user.timezone);
         // Every day and stamp moved: the open pages start afresh rather than hear of each day (§9).
         ctx.bus.publish(user.id, { type: "resync" });
       });

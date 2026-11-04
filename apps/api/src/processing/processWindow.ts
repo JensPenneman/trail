@@ -1,6 +1,9 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/database";
 import { devices } from "../db/schema/devices";
+import { users } from "../db/schema/users";
+import { heatDaysOf } from "../heatmap/heatDaysOf";
+import { rebuildHeatDays } from "../heatmap/rebuildHeatDays";
 import { notifySegments } from "../events/processingNotify";
 import { lockDeviceProcessing } from "./deviceLock";
 import { persistWindow } from "./persistWindow";
@@ -43,6 +46,8 @@ export interface WindowOutcome {
   points: number;
   segments: number;
   missingTiles: readonly TileKey[];
+  /** Milliseconds the pass spent writing the per-day heat cells of the days it touched. */
+  heatDaysMs: number;
 }
 
 const levels: readonly FromLevel[] = ["averaged", "mapped", "inferred"];
@@ -89,8 +94,9 @@ export async function processWindow(
   return db.transaction(async (tx) => {
     await lockDeviceProcessing(tx, deviceId);
     const [owner] = await tx
-      .select({ userId: devices.userId })
+      .select({ userId: devices.userId, timezone: users.timezone })
       .from(devices)
+      .innerJoin(users, eq(users.id, devices.userId))
       .where(eq(devices.id, deviceId))
       .limit(1);
     if (owner === undefined) return null;
@@ -151,6 +157,11 @@ export async function processWindow(
       versions: processingVersions,
       config,
     });
+    // The days it touched in the owner's zone: their cells for the heatmap, from the points and
+    // segments just written (docs/architecture.md §8.2).
+    const heatStarted = performance.now();
+    await rebuildHeatDays(tx, deviceId, owner.timezone, heatDaysOf(window.from, window.to, owner.timezone));
+    const heatDaysMs = Math.round(performance.now() - heatStarted);
     // The older part of a split keeps the rows' reason and level; an upload's is repair: history
     // that must not hold up the fresh points of other devices.
     if (split.older !== null) {
@@ -182,6 +193,7 @@ export async function processWindow(
       points: raw.length,
       segments: result.segments.length,
       missingTiles: waitFor,
+      heatDaysMs,
     };
   });
 }

@@ -1,7 +1,10 @@
 import { asc, eq } from "drizzle-orm";
+import { allowLongStatements } from "../../db/allowLongStatements";
 import { devices } from "../../db/schema/devices";
 import { users } from "../../db/schema/users";
 import { rebuildHeatCells } from "../../heatmap/rebuildHeatCells";
+import { rebuildHeatDays } from "../../heatmap/rebuildHeatDays";
+import { lockDeviceProcessing } from "../../processing/deviceLock";
 import { isUuid } from "../../lib/isUuid";
 import { rebuildDailyStats } from "../../stats/rebuildDailyStats";
 import type { CliContext } from "../cliContext";
@@ -31,6 +34,12 @@ export async function recomputeCommand(
     // The heat cells under the device's lock, which uploads of the device wait for; the
     // statistics after it, without it: they take longer, and uploads would run out of time.
     await ctx.db.transaction((tx) => rebuildHeatCells(tx, device.id));
+    // The per-day cells under the device's processing lock, like a pass writes them.
+    await ctx.db.transaction(async (tx) => {
+      await allowLongStatements(tx);
+      await lockDeviceProcessing(tx, device.id);
+      await rebuildHeatDays(tx, device.id, device.timezone, "all");
+    });
     const days = await ctx.db.transaction((tx) =>
       rebuildDailyStats(tx, device.id, device.timezone),
     );
