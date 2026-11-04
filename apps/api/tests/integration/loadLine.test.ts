@@ -30,6 +30,32 @@ afterAll(async () => {
   await t.close();
 });
 
+/** Field names that would carry a place, a device or a secret, wherever they are in the line. */
+const forbiddenKeys =
+  /^(lat|lon|lng|latitude|longitude|accuracy|altitude|deviceId|device_id|token)$/i;
+
+/** Every key of a parsed line, nested objects and arrays included. */
+function keysOf(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(keysOf);
+  if (value === null || typeof value !== "object") return [];
+  return Object.entries(value).flatMap(([key, inner]) => [key, ...keysOf(inner)]);
+}
+
+/**
+ * What a load line gives away of the fixture's places: a field that carries one, or one of its
+ * coordinates written out in full, as they would be if logged. A timing or a load figure is
+ * no match: only the exact digits of a coordinate are.
+ */
+function leaks(rawLines: readonly string[], coordinates: readonly string[]): string[] {
+  const found: string[] = [];
+  for (const raw of rawLines) {
+    for (const key of keysOf(JSON.parse(raw)))
+      if (forbiddenKeys.test(key)) found.push(`field ${key}`);
+    for (const digits of coordinates) if (raw.includes(digits)) found.push(`coordinate ${digits}`);
+  }
+  return found;
+}
+
 const loadLines = () =>
   lines
     .map((line) => JSON.parse(line) as Record<string, unknown>)
@@ -83,10 +109,28 @@ describe("the load line", () => {
       loopP99Ms: expect.any(Number),
     });
 
-    const raw = lines.filter((entry) => entry.includes('"msg":"load"')).join("\n");
+    const logged = lines.filter((entry) => entry.includes('"msg":"load"'));
+    expect(logged.length).toBeGreaterThan(0);
+    const raw = logged.join("\n");
     for (const secret of [token, email, deviceName, "iphone-jens"])
       expect(raw).not.toContain(secret);
-    // The fixture rides through Ghent (51.03–51.05° N, 3.69–3.73° E).
-    expect(raw).not.toMatch(/51\.0[0-9]{2}|3\.[67][0-9]{2}/);
+    // The fixture rides through Ghent: its coordinates, as written in the batch, in full.
+    const coordinates = overlandFixture()
+      .locations.flatMap((feature) => feature.geometry?.coordinates ?? [])
+      .map(String);
+    expect(coordinates.length).toBeGreaterThan(0);
+    expect(leaks(logged, coordinates)).toEqual([]);
+  });
+
+  it("would notice a coordinate or a place in a line", () => {
+    const [place] = overlandFixture().locations.flatMap((f) => f.geometry?.coordinates ?? []);
+    const coordinates = [String(place)];
+    const clean = JSON.stringify({ level: 30, msg: "load", points: 30, loopP99Ms: 51.034 });
+    // A timing that happens to start like a place is none.
+    expect(leaks([clean], coordinates)).toEqual([]);
+    const written = JSON.stringify({ level: 30, msg: "load", where: `at ${place}` });
+    expect(leaks([written], coordinates)).toEqual([`coordinate ${place}`]);
+    const field = JSON.stringify({ level: 30, msg: "load", last: { lat: 1 } });
+    expect(leaks([field], coordinates)).toEqual(["field lat"]);
   });
 });
