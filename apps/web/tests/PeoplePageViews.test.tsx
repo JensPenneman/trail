@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { basemapMissingNotice } from "../src/map/useMapStyle";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
+import { paramsOf } from "./support/addressParams";
 import { config, ids, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
@@ -242,7 +243,15 @@ describe("switching views", () => {
     await waitFor(() => expect(canvas).toHaveAttribute("data-positions", "3"));
 
     await person.click(view("History"));
-    expect(router.state.location.search).toBe(`?devices=${ids.phone}&person=me&view=history`);
+    // The view and the person the link implied are written by two effects: exactly these three
+    // parameters, in whatever order they land.
+    await waitFor(() =>
+      expect(paramsOf(router.state.location.search)).toEqual([
+        ["devices", ids.phone],
+        ["person", "me"],
+        ["view", "history"],
+      ]),
+    );
     expect(await screen.findByRole("slider", { name: "Position at" })).toBeInTheDocument();
     expect(map()).toBe(canvas);
     await person.click(screen.getByRole("button", { name: "Previous day" }));
@@ -253,9 +262,13 @@ describe("switching views", () => {
     await waitFor(() => expect(map()).toHaveAttribute("data-heat", "2"));
 
     await person.click(view("Live"));
-    expect(new URLSearchParams(router.state.location.search).get("view")).toBeNull();
-    expect(new URLSearchParams(router.state.location.search).get("date")).not.toBeNull();
-    expect(new URLSearchParams(router.state.location.search).get("devices")).toBe(ids.phone);
+    // Live is the default view and leaves the address; the day and the filter stay.
+    await waitFor(() => {
+      const params = new URLSearchParams(router.state.location.search);
+      expect(params.get("view")).toBeNull();
+      expect(params.get("date")).not.toBeNull();
+      expect(params.get("devices")).toBe(ids.phone);
+    });
     expect(await screen.findByRole("region", { name: "Your day so far" })).toBeInTheDocument();
     expect(map()).toBe(canvas);
     expect(map()).toHaveAttribute("data-positions", "3");

@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
+import { paramsOf } from "./support/addressParams";
 import { ana, bob, ids, tracks, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
@@ -219,7 +220,10 @@ describe("a link that implies a person", () => {
     expect(router.state.location.search).toBe(`?devices=${ids.anaPhone}`);
     act(() => release());
     await waitFor(() =>
-      expect(router.state.location.search).toBe(`?devices=${ids.anaPhone}&person=${ids.ana}`),
+      expect(paramsOf(router.state.location.search)).toEqual([
+        ["devices", ids.anaPhone],
+        ["person", ids.ana],
+      ]),
     );
     const heading = await screen.findByRole("heading", { level: 2, name: "Ana Bell" });
     // Nobody asked for it: the focus stays where the page put it.
@@ -230,7 +234,9 @@ describe("a link that implies a person", () => {
   it("rewrites ?people= with one person, and keeps the detail", async () => {
     mockApi(standardRoutes());
     const { router } = renderPage(<PeoplePage />, { url: `/?people=${ids.ana}`, user });
-    await waitFor(() => expect(router.state.location.search).toBe(`?person=${ids.ana}`));
+    await waitFor(() =>
+      expect(paramsOf(router.state.location.search)).toEqual([["person", ids.ana]]),
+    );
     expect(await screen.findByRole("region", { name: "Ana Bell" })).toBeInTheDocument();
   });
 });
