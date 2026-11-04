@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { SessionUser } from "@trail/contracts/user";
-import { queryKeys } from "../api/queryKeys";
+import { type HeatmapParams, queryKeys } from "../api/queryKeys";
+import { localDateOf } from "../time/localDateOf";
 import { staleDaySlices } from "./staleDaySlices";
 
 /** What processing changes: the levels, the stops and moves, the period sums of Insights. */
@@ -16,6 +17,36 @@ const processed = new Set(["level-tracks", "timeline", "insights"]);
  * which the digest's refetch would cancel and send again.
  */
 const digests = new Set(["days"]);
+
+/**
+ * The heat of time spent and visits is made of the stops processing works out (the heat of points
+ * is not): these answers go stale with a change to the devices and days they cover — all of them
+ * when `change` is left out — and the ones on screen are asked for again. A query without a period
+ * covers all the history up to today.
+ */
+export function invalidateStopHeat(
+  client: QueryClient,
+  change?: { deviceId: string; from: string; to: string; timezone: string | null },
+): Promise<void> {
+  const days =
+    change === undefined || change.timezone === null
+      ? null
+      : {
+          from: localDateOf(change.from, change.timezone),
+          to: localDateOf(change.to, change.timezone),
+        };
+  return client.invalidateQueries({
+    queryKey: queryKeys.all.heatmap,
+    predicate: (query) => {
+      const asked = query.queryKey[1] as Partial<HeatmapParams> | undefined;
+      if (asked?.heat === "points") return false;
+      if (change === undefined) return true;
+      if (asked?.deviceIds != null && !asked.deviceIds.includes(change.deviceId)) return false;
+      if (days === null || asked?.from == null || asked.to == null) return true;
+      return asked.from <= days.to && days.from <= asked.to;
+    },
+  });
+}
 
 /** A stretch of a device's history that processing changed, as the `segments` event names it. */
 export interface ProcessedChange {
@@ -79,4 +110,10 @@ export function staleProcessed(client: QueryClient, change: ProcessedChange, by:
   void staleDaySlices(client, digests, slice);
   void staleDaySlices(client, processed, slice);
   void client.invalidateQueries({ queryKey: queryKeys.deviceMode(change.deviceId) });
+  void invalidateStopHeat(client, {
+    deviceId: change.deviceId,
+    from: change.from,
+    to: change.to,
+    timezone: slice.timezone,
+  });
 }

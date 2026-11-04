@@ -2,12 +2,14 @@ import type { InsightsPeriod } from "@trail/contracts/insights";
 import type { Executor } from "../db/database";
 import type { DeviceAccess } from "../devices/deviceAccess";
 import { resolveDeviceIds } from "../devices/resolveDeviceIds";
+import { addDays } from "../lib/calendarDate";
 import { localDate } from "../lib/localDate";
+import { startOfLocalDay } from "../lib/startOfLocalDay";
 import { firstSegmentAt } from "./insightMoves";
 import { resolvePeriod } from "./insightsPeriod";
 import { type LocalHour, localHours } from "./localHours";
 
-/** What every Insights request works on: whose devices, which local days and their hours. */
+/** What every Insights request works on: whose devices, which local days and their hours (`hours` is empty when left off). */
 export interface InsightsScope {
   timezone: string;
   deviceIds: string[];
@@ -33,6 +35,7 @@ export async function insightsScope(
     devices?: readonly string[] | undefined;
   },
   now = new Date(),
+  options: { hours?: boolean } = {},
 ): Promise<InsightsScope> {
   const timezone = access.user.timezone;
   const deviceIds = (await resolveDeviceIds(db, access, query.devices)).map((device) => device.id);
@@ -42,13 +45,21 @@ export async function insightsScope(
     localDate(now, timezone),
     first === null ? null : localDate(new Date(first), timezone),
   );
-  const hours = localHours(period.from, period.to, timezone);
+  // The heatmap needs the period's bounds, not its hours (about 26 000 for three years).
+  const withHours = options.hours !== false;
+  const hours = withHours ? localHours(period.from, period.to, timezone) : [];
   return {
     timezone,
     deviceIds,
     period,
     hours,
-    start: new Date(hours[0]?.start ?? now.getTime()),
-    end: new Date(hours.at(-1)?.end ?? now.getTime()),
+    start: new Date(
+      withHours ? (hours[0]?.start ?? now.getTime()) : startOfLocalDay(period.from, timezone),
+    ),
+    end: new Date(
+      withHours
+        ? (hours.at(-1)?.end ?? now.getTime())
+        : startOfLocalDay(addDays(period.to, 1), timezone),
+    ),
   };
 }

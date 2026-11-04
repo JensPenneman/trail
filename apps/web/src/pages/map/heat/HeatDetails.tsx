@@ -3,6 +3,7 @@ import type { DeviceSummary } from "@trail/contracts/device";
 import type { HeatmapResponse } from "@trail/contracts/heatmap";
 import { useId, useMemo } from "react";
 import { useFormatter } from "../../../format/useFormatter";
+import { heatPlaces } from "../../../map/heatTiles";
 import { useDays } from "../../../queries/useDays";
 import { addDays } from "../../../time/addDays";
 import { Button } from "../../../ui/Button";
@@ -55,7 +56,10 @@ export function HeatDetails({ devices, deviceIds, today, heatmap, onShow }: Heat
   );
   const totalPoints = selected.reduce((sum, device) => sum + device.counts.total, 0);
   const busiest = useMemo(
-    () => [...(heatmap.data?.cells ?? [])].sort((a, b) => b[2] - a[2]).slice(0, 5),
+    () =>
+      heatmap.data === undefined
+        ? []
+        : heatPlaces(heatmap.data, 5).map(({ lon, lat, value }) => ({ lon, lat, count: value })),
     [heatmap.data],
   );
 
@@ -129,7 +133,7 @@ export function HeatDetails({ devices, deviceIds, today, heatmap, onShow }: Heat
           </p>
         ) : (
           <PlainList ordered className="row-list card card--flush">
-            {busiest.map(([lon, lat, count]) => (
+            {busiest.map(({ lon, lat, count }) => (
               <li key={`${lon},${lat}`} className="row-list__item">
                 <div className="row-list__main">
                   <p className="row-list__title">{format.count(count)} points</p>

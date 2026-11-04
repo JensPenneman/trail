@@ -6,7 +6,8 @@ import { type RefObject, useEffect, useEffectEvent } from "react";
  * activating something else). `onDismiss` hears which: "escape" only when
  * focus is in the popover (or nowhere), so the caller can return focus to its
  * button; everything else is "outside" and leaves focus where it is. An
- * Escape that something else handled (a dialog closing) is not ours.
+ * Escape that something else handled (a dialog closing) is not ours, and one
+ * that closes the popover is marked handled for whoever listens after.
  * Listens only while `open`; `within` is the popover with its button.
  */
 export function useDismiss(
@@ -30,6 +31,8 @@ export function useDismiss(
       ) {
         return;
       }
+      // Handled here: the playback bar's Escape (on the window) leaves it be.
+      event.preventDefault();
       const active = document.activeElement;
       dismiss(
         active === null || active === document.body || root.contains(active) ? "escape" : "outside",

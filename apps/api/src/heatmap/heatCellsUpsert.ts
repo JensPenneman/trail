@@ -1,13 +1,12 @@
 import { type SQL, sql } from "drizzle-orm";
-import { heatCellMaxAccuracy, heatCellZooms, mercatorMaxLatitude } from "./heatCellLevels";
-
-const maxLatitude = sql.raw(String(mercatorMaxLatitude));
+import { heatCellMaxAccuracy, heatCellZooms } from "./heatCellLevels";
+import { tileXSql, tileYSql } from "./tileSql";
 
 /**
  * `INSERT INTO heat_cells … ON CONFLICT DO UPDATE` adding the points of
  * `source` (a relation with recorded_at, lat, lon, horizontal_accuracy) to a
  * device's cells at `levels` (every stored level unless a rebuild names some).
- * The tile maths matches `tileMath.ts`.
+ * The tile maths is `tileSql.ts`, which matches `tileMath.ts`.
  */
 export function heatCellsUpsert(
   deviceId: string,
@@ -20,18 +19,9 @@ export function heatCellsUpsert(
     SELECT ${deviceId}::uuid, t.z, t.x, t.y, count(*)::int, min(t.recorded_at), max(t.recorded_at)
     FROM (
       SELECT zl.z, p.recorded_at,
-        least(greatest(floor((p.lon + 180.0) / 360.0 * (1 << zl.z))::int, 0), (1 << zl.z) - 1) AS x,
-        least(
-          greatest(
-            floor((1.0 - ln(tan(radians(c.lat)) + 1.0 / cos(radians(c.lat))) / pi()) / 2.0 * (1 << zl.z))::int,
-            0
-          ),
-          (1 << zl.z) - 1
-        ) AS y
+        ${tileXSql(sql`p.lon`, sql`zl.z`)} AS x,
+        ${tileYSql(sql`p.lat`, sql`zl.z`)} AS y
       FROM ${source} AS p
-      CROSS JOIN LATERAL (
-        SELECT least(greatest(p.lat, -${maxLatitude}), ${maxLatitude}) AS lat
-      ) AS c
       CROSS JOIN (VALUES ${zoomValues}) AS zl(z)
       WHERE p.horizontal_accuracy IS NULL OR p.horizontal_accuracy <= ${heatCellMaxAccuracy}
     ) AS t

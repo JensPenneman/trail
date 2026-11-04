@@ -5,6 +5,7 @@ import { type SessionUser, sessionResponseSchema } from "@trail/contracts/user";
 import { apiFetch } from "../api/apiFetch";
 import { queryKeys } from "../api/queryKeys";
 import { forgetMapStyleChoice } from "../map/useMapStyle";
+import { forgetHeatChoice } from "../pages/map/heat/useHeatChoice";
 import { forgetTrackLevelChoice } from "../transport/useTrackLevel";
 
 interface UpdatePreferencesCallbacks {
@@ -18,7 +19,7 @@ interface UpdatePreferencesCallbacks {
  * Changes some of the account's preferences (`PATCH /api/me`). The session
  * shows the change at once — the map follows it before the answer — and goes
  * back if it fails. Changes are sent one after another (the scope), so the
- * last answer carries all of them. A saved map style or level is no longer
+ * last answer carries all of them. A saved map style, level or heat measure is no longer
  * this browser's own choice: the browser follows the account again.
  */
 export function useUpdatePreferences({ onSaved, onSettled }: UpdatePreferencesCallbacks = {}) {
@@ -50,6 +51,7 @@ export function useUpdatePreferences({ onSaved, onSettled }: UpdatePreferencesCa
       queryClient.setQueryData(queryKeys.session, user);
       if (preferences.mapStyle !== undefined) forgetMapStyleChoice();
       if (preferences.level !== undefined) forgetTrackLevelChoice();
+      if (preferences.heat !== undefined) forgetHeatChoice();
       onSaved?.(preferences);
     },
     onSettled: (_answer, _error, preferences) => onSettled?.(preferences),

@@ -2490,6 +2490,78 @@
         }
       }
     },
+    "/api/v1/people/{userId}/days": {
+      "get": {
+        "operationId": "getPersonDays",
+        "summary": "Get the days a person recorded",
+        "description": "Which days a person recorded something, within the history they share with you: per shared device and local day, the points and the first and last time — no positions. The days are the person's own, in their account's time zone (`timezone`), because that is where their daily totals are cut; the window runs from the day their shared history begins in, counted from there on that first day, to today. A person without a share with history for you (or one you hid) is 404. They see in their data access log that you looked, with the window, not the days. The answer has an `ETag` that changes when their points or the share do.\n\n**Access:** an API token with the scope `people:read`, or a signed-in session.",
+        "tags": [
+          "People"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "people:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The person's account id.",
+              "example": "0199a0f2-11c4-7e0b-9c1d-2f5a8e4b7a60"
+            },
+            "required": true,
+            "description": "The person's account id."
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The days a person recorded something, within the history they share.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonDays"
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/shares": {
       "get": {
         "operationId": "listShares",
@@ -6934,6 +7006,95 @@
         ],
         "additionalProperties": false,
         "description": "What the device is doing."
+      },
+      "PersonDays": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "The time zone of the person whose days these are (their account's): the days are theirs, as their own days are, wherever you are.",
+            "example": "Europe/Brussels"
+          },
+          "window": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                "description": "The first day of the shared history (the day the history window begins in).",
+                "example": "2026-10-20"
+              },
+              "to": {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                "description": "Today, their day.",
+                "example": "2026-10-27"
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ],
+            "additionalProperties": false,
+            "description": "The local days looked at: the share's history up to today."
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                  "description": "A local day of theirs."
+                },
+                "deviceId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "One of their shared devices."
+                },
+                "points": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Points recorded that day, inside the shared history: every recorded point counts, including ones the track leaves out as too inaccurate, so a day can show no track.",
+                  "example": 1066
+                },
+                "firstAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "The first of them.",
+                  "example": "2026-10-26T08:41:07.000Z"
+                },
+                "lastAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "The last of them.",
+                  "example": "2026-10-26T08:41:07.000Z"
+                }
+              },
+              "required": [
+                "date",
+                "deviceId",
+                "points",
+                "firstAt",
+                "lastAt"
+              ],
+              "additionalProperties": false
+            },
+            "description": "The days with points, oldest first, one entry per day and shared device; at most one per day of the history (up to 365) and device. No positions."
+          }
+        },
+        "required": [
+          "timezone",
+          "window",
+          "days"
+        ],
+        "additionalProperties": false,
+        "description": "The days a person recorded something, within the history they share."
       },
       "OutgoingShare": {
         "type": "object",

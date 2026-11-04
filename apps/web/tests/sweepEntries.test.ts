@@ -46,9 +46,19 @@ const pastDay = (daysAgo: number, overrides: Partial<CacheEntry> = {}) => {
 };
 
 const heat = (index: number) =>
-  entry(queryKeys.heatmap({ bbox: `3.${index},51,3.9,51.1`, zoom: 12, deviceIds: null }), {
-    touchedAt: now - index * 60_000,
-  });
+  entry(
+    queryKeys.heatmap({
+      bbox: `3.${index},51,3.9,51.1`,
+      zoom: 12,
+      deviceIds: null,
+      heat: "points",
+      from: null,
+      to: null,
+    }),
+    {
+      touchedAt: now - index * 60_000,
+    },
+  );
 
 const today = entry(
   queryKeys.tracks({
@@ -108,10 +118,10 @@ describe("sweepEntries", () => {
     expect(isProtected(devices, now)).toBe(true);
   });
 
-  it("keeps the newest twenty heat views, whatever the budget", () => {
-    const views = Array.from({ length: 25 }, (_, index) => heat(index));
+  it("keeps the newest sixty heat views, whatever the budget", () => {
+    const views = Array.from({ length: 65 }, (_, index) => heat(index));
     const result = sweepEntries({ entries: views, owner: ids.user, now, targetBytes: 1e12 });
-    expect(result.remove).toEqual(views.slice(20).map((view) => view.key));
+    expect(result.remove).toEqual(views.slice(60).map((view) => view.key));
   });
 
   it("removes what outlived its TTL, counted from when it was last touched", () => {

@@ -9,6 +9,8 @@ export interface MapTrack {
   color: string;
   /** Continuous pieces of `[lon, lat]`; nothing is drawn across recording gaps. */
   segments: readonly (readonly (readonly [number, number])[])[];
+  /** Ahead of the playback cursor: drawn faded. */
+  dimmed?: boolean;
 }
 
 export interface MapPosition {
@@ -36,6 +38,8 @@ export interface MapPoint {
   color: string;
   lon: number;
   lat: number;
+  /** After the playback cursor: drawn faded. */
+  dimmed?: boolean;
 }
 
 export interface MapViewState {
@@ -65,11 +69,13 @@ export interface MapTransportSegment {
   place: readonly [number, number] | null;
   /** How far apart a stop's points lie, metres (the API's `spreadM`); null for the others. */
   spreadM: number | null;
+  /** Ahead of the playback cursor: drawn faded. */
+  dimmed?: boolean;
 }
 
 /** The heatmap's cells as the API sends them and the scale that colours them. */
 export interface MapHeat {
-  /** `[lon, lat, count]` of each cell's centre. */
+  /** `[x, y, value]` of each cell: the tile of `cellZoom` and its points, seconds or visits. */
   cells: readonly (readonly [number, number, number])[];
   /** The slippy-map level of the cells: a cell is that level's tile. */
   cellZoom: number;

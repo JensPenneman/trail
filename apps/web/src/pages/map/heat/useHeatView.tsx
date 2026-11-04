@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { boundsOf } from "../../../map/boundsOf";
 import { heatmapParamsFor } from "../../../map/heatmapParamsFor";
 import { heatScale } from "../../../map/heatScale";
+import { heatPlaces } from "../../../map/heatTiles";
 import type { Bounds, MapHeat, MapViewState } from "../../../map/mapTypes";
 import { useHeatmap } from "../../../queries/useHeatmap";
 import { Spinner } from "../../../ui/Spinner";
@@ -86,7 +87,7 @@ export function useHeatView({
   useEffect(() => {
     if (!framesCamera || dataBounds !== null || heatmap.data === undefined) return;
     if (heatmap.data.cells.length === 0) return;
-    setDataBounds(boundsOf(heatmap.data.cells.map(([lon, lat]) => [lon, lat] as const)));
+    setDataBounds(boundsOf(heatPlaces(heatmap.data).map(({ lon, lat }) => [lon, lat] as const)));
   }, [framesCamera, heatmap.data, dataBounds]);
 
   if (!active) return inactiveView;

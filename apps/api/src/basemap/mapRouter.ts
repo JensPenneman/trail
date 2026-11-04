@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import express, {
   type NextFunction,
   type RequestHandler,
@@ -13,7 +12,6 @@ import type { Basemap } from "./basemap";
 import { ArchiveClosedError } from "./basemapArchive";
 import { bundleTile } from "./basemapBundle";
 import type { StyleName } from "./basemapStyles";
-import { isGlyphRange, spriteFiles } from "./mapAssets";
 
 /** The schema's highest zoom (§3.1): MapLibre asks for nothing beyond the source's `maxzoom`. */
 const maxZoom = 14;
@@ -73,10 +71,11 @@ function takesGzip(header: string | undefined): boolean {
   return (gzip ?? star ?? 0) > 0;
 }
 
-const styleNames: Readonly<Record<string, StyleName>> = {
-  "light.json": "light",
-  "dark.json": "dark",
-};
+// A Map: a request names `constructor` or `__proto__` as readily as a file, and a plain object has them.
+const styleNames: ReadonlyMap<string, StyleName> = new Map([
+  ["light.json", "light"],
+  ["dark.json", "dark"],
+]);
 
 /** A file of the image's map assets: immutable, as `/assets/*`, and never in parts. */
 function sendAsset(res: Response, path: string, type: string, next: NextFunction): void {
@@ -131,7 +130,7 @@ export function mapRouter(input: {
   );
 
   documents.get("/styles/:file", (req, res) => {
-    const name = styleNames[req.params.file];
+    const name = styleNames.get(req.params.file);
     if (name === undefined) {
       notFound(res);
       return;
@@ -206,17 +205,13 @@ export function mapRouter(input: {
   tiles.get("/assets/:hash/fonts/:stack/:file", (req, res, next) => {
     const { assets } = basemap;
     const { hash, stack, file } = req.params;
-    if (
-      assets === null ||
-      hash !== assets.hash ||
-      !assets.fonts.has(stack) ||
-      !file.endsWith(".pbf") ||
-      !isGlyphRange(file.slice(0, -4))
-    ) {
+    // The path is the registry's, never built from the request.
+    const path = assets === null || hash !== assets.hash ? null : assets.fontFile(stack, file);
+    if (path === null) {
       notFound(res);
       return;
     }
-    sendAsset(res, join(assets.dir, "fonts", stack, file), "application/x-protobuf", next);
+    sendAsset(res, path, "application/x-protobuf", next);
   });
 
   /** A sprite file of the image: the PNGs go out as they are, the JSON after compression. */
@@ -224,8 +219,8 @@ export function mapRouter(input: {
     return (req, res, next) => {
       const { assets } = basemap;
       const { hash, file } = req.params;
-      const known = (spriteFiles as readonly string[]).includes(file);
-      if (assets === null || hash !== assets.hash || !known) {
+      const path = assets === null || hash !== assets.hash ? null : assets.spriteFile(file);
+      if (path === null) {
         if (json) notFound(res);
         else next();
         return;
@@ -235,12 +230,7 @@ export function mapRouter(input: {
         next();
         return;
       }
-      sendAsset(
-        res,
-        join(assets.dir, "sprites", file),
-        isJson ? "application/json" : "image/png",
-        next,
-      );
+      sendAsset(res, path, isJson ? "application/json" : "image/png", next);
     };
   };
   tiles.get("/assets/:hash/sprites/:file", sprite(false));

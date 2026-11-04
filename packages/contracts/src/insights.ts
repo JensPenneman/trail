@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { localDateSchema } from "./datetime";
+import { ordered, spanMessage, withinSpan } from "./period";
 import { devicesParamSchema } from "./query";
 import { transportModeSchema, wayKinds } from "./transport";
 
@@ -8,23 +9,6 @@ import { transportModeSchema, wayKinds } from "./transport";
  * travelled, worked out from the stops and moves of the timeline over local
  * days in the account's time zone. No coordinates anywhere: `history:read`.
  */
-
-/** A request covers at most this many years. */
-export const insightsMaxYears = 3;
-
-const pad = (value: number): string => String(value).padStart(2, "0");
-
-/**
- * The last local day a period that starts on `from` may end on: the day before
- * the same date `insightsMaxYears` later (29 February moves to 1 March).
- */
-export function lastInsightsDay(from: string): string {
-  const [year = 0, month = 1, day = 1] = from.split("-").map(Number);
-  const end = new Date(Date.UTC(year + insightsMaxYears, month - 1, day - 1));
-  return `${end.getUTCFullYear()}-${pad(end.getUTCMonth() + 1)}-${pad(end.getUTCDate())}`;
-}
-
-const spanMessage = `The period can span at most ${insightsMaxYears} years`;
 
 const deviceId = z.uuid().meta({
   description: "The device.",
@@ -43,16 +27,6 @@ const queryShape = {
   }),
   devices: devicesParamSchema.optional(),
 };
-
-interface PeriodQuery {
-  from?: string | undefined;
-  to?: string | undefined;
-}
-
-const ordered = (query: PeriodQuery): boolean =>
-  query.from === undefined || query.to === undefined || query.to >= query.from;
-const withinSpan = (query: PeriodQuery): boolean =>
-  query.from === undefined || query.to === undefined || query.to <= lastInsightsDay(query.from);
 
 /** `GET /api/v1/insights/overview` and `GET /api/v1/insights/modes/{mode}` */
 export const insightsQuerySchema = z
