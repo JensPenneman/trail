@@ -3,8 +3,8 @@ import { createFormatter } from "../src/format/createFormatter";
 import { bucketLabels } from "../src/pages/insights/bucketLabels";
 import { foldModes } from "../src/pages/insights/foldModes";
 import { axisFormats, changeOf } from "../src/pages/insights/insightsFormat";
-import { levelOf } from "../src/pages/insights/insightsLevels";
-import { moveOnMap } from "../src/pages/insights/insightsLinks";
+import { keyOf, levelOf } from "../src/pages/insights/insightsLevels";
+import { moveOnMap, placeLink } from "../src/pages/insights/insightsLinks";
 import {
   longestFact,
   modeFamily,
@@ -147,5 +147,33 @@ describe("the facts on a mode's rows", () => {
     expect(levelOf("/insights/time")).toBe(1);
     expect(levelOf("/insights/transport/car")).toBe(1);
     expect(levelOf("/insights/transport/car/speed")).toBe(2);
+    expect(levelOf("/insights/places")).toBe(1);
+    expect(levelOf("/insights/place")).toBe(2);
+    expect(levelOf("/insights/place/days")).toBe(3);
+  });
+
+  it("tells the screens of two places apart by their key, and others by their path", () => {
+    const at = (pathname: string, search = "") => keyOf({ pathname, search });
+    expect(at("/insights/place", "?period=2026-10&place=134217.89012")).toBe(
+      "/insights/place?place=134217.89012",
+    );
+    expect(at("/insights/place/days", "?place=134217.89012&period=year")).toBe(
+      "/insights/place/days?place=134217.89012",
+    );
+    expect(at("/insights/place", "?place=134300.89100")).not.toBe(
+      at("/insights/place", "?place=134217.89012"),
+    );
+    expect(at("/insights/transport/car/", "?place=1.2")).toBe("/insights/transport/car");
+    expect(at("/insights/places", "?period=2026-10")).toBe("/insights/places");
+  });
+
+  it("puts the place in the query, with the period and devices, never in the path", () => {
+    const current = new URLSearchParams("period=2026-10&devices=&mode=car&view=x");
+    expect(placeLink("/insights/place", current, "134217.89012")).toBe(
+      "/insights/place?period=2026-10&place=134217.89012",
+    );
+    expect(placeLink("/insights/place/days", new URLSearchParams(), "1.2")).toBe(
+      "/insights/place/days?place=1.2",
+    );
   });
 });

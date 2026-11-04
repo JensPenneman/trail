@@ -3,6 +3,7 @@ import { insightsOverviewSchema } from "@trail/contracts/insights";
 import { timelineResponseSchema } from "@trail/contracts/transport";
 import { addDevice } from "./support/addDevice";
 import { expectAccessible } from "./support/expectAccessible";
+import { stayAndWalk } from "./support/stayAndWalk";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
 import { walkAndDrive } from "./support/walkAndDrive";
@@ -315,6 +316,91 @@ test("Insights: the summary, its period, a mode, when you travel and roads", asy
   await expect(page.getByRole("heading", { level: 1, name: "Roads" })).toBeVisible();
   await expect(page.getByText("No map data for these moves")).toBeVisible();
   await expectAccessible(page, "Roads");
+});
+
+test("Insights: places, a place and its days, and the day in History", async ({
+  page,
+  account,
+}) => {
+  test.slow();
+  await uploadedDevice(page, "Stayer", stayAndWalk());
+  expect(account.timezone).toBe("Europe/Brussels");
+  const wide = isWide(page);
+  // Waits until the stay is a place (the worker runs seconds after the upload).
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get("/api/v1/insights/places");
+        const body = (await response.json()) as { totals?: { places?: number } };
+        return body.totals?.places ?? 0;
+      },
+      { timeout: 45_000, intervals: [1_000] },
+    )
+    .toBeGreaterThan(0);
+  const { month } = await journeyPeriods(page);
+  const summary = `/insights?period=${month}`;
+  const here = (path: string) => new RegExp(`${path}\\?period=${month}$`);
+
+  await page.goto(summary);
+  const list = page.getByRole("navigation", { name: "Insights" });
+  await list.getByRole("link", { name: "Places" }).click();
+  await expect(page).toHaveURL(here("/insights/places"));
+  await expect(page.getByRole("heading", { level: 1, name: "Places" })).toBeFocused();
+  const tiles = page.getByRole("group", { name: "Totals" });
+  await expect(tiles).toContainText(/\d+ visits?/);
+  await expect(page.getByRole("figure", { name: "Time at your top places" })).toBeVisible();
+  await expectAccessible(page, "Places");
+
+  // A place: the title takes focus; its days lead to History.
+  const place = page
+    .getByRole("region", { name: "Places" })
+    .getByRole("link", { name: / · \d+ visits?$/ })
+    .first();
+  await place.click();
+  await expect(page).toHaveURL(/\/insights\/place\?period=[\d-]+&place=\d+\.\d+$/);
+  const key = new URL(page.url()).searchParams.get("place") ?? "";
+  await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
+  await expect(tiles.getByText("Time here")).toBeVisible();
+  await expect(page.getByRole("figure", { name: "Time here per day" })).toBeVisible();
+  await expect(page.getByText("First here")).toBeVisible();
+  await expectAccessible(page, "a place");
+
+  // All the days at the place.
+  await page.goto(`/insights/place/days?period=${month}&place=${key}`);
+  await expect(page.getByRole("heading", { level: 1, name: "Days" })).toBeVisible();
+  await expect(tiles).toContainText(/\d+ days?/);
+  await expectAccessible(page, "the days at a place");
+
+  // A day opens in History, as the person themselves.
+  await page
+    .getByRole("region", { name: "Days" })
+    .getByRole("link", { name: /\d+ (mins?|hrs?)/ })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/\?view=history&date=\d{4}-\d{2}-\d{2}&person=me$/);
+  await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
+
+  // Back to the place and to the row of it among the places.
+  await page.goto(`/insights/places?period=${month}`);
+  await page
+    .getByRole("region", { name: "Places" })
+    .getByRole("link", { name: / visits?$/ })
+    .first()
+    .click();
+  await page.getByRole("link", { name: "Back to Places" }).click();
+  await expect(page).toHaveURL(here("/insights/places"));
+  await expect(
+    page
+      .getByRole("region", { name: "Places" })
+      .getByRole("link", { name: / visits?$/ })
+      .first(),
+  ).toBeFocused();
+  if (wide) {
+    await expect(list.getByRole("link", { name: "Places" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  }
 });
 
 test.describe("on a 320 px wide screen", () => {

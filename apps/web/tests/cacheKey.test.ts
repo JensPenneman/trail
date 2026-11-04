@@ -40,6 +40,19 @@ describe("cacheKey", () => {
       queryKeys.heatmap({ bbox: "3.7,51,3.8,51.1", zoom: 13, deviceIds: null }),
       queryKeys.insightsMode("car", { from: null, to: null, deviceIds: null, mode: null }),
       queryKeys.insightsMode("train", { from: null, to: null, deviceIds: null, mode: null }),
+      queryKeys.insightsPlaces({ from: null, to: null, deviceIds: null, mode: null }),
+      queryKeys.insightsPlace("134217.89012", {
+        from: null,
+        to: null,
+        deviceIds: null,
+        mode: null,
+      }),
+      queryKeys.insightsPlace("134300.89100", {
+        from: null,
+        to: null,
+        deviceIds: null,
+        mode: null,
+      }),
     ];
     expect(new Set(keys.map((key) => cacheKey(ids.user, key))).size).toBe(keys.length);
   });

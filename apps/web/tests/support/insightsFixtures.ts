@@ -2,8 +2,11 @@ import type {
   InsightsMode,
   InsightsMove,
   InsightsOverview,
+  InsightsPlace,
+  InsightsPlaces,
   InsightsRoads,
   InsightsTime,
+  PlaceSummary,
 } from "@trail/contracts/insights";
 import { ids } from "./fixtures";
 
@@ -227,6 +230,104 @@ export function roadInsights(overrides: Partial<InsightsRoads> = {}): InsightsRo
       { family: "road", distanceM: 4400, share: 0.067 },
       { family: "cycleway", distanceM: 4000, share: 0.061 },
       { family: "rail", distanceM: 57_600, share: 0.873 },
+    ],
+    pending: false,
+    ...overrides,
+  };
+}
+
+/** Four places: a stop, near one, a road and one without a name. */
+export const placeKeys = {
+  station: "134217.89012",
+  square: "134220.89012",
+  street: "134300.89100",
+  unnamed: "134400.89200",
+} as const;
+
+const placeSummary = (
+  key: string,
+  name: PlaceSummary["name"],
+  durationS: number,
+  visits: number,
+): PlaceSummary => ({
+  key,
+  centre: [3.7104, 51.0362],
+  name,
+  durationS,
+  visits,
+  days: 9,
+  firstAt: "2026-10-02T06:30:00.000Z",
+  lastAt: "2026-10-28T17:45:00.000Z",
+});
+
+export function placesAnswer(overrides: Partial<InsightsPlaces> = {}): InsightsPlaces {
+  return {
+    timezone: "Europe/Brussels",
+    period: { from: "2026-10-01", to: "2026-10-31", days: 31 },
+    totals: { places: 16, durationS: 360_000, visits: 28 },
+    places: [
+      placeSummary(
+        placeKeys.station,
+        { text: "Gent-Sint-Pieters", source: "stop", kind: "station", distanceM: 12 },
+        43_200,
+        9,
+      ),
+      placeSummary(
+        placeKeys.square,
+        { text: "Korenmarkt", source: "stop", kind: "tram_stop", distanceM: 80 },
+        36_000,
+        7,
+      ),
+      placeSummary(
+        placeKeys.street,
+        { text: "Kerkstraat", source: "road", kind: null, distanceM: 0 },
+        7200,
+        3,
+      ),
+      placeSummary(placeKeys.unnamed, null, 3600, 6),
+    ],
+    rest: { places: 12, durationS: 14_400, visits: 3 },
+    pending: false,
+    ...overrides,
+  };
+}
+
+export function placeAnswer(overrides: Partial<InsightsPlace> = {}): InsightsPlace {
+  const period = monthPeriod("2026-10");
+  const day = (date: string, durationS: number, visits: number) => ({
+    date,
+    durationS,
+    visits,
+    firstAt: `${date}T06:30:00.000Z`,
+    lastAt: `${date}T17:45:00.000Z`,
+  });
+  return {
+    timezone: "Europe/Brussels",
+    period,
+    place: {
+      ...placeSummary(
+        placeKeys.station,
+        { text: "Gent-Sint-Pieters", source: "stop", kind: "station", distanceM: 12 },
+        43_200,
+        9,
+      ),
+      cells: 1,
+    },
+    series: period.buckets.map((bucket) => ({
+      bucket,
+      durationS: bucket.endsWith("-28") ? 33_120 : 0,
+      visits: bucket.endsWith("-28") ? 2 : 0,
+    })),
+    days: [
+      day("2026-10-28", 33_120, 2),
+      day("2026-10-27", 3600, 1),
+      day("2026-10-24", 1800, 1),
+      day("2026-10-20", 1800, 1),
+      day("2026-10-14", 1800, 1),
+      day("2026-10-09", 900, 1),
+      day("2026-10-05", 900, 1),
+      day("2026-10-03", 600, 1),
+      day("2026-10-02", 600, 1),
     ],
     pending: false,
     ...overrides,

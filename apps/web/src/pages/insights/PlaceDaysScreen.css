@@ -1,0 +1,5 @@
+/* Up to a thousand rows: those out of view are not laid out until they come near. */
+.place-days .settings-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 3.5rem;
+}
