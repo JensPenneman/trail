@@ -1548,6 +1548,7 @@ People and Sharing):
 | `GET /api/v1/people` | `people:read` | people sharing with the caller, by name, with their shared devices |
 | `GET /api/v1/people/{userId}` | `people:read` | one of them; 404 for anyone else or a hidden person |
 | `GET /api/v1/people/{userId}/track` | `people:read` | shares with history only: points in `[from, to)` (≤ 93 days), `from` moved up to the start of the history, split and simplified as in §8.1 |
+| `GET /api/v1/people/{userId}/days` | `people:read` | shares with history only: `{ timezone, window { from, to }, days [{ date, deviceId, points, firstAt, lastAt }] }` — the days with points of the shared devices within the history, from `daily_stats` in the **owner's** zone (the zone their days are cut in); the window's first day, when the history begins inside it, is counted from `locations` from that instant on; no positions. Same grant as the track (`grantsViewer`: hidden, stopped, ended: 404; approximate: 404). The ETag hashes the answer with the share. The owner's access log gets one line with the devices and the window (`from`, `to` as local days), never the days; the share's last view is stamped |
 | `GET /api/v1/shares` | `shares:read` | current outgoing shares: `pending`, `joined`, `active`, `hidden` |
 | `POST /api/v1/shares` | `shares:write` + `locations:read` | start one (201) |
 | `PATCH /api/v1/shares/{id}` | `shares:write` + `locations:read` | change (duration from now, devices, precision, history, details) |
