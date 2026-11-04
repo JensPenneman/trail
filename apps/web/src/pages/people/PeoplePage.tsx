@@ -42,7 +42,7 @@ import { resolveMapSelection } from "../map/resolveMapSelection";
 import { useMapSearch } from "../map/useMapSearch";
 import { PeoplePanel } from "./PeoplePanel";
 import { usePanelFocus } from "./usePanelFocus";
-import { usePeekHeight } from "./usePeekHeight";
+import { peekChanged, usePeekHeight } from "./usePeekHeight";
 import { useSharingActions } from "./useSharingActions";
 import "./PeoplePage.css";
 
@@ -236,9 +236,27 @@ export function PeoplePage() {
   useEffect(() => {
     const before = lifted.current;
     lifted.current = selectedKey;
-    if (wide || selectedKey === null || before === selectedKey) return;
+    if (wide || selectedKey === null || before === selectedKey) return undefined;
     const half = snaps.current?.querySelector<HTMLElement>("[data-detent=half]");
     half?.scrollIntoView?.({ block: "start", behavior: reducedMotion ? "instant" : "smooth" });
+    // The new level's peek is measured just after: the detent moves, and the sheet follows it
+    // until the person takes hold of it or a moment has passed.
+    const page = half?.closest<HTMLElement>(".map-page");
+    if (half == null || page == null) return undefined;
+    const follow = () => half.scrollIntoView?.({ block: "start", behavior: "instant" });
+    const stop = () => {
+      page.removeEventListener(peekChanged, follow);
+      window.removeEventListener("pointerdown", stop);
+      window.removeEventListener("wheel", stop);
+      window.removeEventListener("keydown", stop);
+      clearTimeout(timer);
+    };
+    const timer = setTimeout(stop, 2000);
+    page.addEventListener(peekChanged, follow);
+    window.addEventListener("pointerdown", stop, { once: true });
+    window.addEventListener("wheel", stop, { once: true });
+    window.addEventListener("keydown", stop, { once: true });
+    return stop;
   }, [selectedKey, wide, reducedMotion]);
   // Focus on the bar, the map or its buttons, which a lifted sheet covers: lower the sheet to its
   // peek, so what has focus can be seen (WCAG 2.4.11).
