@@ -237,7 +237,9 @@ export function PeoplePage() {
   // Phones: selecting someone lifts the sheet to its half detent, where the detail reads well.
   const snaps = useRef<HTMLDivElement | null>(null);
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const lifted = useRef(selectedKey);
+  // A person the address names when the page opens (and who loads after it) is not a selection
+  // to lift the sheet for: the sheet stays where the person left it.
+  const lifted = useRef<string | null>(search.person);
   useEffect(() => {
     const before = lifted.current;
     lifted.current = selectedKey;
