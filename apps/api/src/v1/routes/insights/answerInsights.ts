@@ -24,11 +24,8 @@ export async function answerInsights<Body>(input: {
     devices?: readonly string[] | undefined;
   };
   range?: (scope: InsightsScope) => { startMs: number; endMs: number };
-  /**
-   * More that the answer is made of, appended to the validator (the map data
-   * a name comes from); left out for answers that depend on the timeline only.
-   */
-  extra?: () => Promise<unknown>;
+  /** More the answer depends on, as part of the ETag (the map data behind names). */
+  extra?: (scope: InsightsScope) => Promise<unknown>;
   load: (scope: InsightsScope) => Promise<Body>;
 }): Promise<{ status: 304; etag: string } | { status: 200; body: Body; etag: string }> {
   const { ctx, auth } = input;
@@ -37,14 +34,11 @@ export async function answerInsights<Body>(input: {
     startMs: scope.start.getTime(),
     endMs: scope.end.getTime(),
   };
-  const validator = await insightsValidator(ctx.db, scope, range);
-  const etag = weakEtag(
-    auth.user.id,
-    input.operationId,
-    input.extra === undefined
-      ? [input.asked, validator]
-      : [input.asked, validator, await input.extra()],
-  );
+  const etag = weakEtag(auth.user.id, input.operationId, [
+    input.asked,
+    await insightsValidator(ctx.db, scope, range),
+    ...(input.extra === undefined ? [] : [await input.extra(scope)]),
+  ]);
   if (etagMatches(input.ifNoneMatch, etag)) return { status: 304, etag };
   return { status: 200, body: await input.load(scope), etag };
 }

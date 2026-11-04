@@ -87,6 +87,7 @@ export const apiPaths = {
       roads: "/api/v1/insights/roads",
       places: "/api/v1/insights/places",
       place: "/api/v1/insights/place",
+      ways: "/api/v1/insights/ways",
     },
     people: {
       root: "/api/v1/people",

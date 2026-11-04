@@ -654,3 +654,37 @@ export const insightsPlaceSchema = z
   })
   .meta({ id: "InsightsPlace", description: "One place over a period." });
 export type InsightsPlace = z.infer<typeof insightsPlaceSchema>;
+
+export const insightsWayRowSchema = z
+  .object({
+    name: z
+      .string()
+      .meta({ description: "The road's name from OpenStreetMap.", example: "Kleine Beer" }),
+    kind: wayKindSchema.meta({ description: "The kind of way of the longest part of it." }),
+    distanceM: distanceM("Metres travelled on it.", 8_240),
+    moves: z.number().int().positive().meta({
+      description: "How many moves were on it.",
+      example: 14,
+    }),
+  })
+  .meta({ id: "InsightsWayRow", description: "One named road you travelled on." });
+export type InsightsWayRow = z.infer<typeof insightsWayRowSchema>;
+
+/** `GET /api/v1/insights/ways` */
+export const insightsWaysSchema = z
+  .object({
+    timezone: timezoneSchema,
+    period: insightsPeriodSchema,
+    mode: transportModeSchema
+      .nullable()
+      .meta({ description: "The mode asked for; null: every mode." }),
+    modes: modesPresentSchema,
+    mappedM: distanceM("The distance of the moves counted that have map data, metres.", 377_910),
+    namedM: distanceM("The part of it on roads with a name, metres.", 116_020),
+    ways: z.array(insightsWayRowSchema).max(25).meta({
+      description: "The 25 roads travelled most, longest first.",
+    }),
+    pending: pendingSchema,
+  })
+  .meta({ id: "InsightsWays", description: "The named roads you travelled on." });
+export type InsightsWays = z.infer<typeof insightsWaysSchema>;

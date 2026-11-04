@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { Database } from "../db/database";
 import { sweepMapBuilds } from "../mapdata/sweepMapBuilds";
 import { enqueueBackfill, enqueueCatchUp } from "./backfill";
+import { runFeatureBackfill } from "./featureBackfill";
 import type { ProcessingConfig } from "./processingConfig";
 import {
   livePassIntervalMs,
@@ -87,6 +88,7 @@ export class ProcessingWorker {
     this.#mapPass = setInterval(() => void this.#mapWaitPass(), mapPassMs);
     this.#mapPass.unref();
     void this.#backfill().then(() => this.notify(0));
+    void this.#fillFeatures();
     void this.#sweepMapBuilds();
   }
 
@@ -263,6 +265,21 @@ export class ProcessingWorker {
       await sweepMapBuilds(this.#db, this.#logger);
     } catch (error) {
       this.#logger.error({ err: error }, "map build tables could not be swept");
+    }
+  }
+
+  /** Features of the stored segments filled in from derived rows, once, out of the way of passes. */
+  async #fillFeatures(): Promise<void> {
+    try {
+      const run = await runFeatureBackfill(this.#db, {
+        signal: this.#abort.signal,
+        busy: () => this.busy,
+      });
+      if (run.moves > 0 || !run.complete) {
+        this.#logger.info(run, "processing feature backfill done");
+      }
+    } catch (error) {
+      this.#logger.error({ err: error }, "processing feature backfill failed");
     }
   }
 
