@@ -91,37 +91,46 @@ describe("the clock", () => {
   });
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
-  it("runs a minute of playback per second at 1 min/s, in frames of at most 30 a second", () => {
+  it("runs an hour of playback per second at 1 h/s", () => {
     render(<Harness />);
     act(() => {
       controls().setRate(60);
       controls().enter(tue, at(tue, 10));
     });
     const start = read().clock;
-    const frames = vi.spyOn(globalThis, "requestAnimationFrame");
     act(() => vi.advanceTimersByTime(1000));
     // An hour a second, give or take the last frame not yet due.
     expect(read().clock - start).toBeGreaterThan(3400);
     expect(read().clock - start).toBeLessThanOrEqual(3600);
-    frames.mockRestore();
   });
 
-  it("updates at most 30 times a second", () => {
+  it("updates at most 30 times a second on a 60 Hz display, evenly", () => {
+    const callbacks: FrameRequestCallback[] = [];
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    vi.spyOn(performance, "now").mockReturnValue(0);
     render(<Harness />);
     act(() => controls().enter(tue, at(tue, 10)));
-    let updates = 0;
+    const times: number[] = [];
     let last = read().clock;
-    for (let ms = 0; ms < 1000; ms += 4) {
-      act(() => vi.advanceTimersByTime(4));
+    for (let frame = 1; frame <= 60; frame += 1) {
+      const timestamp = (frame * 1000) / 60;
+      act(() => callbacks.at(-1)?.(timestamp));
       if (read().clock !== last) {
-        updates += 1;
+        times.push(timestamp);
         last = read().clock;
       }
     }
-    expect(updates).toBeGreaterThan(15);
-    expect(updates).toBeLessThanOrEqual(30);
+    expect(times.length).toBeLessThanOrEqual(30);
+    expect(times.length).toBeGreaterThanOrEqual(29);
+    // Every second frame, not now two and now three.
+    const gaps = times.slice(1).map((time, index) => Math.round(time - (times[index] ?? 0)));
+    expect(new Set(gaps).size).toBe(1);
   });
 
   it("counts a long wait between frames (a tab in the background) as 250 ms", () => {
@@ -139,7 +148,6 @@ describe("the clock", () => {
     // The browser hands the frame back after five seconds.
     act(() => callbacks.at(-1)?.(5000));
     expect(read().clock - before).toBeCloseTo(0.25 * 5 * 60, 6);
-    vi.restoreAllMocks();
   });
 
   it("steps once a second by the speed's minutes with reduced motion", () => {
@@ -151,6 +159,40 @@ describe("the clock", () => {
     const start = read().clock;
     act(() => vi.advanceTimersByTime(3000));
     expect(read().clock - start).toBe(3 * 15 * 60);
+  });
+
+  it("leaves exactly one clock running, and none after it is unmounted", () => {
+    const cancel = vi.spyOn(globalThis, "cancelAnimationFrame");
+    const { unmount } = render(<Harness />);
+    act(() => controls().enter(tue, at(tue, 10)));
+    act(() => controls().pause());
+    act(() => controls().play());
+    act(() => vi.advanceTimersByTime(500));
+    const running = read().clock;
+    // Pausing and playing again did not start a second clock: a second adds one second's worth.
+    act(() => vi.advanceTimersByTime(1000));
+    expect(read().clock - running).toBeGreaterThan(0.9 * 300);
+    expect(read().clock - running).toBeLessThanOrEqual(300);
+    unmount();
+    expect(cancel).toHaveBeenCalled();
+    const frozen = latest?.state.clock;
+    act(() => vi.advanceTimersByTime(2000));
+    expect(latest?.state.clock).toBe(frozen);
+  });
+
+  it("finishes a step to another day's move once that day is in", () => {
+    const moves = [{ from: at(thu, 7), to: at(thu, 8) }];
+    // Thursday's tracks are not in yet: the step waits for them.
+    const waiting = { ...baseWorld, moves: [], loaded: (day: string) => day !== thu };
+    const { rerender } = render(<Harness world={waiting} />);
+    act(() => controls().enter(tue, at(tue, 6)));
+    act(() => controls().pause());
+    act(() => controls().seek(at(tue, 18, 30)));
+    act(() => controls().stepMove(1));
+    expect(read()).toMatchObject({ day: thu, clock: at(thu, 0) });
+    // The next day's moves reach the page: the press lands on the first of them.
+    rerender(<Harness world={{ ...baseWorld, moves }} />);
+    expect(read().clock).toBe(at(thu, 7));
   });
 
   it("stops when paused", () => {
@@ -251,6 +293,53 @@ describe("the keys", () => {
     // The button's other keys still reach the player.
     press(screen.getByRole("button", { name: "A button" }), { key: "ArrowRight" });
     expect(read().clock).toBe(clock + 5 * 60);
+  });
+
+  it("let Space and Escape through from the bar's own range, radios and switch, but not their own keys", () => {
+    started();
+    const range = document.createElement("input");
+    range.type = "range";
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    document.body.append(range, radio, box);
+    press(range, { key: " " });
+    expect(read().status).toBe("playing");
+    press(range, { key: "ArrowRight" });
+    press(radio, { key: " " });
+    press(box, { key: " " });
+    expect(read().status).toBe("playing");
+    press(radio, { key: "Escape" });
+    expect(read().status).toBe("off");
+    range.remove();
+    radio.remove();
+    box.remove();
+  });
+
+  it("take a held Space or Escape for one press", () => {
+    started();
+    press(document.body, { key: " ", repeat: true });
+    expect(read().status).toBe("paused");
+    press(document.body, { key: " " });
+    press(document.body, { key: " ", repeat: true });
+    expect(read().status).toBe("playing");
+    press(document.body, { key: "Escape", repeat: true });
+    expect(read().status).toBe("playing");
+  });
+
+  it("leave alone editable text and alert dialogs", () => {
+    const clock = started();
+    const editable = document.createElement("div");
+    editable.setAttribute("contenteditable", "plaintext-only");
+    const alert = document.createElement("div");
+    alert.setAttribute("role", "alertdialog");
+    document.body.append(editable, alert);
+    press(editable, { key: "ArrowRight" });
+    press(alert, { key: "Escape" });
+    expect(read()).toMatchObject({ status: "paused", clock });
+    editable.remove();
+    alert.remove();
   });
 
   it("listen only while a player is on", () => {

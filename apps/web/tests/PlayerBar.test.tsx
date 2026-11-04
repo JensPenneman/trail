@@ -20,7 +20,7 @@ function bar(props: Partial<Parameters<typeof PlayerBar>[0]> = {}) {
     onSeek: vi.fn(),
     onExit: vi.fn(),
   };
-  renderPage(
+  const view = renderPage(
     <PlayerBar
       status="playing"
       clock={clock}
@@ -33,7 +33,7 @@ function bar(props: Partial<Parameters<typeof PlayerBar>[0]> = {}) {
     />,
     { user },
   );
-  return handlers;
+  return { ...handlers, view };
 }
 
 describe("the player bar", () => {
@@ -45,7 +45,8 @@ describe("the player bar", () => {
     expect(within(region).queryByRole("button", { name: "Play" })).toBeNull();
     expect(within(region).getByRole("button", { name: "Next move" })).toBeInTheDocument();
     expect(within(region).getByRole("button", { name: "Exit playback" })).toBeInTheDocument();
-    expect(within(region).getByRole("status")).toHaveTextContent("Tue 3 Nov · 14:05");
+    // The readout changes up to thirty times a second while playing: not read out.
+    expect(within(region).getByText("Tue 3 Nov · 14:05")).toHaveAttribute("aria-live", "off");
   });
 
   it("names the button Play when paused or ended, Pause while playing or loading", () => {
@@ -55,10 +56,7 @@ describe("the player bar", () => {
       ["paused", "Play"],
       ["ended", "Play"],
     ] as const) {
-      const { unmount } = (() => {
-        bar({ status });
-        return { unmount: () => document.body.replaceChildren() };
-      })();
+      const { unmount } = bar({ status }).view;
       expect(screen.getByRole("button", { name }), status).toBeInTheDocument();
       unmount();
     }
@@ -117,10 +115,17 @@ describe("the player bar", () => {
     expect(handlers.onExit).toHaveBeenCalledOnce();
   });
 
-  it("says that it waits for a day, and is busy meanwhile", () => {
+  it("says which day it waits for, in a region that is there all along, and is busy meanwhile", () => {
+    const { view } = bar({ status: "paused" });
+    const region = screen.getByRole("region", { name: "Playback" });
+    const status = within(region)
+      .getAllByRole("status")
+      .find((node) => node.tagName === "P");
+    expect(status).toBeEmptyDOMElement();
+    view.rerender(<span />);
     bar({ status: "loading" });
     expect(screen.getByRole("region", { name: "Playback" })).toHaveAttribute("aria-busy", "true");
-    expect(screen.getByText("Loading the next day")).toBeInTheDocument();
+    expect(screen.getByText("Loading Tuesday, 3 November 2026")).toBeInTheDocument();
   });
 });
 

@@ -18,6 +18,8 @@ import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
 
 const zone = "Europe/Brussels";
+/** The announcer's own delay between a message and its being spoken (AnnouncerProvider). */
+const announcerDelayMs = 60;
 /** Renders `steps[0]`, then each next one when "Next" is pressed: a rerender inside the providers. */
 function Steps({ steps }: { steps: readonly ReactNode[] }) {
   const [index, setIndex] = useState(0);
@@ -37,12 +39,15 @@ const iso = (seconds: number) => new Date(seconds * 1000).toISOString();
 function Days(props: {
   source: Parameters<typeof usePlaybackDays>[0]["source"];
   active?: boolean;
+  startDay?: string;
+  playingDay?: string;
+  today?: string;
 }) {
   const days = usePlaybackDays({
     active: props.active ?? true,
-    startDay: "2026-11-01",
-    playingDay: "2026-11-01",
-    today: "2026-11-05",
+    startDay: props.startDay ?? "2026-11-01",
+    playingDay: props.playingDay ?? "2026-11-01",
+    today: props.today ?? "2026-11-05",
     source: props.source,
   });
   return (
@@ -52,7 +57,19 @@ function Days(props: {
   );
 }
 
-function Prefetch({ clock }: { clock: number }) {
+const shown = () => JSON.parse(screen.getByTestId("days").textContent ?? "{}");
+
+function Prefetch({
+  clock,
+  moves = [],
+  skipStops = false,
+  person = false,
+}: {
+  clock: number;
+  moves?: readonly { from: number; to: number }[];
+  skipStops?: boolean;
+  person?: boolean;
+}) {
   const { nextDay } = usePlaybackPrefetch({
     active: true,
     day: "2026-11-03",
@@ -60,8 +77,12 @@ function Prefetch({ clock }: { clock: number }) {
     days: ["2026-11-03", "2026-11-05"],
     timeZone: zone,
     level: "inferred",
-    me: { deviceIds: null },
-    personRequest: null,
+    moves,
+    skipStops,
+    me: person ? null : { deviceIds: null },
+    personRequest: person
+      ? (range) => ({ userId: ids.ana, ...range, deviceIds: [ids.anaPhone], share: "s:7" })
+      : null,
   });
   return <p data-testid="next">{nextDay ?? "none"}</p>;
 }
@@ -72,8 +93,6 @@ function Announcer({ state }: { state: PlaybackState }) {
 }
 
 describe("the days playback can visit", () => {
-  const shown = () => JSON.parse(screen.getByTestId("days").textContent ?? "{}");
-
   it("come from the stats for oneself: days with points, the last point of each, from the start day", async () => {
     const api = mockApi({
       ...standardRoutes(),
@@ -190,6 +209,164 @@ describe("loading the next day ahead", () => {
   });
 });
 
+describe("the days of a long stretch", () => {
+  const dayRow = (date: string, at: number) => ({
+    date,
+    deviceId: ids.phone,
+    points: 3,
+    distanceM: 1,
+    firstAt: iso(at - 100),
+    lastAt: iso(at),
+  });
+  const me = { kind: "me", deviceIds: null } as const;
+
+  it("move on to a window of their own when no later day is left in the one in hand, keeping the earlier days", async () => {
+    // 400 days from 2025-01-01 end in February 2026; today is later, so the list is not complete.
+    const api = mockApi({
+      ...standardRoutes(),
+      "GET /api/stats/days": ({ url }: { url: URL }) => ({
+        status: 200,
+        body: {
+          timezone: zone,
+          days:
+            url.searchParams.get("from") === "2025-01-01"
+              ? [dayRow("2025-01-01", 1000), dayRow("2025-03-01", 2000)]
+              : [dayRow("2025-03-01", 2000), dayRow("2026-03-01", 9000)],
+        },
+      }),
+    });
+    renderPage(
+      <Steps
+        steps={[
+          <Days
+            key="x"
+            source={me}
+            startDay="2025-01-01"
+            playingDay="2025-01-01"
+            today="2026-11-05"
+          />,
+          <Days
+            key="x"
+            source={me}
+            startDay="2025-01-01"
+            playingDay="2025-03-01"
+            today="2026-11-05"
+          />,
+        ]}
+      />,
+      { user },
+    );
+    await waitFor(() => expect(shown().days).toEqual(["2025-01-01", "2025-03-01"]));
+    expect(shown().complete).toBe(false);
+    await next();
+    // Nothing is left after 2025-03-01 in the first window: the next one starts there.
+    await waitFor(() =>
+      expect(
+        api.calls.some((c) => new URL(c.url ?? "").searchParams.get("from") === "2025-03-01"),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(shown().days).toEqual(["2025-01-01", "2025-03-01", "2026-03-01"]));
+  });
+
+  it("are none, and not complete, while another set of devices has not answered", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/stats/days": async ({ url }: { url: URL }) => {
+        const other = url.searchParams.get("deviceIds") === ids.car;
+        if (other) await gate;
+        return {
+          status: 200,
+          body: { timezone: zone, days: other ? [] : [dayRow("2026-11-01", 500)] },
+        };
+      },
+    });
+    renderPage(
+      <Steps
+        steps={[
+          <Days key="x" source={me} />,
+          <Days key="x" source={{ kind: "me", deviceIds: [ids.car] }} />,
+        ]}
+      />,
+      { user },
+    );
+    await waitFor(() => expect(shown().days).toEqual(["2026-11-01"]));
+    await next();
+    // Until the other set answers, the earlier answer is not its days.
+    expect(shown().days).toEqual([]);
+    expect(shown().complete).toBe(false);
+    act(() => release());
+    await waitFor(() => expect(shown().complete).toBe(true));
+    expect(shown().days).toEqual([]);
+  });
+
+  it("take the latest of a sharer's rows for a day, one per device", () => {
+    mockApi(standardRoutes());
+    renderPage(
+      <Days
+        source={{
+          kind: "person",
+          days: {
+            days: [
+              { date: "2026-11-02", lastAt: iso(900) },
+              { date: "2026-11-02", lastAt: iso(300) },
+            ],
+            complete: true,
+          },
+        }}
+      />,
+      { user },
+    );
+    expect(shown().last).toEqual([["2026-11-02", 900]]);
+  });
+});
+
+describe("loading ahead for the other cases", () => {
+  const { start, end } = dayBounds("2026-11-03", zone);
+
+  it("starts once no move is left in the day when stops are skipped, and only then", async () => {
+    const api = mockApi(standardRoutes());
+    const moves = [{ from: start + 8 * 3600, to: start + 9 * 3600 }];
+    renderPage(
+      <Steps
+        steps={[
+          <Prefetch key="x" clock={start + 8.5 * 3600} moves={moves} skipStops />,
+          <Prefetch key="x" clock={start + 9.5 * 3600} moves={moves} skipStops />,
+          <Prefetch key="x" clock={start + 9.5 * 3600} moves={moves} />,
+        ]}
+      />,
+      { user },
+    );
+    expect(screen.getByTestId("next")).toHaveTextContent("none");
+    await next();
+    await waitFor(() => expect(screen.getByTestId("next")).toHaveTextContent("2026-11-05"));
+    expect(api.calls.some((c) => c.path === "/api/tracks")).toBe(true);
+    // Without skipping, a quiet evening is waited through to 90 % of the day.
+    await next();
+    expect(screen.getByTestId("next")).toHaveTextContent("none");
+  });
+
+  it("asks for a sharer's track of the next day, and none of one's own", async () => {
+    const api = mockApi({
+      ...standardRoutes(),
+      [`GET /api/v1/people/${ids.ana}/track`]: {
+        status: 200,
+        body: { from: iso(0), to: iso(1), tracks: [] },
+      },
+    });
+    renderPage(<Prefetch clock={start + (end - start) * 0.95} person />, { user });
+    await waitFor(() =>
+      expect(api.calls.some((c) => c.path === `/api/v1/people/${ids.ana}/track`)).toBe(true),
+    );
+    const asked = api.calls.find((c) => c.path === `/api/v1/people/${ids.ana}/track`)?.url ?? "";
+    expect(new URL(asked).searchParams.get("from")).toBe(iso(dayBounds("2026-11-05", zone).start));
+    expect(api.calls.some((c) => c.path === "/api/tracks")).toBe(false);
+  });
+});
+
 describe("what a screen reader is told", () => {
   const playing = (day: string, clock: number, status: PlaybackState["status"] = "playing") => ({
     ...initialPlayback,
@@ -212,8 +389,9 @@ describe("what a screen reader is told", () => {
       { user },
     );
     await next();
+    // The announcer speaks 60 ms after a message: well past that, still nothing for a same-day step.
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 3 * announcerDelayMs));
     });
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
     await next();
@@ -241,7 +419,7 @@ describe("what a screen reader is told", () => {
     await screen.findByText(/^Playback ended/);
     await next();
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 3 * announcerDelayMs));
     });
     expect(screen.getAllByText(/^Playback ended/)).toHaveLength(1);
   });

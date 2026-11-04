@@ -368,7 +368,8 @@ describe("dimming what the playback cursor has not reached", () => {
     expect(plain).toHaveLength(1);
     expect(plain[0]).not.toHaveProperty("dimmed");
     const cut = tracksToMap([track], () => "#c", middle);
-    expect(cut.map((part) => part.dimmed ?? false)).toEqual([false, true]);
+    // The faded part is drawn first, so that the played line lies over it.
+    expect(cut.map((part) => part.dimmed ?? false)).toEqual([true, false]);
     expect(cut.every((part) => part.color === "#c" && part.id === track.deviceId)).toBe(true);
     // Before the first point everything is ahead, after the last everything is played.
     expect(tracksToMap([track], () => "#c", (times[0] ?? 0) - 10).map((p) => p.dimmed)).toEqual([
@@ -432,11 +433,13 @@ describe("dimming what the playback cursor has not reached", () => {
     const during = levelTracksToMap(response, colors, middle).transport;
     expect(during.map((s) => [s.kind, s.dimmed ?? false])).toEqual([
       ["stop", false],
-      ["move", false],
       ["move", true],
+      ["move", false],
     ]);
+    // Both halves are the segment: a click on either opens it, and a selection lights both.
     const parts = during.filter((s) => s.kind === "move");
-    expect(parts[1]?.id).toBe(`${parts[0]?.id}:ahead`);
+    expect(parts).toHaveLength(2);
+    expect(parts[1]?.id).toBe(parts[0]?.id);
     expect(parts.every((part) => part.line.length > 0)).toBe(true);
     const before = levelTracksToMap(response, colors, (stop.points[0]?.[2] ?? 0) - 1).transport;
     expect(before.map((s) => s.dimmed)).toEqual([true, true]);
@@ -445,6 +448,35 @@ describe("dimming what the playback cursor has not reached", () => {
     const raw = levelTracks("2026-09-29T22:00:00.000Z", "2026-09-30T22:00:00.000Z", "raw");
     const rawTimes = raw.segments.flatMap((s) => s.points.map((p) => p[2]));
     const rawCut = levelTracksToMap(raw, colors, ((rawTimes[0] ?? 0) + (rawTimes.at(-1) ?? 0)) / 2);
-    expect(rawCut.tracks.map((t) => t.dimmed ?? false)).toEqual([false, true]);
+    expect(rawCut.tracks.map((t) => t.dimmed ?? false)).toEqual([true, false]);
+  });
+
+  it("dims a connector across a gap that lies after the cursor", () => {
+    const response = levelTracks(
+      "2026-09-29T22:00:00.000Z",
+      "2026-09-30T22:00:00.000Z",
+      "inferred",
+    );
+    const [stop, move] = response.segments;
+    if (stop === undefined || move === undefined) throw new Error("fixture");
+    // The move starts far from where the stop ended, and later: a connector between them.
+    const apart = {
+      ...response,
+      segments: [
+        stop,
+        { ...move, points: move.points.map((p) => [p[0] + 1, p[1] + 1, p[2] + 5000] as const) },
+      ],
+    };
+    const colors = { device: () => "#device", mode: (mode: string) => `#${mode}` };
+    const kinds = (until?: number) =>
+      levelTracksToMap(apart as typeof response, colors, until).transport.map(
+        (s) => `${s.kind}${s.dimmed === true ? ":dimmed" : ""}`,
+      );
+    expect(kinds()).toContain("gap");
+    const stopEnd = stop.points.at(-1)?.[2] ?? 0;
+    // The cursor in the stop: the connector (and the move after it) are still ahead.
+    expect(kinds(stopEnd - 1)).toContain("gap:dimmed");
+    // The cursor past the move's start: the connector is behind it.
+    expect(kinds(stopEnd + 6000)).toContain("gap");
   });
 });

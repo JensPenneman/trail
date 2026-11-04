@@ -193,6 +193,22 @@ describe("seeking and stepping", () => {
     expect(run(ended, { type: "step", direction: -1, world: w }).status).toBe("paused");
   });
 
+  it("keeps a player that ended at its end ended, so that Play starts over", () => {
+    const ended = { ...playingAt(thu, at(thu, 15)), status: "ended" as const, start: at(mon, 6) };
+    expect(run(ended, { type: "step", direction: 1, world: w }).status).toBe("ended");
+    expect(run(ended, { type: "seek", clock: at(thu, 18), world: w }).status).toBe("ended");
+  });
+
+  it("forgets a pending move step when anything else moves the clock", () => {
+    const pending = {
+      ...playingAt(thu, at(thu, 0)),
+      status: "paused" as const,
+      pendingMove: 1 as const,
+    };
+    expect(run(pending, { type: "seek", clock: at(thu, 3), world: w }).pendingMove).toBeNull();
+    expect(run({ ...pending, status: "playing" }, { type: "pause" }).pendingMove).toBeNull();
+  });
+
   it("drops a pending skip when moved", () => {
     const held = { ...playingAt(tue, at(tue, 3)), holdUntil: 5000 };
     expect(run(held, { type: "seek", clock: at(tue, 4), world: w }).holdUntil).toBeNull();
@@ -222,9 +238,16 @@ describe("moves", () => {
     );
   });
 
-  it("go on to the next day with data after the last move", () => {
+  it("go on to the next day with data after the last move, and land on its first move once it is in", () => {
     const state = run(paused(at(tue, 17, 30)), { type: "stepMove", direction: 1, world: w });
-    expect(state).toMatchObject({ day: thu, clock: at(thu, 0) });
+    expect(state).toMatchObject({ day: thu, clock: at(thu, 0), pendingMove: 1 });
+    // Thursday's moves arrive: the same press finishes on the first of them.
+    const thursday = world({ moves: [{ from: at(thu, 7), to: at(thu, 8) }] });
+    const landed = run(state, { type: "resolveMove", world: thursday });
+    expect(landed).toMatchObject({ clock: at(thu, 7), pendingMove: null, status: "paused" });
+    // A day with no move at all goes on to the day after it, or ends the press.
+    const bare = run(state, { type: "resolveMove", world: world({ moves: [] }) });
+    expect(bare).toMatchObject({ day: thu, clock: at(thu, 0), pendingMove: null });
     const loading = run(playingAt(tue, at(tue, 17, 30)), {
       type: "stepMove",
       direction: 1,
@@ -236,7 +259,16 @@ describe("moves", () => {
   it("go back to the last second of the previous day with data, never before the start", () => {
     const early = { ...paused(at(tue, 7)), start: at(mon, 0) };
     const back = run(early, { type: "stepMove", direction: -1, world: w });
-    expect(back).toMatchObject({ day: mon, clock: dayBounds(mon, zone).end - 1 });
+    expect(back).toMatchObject({
+      day: mon,
+      clock: dayBounds(mon, zone).end - 1,
+      pendingMove: -1,
+    });
+    const monday = world({ moves: [{ from: at(mon, 18), to: at(mon, 19) }] });
+    expect(run(back, { type: "resolveMove", world: monday })).toMatchObject({
+      clock: at(mon, 18),
+      pendingMove: null,
+    });
     const first = { ...paused(at(tue, 7)), start: at(tue, 6) };
     expect(run(first, { type: "stepMove", direction: -1, world: w }).clock).toBe(at(tue, 6));
   });
@@ -264,6 +296,12 @@ describe("Skip stops", () => {
   it("starts the hold when playback begins inside the stretch", () => {
     const started = run(on(at(tue, 12)), tick(33, w, 100));
     expect(started.holdUntil).toBe(600);
+  });
+
+  it("leaves what is left of a stretch alone when it is two minutes or less", () => {
+    const nearEnd = world({ quiet: [{ from: at(tue, 9), to: at(tue, 17) }] });
+    const state = run(on(at(tue, 16, 59)), { type: "setRate", rate: 1 }, tick(33, nearEnd, 0));
+    expect(state.holdUntil).toBeNull();
   });
 
   it("leaves a stretch of two minutes or less alone", () => {

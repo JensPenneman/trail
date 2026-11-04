@@ -12,6 +12,7 @@ import {
   nextDayWithData,
   previousDayWithData,
   quietIntervals,
+  splitTime,
 } from "../src/pages/map/history/playback/playbackModel";
 
 const zone = "Europe/Brussels";
@@ -53,9 +54,27 @@ describe("days", () => {
   });
 
   it("end at the last point of the final day once it is in, else at the endpoint's guess", () => {
-    expect(endOf(100, 120)).toBe(120);
-    expect(endOf(100, null)).toBe(100);
-    expect(endOf(null, null)).toBeNull();
+    expect(endOf(100, 120, true)).toBe(120);
+    expect(endOf(100, null, true)).toBe(100);
+    expect(endOf(null, null, true)).toBeNull();
+  });
+
+  it("do not end anywhere while the list of days may still grow", () => {
+    expect(endOf(100, 120, false)).toBeNull();
+    expect(endOf(100, null, false)).toBeNull();
+  });
+
+  it("cut the map's tracks four times per playback second at most", () => {
+    // A quarter of the minutes that pass in a second: 15 s at 1 min/s, 15 min at 1 h/s.
+    expect(splitTime(1000, 1)).toBe(990);
+    expect(splitTime(1004, 1)).toBe(1004 - (1004 % 15));
+    expect(splitTime(3601, 60)).toBe(3600);
+    expect(splitTime(3600 * 1.9, 60)).toBe(3600 * 1.75);
+    for (const rate of [1, 5, 15, 60] as const) {
+      const step = (rate * 60) / 4;
+      expect(splitTime(step * 7 + 1, rate)).toBe(step * 7);
+      expect(splitTime(step * 7, rate)).toBe(step * 7);
+    }
   });
 });
 
