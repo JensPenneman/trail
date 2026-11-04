@@ -253,6 +253,18 @@ const cases: Case[] = [
     change: correctAMove,
   },
   {
+    name: "v1 Insights places",
+    path: apiPaths.v1.insights.places,
+    query: { from: "2026-10-01", to: "2026-10-31" },
+    change: correctAMove,
+  },
+  {
+    name: "v1 Insights place",
+    path: apiPaths.v1.insights.place,
+    query: { from: "2026-10-01", to: "2026-10-31", place: "134217.89012" },
+    change: correctAMove,
+  },
+  {
     name: "v1 people",
     path: apiPaths.v1.people.root,
     change: async () => {
