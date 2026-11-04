@@ -3,6 +3,7 @@ import {
   type LevelPoint,
   type LevelTrackSegment,
   type LevelTracksResponse,
+  type LevelValue,
   type ProcessingLevel,
   processingLevels,
 } from "@trail/contracts/transport";
@@ -35,6 +36,8 @@ interface LocationRow extends Record<string, unknown> {
   lat: number;
   lon: number;
   horizontal_accuracy: number | null;
+  altitude: number | null;
+  speed: number | null;
 }
 
 interface ProcessedRow extends Record<string, unknown> {
@@ -45,6 +48,7 @@ interface ProcessedRow extends Record<string, unknown> {
   lat_map: number | null;
   lon_map: number | null;
   path_map: [number, number][] | null;
+  speed_avg: number | null;
 }
 
 /** One served point and the level it reached; `vertices` are the way's shape before it. */
@@ -65,6 +69,7 @@ function withTimes(
   from: LevelPoint | null,
   path: readonly [number, number][],
   to: LevelPoint,
+  extras: readonly (number | null)[],
 ): readonly LevelPoint[] {
   if (from === null || path.length === 0) return noVertices;
   const stops = [
@@ -83,7 +88,7 @@ function withTimes(
   const total = lengths.at(-1) ?? 0;
   return path.map(([lon, lat], index) => {
     const share = total > 0 ? (lengths[index + 1] ?? 0) / total : (index + 1) / (path.length + 1);
-    return [lon, lat, Math.round(from[2] + share * (to[2] - from[2]))];
+    return [lon, lat, Math.round(from[2] + share * (to[2] - from[2])), ...extras];
   });
 }
 
@@ -105,7 +110,7 @@ async function processedRows(
   if (level === "raw" || first === undefined || last === undefined) return [];
   const rows = await db.execute<ProcessedRow>(sql`
     SELECT extract(epoch FROM recorded_at)::float8 AS t, kept, lat_avg, lon_avg, lat_map, lon_map,
-      ${level === "averaged" ? sql`NULL::jsonb` : sql`path_map`} AS path_map
+      speed_avg, ${level === "averaged" ? sql`NULL::jsonb` : sql`path_map`} AS path_map
     FROM processed_points
     WHERE device_id = ${deviceId}
       AND recorded_at >= ${first.recorded_at}::timestamptz
@@ -126,6 +131,7 @@ async function servedPoints(
   range: { from: Date; to: Date },
   level: ProcessingLevel,
   ends: ReadonlySet<number>,
+  values: readonly LevelValue[],
 ): Promise<Served[]> {
   const count = await db.execute<{ count: number }>(sql`
     SELECT count(*)::int AS count FROM locations
@@ -144,7 +150,7 @@ async function servedPoints(
         : sql`recorded_at > ${cursor}::timestamptz`;
     const page: { rows: LocationRow[] } = await db.execute<LocationRow>(sql`
       SELECT recorded_at::text, extract(epoch FROM recorded_at)::float8 AS t, lat, lon,
-        horizontal_accuracy
+        horizontal_accuracy, altitude, speed
       FROM locations
       WHERE device_id = ${deviceId} AND ${after}
         AND recorded_at < ${range.to.toISOString()}::timestamptz
@@ -159,6 +165,17 @@ async function servedPoints(
       while ((processed[next]?.t ?? Number.POSITIVE_INFINITY) < row.t) next += 1;
       const done = processed[next]?.t === row.t ? processed[next] : undefined;
       const t = Math.round(row.t);
+      // The values asked for after `t`: the fix's own altitude and accuracy, the speed of the level.
+      const valuesOf = (speed: number | null, own = true): (number | null)[] =>
+        values.map((value) =>
+          value === "speed"
+            ? speed
+            : !own
+              ? null
+              : value === "altitude"
+                ? row.altitude
+                : row.horizontal_accuracy,
+        );
       let entry: Served | null = null;
       if (done === undefined || level === "raw") {
         if (row.horizontal_accuracy === null || row.horizontal_accuracy <= rawMaxAccuracyM) {
@@ -166,17 +183,28 @@ async function servedPoints(
             t,
             level: "raw",
             vertices: noVertices,
-            point: [row.lon, row.lat, t],
+            point: [
+              row.lon,
+              row.lat,
+              t,
+              ...valuesOf(row.speed !== null && row.speed >= 0 ? row.speed : null),
+            ],
             accuracy: row.horizontal_accuracy,
           };
         }
       } else if (done.kept && done.lat_avg !== null && done.lon_avg !== null) {
         if (level !== "averaged" && done.lat_map !== null && done.lon_map !== null) {
-          const here: LevelPoint = [done.lon_map, done.lat_map, t];
+          const here: LevelPoint = [done.lon_map, done.lat_map, t, ...valuesOf(done.speed_avg)];
           entry = {
             t,
             level: "mapped",
-            vertices: withTimes(previous, done.path_map ?? [], here),
+            // The way's shape takes the speed of the point it leads to, and no altitude or accuracy.
+            vertices: withTimes(
+              previous,
+              done.path_map ?? [],
+              here,
+              valuesOf(done.speed_avg, false),
+            ),
             point: here,
             accuracy: null,
           };
@@ -185,7 +213,7 @@ async function servedPoints(
             t,
             level: "averaged",
             vertices: noVertices,
-            point: [done.lon_avg, done.lat_avg, t],
+            point: [done.lon_avg, done.lat_avg, t, ...valuesOf(done.speed_avg)],
             accuracy: null,
           };
         }
@@ -383,8 +411,10 @@ export async function loadLevelTracks(
     to: Date;
     level: ProcessingLevel;
     maxPoints: number;
+    values?: readonly LevelValue[];
   },
 ): Promise<LevelTracksResponse> {
+  const values = query.values ?? [];
   const owned = await resolveDeviceIds(db, access, query.devices);
   const segments: LevelTrackSegment[] = [];
   let available: ProcessingLevel = query.level;
@@ -408,12 +438,12 @@ export async function loadLevelTracks(
         ends.add(Math.round(Date.parse(toIso(row.ended_at)) / 1000));
         ends.add(Math.round(ownEndOf(row)));
       }
-      const served = await servedPoints(db, device.id, query, query.level, ends);
+      const served = await servedPoints(db, device.id, query, query.level, ends, values);
       pieces = piecesOfSegments(device.id, served, rows.rows);
     } else {
       pieces = splitAtGaps(
         device.id,
-        await servedPoints(db, device.id, query, query.level, new Set()),
+        await servedPoints(db, device.id, query, query.level, new Set(), values),
       );
     }
     const lines = pieces.map(lineOf);
@@ -438,6 +468,7 @@ export async function loadLevelTracks(
   }
   return {
     level: query.level,
+    values: [...values],
     availableLevel: available,
     from: query.from.toISOString(),
     to: query.to.toISOString(),

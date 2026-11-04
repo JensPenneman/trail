@@ -319,7 +319,8 @@ describe("the feature backfill", () => {
     expect((await answer()).pending).toBe(true);
 
     const run = await runFeatureBackfill(t.ctx.db, { pauseMs: 0 });
-    expect(run).toMatchObject({ features: ["wayTotals"], complete: true });
+    expect(run.features).toContain("wayTotals");
+    expect(run.complete).toBe(true);
     expect(run.moves).toBeGreaterThanOrEqual(before.length);
     const after = (await Promise.all(devices.map(stored))).flat();
     expect(after.map((row) => [row.id, row.version, row.computed_at])).toEqual(
@@ -341,7 +342,7 @@ describe("the feature backfill", () => {
     const state = await t.ctx.db.execute<{ value: unknown }>(
       sql`SELECT value FROM processing_state WHERE key = 'features'`,
     );
-    expect(state.rows[0]?.value).toEqual({ versions: { wayTotals: 1 } });
+    expect(state.rows[0]?.value).toEqual({ versions: { wayTotals: 1, heatDays: 1 } });
     expect(await runFeatureBackfill(t.ctx.db, { pauseMs: 0 })).toMatchObject({
       features: [],
       moves: 0,

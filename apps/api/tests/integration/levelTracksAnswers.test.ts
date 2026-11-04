@@ -82,15 +82,86 @@ describe("the level tracks", () => {
       .expect(200);
     hashes["inferred commute"] = hashOf(one.body);
     expect(hashes).toEqual({
-      "raw 8000": "3d6fb3c7acb0d46a",
-      "raw 300": "998db2ea32f68b59",
-      "averaged 8000": "358431328275b87b",
-      "averaged 300": "7e204cf31175b678",
-      "mapped 8000": "c7ab3abaf1c18dbe",
-      "mapped 300": "11ee18dbf0300745",
-      "inferred 8000": "57ad6bacf62ce3ab",
-      "inferred 300": "0a8bc3b61f0030e9",
-      "inferred commute": "90ca9f5ceb00abfd",
+      "raw 8000": "28ad6512769fa33e",
+      "raw 300": "2001257666bf84d7",
+      "averaged 8000": "ad66d50633c30b97",
+      "averaged 300": "bea203d0d0154e84",
+      "mapped 8000": "ead1d3cc739d42d6",
+      "mapped 300": "1c1f6af439c4b1de",
+      "inferred 8000": "ce3e34f110ffe026",
+      "inferred 300": "8c531d410a974f84",
+      "inferred commute": "41353bac57dd5baf",
     });
+  });
+});
+
+describe("the values of the points (values=)", () => {
+  const ask = (query: Record<string, string | number>) =>
+    owner.get(apiPaths.v1.tracks).query({ ...day, maxPoints: 50_000, ...query });
+  const pointsOf = (body: { segments: { points: unknown[][] }[] }) =>
+    body.segments.flatMap((segment) => segment.points);
+
+  it("leaves points as they were without them, and echoes none", async () => {
+    const body = (await ask({ level: "raw" }).expect(200)).body;
+    expect(body.values).toEqual([]);
+    expect(pointsOf(body).every((point) => point.length === 3)).toBe(true);
+  });
+
+  it("adds them after t in the order asked, null where a point has none, at every level", async () => {
+    for (const level of ["raw", "averaged", "mapped", "inferred"]) {
+      const plain = (await ask({ level }).expect(200)).body;
+      const rich = (await ask({ level, values: "accuracy,speed,altitude" }).expect(200)).body;
+      expect(rich.values, level).toEqual(["accuracy", "speed", "altitude"]);
+      // The same points, the values after them.
+      const before = pointsOf(plain);
+      const after = pointsOf(rich);
+      expect(after.length, level).toBe(before.length);
+      expect(
+        after.map((point) => point.slice(0, 3)),
+        level,
+      ).toEqual(before);
+      expect(
+        after.every((point) => point.length === 6),
+        level,
+      ).toBe(true);
+      for (const point of after) {
+        for (const value of point.slice(3)) {
+          expect(value === null || typeof value === "number", level).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("takes the speed of the level and the fix's own altitude and accuracy", async () => {
+    const raw = pointsOf(
+      (await ask({ level: "raw", values: "speed,altitude,accuracy" }).expect(200)).body,
+    );
+    expect(raw.some((point) => typeof point[5] === "number")).toBe(true);
+    const averaged = pointsOf(
+      (await ask({ level: "averaged", values: "speed,accuracy" }).expect(200)).body,
+    );
+    expect(averaged.some((point) => typeof point[3] === "number")).toBe(true);
+  });
+
+  it("gives the way's shape between mapped points the speed of the point it leads to and nothing else", async () => {
+    const mapped = pointsOf(
+      (await ask({ level: "mapped", values: "speed,altitude,accuracy" }).expect(200)).body,
+    );
+    const shape = mapped.filter((point) => point[4] === null && point[5] === null);
+    expect(shape.length).toBeGreaterThan(0);
+    expect(shape.every((point) => typeof point[3] === "number" || point[3] === null)).toBe(true);
+    expect(shape.some((point) => typeof point[3] === "number")).toBe(true);
+  });
+
+  it("is another answer for the ETag, and refuses what it cannot give", async () => {
+    const plain = await ask({ level: "raw" }).expect(200);
+    const rich = await ask({ level: "raw", values: "speed" }).expect(200);
+    expect(String(rich.headers["etag"])).not.toBe(String(plain.headers["etag"]));
+    await ask({ level: "raw", values: "speed" })
+      .set("If-None-Match", String(rich.headers["etag"]))
+      .expect(304);
+    for (const values of ["speed,speed", "heading", "speed,altitude,accuracy,speed"]) {
+      await ask({ level: "raw", values }).expect(400);
+    }
   });
 });

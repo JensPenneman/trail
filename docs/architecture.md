@@ -416,6 +416,21 @@ data): `id`, `device_id` → devices (cascade), `received_at`, `reason`,
 `record` (jsonb). Kept forever, like every other recorded row: it is raw phone
 data that a later fix may still recover.
 
+**heat_days** — the heatmap's time on the move and speed, per local day:
+PK `(device_id, z, x, y, day, mode)`, `z` ∈ {12, 15, 18}; `points`,
+`move_s` (the seconds to the next kept point inside a move, each at most
+600 s), `distance_m`, `speed_s` (speed times those seconds), `max_speed`,
+`computed_at`; `mode` is the move's, `stationary` in a stop and `unknown`
+outside any segment (a check lists the twelve); index `(device_id, day)`;
+cascades with the device. A derived table (migration 0012): made by
+`rebuildHeatDays` from the kept processed points and the segments, one
+statement per set of days — the interval from a kept point to the next
+belongs to the first one's cell, day (in the owner's zone) and mode, the
+mode found by carrying the latest segment start forward over the points,
+positions the mapped ones else the averaged. About 125 to 500 rows a
+device-day; a pass for a day of 20 000 points takes about 130 ms (dev
+container), logged as `heatDaysMs` with the pass.
+
 **heat_cells** — pre-aggregated all-time density for the heatmap: PK
 `(device_id, z, x, y)`; `count` (int), `first_at`, `last_at`. `z` ∈ {6, 9, 12,
 15, 18, 20} (slippy-map tile coordinates; level 20 is about 24 m at 51° N, as
@@ -1137,6 +1152,19 @@ centres `[lon, lat, count]` and its 20 000. The query is a range scan of the pri
 (1.2 M points; 6 350 cells at level 18, 28 035 at level 20) every viewport of
 the dashboard answers in under 10 ms, and in at most about 30 ms on cells
 fifteen times denser — no further index is needed.
+
+`heat=moving`, `heat=speed` and `heat=topspeed` (with the same period, and `mode`
+to count one mode's moves only; the answer says which) come from `heat_days`
+(`findDayCells`): the stored level is the first of 12, 15, 18 as fine as the
+cell zoom (finer zooms are answered at 18, `cellZoom` says so), summed over the
+devices and days. Time on the move adds the devices' seconds (two phones on one
+journey count twice, unlike the stops); the average speed is `speed_s` over
+`move_s`, in cm/s, told from ten seconds of movement in a cell; the top speed
+is the fastest in the cell, in cm/s. The ETag takes the view, period and mode,
+`insightsValidator`, `heatDaysValidator` (the period's rows at level 12: count,
+newest `computed_at`, points) and the generation of rebuilds; `pending` is also
+true while a day of the period has points and no cells yet — history the
+features backfill (§17.4) has not reached.
 
 `heat=time` and `heat=visits` (with `from` and `to`, local days of the
 account's zone, at most three years, the Insights scope; points are all time and
@@ -2338,7 +2366,9 @@ runs in the worker (§3) — or in the API's process too, in role `all`.
   Changing the time zone (`PATCH /api/me`) rebuilds every day of the user's
   devices in the background, then publishes `resync`.
 - once, 5 s after the start — the heat levels of every device whose totals
-  disagree are rebuilt from its points (`fillHeatLevels`, §8.2). A shutdown
+  disagree are rebuilt from its points (`fillHeatLevels`, §8.2), and a level
+  of `heat_days` that misses points is made again with the device's others
+  (`fillHeatDayLevels`; the heatmap's ETags move). A shutdown
   does not wait for it: it is cancelled and rolls back.
 - every minute — the API's `load` log line at `info` (docs/perf/README.md): the
   minute's event-loop delay (p50, p99, max), the pool (connections, idle,
@@ -4836,7 +4866,9 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   at a time; another leaves it), one SQL statement from the stored processed
   points: nothing is loaded, no map data, no matching, and neither `version`
   nor `computed_at` changes; a move that has the feature by then is left
-  alone. `wayTotals` 1 (Insights › named roads) counts as the pipeline does:
+  alone. `heatDays` 1 fills `heat_days` the same way: the days with points
+  (the daily statistics) and no cells, newest first, each by `rebuildHeatDays`.
+  `wayTotals` 1 (Insights › named roads) counts as the pipeline does:
   each interval between kept points along `path_map` when both ends are mapped,
   else the chord of the averaged points, half to each end point's way, ways of
   25 m or more, to 0.1 m (the test compares it with the pipeline's own totals
@@ -4856,6 +4888,9 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
 
 ### 17.5 Overrides (the person wins)
 
+- A mode correction or its reset rewrites the per-day heat cells of the
+  days the move spans in the same transaction (`rebuildSegmentHeatDays`), so
+  the time on the move by mode follows it at once.
 - `PUT /api/v1/segments/{id}/mode { mode }` stores a `segment` override for
   the move's span and sets `mode_user` at once (the same mode again changes
   nothing). `DELETE` revokes the override that set the segment (a toggle with
@@ -4929,7 +4964,13 @@ days) answers `{ level, availableLevel, from, to, simplified, segments }`;
 a segment is `{ id, deviceId, kind, level, mode, modeInferred, modeUser,
 confidence, needsReview, startedAt, endedAt, distanceM, centroid, spreadM,
 points }` with points `[lon, lat, epochSeconds]` (the way's shape between
-mapped points carries interpolated times). `raw`, `averaged` and `mapped`
+mapped points carries interpolated times), and, for `values=speed,altitude,
+accuracy` (at most three, in the order asked; `values` is echoed),
+`[lon, lat, epochSeconds, …values]` with null where unknown: the speed is the
+recorded one at `raw` and the averaged one (`processed_points.speed_avg`)
+elsewhere, altitude and accuracy are the fix's own, read from `locations`
+by primary key; the way's shape takes the speed of the point it leads to and
+no altitude or accuracy; the ETag's `asked` includes `values`. `raw`, `averaged` and `mapped`
 give pieces of track (`kind: "track"`, split at gaps over ten minutes;
 `centroid` and `spreadM` null); `inferred` gives the timeline's stops and
 moves — a stop with its place (`centroid`), its spread (`spreadM`, as in the
