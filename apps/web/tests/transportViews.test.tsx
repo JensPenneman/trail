@@ -8,6 +8,7 @@ import { applyServerEvent } from "../src/live/applyServerEvent";
 import { createLiveStore } from "../src/live/createLiveStore";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { localDayRange } from "../src/time/localDayRange";
+import { paramsOf } from "./support/addressParams";
 import { dayStamp, ids, levelTracks, timeline, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { createTestQueryClient, renderPage } from "./support/renderPage";
@@ -304,7 +305,12 @@ describe("a link to one move", () => {
     expect(within(dialog).getByText("Was this a train ride?")).toBeInTheDocument();
     await person.click(within(dialog).getByRole("button", { name: "Close" }));
     // The link implied Me: the address says so now, so Me's detail stays when the move closes.
-    await waitFor(() => expect(router.state.location.search).toBe("?view=history&person=me"));
+    await waitFor(() =>
+      expect(paramsOf(router.state.location.search)).toEqual([
+        ["person", "me"],
+        ["view", "history"],
+      ]),
+    );
     expect(screen.queryByRole("dialog", { name: "Train" })).toBeNull();
     expect(await screen.findByRole("region", { name: "Me" })).toBeInTheDocument();
     expect(await screen.findByRole("region", { name: "Timeline" })).toBeInTheDocument();
