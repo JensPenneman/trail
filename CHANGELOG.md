@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/JensPenneman/trail/compare/v0.7.0...v0.8.0) (2026-11-04)
+
+
+### Features
+
+* **api:** corrections wait until a move is over ([#101](https://github.com/JensPenneman/trail/issues/101)) ([b7d4a3f](https://github.com/JensPenneman/trail/commit/b7d4a3f087c1033c285389be721e1b9e192f3869))
+* **web:** map settings float over the map, people in a sheet on phones ([#105](https://github.com/JensPenneman/trail/issues/105)) ([51c92a6](https://github.com/JensPenneman/trail/commit/51c92a6b65808c409f4574436c62d2872e9e00f5))
+* **web:** people list in the Find My style with one selected person ([#102](https://github.com/JensPenneman/trail/issues/102)) ([007dbbd](https://github.com/JensPenneman/trail/commit/007dbbd5069cb69af5424f5ebaa4860fe737cc83))
+
+
+### Bug Fixes
+
+* **web:** draw tracks above every basemap shape in the dark style ([#100](https://github.com/JensPenneman/trail/issues/100)) ([6903403](https://github.com/JensPenneman/trail/commit/6903403a8d3a286a372d45f7400c71d1c7a37730))
+
 ## [0.7.0](https://github.com/JensPenneman/trail/compare/v0.6.0...v0.7.0) (2026-11-03)
 
 
