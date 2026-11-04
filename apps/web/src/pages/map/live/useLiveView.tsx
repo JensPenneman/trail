@@ -203,7 +203,6 @@ export function useLiveView({
       ? (ownDevices.find((device) => device.id === deviceId)?.name ?? null)
       : null;
 
-  const subject = meSelected ? "you" : (other?.displayName ?? "everyone");
   const whereTheyAre = everyone.length === 0 ? null : format.list(everyone);
   // Promise a track only when one is drawn: a live-only share or a quiet day has none.
   const trackDrawn = meSelected
@@ -213,18 +212,11 @@ export function useLiveView({
     whereTheyAre === null
       ? "Map. Nobody shown has reported a position yet."
       : selected === null || !trackDrawn
-        ? `Map of where everyone is now: ${whereTheyAre}. The same is said in the list.`
-        : `Map of ${meSelected ? "your track" : `${other?.displayName ?? "their"}’s track`} today and where everyone is now: ${whereTheyAre}. The same is said in the list.`;
+        ? `Map of where everyone is now: ${whereTheyAre}.`
+        : `Map of ${meSelected ? "your track" : `${other?.displayName ?? "their"}’s track`} today and where everyone is now: ${whereTheyAre}.`;
 
   return {
     title: "Live",
-    description: (
-      <p>
-        {`Where ${subject} ${subject === "you" ? "are" : "is"} now`}
-        {" · "}
-        {format.day(today)}
-      </p>
-    ),
     map: {
       label,
       tracks: [...transport.tracks, ...peopleTracks],
@@ -252,11 +244,10 @@ export function useLiveView({
     controls: null,
     transport: !meSelected || allDevices.length === 0 ? null : transport,
     chip: null,
+    legend: null,
     foot: null,
-    panelLabel: "",
-    panel: null,
-    mineLabel: "Your day so far",
-    mine:
+    timelineLabel: "Your day so far",
+    timeline:
       !meSelected || allDevices.length === 0 ? null : (
         <>
           {tracks.isError ? (
@@ -269,6 +260,7 @@ export function useLiveView({
           ) : null}
           {range === null ? null : (
             <DayTimeline
+              regionLabel="Timeline"
               segments={segments}
               pending={timeline.data?.pending ?? false}
               loading={timeline.isPending}
@@ -290,6 +282,9 @@ export function useLiveView({
           )}
         </>
       ),
+    meGroup: null,
+    meGroupTitle: "",
+    personGroup: null,
     personTracks: trackStates,
     dialog:
       shownSegment === null ? null : (

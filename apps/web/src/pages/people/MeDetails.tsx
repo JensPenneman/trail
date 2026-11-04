@@ -6,13 +6,10 @@ import { addDevicePath, devicePath } from "../../devices/devicePaths";
 import { EmptyState } from "../../ui/EmptyState";
 import { ErrorState } from "../../ui/ErrorState";
 import { LinkButton } from "../../ui/LinkButton";
-import { MyDevices } from "./MyDevices";
 import type { useMeSummary } from "./useMeSummary";
 
 interface MeDetailsProps {
   devices: UseQueryResult<DeviceSummary[]>;
-  now: number;
-  thresholds: { liveMinutes: number; staleHours: number };
   summary: ReturnType<typeof useMeSummary>;
 }
 
@@ -38,11 +35,11 @@ export function ConnectFirstPhone({ level }: { level: 2 | 3 }) {
 }
 
 /**
- * The rest of Me's detail, after what the view says of one's day: one's
- * devices, always (no longer behind a Details button), the hint when the
- * first upload is awaited, and the way to adding a device when there is none.
+ * What Me's page says when there is something to set up: the way to adding a
+ * device when there is none, the error when the devices could not be loaded, and
+ * the hint when the first upload is awaited.
  */
-export function MeDetails({ devices, now, thresholds, summary }: MeDetailsProps) {
+export function MeDetails({ devices, summary }: MeDetailsProps) {
   const list = devices.data ?? [];
   const { latest, waiting } = summary;
   return (
@@ -64,8 +61,6 @@ export function MeDetails({ devices, now, thresholds, summary }: MeDetailsProps)
           <Link to={devicePath(latest.id, "setup")}>Setup details</Link>
         </p>
       ) : null}
-
-      {list.length === 0 ? null : <MyDevices devices={list} now={now} thresholds={thresholds} />}
     </>
   );
 }

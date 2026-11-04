@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { paramsOf } from "./support/addressParams";
 import { ana, bob, ids, tracks, user } from "./support/fixtures";
+import { openGroup } from "./support/openGroup";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
@@ -182,6 +183,7 @@ describe("selecting a person", () => {
       within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", { name: "Heat" }),
     ).toBeChecked();
     await person.click(await personLink(/^Me/));
+    await openGroup(person, "Heat: totals, busiest places");
     expect(await screen.findByText("225,529")).toBeInTheDocument();
     // The old "Your own devices only" notice has no one to speak to any more.
     expect(screen.queryByText("Your own devices only")).toBeNull();
@@ -327,6 +329,9 @@ describe("History's overview and selections", () => {
     const api = mockApi(withHistoryOfAna());
     renderPage(<PeoplePage />, { url: "/?view=history&person=me", user });
     expect(await screen.findByRole("region", { name: "Timeline" })).toBeInTheDocument();
+    // Summary, visits and trips are one folded group: nothing of them until it is opened.
+    expect(screen.queryByRole("region", { name: "Visits" })).toBeNull();
+    await openGroup(userEvent.setup(), "Summary, visits and trips");
     expect(await screen.findByRole("region", { name: "Visits" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Trips" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Summary" })).toBeInTheDocument();
@@ -336,6 +341,7 @@ describe("History's overview and selections", () => {
   it("shows someone's history alone: their summary, nothing of one's own", async () => {
     const api = mockApi(withHistoryOfAna());
     renderPage(<PeoplePage />, { url: `/?view=history&person=${ids.ana}`, user });
+    await openGroup(userEvent.setup(), "Summary");
     const summary = await screen.findByRole("region", { name: "Summary" });
     expect(await within(summary).findByText("Ana Bell · Ana’s iPhone")).toBeInTheDocument();
     expect(within(summary).queryByText("iPhone 16")).toBeNull();
@@ -343,7 +349,7 @@ describe("History's overview and selections", () => {
       expect(screen.queryByRole("region", { name }), name).not.toBeInTheDocument();
     }
     expect(screen.queryByRole("group", { name: "Detail of the tracks" })).toBeNull();
-    expect(map()).toHaveAccessibleName(/^Map of Ana Bell’s tracks for .* Their totals are listed/);
+    expect(map()).toHaveAccessibleName(/^Map of Ana Bell’s tracks for .* Their totals are on their page/);
     const asked = new Set(api.calls.map((call) => call.path));
     for (const path of [
       "/api/tracks",
@@ -530,6 +536,7 @@ describe("where the selected person has been", () => {
     mockApi(withHistoryOfAna());
     const person = userEvent.setup();
     renderPage(<PeoplePage />, { url: "/?view=history&person=me", user });
+    await openGroup(person, "Summary, visits and trips");
     await person.click(await screen.findByRole("button", { name: /Show this visit on the map/ }));
     expect(map().getAttribute("data-focus")).toMatch(/^visit:/);
     await person.click(await screen.findByRole("button", { name: "Previous day" }));
@@ -543,6 +550,7 @@ describe("where the selected person has been", () => {
       url: "/?view=history&person=me",
       user,
     });
+    await openGroup(person, "Summary, visits and trips");
     await person.click(await screen.findByRole("button", { name: /Show this visit on the map/ }));
     expect(map().getAttribute("data-focus")).toMatch(/^visit:/);
     await person.click(await screen.findByRole("button", { name: "Previous day" }));

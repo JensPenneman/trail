@@ -25,6 +25,7 @@ import {
   user,
 } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
+import { openGroup } from "./support/openGroup";
 import { createTestQueryClient, renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
 
@@ -84,7 +85,7 @@ describe("the People page's list", () => {
     expect(screen.getByText(/^Where everyone is now/).closest(".visually-hidden")).not.toBeNull();
   });
 
-  it("opens Me's detail in place of the list: the devices, always, and the way back", async () => {
+  it("opens Me's page in place of the list: the day so far, the rows, and the way back", async () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
     const { router } = renderPage(<PeoplePage />, { user });
@@ -92,12 +93,44 @@ describe("the People page's list", () => {
     const me = await openPerson(person, "Me");
     expect(router.state.location.search).toBe("?person=me");
     expect(screen.queryByRole("list", { name: "Me" })).toBeNull();
-    // The name takes the focus, so a screen reader starts at the detail.
+    // The name takes the focus, so a screen reader starts at the page.
     const heading = within(me).getByRole("heading", { level: 2, name: "Me" });
     expect(heading).toHaveFocus();
     expect(within(me).getAllByText("Standing still").length).toBeGreaterThan(0);
-    expect(within(me).getByRole("heading", { name: "Your devices" })).toBeInTheDocument();
-    const devices = within(me).getByRole("region", { name: "Your devices" });
+    expect(within(me).getByText("2 devices")).toBeInTheDocument();
+    // The Timeline group is open, the devices are a row of their own, Sharing leads to Settings.
+    expect(within(me).getByRole("button", { name: "Timeline" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(within(me).getByRole("link", { name: /^Your devices/ })).toHaveAttribute(
+      "href",
+      "/?person=me&list=devices",
+    );
+    expect(within(me).getByRole("link", { name: /^Sharing/ })).toHaveAttribute(
+      "href",
+      "/settings/sharing",
+    );
+    expect(within(me).queryByRole("region", { name: "Your devices" })).toBeNull();
+    // No toggle of the transport mode: that is the API's and MCP clients'.
+    expect(within(me).queryByRole("group", { name: "Now:" })).toBeNull();
+
+    // Back to the list; the focus returns to the row that was opened.
+    await person.click(within(me).getByRole("link", { name: "Back to People" }));
+    expect(router.state.location.search).toBe("");
+    expect(await screen.findByRole("link", { name: /^Me/ })).toHaveFocus();
+    expect(screen.queryByRole("region", { name: "Me" })).toBeNull();
+  });
+
+  it("lists one's devices as a level of Me's page, and comes back to its row", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, { url: "/?person=me", user });
+    const me = await screen.findByRole("region", { name: "Me" });
+    await person.click(within(me).getByRole("link", { name: /^Your devices/ }));
+    expect(router.state.location.search).toBe("?person=me&list=devices");
+    expect(await screen.findByRole("heading", { level: 2, name: "Your devices" })).toHaveFocus();
+    const devices = screen.getByRole("region", { name: "Your devices" });
     const [phone, car] = within(devices).getAllByRole("listitem") as [HTMLElement, HTMLElement];
     expect(within(phone).getByRole("link", { name: "iPhone 16" })).toHaveAttribute(
       "href",
@@ -108,16 +141,12 @@ describe("the People page's list", () => {
     expect(within(phone).getByText("None in progress")).toBeInTheDocument();
     expect(within(car).getByText("Last reported movement")).toBeInTheDocument();
     expect(
-      within(me).getByRole("link", { name: /Uploads, activity and settings of your devices/ }),
+      within(devices).getByRole("link", { name: /Uploads, activity and settings of your devices/ }),
     ).toHaveAttribute("href", "/settings/devices");
-    // No toggle of the transport mode: that is the API's and MCP clients'.
-    expect(within(me).queryByRole("group", { name: "Now:" })).toBeNull();
 
-    // Back to the list; the focus returns to the row that was opened.
-    await person.click(within(me).getByRole("link", { name: "Back to People" }));
-    expect(router.state.location.search).toBe("");
-    expect(await screen.findByRole("link", { name: /^Me/ })).toHaveFocus();
-    expect(screen.queryByRole("region", { name: "Me" })).toBeNull();
+    await person.click(screen.getByRole("link", { name: "Back to Me" }));
+    expect(router.state.location.search).toBe("?person=me");
+    expect(await screen.findByRole("link", { name: /^Your devices/ })).toHaveFocus();
   });
 
   it("leaves the focus alone on a link that opens a detail", async () => {
@@ -135,14 +164,11 @@ describe("the People page's list", () => {
     });
     renderPage(<PeoplePage />, { url: "/?person=me", user });
     const me = await screen.findByRole("region", { name: "Me" });
-    expect((await within(me).findAllByText("Waiting for the first upload")).length).toBe(2);
+    expect((await within(me).findAllByText("Waiting for the first upload")).length).toBe(1);
     expect(within(me).getByRole("link", { name: "Setup details" })).toHaveAttribute(
       "href",
       `/settings/devices/${ids.phone}/setup`,
     );
-    expect(
-      within(me).getByText("Updated", { selector: "dt" }).nextElementSibling,
-    ).toHaveTextContent("Waiting for the first upload");
   });
 
   it("shows each person like Find My, in two lines: who and how far, doing what, how fresh", async () => {
@@ -181,6 +207,9 @@ describe("the People page's list", () => {
     const details = await openPerson(person, "Ana Bell");
     expect(within(details).getByRole("heading", { level: 2, name: "Ana Bell" })).toHaveFocus();
     expect(within(details).getAllByText("Cycling · 16 km/h").length).toBeGreaterThan(0);
+    // Their devices and what they share are one folded group.
+    expect(within(details).queryByText("Ana’s iPhone")).toBeNull();
+    await openGroup(person, /^Device \(1\) · What Ana Bell shares with you/);
     expect(within(details).getByText("Ana’s iPhone")).toBeInTheDocument();
     expect(fact(details, "Updated")).toHaveTextContent("2 min ago");
     expect(fact(details, "Doing")).toHaveTextContent("Cycling · 16 km/h");
@@ -219,6 +248,7 @@ describe("the People page's list", () => {
     const person = userEvent.setup();
     renderPage(<PeoplePage />, { user });
     const details = await openPerson(person, "Ana Bell");
+    await openGroup(person, /^Device \(1\) · What Ana Bell shares with you/);
     // Ana shares battery and activity; there is just nothing recent of them.
     expect(fact(details, "Battery")).toHaveTextContent("—");
     expect(fact(details, "Trip")).toHaveTextContent("—");
@@ -230,6 +260,7 @@ describe("the People page's list", () => {
     const person = userEvent.setup();
     renderPage(<PeoplePage />, { user });
     const hers = await openPerson(person, "bob");
+    await openGroup(person, /^Device \(1\) · What bob shares with you/);
     expect(fact(hers, "Battery")).toHaveTextContent("Not shared");
     expect(fact(hers, "Trip")).toHaveTextContent("Not shared");
     expect(fact(hers, "Precision")).toHaveTextContent("Approximate location, within about 500 m");
@@ -485,7 +516,7 @@ describe("the People page's list", () => {
     // Me's detail is there to open, with the day so far.
     const person = userEvent.setup();
     await openPerson(person, "Me");
-    expect(await screen.findByRole("region", { name: "Timeline" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Your day so far" })).toBeInTheDocument();
   });
 
   it("opens the device filter when the address sets one", async () => {

@@ -208,7 +208,7 @@ export function PeoplePage() {
   // Beside the map the panel scrolls by itself: another view or person starts at its top.
   const panel = useRef<HTMLElement | null>(null);
   // The level shown, for the focus that follows it: someone's key, `list:hidden`, or the root.
-  const levelKey = selectedKey ?? (search.list === "hidden" ? "list:hidden" : null);
+  const levelKey = search.list === null ? selectedKey : `list:${search.list}`;
   const focusRef = usePanelFocus(
     levelKey,
     levelKey?.startsWith("list:") === true ||
@@ -269,6 +269,8 @@ export function PeoplePage() {
   const linkTo = (person: string) => `?${withPerson(params, person).toString()}`;
   const backTo = `?${withPerson(params, null).toString()}`;
   const hiddenTo = `?${withList(params, "hidden").toString()}`;
+  const devicesTo = `?${withList(params, "devices").toString()}`;
+  const meTo = `?${withList(params, null).toString()}`;
 
   // Devices to choose among, when there are several: the selected person's; in Heat one's own,
   // whoever is selected (nobody's else is offered there). Choosing some selects Me (adoptPerson).
@@ -366,11 +368,8 @@ export function PeoplePage() {
           )}
           {content.chip}
         </div>
+        {content.legend === null ? null : <div className="map-page__legend">{content.legend}</div>}
         {wide ? foot : null}
-        {/* What the view says of itself, for those who cannot see the map. */}
-        {content.description === null || content.description === undefined ? null : (
-          <div className="visually-hidden">{content.description}</div>
-        )}
       </div>
 
       {/* Phones: the room the map shows through; presses fall on the map under it. */}
@@ -383,11 +382,13 @@ export function PeoplePage() {
         panelRef={panelRef}
         foot={wide ? null : foot}
         at={
-          selectedKey !== null
-            ? { level: "person", selected: selectedKey }
-            : search.list === "hidden"
-              ? { level: "hidden" }
-              : { level: "root" }
+          search.list === "devices"
+            ? { level: "devices" }
+            : selectedKey !== null
+              ? { level: "person", selected: selectedKey }
+              : search.list === "hidden"
+                ? { level: "hidden" }
+                : { level: "root" }
         }
         people={people}
         devices={devices}
@@ -397,6 +398,8 @@ export function PeoplePage() {
         linkTo={linkTo}
         hiddenTo={hiddenTo}
         backTo={backTo}
+        devicesTo={devicesTo}
+        meTo={meTo}
         name={user.displayName}
         content={content}
         period={wherePeriod}

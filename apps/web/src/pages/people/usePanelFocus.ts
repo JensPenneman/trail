@@ -32,15 +32,21 @@ export function usePanelFocus(
     if (before.key === selectedKey) return;
     const panel = root.current;
     if (panel === null) return;
+    const isLevel = (key: string | null) => key?.startsWith("list:") === true;
+    // Back from a level of a page (Me's devices) is to the row that opened it, then the page.
+    const leavingLevel = isLevel(before.key) && !isLevel(selectedKey);
+    const rowOf = (key: string) =>
+      panel.querySelector<HTMLElement>(
+        key.startsWith("list:") ? `[data-row="${key.slice(5)}"]` : `[data-person="${key}"]`,
+      );
+    const heading = () =>
+      panel.querySelector<HTMLElement>("[data-person-heading], [data-level-heading]");
     const target =
-      selectedKey !== null
-        ? panel.querySelector<HTMLElement>("[data-person-heading], [data-level-heading]")
-        : before.resolved && !before.implied
-          ? (panel.querySelector<HTMLElement>(
-              before.key?.startsWith("list:")
-                ? `[data-row="${before.key.slice(5)}"]`
-                : `[data-person="${before.key}"]`,
-            ) ?? panel.querySelector<HTMLElement>("[data-page-title]"))
+      selectedKey !== null && !leavingLevel
+        ? heading()
+        : before.key !== null && before.resolved && !before.implied
+          ? (rowOf(before.key) ??
+            (selectedKey === null ? panel.querySelector<HTMLElement>("[data-page-title]") : heading()))
           : null;
     target?.focus();
   }, [selectedKey, resolved, implied]);

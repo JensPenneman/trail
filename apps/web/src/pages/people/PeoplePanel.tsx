@@ -8,15 +8,19 @@ import type { WhereTheyveBeenPeriod } from "../../people/WhereTheyveBeen";
 import { Button } from "../../ui/Button";
 import { PageHeader } from "../../ui/PageHeader";
 import type { MapViewContent } from "../map/MapViewContent";
+import { me } from "../map/me";
 import { HiddenPeople } from "./HiddenPeople";
 import { PeopleRoot } from "./PeopleRoot";
-import { PersonPanel } from "./PersonPanel";
+import { DevicesLevel } from "./DevicesLevel";
+import { MePage } from "./MePage";
+import { PersonPage } from "./PersonPage";
 import { type SharingActions, shareOfflineId } from "./useSharingActions";
 
 /** Which level of the sidebar is shown: the root, the Hidden list, or someone's page. */
 type PanelLevelKey =
   | { level: "root" }
   | { level: "hidden" }
+  | { level: "devices" }
   | { level: "person"; selected: string };
 
 interface PeoplePanelProps {
@@ -32,7 +36,11 @@ interface PeoplePanelProps {
   /** Someone's page, the Hidden level, and the root, as addresses. */
   linkTo: (person: string) => string;
   hiddenTo: string;
+  /** The root, from a level or a page of its own; Me's page, from its devices. */
   backTo: string;
+  /** Me's devices, a level of Me's page; and Me's page itself. */
+  devicesTo: string;
+  meTo: string;
   name: string;
   content: MapViewContent;
   period: WhereTheyveBeenPeriod | null;
@@ -57,6 +65,8 @@ export function PeoplePanel({
   linkTo,
   hiddenTo,
   backTo,
+  devicesTo,
+  meTo,
   name,
   content,
   period,
@@ -100,12 +110,23 @@ export function PeoplePanel({
           />
         ) : at.level === "hidden" ? (
           <HiddenPeople backTo={backTo} />
-        ) : (
-          <PersonPanel
-            selected={at.selected}
+        ) : at.level === "devices" ? (
+          <DevicesLevel backTo={meTo} devices={devices} now={now} thresholds={thresholds} />
+        ) : at.selected === me ? (
+          <MePage
             backTo={backTo}
+            devicesTo={devicesTo}
             name={name}
             devices={devices}
+            now={now}
+            thresholds={thresholds}
+            content={content}
+            sharing={sharing}
+          />
+        ) : (
+          <PersonPage
+            selected={at.selected}
+            backTo={backTo}
             people={people}
             personColors={personColors}
             now={now}
