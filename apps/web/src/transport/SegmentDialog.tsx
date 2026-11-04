@@ -36,6 +36,8 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
   const underWay = useMoveUnderWay(segment);
   const offlineId = useId();
   const [saved, setSaved] = useState<string | null>(null);
+  // What was last tried (a mode, or null for a reset), for the retry beside a failure.
+  const [tried, setTried] = useState<{ mode: ChosenMode | null } | null>(null);
   const move = segment.kind === "move";
   const mode = segment.mode ?? "stationary";
   const info = transportModeInfo[mode];
@@ -48,6 +50,7 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
 
   const apply = (next: ChosenMode | null) => {
     setSaved(null);
+    setTried({ mode: next });
     change.mutate(next, {
       onSuccess: (response) => {
         const now = response.segment.mode ?? "unknown";
@@ -180,7 +183,22 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
               </>
             )}
             {change.isError ? (
-              <Notice tone="danger" role="alert" title="The mode could not be saved">
+              <Notice
+                tone="danger"
+                role="alert"
+                title="The mode could not be saved"
+                action={
+                  tried === null ? undefined : (
+                    <Button
+                      icon="refresh"
+                      busy={change.isPending}
+                      onClick={() => apply(tried.mode)}
+                    >
+                      Try again
+                    </Button>
+                  )
+                }
+              >
                 <p>{errorMessage(change.error)}</p>
               </Notice>
             ) : null}

@@ -1,4 +1,5 @@
 import { act, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { Segment } from "@trail/contracts/transport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../src/api/queryKeys";
@@ -83,5 +84,40 @@ describe("SegmentDialog and a move that is still going on", () => {
     });
     expect(screen.queryByText("Still under way")).not.toBeInTheDocument();
     expect(picker()).toBeEnabled();
+  });
+
+  it("says a correction is still waiting for processing, beside a retry that saves it", async () => {
+    const move = ride(31 * 60);
+    let calls = 0;
+    mockApi({
+      [`DELETE /api/v1/segments/${move.id}/mode`]: () => {
+        calls += 1;
+        return calls === 1
+          ? {
+              status: 409,
+              body: {
+                error: {
+                  code: "conflict",
+                  message: "Still processing this device's data, try again in a moment.",
+                },
+              },
+            }
+          : {
+              status: 200,
+              body: { segment: { ...move, modeUser: null, mode: move.modeInferred } },
+            };
+      },
+    });
+    show(move);
+    // The fake clock leaves timers alone, so the click and the answer run on real ones.
+    const person = userEvent.setup({ advanceTimers: () => undefined });
+    await person.click(screen.getByRole("button", { name: "Reset to detected" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Still processing this device's data, try again in a moment.",
+    );
+    await person.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText(/^Back to the detected mode/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(calls).toBe(2);
   });
 });
