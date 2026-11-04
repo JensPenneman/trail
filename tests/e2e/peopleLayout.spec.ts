@@ -120,10 +120,7 @@ test("on a phone the sheet scrolls over a map that stays, with its detents", asy
   account,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "iphone", "the sheet is for phones");
-  // The detents are asserted at the position the sheet comes to: with reduced motion it goes
-  // there at once (the product's own path), where a smooth scroll competes with the heading's
-  // focus() that follows a selection and ends wherever the two meet.
-  await page.emulateMedia({ reducedMotion: "reduce" });
+  // Smooth scroll, as most people have it: the half detent is asserted once the sheet has settled.
   await uploadedDevice(page, "Sheet phone", overlandBatch(account.timezone));
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
@@ -206,6 +203,8 @@ test("a press on the map with the sheet at half leaves the sheet where it is", a
   account,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "iphone", "the sheet is for phones");
+  // With reduced motion the sheet goes to its place at once (the product's own path): the press
+  // on the map is judged against a position that does not depend on a scroll in flight.
   await page.emulateMedia({ reducedMotion: "reduce" });
   await uploadedDevice(page, "Half phone", overlandBatch(account.timezone));
   await page.goto("/");
