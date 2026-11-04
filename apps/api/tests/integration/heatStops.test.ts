@@ -94,6 +94,12 @@ beforeAll(async () => {
   await stop(phone, "2026-10-10T08:00:00Z", "2026-10-10T09:00:00Z", far);
   await stop(phone, "2026-10-27T08:00:00Z", "2026-10-27T09:00:00Z", far);
   await stop(foreign, "2026-10-22T08:00:00Z", "2026-10-22T20:00:00Z", home);
+  // A stay stored as two parts of one device (as bounded passes leave a long one), 14:00–16:00
+  // and 16:00–17:30 on the 23rd at the office: one stay of 3.5 h, one visit.
+  await stop(phone, "2026-10-23T14:00:00Z", "2026-10-23T16:00:00Z", office);
+  await stop(phone, "2026-10-23T16:00:00Z", "2026-10-23T17:30:00Z", office);
+  // A stay across the period's end: 22:00 on the 25th to 02:00 on the 26th, 2 h of it counted.
+  await stop(phone, "2026-10-25T22:00:00Z", "2026-10-26T02:00:00Z", far);
 });
 
 afterAll(async () => {
@@ -107,10 +113,13 @@ describe("heat=time and heat=visits", () => {
     expect(answer.period).toEqual(period);
     const [homeX, homeY] = tileOf(home, 18);
     const [officeX, officeY] = tileOf(office, 18);
-    // Home 08:00–11:00 (3 h) and 12:00–13:00 (1 h); the office only from midnight of the 21st (2 h).
+    const [farX, farY] = tileOf(far, 18);
+    // Home 08:00–11:00 (3 h) and 12:00–13:00 (1 h); the office from midnight of the 21st (2 h) and
+    // its two parts of the 23rd as one stay (3.5 h); the far place only until the period's end (2 h).
     expect(answer.cells).toEqual([
+      [officeX, officeY, 2 * 3600 + 3.5 * 3600],
       [homeX, homeY, 4 * 3600],
-      [officeX, officeY, 2 * 3600],
+      [farX, farY, 2 * 3600],
     ]);
   });
 
@@ -118,11 +127,27 @@ describe("heat=time and heat=visits", () => {
     const answer = await parsed({ heat: "visits" });
     const [homeX, homeY] = tileOf(home, 18);
     const [officeX, officeY] = tileOf(office, 18);
+    const [farX, farY] = tileOf(far, 18);
     expect(answer.heat).toBe("visits");
+    // The office: the stay from before the period and the two parts of the 23rd, two visits.
+    // Equal visits: the one with more time first.
     expect(answer.cells).toEqual([
+      [officeX, officeY, 2],
       [homeX, homeY, 2],
-      [officeX, officeY, 1],
+      [farX, farY, 1],
     ]);
+  });
+
+  it("takes the days from the first with data to today when no period is asked", async () => {
+    const answer = heatmapResponseSchema.parse(
+      (
+        await owner
+          .get(`${apiPaths.heatmap}?${query({ ...around, zoom: 13, heat: "time" })}`)
+          .expect(200)
+      ).body,
+    );
+    expect(answer.period?.from).toBe("2026-10-10");
+    expect(answer.period?.to).toBe(new Date().toISOString().slice(0, 10));
   });
 
   it("answers at the cell zoom of the map zoom, tiles at 6, 13 and 20", async () => {
@@ -170,7 +195,8 @@ describe("heat=time and heat=visits", () => {
     });
     expect(found.truncated).toBe(true);
     expect(found.cells).toHaveLength(1);
-    expect(found.cells[0]?.[2]).toBe(4 * 3600 - 3600);
+    // The phone's office: the stay from the 20th clipped (2 h) and the two parts of the 23rd (3.5 h).
+    expect(found.cells[0]?.[2]).toBe(5.5 * 3600);
   });
 
   it("is empty where nothing was, and follows the account's time zone for the days", async () => {
@@ -183,7 +209,7 @@ describe("heat=time and heat=visits", () => {
       const [officeX, officeY] = tileOf(office, 18);
       const answer = await parsed({ heat: "time" });
       expect(answer.cells.find((cell) => cell[0] === officeX && cell[1] === officeY)?.[2]).toBe(
-        4 * 3600,
+        4 * 3600 + 3.5 * 3600,
       );
     } finally {
       await t.ctx.db.execute(

@@ -116,13 +116,22 @@ function unpackTriples(value: unknown): unknown[] | null {
 
 export const unpackLevelPoints = (value: unknown): unknown[] | null => unpackTriples(value);
 
+const maxCellValue = 0xffff_ffff;
+
 /** Heat cells `[x, y, value]` as unsigned 32-bit integers, column after column. */
 export function packHeatCells(cells: HeatmapResponse["cells"]): PackedRows {
   const n = cells.length;
   const columns = new Uint32Array(n * 3);
   for (let index = 0; index < n; index += 1) {
     const cell = cells[index] as readonly [number, number, number];
-    for (let column = 0; column < 3; column += 1) columns[column * n + index] = cell[column] ?? 0;
+    for (let column = 0; column < 3; column += 1) {
+      const value = cell[column] ?? 0;
+      // A typed array would wrap what does not fit: an answer like that is not kept.
+      if (!Number.isInteger(value) || value < 0 || value > maxCellValue) {
+        throw new RangeError(`A heat cell holds ${value}, which does not fit 32 bits`);
+      }
+      columns[column * n + index] = value;
+    }
   }
   return { packed: columns.buffer, n, width: 3 };
 }

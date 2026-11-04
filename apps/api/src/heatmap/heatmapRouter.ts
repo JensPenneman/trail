@@ -53,11 +53,17 @@ export function heatmapRouter(ctx: AppContext): Router {
       });
     } else {
       // Own devices, the account's zone and a period of at most three years, as Insights has them.
-      const scope = await insightsScope(ctx.db, auth, {
-        from: query.from,
-        to: query.to,
-        devices: query.deviceIds,
-      });
+      const scope = await insightsScope(
+        ctx.db,
+        auth,
+        {
+          from: query.from,
+          to: query.to,
+          devices: query.deviceIds,
+        },
+        undefined,
+        { hours: false },
+      );
       const range = { startMs: scope.start.getTime(), endMs: scope.end.getTime() };
       const etag = weakEtag(auth.user.id, apiPaths.heatmap, [
         { bbox: query.bbox, zoom: query.zoom, heat: query.heat, period: scope.period },

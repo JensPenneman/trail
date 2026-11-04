@@ -28,8 +28,10 @@ export function viewCells(
 
 /**
  * The most cells an answer carries (docs/architecture.md §8.2): as many as the viewport can hold,
- * at most `heatCellCeiling`. Cells are 11 to 23 CSS pixels wide, so a screen of 3840 × 2160 holds
- * up to some 65 000; a viewport that touches fewer cells than that cannot be truncated.
+ * at most `heatCellCeiling`. Cells are 11.3 to 22.6 CSS pixels wide, so a screen of 3840 × 2160
+ * holds up to some 64 800 at the narrowest and the whole cells at its edges add a few hundred: the
+ * ceiling just fits, and where it does not the busiest cells are kept (`truncated`). A viewport
+ * that touches fewer cells than the ceiling cannot be truncated.
  */
 export function heatCellCap(
   bbox: readonly [number, number, number, number],

@@ -1,4 +1,4 @@
-import { lastInsightsDay } from "@trail/contracts/insights";
+import { lastInsightsDay } from "@trail/contracts/period";
 import { describe, expect, it } from "vitest";
 import { HttpError } from "../../src/http/httpError";
 import { hourParts } from "../../src/insights/hourParts";

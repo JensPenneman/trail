@@ -5,7 +5,7 @@ import { useFormatter } from "../../../format/useFormatter";
 import { boundsOf } from "../../../map/boundsOf";
 import { heatmapParamsFor } from "../../../map/heatmapParamsFor";
 import { heatScale } from "../../../map/heatScale";
-import { cellCentre } from "../../../map/heatTiles";
+import { heatPlaces } from "../../../map/heatTiles";
 import type { Bounds, MapHeat, MapViewState } from "../../../map/mapTypes";
 import { useDays } from "../../../queries/useDays";
 import { useHeatmap } from "../../../queries/useHeatmap";
@@ -103,7 +103,6 @@ export function useHeatView({
     [devices.data],
   );
   const shown = active ? heatmap.data : undefined;
-  const cells = shown?.cells ?? [];
   // One scale for the squares on the map and the legend, from the cells in view.
   const heat = useMemo<MapHeat | null>(
     () =>
@@ -121,20 +120,15 @@ export function useHeatView({
   useEffect(() => {
     if (!framesCamera || dataBounds !== null || heatmap.data === undefined) return;
     if (heatmap.data.cells.length === 0) return;
-    const { cells: found, cellZoom } = heatmap.data;
-    setDataBounds(boundsOf(found.map(([x, y]) => cellCentre(x, y, cellZoom))));
+    setDataBounds(boundsOf(heatPlaces(heatmap.data).map(({ lon, lat }) => [lon, lat] as const)));
   }, [framesCamera, heatmap.data, dataBounds]);
   // The five busiest cells, as the places they centre on.
   const busiest = useMemo(
     () =>
-      [...cells]
-        .sort((a, b) => b[2] - a[2])
-        .slice(0, 5)
-        .map(([x, y, count]) => {
-          const [lon, lat] = cellCentre(x, y, shown?.cellZoom ?? 0);
-          return { lon, lat, count };
-        }),
-    [cells, shown?.cellZoom],
+      shown === undefined
+        ? []
+        : heatPlaces(shown, 5).map(({ lon, lat, value }) => ({ lon, lat, count: value })),
+    [shown],
   );
 
   if (!active) return inactiveView;

@@ -132,10 +132,11 @@ export function useMapSearch(): MapSearchControls {
     [update],
   );
   const clearLens = useCallback(() => update((current) => withoutLens(current), true), [update]);
-  const releaseCamera = useCallback(
-    () => update((current) => (current.has("c") ? withoutCamera(current) : current), true),
-    [update],
-  );
+  const releaseCamera = useCallback(() => {
+    // The address as it is now: a camera already dropped is not dropped again.
+    if (!latest.current.has("c")) return;
+    update((current) => withoutCamera(current), true);
+  }, [update]);
   return {
     search,
     today,
