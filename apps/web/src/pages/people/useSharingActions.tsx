@@ -2,11 +2,16 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import type { Person } from "@trail/contracts/person";
 import type { OutgoingShare } from "@trail/contracts/share";
 import { type ReactNode, useState } from "react";
+import { useReadOnly } from "../../app/useReadOnly";
 import { useHidePerson } from "../../queries/useHidePerson";
 import { useShares } from "../../queries/useShares";
 import { ShareDialog, type ShareDialogMode } from "../../sharing/ShareDialog";
 import { StopShareDialog } from "../../sharing/StopShareDialog";
+import { OfflineReason } from "../../ui/OfflineReason";
 import { useAnnounce } from "../../ui/useAnnounce";
+
+/** The id of the sentence that says why sharing cannot be changed offline. */
+export const shareOfflineId = "share-offline-reason";
 
 export interface SharingActions {
   shares: UseQueryResult<OutgoingShare[]>;
@@ -20,6 +25,8 @@ export interface SharingActions {
   hide: (person: Person, onHidden: () => void) => void;
   hiding: (shareId: string) => boolean;
   hideError: unknown;
+  /** Why sharing is off while offline, for the controls it describes; null online. */
+  offlineReason: ReactNode;
   /** The two dialogs, to render once. */
   dialogs: ReactNode;
 }
@@ -32,6 +39,7 @@ export function useSharingActions(people: readonly Person[]): SharingActions {
   const shares = useShares();
   const hideMutation = useHidePerson();
   const announce = useAnnounce();
+  const readOnly = useReadOnly();
   const [dialog, setDialog] = useState<ShareDialogMode | null>(null);
   const [stopping, setStopping] = useState<OutgoingShare | null>(null);
   const outgoing = shares.data ?? [];
@@ -60,6 +68,11 @@ export function useSharingActions(people: readonly Person[]): SharingActions {
       ),
     hiding: (shareId) => hideMutation.isPending && hideMutation.variables.shareId === shareId,
     hideError: hideMutation.isError ? hideMutation.error : null,
+    offlineReason: readOnly ? (
+      <OfflineReason id={shareOfflineId}>
+        You’re offline: whom you share with can be changed once you reconnect.
+      </OfflineReason>
+    ) : null,
     dialogs: (
       <>
         <ShareDialog mode={dialog} onClose={() => setDialog(null)} suggestions={suggestions} />

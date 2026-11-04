@@ -255,11 +255,6 @@ export function useLiveView({
     mine:
       !meSelected || allDevices.length === 0 ? null : (
         <>
-          {own === null ? (
-            <p className="muted">
-              The device filter in Map options leaves out all of your devices.
-            </p>
-          ) : null}
           {tracks.isError ? (
             <ErrorState
               title="Today’s tracks could not be loaded"

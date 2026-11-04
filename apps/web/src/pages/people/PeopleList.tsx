@@ -23,7 +23,7 @@ import { useAnnounce } from "../../ui/useAnnounce";
 import { ConnectFirstPhone } from "./MeDetails";
 import { MeRow, PersonRow } from "./PersonRow";
 import { sharingSummary } from "./sharingSummary";
-import type { SharingActions } from "./useSharingActions";
+import { type SharingActions, shareOfflineId } from "./useSharingActions";
 import "./PeopleList.css";
 
 interface PeopleListProps {
@@ -213,7 +213,7 @@ export function PeopleList({
               variant="primary"
               icon="plus"
               disabled={readOnly}
-              aria-describedby={readOnly ? offlineReasonId : undefined}
+              aria-describedby={readOnly ? shareOfflineId : undefined}
               onClick={() => sharing.openShare()}
             >
               Share my location

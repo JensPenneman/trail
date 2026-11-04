@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { DocumentTitle } from "../../app/DocumentTitle";
-import { offlineReasonId, useReadOnly } from "../../app/useReadOnly";
+import { useReadOnly } from "../../app/useReadOnly";
 import { useSessionUser } from "../../app/useSessionUser";
 import { useDeviceColors } from "../../devices/useDeviceColors";
 import { LazyTrailMap } from "../../map/LazyTrailMap";
@@ -38,7 +38,7 @@ import { ViewSwitch } from "../map/ViewSwitch";
 import { PeopleList } from "./PeopleList";
 import { PersonPanel } from "./PersonPanel";
 import { usePanelFocus } from "./usePanelFocus";
-import { useSharingActions } from "./useSharingActions";
+import { shareOfflineId, useSharingActions } from "./useSharingActions";
 import "./PeoplePage.css";
 
 const defaultThresholds = { liveMinutes: 15, staleHours: 12 };
@@ -244,7 +244,7 @@ export function PeoplePage() {
                   icon="plus"
                   iconOnly
                   disabled={readOnly}
-                  aria-describedby={readOnly ? offlineReasonId : undefined}
+                  aria-describedby={readOnly ? shareOfflineId : undefined}
                   onClick={() => sharing.openShare()}
                 >
                   Share my location
@@ -252,6 +252,7 @@ export function PeoplePage() {
               )
             }
           />
+          {sharing.offlineReason}
           <ViewSwitch view={view} views={viewsFor(heatOffered)} onChange={switchView} />
         </div>
         <div className="map-page__head">

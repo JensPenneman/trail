@@ -27,7 +27,7 @@ interface MyDevicesProps {
 export function MyDevices({ devices, now, thresholds }: MyDevicesProps) {
   const format = useFormatter();
   return (
-    <div className="person-details">
+    <section className="person-details" aria-label="Your devices">
       <div className="person-details__part">
         <h3 className="person-details__title">Your devices</h3>
         <PlainList className="person-details__devices">
@@ -90,6 +90,6 @@ export function MyDevices({ devices, now, thresholds }: MyDevicesProps) {
         <span>Uploads, activity and settings of your devices</span>
         <Icon name="chevronRight" />
       </Link>
-    </div>
+    </section>
   );
 }

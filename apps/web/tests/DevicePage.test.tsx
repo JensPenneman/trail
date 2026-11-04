@@ -29,13 +29,13 @@ describe("Settings › Devices › a device", () => {
     expect(fact("App")).toHaveTextContent("Overland");
     expect(fact("Points")).toHaveTextContent("1,066 today · 1,240 in 24 h · 184,322 in total");
     expect(fact("Access token")).toHaveTextContent("…q7Zx");
-    // What the People page's Live view had of it: the hours of activity and the quick toggle.
+    // What the People page's Live view had of it: the hours of activity.
     expect(
       await screen.findByRole("img", {
         name: /iPhone 16, last 48 hours: 40 points in 1 of 48 hours, 3 uploads\./,
       }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Now:" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Now:" })).toBeNull();
     expect(
       screen.getByRole("switch", { name: "Tell me when this device goes silent" }),
     ).toBeChecked();
