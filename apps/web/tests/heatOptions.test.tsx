@@ -254,7 +254,7 @@ describe("the lens chip", () => {
     mockApi(heatRoutes());
     const person = userEvent.setup();
     const { router } = renderPage(<PeoplePage />, {
-      url: "/?view=heat&person=me&heat=time&from=2026-10-01&to=2026-10-31&devices=" + ids.phone,
+      url: `/?view=heat&person=me&heat=time&from=2026-10-01&to=2026-10-31&devices=${ids.phone}`,
       user,
     });
     expect(await screen.findByText("October 2026")).toBeInTheDocument();
