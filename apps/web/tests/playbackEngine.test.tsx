@@ -33,14 +33,20 @@ let latest: ReturnType<typeof usePlayerState> | null = null;
 /** The engine and the keys over a player, with what the keys must leave alone beside it. */
 function Harness({
   world = baseWorld,
+  worldOf,
   reducedMotion = false,
 }: {
   world?: PlaybackWorld;
+  /** A world that follows the day the clock is in, as the page's does. */
+  worldOf?: (day: string) => PlaybackWorld;
   reducedMotion?: boolean;
 }) {
   const player = usePlayerState();
   latest = player;
-  usePlayerEngine(player, { world, reducedMotion });
+  usePlayerEngine(player, {
+    world: worldOf === undefined ? world : worldOf(player.state.day),
+    reducedMotion,
+  });
   usePlayerKeys(player);
   return (
     <div>
@@ -181,20 +187,23 @@ describe("the clock", () => {
   });
 
   it("goes through a day without moves, cached already, to the move of the day after", () => {
-    // Tuesday has moves; Wednesday is cached and has none; Thursday's tracks are not in yet.
+    // Tuesday has moves; Wednesday has none and Thursday has one; every day is in already.
     const days = [tue, "2026-11-04", thu];
-    const world: PlaybackWorld = { ...baseWorld, days, loaded: (day) => day !== thu };
     const thursdayMoves = [{ from: at(thu, 7), to: at(thu, 8) }];
-    const { rerender } = render(<Harness world={world} />);
+    const worldOf = (day: string): PlaybackWorld => ({
+      ...baseWorld,
+      days,
+      loaded: () => true,
+      moves: day === thu ? thursdayMoves : day === tue ? baseWorld.moves : [],
+    });
+    render(<Harness worldOf={worldOf} />);
     act(() => controls().enter(tue, at(tue, 6)));
     act(() => controls().pause());
     act(() => controls().seek(at(tue, 18, 30)));
     act(() => controls().stepMove(1));
-    // Wednesday is in and has no move after the clock: the press goes on by itself, and waits
-    // for Thursday's tracks.
-    expect(read().day).toBe(thu);
-    rerender(<Harness world={{ ...world, loaded: () => true, moves: thursdayMoves }} />);
-    expect(read().clock).toBe(at(thu, 7));
+    // Wednesday has no move: the press goes on to Thursday by itself and lands on its move,
+    // with no rerender from outside.
+    expect(read()).toMatchObject({ day: thu, clock: at(thu, 7) });
   });
 
   it("finishes a step to another day's move once that day is in", () => {

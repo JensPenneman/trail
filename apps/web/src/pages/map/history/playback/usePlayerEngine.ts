@@ -25,6 +25,9 @@ export function usePlayerEngine(
 ): void {
   usePublishedWorld(player, world);
   const { status, day, pendingMove } = player.state;
+  // A day without moves steps on to the next with the same direction pending, and that day may
+  // be loaded already: nothing but the day changes, so the effect's key names it.
+  const pendingKey = pendingMove === null ? null : `${pendingMove}:${day}`;
   const { tick, dayLoaded, resolveMove } = player.controls;
   const loaded = world.loaded(day);
 
@@ -54,8 +57,6 @@ export function usePlayerEngine(
 
   // A step to another day's move lands on it once that day's moves are in.
   useEffect(() => {
-    if (pendingMove !== null && loaded) resolveMove();
-    // `day` too: a day without moves steps on to the next, which may be in already, and `loaded`
-    // and `pendingMove` are then the same as before.
-  }, [pendingMove, loaded, resolveMove]);
+    if (pendingKey !== null && loaded) resolveMove();
+  }, [pendingKey, loaded, resolveMove]);
 }

@@ -1,5 +1,6 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { NowStrip } from "../src/pages/map/history/playback/NowStrip";
 import { PlayerBar } from "../src/pages/map/history/playback/PlayerBar";
@@ -34,6 +35,33 @@ function bar(props: Partial<Parameters<typeof PlayerBar>[0]> = {}) {
     { user },
   );
   return { ...handlers, view };
+}
+
+/** One bar whose clock runs on: the same element, rerendered. */
+function Running() {
+  const [now, setNow] = useState(clock);
+  return (
+    <>
+      <PlayerBar
+        status="playing"
+        clock={now}
+        start={start}
+        end={start + 20 * 3600}
+        rate={5}
+        skipStops={false}
+        onToggle={() => undefined}
+        onPreviousMove={() => undefined}
+        onNextMove={() => undefined}
+        onRate={() => undefined}
+        onSkipStops={() => undefined}
+        onSeek={() => undefined}
+        onExit={() => undefined}
+      />
+      <button type="button" onClick={() => setNow((value) => value + 3600)}>
+        Later
+      </button>
+    </>
+  );
 }
 
 describe("the player bar", () => {
@@ -100,18 +128,17 @@ describe("the player bar", () => {
     expect(Number(slider.getAttribute("max"))).toBe((clock + 7200) / 60);
   });
 
-  it("reads the moment it is at when it takes focus mid-play, not the last one spoken", () => {
-    const { view } = bar({ status: "playing" });
+  it("reads the moment it is at when it takes focus mid-play, not the last one spoken", async () => {
+    renderPage(<Running />, { user });
     const slider = screen.getByRole("slider", { name: "Position at" });
-    const spokenAt = slider.getAttribute("aria-valuetext");
-    view.rerender(<span />);
-    expect(spokenAt).toContain("14:05");
-    bar({ status: "playing", clock: clock + 3600 });
-    const later = screen.getByRole("slider", { name: "Position at" });
-    // Still the first moment's words while the clock runs …
-    expect(later.getAttribute("aria-valuetext")).toContain("15:05");
-    fireEvent.focus(later);
-    expect(later.getAttribute("aria-valuetext")).toContain("15:05");
+    expect(slider.getAttribute("aria-valuetext")).toContain("14:05");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Later" }));
+    // The readout moved on; what the slider says stays at the last moment spoken …
+    expect(screen.getByText("Tue 3 Nov · 15:05")).toBeInTheDocument();
+    expect(slider.getAttribute("aria-valuetext")).toContain("14:05");
+    // … until it takes focus, when it says where it is.
+    fireEvent.focus(slider);
+    expect(slider.getAttribute("aria-valuetext")).toContain("15:05");
   });
 
   it("seeks in seconds, and keeps the slider inside while the end is not known", async () => {
