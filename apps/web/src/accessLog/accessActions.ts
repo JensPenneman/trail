@@ -33,6 +33,7 @@ const actionLabels: Readonly<Record<string, string>> = {
   getInsightsRoads: "Roads you travel",
   getInsightsPlaces: "Places you spent time at",
   getInsightsPlace: "A place you spent time at",
+  getInsightsWays: "Named roads you travel",
   listShares: "Your shares",
   createShare: "Started a share",
   updateShare: "Changed a share",
