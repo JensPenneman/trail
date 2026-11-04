@@ -1,7 +1,14 @@
 import { expect } from "@playwright/test";
 import { publicConfigSchema } from "@trail/contracts/config";
 import { expectAccessible } from "./support/expectAccessible";
-import { localDate, mapView, openDeviceFilter, openGroup, openMapOptions, openPeriodPicker } from "./support/mapControls";
+import {
+  localDate,
+  mapView,
+  openDeviceFilter,
+  openGroup,
+  openMapOptions,
+  openPeriodPicker,
+} from "./support/mapControls";
 import { overlandBatch } from "./support/overlandBatch";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";

@@ -48,7 +48,10 @@ export async function openPeriodPicker(page: Page): Promise<void> {
  * "Summary", a person's devices): its button, pressed if the group is closed.
  */
 export async function openGroup(page: Page, name: string | RegExp): Promise<void> {
-  const button = page.getByRole("button", { name, ...(typeof name === "string" ? { exact: true } : {}) });
+  const button = page.getByRole("button", {
+    name,
+    ...(typeof name === "string" ? { exact: true } : {}),
+  });
   await expect(button).toBeVisible();
   if ((await button.getAttribute("aria-expanded")) === "false") await button.click();
   await expect(button).toHaveAttribute("aria-expanded", "true");

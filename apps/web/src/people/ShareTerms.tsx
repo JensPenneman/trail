@@ -23,7 +23,9 @@ export function ShareTerms({ person, now }: { person: Person; now: number }) {
       </div>
       <div>
         <dt>Until</dt>
-        <dd>{share.expiresAt === null ? "No end set" : expiryText(share.expiresAt, format, now)}</dd>
+        <dd>
+          {share.expiresAt === null ? "No end set" : expiryText(share.expiresAt, format, now)}
+        </dd>
       </div>
       <div>
         <dt>Since</dt>

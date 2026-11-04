@@ -82,7 +82,7 @@ describe("the People page's list", () => {
     ).toEqual([`/?person=${ids.ana}`, `/?person=${ids.bob}`]);
     // Nothing but the people: no summary, no footer; what the view says of itself is not shown.
     expect(screen.queryByRole("link", { name: /^You share with/ })).toBeNull();
-    expect(screen.getByText(/^Where everyone is now/).closest(".visually-hidden")).not.toBeNull();
+    expect(screen.queryByText(/^Where everyone is now/)).toBeNull();
   });
 
   it("opens Me's page in place of the list: the day so far, the rows, and the way back", async () => {
@@ -97,17 +97,17 @@ describe("the People page's list", () => {
     const heading = within(me).getByRole("heading", { level: 2, name: "Me" });
     expect(heading).toHaveFocus();
     expect(within(me).getAllByText("Standing still").length).toBeGreaterThan(0);
-    expect(within(me).getByText("2 devices")).toBeInTheDocument();
+    expect(await within(me).findByText("2 devices")).toBeInTheDocument();
     // The Timeline group is open, the devices are a row of their own, Sharing leads to Settings.
     expect(within(me).getByRole("button", { name: "Timeline" })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
-    expect(within(me).getByRole("link", { name: /^Your devices/ })).toHaveAttribute(
+    expect(await within(me).findByRole("link", { name: /^Your devices/ })).toHaveAttribute(
       "href",
       "/?person=me&list=devices",
     );
-    expect(within(me).getByRole("link", { name: /^Sharing/ })).toHaveAttribute(
+    expect(await within(me).findByRole("link", { name: /^Sharing/ })).toHaveAttribute(
       "href",
       "/settings/sharing",
     );
@@ -127,7 +127,7 @@ describe("the People page's list", () => {
     const person = userEvent.setup();
     const { router } = renderPage(<PeoplePage />, { url: "/?person=me", user });
     const me = await screen.findByRole("region", { name: "Me" });
-    await person.click(within(me).getByRole("link", { name: /^Your devices/ }));
+    await person.click(await within(me).findByRole("link", { name: /^Your devices/ }));
     expect(router.state.location.search).toBe("?person=me&list=devices");
     expect(await screen.findByRole("heading", { level: 2, name: "Your devices" })).toHaveFocus();
     const devices = screen.getByRole("region", { name: "Your devices" });

@@ -46,7 +46,9 @@ export function usePanelFocus(
         ? heading()
         : before.key !== null && before.resolved && !before.implied
           ? (rowOf(before.key) ??
-            (selectedKey === null ? panel.querySelector<HTMLElement>("[data-page-title]") : heading()))
+            (selectedKey === null
+              ? panel.querySelector<HTMLElement>("[data-page-title]")
+              : heading()))
           : null;
     target?.focus();
   }, [selectedKey, resolved, implied]);

@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { paramsOf } from "./support/addressParams";
 import { ana, bob, ids, tracks, user } from "./support/fixtures";
-import { openGroup } from "./support/openGroup";
 import { mockApi } from "./support/mockApi";
+import { openGroup } from "./support/openGroup";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
 
@@ -57,9 +57,7 @@ describe("the overview, nobody selected", () => {
     const api = mockApi(withHistoryOfAna());
     renderPage(<PeoplePage />, { user });
     await waitFor(() => expect(map()).toHaveAttribute("data-positions", "4"));
-    expect(map()).toHaveAccessibleName(
-      "Map of where everyone is now: you, Ana Bell and bob. The same is said in the list.",
-    );
+    expect(map()).toHaveAccessibleName("Map of where everyone is now: you, Ana Bell and bob.");
     expect(map()).toHaveAttribute("data-tracks", "0");
     expect(map()).toHaveAttribute("data-transport", "0");
     expect(screen.queryByRole("region", { name: "Your day so far" })).toBeNull();
@@ -349,7 +347,9 @@ describe("History's overview and selections", () => {
       expect(screen.queryByRole("region", { name }), name).not.toBeInTheDocument();
     }
     expect(screen.queryByRole("group", { name: "Detail of the tracks" })).toBeNull();
-    expect(map()).toHaveAccessibleName(/^Map of Ana Bell’s tracks for .* Their totals are on their page/);
+    expect(map()).toHaveAccessibleName(
+      /^Map of Ana Bell’s tracks for .* Their totals are on their page/,
+    );
     const asked = new Set(api.calls.map((call) => call.path));
     for (const path of [
       "/api/tracks",

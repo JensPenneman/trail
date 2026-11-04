@@ -71,7 +71,6 @@ export function PersonPage({
     open: opened[title] === true,
     onOpenChange: (open: boolean) => setOpened((current) => ({ ...current, [title]: open })),
   });
-  const person = people.data?.find((candidate) => candidate.userId === selected);
   const back = (
     <Link to={backTo} className="back-link" preventScrollReset>
       <Icon name="chevronLeft" className="back-link__icon" />
@@ -80,43 +79,37 @@ export function PersonPage({
       </span>
     </Link>
   );
-  if (person === undefined) {
-    return (
-      <section className="person-panel" aria-labelledby={titleId}>
-        {back}
-        {people.isError ? (
-          <ErrorState
-            title="People could not be loaded"
-            error={people.error}
-            onRetry={() => void people.refetch()}
-            retrying={people.isFetching}
-          />
-        ) : (
-          <LoadingBlock label="Loading">
-            <Skeleton height="4rem" />
-            <Skeleton height="8rem" />
-          </LoadingBlock>
-        )}
-      </section>
-    );
-  }
-  const share = sharing.shareWith(person);
-  const track: PersonTrackState | null = content.personTracks.get(person.userId) ?? null;
-  const where = primaryDevice(person.devices)?.location ?? null;
-  const name = person.displayName;
-  const devicesTitle = `${person.devices.length === 1 ? "Device" : "Devices"} (${format.count(person.devices.length)}) · What ${name} shares with you`;
+  const person = people.data?.find((candidate) => candidate.userId === selected);
+  // One tree whether they are loaded or not, so the back link is not remounted when they load.
+  const loadingOrError = people.isError ? (
+    <ErrorState
+      title="People could not be loaded"
+      error={people.error}
+      onRetry={() => void people.refetch()}
+      retrying={people.isFetching}
+    />
+  ) : (
+    <LoadingBlock label="Loading">
+      <Skeleton height="4rem" />
+      <Skeleton height="8rem" />
+    </LoadingBlock>
+  );
+  const body = (found: Person) => {
+    const share = sharing.shareWith(found);
+    const track: PersonTrackState | null = content.personTracks.get(found.userId) ?? null;
+    const where = primaryDevice(found.devices)?.location ?? null;
+    const name = found.displayName;
+    const devicesTitle = `${found.devices.length === 1 ? "Device" : "Devices"} (${format.count(found.devices.length)}) · What ${name} shares with you`;
 
-  return (
-    <section className="person-panel" aria-labelledby={titleId}>
-      <SectionLevel value={3}>
-        {back}
+    return (
+      <>
         <PersonSummary
           title={name}
           titleId={titleId}
           level={2}
           {...personSummaryProps(
-            person,
-            personColors.slot(person.userId),
+            found,
+            personColors.slot(found.userId),
             now,
             thresholds.liveMinutes,
             format,
@@ -125,7 +118,7 @@ export function PersonPage({
         {foot}
         {period === null ? null : (
           <WhereTheyveBeen
-            person={person}
+            person={found}
             period={period}
             track={track}
             titleId={titleId}
@@ -138,8 +131,8 @@ export function PersonPage({
           </SettingsDisclosureGroup>
         )}
         <SettingsDisclosureGroup title={devicesTitle} {...group("Devices")}>
-          <PersonDevices person={person} now={now} liveMinutes={thresholds.liveMinutes} />
-          <ShareTerms person={person} now={now} />
+          <PersonDevices person={found} now={now} liveMinutes={thresholds.liveMinutes} />
+          <ShareTerms person={found} now={now} />
         </SettingsDisclosureGroup>
 
         {sharing.hideError === null ? null : (
@@ -166,7 +159,7 @@ export function PersonPage({
             <SettingsRow
               kind="action"
               label={`Share back with ${name}`}
-              onClick={() => sharing.openShare(person.email)}
+              onClick={() => sharing.openShare(found.email)}
             />
           ) : (
             <SettingsRow
@@ -187,10 +180,19 @@ export function PersonPage({
             kind="action"
             danger
             label={`Hide ${name}`}
-            busy={sharing.hiding(person.share.id)}
-            onClick={() => sharing.hide(person, () => onLeave(person.userId))}
+            busy={sharing.hiding(found.share.id)}
+            onClick={() => sharing.hide(found, () => onLeave(found.userId))}
           />
         </SettingsGroup>
+      </>
+    );
+  };
+
+  return (
+    <section className="person-panel" aria-labelledby={titleId}>
+      <SectionLevel value={3}>
+        {back}
+        {person === undefined ? loadingOrError : body(person)}
       </SectionLevel>
     </section>
   );

@@ -2,8 +2,8 @@ import { expect } from "@playwright/test";
 import { heatmapResponseSchema } from "@trail/contracts/heatmap";
 import { fact } from "./support/deviceCard";
 import { heatPixels } from "./support/heatPixels";
-import { overlandBatch } from "./support/overlandBatch";
 import { openGroup } from "./support/mapControls";
+import { overlandBatch } from "./support/overlandBatch";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
 

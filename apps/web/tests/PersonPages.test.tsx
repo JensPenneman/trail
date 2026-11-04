@@ -18,7 +18,7 @@ afterEach(() => {
 
 const view = (name: string) =>
   within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", { name });
-const me = () => screen.findByRole("region", { name: "Me", exact: true });
+const me = () => screen.findByRole("region", { name: "Me" });
 const expanded = (button: HTMLElement) => button.getAttribute("aria-expanded") === "true";
 
 describe("Me's page", () => {
@@ -51,10 +51,9 @@ describe("Me's page", () => {
     expect(await screen.findByRole("region", { name: "Your day so far" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Summary, visits and trips" })).toBeNull();
     await person.click(view("History"));
-    expect(await screen.findByRole("button", { name: "Summary, visits and trips" })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    expect(
+      await screen.findByRole("button", { name: "Summary, visits and trips" }),
+    ).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("region", { name: "Visits" })).toBeInTheDocument();
     // Timeline stays open too: closing it in History closes it in Live.
     await person.click(screen.getByRole("button", { name: "Timeline" }));
@@ -86,10 +85,10 @@ describe("Me's page", () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { url: "/?person=me", user });
     const page = await me();
-    const devices = within(page).getByRole("link", { name: /^Your devices/ });
+    const devices = await within(page).findByRole("link", { name: /^Your devices/ });
     expect(devices).toHaveAccessibleName("Your devices 2");
     expect(devices).toHaveAttribute("href", "/?person=me&list=devices");
-    const sharing = within(page).getByRole("link", { name: /^Sharing/ });
+    const sharing = await within(page).findByRole("link", { name: /^Sharing/ });
     expect(sharing).toHaveAccessibleName("Sharing You share with 1 person");
     expect(sharing).toHaveAttribute("href", "/settings/sharing");
   });
@@ -98,22 +97,20 @@ describe("Me's page", () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { url: "/?person=me", user });
     const page = await me();
-    expect(within(page).getByText("2 devices")).toBeInTheDocument();
+    expect(await within(page).findByText("2 devices")).toBeInTheDocument();
     expect(within(page).queryByText("iPhone 16")).toBeNull();
   });
 });
 
 describe("someone else's page", () => {
-  it("folds their summary and their devices, and has the rows of what can be done", async () => {
+  it("folds their devices and what they share, and has the rows of what can be done", async () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
     renderPage(<PeoplePage />, { url: `/?person=${ids.ana}&view=history`, user });
-    const page = await screen.findByRole("region", { name: "Ana Bell", exact: true });
-    const summary = within(page).getByRole("button", { name: "Summary" });
+    const page = await screen.findByRole("region", { name: "Ana Bell" });
     const devices = within(page).getByRole("button", {
       name: "Device (1) · What Ana Bell shares with you",
     });
-    expect(expanded(summary)).toBe(false);
     expect(expanded(devices)).toBe(false);
     expect(within(page).queryByText("Ana’s iPhone")).toBeNull();
     await person.click(devices);
@@ -131,12 +128,14 @@ describe("someone else's page", () => {
       within(page).getByRole("button", { name: "Stop sharing your location with Ana Bell" }),
     ).toBeInTheDocument();
     expect(within(page).getByRole("button", { name: "Hide Ana Bell" })).toBeInTheDocument();
+    // Ana shares live only: there is no history, so no Summary group.
+    expect(within(page).queryByRole("button", { name: "Summary" })).toBeNull();
   });
 
   it("has no Summary group in Live, where there is no summary", async () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { url: `/?person=${ids.ana}`, user });
-    const page = await screen.findByRole("region", { name: "Ana Bell", exact: true });
+    const page = await screen.findByRole("region", { name: "Ana Bell" });
     expect(within(page).queryByRole("button", { name: "Summary" })).toBeNull();
     expect(
       within(page).getByRole("button", { name: "Device (1) · What Ana Bell shares with you" }),
@@ -146,7 +145,7 @@ describe("someone else's page", () => {
   it("offers to share back to someone one does not share with", async () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { url: `/?person=${ids.bob}`, user });
-    const page = await screen.findByRole("region", { name: "bob", exact: true });
+    const page = await screen.findByRole("region", { name: "bob" });
     await waitFor(() =>
       expect(within(page).getByRole("button", { name: "Share back with bob" })).toBeInTheDocument(),
     );

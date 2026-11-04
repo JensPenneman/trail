@@ -9,10 +9,10 @@ import { Button } from "../../ui/Button";
 import { PageHeader } from "../../ui/PageHeader";
 import type { MapViewContent } from "../map/MapViewContent";
 import { me } from "../map/me";
-import { HiddenPeople } from "./HiddenPeople";
-import { PeopleRoot } from "./PeopleRoot";
 import { DevicesLevel } from "./DevicesLevel";
+import { HiddenPeople } from "./HiddenPeople";
 import { MePage } from "./MePage";
+import { PeopleRoot } from "./PeopleRoot";
 import { PersonPage } from "./PersonPage";
 import { type SharingActions, shareOfflineId } from "./useSharingActions";
 

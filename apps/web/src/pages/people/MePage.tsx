@@ -13,8 +13,8 @@ import { SectionLevel } from "../../ui/SectionTitle";
 import type { MapViewContent } from "../map/MapViewContent";
 import { MeDetails } from "./MeDetails";
 import { sharingSummary } from "./sharingSummary";
-import type { SharingActions } from "./useSharingActions";
 import { useMeSummary } from "./useMeSummary";
+import type { SharingActions } from "./useSharingActions";
 
 interface MePageProps {
   /** The root: the page's address without the selection. */
@@ -65,8 +65,7 @@ export function MePage({
   );
   const count = devices.data?.length;
   const shares = sharing.shares.data;
-  const sharesLine =
-    shares === undefined ? undefined : sharingSummary(shares, format.count);
+  const sharesLine = shares === undefined ? undefined : sharingSummary(shares, format.count);
 
   return (
     <section className="person-panel" aria-labelledby={titleId}>
@@ -97,10 +96,7 @@ export function MePage({
           <section aria-label={content.timelineLabel}>{timelineGroup}</section>
         )}
         {content.meGroup === null ? null : (
-          <SettingsDisclosureGroup
-            title={content.meGroupTitle}
-            {...group(content.meGroupTitle)}
-          >
+          <SettingsDisclosureGroup title={content.meGroupTitle} {...group(content.meGroupTitle)}>
             {content.meGroup}
           </SettingsDisclosureGroup>
         )}

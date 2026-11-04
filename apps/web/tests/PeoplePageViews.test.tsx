@@ -5,8 +5,8 @@ import { basemapMissingNotice } from "../src/map/useMapStyle";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { paramsOf } from "./support/addressParams";
 import { config, ids, user } from "./support/fixtures";
-import { openGroup } from "./support/openGroup";
 import { mockApi } from "./support/mockApi";
+import { openGroup } from "./support/openGroup";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
 
@@ -261,6 +261,7 @@ describe("switching views", () => {
     await person.click(screen.getByRole("button", { name: "Previous day" }));
 
     await person.click(view("Heat"));
+    await openGroup(person, "Heat: totals, busiest places");
     expect(await screen.findByText("184,322")).toBeInTheDocument();
     expect(map()).toBe(canvas);
     await waitFor(() => expect(map()).toHaveAttribute("data-heat", "2"));

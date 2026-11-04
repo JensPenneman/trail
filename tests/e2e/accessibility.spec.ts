@@ -1,8 +1,8 @@
 import { expect, type Page } from "@playwright/test";
 import { expectAccessible } from "./support/expectAccessible";
+import { openGroup } from "./support/mapControls";
 import { overlandBatch } from "./support/overlandBatch";
 import { sharingFriend } from "./support/sharingFriend";
-import { openGroup } from "./support/mapControls";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
 

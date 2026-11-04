@@ -1,8 +1,8 @@
 import { expect } from "@playwright/test";
 import { daysResponseSchema } from "@trail/contracts/stats";
 import { tracksResponseSchema } from "@trail/contracts/track";
-import { overlandBatch } from "./support/overlandBatch";
 import { openGroup } from "./support/mapControls";
+import { overlandBatch } from "./support/overlandBatch";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
 
