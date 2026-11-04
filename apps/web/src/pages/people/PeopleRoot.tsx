@@ -1,7 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { Person } from "@trail/contracts/person";
-import { useEffect, useId, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo } from "react";
 import { useSessionUser } from "../../app/useSessionUser";
 import { fold } from "../../format/fold";
 import { useFormatter } from "../../format/useFormatter";
@@ -33,6 +33,11 @@ interface PeopleRootProps {
   linkTo: (person: string) => string;
   /** The Hidden level. */
   hiddenTo: string;
+  /** What one is searching the people for, kept by the page across its levels. */
+  query: string;
+  onQuery: (query: string) => void;
+  /** History's slider on phones: right under the Me row, so the sheet's peek does not hold it. */
+  foot: ReactNode;
 }
 
 /**
@@ -50,6 +55,9 @@ export function PeopleRoot({
   thresholds,
   linkTo,
   hiddenTo,
+  query,
+  onQuery,
+  foot,
 }: PeopleRootProps) {
   const user = useSessionUser();
   const format = useFormatter();
@@ -62,7 +70,6 @@ export function PeopleRoot({
   const hiddenCount = (incoming.data ?? []).filter((share) => share.hiddenAt !== null).length;
   const titleId = useId();
   const searchId = useId();
-  const [query, setQuery] = useState("");
   const searching = ordered.length >= searchFrom && fold(query) !== "";
   const shown = searching ? filterPeople(ordered, query) : ordered;
   const announce = useAnnounce();
@@ -83,17 +90,37 @@ export function PeopleRoot({
 
   return (
     <div className="people-root">
-      <ShareConfirmations people={everyone} />
+      <ShareConfirmations people={ordered} />
 
-      <PlainList className="people-root__rows" label="Me">
-        <li data-peek-end>
-          <MeRow
-            name={user.displayName}
-            devices={devices}
-            now={now}
-            thresholds={thresholds}
-            to={linkTo("me")}
+      {ordered.length < searchFrom ? null : (
+        <search className="people-root__search">
+          <label className="visually-hidden" htmlFor={searchId}>
+            Search people
+          </label>
+          <Icon name="search" className="people-root__search-icon" />
+          <input
+            id={searchId}
+            type="search"
+            className="input people-root__search-input"
+            placeholder="Search"
+            autoComplete="off"
+            spellCheck={false}
+            value={query}
+            onChange={(event) => onQuery(event.currentTarget.value)}
           />
+        </search>
+      )}
+      <PlainList className="people-root__rows" label="Me">
+        <li>
+          <div data-peek-end>
+            <MeRow
+              name={user.displayName}
+              devices={devices}
+              now={now}
+              thresholds={thresholds}
+              to={linkTo("me")}
+            />
+          </div>
           {devices.isError ? (
             <ErrorState
               title="Your devices could not be loaded"
@@ -106,6 +133,7 @@ export function PeopleRoot({
           ) : null}
         </li>
       </PlainList>
+      {foot}
 
       {people.isPending ? (
         <LoadingBlock label="Loading people">
@@ -124,24 +152,6 @@ export function PeopleRoot({
           <h2 className="people-root__title" id={titleId}>
             Sharing with you
           </h2>
-          {ordered.length < searchFrom ? null : (
-            <search className="people-root__search">
-              <label className="visually-hidden" htmlFor={searchId}>
-                Search people
-              </label>
-              <Icon name="search" className="people-root__search-icon" />
-              <input
-                id={searchId}
-                type="search"
-                className="input people-root__search-input"
-                placeholder="Search"
-                autoComplete="off"
-                spellCheck={false}
-                value={query}
-                onChange={(event) => setQuery(event.currentTarget.value)}
-              />
-            </search>
-          )}
           {searching && shown.length === 0 ? (
             <p className="people-root__none">No one called “{query.trim()}”</p>
           ) : (
@@ -162,6 +172,14 @@ export function PeopleRoot({
         </section>
       )}
 
+      {incoming.isError ? (
+        <ErrorState
+          title="The hidden people could not be loaded"
+          error={incoming.error}
+          onRetry={() => void incoming.refetch()}
+          retrying={incoming.isFetching}
+        />
+      ) : null}
       {hiddenCount === 0 ? null : (
         <SettingsGroup>
           <SettingsRow

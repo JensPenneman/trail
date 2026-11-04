@@ -2868,9 +2868,9 @@ count among them, since they lead to signed-in pages.
   **Layout and controls.** The controls float over the map (`MapOverlay`):
   top-left, a bar with the view switch (group "Map view") and a **Map
   options** button with the layers icon; under it the view's own row. The
-  map's zoom and fit buttons keep the top-right corner (on phones they sit
-  under the bar, whose height is measured into `--overlay-end` since it wraps
-  on narrow screens), the "Updating" chip sits top centre (under the bar where
+  map's zoom and fit buttons keep the top-right corner (on phones the bar
+  stops before that column, and wraps to more rows where it must; its height
+  is measured into `--overlay-end`), the "Updating" chip sits top centre (under the bar where
   the screen is not wide enough for both), the map fits tracks under the
   controls (`fit.inset`: below the bar, left of the zoom column on phones),
   and History's time slider floats at the map's foot (first block of the
@@ -2935,20 +2935,26 @@ count among them, since they lead to signed-in pages.
   there. Under it one folded status row when people started sharing while the
   page was open ("Ana shares their location with you", "Ana and Bob share…",
   "Ana, Bob and 3 others share…"), with one **Dismiss** for all
-  (`ShareConfirmations`). Then **Me** in a list of its own, then, only when
-  someone shares, the group **Sharing with you** (its h2 names the list):
-  live now by name, then by when they were last seen, newest first, then those
-  with no location by name (`orderPeople`; a row moves only when someone goes
-  live or stale). From eight people the group has a search, "Search people",
-  that ignores case and accents (`fold`, shared with Settings' search) and
-  filters only those rows; no match says "No one called “x”", and what a search
-  found is announced after a short pause. Last, a row **Hidden (n)** while
+  (`ShareConfirmations`, names in the list's order). From eight people a
+  search, "Search people", above Me, that ignores case and accents (`fold`,
+  shared with Settings' search) and filters only the rows of those who share;
+  the query is the page's, so it is still there after Back. Then **Me** in a
+  list of its own, then, only when someone shares, the group **Sharing with
+  you** (its h2 names the list): live now by name, then by when they were last
+  seen, newest first, then those with no location by name (`orderPeople`; a
+  row moves only when someone goes live or stale). No match says "No one
+  called “x”", and what a search found is announced after a short pause.
+  Last, a row **Hidden (n)** (with an error row and retry if the shares could
+  not be loaded) while
   someone is hidden: it opens `?list=hidden`, where each person has a button
-  "Show X again" and the small print of what hiding means, and "Nobody is
-  hidden" when none is. The root carries no description of the view, no
+  "Show X again" and the small print of what hiding means (the focus moves
+  to the next such button, or to the heading when none is left), and "Nobody
+  is hidden" when none is. The root carries no description of the view, no
   History summary, no Heat totals, no "You share with N people" line and no
-  card for when nobody shares: the view's description is the map's accessible
-  text, and with nobody sharing the root is just the Me row. Rows are one
+  card for when nobody shares: the view's description stays on the page only
+  as a visually hidden block next to the map (the person pages that follow
+  fold it into the map's accessible label), and with nobody sharing the root is
+  just the Me row. Rows are one
   router link each to their page (`PersonRow`; its name is all it says, in
   order, and it has no heading) and are laid out lazily
   (`content-visibility: auto`). A row reads in two lines (`PersonSummary`,
@@ -2969,8 +2975,10 @@ count among them, since they lead to signed-in pages.
   location" past the stale window; with no device yet "Connect your first
   phone" (Add a device: `/settings/devices?add=1`) under the row. On phones
   the sheet's peek is measured (`usePeekHeight`): down to the end of the Me
-  row at the root and of the header on a person's page, at most 45 % of the
-  screen.
+  row at the root (so the search and a confirmation are in it) and of the
+  header on a person's page, at most 45 % of the screen and always below half
+  of the sheet's view, so that selecting someone has a half detent to lift
+  the sheet to; History's slider sits right under what is measured, not in it.
 
   **The detail** replaces the list (`PersonPanel`): a back link ("Back to
   People"), the name as an h2 with the row's two lines, and what the view

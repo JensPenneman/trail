@@ -1,7 +1,8 @@
 /*
  * A popover over the map, under the button that opens it (Map options, the
- * date of History): the map stays usable beside it. On phones it spans the
- * map and stops above the sheet's peek.
+ * date of History): the map stays usable beside it. On phones it is as wide
+ * as the bar, which stops before the zoom column, and stops above the
+ * sheet's peek (but is never shorter than a few rows, and scrolls).
  */
 .map-popover {
   position: absolute;
@@ -36,7 +37,10 @@
     inset-inline: 0;
     width: auto;
     max-width: none;
-    max-height: calc(var(--sheet-view) - var(--sheet-peek) - var(--overlay-end) - var(--space-4));
+    max-height: max(
+      calc(var(--sheet-view) - var(--sheet-peek) - var(--overlay-end) - var(--space-4)),
+      11rem
+    );
   }
 }
 

@@ -32,7 +32,12 @@ interface PeoplePanelProps {
   /** Someone's page, the Hidden level, and the root, as addresses. */
   linkTo: (person: string) => string;
   hiddenTo: string;
+  /** The root, from someone's page. */
   backTo: string;
+  /** The level above the Hidden list (the root, with the page's other choices kept). */
+  levelBackTo: string;
+  query: string;
+  onQuery: (query: string) => void;
   name: string;
   content: MapViewContent;
   period: WhereTheyveBeenPeriod | null;
@@ -57,6 +62,9 @@ export function PeoplePanel({
   linkTo,
   hiddenTo,
   backTo,
+  levelBackTo,
+  query,
+  onQuery,
   name,
   content,
   period,
@@ -67,7 +75,6 @@ export function PeoplePanel({
   return (
     <section className="map-page__panel" aria-labelledby="people-page-title" ref={panelRef}>
       <span className="map-page__grabber" aria-hidden="true" />
-      {foot}
       <div className="map-page__top">
         <PageHeader
           title="People"
@@ -97,9 +104,15 @@ export function PeoplePanel({
             thresholds={thresholds}
             linkTo={linkTo}
             hiddenTo={hiddenTo}
+            query={query}
+            onQuery={onQuery}
+            foot={foot}
           />
         ) : at.level === "hidden" ? (
-          <HiddenPeople backTo={backTo} />
+          <>
+            {foot}
+            <HiddenPeople backTo={levelBackTo} />
+          </>
         ) : (
           <PersonPanel
             selected={at.selected}
@@ -113,6 +126,7 @@ export function PeoplePanel({
             content={content}
             period={period}
             sharing={sharing}
+            foot={foot}
             onLeave={onLeave}
           />
         )}

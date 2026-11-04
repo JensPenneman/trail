@@ -96,6 +96,8 @@ export function PeoplePage() {
   // The device filter is folded away among the map's options, and open when an address sets one.
   const [filterOpen] = useState(() => search.devices !== null);
   const sharing = useSharingActions(people.data ?? []);
+  // What the people are searched for: kept here, so going to someone's page and back keeps it.
+  const [query, setQuery] = useState("");
 
   const available = useMemo<MapPerson[]>(
     () => [
@@ -179,7 +181,7 @@ export function PeoplePage() {
   });
   const content = view === "live" ? live : view === "history" ? history : heat;
   // The map fits what it shows under the controls: below the bar, and left of the zoom column on
-  // phones, where the bar spans the map.
+  // phones, where the bar is as wide as the map less that column.
   const fit =
     content.map.fit === undefined
       ? undefined
@@ -269,6 +271,8 @@ export function PeoplePage() {
   const linkTo = (person: string) => `?${withPerson(params, person).toString()}`;
   const backTo = `?${withPerson(params, null).toString()}`;
   const hiddenTo = `?${withList(params, "hidden").toString()}`;
+  // Back from the Hidden list keeps what else the address says (Heat's own devices included).
+  const levelBackTo = `?${withList(params, null).toString()}`;
 
   // Devices to choose among, when there are several: the selected person's; in Heat one's own,
   // whoever is selected (nobody's else is offered there). Choosing some selects Me (adoptPerson).
@@ -397,6 +401,9 @@ export function PeoplePage() {
         linkTo={linkTo}
         hiddenTo={hiddenTo}
         backTo={backTo}
+        levelBackTo={levelBackTo}
+        query={query}
+        onQuery={setQuery}
         name={user.displayName}
         content={content}
         period={wherePeriod}

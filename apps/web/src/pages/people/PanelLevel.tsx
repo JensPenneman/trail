@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import "../../ui/BackLink.css";
 import { Icon } from "../../ui/Icon";
+import "./PanelLevel.css";
 
 interface PanelLevelProps {
   title: string;

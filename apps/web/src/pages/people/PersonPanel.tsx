@@ -1,7 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { Person } from "@trail/contracts/person";
-import { useId } from "react";
+import { type ReactNode, useId } from "react";
 import { Link } from "react-router";
 import { useFormatter } from "../../format/useFormatter";
 import { PersonDetails } from "../../people/PersonDetails";
@@ -21,6 +21,7 @@ import { me } from "../map/me";
 import { MeDetails } from "./MeDetails";
 import { useMeSummary } from "./useMeSummary";
 import type { SharingActions } from "./useSharingActions";
+import "./PersonPanel.css";
 
 interface PersonPanelProps {
   /** `me`, or the user id of someone who shares with the signed-in person. */
@@ -37,6 +38,8 @@ interface PersonPanelProps {
   /** The day or period their track is for; null where the view draws no tracks of others (Heat). */
   period: WhereTheyveBeenPeriod | null;
   sharing: SharingActions;
+  /** History's slider on phones, right under the header (so the peek does not hold it). */
+  foot: ReactNode;
   /** Leaves the detail for the list (after hiding someone). */
   onLeave: (key: string) => void;
 }
@@ -70,6 +73,7 @@ export function PersonPanel(props: PersonPanelProps) {
             now={now}
             thresholds={thresholds}
             content={content}
+            foot={props.foot}
           />
         ) : (
           <OtherBody {...props} titleId={titleId} />
@@ -103,6 +107,7 @@ function MeBody({
   now,
   thresholds,
   content,
+  foot,
 }: {
   titleId: string;
   name: string;
@@ -110,6 +115,7 @@ function MeBody({
   now: number;
   thresholds: { liveMinutes: number; staleHours: number };
   content: MapViewContent;
+  foot: ReactNode;
 }) {
   const summary = useMeSummary(devices, now, thresholds);
   return (
@@ -122,6 +128,7 @@ function MeBody({
         freshness={summary.freshness}
         doing={summary.doing}
       />
+      {foot}
       <ViewParts content={content} mine />
       <MeDetails devices={devices} now={now} thresholds={thresholds} summary={summary} />
     </>
@@ -138,6 +145,7 @@ function OtherBody({
   content,
   period,
   sharing,
+  foot,
   onLeave,
 }: PersonPanelProps & { titleId: string }) {
   const format = useFormatter();
@@ -173,6 +181,7 @@ function OtherBody({
           format,
         )}
       />
+      {foot}
       {period === null ? null : (
         <WhereTheyveBeen
           person={person}
