@@ -6,7 +6,7 @@ export function insightsLink(path: string, current: URLSearchParams): string {
   const next = new URLSearchParams();
   for (const key of ["period", "from", "to", "devices"]) {
     const value = current.get(key);
-    if (value !== null) next.set(key, value);
+    if (value !== null && value !== "") next.set(key, value);
   }
   const search = next.toString();
   return search === "" ? path : `${path}?${search}`;

@@ -8,7 +8,7 @@ import { parseLocalDate } from "../../time/parseLocalDate";
 import { shiftMonth } from "../../time/shiftMonth";
 
 /** The units a period is chosen in; "all" is the whole history. */
-export const periodUnits = ["week", "month", "year", "all"] as const;
+const periodUnits = ["week", "month", "year", "all"] as const;
 export type PeriodUnit = (typeof periodUnits)[number];
 type CalendarUnit = Exclude<PeriodUnit, "all">;
 
@@ -73,7 +73,7 @@ function isoWeekOf(date: string): { year: number; week: number } {
 }
 
 /** The week, month or year that holds `anchor`. */
-export function calendarPeriod(unit: CalendarUnit, anchor: string, today: string): CalendarPeriod {
+function calendarPeriod(unit: CalendarUnit, anchor: string, today: string): CalendarPeriod {
   let first: string;
   let last: string;
   if (unit === "week") {
@@ -90,8 +90,7 @@ export function calendarPeriod(unit: CalendarUnit, anchor: string, today: string
 }
 
 /** Nothing in the address: this month. */
-export const defaultPeriod = (today: string): InsightsPeriod =>
-  calendarPeriod("month", today, today);
+const defaultPeriod = (today: string): InsightsPeriod => calendarPeriod("month", today, today);
 
 /** `2026-W44` as the Monday it starts on; null for a week the year does not have (W53 only in some years). */
 function weekStart(text: string): string | null {

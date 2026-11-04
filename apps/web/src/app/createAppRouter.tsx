@@ -1,4 +1,5 @@
 import { createBrowserRouter, type RouteObject, replace } from "react-router";
+import { insightsRoute } from "../pages/insights/insightsRoutes";
 import { NotFoundPage } from "../pages/notFound/NotFoundPage";
 import { settingsRoute } from "../settings/settingsRoutes";
 import { AppLoading } from "./AppLoading";
@@ -76,43 +77,7 @@ export function appRoutes(): RouteObject[] {
                   lazy: () =>
                     import("../pages/people/PeoplePage").then((m) => ({ Component: m.PeoplePage })),
                 },
-                {
-                  path: "insights",
-                  lazy: () =>
-                    import("../pages/insights/InsightsShell").then((m) => ({
-                      Component: m.InsightsShell,
-                    })),
-                  children: [
-                    {
-                      index: true,
-                      lazy: () =>
-                        import("../pages/insights/SummaryScreen").then((m) => ({
-                          Component: m.SummaryScreen,
-                        })),
-                    },
-                    {
-                      path: "transport/:mode",
-                      lazy: () =>
-                        import("../pages/insights/ModeScreen").then((m) => ({
-                          Component: m.ModeScreen,
-                        })),
-                    },
-                    {
-                      path: "time",
-                      lazy: () =>
-                        import("../pages/insights/WhenScreen").then((m) => ({
-                          Component: m.WhenScreen,
-                        })),
-                    },
-                    {
-                      path: "roads",
-                      lazy: () =>
-                        import("../pages/insights/RoadsScreen").then((m) => ({
-                          Component: m.RoadsScreen,
-                        })),
-                    },
-                  ],
-                },
+                insightsRoute,
                 settingsRoute,
               ],
             },
