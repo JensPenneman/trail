@@ -20,6 +20,13 @@ interface Visit {
   startedMs: number;
 }
 
+/** A stay as it was, whole and of one device: where a road name is looked for. */
+interface PlaceStayOf {
+  deviceId: string;
+  startMs: number;
+  endMs: number;
+}
+
 export interface PlaceGroup {
   /** The cell that claimed the others, or the only cell. */
   key: string;
@@ -31,6 +38,8 @@ export interface PlaceGroup {
   deviceIds: string[];
   /** Joined stretches inside the period, in order. */
   visits: Visit[];
+  /** The stays in the period with the device and the arrival and departure they really had, by arrival. */
+  stays: PlaceStayOf[];
   durationMs: number;
 }
 
@@ -40,6 +49,7 @@ interface Cell {
   y: number;
   /** Each stay clipped to the period, with the start it had. */
   parts: Visit[];
+  stays: PlaceStayOf[];
   deviceIds: Set<string>;
   durationMs: number;
   lat: number;
@@ -86,19 +96,38 @@ export function groupPlaces(
     let cell = cells.get(key);
     if (cell === undefined) {
       const [x = 0, y = 0] = key.split(".").map(Number);
-      cell = { key, x, y, parts: [], deviceIds: new Set(), durationMs: 0, lat: 0, lon: 0 };
+      cell = {
+        key,
+        x,
+        y,
+        parts: [],
+        stays: [],
+        deviceIds: new Set(),
+        durationMs: 0,
+        lat: 0,
+        lon: 0,
+      };
       cells.set(key, cell);
     }
     cell.parts.push({ fromMs, toMs, startedMs: stay.startMs });
     cell.deviceIds.add(stay.deviceId);
+    cell.stays.push({ deviceId: stay.deviceId, startMs: stay.startMs, endMs: stay.endMs });
     // Accumulated as sums of position × time; divided once the group is known.
     cell.durationMs += toMs - fromMs;
     cell.lat += stay.lat * (toMs - fromMs);
     cell.lon += stay.lon * (toMs - fromMs);
   }
-  // Join within a cell first: its own time is what the claiming order goes by.
+  // A cell's time is that of its stays joined (two devices at once are not twice the time): that is
+  // what the claiming order goes by.
+  const joinedMs = new Map<string, number>();
+  for (const cell of cells.values()) {
+    joinedMs.set(
+      cell.key,
+      join(cell.parts).reduce((sum, visit) => sum + (visit.toMs - visit.fromMs), 0),
+    );
+  }
   const order = [...cells.values()].sort(
-    (a, b) => b.durationMs - a.durationMs || (a.key < b.key ? -1 : 1),
+    (a, b) => (joinedMs.get(b.key) ?? 0) - (joinedMs.get(a.key) ?? 0) || (a.key < b.key ? -1 : 1),
   );
   const claimed = new Set<string>();
   const groups: PlaceGroup[] = [];
@@ -125,6 +154,7 @@ export function groupPlaces(
       ],
       deviceIds: [...new Set(members.flatMap((member) => [...member.deviceIds]))].sort(),
       visits,
+      stays: members.flatMap((member) => member.stays).sort((a, b) => a.startMs - b.startMs),
       durationMs: visits.reduce((sum, visit) => sum + (visit.toMs - visit.fromMs), 0),
     });
   }

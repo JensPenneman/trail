@@ -72,7 +72,14 @@ interface PoiRow extends Record<string, unknown> {
   lon: number;
 }
 
-/** The stops of the z14 tiles around each centre (3 × 3), from the map data, by place index. */
+/** Degrees of latitude in the reach of a stop name (150 m), with a little to spare. */
+const reachDegrees = 0.0014;
+
+/**
+ * The stops within reach of each centre, from the map data, by place index: the z14 tiles around
+ * the centre pick the rows by index, a box of ±150 m keeps the few that can be near (a city tile
+ * holds hundreds of bus stops), and a stop in two sources counts once, the newest.
+ */
 async function loadStops(
   db: Executor,
   centres: readonly (readonly [number, number])[],
@@ -80,6 +87,8 @@ async function loadStops(
   const xs: number[] = [];
   const ys: number[] = [];
   const is: number[] = [];
+  const lons: number[] = [];
+  const lats: number[] = [];
   centres.forEach(([lon, lat], index) => {
     const x = lonToTileX(lon, 14);
     const y = latToTileY(lat, 14);
@@ -88,13 +97,20 @@ async function loadStops(
         xs.push(x + dx);
         ys.push(y + dy);
         is.push(index);
+        lons.push(lon);
+        lats.push(lat);
       }
     }
   });
   const result = await db.execute<PoiRow>(sql`
-    SELECT t.i, p.name, p.kind, p.lat, p.lon
-    FROM unnest(${sql.param(xs)}::int[], ${sql.param(ys)}::int[], ${sql.param(is)}::int[]) AS t(x, y, i)
+    SELECT DISTINCT ON (t.i, p.id) t.i, p.name, p.kind, p.lat, p.lon
+    FROM unnest(${sql.param(xs)}::int[], ${sql.param(ys)}::int[], ${sql.param(is)}::int[],
+      ${sql.param(lons)}::float8[], ${sql.param(lats)}::float8[]) AS t(x, y, i, lon, lat)
     JOIN osm_pois p ON p.z = 14 AND p.x = t.x AND p.y = t.y AND p.name IS NOT NULL
+      AND p.lat BETWEEN t.lat - ${reachDegrees} AND t.lat + ${reachDegrees}
+      AND p.lon BETWEEN t.lon - ${reachDegrees} / cos(radians(t.lat))
+        AND t.lon + ${reachDegrees} / cos(radians(t.lat))
+    ORDER BY t.i, p.id, p.fetched_at DESC
   `);
   const stops = new Map<number, StopCandidate[]>();
   for (const row of result.rows) {
@@ -125,19 +141,17 @@ async function loadRoadNames(
   const tos: string[] = [];
   const is: number[] = [];
   for (const { index, group } of wanted) {
-    for (const visit of group.visits.slice(-roadStays)) {
-      for (const deviceId of group.deviceIds) {
-        const arrived = visit.fromMs;
-        const left = visit.toMs;
-        for (const [from, to] of [
-          [arrived - roadWindowS * 1000, arrived],
-          [left, left + roadWindowS * 1000],
-        ] as const) {
-          devices.push(deviceId);
-          froms.push(new Date(from).toISOString());
-          tos.push(new Date(to).toISOString());
-          is.push(index);
-        }
+    // Each stay's own device, around the arrival and departure it really had: another device of
+    // the place that was somewhere else then says nothing of it. At most 10 × 2 ranges a place.
+    for (const stay of group.stays.slice(-roadStays)) {
+      for (const [from, to] of [
+        [stay.startMs - roadWindowS * 1000, stay.startMs],
+        [stay.endMs, stay.endMs + roadWindowS * 1000],
+      ] as const) {
+        devices.push(stay.deviceId);
+        froms.push(new Date(from).toISOString());
+        tos.push(new Date(to).toISOString());
+        is.push(index);
       }
     }
   }

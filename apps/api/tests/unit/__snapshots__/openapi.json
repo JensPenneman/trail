@@ -3834,7 +3834,7 @@
       },
       "InsightsPlaceKey": {
         "type": "string",
-        "pattern": "^\\d{1,6}\\.\\d{1,6}$",
+        "pattern": "^(0|[1-9]\\d{0,5})\\.(0|[1-9]\\d{0,5})$",
         "description": "The zoom-18 Web Mercator cell `x.y` a place's stays centre on. Keys are the places' own: take them from `GET /api/v1/insights/places`; a cell folded into a neighbour's place resolves to that place.",
         "example": "134217.89012"
       },
@@ -9481,7 +9481,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "trlk_…",
-        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates. |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |\n| `audit:read` | Read the data access log: who looked at or changed your data, when, how and which data — without positions. |\n| `health:read` | Read the API's own request timings per route (administrators only; numbers, no positions or accounts). |"
+        "description": "An API token, sent as `Authorization: Bearer trlk_…`. Its scopes decide what it may do; an operation lists the scopes that grant access to it.\n\n| Scope | Allows |\n|---|---|\n| `profile:read` | Read the account's name and time zone. |\n| `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |\n| `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |\n| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline, Insights › Places). |\n| `locations:write` | Correct how you travelled (transport mode overrides). |\n| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates (Insights › Places needs `locations:read`). |\n| `people:read` | See the people who share their location with you. |\n| `shares:read` | List your shares, the ones you receive and your public links. |\n| `shares:write` | Start and stop sharing, hide people and manage public links. |\n| `audit:read` | Read the data access log: who looked at or changed your data, when, how and which data — without positions. |\n| `health:read` | Read the API's own request timings per route (administrators only; numbers, no positions or accounts). |"
       }
     }
   }

@@ -484,7 +484,7 @@ export type InsightsRoads = z.infer<typeof insightsRoadsSchema>;
 /** A place's key: the cell it is centred on (or, folded, the cell that claimed the others). */
 export const placeKeySchema = z
   .string()
-  .regex(/^\d{1,6}\.\d{1,6}$/)
+  .regex(/^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})$/)
   .refine(
     (key) => {
       const [x = 0, y = 0] = key.split(".").map(Number);
