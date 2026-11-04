@@ -1,4 +1,10 @@
-import { defaultPreferences, mapStyleSchema, type Preferences } from "@trail/contracts/preferences";
+import { heatMeasureSchema } from "@trail/contracts/heatmap";
+import {
+  defaultPreferences,
+  mapStyleSchema,
+  type Preferences,
+  pathColourSchema,
+} from "@trail/contracts/preferences";
 import { processingLevelSchema } from "@trail/contracts/transport";
 import { z } from "zod";
 
@@ -12,6 +18,8 @@ const storedPreferencesSchema = z
   .object({
     mapStyle: mapStyleSchema.catch(defaultPreferences.mapStyle),
     level: processingLevelSchema.catch(defaultPreferences.level),
+    heat: heatMeasureSchema.catch(defaultPreferences.heat),
+    color: pathColourSchema.catch(defaultPreferences.color),
     showOwnActivity: z.boolean().catch(defaultPreferences.showOwnActivity),
   })
   .catch({ ...defaultPreferences });

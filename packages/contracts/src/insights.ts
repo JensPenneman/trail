@@ -24,7 +24,7 @@ export function lastInsightsDay(from: string): string {
   return `${end.getUTCFullYear()}-${pad(end.getUTCMonth() + 1)}-${pad(end.getUTCDate())}`;
 }
 
-const spanMessage = `The period can span at most ${insightsMaxYears} years`;
+export const spanMessage = `The period can span at most ${insightsMaxYears} years`;
 
 const deviceId = z.uuid().meta({
   description: "The device.",
@@ -44,14 +44,14 @@ const queryShape = {
   devices: devicesParamSchema.optional(),
 };
 
-interface PeriodQuery {
+export interface PeriodQuery {
   from?: string | undefined;
   to?: string | undefined;
 }
 
-const ordered = (query: PeriodQuery): boolean =>
+export const ordered = (query: PeriodQuery): boolean =>
   query.from === undefined || query.to === undefined || query.to >= query.from;
-const withinSpan = (query: PeriodQuery): boolean =>
+export const withinSpan = (query: PeriodQuery): boolean =>
   query.from === undefined || query.to === undefined || query.to <= lastInsightsDay(query.from);
 
 /** `GET /api/v1/insights/overview` and `GET /api/v1/insights/modes/{mode}` */

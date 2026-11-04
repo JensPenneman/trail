@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { heatMeasureSchema } from "./heatmap";
 import { processingLevelSchema } from "./transport";
 
 /*
@@ -13,6 +14,11 @@ export const mapStyles = ["auto", "light", "dark", "satellite"] as const;
 export const mapStyleSchema = z.enum(mapStyles);
 export type MapStyle = z.infer<typeof mapStyleSchema>;
 
+/** What the paths on the map are coloured by (the options a level supports; the rest are skipped). */
+export const pathColours = ["mode", "device", "speed", "time"] as const;
+export const pathColourSchema = z.enum(pathColours);
+export type PathColour = z.infer<typeof pathColourSchema>;
+
 /**
  * An account's preferences, each one filled in: what `SessionUser.preferences`
  * carries. A preference that is not there takes its default.
@@ -22,6 +28,10 @@ export const preferencesSchema = z.object({
   mapStyle: mapStyleSchema.default("auto"),
   /** The level of the tracks where neither the address nor this browser has one. */
   level: processingLevelSchema.default("inferred"),
+  /** What the heatmap counts where neither the address nor this browser has a choice. */
+  heat: heatMeasureSchema.default("points"),
+  /** What the paths are coloured by where neither the address nor this browser has a choice. */
+  color: pathColourSchema.default("mode"),
   /** Whether the access log lists the account's own activity too, not only other people's. */
   showOwnActivity: z.boolean().default(false),
 });
@@ -37,6 +47,8 @@ export const defaultPreferences: Readonly<Preferences> = preferencesSchema.parse
 export const preferencesUpdateSchema = z.strictObject({
   mapStyle: mapStyleSchema.optional(),
   level: processingLevelSchema.optional(),
+  heat: heatMeasureSchema.optional(),
+  color: pathColourSchema.optional(),
   showOwnActivity: z.boolean().optional(),
 });
 export type PreferencesUpdate = z.input<typeof preferencesUpdateSchema>;
