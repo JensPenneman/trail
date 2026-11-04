@@ -453,10 +453,12 @@ describe("the People page's list", () => {
     const api = mockApi({
       ...standardRoutes(),
       "GET /api/v1/people": () => ({ status: 200, body: { people: hidden ? [] : [ana()] } }),
-      "GET /api/v1/shares/incoming": () => ({
-        status: 200,
-        body: { shares: [incomingShare()] },
-      }),
+      // The people answer first and the incoming shares late, as they do: the mutation's own
+      // callback (leaving the detail) runs only after all of them.
+      "GET /api/v1/shares/incoming": async () => {
+        if (hidden) await new Promise((resolve) => setTimeout(resolve, 150));
+        return { status: 200, body: { shares: [incomingShare()] } };
+      },
       [`POST /api/v1/shares/incoming/${ids.anaShare}/hide`]: () => {
         hidden = true;
         return { status: 200, body: { share: incomingShare() } };
@@ -467,7 +469,9 @@ describe("the People page's list", () => {
     const details = await openPerson(person, "Ana Bell");
     await person.click(within(details).getByRole("button", { name: "Hide Ana Bell" }));
     expect(await screen.findByText("Hidden (1)")).toBeInTheDocument();
-    expect(router.state.location.search).toBe("");
+    await waitFor(() => expect(router.state.location.search).toBe(""));
+    // Replaced, not pushed: Back does not return to a detail that is gone.
+    expect(router.state.historyAction).toBe("REPLACE");
     expect(screen.queryByRole("region", { name: "Ana Bell" })).toBeNull();
     expect(screen.queryByRole("link", { name: /^Ana Bell/ })).toBeNull();
     expect(

@@ -4,6 +4,7 @@ import type { Database } from "../db/database";
 import type { DeviceAccess } from "../devices/deviceAccess";
 import { HttpError } from "../http/httpError";
 import { lockDeviceProcessing } from "../processing/deviceLock";
+import { assertMoveOver } from "./assertMoveOver";
 import { findSegment } from "./findSegment";
 import { type SegmentRow, segmentColumns, toSegment } from "./segmentRow";
 
@@ -11,7 +12,8 @@ import { type SegmentRow, segmentColumns, toSegment } from "./segmentRow";
  * Sets the mode of one move (docs/architecture.md §17.5): a `segment` override
  * for its span, applied to the segment at once and again whenever the window
  * is processed. Setting the mode it already has from such an override changes
- * nothing. A stop has no mode: 409.
+ * nothing. A stop has no mode, and a move still under way cannot be set
+ * (`assertMoveOver`): 409.
  */
 export async function setSegmentMode(
   db: Database,
@@ -28,6 +30,7 @@ export async function setSegmentMode(
     await lockDeviceProcessing(tx, found.device_id);
     // Read again under the lock: a window processed meanwhile may have replaced it.
     const segment = await findSegment(tx, access, segmentId, { forUpdate: true });
+    await assertMoveOver(tx, segment);
     const existing = await tx.execute<{ id: string; mode: ChosenMode }>(sql`
       SELECT id, mode FROM mode_overrides
       WHERE device_id = ${segment.device_id} AND kind = 'segment' AND revoked_at IS NULL

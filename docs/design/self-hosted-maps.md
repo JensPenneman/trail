@@ -480,10 +480,10 @@ error, it is a `none` the window records as `outside_regions`.
 
 Decision: Planetiler and the OpenMapTiles schema. Keeping one style set for
 the self-hosted tiles and the fallback is what makes the fallback a flag
-rather than a second map, and the screenshots, the heat placement
-(`heatLayerPlacement.ts`, tested on both OpenFreeMap styles as served) and
-the contrast numbers of §14 stay valid. Protomaps is the way out if the
-Planetiler build ever becomes a burden, and the answer for a Europe basemap
+rather than a second map, and the screenshots, the layer placement of
+Trail's fills and lines (`dataLayerPlacement.ts`, tested on both OpenFreeMap
+styles as served) and the contrast numbers of §14 stay valid. Protomaps is
+the way out if the Planetiler build ever becomes a burden, and the answer for a Europe basemap
 without a build machine (§9).
 
 Build numbers on a GitHub runner (4 vCPU, 16 GB, 84 GB free disk, 6 h

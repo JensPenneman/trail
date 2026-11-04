@@ -58,7 +58,7 @@ export function VisitList({
         <ErrorState title="Visits could not be loaded" error={error} onRetry={onRetry} />
       ) : sorted.length === 0 ? (
         <div className="card">
-          <EmptyState icon="visit" title="No visits in this period" level={3}>
+          <EmptyState icon="visit" title="No visits in this period" nested>
             <p>
               iOS reports a visit when the phone stays somewhere for a while. It needs “Visit
               Tracking” on in Overland.

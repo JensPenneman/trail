@@ -200,6 +200,98 @@ describe("selecting a person", () => {
   });
 });
 
+describe("a link that implies a person", () => {
+  it("is rewritten with the person once the lists are in, not before", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/people": async () => {
+        await gate;
+        return { status: 200, body: { people: [ana(), bob()] } };
+      },
+    });
+    const { router } = renderPage(<PeoplePage />, { url: `/?devices=${ids.anaPhone}`, user });
+    // The people are pending: whose device it is is not known yet (Me is the guess, not written).
+    await screen.findByRole("region", { name: "Me" });
+    expect(router.state.location.search).toBe(`?devices=${ids.anaPhone}`);
+    act(() => release());
+    await waitFor(() =>
+      expect(router.state.location.search).toBe(`?devices=${ids.anaPhone}&person=${ids.ana}`),
+    );
+    const heading = await screen.findByRole("heading", { level: 2, name: "Ana Bell" });
+    // Nobody asked for it: the focus stays where the page put it.
+    expect(heading).not.toHaveFocus();
+    expect(router.state.historyAction).toBe("REPLACE");
+  });
+
+  it("rewrites ?people= with one person, and keeps the detail", async () => {
+    mockApi(standardRoutes());
+    const { router } = renderPage(<PeoplePage />, { url: `/?people=${ids.ana}`, user });
+    await waitFor(() => expect(router.state.location.search).toBe(`?person=${ids.ana}`));
+    expect(await screen.findByRole("region", { name: "Ana Bell" })).toBeInTheDocument();
+  });
+});
+
+describe("a view switch next to an implied selection", () => {
+  it("is not undone by the address being rewritten with the person", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, { url: `/?devices=${ids.phone}`, user });
+    await screen.findByRole("region", { name: "Me" });
+    await person.click(
+      within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", {
+        name: "History",
+      }),
+    );
+    // Whichever of the two lands first, both are in the address in the end.
+    await waitFor(() => {
+      const params = new URLSearchParams(router.state.location.search);
+      expect(params.get("view")).toBe("history");
+      expect(params.get("person")).toBe("me");
+    });
+    expect(
+      within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", {
+        name: "History",
+      }),
+    ).toBeChecked();
+  });
+});
+
+describe("Heat's device filter", () => {
+  it("narrows one's own heatmap without selecting anyone or moving the focus", async () => {
+    const api = mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, { url: "/?view=heat", user });
+    await person.click(await screen.findByText("Advanced"));
+    const car = screen.getByRole("checkbox", { name: "Car" });
+    await person.click(car);
+    expect(router.state.location.search).toBe(`?view=heat&devices=${ids.phone}`);
+    expect(car).toHaveFocus();
+    expect(screen.getByRole("list", { name: "People" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Me" })).toBeNull();
+    await waitFor(() =>
+      expect(
+        api.calls.some(
+          (call) => call.path === "/api/heatmap" && call.url?.includes(ids.phone) === true,
+        ),
+      ).toBe(true),
+    );
+    // Leaving Heat leaves its filter: it would imply Me, and the switch would be lost.
+    const live = within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", {
+      name: "Live",
+    });
+    await person.click(live);
+    expect(live).toBeChecked();
+    expect(live).toHaveFocus();
+    await waitFor(() => expect(router.state.location.search).toBe(""));
+    expect(screen.getByRole("list", { name: "People" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Me" })).toBeNull();
+  });
+});
+
 describe("History's overview and selections", () => {
   it("draws one's own tracks and everyone's with a history share, and skips the rest of one's own", async () => {
     const api = mockApi(withHistoryOfAna());

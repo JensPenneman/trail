@@ -98,7 +98,10 @@ sure, especially between a car and a train.
   in the Timeline beside the map (in the sheet on phones). The dialog shows the mode, how sure Trail
   was, the speeds, distance and time. Pick the right mode under Change mode;
   the move shows "set by you" from then on. Reset to detected hands it back to
-  Trail. For a move marked as unsure, "Yes" confirms Trail's guess.
+  Trail. For a move marked as unsure, "Yes" confirms Trail's guess. A move
+  that is still going on says "Still under way" instead: it can be put right
+  once it is over, after a stop or 30 minutes without new points. For the ride
+  you are on, use "From now on" below (API and MCP clients).
 - **From now on**: this one is for the API and MCP clients only; the web
   app has no control for it. Setting a mode for a device
   (`POST /api/v1/devices/{id}/mode`, [api.md](api.md); the MCP tool

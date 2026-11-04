@@ -61,7 +61,7 @@ export function TripList({
         <ErrorState title="Trips could not be loaded" error={error} onRetry={onRetry} />
       ) : sorted.length === 0 ? (
         <div className="card">
-          <EmptyState icon="route" title="No trips in this period" level={3}>
+          <EmptyState icon="route" title="No trips in this period" nested>
             <p>Trips appear when you start one with Overland’s trip button.</p>
           </EmptyState>
         </div>

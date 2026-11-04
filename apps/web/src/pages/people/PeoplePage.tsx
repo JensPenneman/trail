@@ -65,8 +65,8 @@ export function PeoplePage() {
     search,
     today,
     setView,
-    setPerson,
     adoptPerson,
+    leavePerson,
     setDevices,
     showDay,
     showHistoryDay,
@@ -110,13 +110,16 @@ export function PeoplePage() {
   const complete = devices.data !== undefined && (people.data !== undefined || people.isError);
   const selection = useMemo(
     () =>
-      resolveMapSelection({ person: search.person, devices: search.devices }, available, complete),
-    [search.person, search.devices, available, complete],
+      resolveMapSelection(
+        { person: search.person, devices: search.devices },
+        available,
+        complete,
+        search.view === "heat",
+      ),
+    [search.person, search.devices, available, complete, search.view],
   );
   const selected = selection.selected;
   const selectedKey = selected?.key ?? null;
-  const selectedRef = useRef(selectedKey);
-  selectedRef.current = selectedKey;
   // Heat is one's own: with someone else selected the page shows Live, and Heat again with Me.
   const heatOffered = selectedKey === null || selectedKey === me;
   const view = shownView(search.view, heatOffered);
@@ -129,7 +132,7 @@ export function PeoplePage() {
     if (selectedKey !== null && (complete || search.person !== null)) adoptPerson(selectedKey);
   }, [complete, search.person, selectedKey, adoptPerson]);
 
-  // Heat frames the camera only when the page opened on it; the other views share theirs.
+  // Heat frames the camera only when the page opened on it; Live and History frame anew with what they draw.
   const [openedOn] = useState(view);
   const [leftFirstView, setLeftFirstView] = useState(false);
   if (!leftFirstView && view !== openedOn) setLeftFirstView(true);
@@ -201,6 +204,7 @@ export function PeoplePage() {
   const focusRef = usePanelFocus(
     selectedKey,
     available.some((person) => person.key === selectedKey),
+    selection.implied,
   );
   const panelRef = useCallback(
     (element: HTMLElement | null) => {
@@ -404,10 +408,7 @@ export function PeoplePage() {
               content={content}
               period={wherePeriod}
               sharing={sharing}
-              onLeave={(key) => {
-                // Hiding is not a step of the history, and only leaves while it is still their detail.
-                if (selectedRef.current === key) setPerson(null, { replace: true });
-              }}
+              onLeave={leavePerson}
             />
           )}
         </div>

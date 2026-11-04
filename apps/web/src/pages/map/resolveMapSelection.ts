@@ -6,6 +6,8 @@ import type { MapSearch } from "./parseMapSearch";
 export interface MapSelection {
   /** The person selected, as the page knows them; null is the overview, nobody selected. */
   selected: MapPerson | null;
+  /** Whether a device filter alone implied the selection, rather than the address naming them. */
+  implied: boolean;
   /** The device filter as it applies to the selected person; null when all their devices show. */
   filter: readonly string[] | null;
   /**
@@ -26,12 +28,15 @@ export interface MapSelection {
  * Until `complete` (the lists have loaded) an id nobody knows yet is kept, so a
  * deep link does not fall back to the overview while the people load;
  * afterwards it is dropped. A device filter without a person (a link from a
- * device's page) selects the one person whose devices they are.
+ * device's page) selects the one person whose devices they are, except in
+ * Heat (`inHeat`), which is one's own whoever is selected: there the filter
+ * applies to one's own devices and selects nobody.
  */
 export function resolveMapSelection(
   search: Pick<MapSearch, "person" | "devices">,
   available: readonly MapPerson[],
   complete: boolean,
+  inHeat = false,
 ): MapSelection {
   const deviceIds = new Set(
     available.flatMap((person) => person.devices.map((device) => device.id)),
@@ -41,7 +46,7 @@ export function resolveMapSelection(
     : search.devices;
 
   let key = search.person;
-  if (key === null && listed !== null && listed.length > 0) {
+  if (key === null && !inHeat && listed !== null && listed.length > 0) {
     const owners = available.filter((person) =>
       person.devices.some((device) => listed.includes(device.id)),
     );
@@ -59,26 +64,28 @@ export function resolveMapSelection(
     (key === null || complete ? null : { key, name: "", devices: [] as MapPerson["devices"] });
 
   // The filter is the selected person's: ids of anyone else's devices do not count.
+  const owner = selected ?? (inHeat ? available.find((person) => person.key === me) : undefined);
   const theirs =
-    selected === null || listed === null || !complete
+    owner === undefined || listed === null || !complete
       ? listed
-      : listed.filter((id) => selected.devices.some((device) => device.id === id));
-  const filter = selected === null || theirs === null || theirs.length === 0 ? null : theirs;
+      : listed.filter((id) => owner.devices.some((device) => device.id === id));
+  const filter = owner === undefined || theirs === null || theirs.length === 0 ? null : theirs;
+  const filterKey = owner?.key ?? (inHeat ? me : null);
 
   const allOf = (person: string): readonly string[] =>
     (available.find((candidate) => candidate.key === person)?.devices ?? []).map(
       (device) => device.id,
     );
   const devicesOf = (person: string): readonly string[] =>
-    filter === null || selected?.key !== person
+    filter === null || filterKey !== person
       ? allOf(person)
       : allOf(person).filter((id) => filter.includes(id));
   const ownShown = devicesOf(me);
   const own =
-    selected?.key !== me || filter === null
+    filterKey !== me || filter === null
       ? { deviceIds: null }
       : ownShown.length === 0
         ? null
         : { deviceIds: ownShown };
-  return { selected, filter, devicesOf, own };
+  return { selected, implied: selected !== null && search.person === null, filter, devicesOf, own };
 }

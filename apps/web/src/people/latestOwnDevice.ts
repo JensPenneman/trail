@@ -5,7 +5,7 @@ const timeOf = (instant: string | null | undefined): number =>
 
 /**
  * The signed-in person's device that reported last — its position says where
- * they are now, and the Me card's quick toggle applies to it — else the one
+ * they are now, and Me's row and detail say it — else the one
  * that uploaded last, else the first; null without devices.
  */
 export function latestOwnDevice(devices: readonly DeviceSummary[]): DeviceSummary | null {
