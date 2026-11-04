@@ -2825,8 +2825,8 @@ count among them, since they lead to signed-in pages.
     a moment; distance, points, first/last; the timeline of stops and moves,
     with a dialog to correct a mode; visits and trips of the day (Me's
     detail). Other people's tracks as their shares allow (below).
-    **Playback** has an engine in `pages/map/history/playback`, not yet
-    wired into the page: a pure model (`playbackModel`: local-day bounds, the
+    **Playback** plays History back from any moment to the last recorded
+    point (below). Its engine is in `pages/map/history/playback`: a pure model (`playbackModel`: local-day bounds, the
     moves of the timeline or, from the points alone, movement stretches —
     split at recording gaps, cut by three minutes below 0.6 m/s, kept at a
     minute and 100 m — and the quiet stretches outside them, the next day with
@@ -2853,6 +2853,26 @@ count among them, since they lead to signed-in pages.
     cursor by `splitTrackAt` into two halves that keep its id); the caller
     dims visit dots with `MapPoint.dimmed`. `ensureTrailLayers` draws them at
     0.3 opacity (0.5 under `prefers-contrast: more`).
+    *In the page.* The time slider spans the local day, 00:00 to 24:00 (today
+    up to now, a period all its days), starts at the last recorded point and
+    has a Play button when someone is selected. `useHistoryView` takes
+    `usePlayerState` first, so that the playing day replaces the address's
+    period before the queries run; nothing is written to the address while it
+    plays. Pausing, the end and leaving write `date` and `at`
+    (`YYYY-MM-DDTHH:MM` in the account's time zone; `parseAt.ts`); the slider's
+    own moves write `at` 400 ms after the last one, with replace; a value
+    outside the day is ignored and a change of day or period drops it. While
+    playing, the controls and the slider give way to the bar at the map's foot
+    (on phones the sheet drops to its peek) and "At this moment" takes the
+    sidebar's place on the panel; the sidebar stays mounted but hidden, its
+    scroll and the page's are put back on leaving, and the focus goes to Pause
+    on entering and back to the slider's Play on leaving (Escape leaves).
+    Desktop widens the foot and narrows the panel (`--panel-width: 16rem`).
+    Someone who shares is played from `GET /api/v1/people/{userId}/days`
+    (`usePersonDays`, refetched on that person's live events). A day whose
+    tracks come back empty is skipped. The camera frames each day as it
+    loads and follows the cursor when it leaves the viewport (eased, at most
+    every 500 ms; a jump under reduced motion).
   - **Heat** — all-time heatmap (`/api/heatmap` for the view once the map
     has stood still for 300 ms, its box rounded outward to a thousandth of a
     degree and its zoom to a whole level, so that small moves hit the
@@ -4174,7 +4194,9 @@ security ones too.
   level deeper (its uploads and raw points, remote settings, its setup, back
   with the focus on the row), token rotation, renaming, deleting (from the
   list: back in the history, Back not to the gone device), History and its
-  scrubber,
+  scrubber and playback (from midnight to the last point, the empty day
+  skipped, the address while it plays and after, Escape; paused and ended
+  scanned, and a run with reduced motion),
   the heatmap (its squares on the map, found by their colours in a
   screenshot of the canvas, its key and the busiest places), sign-in by email,
   passkey button and autofill, invitations and

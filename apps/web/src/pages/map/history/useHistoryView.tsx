@@ -505,12 +505,13 @@ export function useHistoryView({
       silentExit.current = false;
       return;
     }
-    const at = atText(before.clock, timeZone);
+    // Where it stopped: the state it stopped in, or, once it is off, the last one it was in.
+    const stoppedAt = playback.status === "off" ? before : playback;
     setScrub({
-      key: `${before.day}|${before.day}|${selected?.key ?? "everyone"}|${own?.deviceIds?.join(",") ?? "all"}`,
-      value: before.clock,
+      key: `${stoppedAt.day}|${stoppedAt.day}|${selected?.key ?? "everyone"}|${own?.deviceIds?.join(",") ?? "all"}`,
+      value: stoppedAt.clock,
     });
-    showMoment(before.day, at);
+    showMoment(stoppedAt.day, atText(stoppedAt.clock, timeZone));
   }, [playback.status, playback.day, playback.clock, timeZone, showMoment, selected, own]);
   // What each drawn device was doing at the moment shown, for the strip that replaces the sidebar.
   const nowEntries = useMemo<NowEntry[]>(

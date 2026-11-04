@@ -172,12 +172,18 @@ export function PeoplePanel({
   const kept = useRef<ReactNode>(sidebar);
   if (!playing) kept.current = sidebar;
   return (
-    <section className="map-page__panel" aria-labelledby="people-page-title" ref={panelRef}>
+    <section
+      className="map-page__panel"
+      {...(playing ? { "aria-label": "People" } : { "aria-labelledby": "people-page-title" })}
+      ref={panelRef}
+    >
       <span className="map-page__grabber" aria-hidden="true" />
       {/* Mounted all along, hidden while playing: what is open and typed in it stays. */}
       <div hidden={playing}>{playing ? kept.current : sidebar}</div>
       {playing ? (
         <>
+          {/* The page's own heading is in the hidden sidebar. */}
+          <h1 className="visually-hidden">People</h1>
           {bar}
           <div className="map-page__now" data-peek-end>
             {strip}
