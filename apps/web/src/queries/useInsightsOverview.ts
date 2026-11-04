@@ -8,9 +8,10 @@ import { freshFor } from "../cache/cachePolicy";
 /**
  * How the signed-in person travelled in a period (`/api/v1/insights/overview`).
  * The previous answer stays on screen while another period loads; `segments`
- * events refetch it.
+ * events refetch it. `enabled: false` asks for nothing (a comparison there is
+ * none to make).
  */
-export function useInsightsOverview(params: InsightsParams) {
+export function useInsightsOverview(params: InsightsParams, { enabled = true } = {}) {
   return useQuery({
     queryKey: queryKeys.insightsOverview(params),
     queryFn: ({ client, queryKey, signal }) =>
@@ -20,6 +21,7 @@ export function useInsightsOverview(params: InsightsParams) {
         insightsOverviewSchema,
         { query: { from: params.from, to: params.to, devices: params.deviceIds } },
       ),
+    enabled,
     placeholderData: keepPreviousData,
     staleTime: freshFor("insights"),
   });

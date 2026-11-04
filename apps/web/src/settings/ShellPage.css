@@ -1,6 +1,6 @@
-/* A page of Settings: the bar with the way back, a large title, then its groups. */
+/* A screen beside a list: the bar with the way back, a large title, then its content. */
 
-.settings-page {
+.shell-page {
   display: grid;
   align-content: start;
   gap: var(--space-6);
@@ -12,7 +12,7 @@
  * see-through while the large title shows and takes the title once that
  * scrolls under it.
  */
-.settings-page__bar {
+.shell-page__bar {
   position: sticky;
   top: calc(var(--header-height) + var(--safe-top));
   z-index: 15;
@@ -30,16 +30,16 @@
     border-color var(--duration-fast) ease;
 }
 
-.settings-page__bar[data-compact] {
+.shell-page__bar[data-compact] {
   border-bottom-color: var(--color-border);
   background: var(--color-surface);
 }
 
-.settings-back {
+.shell-page__back {
   grid-column: 1;
 }
 
-.settings-page__compact-title {
+.shell-page__compact-title {
   grid-column: 2;
   overflow: hidden;
   font-weight: 650;
@@ -50,28 +50,28 @@
   transition: opacity var(--duration-fast) ease;
 }
 
-.settings-page__bar[data-compact] .settings-page__compact-title {
+.shell-page__bar[data-compact] .shell-page__compact-title {
   opacity: 1;
 }
 
-.settings-page__header {
+.shell-page__header {
   display: grid;
   gap: var(--space-1);
   padding: 0 var(--space-1);
 }
 
-.settings-page__title {
+.shell-page__title {
   font-size: var(--text-3xl);
   letter-spacing: -0.02em;
 }
 
-.settings-page__description {
+.shell-page__description {
   color: var(--color-text-2);
 }
 
 /* Beside the list: no sticky bar; the way back only on the pages of single items. */
 @media (min-width: 64rem) {
-  .settings-page__bar {
+  .shell-page__bar {
     position: static;
     display: block;
     min-height: 0;
@@ -81,29 +81,29 @@
     background: none;
   }
 
-  .settings-page__bar[data-compact] {
+  .shell-page__bar[data-compact] {
     background: none;
   }
 
-  .settings-page__bar:not(.settings-page__bar--always) {
+  .shell-page__bar:not(.shell-page__bar--always) {
     display: none;
   }
 
-  .settings-page__compact-title {
+  .shell-page__compact-title {
     display: none;
   }
 
-  .settings-back {
+  .shell-page__back {
     margin-inline-start: calc(var(--space-2) * -1);
   }
 
-  .settings-page__title {
+  .shell-page__title {
     font-size: var(--text-2xl);
   }
 }
 
 @media (forced-colors: active) {
-  .settings-page__bar[data-compact] {
+  .shell-page__bar[data-compact] {
     border-bottom-color: CanvasText;
   }
 }

@@ -79,30 +79,39 @@ export function appRoutes(): RouteObject[] {
                 {
                   path: "insights",
                   lazy: () =>
-                    import("../pages/insights/InsightsOverviewPage").then((m) => ({
-                      Component: m.InsightsOverviewPage,
+                    import("../pages/insights/InsightsShell").then((m) => ({
+                      Component: m.InsightsShell,
                     })),
-                },
-                {
-                  path: "insights/transport/:mode",
-                  lazy: () =>
-                    import("../pages/insights/InsightsModePage").then((m) => ({
-                      Component: m.InsightsModePage,
-                    })),
-                },
-                {
-                  path: "insights/time",
-                  lazy: () =>
-                    import("../pages/insights/InsightsTimePage").then((m) => ({
-                      Component: m.InsightsTimePage,
-                    })),
-                },
-                {
-                  path: "insights/roads",
-                  lazy: () =>
-                    import("../pages/insights/InsightsRoadsPage").then((m) => ({
-                      Component: m.InsightsRoadsPage,
-                    })),
+                  children: [
+                    {
+                      index: true,
+                      lazy: () =>
+                        import("../pages/insights/SummaryScreen").then((m) => ({
+                          Component: m.SummaryScreen,
+                        })),
+                    },
+                    {
+                      path: "transport/:mode",
+                      lazy: () =>
+                        import("../pages/insights/ModeScreen").then((m) => ({
+                          Component: m.ModeScreen,
+                        })),
+                    },
+                    {
+                      path: "time",
+                      lazy: () =>
+                        import("../pages/insights/WhenScreen").then((m) => ({
+                          Component: m.WhenScreen,
+                        })),
+                    },
+                    {
+                      path: "roads",
+                      lazy: () =>
+                        import("../pages/insights/RoadsScreen").then((m) => ({
+                          Component: m.RoadsScreen,
+                        })),
+                    },
+                  ],
                 },
                 settingsRoute,
               ],
