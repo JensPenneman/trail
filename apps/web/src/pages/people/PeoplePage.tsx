@@ -248,7 +248,15 @@ export function PeoplePage() {
     // until the person takes hold of it or a moment has passed.
     const page = half?.closest<HTMLElement>(".map-page");
     if (half == null || page == null) return undefined;
-    const follow = () => half.scrollIntoView?.({ block: "start", behavior: "instant" });
+    const lifting = performance.now();
+    const follow = () => {
+      // Lowered since (to peek, by the page or the person): not lifted again.
+      if (window.scrollY <= 0 && performance.now() - lifting > 300) {
+        stop();
+        return;
+      }
+      half.scrollIntoView?.({ block: "start", behavior: "instant" });
+    };
     const stop = () => {
       page.removeEventListener(peekChanged, follow);
       window.removeEventListener("pointerdown", stop);
