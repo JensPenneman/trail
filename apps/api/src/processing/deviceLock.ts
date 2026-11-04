@@ -15,7 +15,7 @@ export async function lockDeviceProcessing(tx: Executor, deviceId: string): Prom
 }
 
 /** How long a person's correction waits for a pass over the device's data before it asks to retry. */
-export const correctionLockWaitMs = 10_000;
+const correctionLockWaitMs = 10_000;
 
 /** What the person is told when the wait ran out (the web app shows it beside a retry). */
 export const stillProcessingMessage = "Still processing this device's data, try again in a moment.";
