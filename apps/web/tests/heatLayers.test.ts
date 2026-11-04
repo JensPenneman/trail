@@ -11,8 +11,7 @@ interface FakeLayer {
 }
 
 /** Just enough of a MapLibre map to add, find and move layers in a style's order. */
-function fakeMap(layers: FakeLayer[]) {
-  const sources = new Set<string>();
+function fakeMap(layers: FakeLayer[], sources = new Set<string>()) {
   const indexOf = (id: string | undefined) =>
     id === undefined ? layers.length : layers.findIndex((layer) => layer.id === id);
   const map = {
@@ -107,22 +106,23 @@ describe("ensureTrailLayers in OpenFreeMap's styles", () => {
 
   it("places everything again after the style is swapped for the other one", () => {
     const layers: FakeLayer[] = asStyleLayers(libertyLayers);
-    ensureTrailLayers(fakeMap(layers), false);
+    const sources = new Set<string>();
+    const map = fakeMap(layers, sources);
+    ensureTrailLayers(map, false);
     // A new style drops Trail's layers and sources; the map object stays.
     layers.splice(0, layers.length, ...asStyleLayers(darkLayers));
-    ensureTrailLayers(fakeMap(layers), true);
+    sources.clear();
+    ensureTrailLayers(map, true);
 
     const trail = layers.flatMap((layer, index) => (isTrailShape(layer) ? [index] : []));
     const first = Math.min(...trail);
     const last = Math.max(...trail);
-    expect(
-      layers.filter(
-        (layer, index) =>
-          index > first && !layer.id.startsWith("trail-") && layer.type !== "symbol",
-      ),
-    ).toEqual([]);
+    const shapesAbove = layers.filter(
+      (layer, index) => index > first && !layer.id.startsWith("trail-") && layer.type !== "symbol",
+    );
+    expect(shapesAbove).toEqual([]);
     expect(layers.filter((layer, index) => index < last && isText(layer))).toEqual([]);
-    expect(layers.filter((layer) => layer.id.startsWith("trail-heat"))).toHaveLength(1);
+    expect(layers.filter((layer) => layer.id === "trail-heat")).toHaveLength(1);
   });
 
   it("raises the names under the circles when the style ends in a shape", () => {

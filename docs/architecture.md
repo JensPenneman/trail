@@ -2835,9 +2835,9 @@ count among them, since they lead to signed-in pages.
     under its buildings and its road names under its boundaries). Trail's
     other fills and lines (tracks, transport, accuracy) take the same
     place, above the heat layer, so no road or building of any style draws
-    over a track. The key (`HeatLegend`) is that scale: "Points recorded in each square", a
-    swatch and the counts of every class, "Rarely" and "Often" at its ends
-    as a visual cue only; it follows the view, as the squares do. Nothing in
+    over a track. The key (`HeatLegend`) is that scale: "Points recorded in
+    each square", a swatch and the counts of every class, "Rarely" and
+    "Often" at its ends as a visual cue only; it follows the view, as the squares do. Nothing in
     the heatmap moves (no transitions, so nothing for reduced motion to
     stop). Heatmaps cover one's own devices only, so Heat offers no people
     and says so when some are chosen with Me.
@@ -3985,8 +3985,8 @@ security ones too.
   scale, classes and squares (`heatHelpers.test.ts`) and where its layer
   goes in the two basemap styles, their layers read from the vendored files
   (`heatLayers.test.ts`: every Trail fill and line over every shape and
-  under every name, heat lowest, circles on top), and the sprite made absolute (`absoluteSprite.test.ts`)
-  have unit tests of their own; Settings itself renders through its real routes
+  under every name, heat lowest, circles on top), and the sprite made
+  absolute (`absoluteSprite.test.ts`) have unit tests of their own; Settings itself renders through its real routes
   (`renderSettings`, phone or wide screen) for the list, search, going
   deeper and back with focus, and every page — Settings › Devices among them:
   its cards, each the way to its device and back with the focus on it, a
