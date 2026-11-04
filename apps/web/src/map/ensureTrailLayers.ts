@@ -3,7 +3,7 @@ import type {
   GeoJSONSourceSpecification,
   Map as MapLibreMap,
 } from "maplibre-gl";
-import { heatLayerPlacement } from "./heatLayerPlacement";
+import { dataLayerPlacement } from "./dataLayerPlacement";
 import { heatRamp } from "./heatRamp";
 
 export const trailSources = {
@@ -52,23 +52,23 @@ function heatColor(dark: boolean): ExpressionSpecification {
 
 /**
  * Adds Trail's sources and layers to the current style (again after every
- * style switch, which drops them). Data layers go below the basemap's labels
- * so street and place names stay readable; visit and scrubber dots go on top.
+ * style switch, which drops them). Fills and lines go over every shape of the
+ * basemap and under its names (see dataLayerPlacement), so street and place
+ * names stay readable; visit and scrubber dots go on top.
  */
 export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
   for (const id of Object.values(trailSources)) {
     if (map.getSource(id) === undefined) map.addSource(id, empty);
   }
   const styleLayers = map.getStyle().layers;
-  const firstLabel = styleLayers.find((layer) => layer.type === "symbol")?.id;
   const casing = dark ? "rgba(12, 12, 14, 0.85)" : "rgba(255, 255, 255, 0.95)";
   const surface = dark ? "#1c1e20" : "#ffffff";
 
-  const heat = heatLayerPlacement(styleLayers);
-  const heatAdded = map.getLayer("trail-heat") === undefined;
-  if (heatAdded) {
+  const placement = dataLayerPlacement(styleLayers);
+  const fresh = map.getLayer("trail-heat") === undefined;
+  if (fresh) {
     // Opaque: a square is exactly its colour in the key, and the ramp's contrast its own.
-    map.addLayer({ id: "trail-heat", type: "fill", source: trailSources.heat }, heat.beforeId);
+    map.addLayer({ id: "trail-heat", type: "fill", source: trailSources.heat }, placement.beforeId);
   }
   map.setPaintProperty("trail-heat", "fill-color", heatColor(dark));
 
@@ -80,7 +80,7 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
         source: trailSources.accuracy,
         paint: { "fill-color": ["get", "color"], "fill-opacity": 0.12 },
       },
-      firstLabel,
+      placement.beforeId,
     );
     map.addLayer(
       {
@@ -89,7 +89,7 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
         source: trailSources.accuracy,
         paint: { "line-color": ["get", "color"], "line-width": 1.25, "line-opacity": 0.6 },
       },
-      firstLabel,
+      placement.beforeId,
     );
   }
 
@@ -104,7 +104,7 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
           "line-width": ["interpolate", ["linear"], ["zoom"], 8, 4, 14, 7, 18, 10],
         },
       },
-      firstLabel,
+      placement.beforeId,
     );
     map.addLayer(
       {
@@ -117,7 +117,7 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
           "line-width": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 3.75, 18, 6],
         },
       },
-      firstLabel,
+      placement.beforeId,
     );
   }
   map.setPaintProperty("trail-track-casing", "line-color", casing);
@@ -138,7 +138,7 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
           "line-dasharray": [3, 2.5],
         },
       },
-      firstLabel,
+      placement.beforeId,
     );
   }
   if (map.getLayer("trail-transport-casing") === undefined) {
@@ -152,7 +152,7 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
           "line-width": ["interpolate", ["linear"], ["zoom"], 8, 4.5, 14, 7.5, 18, 11],
         },
       },
-      firstLabel,
+      placement.beforeId,
     );
     map.addLayer(
       {
@@ -165,7 +165,7 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
           "line-width": ["interpolate", ["linear"], ["zoom"], 8, 2.25, 14, 4, 18, 6.5],
         },
       },
-      firstLabel,
+      placement.beforeId,
     );
     map.addLayer(
       {
@@ -180,7 +180,7 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
           "line-gap-width": ["interpolate", ["linear"], ["zoom"], 8, 3.5, 14, 6, 18, 9],
         },
       },
-      firstLabel,
+      placement.beforeId,
     );
     map.addLayer(
       {
@@ -194,7 +194,7 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
           "line-width": ["interpolate", ["linear"], ["zoom"], 8, 5, 14, 8, 18, 12],
         },
       },
-      firstLabel,
+      placement.beforeId,
     );
   }
   map.setPaintProperty("trail-transport-casing", "line-color", casing);
@@ -214,7 +214,7 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
           "line-dasharray": [0, 2],
         },
       },
-      firstLabel,
+      placement.beforeId,
     );
   }
 
@@ -260,7 +260,7 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
   }
   map.setPaintProperty("trail-cursors", "circle-stroke-color", surface);
 
-  // Last, once Trail's other layers are in under the first label: the names a style draws
-  // under its roads and boundaries go over the squares.
-  if (heatAdded) for (const id of heat.raise) map.moveLayer(id, heat.beforeId);
+  // Last, once Trail's other layers are in: the names a style draws under its roads and
+  // boundaries go over Trail's fills and lines. Only on a fresh style, so a repeat call moves nothing.
+  if (fresh) for (const id of placement.raise) map.moveLayer(id, placement.beforeId);
 }

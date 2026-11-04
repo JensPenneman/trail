@@ -1,4 +1,4 @@
-/** A layer of a style as `map.getStyle().layers` lists it: what placing the heatmap needs. */
+/** A layer of a style as `map.getStyle().layers` lists it: what placing Trail's layers needs. */
 interface StyleLayer {
   id: string;
   type: string;
@@ -12,16 +12,16 @@ const showsText = (layer: StyleLayer): boolean =>
   "text-field" in layer.layout;
 
 /**
- * Where the heatmap's squares go in a style (docs/architecture.md §14): over
- * every area, road, building and boundary, which would cut the squares apart,
+ * Where Trail's fills and lines (the heatmap's squares, tracks, transport) go in a style (docs/architecture.md §14): over
+ * every area, road, building and boundary, which would cut them apart,
  * and under every name. `beforeId` is the layer to add them below — the first
  * of the symbols after the style's last layer that is not one (none: on top);
- * `raise` the names a style draws earlier, to be moved over the squares in
+ * `raise` the names a style draws earlier, to be moved over them in
  * their order (OpenFreeMap's dark style draws its water names under its
  * buildings and its road names under its boundaries). Trail's own layers are
  * left out.
  */
-export function heatLayerPlacement(layers: readonly StyleLayer[]): {
+export function dataLayerPlacement(layers: readonly StyleLayer[]): {
   beforeId: string | undefined;
   raise: string[];
 } {

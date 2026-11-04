@@ -2829,11 +2829,13 @@ count among them, since they lead to signed-in pages.
     (OKLab × 100), at least 7.0 and 6.6 for protanopia and 8.9 and 7.9 for
     deuteranopia. The squares lie over every area, road, building and
     boundary of the basemap, which would otherwise cut them apart, and under
-    every name (`heatLayerPlacement`): below the first of the symbols after
+    every name (`dataLayerPlacement`): below the first of the symbols after
     the style's last other layer, with the names a style draws earlier
     moved over the squares (OpenFreeMap's dark style draws its water names
-    under its buildings and its road names under its boundaries), once
-    Trail's lines are in under the style's first symbol. The key
+    under its buildings and its road names under its boundaries). Trail's
+    other fills and lines (tracks, transport, accuracy) take the same
+    place, above the heat layer, so no road or building of any style draws
+    over a track. The key
     (`HeatLegend`) is that scale: "Points recorded in each square", a
     swatch and the counts of every class, "Rarely" and "Often" at its ends
     as a visual cue only; it follows the view, as the squares do. Nothing in
