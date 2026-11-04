@@ -1,8 +1,10 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { cameraDiffers } from "../src/map/cameraDiffers";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { user } from "./support/fixtures";
+import { stubMap } from "./support/mapStub";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
@@ -38,16 +40,48 @@ describe("the camera of a link (c=)", () => {
     expect(router.state.location.search).toContain("c=3.7,51.05,13.5");
   });
 
-  it("is dropped, in place of its entry, once the map reports another view", async () => {
+  it("is dropped, in place of its entry, once the map reports a view that is not the camera", async () => {
     mockApi(standardRoutes());
-    // The stub starts at an address that is not the one the link names: as a map that had moved.
     const { router } = renderPage(<PeoplePage />, {
-      url: "/?view=heat&person=me&c=-10,0,3",
+      url: "/?view=heat&person=me&c=3.7,51.05,13.5",
       user,
     });
     await screen.findByRole("img", { name: /^Heatmap/ });
-    // The stub reports c's own centre first, so it stays; change the camera under it by hand.
+    expect(router.state.location.search).toContain("c=3.7,51.05,13.5");
+    // The same view again changes nothing.
+    act(() => stubMap.report({ bounds: [3.5, 51.0, 3.9, 51.1], zoom: 13.5 }));
     expect(router.state.location.search).toContain("c=");
+    // A pan: the address no longer names the camera, and it was not a step of the history.
+    act(() => stubMap.report({ bounds: [3.6, 50.9, 4.0, 51.0], zoom: 13.5 }));
+    await waitFor(() => expect(router.state.location.search).not.toContain("c="));
+    expect(router.state.historyAction).toBe("REPLACE");
+    expect(router.state.location.search).toContain("view=heat");
+  });
+
+  it("holds back no fit of the view it was not asked for: Heat with a camera, then History", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: "/?view=heat&person=me&c=3.7,51.05,13.5", user });
+    await screen.findByRole("img", { name: /^Heatmap/ });
+    expect(map()).toHaveAttribute("data-fit", "");
+    await person.click(
+      within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", {
+        name: "History",
+      }),
+    );
+    // History frames its day as it always does: nothing of the camera is held against it.
+    await waitFor(() => expect(map().getAttribute("data-fit")).toMatch(/\|me\|/));
+  });
+
+  it("holds the fit of the view it opens on until the map has left the camera, then lets it frame", async () => {
+    mockApi(standardRoutes());
+    renderPage(<PeoplePage />, { url: "/?view=history&person=me&c=3.7,51.05,13.5", user });
+    await screen.findByRole("img", { name: /^Map/ });
+    await waitFor(() => expect(map().getAttribute("data-initial-view")).not.toBe("null"));
+    // History's fit at load is held while the map is at the camera.
+    expect(map()).toHaveAttribute("data-fit", "");
+    act(() => stubMap.report({ bounds: [3.6, 50.9, 4.0, 51.0], zoom: 12 }));
+    await waitFor(() => expect(map().getAttribute("data-fit")).toMatch(/\|me\|/));
   });
 
   it("without a camera frames the data as before", async () => {

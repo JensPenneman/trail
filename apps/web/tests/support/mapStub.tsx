@@ -1,12 +1,20 @@
 import { useEffect } from "react";
+import type { MapViewState } from "../../src/map/mapTypes";
 import type { TrailMapProps } from "../../src/map/TrailMap";
 
 /** Ghent and around, as a map would report its view once it has loaded. */
 const loadedView = { bounds: [3.4, 50.9, 3.9, 51.1] as const, zoom: 11 };
 
+/** The view change handler of the latest stub, for a test to report another view as a moved map would. */
+let latestReport: ((view: MapViewState) => void) | null = null;
+export const stubMap = {
+  report: (view: MapViewState) => latestReport?.(view),
+};
+
 /** jsdom has no WebGL; page tests check what is handed to the map instead. */
 export function MapStub(props: TrailMapProps) {
   const { onViewChange, initialView } = props;
+  latestReport = onViewChange ?? null;
   // As a real map reports its view once loaded: where it was told to start, else Ghent.
   useEffect(() => {
     if (initialView === undefined) {

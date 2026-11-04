@@ -30,7 +30,7 @@ export const heatMeasureInfo: Readonly<Record<HeatMeasure, HeatMeasureInfo>> = {
   visits: {
     option: "Visits to places",
     title: "Visits to places in each square",
-    ends: ["Less", "More"],
+    ends: ["Rarely", "Often"],
     ladders: countLadders,
   },
 };
@@ -49,17 +49,21 @@ export function valueText(heat: HeatMeasure, value: number, format: Formatter): 
 }
 
 const unitsS = [
-  { size: 604_800, name: "wks" },
-  { size: 86_400, name: "days" },
-  { size: 3600, name: "hr" },
-  { size: 60, name: "min" },
+  { size: 604_800, unit: "week" },
+  { size: 86_400, unit: "day" },
+  { size: 3600, unit: "hour" },
+  { size: 60, unit: "minute" },
 ] as const;
 
-/** "5–15 min", "1–3 hr", else both ends in full: the class from `from` up to (not including) `to`. */
+/** "5–15 min", "1–3 hr" in the locale's own units, else both ends in full: the class from `from` up to `to`. */
 function durationRange(from: number, to: number, format: Formatter): string {
-  const unit = unitsS.find(({ size }) => to % size === 0 && from % size === 0 && to / size >= 2);
-  if (unit === undefined) return `${format.roundDuration(from)}–${format.roundDuration(to)}`;
-  return `${from / unit.size}–${to / unit.size} ${unit.name}`;
+  const found = unitsS.find(({ size }) => to % size === 0 && from % size === 0 && to / size >= 2);
+  if (found === undefined) return `${format.roundDuration(from)}–${format.roundDuration(to)}`;
+  return new Intl.NumberFormat(format.locale, {
+    style: "unit",
+    unit: found.unit,
+    unitDisplay: "short",
+  }).formatRange(from / found.size, to / found.size);
 }
 
 /**

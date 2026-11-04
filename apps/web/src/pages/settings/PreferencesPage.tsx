@@ -15,7 +15,7 @@ import { SettingsRow } from "../../settings/SettingsRow";
 import { levelLabels } from "../../transport/LevelControl";
 import { ErrorState } from "../../ui/ErrorState";
 import { useAnnounce } from "../../ui/useAnnounce";
-import { heatMeasureInfo } from "../map/heat/heatMeasures";
+import { heatChoices, heatMeasureInfo } from "../map/heat/heatMeasures";
 
 const isLevel = (value: string): value is (typeof processingLevels)[number] =>
   (processingLevels as readonly string[]).includes(value);
@@ -133,10 +133,7 @@ export function PreferencesPage() {
           label="Heat by"
           detail="What the squares of the heatmap count: points, the time spent at places or the visits to them."
           selected={preferences.heat}
-          options={["points", "time", "visits"].map((value) => ({
-            value,
-            label: heatMeasureInfo[value as "points" | "time" | "visits"].option,
-          }))}
+          options={heatChoices.map((value) => ({ value, label: heatMeasureInfo[value].option }))}
           onChange={(value) => {
             if (isHeat(value)) save({ heat: value });
           }}

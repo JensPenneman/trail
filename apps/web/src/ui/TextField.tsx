@@ -6,11 +6,21 @@ interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "id
   label: string;
   hint?: ReactNode;
   error?: string | null;
+  /** Marks the input invalid without a message of its own (its partner's error says what is wrong). */
+  invalid?: boolean;
   ref?: Ref<HTMLInputElement>;
 }
 
 /** A labelled input whose hint and error are wired to it for screen readers. */
-export function TextField({ label, hint, error, className, ref, ...inputProps }: TextFieldProps) {
+export function TextField({
+  label,
+  hint,
+  error,
+  invalid = false,
+  className,
+  ref,
+  ...inputProps
+}: TextFieldProps) {
   const id = useId();
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
@@ -32,7 +42,7 @@ export function TextField({ label, hint, error, className, ref, ...inputProps }:
         ref={ref}
         id={id}
         className="input"
-        aria-invalid={error ? true : undefined}
+        aria-invalid={error || invalid ? true : undefined}
         aria-describedby={describedBy === "" ? undefined : describedBy}
       />
       {error ? (

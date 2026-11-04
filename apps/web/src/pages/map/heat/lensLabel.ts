@@ -45,9 +45,14 @@ export function periodLabel(period: HeatPeriod, format: Formatter): string {
     return format.month(from.year, from.month);
   }
   const end = format.date(period.to);
+  // The first end without its year when both have the same one.
   const start =
     from.year === to.year
-      ? format.date(period.from).replace(/\s*\d{4}$/, "")
+      ? new Intl.DateTimeFormat(format.locale, {
+          day: "numeric",
+          month: "short",
+          timeZone: "UTC",
+        }).format(Date.UTC(from.year, from.month - 1, from.day))
       : format.date(period.from);
   return `${start} – ${end}`;
 }

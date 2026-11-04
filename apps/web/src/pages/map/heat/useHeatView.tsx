@@ -21,6 +21,13 @@ import { hasPeriod, heatMeasureInfo } from "./heatMeasures";
 import type { HeatPeriod } from "./heatPeriod";
 import { periodDetail, periodLabel } from "./lensLabel";
 
+/** What the map says of itself, by what it counts. */
+const mapLabels: Record<HeatMeasure, string> = {
+  points: "Heatmap of all recorded points in view: everywhere your devices have been.",
+  time: "Heatmap of time spent at places in view: where you stayed longest.",
+  visits: "Heatmap of visits to places in view: where you stopped most often.",
+};
+
 export interface HeatViewInput {
   active: boolean;
   selection: MapSelection;
@@ -139,13 +146,7 @@ export function useHeatView({
   return {
     title: "Heatmap",
     map: {
-      label: `Heatmap of ${
-        (answered?.heat ?? measure) === "points"
-          ? "all recorded points"
-          : (answered?.heat ?? measure) === "time"
-            ? "time spent at places"
-            : "visits to places"
-      } in view: everywhere your devices have been. The busiest places are under Heat on your page.`,
+      label: `${mapLabels[answered?.heat ?? measure]} The busiest places are under Heat on your page.`,
       describedBy: keyId,
       heat,
       ...(framesCamera

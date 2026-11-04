@@ -151,10 +151,13 @@ export function PeoplePage() {
   const [openedOn] = useState(view);
   const [leftFirstView, setLeftFirstView] = useState(false);
   if (!leftFirstView && view !== openedOn) setLeftFirstView(true);
-  // A link's camera (`?c=`) is where the map starts, once; the first fit the view asks for at load
-  // is held back, a later one (another view, another person) goes on as always.
+  // A link's camera (`?c=`) is where the map starts, once: the view the page opened on does not
+  // fit (its key changes as its data arrives) until the map has left the camera; another view
+  // frames what it shows as always.
   const [camera] = useState(search.camera);
-  const [heldFitKey, setHeldFitKey] = useState<string | null>(null);
+  const [cameraReleased, setCameraReleased] = useState(false);
+  // The view the address names, as the page opened: what the page shows may settle after it.
+  const [loadedView] = useState(search.view);
   const initialView = useMemo(
     () =>
       camera === null
@@ -198,20 +201,22 @@ export function PeoplePage() {
     today,
     measure: heatMeasure,
     period: search.heatPeriod,
-    onClearLens: clearLens,
+    onClearLens: () => {
+      clearLens();
+      // The chip goes with it: focus stays on the map's controls instead of falling to the page.
+      stage.current?.querySelector<HTMLButtonElement>(".map-options__toggle")?.focus();
+    },
   });
   const content = view === "live" ? live : view === "history" ? history : heat;
   // The map fits what it shows under the controls: below the bar, and left of the zoom column on
   // phones, where the bar is as wide as the map less that column.
-  if (camera !== null && heldFitKey === null && content.map.fit !== undefined) {
-    setHeldFitKey(content.map.fit.key);
-  }
-  const fitHeld = camera !== null && content.map.fit?.key === heldFitKey;
+  const fitHeld = camera !== null && !cameraReleased && search.view === loadedView;
+  const { fit: contentFit, ...mapProps } = content.map;
   const fit =
-    content.map.fit === undefined || fitHeld
+    contentFit === undefined || fitHeld
       ? undefined
       : {
-          ...content.map.fit,
+          ...contentFit,
           inset: { top: overlayEnd + 8, right: wide ? 0 : 64 },
         };
 
@@ -283,6 +288,7 @@ export function PeoplePage() {
       setViewport(next);
       if (camera === null || cameraLeft.current || !cameraDiffers(camera, next)) return;
       cameraLeft.current = true;
+      setCameraReleased(true);
       releaseCamera();
     },
     [camera, releaseCamera],
@@ -406,7 +412,7 @@ export function PeoplePage() {
         <div className="map-page__canvas">
           {mapStyle.style === null ? null : (
             <LazyTrailMap
-              {...content.map}
+              {...mapProps}
               mapStyle={mapStyle.style}
               dark={mapStyle.dark}
               notice={mapStyle.notice}

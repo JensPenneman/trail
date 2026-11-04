@@ -2965,7 +2965,7 @@ count among them, since they lead to signed-in pages.
     camera `?c=lon,lat,zoom` starts the map there and holds back the first fit;
     the address drops it, in place of its entry, with the first view that is
     off it by a hundredth of a zoom or two pixels. The busiest places follow the
-    measure ("3 hrs 20 mins", "12 visits"). Settings › Preferences has the
+    measure ("3 hr 20 min", "12 visits"). Settings › Preferences has the
     rows "Heat by" and "Colour paths by"; a period of the stop measures is `?from=`
     and `?to=`, shared with History, and a period longer than 93 days stays
     behind when History opens; `?c=lon,lat,zoom` is a camera a link names,

@@ -138,6 +138,31 @@ describe("Heat's options", () => {
   });
 });
 
+describe("the custom period's form", () => {
+  it("shows the dates of the address when it opens, and marks both ends when they disagree", async () => {
+    mockApi(heatRoutes());
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, {
+      url: "/?view=heat&person=me&heat=time&from=2026-10-03&to=2026-10-10",
+      user,
+    });
+    await openOptions(person);
+    expect(await screen.findByLabelText("From")).toHaveValue("2026-10-03");
+    // A preset replaces the dates; the form, shown again, has the preset's.
+    await person.selectOptions(screen.getByRole("combobox", { name: "Period" }), "7d");
+    await person.selectOptions(screen.getByRole("combobox", { name: "Period" }), "custom");
+    expect(await screen.findByLabelText("To")).toHaveValue(today);
+    await person.clear(screen.getByLabelText("From"));
+    await person.type(screen.getByLabelText("From"), "2026-10-20");
+    await person.clear(screen.getByLabelText("To"));
+    await person.type(screen.getByLabelText("To"), "2026-10-10");
+    await person.click(screen.getByRole("button", { name: "Show period" }));
+    expect(await screen.findByText("From must not be after To.")).toBeInTheDocument();
+    expect(screen.getByLabelText("From")).toBeInvalid();
+    expect(screen.getByLabelText("To")).toBeInvalid();
+  });
+});
+
 describe("Heat's key", () => {
   const keyList = (name: string) => screen.findByRole("list", { name });
 
@@ -265,6 +290,8 @@ describe("the lens chip", () => {
     expect(search.has("from")).toBe(false);
     expect(search.get("devices")).toBe(ids.phone);
     expect(router.state.historyAction).toBe("REPLACE");
+    // The chip is gone: focus is on the map options, not lost.
+    expect(screen.getByRole("button", { name: /Map options/ })).toHaveFocus();
   });
 
   it("says a year, or a range, and is not there without a period", async () => {
