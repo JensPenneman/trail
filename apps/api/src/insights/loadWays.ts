@@ -11,9 +11,9 @@ import type { MoveWays } from "./loadMoveWays";
 import { modesIn } from "./modesIn";
 
 /** The roads listed, longest first. */
-export const maxWayRows = 50;
+const maxWayRows = 50;
 /** At most this many ways are looked up for their names (the longest ones). */
-export const maxNamedWays = 20_000;
+const maxNamedWays = 20_000;
 
 /** The metres on each way over the period's hours: a move counts in proportion to its time inside. */
 export function periodWayTotals(

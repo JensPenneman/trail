@@ -149,9 +149,9 @@ needs them all. A signed-in session holds every scope.
 | `profile:read` | Read the account's name and time zone. |
 | `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |
 | `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |
-| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |
+| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline, Insights › Named roads). |
 | `locations:write` | Correct how you travelled (transport mode overrides). |
-| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates. |
+| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates (Named roads need locations:read). |
 | `people:read` | See the people who share their location with you. |
 | `shares:read` | List your shares, the ones you receive and your public links. |
 | `shares:write` | Start and stop sharing, hide people and manage public links. |
@@ -375,6 +375,15 @@ is true while recorded points of the period still wait for processing.
   `mode` or all. Shares are of the distance with map data (`mappedM`): moves
   without it — map data switched off or not fetched yet — count towards
   `distanceM` only.
+- `GET /api/v1/insights/ways` (`locations:read`) — the 50 roads travelled
+  most, by the name OpenStreetMap gives them, for one `mode` or all: the
+  `distanceM`, its `share` of the distance on named roads (`namedM`), how
+  many `ways` of OpenStreetMap make it up and the rough position of its
+  centre (`lat`, `lon`, three decimals). Ways of one name in the same or
+  touching cells of about 38 km (zoom 10) are one road; the same name in
+  another town is another. Moves without map data, or not worked out again
+  yet after an upgrade, count towards `distanceM` only. The answer has an
+  `ETag`, which also follows the map data.
 
 ## Errors
 

@@ -404,7 +404,7 @@ describe("Insights", () => {
   it("count as reads of the period they cover, through a token or the browser", async () => {
     const made = await createApiToken(owner.agent, {
       name: "Travel statistics",
-      scopes: ["history:read"],
+      scopes: ["history:read", "locations:read"],
       expiresAt: null,
     });
     secrets.push(made.secret);
@@ -416,6 +416,7 @@ describe("Insights", () => {
     await call(apiPaths.v1.insights.mode("cycling"), { ...period, devices: phone.id });
     await call(apiPaths.v1.insights.time, { ...period, mode: "walking" });
     await call(apiPaths.v1.insights.roads, period);
+    await call(apiPaths.v1.insights.ways, { ...period, mode: "cycling" });
     // The Insights pages call the same operations with the session.
     await owner.agent
       .get(apiPaths.v1.insights.overview)
@@ -435,6 +436,7 @@ describe("Insights", () => {
       "api getInsightsOverview",
       "api getInsightsRoads",
       "api getInsightsTime",
+      "api getInsightsWays",
       "web getInsightsOverview",
     ]);
     expect(rows.every((row) => row.access === "read" && row.status === 200)).toBe(true);
@@ -445,6 +447,7 @@ describe("Insights", () => {
       "getInsightsMode",
       "getInsightsTime",
       "getInsightsRoads",
+      "getInsightsWays",
     ]) {
       expect(of("api", action)).toMatchObject({
         actor_kind: "token",
@@ -461,6 +464,7 @@ describe("Insights", () => {
     });
     expect(of("api", "getInsightsTime")?.resource).toEqual({ ...period, mode: "walking" });
     expect(of("api", "getInsightsRoads")?.resource).toEqual(period);
+    expect(of("api", "getInsightsWays")?.resource).toEqual({ ...period, mode: "cycling" });
     expect(of("web", "getInsightsOverview")).toMatchObject({
       actor_kind: "owner",
       actor_label: "Safari on iPhone",

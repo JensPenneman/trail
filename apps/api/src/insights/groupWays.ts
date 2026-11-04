@@ -20,7 +20,7 @@ export interface WayGroup {
 }
 
 /** The zoom of the cells that keep apart roads of the same name in different towns (~38 km wide). */
-export const groupZoom = 10;
+const groupZoom = 10;
 
 function cellOf(lat: number, lon: number): { x: number; y: number } {
   const n = 2 ** groupZoom;
@@ -33,7 +33,7 @@ function cellOf(lat: number, lon: number): { x: number; y: number } {
 /**
  * The ways of one name made into roads: the ways of a name in the same cell, or in cells touching
  * (also diagonally), are one road; "Rue de la Gare" in two towns stays two. Longest first, then by
- * name, so the order is the same on every request.
+ * name and position, so the order is the same on every request.
  */
 export function groupWays(ways: readonly NamedWay[]): WayGroup[] {
   const byName = new Map<string, NamedWay[]>();
@@ -76,5 +76,7 @@ export function groupWays(ways: readonly NamedWay[]): WayGroup[] {
       });
     }
   }
-  return groups.sort((a, b) => b.metres - a.metres || a.name.localeCompare(b.name));
+  return groups.sort(
+    (a, b) => b.metres - a.metres || a.name.localeCompare(b.name) || a.lat - b.lat || a.lon - b.lon,
+  );
 }

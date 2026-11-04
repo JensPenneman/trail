@@ -60,11 +60,13 @@ function wayTotalsOf(
   if (!Array.isArray(totals) || typeof whole !== "number" || whole <= 0) return {};
   const factor = distanceM / whole;
   return {
-    wayTotals: totals.flatMap((entry): [number, number][] =>
-      Array.isArray(entry) && typeof entry[0] === "number" && typeof entry[1] === "number"
-        ? [[entry[0], round(entry[1] * factor, 1)]]
-        : [],
-    ),
+    wayTotals: totals.flatMap((entry): [number, number][] => {
+      const metres =
+        Array.isArray(entry) && typeof entry[0] === "number" && typeof entry[1] === "number"
+          ? round(entry[1] * factor, 1)
+          : 0;
+      return metres > 0 ? [[entry[0], metres]] : [];
+    }),
   };
 }
 
