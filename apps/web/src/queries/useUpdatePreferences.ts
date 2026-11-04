@@ -6,6 +6,7 @@ import { apiFetch } from "../api/apiFetch";
 import { queryKeys } from "../api/queryKeys";
 import { forgetMapStyleChoice } from "../map/useMapStyle";
 import { forgetHeatChoice } from "../pages/map/heat/useHeatChoice";
+import { forgetPathColourChoice } from "../transport/usePathColour";
 import { forgetTrackLevelChoice } from "../transport/useTrackLevel";
 
 interface UpdatePreferencesCallbacks {
@@ -52,6 +53,7 @@ export function useUpdatePreferences({ onSaved, onSettled }: UpdatePreferencesCa
       if (preferences.mapStyle !== undefined) forgetMapStyleChoice();
       if (preferences.level !== undefined) forgetTrackLevelChoice();
       if (preferences.heat !== undefined) forgetHeatChoice();
+      if (preferences.color !== undefined) forgetPathColourChoice();
       onSaved?.(preferences);
     },
     onSettled: (_answer, _error, preferences) => onSettled?.(preferences),

@@ -1,0 +1,13 @@
+.path-legend__swatch {
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 0.25rem;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-text) 25%, transparent);
+}
+
+@media (forced-colors: active) {
+  .path-legend__swatch {
+    forced-color-adjust: none;
+  }
+}

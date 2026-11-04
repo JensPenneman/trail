@@ -9,14 +9,14 @@ import { splitTrackAt } from "./splitTrackAt";
  * what was played by then and, dimmed, what is still ahead.
  */
 export function tracksToMap(
-  tracks: readonly Track[],
+  tracks: readonly (Track & { readonly color?: string })[],
   colorOf: (deviceId: string) => string,
   until?: number,
 ): MapTrack[] {
   if (until === undefined) {
     return tracks.map((track) => ({
       id: track.deviceId,
-      color: colorOf(track.deviceId),
+      color: track.color ?? colorOf(track.deviceId),
       segments: trackSegments(track.points).map((segment) =>
         segment.map((point) => [point[0], point[1]] as const),
       ),
@@ -30,7 +30,7 @@ export function tracksToMap(
       if (cut.played.length > 0) played.push(cut.played);
       if (cut.ahead.length > 0) ahead.push(cut.ahead);
     }
-    const color = colorOf(track.deviceId);
+    const color = track.color ?? colorOf(track.deviceId);
     // The faded part first: where a route doubles back, the played line is drawn over it.
     return [
       ...(ahead.length === 0

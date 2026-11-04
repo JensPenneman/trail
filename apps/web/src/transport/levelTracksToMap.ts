@@ -1,6 +1,7 @@
-import type { LevelTracksResponse, TransportMode } from "@trail/contracts/transport";
+import type { LevelPoint, TransportMode } from "@trail/contracts/transport";
 import { metresBetween, visibleGapM } from "../map/lineGeometry";
 import type { MapTrack, MapTransportSegment } from "../map/mapTypes";
+import type { ColouredLevelTracks } from "../map/pathColour/colourRuns";
 import { splitTrackAt } from "../map/splitTrackAt";
 
 /**
@@ -18,33 +19,42 @@ import { splitTrackAt } from "../map/splitTrackAt";
  * whole. The cursor is the caller's to round (`splitTime`).
  */
 export function levelTracksToMap(
-  response: LevelTracksResponse,
+  response: ColouredLevelTracks,
   colors: { device: (deviceId: string) => string; mode: (mode: TransportMode) => string },
   until?: number,
 ): { tracks: MapTrack[]; transport: MapTransportSegment[] } {
-  const line = (points: readonly (readonly [number, number, number])[]) =>
+  const line = (points: readonly LevelPoint[]) =>
     points.map((point) => [point[0], point[1]] as const);
   if (response.level !== "inferred") {
+    // One entry per device and colour: a path coloured by speed is several, in the device's order.
     const byDevice = new Map<
       string,
       {
+        deviceId: string;
+        color: string;
         played: (readonly (readonly [number, number])[])[];
         ahead: (readonly (readonly [number, number])[])[];
       }
     >();
     for (const segment of response.segments) {
-      const lines = byDevice.get(segment.deviceId) ?? { played: [], ahead: [] };
+      const color = segment.color ?? colors.device(segment.deviceId);
+      const key = `${segment.deviceId}|${color}`;
+      const lines = byDevice.get(key) ?? {
+        deviceId: segment.deviceId,
+        color,
+        played: [],
+        ahead: [],
+      };
       if (until === undefined) lines.played.push(line(segment.points));
       else {
         const cut = splitTrackAt(segment.points, until);
         if (cut.played.length > 0) lines.played.push(cut.played);
         if (cut.ahead.length > 0) lines.ahead.push(cut.ahead);
       }
-      byDevice.set(segment.deviceId, lines);
+      byDevice.set(key, lines);
     }
     return {
-      tracks: [...byDevice].flatMap(([deviceId, { played, ahead }]) => {
-        const color = colors.device(deviceId);
+      tracks: [...byDevice.values()].flatMap(({ deviceId, color, played, ahead }) => {
         // The faded part first, so that the played line is drawn over it.
         return [
           ...(ahead.length === 0
@@ -99,9 +109,10 @@ export function levelTracksToMap(
       selectable: segment.id !== null,
       kind: segment.kind,
       color:
-        segment.kind === "track"
+        segment.color ??
+        (segment.kind === "track"
           ? colors.device(segment.deviceId)
-          : colors.mode(segment.kind === "stop" ? "stationary" : (segment.mode ?? "unknown")),
+          : colors.mode(segment.kind === "stop" ? "stationary" : (segment.mode ?? "unknown"))),
       review: segment.needsReview,
       line: points,
       place: segment.centroid === null ? null : [segment.centroid.lon, segment.centroid.lat],

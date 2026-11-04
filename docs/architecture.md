@@ -3038,7 +3038,7 @@ count among them, since they lead to signed-in pages.
   preference, a dark or satellite map drawing Trail's lines and dots in their
   dark-background steps whatever the page's scheme); while one's own tracks
   are drawn (Live and History with Me or nobody selected) the **detail of the
-  tracks** (level) with the "Map legend"; and, when the selected person has
+  tracks** (level), **Colour by** and the "Map legend"; and, when the selected person has
   more than one device (in Heat, one's own), folded under **Advanced** (a
   disclosure, open when the address sets a filter) the **device filter**
   (someone else's devices in their colour from `personPalette`): which
@@ -3047,6 +3047,32 @@ count among them, since they lead to signed-in pages.
   made on this browser › the account's preference (Settings › Preferences) ›
   Auto and Transport. The body stays in the document while the popover is
   closed and is hidden by CSS only.
+
+  **Colour by** (`usePathColour`, `map/pathColour/`) sets what one's own lines
+  are coloured by: Mode (Transport only: the colour of the move's mode),
+  Device (the device's colour, stops included at Transport), Speed or Time of
+  day. It resolves like the level: `?color=` › `trail.color` on this browser ›
+  the preference `color` › Mode at Transport, else Device; an option the level
+  does not offer is skipped, never rewritten (Raw with `color=mode` is by
+  device). Choosing replaces the entry and is remembered; saving the
+  preference forgets it. Speed and time of day cut each path into runs of one
+  class (`runsOf`: the runs share their boundary points, nothing crosses a
+  recording gap); the same pieces keep their segment's id and review mark at
+  Transport, a stop keeping its stationary colour. The speed of an interval
+  is the phone's own at Raw (the mean of both ends, else distance over time),
+  distance over time at the other levels, the median of three intervals;
+  bands under 6, 6–15, 15–30, 30–70 and 70 km/h and more, or — where every
+  move drawn is on foot — paces of 12:00, 9:00, 7:00 and 5:30 per km. Time of
+  day is the hour the interval began in the account's zone: night 22–06,
+  morning 06–12, afternoon 12–18, evening 18–22. The five steps of the ramp
+  and the four tones (`pathPalette`) are validated by computation (contrast of
+  3:1 or more on the map's grounds, steps in order of lightness, neighbours
+  told apart also under protan, deutan and tritan simulation:
+  `pathPalette.test.ts`). The "Map legend" names the classes of the colouring
+  (the modes, the devices and people drawn, the times of day) and the line
+  styles over it; the speed key floats over the map's bottom-left corner
+  (`PathKey`, in the slot of the Heat key), five steps, slower to faster. Other
+  people's tracks keep their person colour under every option.
 
   History's row is ‹ **Previous day** · the date ▾ · **Next day** › ·
   **Today** (a period shows the date button alone). The date button

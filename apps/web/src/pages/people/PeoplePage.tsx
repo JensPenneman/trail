@@ -23,7 +23,10 @@ import { useDevices } from "../../queries/useDevices";
 import { usePeople } from "../../queries/usePeople";
 import { useNow } from "../../time/useNow";
 import { LevelControl } from "../../transport/LevelControl";
-import { ModeLegend } from "../../transport/ModeLegend";
+import { PathKey } from "../../transport/PathKey";
+import type { LegendDevice } from "../../transport/PathLegend";
+import { PathOptions } from "../../transport/PathOptions";
+import { usePathColour } from "../../transport/usePathColour";
 import { useTrackLevel } from "../../transport/useTrackLevel";
 import { Icon } from "../../ui/Icon";
 import { useMediaQuery } from "../../ui/useMediaQuery";
@@ -92,6 +95,7 @@ export function PeoplePage() {
   const devices = useDevices();
   const people = usePeople();
   const colors = useDeviceColors({ dark: mapStyle.dark });
+  const pathColour = usePathColour(level, { dark: mapStyle.dark, timeZone: user.timezone });
   const personColors = usePersonColors({ dark: mapStyle.dark });
   const now = useNow(15_000);
   const wide = useMediaQuery(besideThePanel);
@@ -174,6 +178,7 @@ export function PeoplePage() {
     colors,
     personColors,
     level,
+    colouring: pathColour.colouring,
     dark: mapStyle.dark,
     today,
     timeZone: user.timezone,
@@ -342,6 +347,21 @@ export function PeoplePage() {
     0,
   );
   const transport = content.transport;
+  // The devices and the person whose lines are on the map, for the legend of the Device colouring.
+  const legendDevices: LegendDevice[] = [
+    ...(available.find((person) => person.key === me)?.devices ?? []).map((device) => ({
+      ...device,
+      slot: colors.slot(device.id),
+      palette: "device" as const,
+    })),
+    ...(selected === null || selected === undefined || selected.key === me
+      ? []
+      : selected.devices.map((device) => ({
+          ...device,
+          slot: personColors.slot(selected.key),
+          palette: "person" as const,
+        }))),
+  ];
   // Which devices draw only matters when some do not: it shows on the button, as the map shows less.
   const note =
     deviceCount > 1 && shownCount < deviceCount ? `${shownCount} of ${deviceCount} devices` : null;
@@ -373,12 +393,13 @@ export function PeoplePage() {
           <LevelControl level={level} available={transport.available} onChange={setLevel} />
         </div>
       )}
-      {transport !== null && level === "inferred" ? (
-        <ModeLegend
-          modes={transport.modes}
-          review={transport.review}
-          stopPaths={transport.stopPaths}
-          gaps={transport.gaps}
+      {transport !== null ? (
+        <PathOptions
+          colour={pathColour.colour}
+          options={pathColour.options}
+          onChange={pathColour.setColour}
+          legend={transport.legend}
+          devices={legendDevices}
         />
       ) : null}
       {deviceCount > 1 ? (
@@ -425,7 +446,12 @@ export function PeoplePage() {
           )}
           {content.chip}
         </div>
-        {content.legend === null ? null : <div className="map-page__legend">{content.legend}</div>}
+        {(content.legend ??
+        (transport?.legend.key == null ? null : <PathKey legend={transport.legend} />)) ? (
+          <div className="map-page__legend">
+            {content.legend ?? (transport === null ? null : <PathKey legend={transport.legend} />)}
+          </div>
+        ) : null}
         {wide ? foot : null}
       </div>
 

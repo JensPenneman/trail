@@ -8,6 +8,8 @@ import type { DeviceColors } from "../../../devices/useDeviceColors";
 import { useFormatter } from "../../../format/useFormatter";
 import { boundsOf } from "../../../map/boundsOf";
 import type { MapPoint } from "../../../map/mapTypes";
+import { colourTracks } from "../../../map/pathColour/colourRuns";
+import type { PathColouring } from "../../../map/pathColour/pathColours";
 import { tracksToMap } from "../../../map/tracksToMap";
 import { sharesHistory } from "../../../people/sharesHistory";
 import type { PersonColors } from "../../../people/usePersonColors";
@@ -56,6 +58,8 @@ export interface HistoryViewInput {
   colors: DeviceColors;
   personColors: PersonColors;
   level: ProcessingLevel;
+  /** How the own lines are coloured (Device, Speed, Time of day, or Mode at Transport). */
+  colouring: PathColouring;
   dark: boolean;
   today: string;
   timeZone: string;
@@ -83,6 +87,7 @@ export function useHistoryView({
   colors,
   personColors,
   level,
+  colouring,
   dark,
   today,
   timeZone,
@@ -216,8 +221,15 @@ export function useHistoryView({
     [requests, personTracks.data],
   );
   const visitList = mineRange === null ? undefined : visits.data;
-  const rawTracks = useMemo(() => tracksToMap(trackList, colors.hex), [trackList, colors]);
-  const transport = useTransportMap(range, level, rawTracks, { dark, device: colors.hex });
+  const rawTracks = useMemo(
+    () => tracksToMap(colourTracks(trackList, colouring), colors.hex),
+    [trackList, colors, colouring],
+  );
+  const transport = useTransportMap(range, level, rawTracks, {
+    dark,
+    device: colors.hex,
+    colouring,
+  });
   const peopleTracks = useMemo(
     () =>
       theirs.flatMap(({ userId, track }) => tracksToMap([track], () => personColors.hex(userId))),
