@@ -2,9 +2,9 @@ import { eq } from "drizzle-orm";
 import type { Database } from "../db/database";
 import { devices } from "../db/schema/devices";
 import { users } from "../db/schema/users";
+import { notifySegments } from "../events/processingNotify";
 import { heatDaysOf } from "../heatmap/heatDaysOf";
 import { rebuildHeatDays } from "../heatmap/rebuildHeatDays";
-import { notifySegments } from "../events/processingNotify";
 import { lockDeviceProcessing } from "./deviceLock";
 import { persistWindow } from "./persistWindow";
 import type { ProcessingConfig } from "./processingConfig";
@@ -160,7 +160,12 @@ export async function processWindow(
     // The days it touched in the owner's zone: their cells for the heatmap, from the points and
     // segments just written (docs/architecture.md §8.2).
     const heatStarted = performance.now();
-    await rebuildHeatDays(tx, deviceId, owner.timezone, heatDaysOf(window.from, window.to, owner.timezone));
+    await rebuildHeatDays(
+      tx,
+      deviceId,
+      owner.timezone,
+      heatDaysOf(window.from, window.to, owner.timezone),
+    );
     const heatDaysMs = Math.round(performance.now() - heatStarted);
     // The older part of a split keeps the rows' reason and level; an upload's is repair: history
     // that must not hold up the fresh points of other devices.

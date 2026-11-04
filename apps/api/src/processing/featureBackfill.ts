@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { sql } from "drizzle-orm";
 import type { Database, Executor } from "../db/database";
+import { rebuildHeatDays } from "../heatmap/rebuildHeatDays";
 import { lockDeviceProcessing } from "./deviceLock";
 import { type ProcessingFeature, processingFeatureVersions } from "./processingVersion";
 
@@ -103,42 +104,88 @@ async function fillWayTotals(
   return result.rowCount ?? 0;
 }
 
-/** The start of the newest move of `deviceId` before `beforeMs` that lacks the feature, or null. */
-async function newestLacking(
-  db: Executor,
-  deviceId: string,
-  beforeMs: number | null,
-): Promise<number | null> {
-  const result = await db.execute<{ at: number }>(sql`
-    SELECT (extract(epoch FROM started_at) * 1000)::float8 AS at
-    FROM segments
-    WHERE device_id = ${deviceId}::uuid AND kind = 'move' AND NOT features ? 'wayTotals'
-      ${beforeMs === null ? sql`` : sql`AND started_at < ${new Date(beforeMs).toISOString()}::timestamptz`}
-    ORDER BY started_at DESC
-    LIMIT 1
-  `);
-  return result.rows[0]?.at ?? null;
+/**
+ * What a feature's fill works on: units of one device (a UTC day of moves, a local day of heat
+ * cells) newest first, `Cursor` marking where one begins. `next` finds the newest unit before
+ * `before` that still lacks the feature — the partial index or the missing rows list them — and
+ * `fill` makes it, in the caller's transaction (under the device's processing lock).
+ */
+interface FeatureFill<Cursor> {
+  devicesLacking(db: Executor): Promise<string[]>;
+  next(db: Executor, deviceId: string, before: Cursor | null): Promise<Cursor | null>;
+  fill(tx: Executor, deviceId: string, at: Cursor): Promise<number>;
 }
 
-/** The devices with a move that lacks the feature (the partial index `segments_move_lacking_totals_idx`). */
-async function devicesLacking(db: Executor): Promise<string[]> {
-  const result = await db.execute<{ id: string }>(sql`
-    SELECT d.id FROM devices d
-    WHERE EXISTS (
-      SELECT 1 FROM segments s
-      WHERE s.device_id = d.id AND s.kind = 'move' AND NOT s.features ? 'wayTotals'
-    )
-  `);
-  return result.rows.map((row) => row.id);
-}
+const wayTotalsFill: FeatureFill<number> = {
+  // The devices with a move that lacks the totals (the partial index `segments_move_lacking_totals_idx`).
+  async devicesLacking(db) {
+    const result = await db.execute<{ id: string }>(sql`
+      SELECT d.id FROM devices d
+      WHERE EXISTS (
+        SELECT 1 FROM segments s
+        WHERE s.device_id = d.id AND s.kind = 'move' AND NOT s.features ? 'wayTotals'
+      )
+    `);
+    return result.rows.map((row) => row.id);
+  },
+  // The start (epoch ms) of the UTC day of the newest move before `before` that lacks them.
+  async next(db, deviceId, before) {
+    const result = await db.execute<{ at: number }>(sql`
+      SELECT (extract(epoch FROM started_at) * 1000)::float8 AS at
+      FROM segments
+      WHERE device_id = ${deviceId}::uuid AND kind = 'move' AND NOT features ? 'wayTotals'
+        ${before === null ? sql`` : sql`AND started_at < ${new Date(before).toISOString()}::timestamptz`}
+      ORDER BY started_at DESC
+      LIMIT 1
+    `);
+    const at = result.rows[0]?.at;
+    return at === undefined ? null : Math.floor(at / dayMs) * dayMs;
+  },
+  fill: (tx, deviceId, dayStart) => fillWayTotals(tx, deviceId, dayStart, dayStart + dayMs),
+};
 
-/** What a feature's fill does for one device-day. */
-const fills: Readonly<
-  Record<
-    ProcessingFeature,
-    (db: Executor, deviceId: string, fromMs: number, toMs: number) => Promise<number>
-  >
-> = { wayTotals: fillWayTotals };
+/**
+ * Local days of a device with points (the daily statistics have them, in the owner's zone, which
+ * `heat_days` is cut in too) that have no row in `heat_days`: the per-day heat cells of history
+ * from before they existed (docs/architecture.md §5).
+ */
+const heatDaysFill: FeatureFill<string> = {
+  async devicesLacking(db) {
+    const result = await db.execute<{ id: string }>(sql`
+      SELECT d.id FROM devices d
+      WHERE EXISTS (
+        SELECT 1 FROM daily_stats s
+        WHERE s.device_id = d.id AND s.points > 0
+          AND NOT EXISTS (SELECT 1 FROM heat_days h WHERE h.device_id = s.device_id AND h.day = s.date)
+      )
+    `);
+    return result.rows.map((row) => row.id);
+  },
+  async next(db, deviceId, before) {
+    const result = await db.execute<{ day: string }>(sql`
+      SELECT s.date::text AS day FROM daily_stats s
+      WHERE s.device_id = ${deviceId}::uuid AND s.points > 0
+        ${before === null ? sql`` : sql`AND s.date < ${before}::date`}
+        AND NOT EXISTS (SELECT 1 FROM heat_days h WHERE h.device_id = s.device_id AND h.day = s.date)
+      ORDER BY s.date DESC
+      LIMIT 1
+    `);
+    return result.rows[0]?.day ?? null;
+  },
+  async fill(tx, deviceId, day) {
+    const owner = await tx.execute<{ timezone: string }>(sql`
+      SELECT u.timezone FROM devices d JOIN users u ON u.id = d.user_id WHERE d.id = ${deviceId}::uuid
+    `);
+    const timezone = owner.rows[0]?.timezone;
+    return timezone === undefined ? 0 : rebuildHeatDays(tx, deviceId, timezone, [day]);
+  },
+};
+
+// Each feature with the cursor of its own kind.
+const fills: { [F in ProcessingFeature]: FeatureFill<never> } = {
+  wayTotals: wayTotalsFill as FeatureFill<never>,
+  heatDays: heatDaysFill as FeatureFill<never>,
+};
 
 interface StateRow extends Record<string, unknown> {
   value: { versions?: Partial<Record<ProcessingFeature, number>> } | null;
@@ -146,7 +193,7 @@ interface StateRow extends Record<string, unknown> {
 
 /**
  * The features to fill: those whose recorded version is not the current one, and — whatever the
- * marker says — those with a move that still lacks them (one a lost race or an older process left
+ * marker says — those with a unit that still lacks them (one a lost race or an older process left
  * behind), so that nothing stays `pending` for good.
  */
 async function featuresToFill(db: Executor): Promise<ProcessingFeature[]> {
@@ -154,10 +201,16 @@ async function featuresToFill(db: Executor): Promise<ProcessingFeature[]> {
     SELECT value FROM processing_state WHERE key = 'features'
   `);
   const recorded = state.rows[0]?.value?.versions ?? {};
-  const lacking = (await devicesLacking(db)).length > 0;
-  return (Object.keys(processingFeatureVersions) as ProcessingFeature[]).filter(
-    (feature) => recorded[feature] !== processingFeatureVersions[feature] || lacking,
-  );
+  const wanted: ProcessingFeature[] = [];
+  for (const feature of Object.keys(processingFeatureVersions) as ProcessingFeature[]) {
+    if (
+      recorded[feature] !== processingFeatureVersions[feature] ||
+      (await fills[feature].devicesLacking(db)).length > 0
+    ) {
+      wanted.push(feature);
+    }
+  }
+  return wanted;
 }
 
 /** Records that `feature` is filled in, at the current version, keeping the others'. */
@@ -209,27 +262,27 @@ export async function runFeatureBackfill(
   const run: FeatureBackfillRun = { features, moves: 0, days: 0, complete: true };
   const stopped = () => options.signal?.aborted === true;
   for (const feature of features) {
-    for (const deviceId of await devicesLacking(db)) {
-      let before: number | null = null;
+    const unit = fills[feature] as FeatureFill<unknown>;
+    for (const deviceId of await unit.devicesLacking(db)) {
+      let before: unknown = null;
       for (;;) {
         if (stopped()) return { ...run, complete: false };
         while (options.busy?.() === true && !stopped()) await sleep(1000).catch(() => undefined);
-        const next = await newestLacking(db, deviceId, before);
+        const next = await unit.next(db, deviceId, before);
         if (next === null) break;
-        const dayStart = Math.floor(next / dayMs) * dayMs;
         const moves = await db.transaction(async (tx) => {
           const lock = await tx.execute<{ taken: boolean }>(
             sql`SELECT pg_try_advisory_xact_lock(hashtextextended('trail.feature-backfill', 0)) AS taken`,
           );
           if (lock.rows[0]?.taken !== true) return null;
           await lockDeviceProcessing(tx, deviceId);
-          return fills[feature](tx, deviceId, dayStart, dayStart + dayMs);
+          return unit.fill(tx, deviceId, next);
         });
         if (moves === null) return { ...run, complete: false, skipped: true };
         run.moves += moves;
         run.days += 1;
         options.onDay?.({ deviceId, moves });
-        before = dayStart;
+        before = next;
         if (pauseMs > 0) await sleep(pauseMs).catch(() => undefined);
       }
     }

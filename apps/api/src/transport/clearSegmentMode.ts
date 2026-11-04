@@ -3,8 +3,7 @@ import { sql } from "drizzle-orm";
 import type { Database } from "../db/database";
 import { toIso } from "../db/toIso";
 import type { DeviceAccess } from "../devices/deviceAccess";
-import { heatDaysOf } from "../heatmap/heatDaysOf";
-import { rebuildHeatDays } from "../heatmap/rebuildHeatDays";
+import { rebuildSegmentHeatDays } from "../heatmap/rebuildSegmentHeatDays";
 import { lockDeviceProcessing } from "../processing/deviceLock";
 import { enqueueWindow } from "../processing/processingQueue";
 import { assertMoveOver } from "./assertMoveOver";
@@ -75,12 +74,7 @@ export async function clearSegmentMode(
     const row = updated.rows[0];
     if (row === undefined) throw new Error("The segment vanished under its lock");
     // The time on the move by mode: the days the move spans (docs/architecture.md §8.2).
-    await rebuildHeatDays(
-      tx,
-      segment.device_id,
-      access.user.timezone,
-      heatDaysOf(new Date(toIso(segment.started_at)), new Date(toIso(segment.ended_at)), access.user.timezone),
-    );
+    await rebuildSegmentHeatDays(tx, segment.device_id, segment);
     return { segment: toSegment(row), revoked: spans };
   });
 }

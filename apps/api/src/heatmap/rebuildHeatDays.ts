@@ -37,8 +37,7 @@ export async function rebuildHeatDays(
       ? sql`TRUE`
       : sql`p.recorded_at >= ${new Date(startOfLocalDay(first, timezone)).toISOString()}::timestamptz
         AND p.recorded_at < ${new Date(startOfLocalDay(addDays(last, 1), timezone) + heatDayMaxIntervalS * 1000).toISOString()}::timestamptz`;
-  const inDays: SQL =
-    list === null ? sql`TRUE` : sql`t.day = ANY(${sql.param(list)}::date[])`;
+  const inDays: SQL = list === null ? sql`TRUE` : sql`t.day = ANY(${sql.param(list)}::date[])`;
   const zooms = sql.raw(heatDayZooms.map((z) => `(${z})`).join(", "));
   const r = sql.raw(String(earthRadiusM));
   const result = await tx.execute(sql`

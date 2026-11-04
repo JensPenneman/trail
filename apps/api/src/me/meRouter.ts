@@ -12,11 +12,11 @@ import { clearedSessionCookie } from "../auth/sessionCookie";
 import { toSessionUser } from "../auth/toSessionUser";
 import { allowLongStatements } from "../db/allowLongStatements";
 import { users } from "../db/schema/users";
+import { rebuildUserHeatDays } from "../heatmap/rebuildUserHeatDays";
 import { HttpError } from "../http/httpError";
 import { parseBody } from "../http/parseInput";
 import { announceAccountGone } from "../sharing/announceAccountGone";
 import { sharesOfAccount } from "../sharing/sharesOfAccount";
-import { rebuildUserHeatDays } from "../heatmap/rebuildUserHeatDays";
 import { rebuildUserDailyStats } from "../stats/rebuildUserDailyStats";
 
 /** `GET/PATCH/DELETE /api/me` — profile, preferences and account deletion. */

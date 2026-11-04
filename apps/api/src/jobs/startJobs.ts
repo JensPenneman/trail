@@ -1,4 +1,5 @@
 import type { AppContext } from "../appContext";
+import { fillHeatDayLevels } from "../heatmap/fillHeatDayLevels";
 import { fillHeatLevels } from "../heatmap/fillHeatLevels";
 import { createMapDataRefresher } from "../mapdata/createMapDataRefresher";
 import { startMapDataSchedule } from "../mapdata/mapDataSchedule";
@@ -34,6 +35,8 @@ export function startJobs(ctx: AppContext): Jobs {
       delayMs: 5_000,
       logger: ctx.logger,
       task: async (signal) => {
+        const days = await fillHeatDayLevels(ctx.db, ctx.logger, signal);
+        if (!days.complete) ctx.logger.info(days, "heat days stopped before every device was done");
         const filled = await fillHeatLevels(ctx.db, ctx.logger, signal);
         if (!filled.complete) {
           ctx.logger.info(filled, "heat levels stopped before every device was done");

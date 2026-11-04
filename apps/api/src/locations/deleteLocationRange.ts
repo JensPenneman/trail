@@ -137,7 +137,12 @@ export async function deleteLocationRange(
     let recomputed: string[] = [];
     if (deletedPoints > 0) {
       await rebuildHeatCells(tx, deviceId);
-      await rebuildHeatDays(tx, deviceId, timezone, heatDaysOf(heatSpan.from, heatSpan.to, timezone));
+      await rebuildHeatDays(
+        tx,
+        deviceId,
+        timezone,
+        heatDaysOf(heatSpan.from, heatSpan.to, timezone),
+      );
 
       const cached = device?.lastRecordedAt ?? null;
       const cacheDeleted = cached !== null && cached >= input.from && cached < input.to;
