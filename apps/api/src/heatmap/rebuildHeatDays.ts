@@ -24,6 +24,33 @@ export async function rebuildHeatDays(
 ): Promise<number> {
   if (days !== "all" && days.length === 0) return 0;
   const list = days === "all" ? null : [...new Set(days)].sort();
+  // Each run of consecutive days is its own statement: days far apart are not one span between.
+  if (list !== null) {
+    let written = 0;
+    for (const run of consecutiveRuns(list))
+      written += await rebuildRun(tx, deviceId, timezone, run);
+    return written;
+  }
+  return rebuildRun(tx, deviceId, timezone, null);
+}
+
+/** The days in runs of consecutive dates (`days` ascending). */
+function consecutiveRuns(days: readonly string[]): string[][] {
+  const runs: string[][] = [];
+  for (const day of days) {
+    const run = runs.at(-1);
+    if (run !== undefined && addDays(run.at(-1) ?? day, 1) === day) run.push(day);
+    else runs.push([day]);
+  }
+  return runs;
+}
+
+async function rebuildRun(
+  tx: Executor,
+  deviceId: string,
+  timezone: string,
+  list: readonly string[] | null,
+): Promise<number> {
   const first = list?.[0];
   const last = list?.at(-1);
   await tx.execute(

@@ -430,10 +430,15 @@ belongs to the first one's cell, day (in the owner's zone) and mode, the
 mode found by carrying the latest segment start forward over the points,
 positions the mapped ones else the averaged. About 125 to 500 rows a
 device-day. A rebuild of a day of 20 000 points takes about 130 ms (dev
-container); a pass does not do it: once it has committed, its touched days are
-scheduled in `HeatDaysScheduler`, a debounced run (15 s) that rebuilds them in a
-transaction of its own under the device's processing lock, so an error there is
-logged and never rolls back or retries a pass.
+container); a pass does not do it: it marks the days it touched in
+`heat_day_marks` (migration 0013) in its own transaction, and once it has
+committed `HeatDaysScheduler` rebuilds them in a run 15 s later, each device in a
+transaction of its own under its processing lock, each run of consecutive days
+in one statement, and deletes the marks it served (one made again meanwhile
+stays). An error there is logged, retried with a growing wait and never rolls
+back or retries a pass; a crash loses nothing, since the marks are rows, and at
+start the days of the last 30 whose points or segments are newer than their
+cells are marked and the marks drained.
 
 **heat_cells** — pre-aggregated all-time density for the heatmap: PK
 `(device_id, z, x, y)`; `count` (int), `first_at`, `last_at`. `z` ∈ {6, 9, 12,
@@ -2372,8 +2377,8 @@ runs in the worker (§3) — or in the API's process too, in role `all`.
 - once, 5 s after the start — the heat levels of every device whose totals
   disagree are rebuilt from its points (`fillHeatLevels`, §8.2), and a level
   of `heat_days` that misses points is made again with the device's others
-  (`fillHeatDayLevels`, comparing the last 90 days only so that a start does
-  not scan every row; older gaps are `trail recompute`'s; the heatmap's ETags
+  (`fillHeatDayLevels`, comparing each device over its newest 90 days of rows
+  so that a start does not scan every row; older gaps are `trail recompute`'s; the heatmap's ETags
   move). A shutdown
   does not wait for it: it is cancelled and rolls back.
 - every minute — the API's `load` log line at `info` (docs/perf/README.md): the

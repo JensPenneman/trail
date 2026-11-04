@@ -9,9 +9,11 @@ import { levelsToRebuild } from "./levelsToRebuild";
 import { rebuildHeatDays } from "./rebuildHeatDays";
 
 /**
- * The levels are compared over the last days only (the index on `(device_id, day)` serves it): a
- * scan of every row of every device would read some half a million a device over three years at
- * each start. A level missing older days is made whole by `trail recompute`.
+ * The levels are compared over each device's newest days only (the index on `(device_id, day)`
+ * serves it): a scan of every row of every device would read some half a million a device over
+ * three years at each start, and a device idle for a while is still compared, over its own newest
+ * 90 days. A level missing older days is made whole when the device's levels are rebuilt, or by
+ * `trail recompute`.
  */
 const recentDays = 90;
 
@@ -37,13 +39,13 @@ export async function fillHeatDayLevels(
   signal?: AbortSignal,
 ): Promise<{ devices: number; complete: boolean }> {
   const totals = await db.execute<TotalRow>(sql`
-    SELECT h.device_id, u.timezone, h.z, sum(h.points) AS total
-    FROM heat_days h
-    JOIN devices d ON d.id = h.device_id
+    SELECT d.id AS device_id, u.timezone, h.z, sum(h.points) AS total
+    FROM devices d
     JOIN users u ON u.id = d.user_id
-    WHERE h.day >= (current_date - ${recentDays}::int)
-    GROUP BY h.device_id, u.timezone, h.z, d.created_at
-    ORDER BY d.created_at, h.device_id
+    CROSS JOIN LATERAL (SELECT max(day) AS last FROM heat_days WHERE device_id = d.id) n
+    JOIN heat_days h ON h.device_id = d.id AND h.day >= n.last - ${recentDays}::int
+    GROUP BY d.id, u.timezone, h.z, d.created_at
+    ORDER BY d.created_at, d.id
   `);
   const byDevice = new Map<string, { timezone: string; levels: Map<number, number> }>();
   for (const row of totals.rows) {

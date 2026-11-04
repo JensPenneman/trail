@@ -92,6 +92,8 @@ export class ProcessingWorker {
     this.#mapPass.unref();
     void this.#backfill().then(() => this.notify(0));
     void this.#fillFeatures();
+    // Days a pass touched and the process went before their cells were made, or made stale since.
+    void this.#heatDays.recover();
     void this.#sweepMapBuilds();
   }
 
@@ -195,7 +197,7 @@ export class ProcessingWorker {
           now: new Date(),
         });
         if (outcome !== null) {
-          this.#heatDays.schedule(outcome.deviceId, outcome.heatDays);
+          this.#heatDays.wake();
           this.#totals.passes += 1;
           this.#totals.points += outcome.points;
           this.#logger.info(

@@ -389,6 +389,34 @@ describe("what is left out of a day", () => {
   });
 });
 
+describe("the level check", () => {
+  it("compares a device over its own newest days, however long ago they were", async () => {
+    const idle = (await createDevice(owner, { name: "Idle" })).device.id;
+    for (const [i, at] of ["2025-02-03T10:00:00Z", "2025-02-03T10:01:00Z"].entries()) {
+      await t.ctx.db.execute(sql`
+        INSERT INTO locations (device_id, recorded_at, lat, lon)
+        VALUES (${idle}::uuid, ${at}::timestamptz, 50.3, ${4.1 + i * 0.001})`);
+      await t.ctx.db.execute(sql`
+        INSERT INTO processed_points (device_id, recorded_at, kept, lat_avg, lon_avg, version)
+        VALUES (${idle}::uuid, ${at}::timestamptz, true, 50.3, ${4.1 + i * 0.001}, 1)`);
+    }
+    await t.ctx.db.transaction((tx) => rebuildHeatDays(tx, idle, zone, "all"));
+    const levels = async () =>
+      (
+        await t.ctx.db.execute<{ z: number }>(
+          sql`SELECT DISTINCT z FROM heat_days WHERE device_id = ${idle}::uuid ORDER BY z`,
+        )
+      ).rows.map((row) => row.z);
+    expect(await levels()).toEqual([12, 15, 18]);
+    // Nothing in the calendar's last 90 days, and a level gone: still found.
+    await t.ctx.db.execute(sql`DELETE FROM heat_days WHERE device_id = ${idle}::uuid AND z = 15`);
+    const filled = await fillHeatDayLevels(t.ctx.db, logger);
+    expect(filled.complete).toBe(true);
+    expect(filled.devices).toBeGreaterThanOrEqual(1);
+    expect(await levels()).toEqual([12, 15, 18]);
+  });
+});
+
 describe("days of 23 and 25 hours", () => {
   const brussels = "Europe/Brussels";
   const day = async (deviceId: string, date: string) =>

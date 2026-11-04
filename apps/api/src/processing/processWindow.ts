@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Database } from "../db/database";
 import { devices } from "../db/schema/devices";
 import { users } from "../db/schema/users";
@@ -156,8 +156,15 @@ export async function processWindow(
       versions: processingVersions,
       config,
     });
-    // The days it touched in the owner's zone: their cells for the heatmap are rebuilt once the
-    // pass has committed, apart from it (HeatDaysScheduler).
+    // The days it touched in the owner's zone are marked, in this transaction: their cells for the
+    // heatmap are rebuilt once the pass has committed, apart from it (HeatDaysScheduler), and a
+    // crash before then loses nothing.
+    const heatDays = heatDaysOf(window.from, window.to, owner.timezone);
+    await tx.execute(sql`
+      INSERT INTO heat_day_marks (device_id, day, marked_at)
+      SELECT ${deviceId}::uuid, d::date, now() FROM unnest(${sql.param(heatDays)}::text[]) AS d
+      ON CONFLICT (device_id, day) DO UPDATE SET marked_at = excluded.marked_at
+    `);
     // The older part of a split keeps the rows' reason and level; an upload's is repair: history
     // that must not hold up the fresh points of other devices.
     if (split.older !== null) {
@@ -189,7 +196,7 @@ export async function processWindow(
       points: raw.length,
       segments: result.segments.length,
       missingTiles: waitFor,
-      heatDays: heatDaysOf(window.from, window.to, owner.timezone),
+      heatDays,
     };
   });
 }
