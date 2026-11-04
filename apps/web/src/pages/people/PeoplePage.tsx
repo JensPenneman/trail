@@ -217,8 +217,15 @@ export function PeoplePage() {
   // phones, where the bar is as wide as the map less that column.
   const fitHeld = camera !== null && !cameraReleased && search.view === loadedView;
   const { fit: contentFit, ...mapProps } = content.map;
+  // The key held back counts as fitted when the hold ends: the map is where the person put it, so
+  // only another key (another day, another view) frames anything later.
+  const [heldFitKey, setHeldFitKey] = useState<string | null>(null);
+  const holdingKey = fitHeld ? (contentFit?.key ?? null) : null;
+  useEffect(() => {
+    if (holdingKey !== null) setHeldFitKey(holdingKey);
+  }, [holdingKey]);
   const fit =
-    contentFit === undefined || fitHeld
+    contentFit === undefined || fitHeld || contentFit.key === heldFitKey
       ? undefined
       : {
           ...contentFit,

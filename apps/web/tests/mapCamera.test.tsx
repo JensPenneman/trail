@@ -73,14 +73,33 @@ describe("the camera of a link (c=)", () => {
     await waitFor(() => expect(map().getAttribute("data-fit")).toMatch(/\|me\|/));
   });
 
-  it("holds the fit of the view it opens on until the map has left the camera, then lets it frame", async () => {
+  it("holds the fit of the view it opens on for good: leaving the camera does not snap to the data", async () => {
     mockApi(standardRoutes());
-    renderPage(<PeoplePage />, { url: "/?view=history&person=me&c=3.7,51.05,13.5", user });
+    const { router } = renderPage(<PeoplePage />, {
+      url: "/?view=history&person=me&c=3.7,51.05,13.5",
+      user,
+    });
     await screen.findByRole("img", { name: /^Map/ });
     await waitFor(() => expect(map().getAttribute("data-initial-view")).not.toBe("null"));
     // History's fit at load is held while the map is at the camera.
     expect(map()).toHaveAttribute("data-fit", "");
     act(() => stubMap.report({ bounds: [3.6, 50.9, 4.0, 51.0], zoom: 12 }));
+    await waitFor(() => expect(router.state.location.search).not.toContain("c="));
+    // The key it held counts as fitted: the first pan does not frame the day.
+    expect(map()).toHaveAttribute("data-fit", "");
+  });
+
+  it("frames another key after the hold: the next day is fitted", async () => {
+    mockApi(standardRoutes());
+    const { router } = renderPage(<PeoplePage />, {
+      url: "/?view=history&person=me&c=3.7,51.05,13.5",
+      user,
+    });
+    await screen.findByRole("img", { name: /^Map/ });
+    await waitFor(() => expect(map().getAttribute("data-initial-view")).not.toBe("null"));
+    act(() => stubMap.report({ bounds: [3.6, 50.9, 4.0, 51.0], zoom: 12 }));
+    await waitFor(() => expect(router.state.location.search).not.toContain("c="));
+    await router.navigate("/?view=history&person=me&from=2026-09-01&to=2026-09-07");
     await waitFor(() => expect(map().getAttribute("data-fit")).toMatch(/\|me\|/));
   });
 
