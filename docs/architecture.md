@@ -2921,8 +2921,9 @@ count among them, since they lead to signed-in pages.
   and focus on the bar, the map or its buttons, which a lifted sheet covers,
   lowers it to peek, for keyboard focus on what the sheet covers only (not a
   press on the map). The map starts under the header and, offline, under the
-  offline banner, which is sticky on this page alone (`--banner-height`); the detents use `svh`, so the
-  browser's collapsing toolbar does not move them.
+  offline banner, which is sticky on this page alone (`--banner-height`);
+  the detents use `svh`, so the browser's collapsing toolbar does not move
+  them.
 
   **The people list** — Find My for Trail (§8.5): people, not their
   devices. The h1 stays "People"; beside it an icon-only **Share my

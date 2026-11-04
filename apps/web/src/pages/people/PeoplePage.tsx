@@ -242,9 +242,11 @@ export function PeoplePage() {
     // Only the keyboard (or a screen reader) is lost behind the sheet; a press on the map or a
     // button at half is the person's own placement. And only what the sheet covers.
     if (!event.target.matches(":focus-visible")) return;
-    if (event.target.getBoundingClientRect().top < panel.current.getBoundingClientRect().top) {
-      return;
-    }
+    // Covered when less than a target's height of it shows above the sheet (the map's canvas
+    // is covered by all but a strip at the full detent).
+    const rect = event.target.getBoundingClientRect();
+    const sheetTop = panel.current.getBoundingClientRect().top;
+    if (Math.min(rect.bottom, sheetTop) - rect.top >= 44) return;
     window.scrollTo({ top: 0, behavior: reducedMotion ? "instant" : "smooth" });
   };
   const toTop = () => {

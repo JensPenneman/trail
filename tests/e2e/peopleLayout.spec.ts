@@ -123,6 +123,7 @@ test("on a phone the sheet scrolls over a map that stays, with its detents", asy
   await uploadedDevice(page, "Sheet phone", overlandBatch(account.timezone));
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
+  await expect(page.locator(".maplibregl-canvas")).toBeVisible();
   const panel = page.locator(".map-page__panel");
   const before = await box(canvas(page));
   const peekTop = (await box(panel)).y;
@@ -195,10 +196,26 @@ test("a press on the map with the sheet at half leaves the sheet where it is", a
   await page.goto("/");
   await page.getByRole("list", { name: "People", exact: true }).getByRole("link").first().click();
   await page.waitForFunction(() => window.scrollY > 100);
-  await page.waitForTimeout(800);
-  const at = await page.evaluate(() => window.scrollY);
+  // Settled: the scroll position stops changing.
+  let at = -1;
+  await expect
+    .poll(async () => {
+      const now = await page.evaluate(() => window.scrollY);
+      const settled = now === at;
+      at = now;
+      return settled;
+    })
+    .toBe(true);
   const map = await box(canvas(page));
   await page.mouse.click(map.x + map.width / 2, map.y + map.height / 3);
-  await page.waitForTimeout(600);
+  // It stays put over a few dozen frames (a lowering would have started at once).
+  await page.evaluate(
+    () =>
+      new Promise<void>((done) => {
+        let frames = 0;
+        const next = () => (++frames >= 30 ? done() : requestAnimationFrame(next));
+        requestAnimationFrame(next);
+      }),
+  );
   expect(await page.evaluate(() => window.scrollY)).toBe(at);
 });
