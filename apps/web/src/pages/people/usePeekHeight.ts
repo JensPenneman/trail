@@ -28,10 +28,10 @@ export function usePeekHeight(
     const page: HTMLElement = foundPage;
     sheet.dataset["level"] = level ?? "root";
     const endOf = () =>
-      // The last one that is drawn: the sidebar's content may be hidden while History plays.
-      [...sheet.querySelectorAll<HTMLElement>("[data-peek-end]")]
-        .reverse()
-        .find((element) => element.getClientRects().length > 0) ??
+      // The first one that is drawn: the sidebar's content is hidden while History plays.
+      [...sheet.querySelectorAll<HTMLElement>("[data-peek-end]")].find(
+        (element) => element.getClientRects().length > 0,
+      ) ??
       sheet
         .querySelector<HTMLElement>("[data-person-heading]")
         ?.closest<HTMLElement>(".person-summary") ??
