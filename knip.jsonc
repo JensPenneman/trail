@@ -18,7 +18,9 @@
       "ignoreDependencies": ["pino-pretty", "@scalar/api-reference"]
     },
     "apps/web": {
-      "entry": ["tests/**/*.{ts,tsx}", "*.config.ts"],
+      // playback/index.ts is the engine's door: nothing imports it until the History view is wired
+      // to it (the player's wiring in the History view); remove it from this list then.
+      "entry": ["tests/**/*.{ts,tsx}", "*.config.ts", "src/pages/map/history/playback/index.ts"],
       "project": ["src/**", "tests/**"]
     },
     "packages/contracts": {

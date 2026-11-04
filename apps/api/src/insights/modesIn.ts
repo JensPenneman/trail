@@ -4,7 +4,7 @@ import type { LocalHour } from "./localHours";
 
 /** The modes of the moves that touch the period's hours, in the order of `transportModes`. */
 export function modesIn(
-  moves: readonly InsightMove[],
+  moves: readonly Pick<InsightMove, "mode" | "startMs" | "endMs">[],
   hours: readonly LocalHour[],
 ): TransportMode[] {
   const first = hours[0]?.start ?? 0;

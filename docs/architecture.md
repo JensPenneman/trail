@@ -1548,6 +1548,7 @@ People and Sharing):
 | `GET /api/v1/people` | `people:read` | people sharing with the caller, by name, with their shared devices |
 | `GET /api/v1/people/{userId}` | `people:read` | one of them; 404 for anyone else or a hidden person |
 | `GET /api/v1/people/{userId}/track` | `people:read` | shares with history only: points in `[from, to)` (≤ 93 days), `from` moved up to the start of the history, split and simplified as in §8.1 |
+| `GET /api/v1/people/{userId}/days` | `people:read` | shares with history only: `{ timezone, window { from, to }, days [{ date, deviceId, points, firstAt, lastAt }] }` — the days with points of the shared devices within the history, from `daily_stats` in the **owner's** zone (the zone their days are cut in); the window's first day, when the history begins inside it, is counted from `locations` from that instant on; no positions. Same grant as the track (`grantsViewer`: hidden, stopped, ended: 404; approximate: 404). The ETag hashes the answer with the share. The owner's access log gets one line with the devices and the window (`from`, `to` as local days), never the days; the share's last view is stamped |
 | `GET /api/v1/shares` | `shares:read` | current outgoing shares: `pending`, `joined`, `active`, `hidden` |
 | `POST /api/v1/shares` | `shares:write` + `locations:read` | start one (201) |
 | `PATCH /api/v1/shares/{id}` | `shares:write` + `locations:read` | change (duration from now, devices, precision, history, details) |
@@ -1736,9 +1737,11 @@ default hints (`ttlMs: 0`, `cacheScope: "private"`): lists vary by token.
 ### 8.7 Insights
 
 Statistics of how the owner travelled (§14, Insights), from the stops and
-moves of the timeline (`segments`, §17) and never from points: four v1
-operations, tag "Insights", scope `history:read` (they carry no
-coordinates: times, distances, speeds, way kinds and segment ids). Contracts:
+moves of the timeline (`segments`, §17) and never from the coordinates of points: six v1
+operations, tag "Insights" — four with scope `history:read` (they carry no
+coordinates: times, distances, speeds, way kinds and segment ids), and the two
+Places operations below with `locations:read` (they carry a centre per place).
+Contracts:
 `packages/contracts/src/insights.ts`; domain: `apps/api/src/insights/`.
 
 | Operation | Answers |
@@ -1747,6 +1750,9 @@ coordinates: times, distances, speeds, way kinds and segment ids). Contracts:
 | `GET /api/v1/insights/modes/{mode}?from&to&devices` | `{ timezone, mode, period, totals { …, typicalSpeedKmh, longest, fastest }, series, byHour [24], byWeekday [7], roads { distanceM, mappedM, kinds }, rail, ferry, stationStops, speedHistogram { binKmh, bins }, topMoves { longest, fastest, recent }, pending }` |
 | `GET /api/v1/insights/time?from&to&devices&mode` | `{ timezone, period, mode, modes, cells [168: weekday × hour], pending }` |
 | `GET /api/v1/insights/roads?from&to&devices&mode` | `{ timezone, period, mode, modes, distanceM, mappedM, kinds, families, pending }` |
+| `GET /api/v1/insights/places?from&to&devices` (`locations:read`) | `{ timezone, period, totals { places, durationS, visits }, places [≤ 50: { key, centre, name, durationS, visits, days, firstAt, lastAt }], rest { places, durationS, visits }, pending }` |
+| `GET /api/v1/insights/place?place&from&to&devices` (`locations:read`) | `{ timezone, period (with bucket, buckets), place (summary + cells) or null, series [{ bucket, durationS, visits }], days [{ date, durationS, visits, firstAt, lastAt }, newest first], pending }` |
+| `GET /api/v1/insights/ways?from&to&devices&mode` (`locations:read`) | `{ timezone, period, mode, modes, mappedM, namedM, ways [≤ 25: { name, kind, distanceM, moves }], pending }` |
 
 - **The period** is local days in the owner's zone, `from` and `to`
   included, at most three years (`lastInsightsDay`: the day before the same
@@ -1790,9 +1796,72 @@ coordinates: times, distances, speeds, way kinds and segment ids). Contracts:
   are the kinds grouped as the inference groups them (`wayFamilyOf`); the
   rail share of trains, trams and metros is rail, light rail, tram and subway
   track, the ferry share of boats ferry routes.
+- **Named roads.** `features.wayTotals` (§17.3) holds the metres on each OSM
+  way of a move, `[wayId, metres]`: ways of 25 m or more, longest first, at
+  most 64, half of each interval counting for each of its end points, as for
+  `wayKinds`; `null` for a move without map data, absent for a move the
+  feature backfill (§17.4) has not reached. `GET /api/v1/insights/ways`
+  reads every mode's moves (for `modes`) and prorates those of the asked mode
+  over the period's hours like the roads, adds the ways up (the longest 20 000
+  are looked up), takes the newest row of `osm_ways` with a `name` for each,
+  and makes roads of them: the ways of one name whose bounding-box centres lie
+  in one zoom-12 cell (about 6 km wide at 51° N) or touching ones (union-find
+  over the 8 neighbours) are one road. Villages of one name in touching cells
+  therefore merge, and a chain of touching cells can merge a wider area; the
+  same name two cells (12 km) or more away is another road. The answer is `{ mappedM, namedM, ways
+  [≤ 25: name, kind (the longest way's), distanceM, moves] }`: the centres
+  serve the grouping on the server and are not answered. `mappedM` is the
+  distance of moves with map data, `namedM` the part on named roads, `moves`
+  the distinct moves on any of a road's ways. `pending` is also true while a
+  move in the period lacks its totals; the web refetches named roads while
+  `pending` and otherwise goes by the ETag, since the fill changes no day
+  stamp. `features` grows by up to about 1.3 KB per move (64 ways; about
+  0.5 KB measured on seeded moves), read with the move's other features.
+  The threat model: names of roads the owner (or a token with `locations:read`
+  for those devices) travelled and metres, no time of day, no position, no
+  person; a road name says where one was, hence `locations:read`; devices go
+  through `resolveDeviceIds` (foreign: 404); the access log keeps `{ from, to,
+  devices, mode }` and no names; a name is OpenStreetMap data, shown as text.
 - `pending` is the timeline's (`hasPendingWork` over the period's devices
   and instants). A request covering three years reads at most the segments
   of those years and builds about 26 000 local hours in some 30 ms.
+- **Places** (`insights/placeStays.ts`, `groupPlaces.ts`, `placeNames.ts`,
+  `loadPlaces.ts`, `loadPlace.ts`). One read of the stops of the devices over
+  the period through `servedSegments` (a stay one stop; its parts are found up
+  to two weeks beyond the range): device, start, end and the time-weighted
+  middle — the only coordinates read. In TypeScript, each stay is clipped to
+  the period and goes to the zoom-18 Web Mercator cell of its middle
+  (`tileMath`, the heatmap's formulas); cells are taken by time, most first
+  (ties by key), and an unclaimed cell claims its unclaimed neighbours among
+  the eight around it, so a place is at most 3 × 3 cells (about 290 m at
+  51° N) and does not depend on the order of the stays. A place joins its
+  devices' time (overlapping stretches are one), counts a visit per joined
+  stretch whose stay began in the period, splits its time at local midnight
+  (`localDaysOf`, `placeDays`, DST days of 23 and 25 hours included) and has a
+  centre weighted by time, to four decimals. The top fifty are named
+  (`placeNames`): the nearest stop of `osm_pois` within 150 m (the z14 tiles
+  around each centre, `osm_pois_tile_idx`), else the named way (`osm_ways`,
+  newest fetch) most often under the device in the minute before the place's
+  ten latest stays began and after they ended (`processed_points` by primary
+  key, kept points with a `way_id`), else none. A key resolves to the place
+  whose cells include it. The validator is the usual one plus `mapStamp`
+  (the newest `osm_tiles.fetched_at` and the builds of the ready regions in
+  `osm_regions`), since a name comes from map data. Three years are some 16 000
+  stays a device, about 1 MB of rows and 60–120 ms of SQL.
+- **Threat model of Places.** Who: the signed-in owner, or a token with
+  `locations:read` (a token with only `history:read` is refused with 403); the
+  devices are the owner's own, limited to the token's, and another person's
+  device is a 404 (`resolveDeviceIds`). What leaves: a centre per place to
+  four decimals (about 10 m) and map-data names — no more than the timeline's
+  stop centres give the same scope, and nothing of a share: no sharer's stay is
+  ever read. What is kept: the data access log records the action and
+  `{ from, to, deviceIds }` only (the `place` key is not on `inputResource`'s
+  list and so never recorded, nor any coordinate); the request log keeps no
+  query value, and at debug only the names (`?place&from&to`). The key is a
+  query parameter, never part of a path, since paths survive redaction.
+  The web app will keep a copy like the tracks' (device data, purged on sign-out) when its screens come.
+  Abuse is bounded by the three-year span and the API's rate limits; guessing
+  keys reveals only one's own stays.
 
 ### 8.8 Data access log
 
@@ -2034,7 +2103,7 @@ hashed for nothing. The dashboard's routers use `answerConditionally`, v1
 | `GET /api/v1/segments` | raw and processed (the cursor and limit are in the query) |
 | `GET /api/stats/days`, `/api/v1/stats/days` | the body: a few hundred small rows with their stamps |
 | `GET /api/heatmap` | the devices, the sum of their point counters (an upload of points too inaccurate for the cells moves it: a needless 200, never a wrong 304), the newest `updated_at` of their rows, which a deletion sets (as many points uploaded as deleted would leave the sum as it was), and the generation of rebuilt cells (`heatGeneration`, which the start-up fill moves) |
-| `GET /api/v1/insights/*` | the scope (zone, period, devices) and over the segments of the period — the overview's with the period before — their count, newest `computed_at`, versions and the sums of their bounds, and `pending` |
+| `GET /api/v1/insights/*` | the scope (zone, period, devices) and over the segments of the period — the overview's with the period before — their count, newest `computed_at`, versions and the sums of their bounds, and `pending`; Places, Place and the named roads add `mapStamp` (the newest `osm_tiles.fetched_at` and the builds of the ready regions), since names come from map data, and the named roads how many moves of the period still lack their totals (the fill changes no stamp). The road a place is named after comes from the points around its stays (`processed_points.way_id`) and is not in the validator: a pass that moves only those points shows in the name once a stay or the map data changes |
 | `GET /api/v1/people` | the body (projecting it is cheap: the saving is bytes and parsing) |
 
 A 304 is a look (§8.8). Measured in the development container on a processed
@@ -2824,6 +2893,34 @@ count among them, since they lead to signed-in pages.
     a moment; distance, points, first/last; the timeline of stops and moves,
     with a dialog to correct a mode; visits and trips of the day (Me's
     detail). Other people's tracks as their shares allow (below).
+    **Playback** has an engine in `pages/map/history/playback`, not yet
+    wired into the page: a pure model (`playbackModel`: local-day bounds, the
+    moves of the timeline or, from the points alone, movement stretches —
+    split at recording gaps, cut by three minutes below 0.6 m/s, kept at a
+    minute and 100 m — and the quiet stretches outside them, the next day with
+    data) and reducer (`playbackReducer`: playing, paused, loading, ended;
+    rates of 1, 5, 15 and 60 playback minutes per second; seeks and steps
+    clamped to the start moment and the last recorded point; midnight crosses
+    into the next day with data and waits for its tracks; "Skip stops" shows a
+    quiet stretch over two minutes for half a second and jumps to its end),
+    driven by hooks: `usePlayerEngine` runs the clock on animation frames, at
+    most 30 updates a second with each step capped at 250 ms (with reduced
+    motion one step a second), `usePlayerKeys` the keys on the window
+    (Space, arrows, Shift with them for moves, Escape; it leaves alone what
+    is handled, modified, in inputs and dialogs, and Space on a button),
+    `usePlaybackDays` the days with data (one's own from `/api/stats/days` in
+    windows of 400 days; someone else's from an answer handed in),
+    `usePlaybackPrefetch` the next day's queries kept mounted from 90 % of a
+    day, `usePlaybackAnnouncer` the day changes and the end. The bar
+    (`PlayerBar`, region "Playback") and the strip of what each device was
+    doing (`NowStrip`, "At this moment") are presentational. For the map,
+    `tracksToMap`, `levelTracksToMap` and `useTransportMap` take an `until`
+    (the cursor, rounded by `splitTime` so that the split moves four times a
+    second at most) and give what lies after it as `dimmed` tracks and
+    Transport segments (a connector or stop after it whole, a move cut at the
+    cursor by `splitTrackAt` into two halves that keep its id); the caller
+    dims visit dots with `MapPoint.dimmed`. `ensureTrailLayers` draws them at
+    0.3 opacity (0.5 under `prefers-contrast: more`).
   - **Heat** — all-time heatmap (`/api/heatmap` for the view once the map
     has stood still for 300 ms, its box rounded outward to a thousandth of a
     degree and its zoom to a whole level, so that small moves hit the
@@ -3809,7 +3906,11 @@ security ones too.
   → train → walk, a tram, a ferry, a flight, a phone on a desk); a benchmark
   holds a dense day of 21 000 points to its CPU budget, and `wayKinds.test.ts`
   puts every journey on its kinds of way (adding up to the whole and, by
-  family, to the family shares). Insights' pure parts
+  family, to the family shares); `wayTotals.test.ts` the metres on each way of
+  a hand-made move and of its pieces, `groupWays.test.ts` the roads made of
+  ways and the prorating over a period, `insightsWaysApi.test.ts` the
+  operation (names, grouping, mode, devices, scope, ETag) and the feature
+  backfill (it fills what processing wrote, resumes, runs once, changes no stamp). Insights' pure parts
   (`insightsCalendar.test.ts`, `insightsAggregation.test.ts`): the local hours
   of a period across both changes of the clocks, in zones half an hour off
   UTC and in one that skips midnight; moves prorated over them at local
@@ -3956,6 +4057,13 @@ security ones too.
   position, details or distance where not granted, no addresses or ids,
   hidden and stopped shares left out), the read-only transaction and its
   timeout, and a device and a sharer named to instruct the agent.
+  Places: `groupPlaces.test.ts` (cells against `tileMath`, the folding in
+  any input order and by joined time, devices joined, clipping, DST days,
+  visits by start, days at local midnight), `placeNames.test.ts` (the 150 m
+  reach and ties, road by frequency) and `insightsPlacesApi.test.ts` (stops on
+  two devices with map-data names, a second device elsewhere not naming a
+  place, folded keys, the three-year cap, ETags after a stop and a tile,
+  scopes, devices, the access log's rows).
   `insightsApi.test.ts` runs the four Insights operations on processed
   journeys (with map data, so the kinds of way are there): totals against
   the timeline, no coordinate anywhere in an answer, the period left out,
@@ -4547,7 +4655,11 @@ average speed, the acceleration variance of dense intervals, the shares of the
 distance by matched way family (rail, subway, tram, motorway, road, cycleway,
 foot, ferry, none) and by way kind (`wayKinds`: every kind, a matched point
 without one counting as `other`; summed by family they give the family
-shares), and near tram tracks, cycleways and footways (they run beside
+shares), the metres on each matched OSM way (`wayTotals`: `[wayId, metres]`
+of 25 m or more, longest first, at most 64, half of each interval to each end
+point; a piece of a cut move gets the whole's, scaled by its share of the
+distance and cut at 25 m — an approximation until a window reads it again),
+and near tram tracks, cycleways and footways (they run beside
 roads), the corridor ratio (samples every 250 m along the straight
 lines between points within 200 m of a railway, and of a motorway), pauses
 inside the move (≤ 1 m/s for ≥ 15 s, or one slow reading between long
@@ -4716,6 +4828,26 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   is matched with the cached map data, or waits for its tiles. So a change
   that turns points of stops into moves (inferred version 3: stops that end
   when the phone leaves) needs the inferred level alone.
+- **Feature backfill.** A feature that can be derived from rows already stored
+  needs no new level: `processingFeatureVersions` (`processingVersion.ts`)
+  lists them, `processing_state` key `features` records the version each was
+  filled in at, and at every start the worker runs `runFeatureBackfill` apart
+  from the queue, held off while a pass of its own is at work. It fills the
+  features whose version is old, and any a move still lacks (the partial index
+  `segments_move_lacking_totals_idx` lists them, empty once done), so a move
+  left behind never stays `pending`. Device by device and UTC day, newest
+  first, one transaction per day under the device's processing lock (a live
+  pass never overlaps it) and an advisory lock for the fill (one process fills
+  at a time; another leaves it), one SQL statement from the stored processed
+  points: nothing is loaded, no map data, no matching, and neither `version`
+  nor `computed_at` changes; a move that has the feature by then is left
+  alone. `wayTotals` 1 (Insights › named roads) counts as the pipeline does:
+  each interval between kept points along `path_map` when both ends are mapped,
+  else the chord of the averaged points, half to each end point's way, ways of
+  25 m or more, to 0.1 m (the test compares it with the pipeline's own totals
+  on curved and sparse journeys). Measured in the dev container on 10 000
+  moves of 40 points: 5.6 s, about 1 800 moves (70 000 points) per second.
+  The heat days of the map are planned on the same mechanism.
 - `trail reprocess [--device <id>] [--from <iso> --to <iso>] [--from-level
   averaged|mapped|inferred]` queues the range in day windows, then processes
   them itself with the map data already cached; tiles still missing are left

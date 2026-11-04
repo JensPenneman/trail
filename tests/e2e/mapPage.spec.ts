@@ -114,8 +114,12 @@ test("the device filter, folded away in Map options, narrows every view and stay
   await expect(page.getByRole("group", { name: "Devices" })).toBeHidden();
   await openDeviceFilter(page);
   const filter = page.getByRole("group", { name: "Devices" });
-  await filter.getByRole("checkbox", { name: "Dropped phone" }).uncheck();
+  // The address owns the choice: the box follows it a moment after the press, so it is pressed
+  // and then awaited (`uncheck()` would ask for the new state at once).
+  const dropped = filter.getByRole("checkbox", { name: "Dropped phone" });
+  await dropped.click();
   await expect(page).toHaveURL(/[?&]devices=[0-9a-f-]{36}$/);
+  await expect(dropped).not.toBeChecked();
   // The last device stays: an empty map explains nothing.
   await expect(filter.getByRole("checkbox", { name: "Kept phone" })).toBeDisabled();
 

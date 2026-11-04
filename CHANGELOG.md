@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1](https://github.com/JensPenneman/trail/compare/v0.8.0...v0.8.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **api:** resolve basemap bundles by id, never from the request path ([#108](https://github.com/JensPenneman/trail/issues/108)) ([109cf3f](https://github.com/JensPenneman/trail/commit/109cf3f398f760f294033587ba31f1ed84048a75))
+* **api:** unknown style names answer 404, not 500 ([#110](https://github.com/JensPenneman/trail/issues/110)) ([7c5f1d0](https://github.com/JensPenneman/trail/commit/7c5f1d045c9ccc82a8a6c90f3cc00250048c3d94))
+
 ## [0.8.0](https://github.com/JensPenneman/trail/compare/v0.7.0...v0.8.0) (2026-11-04)
 
 
