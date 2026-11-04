@@ -1736,9 +1736,11 @@ default hints (`ttlMs: 0`, `cacheScope: "private"`): lists vary by token.
 ### 8.7 Insights
 
 Statistics of how the owner travelled (§14, Insights), from the stops and
-moves of the timeline (`segments`, §17) and never from points: four v1
-operations, tag "Insights", scope `history:read` (they carry no
-coordinates: times, distances, speeds, way kinds and segment ids). Contracts:
+moves of the timeline (`segments`, §17) and never from points: six v1
+operations, tag "Insights" — four with scope `history:read` (they carry no
+coordinates: times, distances, speeds, way kinds and segment ids), and the two
+Places operations below with `locations:read` (they carry a centre per place).
+Contracts:
 `packages/contracts/src/insights.ts`; domain: `apps/api/src/insights/`.
 
 | Operation | Answers |
@@ -1747,6 +1749,8 @@ coordinates: times, distances, speeds, way kinds and segment ids). Contracts:
 | `GET /api/v1/insights/modes/{mode}?from&to&devices` | `{ timezone, mode, period, totals { …, typicalSpeedKmh, longest, fastest }, series, byHour [24], byWeekday [7], roads { distanceM, mappedM, kinds }, rail, ferry, stationStops, speedHistogram { binKmh, bins }, topMoves { longest, fastest, recent }, pending }` |
 | `GET /api/v1/insights/time?from&to&devices&mode` | `{ timezone, period, mode, modes, cells [168: weekday × hour], pending }` |
 | `GET /api/v1/insights/roads?from&to&devices&mode` | `{ timezone, period, mode, modes, distanceM, mappedM, kinds, families, pending }` |
+| `GET /api/v1/insights/places?from&to&devices` (`locations:read`) | `{ timezone, period, totals { places, durationS, visits }, places [≤ 50: { key, centre, name, durationS, visits, days, firstAt, lastAt }], rest { places, durationS, visits }, pending }` |
+| `GET /api/v1/insights/place?place&from&to&devices` (`locations:read`) | `{ timezone, period (with bucket, buckets), place (summary + cells) or null, series [{ bucket, durationS, visits }], days [{ date, durationS, visits, firstAt, lastAt }, newest first], pending }` |
 
 - **The period** is local days in the owner's zone, `from` and `to`
   included, at most three years (`lastInsightsDay`: the day before the same
@@ -1793,6 +1797,43 @@ coordinates: times, distances, speeds, way kinds and segment ids). Contracts:
 - `pending` is the timeline's (`hasPendingWork` over the period's devices
   and instants). A request covering three years reads at most the segments
   of those years and builds about 26 000 local hours in some 30 ms.
+- **Places** (`insights/placeStays.ts`, `groupPlaces.ts`, `placeNames.ts`,
+  `loadPlaces.ts`, `loadPlace.ts`). One read of the stops of the devices over
+  the period through `servedSegments` (a stay one stop; its parts are found up
+  to two weeks beyond the range): device, start, end and the time-weighted
+  middle — the only coordinates read. In TypeScript, each stay is clipped to
+  the period and goes to the zoom-18 Web Mercator cell of its middle
+  (`tileMath`, the heatmap's formulas); cells are taken by time, most first
+  (ties by key), and an unclaimed cell claims its unclaimed neighbours among
+  the eight around it, so a place is at most 3 × 3 cells (about 290 m at
+  51° N) and does not depend on the order of the stays. A place joins its
+  devices' time (overlapping stretches are one), counts a visit per joined
+  stretch whose stay began in the period, splits its time at local midnight
+  (`localDaysOf`, `placeDays`, DST days of 23 and 25 hours included) and has a
+  centre weighted by time, to four decimals. The top fifty are named
+  (`placeNames`): the nearest stop of `osm_pois` within 150 m (the z14 tiles
+  around each centre, `osm_pois_tile_idx`), else the named way (`osm_ways`,
+  newest fetch) most often under the device in the minute before the place's
+  ten latest stays began and after they ended (`processed_points` by primary
+  key, kept points with a `way_id`), else none. A key resolves to the place
+  whose cells include it. The validator is the usual one plus `mapStamp`
+  (the newest `osm_tiles.fetched_at` and the builds of the ready regions in
+  `osm_regions`), since a name comes from map data. Three years are some 16 000
+  stays a device, about 1 MB of rows and 60–120 ms of SQL.
+- **Threat model of Places.** Who: the signed-in owner, or a token with
+  `locations:read` (a token with only `history:read` is refused with 403); the
+  devices are the owner's own, limited to the token's, and another person's
+  device is a 404 (`resolveDeviceIds`). What leaves: a centre per place to
+  four decimals (about 10 m) and map-data names — no more than the timeline's
+  stop centres give the same scope, and nothing of a share: no sharer's stay is
+  ever read. What is kept: the data access log records the action and
+  `{ from, to, deviceIds }` only (the `place` key is not on `inputResource`'s
+  list and so never recorded, nor any coordinate); the request log keeps no
+  query value, and at debug only the names (`?place&from&to`). The key is a
+  query parameter, never part of a path, since paths survive redaction.
+  Browsers keep a copy like the tracks' (device data, purged on sign-out).
+  Abuse is bounded by the three-year span and the API's rate limits; guessing
+  keys reveals only one's own stays.
 
 ### 8.8 Data access log
 
