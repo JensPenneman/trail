@@ -5,11 +5,11 @@
  *    the screen. The sidebar scrolls by itself.
  *  - On phones and small tablets the map is fixed between the header and the
  *    tab bar, down to the sheet's peek height, and the page's own scroll
- *    lifts the sheet over it: it snaps at peek and half (CSS scroll
+ *    lifts the sheet over it. It snaps at peek and half (CSS scroll
  *    snapping, no script) and scrolls freely above, up to the header.
  *    Nothing snaps above half: a snap point there would pull a long list
- *    back from the content past it. The spacer above the sheet is transparent to presses, so a
- *    finger on the map pans it.
+ *    back from the content past it. The spacer above the sheet is
+ *    transparent to presses, so a finger on the map pans it.
  * DOM order on every screen: the controls, the map, then the panel.
  */
 .map-page {
@@ -132,7 +132,7 @@
     pointer-events: none;
   }
 
-  /* Detents as scroll offsets of the page: sheet at peek, half the view, nearly the top. */
+  /* Detents as scroll offsets of the page: the sheet at peek, and at half the view. */
   .map-page__snaps {
     position: absolute;
     inset: 0 auto auto 0;
@@ -160,7 +160,7 @@
   .map-page__panel {
     position: relative;
     z-index: 2;
-    /* lvh: with the toolbar collapsed the sheet must still reach the full detent. */
+    /* lvh: with the toolbar collapsed the sheet must still reach the header. */
     min-height: calc(100lvh - var(--map-top) - var(--map-bottom-gap));
     border-start-start-radius: var(--radius-xl);
     border-start-end-radius: var(--radius-xl);

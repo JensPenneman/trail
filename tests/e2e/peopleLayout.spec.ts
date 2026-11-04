@@ -226,8 +226,11 @@ test("the sheet's whole content can be scrolled to, clear of the header and the 
 }, testInfo) => {
   test.skip(testInfo.project.name !== "iphone", "the sheet is for phones");
   await uploadedDevice(page, "Reach phone", overlandBatch(account.timezone));
+  // Nobody shares with this account: the card with Share my location ends a sheet that is
+  // longer than the screen, and it is the control a person taps to start.
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
+  const share = page.getByRole("button", { name: "Share my location" });
+  await expect(share).toBeVisible();
   const settled = async () => {
     let last = -1;
     await expect
@@ -245,17 +248,19 @@ test("the sheet's whole content can be scrolled to, clear of the header and the 
       const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
       return hit !== null && element.contains(hit);
     });
+  const viewHeight = (await page.viewportSize())?.height ?? 0;
+  expect(await page.locator(".map-page__panel").evaluate((e) => e.scrollHeight)).toBeGreaterThan(
+    viewHeight * 0.6,
+  );
 
-  // The last control of the sheet, scrolled to the end of the page (snapping must not pull
-  // the end of a long sheet back under the tab bar).
-  const last = page.getByRole("button", { name: "Share my location" });
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  // Brought into view the way a person scrolls to it: a snap point must not pull the end of a
+  // long sheet back, under the tab bar.
+  await share.scrollIntoViewIfNeeded();
   await settled();
-  expect(await reachable(last)).toBe(true);
+  expect(await reachable(share)).toBe(true);
 
-  // The first control, with the sheet lifted to the header: under the header it is not.
+  // The first control, with the sheet lifted towards the header: not under it.
   const first = page.getByRole("list", { name: "People", exact: true }).getByRole("link").first();
-  await first.scrollIntoViewIfNeeded();
   await page.evaluate(() => window.scrollTo(0, 400));
   await settled();
   expect(await reachable(first)).toBe(true);
