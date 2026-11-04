@@ -7,7 +7,12 @@ import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
 
 /** Opens a signed-in page by its URL and waits for its heading and data. */
-async function open(page: Page, path: string, heading: string, ready?: string): Promise<void> {
+async function open(
+  page: Page,
+  path: string,
+  heading: string,
+  ready?: string | RegExp,
+): Promise<void> {
   await page.goto(path);
   await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
   if (ready !== undefined) await expect(page.getByText(ready).first()).toBeVisible();
@@ -47,7 +52,7 @@ test.describe("accessibility", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
 
     const device = await uploadedDevice(page, "Checked phone", overlandBatch(account.timezone));
-    await open(page, "/", "People", "Me");
+    await open(page, "/", "People", /^Me$/);
     await expectAccessible(page, "People's list");
     // Me's detail: the day so far and each device, the way to Settings › Devices.
     await open(page, "/?person=me", "People", "Timeline");
@@ -56,11 +61,11 @@ test.describe("accessibility", () => {
     await page.getByRole("link", { name: /^Your devices/ }).click();
     await expect(page.getByRole("heading", { level: 2, name: "Your devices" })).toBeVisible();
     await expectAccessible(page, "Me's devices level");
-    await open(page, "/?view=history", "People", "Me");
+    await open(page, "/?view=history", "People", /^Me$/);
     await expectAccessible(page, "People's History overview");
     await open(page, "/?view=history&person=me", "People", "Summary, visits and trips");
     await openGroup(page, "Summary, visits and trips");
-    await expect(page.getByRole("region", { name: "Visits" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Summary", exact: true })).toBeVisible();
     await expectAccessible(page, "People's History in Me's detail, group open");
     await open(page, "/?view=heat&person=me", "People", "Heat: totals, busiest places");
     await openGroup(page, "Heat: totals, busiest places");
@@ -99,14 +104,14 @@ test.describe("accessibility", () => {
     await expect(page.getByRole("button", { name: "Share my location" })).toBeVisible();
     await expectAccessible(page, "People's list with someone who shares");
     await open(page, `/?person=${friend.account.id}`, "People", "Where they’ve been");
+    await openGroup(page, /^Device \(1\) · What /);
     await expect(page.getByText(friend.device.name).first()).toBeVisible();
     await expectAccessible(page, "someone's detail in Live");
-    await open(
-      page,
-      `/?view=history&person=${friend.account.id}`,
-      "People",
-      `${friend.account.displayName} · ${friend.device.name}`,
-    );
+    await open(page, `/?view=history&person=${friend.account.id}`, "People", "Where they’ve been");
+    await openGroup(page, "Summary");
+    await expect(
+      page.getByText(`${friend.account.displayName} · ${friend.device.name}`),
+    ).toBeVisible();
     await expectAccessible(page, "someone's detail in History");
   });
 

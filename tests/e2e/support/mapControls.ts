@@ -56,3 +56,16 @@ export async function openGroup(page: Page, name: string | RegExp): Promise<void
   if ((await button.getAttribute("aria-expanded")) === "false") await button.click();
   await expect(button).toHaveAttribute("aria-expanded", "true");
 }
+
+/** Shows one of Live · History · Heat: on phones the sheet is lowered first, as it covers the bar. */
+export async function showView(page: Page, name: "Live" | "History" | "Heat"): Promise<void> {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await mapView(page, name).click();
+}
+
+/** Closes the map options popover (Escape, as a keyboard user does), so it no longer covers the sheet. */
+export async function closeMapOptions(page: Page): Promise<void> {
+  const toggle = page.getByRole("button", { name: /^Map options/ });
+  if ((await toggle.getAttribute("aria-expanded")) === "true") await page.keyboard.press("Escape");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+}

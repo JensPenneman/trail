@@ -74,6 +74,10 @@ export function HiddenPeople({ backTo, foot }: { backTo: string; foot: ReactNode
                     hide.mutate(
                       { shareId: share.id, hidden: false },
                       {
+                        // A press that failed is forgotten: the row going later is nothing of its.
+                        onError: () => {
+                          pressed.current = null;
+                        },
                         onSuccess: () =>
                           announce(
                             `${share.owner.displayName} is shown again.${

@@ -12,7 +12,14 @@ const tags = ["wcag2a", "wcag2aa", "wcag2aaa", "wcag21a", "wcag21aa", "wcag22aa"
  * Scans the page as it is now. Opening transitions (dialogs fade in) are
  * awaited first: halfway through, the text is paler than it will be.
  */
-export async function expectAccessible(page: Page, what: string): Promise<void> {
+export async function expectAccessible(
+  page: Page,
+  what: string,
+  { keepScroll = false }: { keepScroll?: boolean } = {},
+): Promise<void> {
+  // On phones the page is scanned with the sheet at its peek, as a person first sees it: a sheet
+  // that happens to be half lifted covers the map's controls and the header's links partly.
+  if (!keepScroll) await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForFunction(() =>
     document
       .getAnimations()

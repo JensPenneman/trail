@@ -1,7 +1,7 @@
 import { expect } from "@playwright/test";
 import { daysResponseSchema } from "@trail/contracts/stats";
 import { tracksResponseSchema } from "@trail/contracts/track";
-import { openGroup } from "./support/mapControls";
+import { openGroup, openPeriodPicker } from "./support/mapControls";
 import { overlandBatch } from "./support/overlandBatch";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
@@ -88,6 +88,6 @@ test("History shows today's distance, points, visits and trips, and the time scr
     )
     .toBe(30);
   await page.reload();
-  await page.getByRole("button", { name: /, choose another day$/ }).click();
+  await openPeriodPicker(page);
   await expect(page.getByRole("button", { name: /, today, 30 points$/ })).toBeVisible();
 });

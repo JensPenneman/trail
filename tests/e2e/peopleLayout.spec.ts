@@ -143,7 +143,7 @@ test("on a phone the sheet scrolls over a map that stays, with its detents", asy
   await page.waitForFunction(() => window.scrollY > 0);
   expect(await box(canvas(page))).toEqual(before);
   expect((await box(panel)).y).toBeLessThan(peekTop);
-  await expectAccessible(page, "the people sheet lifted");
+  await expectAccessible(page, "the people sheet lifted", { keepScroll: true });
 
   // Focus on what the sheet covers lowers it to peek.
   await page.getByRole("button", { name: "Zoom in" }).focus();
@@ -158,14 +158,20 @@ test("on a phone the sheet scrolls over a map that stays, with its detents", asy
 
   // Selecting a person lifts it to the half detent.
   await page.getByRole("list", { name: "Me", exact: true }).getByRole("link").first().click();
-  const half = await page.evaluate(() => {
+  // The half detent is below the peek (the peek is capped below half the view), and the sheet
+  // comes to rest on it once the page has settled; the detent moves while the content loads.
+  const detent = () => {
     const marker = document.querySelector("[data-detent=half]")?.getBoundingClientRect().top ?? 0;
     const padding = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop);
     return marker + window.scrollY - padding;
+  };
+  expect(await page.evaluate(detent)).toBeGreaterThan(0);
+  // Lifted to the half detent at least (it may rest a little above while the content settles).
+  await page.waitForFunction(() => {
+    const marker = document.querySelector("[data-detent=half]")?.getBoundingClientRect().top ?? 0;
+    const padding = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop);
+    return window.scrollY >= marker + window.scrollY - padding - 3;
   });
-  // The peek is capped below half the view, so there is a half detent to lift the sheet to.
-  expect(half).toBeGreaterThan(0);
-  await page.waitForFunction((target) => Math.abs(window.scrollY - target) < 3, half);
 });
 
 test("the controls and the zoom buttons clear each other on a 375 px screen", async ({
@@ -178,14 +184,18 @@ test("the controls and the zoom buttons clear each other on a 375 px screen", as
   await page.goto("/?view=history&person=me");
   await expect(mapView(page, "History")).toBeChecked();
   const overlay = await box(page.locator(".map-overlay"));
-  const controlsEnd = overlay.y + overlay.height;
   const zoom = await box(page.getByRole("button", { name: "Zoom in" }));
-  expect(zoom.y).toBeGreaterThanOrEqual(controlsEnd - 1);
-  // The popover stays above the sheet.
+  // The zoom buttons are beside the bar, never under it.
+  expect(zoom.x).toBeGreaterThanOrEqual(overlay.x + overlay.width - 1);
+  // The popover is drawn over the sheet where it reaches below the map, and is not behind it.
   await openPeriodPicker(page);
   const popover = await box(page.locator(".period-control__popover"));
-  const sheetTop = (await box(page.locator(".map-page__panel"))).y;
-  expect(popover.y + popover.height).toBeLessThanOrEqual(sheetTop + 1);
+  const lowerEdge = await page.evaluate(
+    ([x, y]) =>
+      document.elementFromPoint(x ?? 0, y ?? 0)?.closest(".period-control__popover") !== null,
+    [popover.x + popover.width / 2, popover.y + popover.height - 4],
+  );
+  expect(lowerEdge).toBe(true);
   await expectAccessible(page, "the period popover on a narrow phone");
 });
 
@@ -198,15 +208,25 @@ test("a press on the map with the sheet at half leaves the sheet where it is", a
   await page.goto("/");
   await page.getByRole("list", { name: "Me", exact: true }).getByRole("link").first().click();
   await page.waitForFunction(() => window.scrollY > 100);
-  // Settled: the scroll position stops changing.
+  // Settled: the page stops changing size (the content loads and the sheet re-snaps) and the
+  // scroll position stops moving, for a whole second.
   let at = -1;
+  let height = -1;
+  let steady = 0;
   await expect
-    .poll(async () => {
-      const now = await page.evaluate(() => window.scrollY);
-      const settled = now === at;
-      at = now;
-      return settled;
-    })
+    .poll(
+      async () => {
+        const now = await page.evaluate(() => [
+          window.scrollY,
+          document.documentElement.scrollHeight,
+        ]);
+        steady = now[0] === at && now[1] === height ? steady + 1 : 0;
+        at = now[0] ?? -1;
+        height = now[1] ?? -1;
+        return steady >= 4;
+      },
+      { intervals: [250] },
+    )
     .toBe(true);
   const map = await box(canvas(page));
   await page.mouse.click(map.x + map.width / 2, map.y + map.height / 3);

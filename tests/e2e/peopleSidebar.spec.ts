@@ -182,7 +182,7 @@ test("someone else's page: summary and devices folded, actions as rows", async (
     "false",
   );
   await openGroup(page, new RegExp(`^Device \\(1\\) · What ${name} shares with you`));
-  await expect(them.getByText(friend.device.name)).toBeVisible();
+  await expect(them.getByText(friend.device.name).first()).toBeVisible();
   await expect(them.getByRole("link", { name: /^Open in Apple Maps/ })).toHaveAttribute(
     "target",
     "_blank",
