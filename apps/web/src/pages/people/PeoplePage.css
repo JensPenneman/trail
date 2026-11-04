@@ -285,3 +285,19 @@
     background: CanvasText;
   }
 }
+
+/* While History plays the sidebar is a narrow strip of what each device is doing. */
+@media (min-width: 64rem) {
+  .map-page[data-playing] {
+    --panel-width: 16rem;
+  }
+
+  .map-page[data-playing] .map-page__foot {
+    width: min(100% - 2 * var(--space-6), 46rem);
+  }
+}
+
+.map-page__now {
+  padding: var(--space-4) calc(var(--space-4) + var(--safe-right)) var(--space-6)
+    calc(var(--space-4) + var(--safe-left));
+}

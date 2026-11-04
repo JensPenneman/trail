@@ -78,6 +78,8 @@ export function PeoplePage() {
     showDay,
     showHistoryDay,
     showRange,
+    setAt,
+    showMoment,
   } = useMapSearch();
   const { level, setLevel } = useTrackLevel();
   const mapStyle = useMapStyle();
@@ -169,6 +171,9 @@ export function PeoplePage() {
     period: search.period,
     showDay,
     showRange,
+    at: search.at,
+    setAt,
+    showMoment,
   });
   const heat = useHeatView({
     active: view === "heat",
@@ -260,6 +265,24 @@ export function PeoplePage() {
     return () => element.removeEventListener("focusin", onStageFocus);
   }, []);
   usePeekHeight(panel, levelKey, !wide);
+  // Playback replaces the sidebar's content (kept, hidden) by what each device is doing at the
+  // moment shown. Its scroll, and the page's, are put back when it ends; focus goes to Pause on
+  // entry and back to the slider's Play on exit.
+  const playing = content.player?.on === true;
+  const scrolls = useRef<{ panel: number; page: number } | null>(null);
+  useEffect(() => {
+    if (playing) {
+      scrolls.current = { panel: panel.current?.scrollTop ?? 0, page: window.scrollY };
+      if (!wide) window.scrollTo({ top: 0, behavior: "instant" });
+      document.querySelector<HTMLElement>("[data-player-toggle]")?.focus({ preventScroll: true });
+    } else if (scrolls.current !== null) {
+      const saved = scrolls.current;
+      scrolls.current = null;
+      if (panel.current !== null) panel.current.scrollTop = saved.panel;
+      if (!wide) window.scrollTo({ top: saved.page, behavior: "instant" });
+      document.querySelector<HTMLElement>("[data-play]")?.focus({ preventScroll: true });
+    }
+  }, [playing, wide]);
   const toTop = () => {
     if (panel.current !== null) panel.current.scrollTop = 0;
   };
@@ -346,6 +369,7 @@ export function PeoplePage() {
     <div
       className="map-page"
       data-view={view}
+      {...(playing ? { "data-playing": "" } : {})}
       style={{ "--overlay-end": `${overlayEnd}px` } as CSSProperties}
     >
       <DocumentTitle title={`${content.title} · People`} />
@@ -385,7 +409,9 @@ export function PeoplePage() {
       </div>
       <PeoplePanel
         panelRef={panelRef}
-        foot={wide ? null : foot}
+        foot={wide || playing ? null : foot}
+        bar={wide || !playing ? null : foot}
+        strip={playing ? (content.player?.strip ?? null) : null}
         at={
           search.list === "devices"
             ? { level: "devices" }

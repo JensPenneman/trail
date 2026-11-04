@@ -20,6 +20,12 @@ export function MapStub(props: TrailMapProps) {
       data-heat={props.heat?.cells.length ?? 0}
       data-fit={props.fit?.key ?? ""}
       data-focus={props.focus?.key ?? ""}
+      data-follow={
+        props.follow === null || props.follow === undefined
+          ? ""
+          : `${props.follow.lon},${props.follow.lat}`
+      }
+      data-dimmed={props.tracks?.filter((track) => track.dimmed === true).length ?? 0}
       data-notice={props.notice ?? ""}
     />
   );

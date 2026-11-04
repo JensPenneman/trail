@@ -63,6 +63,11 @@ export interface TrailMapProps {
     /** Extra padding in px per side, for what floats over the map (controls). */
     inset?: { top?: number; right?: number };
   };
+  /**
+   * A point the camera follows while it is set (the playback cursor): when it leaves the
+   * viewport the camera eases to it, at most twice a second; with reduced motion it jumps.
+   */
+  follow?: { lon: number; lat: number } | null;
   /** The camera moves to this point once per `key` (a key shown again does not move it again). */
   focus?: { key: string; lon: number; lat: number; zoom: number } | null;
   initialView?: { center: readonly [number, number]; zoom: number };
@@ -156,6 +161,7 @@ export function TrailMap({
   cursors,
   heat,
   fit,
+  follow,
   focus,
   initialView,
   onViewChange,
@@ -424,6 +430,24 @@ export function TrailMap({
     fitNow(map, fittedKey.current !== null);
     fittedKey.current = fitKey;
   }, [map, fitKey, hasFitBounds]);
+
+  // Following: only when the point is out of the viewport (less a margin), and not more than
+  // twice a second, so that a fast cursor does not make the camera chase every frame.
+  const followLon = follow?.lon;
+  const followLat = follow?.lat;
+  const followedAt = useRef(0);
+  useEffect(() => {
+    if (map === null || followLon === undefined || followLat === undefined) return;
+    const now = performance.now();
+    if (now - followedAt.current < 500) return;
+    const { x, y } = map.project([followLon, followLat]);
+    const { clientWidth: width, clientHeight: height } = map.getContainer();
+    const margin = Math.min(width, height) * 0.12;
+    if (x >= margin && x <= width - margin && y >= margin && y <= height - margin) return;
+    followedAt.current = now;
+    if (reducedMotion) map.jumpTo({ center: [followLon, followLat] });
+    else map.easeTo({ center: [followLon, followLat], duration: 400 });
+  }, [map, followLon, followLat, reducedMotion]);
 
   const focusKey = focus?.key;
   const focusTarget = useEffectEvent((instance: MapLibreMap) => {

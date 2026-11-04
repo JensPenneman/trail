@@ -1,7 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { Person } from "@trail/contracts/person";
-import type { ReactNode, Ref } from "react";
+import { type ReactNode, type Ref, useRef } from "react";
 import { useReadOnly } from "../../app/useReadOnly";
 import type { PersonColors } from "../../people/usePersonColors";
 import type { WhereTheyveBeenPeriod } from "../../people/WhereTheyveBeen";
@@ -27,6 +27,10 @@ interface PeoplePanelProps {
   panelRef: Ref<HTMLElement>;
   /** The history slider on phones, right under the header of the level; null beside the map. */
   foot: ReactNode;
+  /** The playback bar on phones, in the sheet while it plays; null beside the map. */
+  bar: ReactNode;
+  /** What stands in for the sidebar's content while History plays ("At this moment"). */
+  strip: ReactNode;
   at: PanelLevelKey;
   people: UseQueryResult<Person[]>;
   devices: UseQueryResult<DeviceSummary[]>;
@@ -59,6 +63,8 @@ interface PeoplePanelProps {
 export function PeoplePanel({
   panelRef,
   foot,
+  bar,
+  strip,
   at,
   people,
   devices,
@@ -79,9 +85,9 @@ export function PeoplePanel({
   onLeave,
 }: PeoplePanelProps) {
   const readOnly = useReadOnly();
-  return (
-    <section className="map-page__panel" aria-labelledby="people-page-title" ref={panelRef}>
-      <span className="map-page__grabber" aria-hidden="true" />
+  const playing = strip !== null;
+  const sidebar = (
+    <>
       <div className="map-page__top">
         <PageHeader
           title="People"
@@ -153,6 +159,25 @@ export function PeoplePanel({
           />
         )}
       </div>
+    </>
+  );
+  // While it plays the same element is handed on again, so that the hidden content is not
+  // rendered at every tick of the clock.
+  const kept = useRef<ReactNode>(sidebar);
+  if (!playing) kept.current = sidebar;
+  return (
+    <section className="map-page__panel" aria-labelledby="people-page-title" ref={panelRef}>
+      <span className="map-page__grabber" aria-hidden="true" />
+      {/* Mounted all along, hidden while playing: what is open and typed in it stays. */}
+      <div hidden={playing}>{playing ? kept.current : sidebar}</div>
+      {playing ? (
+        <>
+          {bar}
+          <div className="map-page__now" data-peek-end>
+            {strip}
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }

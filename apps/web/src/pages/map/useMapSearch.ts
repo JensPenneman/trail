@@ -1,7 +1,15 @@
 import { startTransition, useCallback, useEffect, useMemo, useOptimistic, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { useToday } from "../../time/useToday";
-import { withDay, withDevices, withPerson, withRange, withView } from "./mapSearchUpdates";
+import {
+  withAt,
+  withDay,
+  withDevices,
+  withMoment,
+  withPerson,
+  withRange,
+  withView,
+} from "./mapSearchUpdates";
 import type { MapView } from "./mapViews";
 import { type MapSearch, parseMapSearch } from "./parseMapSearch";
 
@@ -25,6 +33,10 @@ export interface MapSearchControls {
   /** History on a day, from another view: one step of the history for both. */
   showHistoryDay: (date: string) => void;
   showRange: (from: string, to: string) => void;
+  /** The slider's moment, in place of the entry (it follows the slider; nothing to go Back to). */
+  setAt: (at: string) => void;
+  /** A day and a moment on it, in place of the entry: where playback paused, ended or was left. */
+  showMoment: (day: string, at: string) => void;
 }
 
 /**
@@ -111,6 +123,14 @@ export function useMapSearch(): MapSearchControls {
     (from: string, to: string) => update((current) => withRange(current, from, to)),
     [update],
   );
+  const setAt = useCallback(
+    (at: string) => update((current) => withAt(current, at), true),
+    [update],
+  );
+  const showMoment = useCallback(
+    (day: string, at: string) => update((current) => withMoment(current, day, at, today), true),
+    [update, today],
+  );
   return {
     search,
     today,
@@ -121,5 +141,7 @@ export function useMapSearch(): MapSearchControls {
     showDay,
     showHistoryDay,
     showRange,
+    setAt,
+    showMoment,
   };
 }
