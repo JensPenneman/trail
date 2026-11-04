@@ -296,6 +296,14 @@ for (const [width, height] of [
     await openMapOptions(page);
     const popover = await box(page.locator(".map-options__body"));
     expect(popover.height).toBeGreaterThanOrEqual(11 * 16 - 1);
+    // Its lower edge is not behind the sheet: what is drawn there is the popover's, and above the tab bar.
+    const tabBar = await box(page.locator(".primary-nav"));
+    expect(popover.y + popover.height).toBeLessThanOrEqual(tabBar.y);
+    const lowerEdge = await page.evaluate(
+      ([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest(".map-options__body") !== null,
+      [popover.x + popover.width / 2, popover.y + popover.height - 4],
+    );
+    expect(lowerEdge).toBe(true);
     await expectAccessible(page, `Map options on a ${width} px screen`);
   });
 }

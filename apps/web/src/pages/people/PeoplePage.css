@@ -126,6 +126,11 @@
     z-index: 1;
   }
 
+  /* A popover that reaches below the map is not hidden by the sheet: the stage rises over it. */
+  .map-page__stage:has(.map-options.is-open, .period-control__popover) {
+    z-index: 3;
+  }
+
   .map-page__spacer {
     display: block;
     height: calc(var(--sheet-view) - var(--sheet-peek));

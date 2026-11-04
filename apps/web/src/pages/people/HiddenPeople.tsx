@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { offlineReasonId, useReadOnly } from "../../app/useReadOnly";
 import { useFormatter } from "../../format/useFormatter";
 import { useHidePerson } from "../../queries/useHidePerson";
@@ -16,7 +16,7 @@ import { PanelLevel } from "./PanelLevel";
  * hiding means and can be shown again; the list is then one shorter, and says
  * when nobody is hidden.
  */
-export function HiddenPeople({ backTo }: { backTo: string }) {
+export function HiddenPeople({ backTo, foot }: { backTo: string; foot: ReactNode }) {
   const format = useFormatter();
   const incoming = useIncomingShares();
   const hide = useHidePerson();
@@ -24,25 +24,22 @@ export function HiddenPeople({ backTo }: { backTo: string }) {
   const readOnly = useReadOnly();
   const hidden = (incoming.data ?? []).filter((share) => share.hiddenAt !== null);
   const level = useRef<HTMLDivElement | null>(null);
-  // The button that was pressed goes with its row: focus moves to the one now in its place, or
-  // to the heading when none is left.
-  const pressed = useRef<number | null>(null);
+  // The button that was pressed goes with its row, once the list has answered: focus moves to
+  // the button now at its place, or to the heading when none is left.
+  const pressed = useRef<{ id: string; index: number } | null>(null);
+  const ids = hidden.map((share) => share.id).join();
   useEffect(() => {
-    const at = pressed.current;
-    if (at === null) return;
+    const was = pressed.current;
+    if (was === null || ids.split(",").includes(was.id)) return;
+    pressed.current = null;
     const buttons = level.current?.querySelectorAll<HTMLElement>("[data-show-again]") ?? [];
-    const next = buttons[Math.min(at, buttons.length - 1)];
-    if (next !== undefined) {
-      pressed.current = null;
-      next.focus();
-    } else if (hidden.length === 0 && !hide.isPending) {
-      pressed.current = null;
-      level.current?.querySelector<HTMLElement>("[data-level-heading]")?.focus();
-    }
-  }, [hidden.length, hide.isPending]);
+    const next = buttons[Math.min(was.index, buttons.length - 1)];
+    (next ?? level.current?.querySelector<HTMLElement>("[data-level-heading]"))?.focus();
+  }, [ids]);
   return (
     <div ref={level}>
       <PanelLevel title="Hidden" backTo={backTo} backLabel="People">
+        {foot}
         {incoming.isPending ? (
           <LoadingBlock label="Loading">
             <Skeleton height="4rem" />
@@ -73,7 +70,7 @@ export function HiddenPeople({ backTo }: { backTo: string }) {
                   disabled={readOnly}
                   aria-describedby={readOnly ? offlineReasonId : undefined}
                   onClick={() => {
-                    pressed.current = index;
+                    pressed.current = { id: share.id, index };
                     hide.mutate(
                       { shareId: share.id, hidden: false },
                       {

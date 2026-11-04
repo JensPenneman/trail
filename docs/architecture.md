@@ -2873,8 +2873,8 @@ count among them, since they lead to signed-in pages.
   is measured into `--overlay-end`), the "Updating" chip sits top centre (under the bar where
   the screen is not wide enough for both), the map fits tracks under the
   controls (`fit.inset`: below the bar, left of the zoom column on phones),
-  and History's time slider floats at the map's foot (first block of the
-  sheet on phones). The
+  and History's time slider floats at the map's foot (in the sheet on phones,
+  right under the Me row or the person's header, not in the peek). The
   DOM order is the controls, the map, then the panel, so the keyboard meets
   them in that order.
 

@@ -21,7 +21,7 @@ type PanelLevelKey =
 
 interface PeoplePanelProps {
   panelRef: Ref<HTMLElement>;
-  /** The history slider, first in the sheet on phones; null beside the map. */
+  /** The history slider on phones, right under the header of the level; null beside the map. */
   foot: ReactNode;
   at: PanelLevelKey;
   people: UseQueryResult<Person[]>;
@@ -109,10 +109,7 @@ export function PeoplePanel({
             foot={foot}
           />
         ) : at.level === "hidden" ? (
-          <>
-            {foot}
-            <HiddenPeople backTo={levelBackTo} />
-          </>
+          <HiddenPeople backTo={levelBackTo} foot={foot} />
         ) : (
           <PersonPanel
             selected={at.selected}
