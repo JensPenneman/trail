@@ -459,8 +459,15 @@ toggle, else the latest stop or move while it is recent) come along when
   the last `historyDays` days, or the last 12 hours for live-only shares.
   `distanceM` starts from your own most recently located device and needs
   `locations:read` as well. `GET /api/v1/people/{userId}/track` returns
-  their track for shares with history, never older than the history allows.
-  The people you look at see in their [access log](#access-log) that you
+  their track for shares with history, never older than the history allows,
+  and `GET /api/v1/people/{userId}/days` the days they recorded something
+  within that history — per shared device and day, the points and the first
+  and last time, no positions (`people:read`; 404 as for the track). The
+  days are the **person's own**, cut at midnight in their account's time zone
+  (`timezone`), not in yours: that is where their daily totals are made, and
+  everyone who looks sees the same days. The window runs from the day their
+  history begins in, counted from the history's start on that first day (so
+  nothing older shows), to their today. The answer has an `ETag`. The people you look at see in their [access log](#access-log) that you
   looked, when and at what — not from where or with which token.
 - `GET`, `POST /api/v1/shares` and `PATCH`, `DELETE /api/v1/shares/{id}`
   manage your own shares: listing needs `shares:read`, stopping
