@@ -67,7 +67,7 @@ function hashOf(body: unknown): string {
 
 describe("the level tracks", () => {
   it("are the answers they were, at every level, simplified or not", async () => {
-    // The values asked for are echoed; none asked, none listed.
+    // The values asked for are echoed; none asked, none listed (the answer is what it was).
     expect(
       (
         await owner
@@ -75,7 +75,7 @@ describe("the level tracks", () => {
           .query({ ...day, level: "raw" })
           .expect(200)
       ).body.values,
-    ).toEqual([]);
+    ).toBeUndefined();
     const hashes: Record<string, string> = {};
     for (const level of ["raw", "averaged", "mapped", "inferred"]) {
       for (const maxPoints of [8000, 300]) {
@@ -113,7 +113,7 @@ describe("the values of the points (values=)", () => {
 
   it("leaves points as they were without them, and echoes none", async () => {
     const body = (await ask({ level: "raw" }).expect(200)).body;
-    expect(body.values).toEqual([]);
+    expect(body.values).toBeUndefined();
     expect(pointsOf(body).every((point) => point.length === 3)).toBe(true);
   });
 

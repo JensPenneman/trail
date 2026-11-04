@@ -468,7 +468,7 @@ export async function loadLevelTracks(
   }
   return {
     level: query.level,
-    values: [...values],
+    ...(values.length === 0 ? {} : { values: [...values] }),
     availableLevel: available,
     from: query.from.toISOString(),
     to: query.to.toISOString(),

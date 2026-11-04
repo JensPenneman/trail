@@ -4976,7 +4976,7 @@ a segment is `{ id, deviceId, kind, level, mode, modeInferred, modeUser,
 confidence, needsReview, startedAt, endedAt, distanceM, centroid, spreadM,
 points }` with points `[lon, lat, epochSeconds]` (the way's shape between
 mapped points carries interpolated times), and, for `values=speed,altitude,
-accuracy` (at most three, in the order asked; `values` is echoed),
+accuracy` (at most three, in the order asked; `values` is echoed, and left out when none were asked),
 `[lon, lat, epochSeconds, …values]` with null where unknown: the speed is the
 recorded one at `raw` and the averaged one (`processed_points.speed_avg`)
 elsewhere, altitude and accuracy are the fix's own, read from `locations`

@@ -256,7 +256,7 @@ export function levelTracks(from: string, to: string, level: ProcessingLevel): L
             points,
           },
         ];
-  return { level, values: [], availableLevel: level, from, to, simplified: false, segments };
+  return { level, availableLevel: level, from, to, simplified: false, segments };
 }
 
 export const automatic: DeviceMode = { override: null, current: null };

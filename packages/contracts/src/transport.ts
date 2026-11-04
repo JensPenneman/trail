@@ -343,10 +343,14 @@ export type LevelTrackSegment = z.infer<typeof levelTrackSegmentSchema>;
 export const levelTracksResponseSchema = z
   .object({
     level: processingLevelSchema.meta({ description: "The level asked for." }),
-    values: z.array(levelValueSchema).default([]).meta({
-      description: "The values each point carries after `t`, in order (the query's `values`).",
-      example: [],
-    }),
+    values: z
+      .array(levelValueSchema)
+      .optional()
+      .meta({
+        description:
+          "The values each point carries after `t`, in order (the query's `values`); left out when none were asked for.",
+        example: ["speed", "altitude"],
+      }),
     availableLevel: processingLevelSchema.meta({
       description:
         "The level every point of the response reached. Lower than `level` while points wait for processing or map data.",

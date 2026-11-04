@@ -292,7 +292,7 @@ point reached, each segment's `level` its own. Points are `[lon, lat, t]`:
 WGS84 degrees and epoch seconds (the way's shape between two mapped points
 carries interpolated times). `values=speed,altitude,accuracy` (at most three,
 none twice) adds them after `t` in the order asked, `null` where a point has
-none, and `values` in the answer says which: the speed in m/s is the recorded
+none, and `values` in the answer says which (it is left out when none were asked): the speed in m/s is the recorded
 one at `raw` and the averaged one at the other levels, altitude and accuracy
 in metres are the fix's own; the way's shape between mapped points takes the
 speed of the point it leads to and has no altitude or accuracy. At `inferred` the segments are the timeline's

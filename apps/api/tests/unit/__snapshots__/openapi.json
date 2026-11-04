@@ -5027,9 +5027,11 @@
             "$ref": "#/components/schemas/ProcessingLevel"
           },
           "values": {
-            "default": [],
-            "description": "The values each point carries after `t`, in order (the query's `values`).",
-            "example": [],
+            "description": "The values each point carries after `t`, in order (the query's `values`); left out when none were asked for.",
+            "example": [
+              "speed",
+              "altitude"
+            ],
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/LevelValue"
@@ -5073,7 +5075,6 @@
         },
         "required": [
           "level",
-          "values",
           "availableLevel",
           "from",
           "to",
