@@ -334,7 +334,7 @@ describe("stops of one stay", () => {
       { arrivedAt: days[0]?.t ?? 0, departedAt: lastT(days), lat, lon, accuracy: 20 },
     ]);
     await upload(device.token, concat(there, days, away));
-    await t.ctx.processing.flush();
+    await settle(device.id);
     // As the bounded passes left it: the stay in parts, one after the other.
     const stops = await storedStops(device.id);
     expect(stops.length).toBeGreaterThanOrEqual(2);
@@ -485,7 +485,7 @@ describe("stops of one stay", () => {
       seed: 113,
     });
     await upload(device.token, concat(atHome, toWork, atWork));
-    await t.ctx.processing.flush();
+    await settle(device.id);
     // Riding on, an upload every three minutes, each worked out before the next.
     const ride = travel([work, [work[0] + 8000, work[1]]], {
       startT: lastT(atWork) + 2,
@@ -503,7 +503,7 @@ describe("stops of one stay", () => {
           (point) => point.t >= riding + index * 180 && point.t < riding + (index + 1) * 180,
         ),
       );
-      await t.ctx.processing.flush();
+      await settle(device.id);
       const to = iso(riding + (index + 1) * 180 + 3600);
       const served = (await timeline(device.id, from, to)).filter((item) => item.kind === "stop");
       // Home and work, however many parts the passes left.
@@ -669,7 +669,7 @@ describe("a quick toggle across the parts of a stay", () => {
       seed: 131,
     });
     await upload(device.token, days);
-    await t.ctx.processing.flush();
+    await settle(device.id);
     const parts = await storedStops(device.id);
     expect(parts.length).toBeGreaterThan(1);
     // The train set an hour before the last part began: the parts after it are the same stay.
@@ -695,7 +695,7 @@ describe("a quick toggle across the parts of a stay", () => {
       seed: 133,
     });
     await upload(device.token, concat(toWork, atWork));
-    await t.ctx.processing.flush();
+    await settle(device.id);
     const rides = (
       await t.ctx.db.execute<{ mode_user: string | null; mode_inferred: string | null }>(sql`
         SELECT mode_user, mode_inferred FROM segments
