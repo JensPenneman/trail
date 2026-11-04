@@ -149,9 +149,9 @@ needs them all. A signed-in session holds every scope.
 | `profile:read` | Read the account's name and time zone. |
 | `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |
 | `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |
-| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |
+| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline, Insights › Places). |
 | `locations:write` | Correct how you travelled (transport mode overrides). |
-| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates. |
+| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates (Insights › Places needs `locations:read`). |
 | `people:read` | See the people who share their location with you. |
 | `shares:read` | List your shares, the ones you receive and your public links. |
 | `shares:write` | Start and stop sharing, hide people and manage public links. |
@@ -343,8 +343,9 @@ correction or new data, read the timeline again.
 Insights are statistics of how you travelled, worked out from the stops and
 moves of the timeline — never from coordinates, so they need `history:read`
 only; the exception is Places, below, which holds a centre per place and needs
-`locations:read`. A period is a range of local days in the account's time zone: `from`
-and `to` (both included, at most three years apart). Leave out `to` for today
+`locations:read`. A period is a range of local days in the account's time
+zone: `from` and `to` (both included, at most three years apart). Leave out
+`to` for today
 and `from` for the first day with stops or moves; `devices` narrows them to
 some devices. A move across the period's edge, or across midnight, counts in
 each day (and hour) with the part of its distance and time that falls there;

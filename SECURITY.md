@@ -69,8 +69,8 @@ yourself: location data is personal data.
 - **API tokens**: 32 random bytes (`trlk_…`), stored as SHA-256 hashes only
   and shown once, when created or rolled. Each token has scopes (positions
   only with `locations:read`, which includes Insights › Places: a centre per
-  place to four decimals, never kept in the access log), can be limited to some devices and to IP
-  addresses or networks, and expires unless
+  place to four decimals, never kept in the access log), can be limited to
+  some devices and to IP addresses or networks, and expires unless
   its owner chooses otherwise; rolling replaces its secret at once, revoking
   ends it at once. Tokens are accepted only in the `Authorization` header of
   `/api/v1` and `/mcp`, are shape-checked before any lookup, and are never

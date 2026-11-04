@@ -1736,7 +1736,7 @@ default hints (`ttlMs: 0`, `cacheScope: "private"`): lists vary by token.
 ### 8.7 Insights
 
 Statistics of how the owner travelled (§14, Insights), from the stops and
-moves of the timeline (`segments`, §17) and never from points: six v1
+moves of the timeline (`segments`, §17) and never from the coordinates of points: six v1
 operations, tag "Insights" — four with scope `history:read` (they carry no
 coordinates: times, distances, speeds, way kinds and segment ids), and the two
 Places operations below with `locations:read` (they carry a centre per place).
@@ -1831,7 +1831,7 @@ Contracts:
   list and so never recorded, nor any coordinate); the request log keeps no
   query value, and at debug only the names (`?place&from&to`). The key is a
   query parameter, never part of a path, since paths survive redaction.
-  Browsers keep a copy like the tracks' (device data, purged on sign-out).
+  The web app will keep a copy like the tracks' (device data, purged on sign-out) when its screens come.
   Abuse is bounded by the three-year span and the API's rate limits; guessing
   keys reveals only one's own stays.
 
@@ -2075,7 +2075,7 @@ hashed for nothing. The dashboard's routers use `answerConditionally`, v1
 | `GET /api/v1/segments` | raw and processed (the cursor and limit are in the query) |
 | `GET /api/stats/days`, `/api/v1/stats/days` | the body: a few hundred small rows with their stamps |
 | `GET /api/heatmap` | the devices, the sum of their point counters (an upload of points too inaccurate for the cells moves it: a needless 200, never a wrong 304), the newest `updated_at` of their rows, which a deletion sets (as many points uploaded as deleted would leave the sum as it was), and the generation of rebuilt cells (`heatGeneration`, which the start-up fill moves) |
-| `GET /api/v1/insights/*` | the scope (zone, period, devices) and over the segments of the period — the overview's with the period before — their count, newest `computed_at`, versions and the sums of their bounds, and `pending` |
+| `GET /api/v1/insights/*` | the scope (zone, period, devices) and over the segments of the period — the overview's with the period before — their count, newest `computed_at`, versions and the sums of their bounds, and `pending`; Places and Place add `mapStamp` (the newest `osm_tiles.fetched_at` and the builds of the ready regions), since names come from map data. The road a place is named after comes from the points around its stays (`processed_points.way_id`) and is not in the validator: a pass that moves only those points shows in the name once a stay or the map data changes |
 | `GET /api/v1/people` | the body (projecting it is cheap: the saving is bytes and parsing) |
 
 A 304 is a look (§8.8). Measured in the development container on a processed
@@ -3957,6 +3957,13 @@ security ones too.
   position, details or distance where not granted, no addresses or ids,
   hidden and stopped shares left out), the read-only transaction and its
   timeout, and a device and a sharer named to instruct the agent.
+  Places: `groupPlaces.test.ts` (cells against `tileMath`, the folding in
+  any input order and by joined time, devices joined, clipping, DST days,
+  visits by start, days at local midnight), `placeNames.test.ts` (the 150 m
+  reach and ties, road by frequency) and `insightsPlacesApi.test.ts` (stops on
+  two devices with map-data names, a second device elsewhere not naming a
+  place, folded keys, the three-year cap, ETags after a stop and a tile,
+  scopes, devices, the access log's rows).
   `insightsApi.test.ts` runs the four Insights operations on processed
   journeys (with map data, so the kinds of way are there): totals against
   the timeline, no coordinate anywhere in an answer, the period left out,
