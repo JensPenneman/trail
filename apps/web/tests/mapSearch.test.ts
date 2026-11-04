@@ -167,6 +167,19 @@ describe("the map's selection", () => {
     );
   });
 
+  it("applies a device filter to one's own devices in Heat and selects nobody", () => {
+    const heat = resolveMapSelection({ person: null, devices: ["car"] }, people, true, true);
+    expect(heat.selected).toBeNull();
+    expect(heat.filter).toEqual(["car"]);
+    expect(heat.own).toEqual({ deviceIds: ["car"] });
+    expect(heat.devicesOf("me")).toEqual(["car"]);
+    expect(heat.devicesOf(anna)).toEqual(["anna-phone"]);
+    // Anyone else's device is no filter of one's heatmap.
+    expect(
+      resolveMapSelection({ person: null, devices: ["anna-phone"] }, people, true, true).own,
+    ).toEqual({ deviceIds: null });
+  });
+
   it("drops what nobody knows once everything has loaded, and keeps it until then", () => {
     const pending = resolveMapSelection({ person: bob, devices: ["gone"] }, people, false);
     expect(pending.selected?.key).toBe(bob);

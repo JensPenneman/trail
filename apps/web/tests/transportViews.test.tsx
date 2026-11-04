@@ -304,9 +304,7 @@ describe("a link to one move", () => {
     expect(within(dialog).getByText("Was this a train ride?")).toBeInTheDocument();
     await person.click(within(dialog).getByRole("button", { name: "Close" }));
     // The link implied Me: the address says so now, so Me's detail stays when the move closes.
-    await waitFor(() => expect(router.state.location.search).toBe("?view=history&person=me"), {
-      timeout: 4000,
-    });
+    await waitFor(() => expect(router.state.location.search).toBe("?view=history&person=me"));
     expect(screen.queryByRole("dialog", { name: "Train" })).toBeNull();
     expect(await screen.findByRole("region", { name: "Me" })).toBeInTheDocument();
     expect(await screen.findByRole("region", { name: "Timeline" })).toBeInTheDocument();

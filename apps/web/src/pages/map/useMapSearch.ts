@@ -9,14 +9,17 @@ export interface MapSearchControls {
   search: MapSearch;
   today: string;
   setView: (view: MapView) => void;
-  /** Selects someone (`me` or a user id), or nobody. */
-  setPerson: (person: string | null, options?: { replace?: boolean }) => void;
   /**
    * Writes the selection an older link implies (`?segment=`, `?devices=`) into
    * the address, in place of its entry, so that closing a move or ticking all
    * devices again keeps the detail. Does nothing while a choice is on its way.
    */
   adoptPerson: (person: string) => void;
+  /**
+   * Leaves the detail of `person` for the list, in place of its entry — if the
+   * address still names them when this runs (hiding someone answers late).
+   */
+  leavePerson: (person: string) => void;
   setDevices: (deviceIds: readonly string[] | null) => void;
   showDay: (date: string) => void;
   /** History on a day, from another view: one step of the history for both. */
@@ -53,15 +56,15 @@ export function useMapSearch(): MapSearchControls {
       }),
     [setParams, showView],
   );
-  const setPerson = useCallback(
-    (person: string | null, options?: { replace?: boolean }) =>
-      startTransition(() => {
-        showChosen({ person, devices: null });
-        update((current) => withPerson(current, person), options?.replace === true);
-      }),
-    [update, showChosen],
-  );
   const settled = chosen.person === parsed.person && chosen.devices === parsed.devices;
+  const leavePerson = useCallback(
+    (person: string) =>
+      update(
+        (current) => (current.get("person") === person ? withPerson(current, null) : current),
+        true,
+      ),
+    [update],
+  );
   const adoptPerson = useCallback(
     (person: string) => {
       if (!settled || params.get("person") === person) return;
@@ -72,7 +75,7 @@ export function useMapSearch(): MapSearchControls {
         return next;
       }, true);
     },
-    [settled, params, update],
+    [params, update, settled],
   );
   const setDevices = useCallback(
     (deviceIds: readonly string[] | null) =>
@@ -102,8 +105,8 @@ export function useMapSearch(): MapSearchControls {
     search,
     today,
     setView,
-    setPerson,
     adoptPerson,
+    leavePerson,
     setDevices,
     showDay,
     showHistoryDay,

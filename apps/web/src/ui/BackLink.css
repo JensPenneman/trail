@@ -29,3 +29,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+@media (forced-colors: active) {
+  .back-link:hover {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

@@ -132,8 +132,7 @@
     color: LinkText;
   }
 
-  .person-row:hover,
-  .back-link:hover {
+  .person-row:hover {
     outline: 2px solid Highlight;
     outline-offset: -2px;
   }

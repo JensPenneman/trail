@@ -200,6 +200,61 @@ describe("selecting a person", () => {
   });
 });
 
+describe("a link that implies a person", () => {
+  it("is rewritten with the person once the lists are in, not before", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/people": async () => {
+        await gate;
+        return { status: 200, body: { people: [ana(), bob()] } };
+      },
+    });
+    const { router } = renderPage(<PeoplePage />, { url: `/?devices=${ids.anaPhone}`, user });
+    // The people are pending: whose device it is is not known yet (Me is the guess, not written).
+    await screen.findByRole("region", { name: "Me" });
+    expect(router.state.location.search).toBe(`?devices=${ids.anaPhone}`);
+    act(() => release());
+    await waitFor(() =>
+      expect(router.state.location.search).toBe(`?devices=${ids.anaPhone}&person=${ids.ana}`),
+    );
+    expect(await screen.findByRole("region", { name: "Ana Bell" })).toBeInTheDocument();
+    expect(router.state.historyAction).toBe("REPLACE");
+  });
+
+  it("rewrites ?people= with one person, and keeps the detail", async () => {
+    mockApi(standardRoutes());
+    const { router } = renderPage(<PeoplePage />, { url: `/?people=${ids.ana}`, user });
+    await waitFor(() => expect(router.state.location.search).toBe(`?person=${ids.ana}`));
+    expect(await screen.findByRole("region", { name: "Ana Bell" })).toBeInTheDocument();
+  });
+});
+
+describe("Heat's device filter", () => {
+  it("narrows one's own heatmap without selecting anyone or moving the focus", async () => {
+    const api = mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, { url: "/?view=heat", user });
+    await person.click(await screen.findByText("Advanced"));
+    const car = screen.getByRole("checkbox", { name: "Car" });
+    await person.click(car);
+    expect(router.state.location.search).toBe(`?view=heat&devices=${ids.phone}`);
+    expect(car).toHaveFocus();
+    expect(screen.getByRole("list", { name: "People" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Me" })).toBeNull();
+    await waitFor(() =>
+      expect(
+        api.calls.some(
+          (call) => call.path === "/api/heatmap" && call.url?.includes(ids.phone) === true,
+        ),
+      ).toBe(true),
+    );
+  });
+});
+
 describe("History's overview and selections", () => {
   it("draws one's own tracks and everyone's with a history share, and skips the rest of one's own", async () => {
     const api = mockApi(withHistoryOfAna());
