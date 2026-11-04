@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 
@@ -23,10 +23,16 @@ const assetsSchema = z.object({
 export interface MapAssets {
   /** In the URLs: a new set of assets is a new URL, so every file is cached for good. */
   hash: string;
-  /** `<web dist>/map-assets/<hash>`. */
-  dir: string;
-  /** The font stacks there are glyphs for: a request names one of them or nothing. */
+  /** The font stacks there are glyphs for. */
   fonts: ReadonlySet<string>;
+  /**
+   * The glyph file of a font stack and range as a URL names them, or null. The
+   * answer is a path listed when the assets were read, found by looking the
+   * names up: no part of a request is ever joined into a path.
+   */
+  fontFile(stack: string, file: string): string | null;
+  /** The sprite file a URL names (`ofm.json` …), likewise. */
+  spriteFile(file: string): string | null;
 }
 
 /** The image's map assets, or null when the build has none (`npm run dev` before a build). */
@@ -40,7 +46,32 @@ export function readMapAssets(webDistDir: string): MapAssets | null {
   }
   const dir = join(root, parsed.hash);
   if (!existsSync(dir)) return null;
-  return { hash: parsed.hash, dir, fonts: new Set(parsed.fonts) };
+  // What there is, listed once: the registry the router looks requests up in.
+  const fontFiles = new Map<string, string>();
+  for (const stack of parsed.fonts) {
+    let names: string[];
+    try {
+      names = readdirSync(join(dir, "fonts", stack));
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (name.endsWith(".pbf") && isGlyphRange(name.slice(0, -4))) {
+        fontFiles.set(`${stack}/${name}`, join(dir, "fonts", stack, name));
+      }
+    }
+  }
+  const spriteMap = new Map<string, string>();
+  for (const name of spriteFiles) {
+    const path = join(dir, "sprites", name);
+    if (existsSync(path)) spriteMap.set(name, path);
+  }
+  return {
+    hash: parsed.hash,
+    fonts: new Set(parsed.fonts),
+    fontFile: (stack, file) => fontFiles.get(`${stack}/${file}`) ?? null,
+    spriteFile: (file) => spriteMap.get(file) ?? null,
+  };
 }
 
 /** `0-255`, `256-511` … `65280-65535`: a range of 256 code points as MapLibre names it. */
