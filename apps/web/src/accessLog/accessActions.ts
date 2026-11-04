@@ -47,6 +47,7 @@ const actionLabels: Readonly<Record<string, string>> = {
   listPeople: "The people who share with you",
   getPerson: "Someone who shares with you",
   getPersonTrack: "The history of someone who shares with you",
+  getPersonDays: "The days of someone who shares with you",
   "dashboard.tracks": "Tracks as recorded",
   "dashboard.heatmap": "Heatmap",
   "dashboard.statsDays": "Day statistics",
@@ -81,6 +82,7 @@ const lookLabels: Readonly<Record<string, string>> = {
   listPeople: "Your position, in their People",
   getPerson: "Your position",
   getPersonTrack: "Your history",
+  getPersonDays: "Which days you recorded",
   "mcp.get_people": "Your position, through their agent",
 };
 
@@ -100,6 +102,7 @@ export function lookKindOf(action: string): LookKind {
     case "mcp.get_people":
       return "position";
     case "getPersonTrack":
+    case "getPersonDays":
       return "history";
     case "live.position":
       return "live";
@@ -137,6 +140,7 @@ export const actionChoices: readonly {
       { action: "listPeople", label: "Your position, in their People" },
       { action: "getPerson", label: "Your position" },
       { action: "getPersonTrack", label: "Your history" },
+      { action: "getPersonDays", label: "Which days you recorded" },
       { action: "live.position", label: "Your new positions, live" },
       { action: "link.view", label: "A public link's page" },
     ],

@@ -30,13 +30,16 @@ export interface TransportMap {
  * has (`raw`, which the live stream extends) or the level's tracks from
  * `/api/v1/tracks`, until they arrive the raw ones. A null range asks for
  * nothing (a view that is not shown). `colors` are those of the map's
- * background, which need not be the page's.
+ * background, which need not be the page's. `until` (epoch seconds: the
+ * playback cursor, rounded by `splitTime` so that the split moves four times a
+ * second at most) dims what lies after it; `raw` is then the caller's to cut.
  */
 export function useTransportMap(
   range: RangeParams | null,
   level: ProcessingLevel,
   raw: readonly MapTrack[],
   colors: { dark: boolean; device: (deviceId: string) => string },
+  until?: number,
 ): TransportMap {
   const levelTracks = useLevelTracks(
     level === "raw" || range === null ? null : { ...range, level },
@@ -60,7 +63,7 @@ export function useTransportMap(
       };
     }
     const palette = modePalette[dark ? "dark" : "light"];
-    const layers = levelTracksToMap(data, { device, mode: (mode) => palette[mode] });
+    const layers = levelTracksToMap(data, { device, mode: (mode) => palette[mode] }, until);
     const modes = new Set<TransportMode>();
     let review = false;
     for (const segment of data.segments) {
@@ -85,6 +88,7 @@ export function useTransportMap(
     raw,
     dark,
     device,
+    until,
     levelTracks.isPending,
     levelTracks.isPlaceholderData,
     levelTracks.isFetching,
