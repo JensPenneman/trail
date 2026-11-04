@@ -1,9 +1,10 @@
+import { type ReactNode, useId } from "react";
 import { useFormatter } from "../../../format/useFormatter";
 import { addDays } from "../../../time/addDays";
 import { Button } from "../../../ui/Button";
-import { Icon } from "../../../ui/Icon";
 import { SegmentedControl } from "../../../ui/SegmentedControl";
 import type { HistorySelection } from "./HistorySelection";
+import { PeriodControl } from "./PeriodControl";
 import { RangeForm } from "./RangeForm";
 import "./HistoryControls.css";
 
@@ -12,9 +13,11 @@ interface HistoryControlsProps {
   today: string;
   onDay: (date: string) => void;
   onRange: (from: string, to: string) => void;
-  calendarId: string;
-  calendarOpen: boolean;
-  onToggleCalendar: () => void;
+  /** Whether the date button's popover is open. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** The month calendar, for a day. */
+  calendar: ReactNode;
 }
 
 const modes = [
@@ -22,19 +25,28 @@ const modes = [
   { value: "range", label: "Period" },
 ] as const;
 
-/** Day stepping (with the calendar toggle) or a from–to period. */
+/**
+ * History's row over the map: ‹ Previous day · the date ▾ · Next day › ·
+ * Today. The date button opens a popover with Day | Period and the calendar
+ * or the from–to form; a period has the button alone.
+ */
 export function HistoryControls({
   selection,
   today,
   onDay,
   onRange,
-  calendarId,
-  calendarOpen,
-  onToggleCalendar,
+  open,
+  onOpenChange,
+  calendar,
 }: HistoryControlsProps) {
   const format = useFormatter();
-  return (
-    <div className="history-controls">
+  const popoverId = useId();
+  const day = selection.mode === "day";
+  const label = day
+    ? format.day(selection.from)
+    : `${format.day(selection.from)} – ${format.day(selection.to)}`;
+  const date = (
+    <PeriodControl label={label} open={open} onOpenChange={onOpenChange} popoverId={popoverId}>
       <SegmentedControl
         label="Show one day or a period"
         value={selection.mode}
@@ -44,39 +56,8 @@ export function HistoryControls({
           else onRange(addDays(selection.to, -6), selection.to);
         }}
       />
-      {selection.mode === "day" ? (
-        <div className="history-controls__day">
-          <div className="history-controls__stepper">
-            <Button icon="chevronLeft" iconOnly onClick={() => onDay(addDays(selection.from, -1))}>
-              Previous day
-            </Button>
-            <button
-              type="button"
-              className="history-controls__date"
-              aria-expanded={calendarOpen}
-              aria-controls={calendarId}
-              onClick={onToggleCalendar}
-            >
-              <Icon name="calendar" />
-              <span className="history-controls__date-label">{format.day(selection.from)}</span>
-              <span className="visually-hidden">, choose another day</span>
-              <Icon name="chevronDown" className="history-controls__chevron" />
-            </button>
-            <Button
-              icon="chevronRight"
-              iconOnly
-              disabled={selection.from >= today}
-              onClick={() => onDay(addDays(selection.from, 1))}
-            >
-              Next day
-            </Button>
-          </div>
-          {selection.from === today ? null : (
-            <Button variant="ghost" onClick={() => onDay(today)}>
-              Today
-            </Button>
-          )}
-        </div>
+      {day ? (
+        calendar
       ) : (
         <RangeForm
           key={`${selection.from}:${selection.to}`}
@@ -85,6 +66,28 @@ export function HistoryControls({
           today={today}
           onApply={onRange}
         />
+      )}
+    </PeriodControl>
+  );
+  if (!day) return <div className="history-controls">{date}</div>;
+  return (
+    <div className="history-controls">
+      <Button icon="chevronLeft" iconOnly onClick={() => onDay(addDays(selection.from, -1))}>
+        Previous day
+      </Button>
+      {date}
+      <Button
+        icon="chevronRight"
+        iconOnly
+        disabled={selection.from >= today}
+        onClick={() => onDay(addDays(selection.from, 1))}
+      >
+        Next day
+      </Button>
+      {selection.from === today ? null : (
+        <Button variant="ghost" onClick={() => onDay(today)}>
+          Today
+        </Button>
       )}
     </div>
   );

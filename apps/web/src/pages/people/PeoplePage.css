@@ -1,12 +1,53 @@
 /*
- * The People page is laid out around its map. One order for every screen:
- * the controls, the map, then the details and the people. Phones and small
- * tablets scroll the page as a whole, the map between the controls and the
- * rest. From 64rem the map fills the rest of the screen beside the panel,
- * which scrolls by itself with its title and view switch on top.
+ * The People page is laid out around its map. The controls float over the
+ * map, the people and the detail sit beside it or under it:
+ *  - From 64rem the list is a docked sidebar and the map fills the rest of
+ *    the screen. The sidebar scrolls by itself.
+ *  - On phones and small tablets the map is fixed between the header and the
+ *    tab bar, down to the sheet's peek height, and the page's own scroll
+ *    lifts the sheet over it: peek, half, full (CSS scroll snapping, no
+ *    script). The spacer above the sheet is transparent to presses, so a
+ *    finger on the map pans it.
+ * DOM order on every screen: the controls, the map, then the panel.
  */
 .map-page {
+  --map-top: calc(var(--header-height) + var(--safe-top));
+  --map-bottom-gap: 0px;
+  --sheet-peek: 9rem;
+  --sheet-view: calc(100dvh - var(--map-top) - var(--map-bottom-gap));
+  /* Rows of the bar over the map, for what must sit below it (zoom buttons, the chip). */
+  --overlay-rows: 1;
+  /* Where the first row of controls ends, from the map's top edge. */
+  --overlay-end: calc(var(--space-3) + var(--overlay-rows) * (var(--target) + var(--space-2)));
+
+  position: relative;
   min-width: 0;
+}
+
+.map-page[data-view="history"] {
+  --overlay-rows: 2;
+}
+
+@media (max-width: 47.99rem) {
+  .map-page {
+    --map-bottom-gap: calc(var(--tabbar-height) + var(--safe-bottom));
+  }
+}
+
+.map-page__level {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+.map-page__stage {
+  min-width: 0;
+}
+
+.map-page__canvas {
+  position: absolute;
+  inset: 0;
+  border-block: var(--border-width) solid var(--color-border);
 }
 
 .map-page__panel {
@@ -18,50 +59,12 @@
 .map-page__top {
   display: grid;
   gap: var(--space-4);
-  padding: var(--space-5) calc(var(--space-4) + var(--safe-right)) 0
+  padding: var(--space-3) calc(var(--space-4) + var(--safe-right)) 0
     calc(var(--space-4) + var(--safe-left));
 }
 
-/*
- * Positioned, like the body: whatever they hold that is positioned (visually
- * hidden labels) stays inside the panel that scrolls, instead of reaching out
- * to the page the map is placed against.
- */
-.map-page__head {
-  position: relative;
-  display: grid;
-  gap: var(--space-4);
-  padding: var(--space-4) calc(var(--space-4) + var(--safe-right)) var(--space-4)
-    calc(var(--space-4) + var(--safe-left));
-}
-
-.map-page__controls {
-  display: grid;
-  gap: var(--space-4);
-}
-
-.map-page__level {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-2);
-}
-
-.map-page__map {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-}
-
-.map-page__canvas {
-  position: relative;
-  height: min(52vh, 28rem);
-  min-height: 16rem;
-  border-block: var(--border-width) solid var(--color-border);
-}
-
-/* Phones: History's time slider sits under the map, in the page flow. */
 .map-page__foot {
-  padding: var(--space-4) calc(var(--space-4) + var(--safe-right)) 0
+  padding: var(--space-3) calc(var(--space-4) + var(--safe-right)) 0
     calc(var(--space-4) + var(--safe-left));
 }
 
@@ -88,11 +91,11 @@
   min-width: 0;
 }
 
-/* A small status chip floating over the map ("Updating"). */
+/* A small status chip floating over the map ("Updating"), top centre, under the bar when it is wide. */
 .map-page__chip {
   position: absolute;
-  top: var(--space-3);
-  left: var(--space-3);
+  top: var(--overlay-end);
+  left: 50%;
   z-index: 3;
   display: inline-flex;
   align-items: center;
@@ -103,15 +106,95 @@
   box-shadow: var(--shadow-2);
   font-size: var(--text-s);
   font-weight: 600;
+  translate: -50% 0;
+}
+
+.map-page__spacer,
+.map-page__snaps,
+.map-page__grabber {
+  display: none;
+}
+
+/* Phones and small tablets: the map stays, the sheet scrolls over it. */
+@media (max-width: 63.99rem) {
+  html:has(.map-page) {
+    overscroll-behavior: none;
+    scroll-padding-top: calc(var(--header-height) + var(--safe-top));
+    scroll-snap-type: y proximity;
+  }
+
+  .map-page__stage {
+    position: fixed;
+    inset: var(--map-top) 0 calc(var(--map-bottom-gap) + var(--sheet-peek));
+    z-index: 1;
+  }
+
+  .map-page__spacer {
+    display: block;
+    height: calc(var(--sheet-view) - var(--sheet-peek));
+    pointer-events: none;
+  }
+
+  /* Detents as scroll offsets of the page: sheet at peek, half the view, nearly the top. */
+  .map-page__snaps {
+    position: absolute;
+    inset: 0 auto auto 0;
+    display: block;
+    width: 0;
+    height: 0;
+  }
+
+  .map-page__snap {
+    position: absolute;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    scroll-snap-align: start;
+  }
+
+  .map-page__snap--peek {
+    top: 0;
+  }
+
+  .map-page__snap--half {
+    top: calc(var(--sheet-view) / 2 - var(--sheet-peek));
+  }
+
+  .map-page__snap--full {
+    top: calc(var(--sheet-view) - var(--sheet-peek) - var(--space-2));
+  }
+
+  .map-page__panel {
+    position: relative;
+    z-index: 2;
+    min-height: var(--sheet-view);
+    border-start-start-radius: var(--radius-xl);
+    border-start-end-radius: var(--radius-xl);
+    background: var(--color-bg);
+    box-shadow: 0 -8px 24px rgb(29 27 25 / 14%);
+  }
+
+  .map-page__grabber {
+    display: block;
+    width: 2.5rem;
+    height: 0.25rem;
+    margin: var(--space-2) auto 0;
+    border-radius: var(--radius-pill);
+    background: var(--color-border-strong);
+  }
+
+  /* MapLibre's buttons sit under the bar, not under it. */
+  .map-page .maplibregl-ctrl-top-right {
+    margin-top: calc(var(--overlay-end) - var(--space-3));
+  }
 }
 
 @media (min-width: 64rem) {
   .map-page {
-    position: relative;
     height: calc(100dvh - var(--header-height) - var(--safe-top));
   }
 
-  /* Not positioned: the map inside it is placed against the page and does not scroll with it. */
+  /* Not positioned: the stage inside it is placed against the page and does not scroll with it. */
   .map-page__panel {
     width: var(--panel-width);
     height: 100%;
@@ -121,30 +204,16 @@
     background: var(--color-bg);
   }
 
-  /* The panel's own child, so it stays on top through all of the panel's scrolling. */
   .map-page__top {
-    position: sticky;
-    top: 0;
-    z-index: 4;
-    padding: var(--space-6) var(--space-6) var(--space-4) calc(var(--space-6) + var(--safe-left));
-    border-bottom: var(--border-width) solid var(--color-border);
-    background: var(--color-bg);
+    padding: var(--space-6) var(--space-6) 0 calc(var(--space-6) + var(--safe-left));
   }
 
-  .map-page__head {
-    padding: var(--space-4) var(--space-6) var(--space-4) calc(var(--space-6) + var(--safe-left));
-  }
-
-  .map-page__map {
+  .map-page__stage {
     position: absolute;
     inset: 0 0 0 var(--panel-width);
   }
 
   .map-page__canvas {
-    position: absolute;
-    inset: 0;
-    height: auto;
-    min-height: 0;
     border-block: 0;
   }
 
@@ -163,7 +232,14 @@
   }
 
   .map-page__body {
-    padding: var(--space-2) var(--space-6) var(--space-8) calc(var(--space-6) + var(--safe-left));
+    padding: var(--space-4) var(--space-6) var(--space-8) calc(var(--space-6) + var(--safe-left));
+  }
+}
+
+/* Wide enough for the bar and the chip side by side. */
+@media (min-width: 80rem) {
+  .map-page__chip {
+    top: var(--space-3);
   }
 }
 
@@ -180,4 +256,14 @@
 
 .map-page__advanced[open] > summary {
   margin-bottom: var(--space-2);
+}
+
+@media (forced-colors: active) {
+  .map-page__panel {
+    border-color: CanvasText;
+  }
+
+  .map-page__grabber {
+    background: CanvasText;
+  }
 }

@@ -1,0 +1,38 @@
+.map-overlay {
+  position: absolute;
+  inset: var(--space-3) calc(var(--target) + var(--space-6)) auto var(--space-3);
+  z-index: 5;
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+
+.map-overlay > * {
+  max-width: 100%;
+}
+
+.map-overlay__bar,
+.map-overlay__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.map-overlay__bar > *,
+.map-overlay__row > * {
+  pointer-events: auto;
+}
+
+.map-overlay .view-switch {
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-2);
+}
+
+/* Phones: the bar spans the map; MapLibre's buttons sit under it (see PeoplePage.css). */
+@media (max-width: 63.99rem) {
+  .map-overlay {
+    inset-inline-end: var(--space-3);
+  }
+}

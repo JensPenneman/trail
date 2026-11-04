@@ -132,7 +132,9 @@ describe("the People page, History", () => {
   it("shows a period from a deep link", async () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { url: "/?view=history&from=2026-09-01&to=2026-09-07", user });
-    expect(await screen.findByText(/1 Sept – .*7 Sept/)).toBeInTheDocument();
+    const date = await screen.findByRole("button", { name: /1 Sept – .*7 Sept/ });
+    expect(screen.queryByRole("radio", { name: "Period" })).not.toBeInTheDocument();
+    await userEvent.setup().click(date);
     expect(screen.getByRole("radio", { name: "Period" })).toBeChecked();
   });
 });
@@ -246,15 +248,13 @@ describe("the device filter", () => {
     if (advanced === null) throw new Error("No Advanced in Map options");
     expect(advanced).not.toHaveAttribute("open");
     // Which devices draw is not worth a word of the summary while all of them do.
-    expect(screen.getByRole("button", { name: /^Map options/ })).not.toHaveTextContent(/devices/);
+    expect(screen.queryByText(/\d of \d devices/)).not.toBeInTheDocument();
     await person.click(screen.getByText("Advanced"));
     const filter = await within(advanced).findByRole("group", { name: "Devices" });
     await person.click(within(filter).getByRole("checkbox", { name: "Car" }));
     expect(router.state.location.search).toBe(`?person=me&devices=${ids.phone}`);
     await waitFor(() => expect(map()).toHaveAttribute("data-positions", "3"));
-    expect(screen.getByRole("button", { name: /^Map options/ })).toHaveTextContent(
-      "1 of 2 devices",
-    );
+    expect(screen.getByText(/1 of 2 devices/)).toBeInTheDocument();
     expect(within(filter).getByRole("checkbox", { name: "iPhone 16" })).toBeDisabled();
     await person.click(within(filter).getByRole("checkbox", { name: "Car" }));
     expect(router.state.location.search).toBe("?person=me");

@@ -348,7 +348,6 @@ export function useHistoryView({
   const day = period.mode === "day" ? period.from : null;
   // Nobody with history and none of one's own: nothing to say here, their cards say why.
   const quiet = !drawsOwn && withHistory.length === 0 && personTracks.error === null;
-  const showsCalendar = calendarOpen && period.mode === "day";
 
   return {
     title: "History",
@@ -385,24 +384,21 @@ export function useHistoryView({
       focus: focus !== null && focus.period === periodKey ? focus : null,
     },
     controls: (
-      <>
-        <HistoryControls
-          selection={{ ...period, deviceIds: own?.deviceIds ?? null }}
-          today={today}
-          onDay={(date) => {
-            showDay(date);
-            setFocus(null);
-          }}
-          onRange={(from, to) => {
-            showRange(from, to);
-            setCalendarOpen(false);
-            setFocus(null);
-          }}
-          calendarId={calendarId}
-          calendarOpen={showsCalendar}
-          onToggleCalendar={() => setCalendarOpen((open) => !open)}
-        />
-        {showsCalendar ? (
+      <HistoryControls
+        selection={{ ...period, deviceIds: own?.deviceIds ?? null }}
+        today={today}
+        onDay={(date) => {
+          showDay(date);
+          setFocus(null);
+        }}
+        onRange={(from, to) => {
+          showRange(from, to);
+          setCalendarOpen(false);
+          setFocus(null);
+        }}
+        open={calendarOpen}
+        onOpenChange={setCalendarOpen}
+        calendar={
           <MonthCalendar
             id={calendarId}
             month={calendarMonth}
@@ -413,11 +409,12 @@ export function useHistoryView({
             loading={days.isFetching}
             onSelect={(date) => {
               showDay(date);
+              setCalendarOpen(false);
               setFocus(null);
             }}
           />
-        ) : null}
-      </>
+        }
+      />
     ),
     transport: drawsOwn ? transport : null,
     chip:

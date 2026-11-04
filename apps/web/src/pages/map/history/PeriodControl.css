@@ -1,0 +1,91 @@
+.period-control {
+  position: relative;
+  min-width: 0;
+}
+
+.period-control__date {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--target);
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-m);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.period-control__date:hover {
+  background: var(--color-surface-2);
+}
+
+.period-control__date .icon {
+  flex-shrink: 0;
+  color: var(--color-text-2);
+}
+
+.period-control__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.period-control__chevron {
+  transition: rotate var(--duration-fast) ease;
+}
+
+.period-control__date[aria-expanded="true"] .period-control__chevron {
+  rotate: 180deg;
+}
+
+.period-control__popover {
+  position: absolute;
+  inset-block-start: calc(100% + var(--space-2));
+  inset-inline-start: 0;
+  z-index: 6;
+  display: grid;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  width: 21rem;
+  max-width: calc(100vw - 2 * var(--space-4));
+  max-height: min(36rem, calc(100dvh - var(--header-height) - 9rem));
+  padding: var(--space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-l);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-3);
+}
+
+/* Phones: the bar is the width of the map, and so is the popover. */
+@media (max-width: 63.99rem) {
+  .period-control {
+    position: static;
+  }
+
+  .period-control__popover {
+    inset-inline: 0;
+    width: auto;
+    max-width: none;
+    max-height: calc(var(--sheet-view) - var(--sheet-peek) - var(--overlay-end) - var(--space-4));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .period-control__chevron {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .period-control__date,
+  .period-control__popover {
+    border-color: CanvasText;
+  }
+}

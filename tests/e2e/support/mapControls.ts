@@ -1,16 +1,17 @@
 import { expect, type Page } from "@playwright/test";
 
 /**
- * The map's options (people, devices, style, level): always open beside a
- * full-height map, folded into one button on phones — opened here if so.
+ * The map's options (style, detail of the tracks, devices): a popover that
+ * opens from the "Map options" button over the map — opened here if closed.
+ * A press outside closes it, so reopen it after touching the map.
  */
 export async function openMapOptions(page: Page): Promise<void> {
-  const toggle = page.getByRole("button", { name: /^Map options/ });
-  // The button where the options fold away, else the options themselves: the page is there.
-  await expect(toggle.or(page.getByRole("group", { name: "Map style" })).first()).toBeVisible();
-  if ((await toggle.isVisible()) && (await toggle.getAttribute("aria-expanded")) === "false") {
-    await toggle.click();
-  }
+  // On phones a lifted sheet covers the bar: lower it, as a person would.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const toggle = page.getByRole("button", { name: "Map options" });
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+  await expect(page.getByRole("group", { name: "Map style" })).toBeVisible();
 }
 
 /** The map's device filter: in Map options, folded under Advanced — opened here if need be. */
@@ -31,4 +32,13 @@ export function mapView(page: Page, name: "Live" | "History" | "Heat") {
 /** A local date `YYYY-MM-DD` in `timeZone`, `days` from today. */
 export function localDate(timeZone: string, days = 0): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone }).format(Date.now() + days * 86_400_000);
+}
+
+/** History's date button over the map, with its popover opened (the day or period choice). */
+export async function openPeriodPicker(page: Page): Promise<void> {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const date = page.getByRole("button", { name: /, choose another day$/ });
+  await expect(date).toBeVisible();
+  if ((await date.getAttribute("aria-expanded")) === "false") await date.click();
+  await expect(page.getByRole("group", { name: "Show one day or a period" })).toBeVisible();
 }

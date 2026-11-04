@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { DocumentTitle } from "../../app/DocumentTitle";
 import { useReadOnly } from "../../app/useReadOnly";
@@ -27,6 +27,7 @@ import { useHeatView } from "../map/heat/useHeatView";
 import { useHistoryView } from "../map/history/useHistoryView";
 import { useLiveView } from "../map/live/useLiveView";
 import { MapOptions } from "../map/MapOptions";
+import { MapOverlay } from "../map/MapOverlay";
 import type { MapPerson } from "../map/MapPerson";
 import { MapStyleControl } from "../map/MapStyleControl";
 import { withPerson } from "../map/mapSearchUpdates";
@@ -34,7 +35,6 @@ import { type MapView, shownView, viewsFor } from "../map/mapViews";
 import { me } from "../map/me";
 import { resolveMapSelection } from "../map/resolveMapSelection";
 import { useMapSearch } from "../map/useMapSearch";
-import { ViewSwitch } from "../map/ViewSwitch";
 import { PeopleList } from "./PeopleList";
 import { PersonPanel } from "./PersonPanel";
 import { usePanelFocus } from "./usePanelFocus";
@@ -178,6 +178,17 @@ export function PeoplePage() {
     },
     [scrollable, focusRef],
   );
+  // Phones: selecting someone lifts the sheet to its half detent, where the detail reads well.
+  const snaps = useRef<HTMLDivElement | null>(null);
+  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const lifted = useRef(selectedKey);
+  useEffect(() => {
+    const before = lifted.current;
+    lifted.current = selectedKey;
+    if (wide || selectedKey === null || before === selectedKey) return;
+    const half = snaps.current?.querySelector<HTMLElement>("[data-detent=half]");
+    half?.scrollIntoView?.({ block: "start", behavior: reducedMotion ? "instant" : "smooth" });
+  }, [selectedKey, wide, reducedMotion]);
   const toTop = () => {
     if (panel.current !== null) panel.current.scrollTop = 0;
   };
@@ -228,10 +239,81 @@ export function PeoplePage() {
       </section>
     );
 
+  // The history slider: over the foot of the map beside the panel, first in the sheet on phones.
+  const foot = content.foot === null ? null : <div className="map-page__foot">{content.foot}</div>;
+  const options = (
+    <MapOptions summary={summary}>
+      <MapStyleControl
+        choice={mapStyle.choice}
+        choices={mapStyle.choices}
+        onChange={mapStyle.setChoice}
+      />
+      {transport === null ? null : (
+        <div className="map-page__level">
+          <p className="map-options__label" aria-hidden="true">
+            Detail of the tracks
+          </p>
+          <LevelControl level={level} available={transport.available} onChange={setLevel} />
+        </div>
+      )}
+      {transport !== null && level === "inferred" ? (
+        <ModeLegend
+          modes={transport.modes}
+          review={transport.review}
+          stopPaths={transport.stopPaths}
+          gaps={transport.gaps}
+        />
+      ) : null}
+      {deviceCount > 1 ? (
+        <details className="disclosure map-page__advanced" open={filterOpen || undefined}>
+          <summary>
+            <Icon name="chevronDown" className="disclosure__chevron" />
+            <span>Advanced</span>
+          </summary>
+          <DeviceFilter groups={groups} selected={selection.filter} onChange={setDevices} />
+        </details>
+      ) : null}
+    </MapOptions>
+  );
+
   return (
-    <div className="map-page">
+    <div className="map-page" data-view={view}>
       <DocumentTitle title={`${content.title} · People`} />
+      <div className="map-page__stage">
+        <MapOverlay
+          view={view}
+          views={viewsFor(heatOffered)}
+          onViewChange={switchView}
+          options={options}
+          controls={content.controls}
+        />
+        <div className="map-page__canvas">
+          {mapStyle.style === null ? null : (
+            <LazyTrailMap
+              {...content.map}
+              mapStyle={mapStyle.style}
+              dark={mapStyle.dark}
+              notice={mapStyle.notice}
+              onViewChange={setViewport}
+              // One finger pans: on phones the page scrolls through the sheet, not the map.
+              cooperativeGestures={false}
+            />
+          )}
+          {content.chip}
+        </div>
+        {wide ? foot : null}
+      </div>
+
+      {/* Phones: the room the map shows through; presses fall on the map under it. */}
+      <div className="map-page__spacer" aria-hidden="true" />
+      <div className="map-page__snaps" aria-hidden="true" ref={snaps}>
+        <span className="map-page__snap map-page__snap--peek" />
+        <span className="map-page__snap map-page__snap--half" data-detent="half" />
+        <span className="map-page__snap map-page__snap--full" />
+      </div>
       <section className="map-page__panel" aria-labelledby="people-page-title" ref={panelRef}>
+        <span className="map-page__grabber" aria-hidden="true" />
+        {wide ? null : foot}
         <div className="map-page__top">
           <PageHeader
             title="People"
@@ -253,64 +335,7 @@ export function PeoplePage() {
             }
           />
           {sharing.offlineReason}
-          <ViewSwitch view={view} views={viewsFor(heatOffered)} onChange={switchView} />
         </div>
-        <div className="map-page__head">
-          {content.controls === null ? null : (
-            <div className="map-page__controls">{content.controls}</div>
-          )}
-          <MapOptions summary={summary}>
-            <MapStyleControl
-              choice={mapStyle.choice}
-              choices={mapStyle.choices}
-              onChange={mapStyle.setChoice}
-            />
-            {transport === null ? null : (
-              <div className="map-page__level">
-                <p className="map-options__label" aria-hidden="true">
-                  Detail of the tracks
-                </p>
-                <LevelControl level={level} available={transport.available} onChange={setLevel} />
-              </div>
-            )}
-            {deviceCount > 1 ? (
-              <details className="disclosure map-page__advanced" open={filterOpen || undefined}>
-                <summary>
-                  <Icon name="chevronDown" className="disclosure__chevron" />
-                  <span>Advanced</span>
-                </summary>
-                <DeviceFilter groups={groups} selected={selection.filter} onChange={setDevices} />
-              </details>
-            ) : null}
-          </MapOptions>
-          {transport !== null && level === "inferred" ? (
-            <ModeLegend
-              modes={transport.modes}
-              review={transport.review}
-              stopPaths={transport.stopPaths}
-              gaps={transport.gaps}
-            />
-          ) : null}
-        </div>
-
-        <div className="map-page__map">
-          <div className="map-page__canvas">
-            {mapStyle.style === null ? null : (
-              <LazyTrailMap
-                {...content.map}
-                mapStyle={mapStyle.style}
-                dark={mapStyle.dark}
-                notice={mapStyle.notice}
-                onViewChange={setViewport}
-                // Two fingers move a map inside a scrolling page; beside the panel one is enough.
-                cooperativeGestures={!wide}
-              />
-            )}
-            {content.chip}
-          </div>
-          {content.foot === null ? null : <div className="map-page__foot">{content.foot}</div>}
-        </div>
-
         <div className="map-page__body">
           {selectedKey === null ? (
             <PeopleList

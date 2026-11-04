@@ -192,6 +192,7 @@ test("a person's detail shows them alone, with only what their share allows", as
   for (const name of ownOnly) {
     await expect(page.getByRole("region", { name, exact: true }), name).toBeVisible();
   }
+  await openMapOptions(page);
   await expect(page.getByRole("group", { name: "Detail of the tracks" })).toBeVisible();
   // Always: the devices, in the detail and not behind a button.
   await expect(detail(page, "Me").getByRole("link", { name: "My phone" })).toBeVisible();
