@@ -4639,7 +4639,9 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   row of the device after it lacks a `processed_points` row. The queue is not
   the test: rows waiting for map tiles, and the window a reset queues, re-read
   the same points, while an upload committed but not yet queued still counts.
-  The dialog (§17.6) shows "Still under way" for a move that ended less than
+  Points a phone sends late (offline while moving: a train without signal, a
+  flight) can still extend a move that was over; nothing on the server sees
+  them coming. The dialog (§17.6) shows "Still under way" for a move that ended less than
   that ago and is its device's latest item in the timelines it holds (the
   device's mode `current` ends after 15 minutes, too soon).
 - `POST /api/v1/devices/{id}/mode { mode, until? }` is the quick toggle: a

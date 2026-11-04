@@ -1,3 +1,5 @@
+import { moveOverAfterS } from "@trail/contracts/transport";
+
 /**
  * Every threshold of the processing pipeline (docs/architecture.md §17) in one
  * typed object. The stages take it as an argument, so tests can vary it, and
@@ -11,7 +13,6 @@
  * a change to them needs the inferred level alone. `passes` belongs to no
  * level: it bounds how much one pass works out, not what is worked out.
  */
-import { moveOverAfterS } from "@trail/contracts/transport";
 export interface ProcessingConfig {
   readonly passes: {
     /** A pass reads at most this many raw points (PROCESSING_PASS_MAX_POINTS): a bigger job is split first … */

@@ -347,7 +347,9 @@ export const toggleEndingStopS = 600;
  * How long a device must be silent before the move it was on is over: the
  * pipeline's own `stops.gapSplitS`, which the processing config reads from
  * here. A move with no later segment can still grow until then, so a
- * correction waits for it (docs/architecture.md §17.5).
+ * correction waits for it (docs/architecture.md §17.5). It belongs to the
+ * inferred level: a change needs a bump of its `processingVersions`, as any
+ * other threshold of the processing config does.
  */
 export const moveOverAfterS = 1800;
 

@@ -10,7 +10,9 @@ import { useNow } from "../time/useNow";
  * points, docs/architecture.md §17.5). It is under way when it ended less than
  * that ago and is its device's latest item in the timelines in hand: the
  * device's mode (`current`) ends after 15 minutes, too soon for this. A past
- * move reads nothing.
+ * move reads nothing. Only the cached ranges are read: within 30 minutes of
+ * midnight a later stop may lie outside them, and the dialog then says "Still
+ * under way" for a move the API would accept, which is the safe side.
  */
 export function useMoveUnderWay(segment: Segment): boolean {
   const now = useNow(10_000);
