@@ -25,7 +25,8 @@ export function InsightsList({ placement }: { placement: "root" | "sidebar" }) {
   const { pathname } = useLocation();
   const overview = useInsightsOverview(state.query());
   const titleAs = placement === "root" ? "h2" : "p";
-  // Beside the screens a pressed row has the focus already; a list in the summary hands it back.
+  // Beside the screens the title of the screen takes focus, and the row of the screen left must
+  // not take it back; a list in the summary hands it to the row of the screen left.
   const returnFocus = placement === "root";
   const path = pathname.replace(/\/+$/, "");
   const shownMode = path.startsWith("/insights/transport/") ? path.split("/")[3] : undefined;

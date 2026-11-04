@@ -3059,10 +3059,13 @@ count among them, since they lead to signed-in pages.
   parts of a mode (below) level 2, whose way back leads to the mode — "‹ Car"
   — and which keep the mode's row current in the list; the key of a screen is
   its path. Coming back to the summary hands focus to the row that was left
-  (`data-route-focus`; not on wide screens, where the pressed row has it
-  already), going in to the new screen's h1. Every screen has the title
+  (`data-route-focus`; not for the list beside the screens, where the
+  new screen's h1 takes focus whichever way one goes and the row left must
+  not take it back), going in to the new screen's h1. Every screen has the title
   "<screen> · Insights" and a notice while processing has work in the period
-  ("Processing is still catching up").
+  ("Processing is still catching up"). Choosing another period or other devices
+  is announced politely once its answer is there ("October 2026: 66 km");
+  opening a screen or refetching the same period announces nothing.
 
   The period is a calendar week (Monday first, as the API's series), month
   or year, all of the history, or a custom range of local days (three years
@@ -3081,7 +3084,7 @@ count among them, since they lead to signed-in pages.
   the period's name as a button ("October 2026, choose a custom period")
   that opens a popover with From, To and Show (Escape and Show return focus
   to the button), and "Options" — with a note "1 of 2 devices" while
-  filtered — whose popover holds "Advanced" and the device filter of the
+  filtered — whose popover holds "Advanced" (open at once while a filter is on) and the device filter of the
   People page (neither with a single device). The popovers do not trap focus
   (`useDismiss`). Refetching keeps the previous numbers on screen
   (`aria-busy`); `segments` events refetch every Insights query.
@@ -3099,7 +3102,7 @@ count among them, since they lead to signed-in pages.
   compare with." stands in place of the arrow; where this measure had none
   there, "None in September".
   - **Summary** (`/insights`) — the distance, with the time on the move and
-    the moves, and one chart of the distance per day, week or month stacked
+    the moves (for all of the history, since when), and one chart of the distance per day, week or month stacked
     by mode in the modes' fixed order, past seven modes the smallest folding
     into "Other modes" (`foldModes`). No moves: "No moves in October 2026",
     the patterns stay.

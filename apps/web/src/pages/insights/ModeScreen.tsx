@@ -23,7 +23,11 @@ function Body({ mode, label, state, up }: ModeContext) {
   const format = useFormatter();
   const insights = useInsightsMode(mode, state.query());
   const overview = useInsightsOverview(state.query());
-  const comparison = useInsightsComparison(state, overview.data);
+  // The comparison belongs to the period the answers are of, not to the one they replace.
+  const comparison = useInsightsComparison(
+    state,
+    insights.isPlaceholderData || overview.isPlaceholderData ? undefined : overview.data,
+  );
   const data = insights.data;
   const none = data !== undefined && data.totals.durationS <= 0 && data.totals.moves === 0;
   const to = (part?: Parameters<typeof modePath>[1]) =>

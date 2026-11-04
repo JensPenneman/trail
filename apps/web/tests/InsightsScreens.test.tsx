@@ -6,7 +6,7 @@ import { addDays } from "../src/time/addDays";
 import { localDateOf } from "../src/time/localDateOf";
 import { shiftMonth } from "../src/time/shiftMonth";
 import { holdAll, seedEntry, warmClient } from "./support/cacheHarness";
-import { user } from "./support/fixtures";
+import { device, ids, user } from "./support/fixtures";
 import {
   modeInsights,
   monthPeriod,
@@ -138,6 +138,8 @@ describe("the summary", () => {
     expect(await within(await hero()).findByText("66.0 km")).toBeVisible();
     expect(screen.queryByText(/than/)).toBeNull();
     expect(queriesOf(calls, "/api/v1/insights/overview")).toHaveLength(1);
+    // Where it begins: the first day of the answer.
+    expect(within(await hero()).getByText(/ · since 1 Oct 2026$/)).toBeVisible();
     expect(lastQuery(calls, "/api/v1/insights/overview").has("from")).toBe(false);
     all.unmount();
 
@@ -224,7 +226,10 @@ describe("the list of screens", () => {
     });
     renderInsights("/insights/transport/train?period=2026-10", { wide: true });
     const nav = await screen.findByRole("navigation", { name: "Insights" });
-    expect(await within(nav).findByRole("link", { name: /^Summary/ })).toHaveTextContent("66.0 km");
+    // The summary's row gets its distance when the overview is there.
+    await waitFor(() =>
+      expect(within(nav).getByRole("link", { name: /^Summary/ })).toHaveTextContent("66.0 km"),
+    );
     expect(within(nav).getByRole("link", { name: /^Train/ })).toHaveAttribute(
       "aria-current",
       "page",
@@ -232,6 +237,28 @@ describe("the list of screens", () => {
     // Beside the screens the groups are labels, not headings.
     expect(within(nav).queryByRole("heading")).toBeNull();
     expect(await screen.findByRole("heading", { level: 1, name: "Train" })).toBeVisible();
+  });
+
+  it("hands focus to the title of the screen opened from the list beside it, whichever way", async () => {
+    const browser = userEvent.setup();
+    mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/modes/train": {
+        status: 200,
+        body: modeInsights({ period: monthPeriod("2026-10") }),
+      },
+    });
+    renderInsights("/insights?period=2026-10", { wide: true });
+    const nav = await screen.findByRole("navigation", { name: "Insights" });
+    await browser.click(await within(nav).findByRole("link", { name: /^Train/ }));
+    const train = await screen.findByRole("heading", { level: 1, name: "Train" });
+    await waitFor(() => expect(train).toHaveFocus());
+
+    // Back to the summary by its row: the title of the summary, not the row of the mode left.
+    await browser.click(within(nav).getByRole("link", { name: /^Summary/ }));
+    const summary = await screen.findByRole("heading", { level: 1, name: "Insights" });
+    await waitFor(() => expect(summary).toHaveFocus());
+    expect(within(nav).getByRole("link", { name: /^Train/ })).not.toHaveFocus();
   });
 
   it("marks the summary and the patterns as current, and a mode without moves as none", async () => {
@@ -412,11 +439,69 @@ describe("the period", () => {
     expect(screen.getByRole("button", { name: "Options 1 of 2 devices" })).toBeVisible();
   });
 
+  it("opens Advanced at once while a device filter is on, and keeps focus on the step it took", async () => {
+    const browser = userEvent.setup();
+    mockApi(octoberRoutes());
+    const { router } = renderInsights(`/insights?period=2026-10&devices=${ids.phone}`);
+    await hero();
+    await browser.click(await screen.findByRole("button", { name: "Options 1 of 2 devices" }));
+    expect(screen.getByRole("button", { name: "Advanced" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByRole("group", { name: "Devices" })).toBeVisible();
+
+    // A step changes the screen's numbers, not where focus is.
+    const previous = screen.getByRole("button", { name: "Previous month" });
+    await browser.click(previous);
+    await waitFor(() => expect(router.state.location.search).toMatch(/period=2026-09/));
+    await screen.findByRole("button", { name: "September 2026, choose a custom period" });
+    expect(previous).toHaveFocus();
+  });
+
+  it("announces a new period once its answer is there, and nothing at opening or on a refetch", async () => {
+    const browser = userEvent.setup();
+    let more = 0;
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/insights/overview": ({ url }) => {
+        const september = url.searchParams.get("from")?.startsWith("2026-09") === true;
+        const body = september ? septemberOverview() : octoberOverview();
+        return {
+          status: 200,
+          body: { ...body, totals: { ...body.totals, distanceM: body.totals.distanceM + more } },
+        };
+      },
+    });
+    const { queryClient } = renderInsights("/insights?period=2026-10");
+    const status = screen.getByRole("status");
+    const heard: string[] = [];
+    new MutationObserver(() => heard.push(status.textContent ?? "")).observe(status, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    await hero();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(heard).toEqual([]);
+
+    await browser.click(screen.getByRole("button", { name: "Previous month" }));
+    await waitFor(() => expect(status).toHaveTextContent("September 2026: 60.0 km"));
+
+    // The same period again, with other numbers: said nothing more.
+    heard.length = 0;
+    more = 5000;
+    await queryClient.invalidateQueries({ queryKey: ["insights"] });
+    await within(await hero()).findByText("65.0 km");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(heard).toEqual([]);
+  });
+
   it("has no options with a single device", async () => {
     const standard = standardRoutes();
     mockApi({
       ...standard,
-      "GET /api/devices": { status: 200, body: { devices: [] } },
+      "GET /api/devices": { status: 200, body: { devices: [device()] } },
       "GET /api/v1/insights/overview": overviewRoute,
     });
     renderInsights("/insights?period=2026-10");

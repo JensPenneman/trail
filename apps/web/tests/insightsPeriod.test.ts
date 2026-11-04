@@ -25,18 +25,21 @@ const address = (query: string, on = today) => parseInsightsAddress(new URLSearc
 const period = (query: string, on = today): InsightsPeriod => address(query, on).period;
 
 describe("reading the address of Insights", () => {
-  it("takes this month when it says nothing, or says something it cannot read", () => {
-    const month = { kind: "month", first: "2026-11-01", last: "2026-11-30", current: true };
-    expect(period("")).toEqual(month);
-    expect(period("period=fortnight")).toEqual(month);
-    expect(period("period=2026-13")).toEqual(month);
-    expect(period("period=2026-W00")).toEqual(month);
-    expect(period("period=constructor")).toEqual(month);
-    // The future has nothing to show.
-    expect(period("period=2027-01")).toEqual(month);
-    expect(period("period=2027")).toEqual(month);
-    expect(period("period=2026-W50")).toEqual(month);
-    expect(period("period=1969")).toEqual(month);
+  const month = { kind: "month", first: "2026-11-01", last: "2026-11-30", current: true };
+  it.each([
+    ["nothing", ""],
+    ["an unknown period", "period=fortnight"],
+    ["a month there is not", "period=2026-13"],
+    ["week 0", "period=2026-W00"],
+    ["a name of the object prototype", "period=constructor"],
+    ["next year's January", "period=2027-01"],
+    ["next year", "period=2027"],
+    ["a week still to come", "period=2026-W50"],
+    // 2026 has a 53rd week, but it begins on 28 December.
+    ["2026-W53, which is still to come", "period=2026-W53"],
+    ["a year before phones", "period=1969"],
+  ])("takes this month for %s", (_what, query) => {
+    expect(period(query)).toEqual(month);
   });
 
   it("reads the current week, month, year and all of it", () => {
@@ -56,35 +59,24 @@ describe("reading the address of Insights", () => {
     expect(period("period=all")).toEqual({ kind: "all" });
   });
 
-  it("reads fixed weeks (Monday first), months and years", () => {
-    expect(period("period=2026-W44")).toEqual({
-      kind: "week",
-      first: "2026-10-26",
-      last: "2026-11-01",
-      current: false,
-    });
-    expect(period("period=2026-10")).toEqual({
-      kind: "month",
-      first: "2026-10-01",
-      last: "2026-10-31",
-      current: false,
-    });
-    expect(period("period=2025")).toEqual({
-      kind: "year",
-      first: "2025-01-01",
-      last: "2025-12-31",
-      current: false,
-    });
+  it.each([
+    ["period=2026-W44", { kind: "week", first: "2026-10-26", last: "2026-11-01", current: false }],
+    ["period=2026-10", { kind: "month", first: "2026-10-01", last: "2026-10-31", current: false }],
+    ["period=2025", { kind: "year", first: "2025-01-01", last: "2025-12-31", current: false }],
     // A fixed period that holds today is the current one.
-    expect(period("period=2026-11")).toMatchObject({ kind: "month", current: true });
-    expect(period("period=2026-W45")).toMatchObject({ kind: "week", current: true });
+    ["period=2026-11", { kind: "month", first: "2026-11-01", last: "2026-11-30", current: true }],
+    ["period=2026-W45", { kind: "week", first: "2026-11-02", last: "2026-11-08", current: true }],
+  ])("reads the fixed period %s", (query, expected) => {
+    expect(period(query)).toEqual(expected);
   });
 
-  it("knows which years have a 53rd week", () => {
-    expect(period("period=2020-W53")).toMatchObject({ first: "2020-12-28", last: "2021-01-03" });
-    expect(period("period=2021-W53")).toMatchObject({ kind: "month" });
-    expect(period("period=2025-W01")).toMatchObject({ first: "2024-12-30", last: "2025-01-05" });
-    expect(period("period=2025-W53")).toMatchObject({ kind: "month" });
+  it.each([
+    ["2020-W53", { first: "2020-12-28", last: "2021-01-03" }],
+    ["2025-W01", { first: "2024-12-30", last: "2025-01-05" }],
+    ["2021-W53", { kind: "month" }],
+    ["2025-W53", { kind: "month" }],
+  ])("knows which years have a 53rd week: %s", (week, expected) => {
+    expect(period(`period=${week}`)).toMatchObject(expected);
   });
 
   it("reads the old rolling periods as custom ranges ending today", () => {
@@ -241,13 +233,16 @@ describe("what a period is compared with", () => {
     });
   });
 
-  it("clips the days to the period before: 30 March against February", () => {
-    const march = period("", "2026-03-30");
-    expect(comparisonOf(march, "2026-03-30")).toMatchObject({
-      from: "2026-02-01",
-      to: "2026-02-28",
-      partial: true,
-    });
+  it.each([
+    // The days are clipped to the length of the period before.
+    ["30 March against February", "2026-03-30", "2026-02-01", "2026-02-28"],
+    // The last day of a month is not the end of it yet: it has had as many days as it has had.
+    ["28 February against January", "2026-02-28", "2026-01-01", "2026-01-28"],
+    ["30 November against October", "2026-11-30", "2026-10-01", "2026-10-30"],
+    ["31 October against September", "2026-10-31", "2026-09-01", "2026-09-30"],
+    ["1 January against December", "2026-01-01", "2025-12-01", "2025-12-01"],
+  ])("takes the same days: %s", (_what, on, from, to) => {
+    expect(comparisonOf(period("", on), on)).toMatchObject({ from, to, partial: true });
   });
 
   it("has none for all of the history and for custom ranges", () => {

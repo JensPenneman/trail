@@ -25,7 +25,8 @@ export function SummaryScreen() {
   const wide = useMediaQuery(sideBySide);
   const overview = useInsightsOverview(state.query());
   const data = overview.data;
-  const comparison = useInsightsComparison(state, data);
+  // The comparison belongs to the period the answer is of, not to the one it is replacing.
+  const comparison = useInsightsComparison(state, overview.isPlaceholderData ? undefined : data);
   const moves = data?.totals.moves ?? 0;
   return (
     <InsightsScreen
@@ -67,7 +68,7 @@ export function SummaryScreen() {
           <InsightsHero
             label="Distance"
             value={format.distance(overview.data.totals.distanceM)}
-            detail={`${format.duration(overview.data.totals.durationS)} on the move · ${format.count(moves)} ${moves === 1 ? "move" : "moves"}`}
+            detail={`${format.duration(overview.data.totals.durationS)} on the move · ${format.count(moves)} ${moves === 1 ? "move" : "moves"}${state.period.kind === "all" ? ` · since ${format.date(overview.data.period.from)}` : ""}`}
             change={heroChange(
               comparison,
               overview.data.totals.distanceM,
