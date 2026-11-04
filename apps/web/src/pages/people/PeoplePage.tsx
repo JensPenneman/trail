@@ -1,8 +1,8 @@
 import {
   type CSSProperties,
-  type FocusEvent,
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -237,18 +237,27 @@ export function PeoplePage() {
   }, [selectedKey, wide, reducedMotion]);
   // Focus on the bar, the map or its buttons, which a lifted sheet covers: lower the sheet to its
   // peek, so what has focus can be seen (WCAG 2.4.11).
-  const lowerSheet = (event: FocusEvent<HTMLElement>) => {
+  const lowerSheet = (event: FocusEvent) => {
     if (wide || window.scrollY <= 0 || panel.current === null) return;
     // Only the keyboard (or a screen reader) is lost behind the sheet; a press on the map or a
     // button at half is the person's own placement. And only what the sheet covers.
-    if (!event.target.matches(":focus-visible")) return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !target.matches(":focus-visible")) return;
     // Covered when less than a target's height of it shows above the sheet (the map's canvas
     // is covered by all but a strip at the full detent).
-    const rect = event.target.getBoundingClientRect();
+    const rect = target.getBoundingClientRect();
     const sheetTop = panel.current.getBoundingClientRect().top;
     if (Math.min(rect.bottom, sheetTop) - rect.top >= 44) return;
     window.scrollTo({ top: 0, behavior: reducedMotion ? "instant" : "smooth" });
   };
+  const stage = useRef<HTMLDivElement | null>(null);
+  const onStageFocus = useEffectEvent(lowerSheet);
+  useEffect(() => {
+    const element = stage.current;
+    if (element === null) return undefined;
+    element.addEventListener("focusin", onStageFocus);
+    return () => element.removeEventListener("focusin", onStageFocus);
+  }, []);
   const toTop = () => {
     if (panel.current !== null) panel.current.scrollTop = 0;
   };
@@ -340,7 +349,7 @@ export function PeoplePage() {
       style={{ "--overlay-end": `${overlayEnd}px` } as CSSProperties}
     >
       <DocumentTitle title={`${content.title} · People`} />
-      <div className="map-page__stage" onFocus={lowerSheet}>
+      <div className="map-page__stage" ref={stage}>
         <MapOverlay
           view={view}
           views={viewsFor(heatOffered)}
