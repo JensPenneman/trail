@@ -1,6 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { expectAccessible } from "./support/expectAccessible";
 import { overlandBatch } from "./support/overlandBatch";
+import { sharingFriend } from "./support/sharingFriend";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
 
@@ -31,7 +32,10 @@ test.describe("accessibility", () => {
     test.slow();
     await expect(page.getByRole("heading", { name: "Connect your first phone" })).toBeVisible();
     await expect(page.getByText("Nobody shares with you yet")).toBeVisible();
-    await expectAccessible(page, "People's Live without devices or anyone who shares");
+    await expectAccessible(page, "People's list without devices or anyone who shares");
+    // Me's detail without a device: the way to adding one.
+    await open(page, "/?person=me", "People", "Connect your first phone");
+    await expectAccessible(page, "Me's detail without devices");
     await open(page, "/settings/devices", "Devices", "No devices yet");
     await expectAccessible(page, "Settings › Devices without devices");
 
@@ -41,17 +45,16 @@ test.describe("accessibility", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
 
     const device = await uploadedDevice(page, "Checked phone", overlandBatch(account.timezone));
-    await open(page, "/", "People", "Timeline");
-    await expectAccessible(page, "People's Live");
-    // The Me card opened up: each device, the way to Settings › Devices.
-    await page
-      .getByRole("region", { name: "Me", exact: true })
-      .getByRole("button", { name: "Details" })
-      .click();
+    await open(page, "/", "People", "Me");
+    await expectAccessible(page, "People's list");
+    // Me's detail: the day so far and each device, the way to Settings › Devices.
+    await open(page, "/?person=me", "People", "Timeline");
     await expect(page.getByRole("heading", { name: "Your devices" })).toBeVisible();
-    await expectAccessible(page, "People's Live with Me's details");
+    await expectAccessible(page, "People's Live in Me's detail");
     await open(page, "/?view=history", "People", "30 points");
-    await expectAccessible(page, "People's History");
+    await expectAccessible(page, "People's History overview");
+    await open(page, "/?view=history&person=me", "People", "Visits");
+    await expectAccessible(page, "People's History in Me's detail");
     await open(page, "/?view=heat", "People", "Busiest places in view");
     await expect(page.getByText(/^\d+ points$/).first()).toBeVisible();
     await expectAccessible(page, "People's Heat");
@@ -70,6 +73,32 @@ test.describe("accessibility", () => {
       await expectAccessible(page, `the device's ${name.toLowerCase()}`);
     }
     // Settings, every page of it and the administrators' one: settings.spec.ts.
+  });
+
+  test("People with someone who shares: the list and their detail", async ({
+    page,
+    account,
+    openBrowser,
+  }) => {
+    test.slow();
+    await uploadedDevice(page, "Checked phone", overlandBatch(account.timezone));
+    const friend = await sharingFriend(openBrowser, account, "seen", {
+      precision: "precise",
+      historyDays: 7,
+    });
+    await open(page, "/", "People", friend.account.displayName);
+    await expect(page.getByRole("button", { name: "Share my location" })).toBeVisible();
+    await expectAccessible(page, "People's list with someone who shares");
+    await open(page, `/?person=${friend.account.id}`, "People", "Where they’ve been");
+    await expect(page.getByText(friend.device.name).first()).toBeVisible();
+    await expectAccessible(page, "someone's detail in Live");
+    await open(
+      page,
+      `/?view=history&person=${friend.account.id}`,
+      "People",
+      `${friend.account.displayName} · ${friend.device.name}`,
+    );
+    await expectAccessible(page, "someone's detail in History");
   });
 
   test("the setup code of a new device", async ({ page, account }) => {

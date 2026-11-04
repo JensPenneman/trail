@@ -14,20 +14,20 @@ test("Live, History and Heat share one map and keep their place in the URL", asy
   account,
 }) => {
   await uploadedDevice(page, "Viewed phone", overlandBatch(account.timezone));
-  await page.goto("/");
+  await page.goto("/?person=me");
   await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
   await expect(mapView(page, "Live")).toBeChecked();
   const myDay = page.getByRole("region", { name: "Your day so far" });
   await expect(myDay).toBeVisible();
   await expect(page).toHaveTitle("Live · People · Trail");
   const canvas = page.locator(".maplibregl-canvas");
-  await expect(canvas).toHaveAccessibleName(/^Map of today’s tracks/);
+  await expect(canvas).toHaveAccessibleName(/^Map of your track today/);
   await canvas.evaluate((element, name) => Reflect.set(window, name, element), canvasMarked);
   const sameCanvas = () =>
     canvas.evaluate((element, name) => element === Reflect.get(window, name), canvasMarked);
 
   await mapView(page, "History").click();
-  await expect(page).toHaveURL(/\/\?view=history$/);
+  await expect(page).toHaveURL(/\/\?person=me&view=history$/);
   await expect(page.getByRole("region", { name: "Summary", exact: true })).toContainText(
     "30 points",
   );
@@ -37,7 +37,7 @@ test("Live, History and Heat share one map and keep their place in the URL", asy
   await expect(mapView(page, "History")).toBeFocused();
 
   await mapView(page, "Heat").click();
-  await expect(page).toHaveURL(/\/\?view=heat$/);
+  await expect(page).toHaveURL(/\/\?person=me&view=heat$/);
   await expect(canvas).toHaveAccessibleName(/^Heatmap of all recorded points/);
   await expect(
     page.getByRole("region", { name: "Busiest places in view" }).getByRole("listitem").first(),
@@ -96,7 +96,7 @@ test("the device filter, folded away in Map options, narrows every view and stay
 }) => {
   await uploadedDevice(page, "Kept phone", overlandBatch(account.timezone));
   await uploadedDevice(page, "Dropped phone", overlandBatch(account.timezone));
-  await page.goto("/");
+  await page.goto("/?person=me");
   await openMapOptions(page);
   // Not where one looks first: under Advanced, closed.
   await expect(page.getByRole("group", { name: "Devices" })).toBeHidden();

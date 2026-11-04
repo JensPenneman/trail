@@ -67,7 +67,7 @@ test("the map draws Monaco from the server's own basemap, and nothing from anywh
   await uploadedDevice(page, "Monaco phone", monacoBatch());
   await page.goto("/");
   const canvas = page.locator(".maplibregl-canvas");
-  await expect(canvas).toHaveAccessibleName(/^Map of today’s tracks/);
+  await expect(canvas).toHaveAccessibleName(/^Map of where everyone is now/);
   const [tileAnswer] = await Promise.all([tile, glyphs, sprite]);
   // Stored gzipped, sent as stored, and cached for good: the bundle's id is in the path.
   expect(tileAnswer.headers()["content-encoding"]).toBe("gzip");
