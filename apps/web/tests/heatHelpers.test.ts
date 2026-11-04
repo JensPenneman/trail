@@ -8,7 +8,7 @@ import {
   heatScale,
   heatShadeOf,
 } from "../src/map/heatScale";
-import { cellCentre, cellEdges } from "../src/map/heatTiles";
+import { cellCentre, cellEdges, heatPlaces } from "../src/map/heatTiles";
 
 /** `count` cells of every value, for a distribution of a given shape. */
 const spread = (...groups: (readonly [value: number, cells: number])[]) =>
@@ -121,6 +121,21 @@ describe("heatScale by time spent", () => {
     );
   });
 
+  it("lets the busiest 3 % share the top class, as counts do", () => {
+    // 97 places of 2 to 40 minutes and three of five days: the scale ends at the 97th, so one
+    // home does not stretch it into days.
+    const times = [
+      ...Array.from({ length: 97 }, (_, index) => (2 + (index % 39)) * minute),
+      ...[5, 5, 5].map((d) => d * day),
+    ];
+    const { starts } = heatScale(times, durationLadders);
+    expect(starts.at(-1)).toBeLessThanOrEqual(hour);
+    expect(heatClassOf({ starts }, 5 * day)).toBe(starts.length - 1);
+    // In a view of fewer than 34 cells the busiest stands alone and the scale reaches it.
+    const small = heatScale([...times.slice(0, 9), 5 * day], durationLadders).starts;
+    expect(small.at(-1) ?? 0).toBeGreaterThan(hour);
+  });
+
   it("keeps the busiest few per cent in the top class and counts as before", () => {
     expect(heatScale([1, 3, 7, 12, 25, 40], countLadders).starts).toEqual([1, 2, 5, 10, 20]);
     expect(heatScale([1, 3, 7, 12, 25, 40]).starts).toEqual([1, 2, 5, 10, 20]);
@@ -128,26 +143,45 @@ describe("heatScale by time spent", () => {
 });
 
 describe("heat tiles", () => {
-  const tiles = 2 ** 12;
-  const lonOf = (column: number) => (column / tiles) * 360 - 180;
-  const latOf = (row: number) =>
-    (Math.atan(Math.sinh(Math.PI * (1 - (2 * row) / tiles))) * 180) / Math.PI;
-
-  it("gives the edges and the centre of a tile, with an inset", () => {
+  // Values the API's tileCentre and tileBounds (heatmap/tileMath.ts) give for the same tiles.
+  it("gives the edges and the centre of a tile as the server does", () => {
     const edges = cellEdges(2090, 1370, 12);
-    expect(edges.west).toBeCloseTo(lonOf(2090), 9);
-    expect(edges.east).toBeCloseTo(lonOf(2091), 9);
-    expect(edges.north).toBeCloseTo(latOf(1370), 9);
-    expect(edges.south).toBeCloseTo(latOf(1371), 9);
+    expect(edges.west).toBeCloseTo(3.69140625, 9);
+    expect(edges.east).toBeCloseTo(3.779296875, 9);
+    expect(edges.north).toBeCloseTo(51.0690166596039, 9);
+    expect(edges.south).toBeCloseTo(51.013754657188194, 9);
     const [lon, lat] = cellCentre(2090, 1370, 12);
-    expect(lon).toBeCloseTo(lonOf(2090.5), 9);
-    expect(lat).toBeCloseTo(latOf(1370.5), 9);
-    expect(cellEdges(2090, 1370, 12, 0.25).west).toBeCloseTo(lonOf(2090.25), 9);
+    expect(lon).toBeCloseTo(3.7353515625, 9);
+    expect(lat).toBeCloseTo(51.041393898126366, 9);
+    expect(cellEdges(2090, 1370, 12, 0.25).west).toBeCloseTo(3.7133789062, 9);
   });
 
   it("keeps the first and last columns of the world apart", () => {
     expect(cellEdges(0, 0, 6).west).toBeCloseTo(-180, 9);
     expect(cellEdges(63, 0, 6).east).toBeCloseTo(180, 9);
+    const [lon, lat] = cellCentre(0, 0, 6);
+    expect(lon).toBeCloseTo(-177.1875, 9);
+    expect(lat).toBeCloseTo(84.80247372433453, 9);
+    expect(cellEdges(63, 63, 6).south).toBeCloseTo(-85.05112877980659, 9);
+  });
+
+  it("lists the busiest places at their centres", () => {
+    const places = heatPlaces(
+      {
+        cellZoom: 12,
+        cells: [
+          [0, 0, 5],
+          [2090, 1370, 40],
+          [2091, 1370, 12],
+        ],
+      },
+      2,
+    );
+    expect(places.map((place) => place.value)).toEqual([40, 12]);
+    expect(places[0]?.lon).toBeCloseTo(3.7353515625, 9);
+    expect(places[0]?.lat).toBeCloseTo(51.041393898126366, 9);
+    expect(heatPlaces({ cellZoom: 12, cells: [[0, 0, 5]] })).toHaveLength(1);
+    expect(heatPlaces({ cellZoom: 12, cells: [] })).toEqual([]);
   });
 });
 

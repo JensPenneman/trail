@@ -143,9 +143,10 @@ export function standardRoutes() {
         heat: "points",
         cellZoom: 15,
         cells: [
-          // The tiles of zoom 15 that hold Ghent's west and east ends.
-          [16722, 10976, 9000],
-          [16730, 10970, 6400],
+          // Tiles of zoom 15: their centres are (3.5321, 50.9826) and (3.7189, 51.0448), Ghent's
+          // west and east ends.
+          [16705, 10972, 9000],
+          [16722, 10963, 6400],
         ],
         truncated: false,
         period: null,

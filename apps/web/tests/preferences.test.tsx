@@ -7,6 +7,7 @@ import { queryKeys } from "../src/api/queryKeys";
 import { RequireSession } from "../src/app/RequireSession";
 import { resolveMapStyleChoice, useMapStyle } from "../src/map/useMapStyle";
 import { PreferencesPage } from "../src/pages/settings/PreferencesPage";
+import { useUpdatePreferences } from "../src/queries/useUpdatePreferences";
 import { resolveTrackLevel, useTrackLevel } from "../src/transport/useTrackLevel";
 import { config, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
@@ -95,6 +96,36 @@ describe("the map's defaults", () => {
     mockApi(standardRoutes());
     renderPage(<MapDefaults />, { path: "/s", user: null });
     expect(await screen.findByText("style auto, level inferred")).toBeInTheDocument();
+  });
+});
+
+function SaveHeat() {
+  const save = useUpdatePreferences();
+  return (
+    <button type="button" onClick={() => save.mutate({ heat: "visits" })}>
+      Save heat
+    </button>
+  );
+}
+
+describe("a saved heat measure", () => {
+  it("makes this browser follow the account again", async () => {
+    window.localStorage.setItem("trail.heat", "time");
+    window.localStorage.setItem("trail.level", "mapped");
+    try {
+      const { calls } = renderSignedIn(<SaveHeat />, "/", user);
+      await userEvent.setup().click(await screen.findByRole("button", { name: "Save heat" }));
+      await waitFor(() =>
+        expect(calls.filter((call) => call.method === "PATCH").map((call) => call.body)).toEqual([
+          { preferences: { heat: "visits" } },
+        ]),
+      );
+      await waitFor(() => expect(window.localStorage.getItem("trail.heat")).toBeNull());
+      // Only the saved one is forgotten.
+      expect(window.localStorage.getItem("trail.level")).toBe("mapped");
+    } finally {
+      window.localStorage.clear();
+    }
   });
 });
 

@@ -2,7 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { type HeatmapParams, queryKeys } from "../src/api/queryKeys";
 import { resyncAfterGap } from "../src/live/resyncAfterGap";
-import { staleProcessed } from "../src/live/staleProcessed";
+import { invalidateStopHeat, staleProcessed } from "../src/live/staleProcessed";
 import { sameHeatKind } from "../src/queries/useHeatmap";
 
 const params = (overrides: Partial<HeatmapParams> = {}): HeatmapParams => ({
@@ -40,6 +40,34 @@ describe("the heat of stops", () => {
     expect(invalidated("time")).toBe(true);
     expect(invalidated("visits")).toBe(true);
     expect(invalidated("points")).toBe(false);
+  });
+
+  it("goes stale only for the devices and days a change touches", () => {
+    const client = new QueryClient();
+    const kinds = {
+      october: params({ heat: "time", from: "2026-10-01", to: "2026-10-31" }),
+      september: params({ heat: "time", from: "2026-09-01", to: "2026-09-30" }),
+      allTime: params({ heat: "visits" }),
+      other: params({ heat: "time", from: "2026-10-01", to: "2026-10-31", deviceIds: ["b"] }),
+      mine: params({ heat: "time", from: "2026-10-01", to: "2026-10-31", deviceIds: ["a", "b"] }),
+      points: params(),
+    };
+    for (const kind of Object.values(kinds)) client.setQueryData(queryKeys.heatmap(kind), {});
+    const stale = (name: keyof typeof kinds) =>
+      client.getQueryState(queryKeys.heatmap(kinds[name]))?.isInvalidated === true;
+    // 20 October in Brussels, device a.
+    void invalidateStopHeat(client, {
+      deviceId: "a",
+      from: "2026-10-20T08:00:00Z",
+      to: "2026-10-20T10:00:00Z",
+      timezone: "Europe/Brussels",
+    });
+    expect(stale("october")).toBe(true); // every device, that period
+    expect(stale("allTime")).toBe(true); // no period: all history
+    expect(stale("mine")).toBe(true);
+    expect(stale("september")).toBe(false); // another period
+    expect(stale("other")).toBe(false); // another device
+    expect(stale("points")).toBe(false);
   });
 
   it("goes stale after a gap in the live stream too", () => {

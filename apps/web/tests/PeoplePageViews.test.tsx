@@ -233,6 +233,40 @@ describe("the People page, Heat", () => {
   });
 });
 
+describe("the People page, Heat, places from tiles", () => {
+  it("lists the busiest places at the centres of their tiles and frames the camera on them", async () => {
+    mockApi(standardRoutes());
+    renderPage(<PeoplePage />, { url: "/?view=heat", user });
+    const busiest = await screen.findByRole("region", { name: "Busiest places in view" });
+    // The fixture's tiles of zoom 15 decode to these centres, busiest first: a tile read as a
+    // longitude and latitude would show 16,705 and 10,972 here.
+    const items = await within(busiest).findAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent("9,000 points");
+    expect(items[0]).toHaveTextContent("50.9826° N, 3.5321° E");
+    expect(items[1]).toHaveTextContent("6,400 points");
+    expect(items[1]).toHaveTextContent("51.0448° N, 3.7189° E");
+    // The first fit around the cells' centres.
+    const map = await screen.findByRole("img", { name: /Heatmap of all recorded points/ });
+    await waitFor(() => expect(map).toHaveAttribute("data-fit", "heat:data"));
+    const bounds = JSON.parse(map.getAttribute("data-fit-bounds") ?? "null") as number[];
+    expect(bounds[0]).toBeCloseTo(3.5321, 3);
+    expect(bounds[1]).toBeCloseTo(50.9826, 3);
+    expect(bounds[2]).toBeCloseTo(3.7189, 3);
+    expect(bounds[3]).toBeCloseTo(51.0448, 3);
+    // "Show" flies to the centre of the tile.
+    await userEvent
+      .setup()
+      .click(
+        within(items[0] as HTMLElement).getByRole("button", { name: "Show this place on the map" }),
+      );
+    await waitFor(() => expect(map.getAttribute("data-focus-at")).not.toBe("null"));
+    const at = JSON.parse(map.getAttribute("data-focus-at") ?? "null") as number[];
+    expect(at[0]).toBeCloseTo(3.5321, 3);
+    expect(at[1]).toBeCloseTo(50.9826, 3);
+  });
+});
+
 describe("switching views", () => {
   it("keeps the one map, the device selection and the other views' parameters", async () => {
     mockApi(standardRoutes());

@@ -1,19 +1,16 @@
-import { type HeatMeasure, heatMeasures } from "@trail/contracts/heatmap";
+import type { HeatMeasure } from "@trail/contracts/heatmap";
 import { startTransition, useCallback, useContext, useMemo, useOptimistic } from "react";
 import { useSearchParams } from "react-router";
 import { SessionUserContext } from "../../../app/SessionUserContext";
+import { parseHeatMeasure } from "../parseMapSearch";
 
 const storageKey = "trail.heat";
 /** Without a choice in the address, remembered or preferred, Heat counts the points recorded. */
 const defaultHeat: HeatMeasure = "points";
 
-const isMeasure = (value: string | null): value is HeatMeasure =>
-  value !== null && (heatMeasures as readonly string[]).includes(value);
-
 function remembered(): HeatMeasure | null {
   try {
-    const value = window.localStorage.getItem(storageKey);
-    return isMeasure(value) ? value : null;
+    return parseHeatMeasure(window.localStorage.getItem(storageKey));
   } catch {
     return null;
   }
@@ -34,8 +31,7 @@ export function resolveHeatMeasure(
   rememberedHeat: HeatMeasure | null,
   preferred: HeatMeasure | undefined,
 ): HeatMeasure {
-  if (isMeasure(fromUrl)) return fromUrl;
-  return rememberedHeat ?? preferred ?? defaultHeat;
+  return parseHeatMeasure(fromUrl) ?? rememberedHeat ?? preferred ?? defaultHeat;
 }
 
 /**

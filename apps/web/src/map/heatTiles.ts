@@ -23,6 +23,20 @@ export function cellEdges(
   };
 }
 
+/** The cells of an answer as places: the `n` with the most (all when `n` is left out), busiest first. */
+export function heatPlaces(
+  answer: { cells: readonly (readonly [number, number, number])[]; cellZoom: number },
+  n = answer.cells.length,
+): { lon: number; lat: number; value: number }[] {
+  return [...answer.cells]
+    .sort((a, b) => b[2] - a[2])
+    .slice(0, n)
+    .map(([x, y, value]) => {
+      const [lon, lat] = cellCentre(x, y, answer.cellZoom);
+      return { lon, lat, value };
+    });
+}
+
 /** The centre `[lon, lat]` of tile (x, y) of zoom `z`. */
 export function cellCentre(x: number, y: number, z: number): [number, number] {
   const tiles = 2 ** z;

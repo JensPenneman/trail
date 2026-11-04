@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { localDateSchema } from "./datetime";
-import { ordered, spanMessage, withinSpan } from "./insights";
+import { ordered, spanMessage, withinSpan } from "./period";
 import { deviceIdsParamSchema } from "./query";
 import { transportModeSchema } from "./transport";
 
@@ -41,7 +41,11 @@ export const heatMovementMeasures: ReadonlySet<HeatMeasure> = new Set<HeatMeasur
   "topspeed",
 ]);
 
-/** The most cells one answer carries, whatever the screen: 3840 × 2160 at 11 px cells fits. */
+/**
+ * The most cells one answer carries, whatever the screen. Cells are 11.3 to 22.6 CSS pixels wide, so
+ * a 3840 × 2160 view holds up to some 64 800 of them at the worst fractional zoom: a view that
+ * large with every cell full can reach the ceiling by a few hundred.
+ */
 export const heatCellCeiling = 65_536;
 
 /** `GET /api/heatmap` — density in the viewport: points all time, or time and visits at places over a period. */

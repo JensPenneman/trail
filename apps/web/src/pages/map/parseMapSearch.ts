@@ -1,5 +1,5 @@
 import { type HeatMeasure, heatMeasures } from "@trail/contracts/heatmap";
-import { lastInsightsDay } from "@trail/contracts/insights";
+import { lastInsightsDay } from "@trail/contracts/period";
 import { parseLocalDate } from "../../time/parseLocalDate";
 import type { HistorySelection } from "./history/HistorySelection";
 import { parseHistorySelection } from "./history/parseHistorySelection";
@@ -18,6 +18,11 @@ const maxLatitude = 85.0511;
 const maxCameraZoom = 22;
 const plainNumber = /^-?\d+(\.\d+)?$/;
 
+const round = (value: number, digits: number): number => {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+};
+
 /**
  * `c=<lon>,<lat>,<zoom>`, read defensively: three plain numbers within the world and the zooms the
  * map has, else nothing (the camera is then the page's own).
@@ -28,7 +33,8 @@ export function parseCamera(value: string | null): MapCamera | null {
   const [lon, lat, zoom] = parts.map(Number) as [number, number, number];
   if (Math.abs(lon) > 180 || Math.abs(lat) > maxLatitude) return null;
   if (zoom < 0 || zoom > maxCameraZoom) return null;
-  return { lon, lat, zoom };
+  // As precise as the address is written (about a metre, a hundredth of a zoom): more is rounded.
+  return { lon: round(lon, 5), lat: round(lat, 5), zoom: round(zoom, 2) };
 }
 
 /**
@@ -71,7 +77,7 @@ export interface MapSearch {
 }
 
 /** A measure Heat counts, or null for anything else (the address is read defensively). */
-function parseHeatMeasure(value: string | null): HeatMeasure | null {
+export function parseHeatMeasure(value: string | null): HeatMeasure | null {
   return (heatMeasures as readonly (string | null)[]).includes(value)
     ? (value as HeatMeasure)
     : null;
