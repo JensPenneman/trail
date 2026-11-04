@@ -1,7 +1,13 @@
 import { expect } from "@playwright/test";
 import { publicConfigSchema } from "@trail/contracts/config";
 import { expectAccessible } from "./support/expectAccessible";
-import { localDate, mapView, openDeviceFilter, openMapOptions } from "./support/mapControls";
+import {
+  localDate,
+  mapView,
+  openDeviceFilter,
+  openMapOptions,
+  openPeriodPicker,
+} from "./support/mapControls";
 import { overlandBatch } from "./support/overlandBatch";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
@@ -81,6 +87,7 @@ test("the old addresses of History and Explore, and deep links, open the right v
   await expect(page).toHaveURL(new RegExp(`/\\?view=history&date=${yesterday}&level=raw$`));
 
   await page.goto(`/?view=history&from=${weekAgo}&to=${today}`);
+  await openPeriodPicker(page);
   await expect(page.getByRole("radio", { name: "Period" })).toBeChecked();
   await expect(page.getByRole("region", { name: "Summary", exact: true })).toContainText(
     "Linked phone",

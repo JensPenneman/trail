@@ -1,9 +1,10 @@
+import { type ReactNode, useId } from "react";
 import { useFormatter } from "../../../format/useFormatter";
 import { addDays } from "../../../time/addDays";
 import { Button } from "../../../ui/Button";
-import { Icon } from "../../../ui/Icon";
 import { SegmentedControl } from "../../../ui/SegmentedControl";
 import type { HistorySelection } from "./HistorySelection";
+import { PeriodControl } from "./PeriodControl";
 import { RangeForm } from "./RangeForm";
 import "./HistoryControls.css";
 
@@ -12,9 +13,13 @@ interface HistoryControlsProps {
   today: string;
   onDay: (date: string) => void;
   onRange: (from: string, to: string) => void;
-  calendarId: string;
-  calendarOpen: boolean;
-  onToggleCalendar: () => void;
+  /** Whether the date button's popover is open. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** The month calendar, for a day; it gets `done` to call when a day is picked. */
+  calendar: (done: () => void) => ReactNode;
+  /** Opened from the panel (not the button): focus goes to the day shown. */
+  focusIn: boolean;
 }
 
 const modes = [
@@ -22,70 +27,87 @@ const modes = [
   { value: "range", label: "Period" },
 ] as const;
 
-/** Day stepping (with the calendar toggle) or a from–to period. */
+/**
+ * History's row over the map: ‹ Previous day · the date ▾ · Next day › ·
+ * Today. The date button opens a popover with Day | Period and the calendar
+ * or the from–to form; a period has the button alone.
+ */
 export function HistoryControls({
   selection,
   today,
   onDay,
   onRange,
-  calendarId,
-  calendarOpen,
-  onToggleCalendar,
+  open,
+  onOpenChange,
+  calendar,
+  focusIn,
 }: HistoryControlsProps) {
   const format = useFormatter();
+  const popoverId = useId();
+  const day = selection.mode === "day";
+  const label = day
+    ? format.day(selection.from)
+    : `${format.day(selection.from)} – ${format.day(selection.to)}`;
+  const today_ = selection.from === today;
+  // One tree for a day and a period, so the date button never remounts when the mode changes.
   return (
     <div className="history-controls">
-      <SegmentedControl
-        label="Show one day or a period"
-        value={selection.mode}
-        options={modes}
-        onChange={(mode) => {
-          if (mode === "day") onDay(selection.to);
-          else onRange(addDays(selection.to, -6), selection.to);
-        }}
-      />
-      {selection.mode === "day" ? (
-        <div className="history-controls__day">
-          <div className="history-controls__stepper">
-            <Button icon="chevronLeft" iconOnly onClick={() => onDay(addDays(selection.from, -1))}>
-              Previous day
-            </Button>
-            <button
-              type="button"
-              className="history-controls__date"
-              aria-expanded={calendarOpen}
-              aria-controls={calendarId}
-              onClick={onToggleCalendar}
-            >
-              <Icon name="calendar" />
-              <span className="history-controls__date-label">{format.day(selection.from)}</span>
-              <span className="visually-hidden">, choose another day</span>
-              <Icon name="chevronDown" className="history-controls__chevron" />
-            </button>
-            <Button
-              icon="chevronRight"
-              iconOnly
-              disabled={selection.from >= today}
-              onClick={() => onDay(addDays(selection.from, 1))}
-            >
-              Next day
-            </Button>
-          </div>
-          {selection.from === today ? null : (
-            <Button variant="ghost" onClick={() => onDay(today)}>
-              Today
-            </Button>
-          )}
-        </div>
-      ) : (
-        <RangeForm
-          key={`${selection.from}:${selection.to}`}
-          from={selection.from}
-          to={selection.to}
-          today={today}
-          onApply={onRange}
-        />
-      )}
+      {day ? (
+        <Button icon="chevronLeft" iconOnly onClick={() => onDay(addDays(selection.from, -1))}>
+          Previous day
+        </Button>
+      ) : null}
+      <PeriodControl
+        label={label}
+        open={open}
+        onOpenChange={onOpenChange}
+        popoverId={popoverId}
+        focusIn={focusIn}
+      >
+        {(done) => (
+          <>
+            <SegmentedControl
+              label="Show one day or a period"
+              value={selection.mode}
+              options={modes}
+              onChange={(mode) => {
+                // Only the mode changes: the popover stays for the day or the period.
+                if (mode === "day") onDay(selection.to);
+                else onRange(addDays(selection.to, -6), selection.to);
+              }}
+            />
+            {day ? (
+              calendar(done)
+            ) : (
+              <RangeForm
+                key={`${selection.from}:${selection.to}`}
+                from={selection.from}
+                to={selection.to}
+                today={today}
+                onApply={(from, to) => {
+                  onRange(from, to);
+                  done();
+                }}
+              />
+            )}
+          </>
+        )}
+      </PeriodControl>
+      {day ? (
+        <Button
+          icon="chevronRight"
+          iconOnly
+          disabled={selection.from >= today}
+          onClick={() => onDay(addDays(selection.from, 1))}
+        >
+          Next day
+        </Button>
+      ) : null}
+      {day && !today_ ? (
+        <Button variant="ghost" onClick={() => onDay(today)}>
+          Today
+        </Button>
+      ) : null}
     </div>
   );
 }

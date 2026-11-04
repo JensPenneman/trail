@@ -1,0 +1,47 @@
+/*
+ * A popover over the map, under the button that opens it (Map options, the
+ * date of History): the map stays usable beside it. On phones it spans the
+ * map and stops above the sheet's peek.
+ */
+.map-popover {
+  position: absolute;
+  inset-block-start: calc(100% + var(--space-2));
+  inset-inline-start: 0;
+  z-index: 6;
+  display: grid;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  width: 23.5rem;
+  max-width: calc(100vw - 2 * var(--space-4));
+  max-height: min(36rem, calc(100dvh - var(--header-height) - 9rem));
+  padding: var(--space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-l);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-3);
+  container-type: inline-size;
+}
+
+/* The calendar is the popover's own: no card inside the card. */
+.map-popover .calendar {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+@media (max-width: 63.99rem) {
+  .map-popover {
+    inset-inline: 0;
+    width: auto;
+    max-width: none;
+    max-height: calc(var(--sheet-view) - var(--sheet-peek) - var(--overlay-end) - var(--space-4));
+  }
+}
+
+@media (forced-colors: active) {
+  .map-popover {
+    border-color: CanvasText;
+  }
+}

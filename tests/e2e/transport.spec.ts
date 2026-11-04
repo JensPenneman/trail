@@ -260,6 +260,8 @@ test("a stop shows the walk within it, and a silent phone shows as no data", asy
   await page.goto("/?view=history&person=me");
   const timeline = page.getByRole("region", { name: "Timeline" });
   await expect(timeline.getByText(/^No data · 4[45] mins$/)).toBeVisible();
+  // The legend is part of the map options popover.
+  await openMapOptions(page);
   const legend = page.getByRole("region", { name: "Map legend" });
   await expect(legend.getByText("Moved within a stop")).toBeVisible();
   await expect(legend.getByText("No data: a gap in the recording")).toBeVisible();

@@ -129,10 +129,82 @@ describe("the People page, History", () => {
     expect(router.state.location.search).toBe("?view=history&date=2026-09-10");
   });
 
+  it("keeps the date popover open while the day becomes a period, and shows the period form", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, {
+      url: "/?view=history&date=2026-09-12",
+      user,
+    });
+    const date = screen.getByRole("button", { name: /choose another day/ });
+    await person.click(date);
+    await person.click(screen.getByRole("radio", { name: "Period" }));
+    expect(router.state.location.search).toContain("from=");
+    // The same popover, now with the form; focus stays on the radio that was pressed.
+    expect(await screen.findByRole("button", { name: "Show" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Period" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: /choose another day/ })).toBe(date);
+  });
+
+  it("closes the popover when a period is applied, with focus on the date button", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, {
+      url: "/?view=history&from=2026-09-01&to=2026-09-07",
+      user,
+    });
+    await person.click(await screen.findByRole("button", { name: /1 Sept – .*7 Sept/ }));
+    await person.click(screen.getByRole("button", { name: "Last 7 days" }));
+    expect(router.state.location.search).toContain("from=");
+    expect(screen.queryByRole("radio", { name: "Period" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /choose another day|–/ })).toHaveFocus();
+  });
+
+  it("closes the popover when a day is picked, with focus on the date button", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: "/?view=history&date=2026-09-12", user });
+    await person.click(screen.getByRole("button", { name: /choose another day/ }));
+    await person.click(await screen.findByRole("button", { name: /Thursday, 10 September 2026/ }));
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /choose another day/ })).toHaveFocus();
+  });
+
+  it("opens the calendar from an empty day with focus on the day shown", async () => {
+    const empty = ({ url }: { url: URL }) => {
+      const from = url.searchParams.get("from") ?? "2026-09-12T00:00:00Z";
+      const to = url.searchParams.get("to") ?? "2026-09-13T00:00:00Z";
+      return { from, to };
+    };
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/tracks": (request: { url: URL }) => ({
+        status: 200,
+        body: { ...empty(request), tracks: [] },
+      }),
+      "GET /api/v1/tracks": (request: { url: URL }) => ({
+        status: 200,
+        body: { ...empty(request), level: "raw", segments: [] },
+      }),
+      "GET /api/v1/segments": {
+        status: 200,
+        body: { items: [], nextCursor: null, pending: false },
+      },
+    });
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: "/?view=history&person=me&date=2026-09-12", user });
+    await person.click(await screen.findByRole("button", { name: "Find a day with data" }));
+    const day = await screen.findByRole("button", { name: /Saturday, 12 September 2026/ });
+    expect(day).toHaveAttribute("aria-pressed", "true");
+    expect(day).toHaveFocus();
+  });
+
   it("shows a period from a deep link", async () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { url: "/?view=history&from=2026-09-01&to=2026-09-07", user });
-    expect(await screen.findByText(/1 Sept – .*7 Sept/)).toBeInTheDocument();
+    const date = await screen.findByRole("button", { name: /1 Sept – .*7 Sept/ });
+    expect(screen.queryByRole("radio", { name: "Period" })).not.toBeInTheDocument();
+    await userEvent.setup().click(date);
     expect(screen.getByRole("radio", { name: "Period" })).toBeChecked();
   });
 });
@@ -246,15 +318,13 @@ describe("the device filter", () => {
     if (advanced === null) throw new Error("No Advanced in Map options");
     expect(advanced).not.toHaveAttribute("open");
     // Which devices draw is not worth a word of the summary while all of them do.
-    expect(screen.getByRole("button", { name: /^Map options/ })).not.toHaveTextContent(/devices/);
+    expect(screen.queryByText(/\d of \d devices/)).not.toBeInTheDocument();
     await person.click(screen.getByText("Advanced"));
     const filter = await within(advanced).findByRole("group", { name: "Devices" });
     await person.click(within(filter).getByRole("checkbox", { name: "Car" }));
     expect(router.state.location.search).toBe(`?person=me&devices=${ids.phone}`);
     await waitFor(() => expect(map()).toHaveAttribute("data-positions", "3"));
-    expect(screen.getByRole("button", { name: /^Map options/ })).toHaveTextContent(
-      "1 of 2 devices",
-    );
+    expect(screen.getByText(/1 of 2 devices/)).toBeInTheDocument();
     expect(within(filter).getByRole("checkbox", { name: "iPhone 16" })).toBeDisabled();
     await person.click(within(filter).getByRole("checkbox", { name: "Car" }));
     expect(router.state.location.search).toBe("?person=me");

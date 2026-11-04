@@ -2865,24 +2865,65 @@ count among them, since they lead to signed-in pages.
     stop). Heatmaps cover one's own devices only, so Heat is offered while
     nobody or Me is selected.
 
-  The head holds the controls the views share, in this order: the **map
+  **Layout and controls.** The controls float over the map (`MapOverlay`):
+  top-left, a bar with the view switch (group "Map view") and a **Map
+  options** button with the layers icon; under it the view's own row. The
+  map's zoom and fit buttons keep the top-right corner (on phones they sit
+  under the bar, whose height is measured into `--overlay-end` since it wraps
+  on narrow screens), the "Updating" chip sits top centre (under the bar where
+  the screen is not wide enough for both), the map fits tracks under the
+  controls (`fit.inset`: below the bar, left of the zoom column on phones),
+  and History's time slider floats at the map's foot (first block of the
+  sheet on phones). The
+  DOM order is the controls, the map, then the panel, so the keyboard meets
+  them in that order.
+
+  Map options is a non-modal popover (`MapOptions`, `useDismiss`): Escape
+  closes it and returns focus to its button; a press outside (on the map,
+  say) or focus moving outside closes it and leaves focus where it is. The map
+  stays usable beside it. While a device filter leaves devices out the button
+  says so, "1 of 2 devices", as part of its name. In the popover: the **map
   style** (Auto, which follows the system's light
   or dark setting, Light, Dark, and Satellite when the server has imagery;
   remembered in localStorage `trail.mapStyle`, else the account's
   preference, a dark or satellite map drawing Trail's lines and dots in their
-  dark-background steps whatever the page's scheme), the tracks' **level**
-  with the mode legend (Live and History, with Me), and last, folded under
-  **Advanced** (a disclosure, open when the address sets a filter), the
-  **device filter** (the devices of the person selected, in Heat one's
-  own; someone else's in their colour from `personPalette`): which devices draw is seldom what one looks
-  for. The style and the level resolve in the same order: the address
-  (`?style=`, `?level=`) › the choice last made on this browser › the
-  account's preference (Settings › Preferences) › Auto and Transport. On
-  phones and small tablets they fold into one "Map options" button with a
-  one-line summary (whom, the level, the style; devices only while some are
-  left out, "1 of 2 devices"), so the map stays near the top; beside a
-  full-height map (≥ 64rem) the panel scrolls by itself under a sticky title
-  and view switch.
+  dark-background steps whatever the page's scheme); while one's own tracks
+  are drawn (Live and History with Me or nobody selected) the **detail of the
+  tracks** (level) with the "Map legend"; and, when the selected person has
+  more than one device (in Heat, one's own), folded under **Advanced** (a
+  disclosure, open when the address sets a filter) the **device filter**
+  (someone else's devices in their colour from `personPalette`): which
+  devices draw is seldom what one looks for. The style and the level resolve
+  in the same order: the address (`?style=`, `?level=`) › the choice last
+  made on this browser › the account's preference (Settings › Preferences) ›
+  Auto and Transport. The body stays in the document while the popover is
+  closed and is hidden by CSS only.
+
+  History's row is ‹ **Previous day** · the date ▾ · **Next day** › ·
+  **Today** (a period shows the date button alone). The date button
+  (`PeriodControl`, named by its date and ", choose another day") opens a
+  popover with **Day | Period** and the month calendar or the from–to form,
+  closed like the options. Switching between day and period keeps it open (one
+  tree, so the button does not remount); picking a day or applying a period
+  closes it, and every close from inside returns focus to the date button.
+  "Find a day with data" in the panel opens it and moves focus to the day shown.
+
+  Beside the map (≥ 64rem) the list is a docked sidebar (`--panel-width`)
+  that scrolls by itself while the page does not, and the map fills the rest.
+  On phones and small tablets the map is fixed full-bleed between the header
+  and the tab bar down to the sheet's peek height, with one-finger panning
+  (no cooperative gestures), and the list or detail is a **bottom sheet** made
+  of the page's own scroll, in CSS only: a transparent spacer that lets
+  presses through to the map, then the sheet with a decorative grabber, and
+  two detents (peek and half) as scroll-snap points, free scrolling above them
+  (`scroll-snap-type: y proximity`, `overscroll-behavior: none`). Selecting a
+  person lifts the sheet to the half detent (at once under reduced motion),
+  and focus on the bar, the map or its buttons, which a lifted sheet covers,
+  lowers it to peek, for keyboard focus on what the sheet covers only (not a
+  press on the map). The map starts under the header and, offline, under the
+  offline banner, which is sticky on this page alone (`--banner-height`);
+  the detents use `svh`, so the browser's collapsing toolbar does not move
+  them.
 
   **The people list** — Find My for Trail (§8.5): people, not their
   devices. The h1 stays "People"; beside it an icon-only **Share my

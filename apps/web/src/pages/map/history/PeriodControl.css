@@ -1,0 +1,63 @@
+.period-control {
+  position: relative;
+  min-width: 0;
+}
+
+.period-control__date {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--target);
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-m);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.period-control__date:hover {
+  background: var(--color-surface-2);
+}
+
+.period-control__date .icon {
+  flex-shrink: 0;
+  color: var(--color-text-2);
+}
+
+.period-control__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.period-control__chevron {
+  transition: rotate var(--duration-fast) ease;
+}
+
+.period-control__date[aria-expanded="true"] .period-control__chevron {
+  rotate: 180deg;
+}
+
+/* Phones: the bar is the width of the map, and so is the popover (MapPopover.css). */
+@media (max-width: 63.99rem) {
+  .period-control {
+    position: static;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .period-control__chevron {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .period-control__date {
+    border-color: CanvasText;
+  }
+}

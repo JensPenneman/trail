@@ -10,3 +10,14 @@
   font-weight: 600;
   text-align: center;
 }
+
+/*
+ * Only where a page floats a map under the header (the People page): the banner
+ * stays above it. Elsewhere it is in the flow, so Settings' own sticky bars and
+ * the pages' scroll padding keep their place.
+ */
+.offline-banner--sticky {
+  position: sticky;
+  top: calc(var(--header-height) + var(--safe-top));
+  z-index: 19;
+}

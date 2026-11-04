@@ -127,6 +127,8 @@ export function useHistoryView({
       });
   };
   const [calendarOpen, setCalendarOpen] = useState(false);
+  // Opened from the panel's empty state (a sheet on phones): focus goes into the calendar.
+  const [fromPanel, setFromPanel] = useState(false);
   const [browsing, setBrowsing] = useState<{ anchor: string; month: string } | null>(null);
   const [scrub, setScrub] = useState<{ key: string; value: number } | null>(null);
   // A camera move belongs to its period: another day — from the controls, a person's detail or
@@ -349,7 +351,6 @@ export function useHistoryView({
   const day = period.mode === "day" ? period.from : null;
   // Nobody with history and none of one's own: nothing to say here, their detail says why.
   const quiet = !drawsOwn && withHistory.length === 0 && personTracks.error === null;
-  const showsCalendar = calendarOpen && period.mode === "day";
 
   return {
     title: "History",
@@ -386,24 +387,24 @@ export function useHistoryView({
       focus: focus !== null && focus.period === periodKey ? focus : null,
     },
     controls: (
-      <>
-        <HistoryControls
-          selection={{ ...period, deviceIds: own?.deviceIds ?? null }}
-          today={today}
-          onDay={(date) => {
-            showDay(date);
-            setFocus(null);
-          }}
-          onRange={(from, to) => {
-            showRange(from, to);
-            setCalendarOpen(false);
-            setFocus(null);
-          }}
-          calendarId={calendarId}
-          calendarOpen={showsCalendar}
-          onToggleCalendar={() => setCalendarOpen((open) => !open)}
-        />
-        {showsCalendar ? (
+      <HistoryControls
+        selection={{ ...period, deviceIds: own?.deviceIds ?? null }}
+        today={today}
+        onDay={(date) => {
+          showDay(date);
+          setFocus(null);
+        }}
+        onRange={(from, to) => {
+          showRange(from, to);
+          setFocus(null);
+        }}
+        open={calendarOpen}
+        onOpenChange={(open) => {
+          setCalendarOpen(open);
+          if (!open) setFromPanel(false);
+        }}
+        focusIn={fromPanel}
+        calendar={(done) => (
           <MonthCalendar
             id={calendarId}
             month={calendarMonth}
@@ -415,10 +416,11 @@ export function useHistoryView({
             onSelect={(date) => {
               showDay(date);
               setFocus(null);
+              done();
             }}
           />
-        ) : null}
-      </>
+        )}
+      />
     ),
     transport: drawsOwn ? transport : null,
     chip:
@@ -499,7 +501,13 @@ export function useHistoryView({
               }
               action={
                 period.mode === "day" && !calendarOpen ? (
-                  <Button icon="calendar" onClick={() => setCalendarOpen(true)}>
+                  <Button
+                    icon="calendar"
+                    onClick={() => {
+                      setFromPanel(true);
+                      setCalendarOpen(true);
+                    }}
+                  >
                     Find a day with data
                   </Button>
                 ) : undefined
