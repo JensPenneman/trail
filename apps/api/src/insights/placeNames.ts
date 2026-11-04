@@ -5,7 +5,7 @@ import { latToTileY, lonToTileX } from "../heatmap/tileMath";
 import { haversineM } from "../tracks/haversine";
 import type { PlaceGroup } from "./groupPlaces";
 
-/** A stop within this far from a place's centre names it ("Near …" up to here). */
+/** A stop within this far from a place's centre names it ("Near …" up to here): decided in SQL. */
 const stopNameReachM = 150;
 /** The latest stays of a nameless place that are asked what road they were on. */
 const roadStays = 10;
@@ -21,7 +21,7 @@ export interface StopCandidate {
   lon: number;
 }
 
-/** The nearest stop within reach, or null. Ties go to the shorter name, then alphabetically. */
+/** The nearest of the stops within reach (`loadStops` brings no others), or null. Ties go to the shorter name, then alphabetically. */
 export function stopNameFor(
   centre: readonly [number, number],
   candidates: readonly StopCandidate[],
@@ -32,7 +32,6 @@ export function stopNameFor(
       { lat: centre[1], lon: centre[0] },
       { lat: candidate.lat, lon: candidate.lon },
     );
-    if (distanceM > stopNameReachM) continue;
     if (
       best === null ||
       distanceM < best.distanceM - 1e-9 ||
@@ -74,6 +73,8 @@ interface PoiRow extends Record<string, unknown> {
 
 /** Degrees of latitude in the reach of a stop name (150 m), with a little to spare. */
 const reachDegrees = 0.0014;
+/** Metres in a degree of latitude, for the exact reach in SQL (flat at 150 m). */
+const metresPerDegree = 111_195;
 
 /**
  * The stops within reach of each centre, from the map data, by place index: the z14 tiles around
@@ -110,6 +111,9 @@ async function loadStops(
       AND p.lat BETWEEN t.lat - ${reachDegrees} AND t.lat + ${reachDegrees}
       AND p.lon BETWEEN t.lon - ${reachDegrees} / cos(radians(t.lat))
         AND t.lon + ${reachDegrees} / cos(radians(t.lat))
+      AND power((p.lat - t.lat) * ${metresPerDegree}, 2)
+        + power((p.lon - t.lon) * ${metresPerDegree} * cos(radians(t.lat)), 2)
+        <= ${stopNameReachM * stopNameReachM}
     ORDER BY t.i, p.id, p.fetched_at DESC
   `);
   const stops = new Map<number, StopCandidate[]>();

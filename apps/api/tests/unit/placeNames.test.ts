@@ -12,7 +12,7 @@ const stop = (name: string, metres: number, kind = "station" as const) => ({
 });
 
 describe("naming a place after a stop", () => {
-  it("takes the nearest stop within 150 m, and says how far", () => {
+  it("takes the nearest stop, and says how far", () => {
     expect(stopNameFor(centre, [stop("Far", 120), stop("Near", 20)])).toEqual({
       text: "Near",
       source: "stop",
@@ -20,11 +20,6 @@ describe("naming a place after a stop", () => {
       distanceM: 20,
     });
     expect(stopNameFor(centre, [stop("Edge", 149)])?.distanceM).toBe(149);
-  });
-
-  it("takes none beyond 150 m", () => {
-    expect(stopNameFor(centre, [stop("Too far", 151), stop("Further", 400)])).toBeNull();
-    expect(stopNameFor(centre, [])).toBeNull();
   });
 
   it("keeps the distance for the reader to tell 'at' (30 m) from 'near'", () => {

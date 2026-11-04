@@ -291,15 +291,25 @@ describe("GET /api/v1/insights/place", () => {
 
 describe("names from stops", () => {
   const range = { from: "2026-09-07", to: "2026-09-13" };
+  const metresNorth = (at: { lat: number; lon: number }, metres: number) => ({
+    lat: at.lat + metres / 111_195,
+    lon: at.lon,
+  });
+  const metresEast = (at: { lat: number; lon: number }, metres: number) => ({
+    lat: at.lat,
+    lon: at.lon + metres / (111_195 * Math.cos((at.lat * Math.PI) / 180)),
+  });
   const lonely = { lat: 50.9, lon: 4.2 };
+  const edge = { lat: 50.7, lon: 4.4 };
+  const corner = { lat: 50.6, lon: 4.5 };
   const twice = { lat: 50.8, lon: 4.3 };
 
-  it("takes no stop more than 150 m away, and of one stop held by two sources the newest", async () => {
-    await stop(tracker, "2026-09-08T10:00:00Z", "2026-09-08T12:00:00Z", lonely);
-    await stop(tracker, "2026-09-09T10:00:00Z", "2026-09-09T11:00:00Z", {
-      lat: twice.lat + 15 / 111_195,
-      lon: twice.lon,
-    });
+  it("takes a stop 145 m away, none 200 m or diagonally 170 m away, and of one stop in two builds the newest", async () => {
+    // Durations order the places: 4 h, 3 h, 2 h, 1 h.
+    await stop(tracker, "2026-09-08T08:00:00Z", "2026-09-08T12:00:00Z", lonely);
+    await stop(tracker, "2026-09-09T08:00:00Z", "2026-09-09T11:00:00Z", edge);
+    await stop(tracker, "2026-09-10T08:00:00Z", "2026-09-10T10:00:00Z", corner);
+    await stop(tracker, "2026-09-11T08:00:00Z", "2026-09-11T09:00:00Z", metresNorth(twice, 15));
     // A second build of the map data lives in a partition of its own.
     await t.ctx.db.execute(
       sql`CREATE TABLE IF NOT EXISTS osm_pois_build PARTITION OF osm_pois FOR VALUES IN ('belgium@20260902-abcd1234')`,
@@ -316,16 +326,19 @@ describe("names from stops", () => {
         VALUES (${id}, ${source}, 'station', ${at.lat}, ${at.lon}, ${name}, 14,
           ${tileX(at.lon)}, ${tileY(at.lat)}, ${fetched}::timestamptz)
       `);
-    // 200 m north of the first place, in the same tile; the second place's stop in two builds.
+    // All in the tile of their place; the corner one is 120 m north and 120 m east (170 m).
+    await insert("n10", "overpass", metresNorth(lonely, 200), "Too Far", "2026-09-01T00:00:00Z");
+    await insert("n12", "overpass", metresEast(edge, 145), "Edge Stop", "2026-09-01T00:00:00Z");
     await insert(
-      "n10",
+      "n13",
       "overpass",
-      { lat: lonely.lat + 200 / 111_195, lon: lonely.lon },
-      "Too Far",
+      metresEast(metresNorth(corner, 120), 120),
+      "Diagonal",
       "2026-09-01T00:00:00Z",
     );
-    await insert("n11", "overpass", twice, "Old Name", "2026-09-01T00:00:00Z");
-    await insert("n11", "belgium@20260902-abcd1234", twice, "New Name", "2026-09-02T00:00:00Z");
+    // The same stop in two builds: the older name sorts first and is shorter, the newer one wins.
+    await insert("n11", "overpass", twice, "Aa", "2026-09-01T00:00:00Z");
+    await insert("n11", "belgium@20260902-abcd1234", twice, "Zuid-Station", "2026-09-02T00:00:00Z");
     const answer = insightsPlacesSchema.parse(
       (
         await owner
@@ -334,9 +347,13 @@ describe("names from stops", () => {
           .expect(200)
       ).body,
     );
-    const [far, both] = answer.places;
-    expect(far?.name).toBeNull();
-    expect(both?.name).toMatchObject({ text: "New Name", source: "stop" });
+    expect(answer.places.map((place) => place.name?.text ?? null)).toEqual([
+      null,
+      "Edge Stop",
+      null,
+      "Zuid-Station",
+    ]);
+    expect(answer.places[1]?.name?.distanceM).toBeGreaterThan(140);
   });
 });
 
