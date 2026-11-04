@@ -43,37 +43,10 @@
   rotate: 180deg;
 }
 
-.period-control__popover {
-  position: absolute;
-  inset-block-start: calc(100% + var(--space-2));
-  inset-inline-start: 0;
-  z-index: 6;
-  display: grid;
-  gap: var(--space-3);
-  box-sizing: border-box;
-  width: 21rem;
-  max-width: calc(100vw - 2 * var(--space-4));
-  max-height: min(36rem, calc(100dvh - var(--header-height) - 9rem));
-  padding: var(--space-4);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-l);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-3);
-}
-
-/* Phones: the bar is the width of the map, and so is the popover. */
+/* Phones: the bar is the width of the map, and so is the popover (MapPopover.css). */
 @media (max-width: 63.99rem) {
   .period-control {
     position: static;
-  }
-
-  .period-control__popover {
-    inset-inline: 0;
-    width: auto;
-    max-width: none;
-    max-height: calc(var(--sheet-view) - var(--sheet-peek) - var(--overlay-end) - var(--space-4));
   }
 }
 
@@ -84,8 +57,7 @@
 }
 
 @media (forced-colors: active) {
-  .period-control__date,
-  .period-control__popover {
+  .period-control__date {
     border-color: CanvasText;
   }
 }

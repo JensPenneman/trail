@@ -127,6 +127,8 @@ export function useHistoryView({
       });
   };
   const [calendarOpen, setCalendarOpen] = useState(false);
+  // Opened from the panel's empty state (a sheet on phones): focus goes into the calendar.
+  const [fromPanel, setFromPanel] = useState(false);
   const [browsing, setBrowsing] = useState<{ anchor: string; month: string } | null>(null);
   const [scrub, setScrub] = useState<{ key: string; value: number } | null>(null);
   // A camera move belongs to its period: another day — from the controls, a person's detail or
@@ -394,12 +396,15 @@ export function useHistoryView({
         }}
         onRange={(from, to) => {
           showRange(from, to);
-          setCalendarOpen(false);
           setFocus(null);
         }}
         open={calendarOpen}
-        onOpenChange={setCalendarOpen}
-        calendar={
+        onOpenChange={(open) => {
+          setCalendarOpen(open);
+          if (!open) setFromPanel(false);
+        }}
+        focusIn={fromPanel}
+        calendar={(done) => (
           <MonthCalendar
             id={calendarId}
             month={calendarMonth}
@@ -410,11 +415,11 @@ export function useHistoryView({
             loading={days.isFetching}
             onSelect={(date) => {
               showDay(date);
-              setCalendarOpen(false);
               setFocus(null);
+              done();
             }}
           />
-        }
+        )}
       />
     ),
     transport: drawsOwn ? transport : null,
@@ -496,7 +501,13 @@ export function useHistoryView({
               }
               action={
                 period.mode === "day" && !calendarOpen ? (
-                  <Button icon="calendar" onClick={() => setCalendarOpen(true)}>
+                  <Button
+                    icon="calendar"
+                    onClick={() => {
+                      setFromPanel(true);
+                      setCalendarOpen(true);
+                    }}
+                  >
                     Find a day with data
                   </Button>
                 ) : undefined

@@ -99,22 +99,87 @@ test("on a wide screen only the docked panel scrolls", async ({ page, account },
   ).toBeLessThanOrEqual(0);
 });
 
-test("on a phone the sheet scrolls over a map that stays", async ({ page, account }, testInfo) => {
+test("History's popover keeps the period form and gives focus back to the date button", async ({
+  page,
+  account,
+}) => {
+  await uploadedDevice(page, "Period phone", overlandBatch(account.timezone));
+  await page.goto("/?view=history&person=me");
+  await openPeriodPicker(page);
+  await page.getByRole("radio", { name: "Period" }).click();
+  // The same popover, now with the form for the period.
+  await expect(page.getByRole("button", { name: "Show", exact: true })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Period" })).toBeFocused();
+  await page.getByRole("button", { name: "Last 7 days" }).click();
+  await expect(page.getByRole("group", { name: "Show one day or a period" })).toBeHidden();
+  await expect(page.getByRole("button", { name: /, choose another day$/ })).toBeFocused();
+});
+
+test("on a phone the sheet scrolls over a map that stays, with its detents", async ({
+  page,
+  account,
+}, testInfo) => {
   test.skip(testInfo.project.name !== "iphone", "the sheet is for phones");
   await uploadedDevice(page, "Sheet phone", overlandBatch(account.timezone));
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
+  const panel = page.locator(".map-page__panel");
   const before = await box(canvas(page));
-  const heading = page.getByRole("heading", { level: 1, name: "People" });
-  const peek = (await box(heading)).y;
+  const peekTop = (await box(panel)).y;
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
 
+  // At peek: a press above the sheet reaches the map, and its attribution is not covered.
+  const reachesMap = await page.evaluate(
+    ([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest(".maplibregl-map") !== null,
+    [before.x + before.width / 2, peekTop - 40],
+  );
+  expect(reachesMap).toBe(true);
+  const attribution = await box(page.locator(".maplibregl-ctrl-attrib").first());
+  expect(attribution.y + attribution.height).toBeLessThanOrEqual(peekTop + 1);
+
+  // Lifting the sheet leaves the map where it is.
   await page.evaluate(() => window.scrollTo({ top: 400 }));
   await page.waitForFunction(() => window.scrollY > 0);
-  // The map did not move; the sheet rose over it.
   expect(await box(canvas(page))).toEqual(before);
-  expect((await box(heading)).y).toBeLessThan(peek);
-  // The sheet leaves the map's last pixels to the attribution until it has been lifted.
-  expect(before.y + before.height).toBeLessThan((await page.viewportSize())?.height ?? 0);
+  expect((await box(panel)).y).toBeLessThan(peekTop);
   await expectAccessible(page, "the people sheet lifted");
+
+  // Focus on what the sheet covers lowers it to peek.
+  await page.getByRole("button", { name: "Zoom in" }).focus();
+  await page.waitForFunction(() => window.scrollY === 0);
+
+  // Selecting a person lifts it to the half detent.
+  await page.getByRole("list", { name: "People", exact: true }).getByRole("link").first().click();
+  const half = await page.evaluate(() => {
+    const marker = document.querySelector("[data-detent=half]")?.getBoundingClientRect().top ?? 0;
+    return marker + window.scrollY - 56;
+  });
+  await page.waitForFunction((target) => Math.abs(window.scrollY - target) < 3, half);
+});
+
+test("the controls and the zoom buttons clear each other on a 375 px screen", async ({
+  page,
+  account,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "iphone", "the phone layout");
+  await page.setViewportSize({ width: 375, height: 667 });
+  await uploadedDevice(page, "Narrow phone", overlandBatch(account.timezone));
+  await page.goto("/?view=history&person=me");
+  await expect(mapView(page, "History")).toBeChecked();
+  const lowest = async () => {
+    const parts = [
+      await box(bar(page)),
+      await box(page.getByRole("button", { name: /, choose another day$/ })),
+    ];
+    return Math.max(...parts.map((part) => part.y + part.height));
+  };
+  const controlsEnd = await lowest();
+  const zoom = await box(page.getByRole("button", { name: "Zoom in" }));
+  expect(zoom.y).toBeGreaterThanOrEqual(controlsEnd - 1);
+  // The popover stays above the sheet.
+  await openPeriodPicker(page);
+  const popover = await box(page.locator(".period-control__popover"));
+  const sheetTop = (await box(page.locator(".map-page__panel"))).y;
+  expect(popover.y + popover.height).toBeLessThanOrEqual(sheetTop + 1);
+  await expectAccessible(page, "the period popover on a narrow phone");
 });

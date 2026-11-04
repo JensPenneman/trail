@@ -56,7 +56,13 @@ export interface TrailMapProps {
   /** The heatmap's cells and the scale that colours them, the same the legend shows. */
   heat?: MapHeat | null;
   /** The camera fits `bounds` whenever `key` changes — never merely because data grew. */
-  fit?: { key: string; bounds: Bounds | null; maxZoom?: number };
+  fit?: {
+    key: string;
+    bounds: Bounds | null;
+    maxZoom?: number;
+    /** Extra padding in px per side, for what floats over the map (controls). */
+    inset?: { top?: number; right?: number };
+  };
   /** The camera moves to this point once per `key` (a key shown again does not move it again). */
   focus?: { key: string; lon: number; lat: number; zoom: number } | null;
   initialView?: { center: readonly [number, number]; zoom: number };
@@ -183,13 +189,19 @@ export function TrailMap({
     const [west, south, east, north] = fit.bounds;
     const container = instance.getContainer();
     const padding = Math.round(Math.min(container.clientWidth, container.clientHeight) * 0.12);
+    const base = Math.max(24, Math.min(padding, 72));
     instance.fitBounds(
       [
         [west, south],
         [east, north],
       ],
       {
-        padding: Math.max(24, Math.min(padding, 72)),
+        padding: {
+          top: base + (fit.inset?.top ?? 0),
+          right: base + (fit.inset?.right ?? 0),
+          bottom: base,
+          left: base,
+        },
         maxZoom: fit.maxZoom ?? 16,
         animate: animate && !reducedMotion,
         duration: 700,

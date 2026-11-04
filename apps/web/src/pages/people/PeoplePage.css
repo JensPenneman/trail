@@ -11,21 +11,17 @@
  * DOM order on every screen: the controls, the map, then the panel.
  */
 .map-page {
-  --map-top: calc(var(--header-height) + var(--safe-top));
+  /* The map starts under the header and, offline, the banner (OfflineBanner). */
+  --map-top: calc(var(--header-height) + var(--safe-top) + var(--banner-height, 0px));
   --map-bottom-gap: 0px;
-  --sheet-peek: 9rem;
-  --sheet-view: calc(100dvh - var(--map-top) - var(--map-bottom-gap));
-  /* Rows of the bar over the map, for what must sit below it (zoom buttons, the chip). */
-  --overlay-rows: 1;
-  /* Where the first row of controls ends, from the map's top edge. */
-  --overlay-end: calc(var(--space-3) + var(--overlay-rows) * (var(--target) + var(--space-2)));
+  /* svh: the browser's toolbar collapsing while the sheet lifts must not resize the detents. */
+  --sheet-peek: min(9rem, 22svh);
+  --sheet-view: calc(100svh - var(--map-top) - var(--map-bottom-gap));
+  /* Where the floating controls end, from the map's top edge; set by the page, which measures it. */
+  --overlay-end: 3.5rem;
 
   position: relative;
   min-width: 0;
-}
-
-.map-page[data-view="history"] {
-  --overlay-rows: 2;
 }
 
 @media (max-width: 47.99rem) {
@@ -94,7 +90,7 @@
 /* A small status chip floating over the map ("Updating"), top centre, under the bar when it is wide. */
 .map-page__chip {
   position: absolute;
-  top: var(--overlay-end);
+  top: calc(var(--overlay-end) + var(--space-2));
   left: 50%;
   z-index: 3;
   display: inline-flex;
@@ -119,7 +115,7 @@
 @media (max-width: 63.99rem) {
   html:has(.map-page) {
     overscroll-behavior: none;
-    scroll-padding-top: calc(var(--header-height) + var(--safe-top));
+    scroll-padding-top: calc(var(--header-height) + var(--safe-top) + var(--banner-height, 0px));
     scroll-snap-type: y proximity;
   }
 
@@ -171,7 +167,7 @@
     border-start-start-radius: var(--radius-xl);
     border-start-end-radius: var(--radius-xl);
     background: var(--color-bg);
-    box-shadow: 0 -8px 24px rgb(29 27 25 / 14%);
+    box-shadow: var(--shadow-sheet);
   }
 
   .map-page__grabber {
@@ -183,18 +179,18 @@
     background: var(--color-border-strong);
   }
 
-  /* MapLibre's buttons sit under the bar, not under it. */
+  /* MapLibre's zoom buttons sit below the bar, which spans the map. */
   .map-page .maplibregl-ctrl-top-right {
-    margin-top: calc(var(--overlay-end) - var(--space-3));
+    margin-top: var(--overlay-end);
   }
 }
 
 @media (min-width: 64rem) {
   .map-page {
-    height: calc(100dvh - var(--header-height) - var(--safe-top));
+    height: calc(100dvh - var(--header-height) - var(--safe-top) - var(--banner-height, 0px));
   }
 
-  /* Not positioned: the stage inside it is placed against the page and does not scroll with it. */
+  /* Not positioned: the stage beside it is placed against the page and does not scroll with it. */
   .map-page__panel {
     width: var(--panel-width);
     height: 100%;

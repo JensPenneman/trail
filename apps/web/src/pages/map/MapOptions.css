@@ -25,34 +25,14 @@
   color: var(--color-text-2);
 }
 
-/* A popover under the button; closed, it is hidden but stays in the tree. */
-.map-options__body {
-  position: absolute;
-  inset-block-start: calc(100% + var(--space-2));
-  inset-inline-start: 0;
-  z-index: 6;
-  display: grid;
-  gap: var(--space-4);
-  box-sizing: border-box;
-  width: 22rem;
-  max-width: calc(100vw - 2 * var(--space-4));
-  max-height: min(34rem, calc(100dvh - var(--header-height) - 9rem));
-  padding: var(--space-4);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-l);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-3);
-}
-
 .map-options:not(.is-open) .map-options__body {
   display: none;
 }
 
-.map-options__summary {
+.map-options__note {
   color: var(--color-text-2);
   font-size: var(--text-s);
+  font-weight: 600;
 }
 
 .map-options__label {
@@ -60,23 +40,14 @@
   font-weight: 600;
 }
 
-/* Phones: the popover spans the map under the bar. */
+/* Phones: the popover spans the map under the bar (MapPopover.css), so the button is no anchor. */
 @media (max-width: 63.99rem) {
   .map-options {
     position: static;
   }
-
-  .map-options__body {
-    inset-inline: 0;
-    width: auto;
-    max-width: none;
-    /* Within the map, which the sheet covers below its peek. */
-    max-height: calc(var(--sheet-view) - var(--sheet-peek) - 6rem);
-  }
 }
 
 @media (forced-colors: active) {
-  .map-options__body,
   .map-options__toggle {
     border-color: CanvasText;
   }

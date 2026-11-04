@@ -4,8 +4,8 @@ import { useDismiss } from "../../ui/useDismiss";
 import "./MapOptions.css";
 
 interface MapOptionsProps {
-  /** The current choices in a few words, at the top of the popover. */
-  summary: string;
+  /** What is left out while a filter is on ("1 of 2 devices"), shown on the button. */
+  note: string | null;
   children: ReactNode;
 }
 
@@ -16,7 +16,7 @@ interface MapOptionsProps {
  * returns focus to the button). The body stays in the document while closed
  * and is hidden by CSS only, so what is in it keeps its place in the tree.
  */
-export function MapOptions({ summary, children }: MapOptionsProps) {
+export function MapOptions({ note, children }: MapOptionsProps) {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const root = useRef<HTMLDivElement | null>(null);
@@ -41,9 +41,14 @@ export function MapOptions({ summary, children }: MapOptionsProps) {
       >
         <Icon name="layers" />
         <span>Map options</span>
+        {note === null ? null : (
+          <>
+            {" "}
+            <span className="map-options__note">{note}</span>
+          </>
+        )}
       </button>
-      <div className="map-options__body" id={bodyId}>
-        <p className="map-options__summary">{summary}</p>
+      <div className="map-options__body map-popover" id={bodyId}>
         {children}
       </div>
     </div>

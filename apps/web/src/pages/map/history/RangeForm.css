@@ -33,3 +33,15 @@
     margin-top: 0;
   }
 }
+
+/* In a popover the room is the popover's, not the viewport's. */
+@container (max-width: 26rem) {
+  .range-form__dates {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .range-form__apply {
+    grid-column: 1 / -1;
+    margin-top: 0;
+  }
+}

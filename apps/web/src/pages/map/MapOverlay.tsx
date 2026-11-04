@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import type { MapView } from "./mapViews";
 import { ViewSwitch } from "./ViewSwitch";
 import "./MapOverlay.css";
@@ -11,6 +11,8 @@ interface MapOverlayProps {
   options: ReactNode;
   /** The view's own row (History's day or period), under the bar. */
   controls: ReactNode;
+  /** Where the controls end, in px from the map's top edge: they wrap, so it is measured. */
+  onMeasure: (end: number) => void;
 }
 
 /**
@@ -19,9 +21,26 @@ interface MapOverlayProps {
  * row. The map's zoom buttons keep the top-right corner. The wrapper lets
  * presses through to the map; its children take them.
  */
-export function MapOverlay({ view, views, onViewChange, options, controls }: MapOverlayProps) {
+export function MapOverlay({
+  view,
+  views,
+  onViewChange,
+  options,
+  controls,
+  onMeasure,
+}: MapOverlayProps) {
+  const root = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const element = root.current;
+    if (element === null || typeof ResizeObserver === "undefined") return undefined;
+    const measure = () => onMeasure(element.offsetTop + element.offsetHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [onMeasure]);
   return (
-    <div className="map-overlay">
+    <div className="map-overlay" ref={root}>
       <div className="map-overlay__bar">
         <ViewSwitch view={view} views={views} onChange={onViewChange} />
         {options}

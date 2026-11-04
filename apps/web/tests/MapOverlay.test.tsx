@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -7,7 +7,7 @@ import { MapOptions } from "../src/pages/map/MapOptions";
 import { MapOverlay } from "../src/pages/map/MapOverlay";
 
 const options = (
-  <MapOptions summary="Standard map">
+  <MapOptions note="1 of 2 devices">
     <p>Map style</p>
   </MapOptions>
 );
@@ -22,7 +22,8 @@ function Controls({ mode = "day" as "day" | "range" }) {
       onRange={vi.fn()}
       open={open}
       onOpenChange={setOpen}
-      calendar={<p>Calendar</p>}
+      calendar={() => <p>Calendar</p>}
+      focusIn={false}
     />
   );
 }
@@ -36,10 +37,11 @@ describe("MapOverlay", () => {
         onViewChange={vi.fn()}
         options={options}
         controls={<p>History row</p>}
+        onMeasure={vi.fn()}
       />,
     );
     expect(screen.getByRole("group", { name: "Map view" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Map options" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: /^Map options/ })).toHaveAttribute(
       "aria-expanded",
       "false",
     );
@@ -48,15 +50,31 @@ describe("MapOverlay", () => {
 });
 
 describe("MapOptions", () => {
-  it("keeps its body in the document while closed", () => {
+  it("keeps its body in the document while closed, and names a filter on its button", () => {
     render(options);
     expect(screen.getByText("Map style")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Map options 1 of 2 devices" })).toBeInTheDocument();
+  });
+
+  it("closes when focus moves outside, without taking it back", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        {options}
+        <button type="button">Elsewhere</button>
+      </>,
+    );
+    const button = screen.getByRole("button", { name: /^Map options/ });
+    await user.click(button);
+    act(() => screen.getByRole("button", { name: "Elsewhere" }).focus());
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Elsewhere" })).toHaveFocus();
   });
 
   it("opens from its button, closes on Escape with focus back on the button", async () => {
     const user = userEvent.setup();
     render(options);
-    const button = screen.getByRole("button", { name: "Map options" });
+    const button = screen.getByRole("button", { name: /^Map options/ });
     await user.click(button);
     expect(button).toHaveAttribute("aria-expanded", "true");
     await user.keyboard("{Escape}");
@@ -72,7 +90,7 @@ describe("MapOptions", () => {
         <button type="button">Elsewhere</button>
       </>,
     );
-    const button = screen.getByRole("button", { name: "Map options" });
+    const button = screen.getByRole("button", { name: /^Map options/ });
     await user.click(button);
     await user.click(screen.getByRole("button", { name: "Elsewhere" }));
     expect(button).toHaveAttribute("aria-expanded", "false");
@@ -82,9 +100,9 @@ describe("MapOptions", () => {
   it("stays open for a press inside", async () => {
     const user = userEvent.setup();
     render(options);
-    const button = screen.getByRole("button", { name: "Map options" });
+    const button = screen.getByRole("button", { name: /^Map options/ });
     await user.click(button);
-    await user.click(screen.getByText("Standard map"));
+    await user.click(screen.getByText("Map style"));
     expect(button).toHaveAttribute("aria-expanded", "true");
   });
 });

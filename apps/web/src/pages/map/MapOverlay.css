@@ -1,6 +1,7 @@
 .map-overlay {
   position: absolute;
-  inset: var(--space-3) calc(var(--target) + var(--space-6)) auto var(--space-3);
+  inset: var(--space-3) calc(var(--target) + var(--space-6)) auto
+    calc(var(--space-3) + var(--safe-left));
   z-index: 5;
   display: grid;
   justify-items: start;
@@ -33,6 +34,6 @@
 /* Phones: the bar spans the map; MapLibre's buttons sit under it (see PeoplePage.css). */
 @media (max-width: 63.99rem) {
   .map-overlay {
-    inset-inline-end: var(--space-3);
+    inset-inline-end: calc(var(--space-3) + var(--safe-right));
   }
 }

@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { DocumentTitle } from "../../app/DocumentTitle";
 import { useReadOnly } from "../../app/useReadOnly";
 import { useSessionUser } from "../../app/useSessionUser";
 import { useDeviceColors } from "../../devices/useDeviceColors";
 import { LazyTrailMap } from "../../map/LazyTrailMap";
-import { mapStyleLabels } from "../../map/mapStyleChoices";
 import type { MapViewState } from "../../map/mapTypes";
 import { useMapStyle } from "../../map/useMapStyle";
 import { usePersonColors } from "../../people/usePersonColors";
@@ -14,7 +13,7 @@ import { useConfig } from "../../queries/useConfig";
 import { useDevices } from "../../queries/useDevices";
 import { usePeople } from "../../queries/usePeople";
 import { useNow } from "../../time/useNow";
-import { LevelControl, levelLabels } from "../../transport/LevelControl";
+import { LevelControl } from "../../transport/LevelControl";
 import { ModeLegend } from "../../transport/ModeLegend";
 import { useTrackLevel } from "../../transport/useTrackLevel";
 import { Button } from "../../ui/Button";
@@ -86,6 +85,8 @@ export function PeoplePage() {
   const readOnly = useReadOnly();
   const thresholds = config.data?.thresholds ?? defaultThresholds;
   const [viewport, setViewport] = useState<MapViewState | null>(null);
+  // Where the floating controls end, measured: they wrap on narrow screens.
+  const [overlayEnd, setOverlayEnd] = useState(56);
   // The device filter is folded away among the map's options, and open when an address sets one.
   const [filterOpen] = useState(() => search.devices !== null);
   const sharing = useSharingActions(people.data ?? []);
@@ -168,6 +169,15 @@ export function PeoplePage() {
     today,
   });
   const content = view === "live" ? live : view === "history" ? history : heat;
+  // The map fits what it shows under the controls: below the bar, and left of the zoom column on
+  // phones, where the bar spans the map.
+  const fit =
+    content.map.fit === undefined
+      ? undefined
+      : {
+          ...content.map.fit,
+          inset: { top: overlayEnd + 8, right: wide ? 0 : 64 },
+        };
 
   // Where the selected person has been: Live's today (a day back is History), History's day or
   // period. Heat draws nobody else.
@@ -211,6 +221,13 @@ export function PeoplePage() {
     const half = snaps.current?.querySelector<HTMLElement>("[data-detent=half]");
     half?.scrollIntoView?.({ block: "start", behavior: reducedMotion ? "instant" : "smooth" });
   }, [selectedKey, wide, reducedMotion]);
+  // Focus on the bar, the map or its buttons, which a lifted sheet covers: lower the sheet to its
+  // peek, so what has focus can be seen (WCAG 2.4.11).
+  const lowerSheet = () => {
+    if (!wide && window.scrollY > 0) {
+      window.scrollTo({ top: 0, behavior: reducedMotion ? "instant" : "smooth" });
+    }
+  };
   const toTop = () => {
     if (panel.current !== null) panel.current.scrollTop = 0;
   };
@@ -246,14 +263,9 @@ export function PeoplePage() {
     0,
   );
   const transport = content.transport;
-  const summary = [
-    // Which devices draw only matters when some do not.
-    ...(deviceCount > 1 && shownCount < deviceCount
-      ? [`${shownCount} of ${deviceCount} devices`]
-      : []),
-    ...(transport === null ? [] : [levelLabels[level]]),
-    `${mapStyleLabels[mapStyle.choice]} map`,
-  ].join(" · ");
+  // Which devices draw only matters when some do not: it shows on the button, as the map shows less.
+  const note =
+    deviceCount > 1 && shownCount < deviceCount ? `${shownCount} of ${deviceCount} devices` : null;
 
   // The view's part of the list and of every detail, with the label that names it.
   const viewPanel =
@@ -266,7 +278,7 @@ export function PeoplePage() {
   // The history slider: over the foot of the map beside the panel, first in the sheet on phones.
   const foot = content.foot === null ? null : <div className="map-page__foot">{content.foot}</div>;
   const options = (
-    <MapOptions summary={summary}>
+    <MapOptions note={note}>
       <MapStyleControl
         choice={mapStyle.choice}
         choices={mapStyle.choices}
@@ -301,15 +313,20 @@ export function PeoplePage() {
   );
 
   return (
-    <div className="map-page" data-view={view}>
+    <div
+      className="map-page"
+      data-view={view}
+      style={{ "--overlay-end": `${overlayEnd}px` } as CSSProperties}
+    >
       <DocumentTitle title={`${content.title} · People`} />
-      <div className="map-page__stage">
+      <div className="map-page__stage" onFocus={lowerSheet}>
         <MapOverlay
           view={view}
           views={viewsFor(heatOffered)}
           onViewChange={switchView}
           options={options}
           controls={content.controls}
+          onMeasure={setOverlayEnd}
         />
         <div className="map-page__canvas">
           {mapStyle.style === null ? null : (
@@ -318,6 +335,7 @@ export function PeoplePage() {
               mapStyle={mapStyle.style}
               dark={mapStyle.dark}
               notice={mapStyle.notice}
+              {...(fit === undefined ? {} : { fit })}
               onViewChange={setViewport}
               // One finger pans: on phones the page scrolls through the sheet, not the map.
               cooperativeGestures={false}

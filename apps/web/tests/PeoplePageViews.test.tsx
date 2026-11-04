@@ -129,6 +129,47 @@ describe("the People page, History", () => {
     expect(router.state.location.search).toBe("?view=history&date=2026-09-10");
   });
 
+  it("keeps the date popover open while the day becomes a period, and shows the period form", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, {
+      url: "/?view=history&date=2026-09-12",
+      user,
+    });
+    const date = screen.getByRole("button", { name: /choose another day/ });
+    await person.click(date);
+    await person.click(screen.getByRole("radio", { name: "Period" }));
+    expect(router.state.location.search).toContain("from=");
+    // The same popover, now with the form; focus stays on the radio that was pressed.
+    expect(await screen.findByRole("button", { name: "Show" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Period" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: /choose another day/ })).toBe(date);
+  });
+
+  it("closes the popover when a period is applied, with focus on the date button", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, {
+      url: "/?view=history&from=2026-09-01&to=2026-09-07",
+      user,
+    });
+    await person.click(await screen.findByRole("button", { name: /1 Sept – .*7 Sept/ }));
+    await person.click(screen.getByRole("button", { name: "Last 7 days" }));
+    expect(router.state.location.search).toContain("from=");
+    expect(screen.queryByRole("radio", { name: "Period" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /choose another day|–/ })).toHaveFocus();
+  });
+
+  it("closes the popover when a day is picked, with focus on the date button", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: "/?view=history&date=2026-09-12", user });
+    await person.click(screen.getByRole("button", { name: /choose another day/ }));
+    await person.click(await screen.findByRole("button", { name: /Thursday, 10 September 2026/ }));
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /choose another day/ })).toHaveFocus();
+  });
+
   it("shows a period from a deep link", async () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { url: "/?view=history&from=2026-09-01&to=2026-09-07", user });

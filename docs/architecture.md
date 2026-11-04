@@ -2868,17 +2868,20 @@ count among them, since they lead to signed-in pages.
   top-left, a bar with the view switch (group "Map view") and a **Map
   options** button with the layers icon; under it the view's own row. The
   map's zoom and fit buttons keep the top-right corner (on phones they sit
-  under the bar, `--overlay-rows`), the "Updating" chip sits top centre (under
-  the bar where the screen is not wide enough for both), and History's time
+  under the bar, whose height is measured into `--overlay-end` since it wraps
+  on narrow screens), the "Updating" chip sits top centre (under the bar where
+  the screen is not wide enough for both), the map fits tracks under the
+  controls (`fit.inset`: below the bar, left of the zoom column on phones), and History's time
   slider floats at the map's foot (first block of the sheet on phones). The
   DOM order is the controls, the map, then the panel, so the keyboard meets
   them in that order.
 
   Map options is a non-modal popover (`MapOptions`, `useDismiss`): Escape
-  closes it and returns focus to its button, a press outside (on the map,
-  say) closes it, and the map stays usable beside it. A one-line summary
-  tops it (the level, the style; devices only while some are left out, "1 of
-  2 devices"), then the **map style** (Auto, which follows the system's light
+  closes it and returns focus to its button; a press outside (on the map,
+  say) or focus moving outside closes it and leaves focus where it is. The map
+  stays usable beside it. While a device filter leaves devices out the button
+  says so, "1 of 2 devices", as part of its name. In the popover: the **map
+  style** (Auto, which follows the system's light
   or dark setting, Light, Dark, and Satellite when the server has imagery;
   remembered in localStorage `trail.mapStyle`, else the account's
   preference, a dark or satellite map drawing Trail's lines and dots in their
@@ -2898,7 +2901,10 @@ count among them, since they lead to signed-in pages.
   **Today** (a period shows the date button alone). The date button
   (`PeriodControl`, named by its date and ", choose another day") opens a
   popover with **Day | Period** and the month calendar or the from–to form,
-  closed like the options; picking a day closes it.
+  closed like the options. Switching between day and period keeps it open (one
+  tree, so the button does not remount); picking a day or applying a period
+  closes it, and every close from inside returns focus to the date button.
+  "Find a day with data" in the panel opens it and moves focus to the day shown.
 
   Beside the map (≥ 64rem) the list is a docked sidebar (`--panel-width`)
   that scrolls by itself while the page does not, and the map fills the rest.
@@ -2909,7 +2915,11 @@ count among them, since they lead to signed-in pages.
   presses through to the map, then the sheet with a decorative grabber, and
   three detents (peek, half, full) as scroll-snap points
   (`scroll-snap-type: y proximity`, `overscroll-behavior: none`). Selecting a
-  person lifts the sheet to the half detent (at once under reduced motion).
+  person lifts the sheet to the half detent (at once under reduced motion),
+  and focus on the bar, the map or its buttons, which a lifted sheet covers,
+  lowers it to peek. The map starts under the header and, offline, under the
+  sticky offline banner (`--banner-height`); the detents use `svh`, so the
+  browser's collapsing toolbar does not move them.
 
   **The people list** — Find My for Trail (§8.5): people, not their
   devices. The h1 stays "People"; beside it an icon-only **Share my
