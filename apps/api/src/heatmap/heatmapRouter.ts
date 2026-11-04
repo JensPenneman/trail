@@ -21,7 +21,7 @@ import { findDayCells } from "./findDayCells";
 import { findHeatCells } from "./findHeatCells";
 import { findStopCells } from "./findStopCells";
 import { heatCellCap } from "./heatCellCap";
-import { heatDaysMissing, heatDaysValidator } from "./heatDaysValidator";
+import { heatDaysMarked, heatDaysMissing, heatDaysValidator } from "./heatDaysValidator";
 import { heatValidator } from "./heatValidator";
 
 /**
@@ -97,6 +97,7 @@ export function heatmapRouter(ctx: AppContext): Router {
           period: { from: scope.period.from, to: scope.period.to },
           pending:
             (await hasPendingWork(ctx.db, scope.deviceIds, scope.start, scope.end)) ||
+            (await heatDaysMarked(ctx.db, scope.deviceIds, scope.period)) > 0 ||
             (await heatDaysMissing(ctx.db, scope.deviceIds, scope.period, scope.timezone)),
         };
         return body;

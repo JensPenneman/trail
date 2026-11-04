@@ -23,7 +23,8 @@ interface MarkRow extends Record<string, unknown> {
  * seconds after the first wake-up reads the marks, rebuilds the days of each device in a
  * transaction of its own under its processing lock, and deletes the marks it served (one made
  * again meanwhile stays). Because the marks are rows, a crash, a kill or an error loses none:
- * a failed run is logged and tried again with a growing wait, and at start `recover` marks recent
+ * a failed rebuild is logged and its device tried again with a growing wait of its own (another
+ * device's marks are served meanwhile), and at start `recover` marks recent
  * days whose points or segments are newer than their cells and drains what is marked. An error
  * here never rolls back, retries or stalls a pass.
  */
@@ -32,8 +33,10 @@ export class HeatDaysScheduler {
   readonly #logger: Logger;
   readonly #delayMs: number;
   readonly #retryMs: number;
-  #failures = 0;
+  /** Devices whose last rebuild failed: how many times in a row, and when they may be tried again. */
+  readonly #backoff = new Map<string, { failures: number; retryAt: number }>();
   #timer: NodeJS.Timeout | undefined;
+  #timerAt = 0;
   #running: Promise<void> | null = null;
   #stopped = false;
 
@@ -49,12 +52,12 @@ export class HeatDaysScheduler {
     this.#arm(this.#delayMs);
   }
 
-  /** Drains the marks now and waits for it (tests, shutdown). */
+  /** Drains the marks now, a device in its wait included, and waits for it (tests, shutdown). */
   async flush(): Promise<void> {
     clearTimeout(this.#timer);
     this.#timer = undefined;
     await this.#running;
-    await this.#run();
+    await this.#run(true);
   }
 
   /** Stops accepting work; call `flush` first to finish what is marked. */
@@ -70,22 +73,26 @@ export class HeatDaysScheduler {
    */
   async recover(): Promise<void> {
     try {
+      // Device by device (a lateral subquery each): the points of one device in a time range read
+      // the primary key in order, where a filter on time alone would scan every device's points.
       await this.#db.execute(sql`
         INSERT INTO heat_day_marks (device_id, day, marked_at)
         SELECT w.device_id, w.day, now()
         FROM (
-          SELECT p.device_id, (p.recorded_at AT TIME ZONE u.timezone)::date AS day,
-            max(p.processed_at) AS newest
-          FROM processed_points p
-          JOIN devices d ON d.id = p.device_id JOIN users u ON u.id = d.user_id
-          WHERE p.recorded_at >= now() - ${`${recoverDays + 1} days`}::interval
-          GROUP BY 1, 2
-          UNION ALL
-          SELECT s.device_id, (s.started_at AT TIME ZONE u.timezone)::date, max(s.computed_at)
-          FROM segments s
-          JOIN devices d ON d.id = s.device_id JOIN users u ON u.id = d.user_id
-          WHERE s.started_at >= now() - ${`${recoverDays + 1} days`}::interval
-          GROUP BY 1, 2
+          SELECT d.id AS device_id, x.day, x.newest
+          FROM devices d
+          JOIN users u ON u.id = d.user_id
+          CROSS JOIN LATERAL (
+            SELECT (p.recorded_at AT TIME ZONE u.timezone)::date AS day, max(p.processed_at) AS newest
+            FROM processed_points p
+            WHERE p.device_id = d.id AND p.recorded_at >= now() - ${`${recoverDays + 1} days`}::interval
+            GROUP BY 1
+            UNION ALL
+            SELECT (s.started_at AT TIME ZONE u.timezone)::date, max(s.computed_at)
+            FROM segments s
+            WHERE s.device_id = d.id AND s.started_at >= now() - ${`${recoverDays + 1} days`}::interval
+            GROUP BY 1
+          ) x
         ) w
         WHERE w.day >= current_date - ${recoverDays}::int
         GROUP BY w.device_id, w.day
@@ -100,28 +107,38 @@ export class HeatDaysScheduler {
     await this.flush();
   }
 
+  /** A run in `ms`: sooner than one already armed replaces it, never later. */
   #arm(ms: number): void {
-    if (this.#stopped || this.#timer !== undefined) return;
+    if (this.#stopped) return;
+    const at = Date.now() + ms;
+    if (this.#timer !== undefined) {
+      if (this.#timerAt <= at) return;
+      clearTimeout(this.#timer);
+    }
+    this.#timerAt = at;
     this.#timer = setTimeout(() => {
       this.#timer = undefined;
-      void this.#run();
+      void this.#run(false);
     }, ms);
     this.#timer.unref();
   }
 
-  async #run(): Promise<void> {
+  async #run(force: boolean): Promise<void> {
     if (this.#running !== null) {
       await this.#running;
       return;
     }
-    this.#running = this.#drain().finally(() => {
+    this.#running = this.#drain(force).finally(() => {
       this.#running = null;
     });
     await this.#running;
   }
 
-  /** Serves every mark there is; when a device's rebuild fails, tries again after a wait. */
-  async #drain(): Promise<void> {
+  /**
+   * Serves the marks of every device not waiting out a failure (`force`: all of them); a device
+   * whose rebuild fails waits, twice as long each time, while the others go on.
+   */
+  async #drain(force: boolean): Promise<void> {
     let marks: MarkRow[];
     try {
       marks = (
@@ -133,14 +150,17 @@ export class HeatDaysScheduler {
       ).rows;
     } catch (error) {
       this.#logger.error({ err: error }, "heat days could not be read");
-      this.#retry();
+      this.#arm(this.#retryMs);
       return;
     }
     const byDevice = new Map<string, MarkRow[]>();
     for (const mark of marks)
       byDevice.set(mark.device_id, [...(byDevice.get(mark.device_id) ?? []), mark]);
-    let failed = false;
+    // A device with nothing marked has nothing to wait for.
+    for (const deviceId of this.#backoff.keys())
+      if (!byDevice.has(deviceId)) this.#backoff.delete(deviceId);
     for (const [deviceId, own] of byDevice) {
+      if (!force && (this.#backoff.get(deviceId)?.retryAt ?? 0) > Date.now()) continue;
       const started = performance.now();
       const days = own.map((mark) => mark.day);
       const timezone = own[0]?.timezone ?? "UTC";
@@ -158,21 +178,22 @@ export class HeatDaysScheduler {
             `);
           }
         });
+        this.#backoff.delete(deviceId);
         this.#logger.debug(
           { deviceId, days: days.length, heatDaysMs: Math.round(performance.now() - started) },
           "heat days rebuilt",
         );
       } catch (error) {
-        failed = true;
+        const failures = (this.#backoff.get(deviceId)?.failures ?? 0) + 1;
+        this.#backoff.set(deviceId, {
+          failures,
+          retryAt: Date.now() + Math.min(retryMaxMs, this.#retryMs * 2 ** (failures - 1)),
+        });
         this.#logger.error({ err: error, deviceId, days }, "heat days could not be rebuilt");
       }
     }
-    if (failed) this.#retry();
-    else this.#failures = 0;
-  }
-
-  #retry(): void {
-    this.#failures += 1;
-    this.#arm(Math.min(retryMaxMs, this.#retryMs * 2 ** (this.#failures - 1)));
+    // The next run is the earliest wait that is over; a device that is well again is not in it.
+    const waits = [...this.#backoff.values()].map((entry) => entry.retryAt);
+    if (waits.length > 0) this.#arm(Math.max(0, Math.min(...waits) - Date.now()));
   }
 }

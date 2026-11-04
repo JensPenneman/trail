@@ -17,12 +17,13 @@ import { createTestContext, type TestContext } from "../support/testContext";
 let t: TestContext;
 let device = "";
 let token = "";
+let agent: Awaited<ReturnType<typeof signUpWithCookie>>["agent"];
 const logger = pino({ level: "silent" });
 
 beforeAll(async () => {
   await resetDatabase();
   t = await createTestContext({ waySource: new FixtureWaySource() });
-  const { agent } = await signUpWithCookie(t.app, "first@example.com");
+  ({ agent } = await signUpWithCookie(t.app, "first@example.com"));
   const made = await createDevice(agent, { name: "Drive" });
   device = made.device.id;
   token = made.credentials.accessToken;
@@ -154,5 +155,54 @@ describe("the per-day cells of a pass", () => {
     ).rows[0]?.at;
     expect(after).not.toBe(before);
     expect(await marks()).toBe(0);
+  });
+
+  it("keeps a device that fails to itself: another's marks are served in its wait", async () => {
+    const other = await createDevice(agent, { name: "Other drive" });
+    await uploadJourney(t.app, other.credentials.accessToken, motorwayDrive(1_793_300_000));
+    await t.ctx.background.drain(5000);
+    await t.ctx.processing.flush();
+    await new HeatDaysScheduler(t.ctx.db, logger).flush();
+    const otherId = other.device.id;
+    const count = async (table: string, id: string) =>
+      (
+        await t.ctx.db.execute<{ n: number }>(
+          sql`SELECT count(*)::int AS n FROM ${sql.raw(table)} WHERE device_id = ${id}::uuid`,
+        )
+      ).rows[0]?.n ?? 0;
+    const markAll = async (id: string) =>
+      t.ctx.db.execute(sql`
+        INSERT INTO heat_day_marks (device_id, day)
+        SELECT DISTINCT ${id}::uuid, day FROM heat_days WHERE device_id = ${id}::uuid
+        ON CONFLICT DO NOTHING`);
+    await markAll(device);
+    await markAll(otherId);
+    // The first device cannot be written; its wait is long, the other one's marks are not held back.
+    await t.ctx.db.execute(
+      sql.raw(
+        `ALTER TABLE heat_days ADD CONSTRAINT heat_days_boom CHECK (device_id <> '${device}'::uuid) NOT VALID`,
+      ),
+    );
+    const scheduler = new HeatDaysScheduler(t.ctx.db, logger, { delayMs: 20, retryMs: 600_000 });
+    try {
+      await scheduler.flush();
+      expect(await count("heat_day_marks", device)).toBeGreaterThan(0);
+      expect(await count("heat_day_marks", otherId)).toBe(0);
+      // A pass marks the other device again while the first one's retry is armed far ahead.
+      await t.ctx.db.execute(sql`
+        INSERT INTO heat_day_marks (device_id, day)
+        SELECT DISTINCT ${otherId}::uuid, day FROM heat_days WHERE device_id = ${otherId}::uuid`);
+      scheduler.wake();
+      await vi.waitFor(async () => expect(await count("heat_day_marks", otherId)).toBe(0), {
+        timeout: 5000,
+      });
+      // The device in its wait is not hammered: still marked, still waiting.
+      expect(await count("heat_day_marks", device)).toBeGreaterThan(0);
+    } finally {
+      scheduler.stop();
+      await t.ctx.db.execute(sql`ALTER TABLE heat_days DROP CONSTRAINT heat_days_boom`);
+    }
+    await new HeatDaysScheduler(t.ctx.db, logger).flush();
+    expect(await count("heat_day_marks", device)).toBe(0);
   });
 });

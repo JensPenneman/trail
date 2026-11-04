@@ -285,6 +285,28 @@ describe("what is read", () => {
     );
   });
 
+  it("is pending while a day of the period is marked for a rebuild, and its tag moves with it", async () => {
+    const url = `${apiPaths.heatmap}?bbox=3.6,50.9,3.9,51.2&zoom=13&heat=moving&from=${day1}&to=${day2}`;
+    const first = await owner.get(url).expect(200);
+    expect(heatmapResponseSchema.parse(first.body).pending).toBe(false);
+    await t.ctx.db.execute(
+      sql`INSERT INTO heat_day_marks (device_id, day) VALUES (${device}::uuid, ${day1}::date)`,
+    );
+    try {
+      const marked = await owner
+        .get(url)
+        .set("If-None-Match", String(first.headers["etag"]))
+        .expect(200);
+      expect(heatmapResponseSchema.parse(marked.body).pending).toBe(true);
+      expect(marked.headers["etag"]).not.toBe(first.headers["etag"]);
+    } finally {
+      await t.ctx.db.execute(sql`DELETE FROM heat_day_marks WHERE device_id = ${device}::uuid`);
+    }
+    expect(heatmapResponseSchema.parse((await owner.get(url).expect(200)).body).pending).toBe(
+      false,
+    );
+  });
+
   it("changes its validator with the rows of the period", async () => {
     const before = await heatDaysValidator(t.ctx.db, [device], { from: day1, to: day2 });
     await rebuild([day1]);
