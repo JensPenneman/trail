@@ -435,10 +435,14 @@ container); a pass does not do it: it marks the days it touched in
 committed `HeatDaysScheduler` rebuilds them in a run 15 s later, each device in a
 transaction of its own under its processing lock, each run of consecutive days
 in one statement, and deletes the marks it served (one made again meanwhile
-stays). An error there is logged, retried with a growing wait and never rolls
-back or retries a pass; a crash loses nothing, since the marks are rows, and at
+stays). An error there is logged and never rolls back or retries a pass; the
+device that failed waits, twice as long each time (a wait of its own, so that
+the marks of the others are served meanwhile and a sooner wake-up is never held
+back by a later retry); a crash loses nothing, since the marks are rows, and at
 start the days of the last 30 whose points or segments are newer than their
-cells are marked and the marks drained.
+cells are marked (device by device, in primary-key order) and the marks drained.
+An answer of the measures of movement is `pending` while a day of its period is
+marked, and its tag moves with the marks.
 
 **heat_cells** — pre-aggregated all-time density for the heatmap: PK
 `(device_id, z, x, y)`; `count` (int), `first_at`, `last_at`. `z` ∈ {6, 9, 12,
@@ -2160,7 +2164,7 @@ hashed for nothing. The dashboard's routers use `answerConditionally`, v1
 | `GET /api/v1/tracks` | the raw strings at level `raw`, raw and processed otherwise |
 | `GET /api/v1/segments` | raw and processed (the cursor and limit are in the query) |
 | `GET /api/stats/days`, `/api/v1/stats/days` | the body: a few hundred small rows with their stamps |
-| `GET /api/heatmap` | for points: the devices, the sum of their point counters (an upload of points too inaccurate for the cells moves it: a needless 200, never a wrong 304), the newest `updated_at` of their rows, which a deletion sets (as many points uploaded as deleted would leave the sum as it was), and the generation of rebuilt cells (`heatGeneration`, which the start-up fill moves); for time and visits: the Insights scope (zone, period, devices) and `insightsValidator` over the stays of the period, with `pending`, read before the cells; for time on the move, speed and top speed: the same scope and `insightsValidator`, `heatDaysValidator` (the rows of the period's days at level 12: their count, newest `computed_at` and points) and the generation of rebuilds, with the mode, read before the cells |
+| `GET /api/heatmap` | for points: the devices, the sum of their point counters (an upload of points too inaccurate for the cells moves it: a needless 200, never a wrong 304), the newest `updated_at` of their rows, which a deletion sets (as many points uploaded as deleted would leave the sum as it was), and the generation of rebuilt cells (`heatGeneration`, which the start-up fill moves); for time and visits: the Insights scope (zone, period, devices) and `insightsValidator` over the stays of the period, with `pending`, read before the cells; for time on the move, speed and top speed: the same scope and `insightsValidator`, `heatDaysValidator` (the rows of the period's days at level 12: their count, newest `computed_at` and points, and the marks waiting) and the generation of rebuilds, with the mode, read before the cells |
 | `GET /api/v1/insights/*` | the scope (zone, period, devices) and over the segments of the period — the overview's with the period before — their count, newest `computed_at`, versions and the sums of their bounds, and `pending`; Places, Place and the named roads add `mapStamp` (the newest `osm_tiles.fetched_at` and the builds of the ready regions), since names come from map data, and the named roads how many moves of the period still lack their totals (the fill changes no stamp). The road a place is named after comes from the points around its stays (`processed_points.way_id`) and is not in the validator: a pass that moves only those points shows in the name once a stay or the map data changes |
 | `GET /api/v1/people` | the body (projecting it is cheap: the saving is bytes and parsing) |
 

@@ -21,6 +21,25 @@ interface Row extends Record<string, unknown> {
 }
 
 /**
+ * How many (device, day) pairs of the period are marked for a rebuild that has not run yet: a pass
+ * has changed their points or segments, and their cells (some seconds behind it) are not made
+ * again. The answer is `pending` while there are any, and its tag moves with them.
+ */
+export async function heatDaysMarked(
+  db: Executor,
+  deviceIds: readonly string[],
+  period: { from: string; to: string },
+): Promise<number> {
+  if (deviceIds.length === 0) return 0;
+  const result = await db.execute<{ marked: number }>(sql`
+    SELECT count(*)::int AS marked FROM heat_day_marks
+    WHERE device_id = ANY(${sql.param(deviceIds)}::uuid[])
+      AND day BETWEEN ${period.from}::date AND ${period.to}::date
+  `);
+  return result.rows[0]?.marked ?? 0;
+}
+
+/**
  * What an answer made of `heat_days` is made of, read before the cells (docs/architecture.md
  * §8.9): the rows of the period's days at the coarsest level — their count, newest `computed_at`
  * and points, which a pass, a mode correction, a deletion and a rebuild in a new time zone all
@@ -33,6 +52,7 @@ export async function heatDaysValidator(
   period: { from: string; to: string },
 ): Promise<unknown> {
   if (deviceIds.length === 0) return [heatGeneration(), null];
+  const marked = await heatDaysMarked(db, deviceIds, period);
   const result = await db.execute<Row>(sql`
     SELECT count(*)::int AS rows, max(computed_at)::text AS computed, sum(points)::text AS points
     FROM heat_days
@@ -40,7 +60,7 @@ export async function heatDaysValidator(
       AND day BETWEEN ${period.from}::date AND ${period.to}::date
   `);
   const row = result.rows[0];
-  return [heatGeneration(), row?.rows ?? 0, row?.computed ?? null, row?.points ?? null];
+  return [heatGeneration(), row?.rows ?? 0, row?.computed ?? null, row?.points ?? null, marked];
 }
 
 /**
