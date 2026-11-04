@@ -33,6 +33,7 @@ export function InsightsOptions({ state }: { state: InsightsPeriodState }) {
       open={open}
       onOpenChange={setOpen}
       popoverId={popoverId}
+      align="end"
       button={(props) => (
         <button type="button" className="insights-bar__options" {...props}>
           <Icon name="settings" />

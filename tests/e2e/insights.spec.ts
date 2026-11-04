@@ -47,6 +47,12 @@ async function processed(page: Page): Promise<void> {
     .toEqual(["walking", "car"]);
 }
 
+/** The last day of a month `2026-10`, as a date. */
+const lastDayOf = (month: string): string => {
+  const [year = 0, number = 1] = month.split("-").map(Number);
+  return `${month}-${new Date(Date.UTC(year, number, 0)).getUTCDate()}`;
+};
+
 /** The ISO week (`2026-W45`) of a local date. */
 function isoWeek(date: string): string {
   const day = new Date(`${date}T12:00:00Z`);
@@ -120,7 +126,7 @@ test("Insights: the summary, its period, a mode, when you travel and roads", asy
   const overview = insightsOverviewSchema.parse(
     await (
       await page.request.get("/api/v1/insights/overview", {
-        params: { from: `${month}-01`, to: `${month}-28` },
+        params: { from: `${month}-01`, to: lastDayOf(month) },
       })
     ).json(),
   );
