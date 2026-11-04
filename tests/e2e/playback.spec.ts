@@ -92,7 +92,7 @@ test("History plays from midnight to the last point, skipping the empty day", as
   await page.goto(`/?view=history&person=me&date=${first}&at=${first}T00:00`);
   await expect(page.locator("output")).toHaveText("00:00");
   await page.locator("[data-play]").click();
-  const bar = page.getByRole("region", { name: "Playback" });
+  const bar = page.getByRole("region", { name: "Playback", exact: true });
   await expect(bar).toBeVisible();
   await expect(page.getByRole("region", { name: "At this moment" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeFocused();
@@ -148,7 +148,7 @@ test("with reduced motion the clock moves in whole hours", async ({ page, accoun
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(`/?view=history&person=me&date=${first}&at=${first}T00:00`);
   await page.locator("[data-play]").click();
-  const bar = page.getByRole("region", { name: "Playback" });
+  const bar = page.getByRole("region", { name: "Playback", exact: true });
   await bar.getByRole("radio", { name: "1 h/s" }).check();
   const readout = bar.locator(".player-bar__readout");
   await expect(readout).toHaveText(/(0[1-9]|1\d):00$/, { timeout: 30_000 });
