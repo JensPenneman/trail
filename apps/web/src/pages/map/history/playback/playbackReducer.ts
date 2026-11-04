@@ -227,7 +227,7 @@ export function playbackReducer(state: PlaybackState, action: PlaybackAction): P
     }
     case "pause":
       return state.status === "playing" || state.status === "loading"
-        ? { ...state, status: "paused", holdUntil: null, pendingMove: null }
+        ? { ...state, status: "paused", holdUntil: null }
         : state;
     case "toggle":
       if (state.status === "playing" || state.status === "loading") {

@@ -52,7 +52,8 @@ export function usePlaybackPrefetch({
 }): { nextDay: string | null } {
   const { start, end } = dayBounds(day, timeZone);
   const lateInDay = clock >= start + (end - start) * prefetchAt;
-  const nothingLeftToSee = skipStops && moves.length > 0 && moves.every((move) => move.to <= clock);
+  // A day without moves (a day at home) is jumped whole: nothing is left to see in it either.
+  const nothingLeftToSee = skipStops && moves.every((move) => move.to <= clock);
   const next = active && (lateInDay || nothingLeftToSee) ? nextDayWithData(days, day) : null;
   const range = useMemo(
     () => (next === null ? null : localDayRange(next, next, timeZone)),

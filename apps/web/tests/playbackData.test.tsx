@@ -259,13 +259,55 @@ describe("the days of a long stretch", () => {
     await waitFor(() => expect(shown().days).toEqual(["2025-01-01", "2025-03-01"]));
     expect(shown().complete).toBe(false);
     await next();
-    // Nothing is left after 2025-03-01 in the first window: the next one starts there.
+    // Nothing is left after 2025-03-01 in the first window: the next one starts after it.
     await waitFor(() =>
       expect(
-        api.calls.some((c) => new URL(c.url ?? "").searchParams.get("from") === "2025-03-01"),
+        api.calls.some((c) => new URL(c.url ?? "").searchParams.get("from") === "2026-02-05"),
       ).toBe(true),
     );
     await waitFor(() => expect(shown().days).toEqual(["2025-01-01", "2025-03-01", "2026-03-01"]));
+  });
+
+  it("go on through empty windows until today, so that a history that ended long ago ends", async () => {
+    const api = mockApi({
+      ...standardRoutes(),
+      "GET /api/stats/days": { status: 200, body: { timezone: zone, days: [] } },
+    });
+    // 2024: three windows of 400 days reach 2026-11-05; the data (none) ended before the first.
+    renderPage(
+      <Steps
+        steps={[
+          <Days
+            key="x"
+            source={me}
+            startDay="2024-01-01"
+            playingDay="2024-01-01"
+            today="2026-11-05"
+          />,
+          <Days
+            key="x"
+            source={me}
+            startDay="2024-01-01"
+            playingDay="2024-01-01"
+            today="2026-11-05"
+          />,
+          <Days
+            key="x"
+            source={me}
+            startDay="2024-01-01"
+            playingDay="2024-01-01"
+            today="2026-11-05"
+          />,
+        ]}
+      />,
+      { user },
+    );
+    await waitFor(() => expect(shown().complete).toBe(true));
+    const froms = api.calls
+      .filter((c) => c.path === "/api/stats/days")
+      .map((c) => new URL(c.url ?? "").searchParams.get("from"));
+    // Each window starts the day after the one before ended.
+    expect(froms).toEqual(["2024-01-01", "2025-02-04", "2026-03-11"]);
   });
 
   it("are none, and not complete, while another set of devices has not answered", async () => {
@@ -326,6 +368,12 @@ describe("the days of a long stretch", () => {
 
 describe("loading ahead for the other cases", () => {
   const { start, end } = dayBounds("2026-11-03", zone);
+
+  it("starts at once for a day without moves when stops are skipped", async () => {
+    mockApi(standardRoutes());
+    renderPage(<Prefetch clock={start + 3600} moves={[]} skipStops />, { user });
+    await waitFor(() => expect(screen.getByTestId("next")).toHaveTextContent("2026-11-05"));
+  });
 
   it("starts once no move is left in the day when stops are skipped, and only then", async () => {
     const api = mockApi(standardRoutes());

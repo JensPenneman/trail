@@ -206,7 +206,15 @@ describe("seeking and stepping", () => {
       pendingMove: 1 as const,
     };
     expect(run(pending, { type: "seek", clock: at(thu, 3), world: w }).pendingMove).toBeNull();
-    expect(run({ ...pending, status: "playing" }, { type: "pause" }).pendingMove).toBeNull();
+  });
+
+  it("keeps a waiting move step through a pause, so that it still lands on a move", () => {
+    const pending = {
+      ...playingAt(thu, at(thu, 0)),
+      status: "playing" as const,
+      pendingMove: 1 as const,
+    };
+    expect(run(pending, { type: "pause" })).toMatchObject({ status: "paused", pendingMove: 1 });
   });
 
   it("drops a pending skip when moved", () => {

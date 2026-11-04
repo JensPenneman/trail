@@ -58,12 +58,15 @@ export function usePlaybackDays({
 }): PlaybackDays {
   // The window starts where playback did and moves on to the day being played; what earlier
   // windows found is carried along.
+  // Another set of devices is another list: what was carried belonged to the first.
+  const devicesKey = source.kind === "me" ? (source.deviceIds?.join(",") ?? "") : "";
   const [anchor, setAnchor] = useState<{
     startDay: string;
+    devicesKey: string;
     from: string;
     carried: ReadonlyMap<string, number>;
-  }>({ startDay, from: startDay, carried: new Map() });
-  const fresh = anchor.startDay === startDay;
+  }>({ startDay, devicesKey, from: startDay, carried: new Map() });
+  const fresh = anchor.startDay === startDay && anchor.devicesKey === devicesKey;
   const from = fresh ? anchor.from : startDay;
   const carried = fresh ? anchor.carried : none.lastAt;
   const windowEnd = addDays(from, windowDays - 1);
@@ -86,11 +89,15 @@ export function usePlaybackDays({
     return lastAt;
   }, [carried, answered, query.data]);
 
-  if (!fresh) setAnchor({ startDay, from: startDay, carried: new Map() });
-  else if (active && source.kind === "me" && windowEnd < today && answered && playingDay > from) {
+  if (!fresh) setAnchor({ startDay, devicesKey, from: startDay, carried: new Map() });
+  else if (active && source.kind === "me" && windowEnd < today && answered) {
     const lastDay = [...mine.keys()].sort().at(-1) ?? "";
-    if (playingDay > addDays(windowEnd, -windowMargin) || lastDay <= playingDay) {
-      setAnchor({ startDay, from: playingDay, carried: mine });
+    const nothingLater = lastDay <= playingDay;
+    if (nothingLater || playingDay > addDays(windowEnd, -windowMargin)) {
+      // Nothing left in this window: the next one starts after it (or at the day being played, if
+      // that is further on), so that a history that ended long ago is still found to have ended.
+      const next = nothingLater && playingDay <= windowEnd ? addDays(windowEnd, 1) : playingDay;
+      if (next > from) setAnchor({ startDay, devicesKey, from: next, carried: mine });
     }
   }
   const sharer = source.kind === "person" ? source.days : undefined;

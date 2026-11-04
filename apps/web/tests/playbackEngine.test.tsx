@@ -180,6 +180,23 @@ describe("the clock", () => {
     expect(latest?.state.clock).toBe(frozen);
   });
 
+  it("goes through a day without moves, cached already, to the move of the day after", () => {
+    // Tuesday has moves; Wednesday is cached and has none; Thursday's tracks are not in yet.
+    const days = [tue, "2026-11-04", thu];
+    const world: PlaybackWorld = { ...baseWorld, days, loaded: (day) => day !== thu };
+    const thursdayMoves = [{ from: at(thu, 7), to: at(thu, 8) }];
+    const { rerender } = render(<Harness world={world} />);
+    act(() => controls().enter(tue, at(tue, 6)));
+    act(() => controls().pause());
+    act(() => controls().seek(at(tue, 18, 30)));
+    act(() => controls().stepMove(1));
+    // Wednesday is in and has no move after the clock: the press goes on by itself, and waits
+    // for Thursday's tracks.
+    expect(read().day).toBe(thu);
+    rerender(<Harness world={{ ...world, loaded: () => true, moves: thursdayMoves }} />);
+    expect(read().clock).toBe(at(thu, 7));
+  });
+
   it("finishes a step to another day's move once that day is in", () => {
     const moves = [{ from: at(thu, 7), to: at(thu, 8) }];
     // Thursday's tracks are not in yet: the step waits for them.

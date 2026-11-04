@@ -55,5 +55,7 @@ export function usePlayerEngine(
   // A step to another day's move lands on it once that day's moves are in.
   useEffect(() => {
     if (pendingMove !== null && loaded) resolveMove();
+    // `day` too: a day without moves steps on to the next, which may be in already, and `loaded`
+    // and `pendingMove` are then the same as before.
   }, [pendingMove, loaded, resolveMove]);
 }

@@ -22,6 +22,8 @@ interface PlayerBarProps {
   /** Where playback started and where the recording ends, epoch seconds (the end may not be known yet). */
   start: number;
   end: number | null;
+  /** The latest recorded moment known while `end` is not (epoch seconds): how far the slider reaches. */
+  latest?: number | null;
   rate: PlaybackRate;
   skipStops: boolean;
   onToggle: () => void;
@@ -44,6 +46,7 @@ export function PlayerBar({
   clock,
   start,
   end,
+  latest = null,
   rate,
   skipStops,
   onToggle,
@@ -65,10 +68,11 @@ export function PlayerBar({
   const spokenDay = localDateOf(spoken * 1000, format.timeZone);
   // The slider counts whole minutes from the epoch; the clock is a second more precise.
   const first = Math.ceil(start / 60);
-  const last = Math.max(first, Math.floor((end ?? clock) / 60));
+  // While the end is unknown (a stretch of history over 400 days), the latest moment known.
+  const last = Math.max(first, Math.floor((end ?? Math.max(clock, latest ?? clock)) / 60));
   const minute = Math.min(Math.max(Math.round(clock / 60), first), last);
   return (
-    <section className="player-bar" aria-label="Playback" aria-busy={status === "loading"}>
+    <section className="player-bar" aria-label="Playback">
       <div className="player-bar__row">
         <div className="player-bar__transport">
           <Button variant="ghost" icon="skipBack" iconOnly onClick={onPreviousMove}>
@@ -102,6 +106,7 @@ export function PlayerBar({
         max={last}
         step={1}
         value={minute}
+        onFocus={() => setSpoken(clock)}
         onChange={(event) => {
           const seconds = Number(event.currentTarget.value) * 60;
           setSpoken(seconds);
@@ -122,7 +127,7 @@ export function PlayerBar({
       </div>
       {/* Mounted all along, so that the words are announced when they arrive. */}
       <p className="visually-hidden" role="status">
-        {status === "loading" ? `Loading ${format.dayLong(day)}` : ""}
+        {status === "loading" ? "Loading" : ""}
       </p>
     </section>
   );

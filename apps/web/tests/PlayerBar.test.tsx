@@ -94,6 +94,26 @@ describe("the player bar", () => {
     expect(handlers.onSeek).not.toHaveBeenCalled();
   });
 
+  it("reaches as far as the latest known moment while the end is not", () => {
+    bar({ end: null, latest: clock + 7200 });
+    const slider = screen.getByRole("slider", { name: "Position at" });
+    expect(Number(slider.getAttribute("max"))).toBe((clock + 7200) / 60);
+  });
+
+  it("reads the moment it is at when it takes focus mid-play, not the last one spoken", () => {
+    const { view } = bar({ status: "playing" });
+    const slider = screen.getByRole("slider", { name: "Position at" });
+    const spokenAt = slider.getAttribute("aria-valuetext");
+    view.rerender(<span />);
+    expect(spokenAt).toContain("14:05");
+    bar({ status: "playing", clock: clock + 3600 });
+    const later = screen.getByRole("slider", { name: "Position at" });
+    // Still the first moment's words while the clock runs …
+    expect(later.getAttribute("aria-valuetext")).toContain("15:05");
+    fireEvent.focus(later);
+    expect(later.getAttribute("aria-valuetext")).toContain("15:05");
+  });
+
   it("seeks in seconds, and keeps the slider inside while the end is not known", async () => {
     const handlers = bar({ end: null });
     const slider = screen.getByRole("slider", { name: "Position at" });
@@ -124,8 +144,9 @@ describe("the player bar", () => {
     expect(status).toBeEmptyDOMElement();
     view.rerender(<span />);
     bar({ status: "loading" });
-    expect(screen.getByRole("region", { name: "Playback" })).toHaveAttribute("aria-busy", "true");
-    expect(screen.getByText("Loading Tuesday, 3 November 2026")).toBeInTheDocument();
+    // Said in a status of its own, outside anything marked busy, so that it is spoken.
+    expect(screen.getByRole("region", { name: "Playback" })).not.toHaveAttribute("aria-busy");
+    expect(screen.getByText("Loading")).toBeInTheDocument();
   });
 });
 
