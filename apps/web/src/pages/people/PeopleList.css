@@ -122,24 +122,6 @@
   min-width: 0;
 }
 
-.person-back {
-  display: inline-flex;
-  align-items: center;
-  justify-self: start;
-  gap: var(--space-1);
-  min-height: var(--target);
-  margin-inline-start: calc(-1 * var(--space-2));
-  padding-inline: var(--space-2);
-  border-radius: var(--radius-m);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.person-back:hover {
-  background: var(--color-surface-2);
-  text-decoration: none;
-}
-
 .person-panel__setup {
   color: var(--color-text-2);
   font-size: var(--text-s);
@@ -151,7 +133,7 @@
   }
 
   .person-row:hover,
-  .person-back:hover {
+  .back-link:hover {
     outline: 2px solid Highlight;
     outline-offset: -2px;
   }

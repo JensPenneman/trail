@@ -129,7 +129,7 @@ export function useHistoryView({
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [browsing, setBrowsing] = useState<{ anchor: string; month: string } | null>(null);
   const [scrub, setScrub] = useState<{ key: string; value: number } | null>(null);
-  // A camera move belongs to its period: another day — from the controls, a person's card or
+  // A camera move belongs to its period: another day — from the controls, a person's detail or
   // the history's Back — drops it, and it is never made again.
   const [focus, setFocus] = useState<(Focus & { period: string }) | null>(null);
   // Every "show" is a camera move of its own, even to a place shown before.
@@ -316,12 +316,13 @@ export function useHistoryView({
   if (focus !== null && (!active || focus.period !== periodKey)) setFocus(null);
   if (!active) return inactiveView;
 
+  // The devices really drawn: one's own while their tracks are, and those of the people asked for.
   const shownIds = [
-    ...deviceList
-      .filter(
-        (device) => own !== null && (own.deviceIds === null || own.deviceIds.includes(device.id)),
-      )
-      .map((device) => device.id),
+    ...(drawsOwn && own !== null
+      ? deviceList
+          .filter((device) => own.deviceIds === null || own.deviceIds.includes(device.id))
+          .map((device) => device.id)
+      : []),
     ...requests.flatMap((request) => request.deviceIds),
   ];
   const periodLabel =
@@ -346,7 +347,7 @@ export function useHistoryView({
       ? (deviceList.find((device) => device.id === deviceId)?.name ?? "Removed device")
       : null;
   const day = period.mode === "day" ? period.from : null;
-  // Nobody with history and none of one's own: nothing to say here, their cards say why.
+  // Nobody with history and none of one's own: nothing to say here, their detail says why.
   const quiet = !drawsOwn && withHistory.length === 0 && personTracks.error === null;
   const showsCalendar = calendarOpen && period.mode === "day";
 
@@ -370,7 +371,7 @@ export function useHistoryView({
       visits: visitPoints,
       cursors,
       fit: {
-        key: fitKey(period.from, period.to, shownIds),
+        key: fitKey(`${period.from}..${period.to}`, selected?.key ?? null, shownIds),
         // Tracks placeholder data belongs to the previous period until the new one arrives.
         bounds:
           devices.isPending ||
@@ -465,7 +466,7 @@ export function useHistoryView({
             withDate={withDate}
           />
         ) : !drawsOwn ? (
-          // Someone else alone: their tracks, or their cards say why there are none.
+          // Someone else alone: their tracks, or their detail says why there are none.
           withHistory.length === 0 ? null : personTracks.pending ? (
             <LoadingBlock label="Loading tracks">
               <Skeleton height="4.5rem" />

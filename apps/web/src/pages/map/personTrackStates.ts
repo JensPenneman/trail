@@ -2,7 +2,7 @@ import type { PersonTrackState } from "../../people/PersonTrackState";
 import { summarizePersonTrack } from "../../people/summarizePersonTrack";
 import type { PersonTrackRequest, PersonTracks } from "../../queries/usePersonTracks";
 
-/** Each requested person's track as a card shows it: waiting, failed, or summed up. */
+/** Each requested person's track as a detail shows it: waiting, failed, or summed up. */
 export function personTrackStates(
   requests: readonly PersonTrackRequest[],
   tracks: PersonTracks,

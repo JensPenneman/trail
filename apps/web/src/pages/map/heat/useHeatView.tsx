@@ -14,6 +14,7 @@ import { ErrorState } from "../../../ui/ErrorState";
 import { LoadingBlock } from "../../../ui/LoadingBlock";
 import { Notice } from "../../../ui/Notice";
 import { PlainList } from "../../../ui/PlainList";
+import { SectionTitle } from "../../../ui/SectionTitle";
 import { Skeleton } from "../../../ui/Skeleton";
 import { Spinner } from "../../../ui/Spinner";
 import { useDebouncedValue } from "../../../ui/useDebouncedValue";
@@ -179,9 +180,7 @@ export function useHeatView({
         ) : null}
 
         <section className="section" aria-labelledby={totalsId}>
-          <h2 className="section__title" id={totalsId}>
-            Totals
-          </h2>
+          <SectionTitle id={totalsId}>Totals</SectionTitle>
           {devices.isPending || days.isPending ? (
             <LoadingBlock label="Loading totals">
               <Skeleton height="6rem" />
@@ -221,9 +220,7 @@ export function useHeatView({
         </section>
 
         <section className="section" aria-labelledby={busiestId}>
-          <h2 className="section__title" id={busiestId}>
-            Busiest places in view
-          </h2>
+          <SectionTitle id={busiestId}>Busiest places in view</SectionTitle>
           {heatmap.data === undefined ? (
             <LoadingBlock label="Loading places">
               <Skeleton height="3rem" />

@@ -27,7 +27,7 @@ interface PersonRowProps {
 export function PersonRow({ person, colorSlot, now, liveMinutes, to }: PersonRowProps) {
   const format = useFormatter();
   return (
-    <Link to={to} className="person-row" data-person={person.userId}>
+    <Link to={to} className="person-row" data-person={person.userId} preventScrollReset>
       <PersonSummary
         title={person.displayName}
         level="row"
@@ -51,7 +51,7 @@ interface MeRowProps {
 export function MeRow({ name, devices, now, thresholds, to }: MeRowProps) {
   const { freshness, doing } = useMeSummary(devices, now, thresholds);
   return (
-    <Link to={to} className="person-row" data-person="me">
+    <Link to={to} className="person-row" data-person="me" preventScrollReset>
       <PersonSummary
         title="Me"
         level="row"

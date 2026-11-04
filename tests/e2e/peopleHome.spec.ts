@@ -8,9 +8,12 @@ import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
 
 const peopleList = (page: Page) => page.getByRole("list", { name: "People", exact: true });
-const meRow = (page: Page) => peopleList(page).getByRole("link", { name: /^Me/ });
+const meRow = (page: Page) => peopleList(page).getByRole("link", { name: /^Me(\s|$)/ });
+/** The row of someone: the name, then a space or the end, so a longer name does not match. */
 const personRow = (page: Page, name: string) =>
-  peopleList(page).getByRole("link", { name: new RegExp(`^${name}`) });
+  peopleList(page).getByRole("link", {
+    name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`),
+  });
 /** A person's detail replaces the list; the region is named by their name. */
 const detail = (page: Page, name: string) => page.getByRole("region", { name, exact: true });
 const ownOnly = ["Timeline", "Visits", "Trips"] as const;
@@ -94,7 +97,7 @@ test("a person's detail shows them alone, with only what their share allows", as
   // Everyone's markers stay on the map; the camera and the label follow the person.
   await expect(page.locator(".map-person")).toHaveCount(2);
   await expect(page.locator(".maplibregl-canvas")).toHaveAccessibleName(
-    new RegExp(`^Map of ${roughName}’s track today and where everyone is now`),
+    /^Map of where everyone is now/,
   );
   await expect(mapView(page, "Heat")).toHaveCount(0);
   await openMapOptions(page);
@@ -287,7 +290,7 @@ test("the list kept live, and sharing back and stopping from a detail", async ({
   await expect(myDay(page)).toHaveCount(0);
   await expect(page.locator(".map-person")).toHaveCount(2);
   await expect(page.locator(".maplibregl-canvas")).toHaveAccessibleName(
-    new RegExp(`^Map of ${farName}’s track today`),
+    /^Map of where everyone is now/,
   );
   // The focus stays where the page put it: nothing moves for a link that opens a detail.
   await expect(page.getByRole("heading", { level: 2, name: farName })).not.toBeFocused();

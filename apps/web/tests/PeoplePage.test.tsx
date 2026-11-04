@@ -101,7 +101,7 @@ describe("the People page's list", () => {
     expect(
       within(me).getByRole("link", { name: /Uploads, activity and settings of your devices/ }),
     ).toHaveAttribute("href", "/settings/devices");
-    // No toggle of the transport mode: that is the API's and the assistant's.
+    // No toggle of the transport mode: that is the API's and MCP clients'.
     expect(within(me).queryByRole("group", { name: "Now:" })).toBeNull();
 
     // Back to the list; the focus returns to the row that was opened.

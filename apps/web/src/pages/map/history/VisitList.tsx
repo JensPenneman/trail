@@ -9,6 +9,7 @@ import { EmptyState } from "../../../ui/EmptyState";
 import { ErrorState } from "../../../ui/ErrorState";
 import { LoadingBlock } from "../../../ui/LoadingBlock";
 import { PlainList } from "../../../ui/PlainList";
+import { SectionTitle } from "../../../ui/SectionTitle";
 import { Skeleton } from "../../../ui/Skeleton";
 
 interface VisitListProps {
@@ -48,9 +49,7 @@ export function VisitList({
 
   return (
     <section className="section" aria-labelledby={headingId}>
-      <h2 className="section__title" id={headingId}>
-        Visits
-      </h2>
+      <SectionTitle id={headingId}>Visits</SectionTitle>
       {loading ? (
         <LoadingBlock label="Loading visits">
           <Skeleton height="4rem" />

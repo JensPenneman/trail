@@ -10,9 +10,11 @@ import type { PersonTrackState } from "../../people/PersonTrackState";
 import { personSummaryProps } from "../../people/personSummaryProps";
 import type { PersonColors } from "../../people/usePersonColors";
 import { WhereTheyveBeen, type WhereTheyveBeenPeriod } from "../../people/WhereTheyveBeen";
+import "../../ui/BackLink.css";
 import { ErrorState } from "../../ui/ErrorState";
 import { Icon } from "../../ui/Icon";
 import { LoadingBlock } from "../../ui/LoadingBlock";
+import { SectionLevel } from "../../ui/SectionTitle";
 import { Skeleton } from "../../ui/Skeleton";
 import type { MapViewContent } from "../map/MapViewContent";
 import { me } from "../map/me";
@@ -36,7 +38,7 @@ interface PersonPanelProps {
   period: WhereTheyveBeenPeriod | null;
   sharing: SharingActions;
   /** Leaves the detail for the list (after hiding someone). */
-  onLeave: () => void;
+  onLeave: (key: string) => void;
 }
 
 /**
@@ -53,24 +55,26 @@ export function PersonPanel(props: PersonPanelProps) {
   const mine = selected === me;
   return (
     <section className="person-panel" aria-labelledby={titleId}>
-      <Link to={backTo} className="person-back">
-        <Icon name="chevronLeft" className="person-back__icon" />
-        <span>
-          <span className="visually-hidden">Back to</span> People
-        </span>
-      </Link>
-      {mine ? (
-        <MeBody
-          titleId={titleId}
-          name={name}
-          devices={devices}
-          now={now}
-          thresholds={thresholds}
-          content={content}
-        />
-      ) : (
-        <OtherBody {...props} titleId={titleId} />
-      )}
+      <SectionLevel value={3}>
+        <Link to={backTo} className="back-link" preventScrollReset>
+          <Icon name="chevronLeft" className="back-link__icon" />
+          <span className="back-link__label">
+            <span className="visually-hidden">Back to</span> People
+          </span>
+        </Link>
+        {mine ? (
+          <MeBody
+            titleId={titleId}
+            name={name}
+            devices={devices}
+            now={now}
+            thresholds={thresholds}
+            content={content}
+          />
+        ) : (
+          <OtherBody {...props} titleId={titleId} />
+        )}
+      </SectionLevel>
     </section>
   );
 }
@@ -189,7 +193,7 @@ function OtherBody({
         sharesBack={share !== null}
         onShareBack={() => sharing.openShare(person.email)}
         {...(share === null ? {} : { onStopSharing: () => sharing.openStop(share) })}
-        onHide={() => sharing.hide(person, onLeave)}
+        onHide={() => sharing.hide(person, () => onLeave(person.userId))}
         hiding={sharing.hiding(person.share.id)}
       />
     </>

@@ -43,7 +43,7 @@ test("someone you share with sees you live, may hide you, and loses you when you
   await expect(youShareWith(page).getByText("Sees you")).toBeVisible();
 
   await friend.page.goto("/");
-  const row = friend.page.getByRole("link", { name: new RegExp(`^${account.displayName}`) });
+  const row = friend.page.getByRole("link", { name: new RegExp(`^${account.displayName}(\\s|$)`) });
   // Who and how fresh at a glance, with the battery; the phone itself in the detail.
   await expect(row.getByRole("img", { name: "Battery 77%" })).toBeVisible();
   await expectAccessible(friend.page, "People with someone who shares");

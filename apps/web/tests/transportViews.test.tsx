@@ -303,8 +303,13 @@ describe("a link to one move", () => {
     const dialog = await screen.findByRole("dialog", { name: "Train" });
     expect(within(dialog).getByText("Was this a train ride?")).toBeInTheDocument();
     await person.click(within(dialog).getByRole("button", { name: "Close" }));
-    await waitFor(() => expect(router.state.location.search).toBe("?view=history"));
+    // The link implied Me: the address says so now, so Me's detail stays when the move closes.
+    await waitFor(() => expect(router.state.location.search).toBe("?view=history&person=me"), {
+      timeout: 4000,
+    });
     expect(screen.queryByRole("dialog", { name: "Train" })).toBeNull();
+    expect(await screen.findByRole("region", { name: "Me" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Timeline" })).toBeInTheDocument();
   });
 });
 
@@ -324,7 +329,7 @@ describe("what Me is doing", () => {
     expect(await within(me).findByText("By train")).toBeInTheDocument();
   });
 
-  it("has no toggle in the app any more: the mode is the API's and the assistant's to set", async () => {
+  it("has no toggle in the app any more: the mode is the API's and MCP clients' to set", async () => {
     mockApi(standardRoutes());
     renderPage(<PeoplePage />, { url: "/?person=me", user });
     await screen.findByRole("region", { name: "Me" });

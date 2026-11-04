@@ -205,10 +205,14 @@ export function useLiveView({
 
   const subject = meSelected ? "you" : (other?.displayName ?? "everyone");
   const whereTheyAre = everyone.length === 0 ? null : format.list(everyone);
+  // Promise a track only when one is drawn: a live-only share or a quiet day has none.
+  const trackDrawn = meSelected
+    ? transport.tracks.length + transport.transport.length > 0
+    : peopleTracks.length > 0;
   const label =
     whereTheyAre === null
       ? "Map. Nobody shown has reported a position yet."
-      : selected === null
+      : selected === null || !trackDrawn
         ? `Map of where everyone is now: ${whereTheyAre}. The same is said in the list.`
         : `Map of ${meSelected ? "your track" : `${other?.displayName ?? "their"}’s track`} today and where everyone is now: ${whereTheyAre}. The same is said in the list.`;
 

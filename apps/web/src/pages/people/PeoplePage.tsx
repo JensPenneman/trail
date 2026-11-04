@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { DocumentTitle } from "../../app/DocumentTitle";
 import { useReadOnly } from "../../app/useReadOnly";
@@ -62,8 +62,17 @@ const besideThePanel = "(min-width: 64rem)";
  */
 export function PeoplePage() {
   const user = useSessionUser();
-  const { search, today, setView, setPerson, setDevices, showDay, showHistoryDay, showRange } =
-    useMapSearch();
+  const {
+    search,
+    today,
+    setView,
+    setPerson,
+    adoptPerson,
+    setDevices,
+    showDay,
+    showHistoryDay,
+    showRange,
+  } = useMapSearch();
   const { level, setLevel } = useTrackLevel();
   const mapStyle = useMapStyle();
   const config = useConfig();
@@ -105,9 +114,19 @@ export function PeoplePage() {
   );
   const selected = selection.selected;
   const selectedKey = selected?.key ?? null;
+  const selectedRef = useRef(selectedKey);
+  selectedRef.current = selectedKey;
   // Heat is one's own: with someone else selected the page shows Live, and Heat again with Me.
   const heatOffered = selectedKey === null || selectedKey === me;
   const view = shownView(search.view, heatOffered);
+
+  // A link from before the single selection (`?segment=`, `?devices=`) implies a person: write
+  // it into the address once the lists are in, so that closing a move or ticking all devices
+  // again keeps their detail instead of falling back to the overview.
+  useEffect(() => {
+    // A person the link names is adopted at once; one implied by its devices once the lists say whose.
+    if (selectedKey !== null && (complete || search.person !== null)) adoptPerson(selectedKey);
+  }, [complete, search.person, selectedKey, adoptPerson]);
 
   // Heat frames the camera only when the page opened on it; the other views share theirs.
   const [openedOn] = useState(view);
@@ -169,7 +188,10 @@ export function PeoplePage() {
 
   // Beside the map the panel scrolls by itself: another view or person starts at its top.
   const panel = useRef<HTMLElement | null>(null);
-  const focusRef = usePanelFocus(selectedKey);
+  const focusRef = usePanelFocus(
+    selectedKey,
+    available.some((person) => person.key === selectedKey),
+  );
   const panelRef = useCallback(
     (element: HTMLElement | null) => {
       panel.current = element;
@@ -189,18 +211,20 @@ export function PeoplePage() {
   const linkTo = (person: string) => `?${withPerson(params, person).toString()}`;
   const backTo = `?${withPerson(params, null).toString()}`;
 
-  // Devices to choose among: the selected person's (in Heat, one's own), when they have several.
+  // Devices to choose among, when there are several: the selected person's; in Heat one's own,
+  // whoever is selected (nobody's else is offered there). Choosing some selects Me (adoptPerson).
+  const filtered = view === "heat" ? available.find((person) => person.key === me) : selected;
   const groups: DeviceFilterGroup[] =
-    selected === null || selected.devices.length < 2
+    filtered === undefined || filtered === null || filtered.devices.length < 2
       ? []
       : [
           {
-            key: selected.key,
-            name: selected.name,
-            devices: selected.devices.map((device) =>
-              selected.key === me
+            key: filtered.key,
+            name: filtered.name,
+            devices: filtered.devices.map((device) =>
+              filtered.key === me
                 ? { ...device, slot: colors.slot(device.id), palette: "device" as const }
-                : { ...device, slot: personColors.slot(selected.key), palette: "person" as const },
+                : { ...device, slot: personColors.slot(filtered.key), palette: "person" as const },
             ),
           },
         ];
@@ -238,7 +262,8 @@ export function PeoplePage() {
             titleId="people-page-title"
             description={content.description}
             actions={
-              everyone.length === 0 ? undefined : (
+              // Not while the list is known to be empty: the card says so and has the button.
+              people.isSuccess && everyone.length === 0 ? undefined : (
                 <Button
                   variant="ghost"
                   icon="plus"
@@ -336,7 +361,10 @@ export function PeoplePage() {
               content={content}
               period={wherePeriod}
               sharing={sharing}
-              onLeave={() => setPerson(null)}
+              onLeave={(key) => {
+                // Hiding is not a step of the history, and only leaves while it is still their detail.
+                if (selectedRef.current === key) setPerson(null, { replace: true });
+              }}
             />
           )}
         </div>

@@ -1,6 +1,7 @@
 import { type MouseEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { DocumentTitle } from "../app/DocumentTitle";
+import "../ui/BackLink.css";
 import { Icon } from "../ui/Icon";
 import { openedFrom } from "./openedFrom";
 import { type SettingsPageId, settingsPage, settingsRootPath } from "./settingsTree";
@@ -38,9 +39,9 @@ function BackLink({ to, label }: { to: string; label: string }) {
     void navigate(-1);
   };
   return (
-    <Link to={to} className="settings-back" onClick={onClick}>
-      <Icon name="chevronLeft" className="settings-back__icon" />
-      <span className="settings-back__label">
+    <Link to={to} className="settings-back back-link" onClick={onClick}>
+      <Icon name="chevronLeft" className="back-link__icon" />
+      <span className="back-link__label">
         <span className="visually-hidden">Back to</span> {label}
       </span>
     </Link>
