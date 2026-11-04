@@ -235,6 +235,31 @@ describe("a link that implies a person", () => {
   });
 });
 
+describe("a view switch next to an implied selection", () => {
+  it("is not undone by the address being rewritten with the person", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, { url: `/?devices=${ids.phone}`, user });
+    await screen.findByRole("region", { name: "Me" });
+    await person.click(
+      within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", {
+        name: "History",
+      }),
+    );
+    // Whichever of the two lands first, both are in the address in the end.
+    await waitFor(() => {
+      const params = new URLSearchParams(router.state.location.search);
+      expect(params.get("view")).toBe("history");
+      expect(params.get("person")).toBe("me");
+    });
+    expect(
+      within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", {
+        name: "History",
+      }),
+    ).toBeChecked();
+  });
+});
+
 describe("Heat's device filter", () => {
   it("narrows one's own heatmap without selecting anyone or moving the focus", async () => {
     const api = mockApi(standardRoutes());
@@ -245,16 +270,6 @@ describe("Heat's device filter", () => {
     await person.click(car);
     expect(router.state.location.search).toBe(`?view=heat&devices=${ids.phone}`);
     expect(car).toHaveFocus();
-    // Leaving Heat leaves its filter: it would imply Me, and the switch would be lost.
-    const live = within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", {
-      name: "Live",
-    });
-    await person.click(live);
-    expect(live).toBeChecked();
-    expect(live).toHaveFocus();
-    await waitFor(() => expect(router.state.location.search).toBe(""));
-    expect(screen.getByRole("list", { name: "People" })).toBeInTheDocument();
-    expect(router.state.location.search).toBe("");
     expect(screen.getByRole("list", { name: "People" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Me" })).toBeNull();
     await waitFor(() =>
@@ -264,6 +279,16 @@ describe("Heat's device filter", () => {
         ),
       ).toBe(true),
     );
+    // Leaving Heat leaves its filter: it would imply Me, and the switch would be lost.
+    const live = within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", {
+      name: "Live",
+    });
+    await person.click(live);
+    expect(live).toBeChecked();
+    expect(live).toHaveFocus();
+    await waitFor(() => expect(router.state.location.search).toBe(""));
+    expect(screen.getByRole("list", { name: "People" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Me" })).toBeNull();
   });
 });
 

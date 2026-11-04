@@ -51,10 +51,15 @@ export function useMapSearch(): MapSearchControls {
     (next: MapView) =>
       startTransition(() => {
         showView(next);
+        // Leaving Heat drops its device filter (withView); the page must not imply Me from it for
+        // the first render either.
+        if (withView(params, next).get("devices") !== params.get("devices")) {
+          showChosen((current) => ({ ...current, devices: null }));
+        }
         // Another view is another screen: on phones the page starts from the top.
         setParams((current) => withView(current, next));
       }),
-    [setParams, showView],
+    [params, setParams, showView, showChosen],
   );
   const settled =
     chosen.person === parsed.person && chosen.devices === parsed.devices && view === parsed.view;
