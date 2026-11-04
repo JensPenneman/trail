@@ -2824,6 +2824,32 @@ count among them, since they lead to signed-in pages.
     a moment; distance, points, first/last; the timeline of stops and moves,
     with a dialog to correct a mode; visits and trips of the day (Me's
     detail). Other people's tracks as their shares allow (below).
+    **Playback** has an engine in `pages/map/history/playback`, not yet
+    wired into the page: a pure model (`playbackModel`: local-day bounds, the
+    moves of the timeline or, from the points alone, movement stretches —
+    split at recording gaps, cut by three minutes below 0.6 m/s, kept at a
+    minute and 100 m — and the quiet stretches outside them, the next day with
+    data) and reducer (`playbackReducer`: playing, paused, loading, ended;
+    rates of 1, 5, 15 and 60 playback minutes per second; seeks and steps
+    clamped to the start moment and the last recorded point; midnight crosses
+    into the next day with data and waits for its tracks; "Skip stops" shows a
+    quiet stretch over two minutes for half a second and jumps to its end),
+    driven by hooks: `usePlayerEngine` runs the clock on animation frames, at
+    most 30 updates a second with each step capped at 250 ms (with reduced
+    motion one step a second), `usePlayerKeys` the keys on the window
+    (Space, arrows, Shift with them for moves, Escape; it leaves alone what
+    is handled, modified, in inputs and dialogs, and Space on a button),
+    `usePlaybackDays` the days with data (one's own from `/api/stats/days` in
+    windows of 400 days; someone else's from an answer handed in),
+    `usePlaybackPrefetch` the next day's queries kept mounted from 90 % of a
+    day, `usePlaybackAnnouncer` the day changes and the end. The bar
+    (`PlayerBar`, region "Playback") and the strip of what each device was
+    doing (`NowStrip`, "At this moment") are presentational. For the map,
+    `tracksToMap` and `levelTracksToMap` take an `until` (the cursor) and
+    give what lies after it as `dimmed` tracks, segments and points, which
+    `ensureTrailLayers` draws at 0.3 opacity (0.5 under
+    `prefers-contrast: more`); a line is cut at the cursor with
+    `splitTrackAt`, the two parts meeting at its interpolated position.
   - **Heat** — all-time heatmap (`/api/heatmap` for the view once the map
     has stood still for 300 ms, its box rounded outward to a thousandth of a
     degree and its zoom to a whole level, so that small moves hit the
