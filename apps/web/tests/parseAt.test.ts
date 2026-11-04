@@ -10,11 +10,29 @@ describe("?at=", () => {
     expect(atText(moment ?? 0, tz)).toBe("2026-10-20T14:30");
   });
 
-  it("counts the time of day from the day's start, so a 25 hour day stays within its day", () => {
+  it("reads the wall-clock time on the day of 25 hours, as it is written", () => {
+    // 2026-10-25: the clocks go back at 03:00, so the day has 25 hours.
+    for (const time of ["00:00", "01:30", "02:30", "03:30", "14:00", "23:59"]) {
+      const text = `2026-10-25T${time}`;
+      const moment = momentOf(text, tz);
+      expect(moment, text).not.toBeNull();
+      expect(atText(moment ?? 0, tz), text).toBe(text);
+    }
     const start = momentOf("2026-10-25T00:00", tz) ?? 0;
-    const late = momentOf("2026-10-25T23:59", tz) ?? 0;
-    expect(late - start).toBe(24 * 3600 - 60);
-    expect(atText(late, tz).slice(0, 10)).toBe("2026-10-25");
+    expect((momentOf("2026-10-25T14:00", tz) ?? 0) - start).toBe(15 * 3600);
+  });
+
+  it("reads the wall-clock time on the day of 23 hours, and refuses the hour that is skipped", () => {
+    // 2026-03-29: the clocks go forward at 02:00, so 02:30 does not exist.
+    for (const time of ["00:00", "01:59", "03:00", "14:00", "23:30", "23:59"]) {
+      const text = `2026-03-29T${time}`;
+      const moment = momentOf(text, tz);
+      expect(moment, text).not.toBeNull();
+      expect(atText(moment ?? 0, tz), text).toBe(text);
+    }
+    expect(momentOf("2026-03-29T02:30", tz)).toBeNull();
+    const start = momentOf("2026-03-29T00:00", tz) ?? 0;
+    expect((momentOf("2026-03-29T14:00", tz) ?? 0) - start).toBe(13 * 3600);
   });
 
   it("ignores text that is not a moment", () => {

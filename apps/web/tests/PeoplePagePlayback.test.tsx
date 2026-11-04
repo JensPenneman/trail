@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
@@ -74,5 +74,78 @@ describe("playing History back", () => {
       expect(api.calls.some((call) => call.path === `/api/v1/people/${ids.ana}/days`)).toBe(true),
     );
     expect(within(document.body).queryByRole("region", { name: "At this moment" })).not.toBeNull();
+  });
+
+  it("names the page's one heading for what is on screen while the sidebar is hidden", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url, user });
+    await person.click(await screen.findByRole("button", { name: "Play" }));
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "History playback" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("heading", { level: 1, name: "People" })).not.toBeInTheDocument();
+  });
+
+  it("has no Play while nobody is selected", async () => {
+    mockApi(standardRoutes());
+    renderPage(<PeoplePage />, { url: "/?view=history&date=2026-09-12", user });
+    await screen.findByRole("slider", { name: "Position at" });
+    expect(screen.queryByRole("button", { name: "Play" })).not.toBeInTheDocument();
+  });
+
+  it("writes where it was left when it is left after a seek made while paused", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, { url, user });
+    await person.click(await screen.findByRole("button", { name: "Play" }));
+    await person.click(await screen.findByRole("button", { name: "Pause" }));
+    const slider = await screen.findByRole("slider", { name: "Position at" });
+    await waitFor(() =>
+      expect(new URLSearchParams(router.state.location.search).get("at")).not.toBeNull(),
+    );
+    const paused = new URLSearchParams(router.state.location.search).get("at");
+    fireEvent.change(slider, {
+      target: { value: String(Number(slider.getAttribute("min")) + 30) },
+    });
+    await person.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Playback" })).toBeNull());
+    const left = new URLSearchParams(router.state.location.search).get("at");
+    expect(left).toMatch(/^2026-09-12T\d\d:\d\d$/);
+    expect(left).not.toBe(paused);
+  });
+
+  it("ends without writing the moment when the view changes", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, { url, user });
+    await person.click(await screen.findByRole("button", { name: "Play" }));
+    await screen.findByRole("region", { name: "Playback" });
+    await person.click(
+      within(screen.getByRole("group", { name: "Map view" })).getByRole("radio", { name: "Live" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Playback" })).toBeNull());
+    expect(new URLSearchParams(router.state.location.search).get("at")).toBeNull();
+    // Live is the default view: the address names none.
+    expect(new URLSearchParams(router.state.location.search).get("view")).not.toBe("history");
+  });
+
+  it("dims what lies after the cursor, follows the cursors and redraws the tracks rarely", async () => {
+    mockApi(standardRoutes());
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url, user });
+    // From between the first two points of the day's track, so that the rest lies ahead.
+    const scrubber = await screen.findByRole("slider", { name: "Position at" });
+    fireEvent.change(scrubber, {
+      target: { value: String(Number(scrubber.getAttribute("min")) + 7 * 3600 + 30) },
+    });
+    await person.click(await screen.findByRole("button", { name: "Play" }));
+    const map = await screen.findByRole("img", { name: /^Map/ });
+    await waitFor(() => expect(map.getAttribute("data-follow")).not.toBe(""));
+    await waitFor(() => expect(Number(map.getAttribute("data-dimmed"))).toBeGreaterThan(0));
+    // A second of playback: the tracks are handed over as new data a few times, not at every tick.
+    const before = Number(map.getAttribute("data-track-updates"));
+    await new Promise((done) => setTimeout(done, 1000));
+    expect(Number(map.getAttribute("data-track-updates")) - before).toBeLessThanOrEqual(5);
   });
 });

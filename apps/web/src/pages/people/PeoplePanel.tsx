@@ -174,7 +174,9 @@ export function PeoplePanel({
   return (
     <section
       className="map-page__panel"
-      {...(playing ? { "aria-label": "People" } : { "aria-labelledby": "people-page-title" })}
+      {...(playing
+        ? { "aria-label": "History playback" }
+        : { "aria-labelledby": "people-page-title" })}
       ref={panelRef}
     >
       <span className="map-page__grabber" aria-hidden="true" />
@@ -182,8 +184,8 @@ export function PeoplePanel({
       <div hidden={playing}>{playing ? kept.current : sidebar}</div>
       {playing ? (
         <>
-          {/* The page's own heading is in the hidden sidebar. */}
-          <h1 className="visually-hidden">People</h1>
+          {/* The page's own heading is in the hidden sidebar: this one says what is on screen. */}
+          <h1 className="visually-hidden">History playback</h1>
           {bar}
           <div className="map-page__now" data-peek-end>
             {strip}

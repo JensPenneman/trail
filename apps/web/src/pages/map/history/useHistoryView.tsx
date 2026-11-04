@@ -2,7 +2,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { Person } from "@trail/contracts/person";
 import type { ProcessingLevel } from "@trail/contracts/transport";
-import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { DeviceColors } from "../../../devices/useDeviceColors";
 import { useFormatter } from "../../../format/useFormatter";
@@ -49,6 +49,7 @@ import {
   dayBounds,
   dayOf,
   endOf,
+  mergeIntervals,
   movesOf,
   movingStretches,
   type NowEntry,
@@ -299,6 +300,11 @@ export function useHistoryView({
       })),
     [visitList, colors, until],
   );
+  // One array while its parts are the same: the map redraws the tracks when it changes.
+  const mapTracks = useMemo(
+    () => [...transport.tracks, ...peopleTracks],
+    [transport.tracks, peopleTracks],
+  );
   const bounds = useMemo(
     () =>
       boundsOf([
@@ -420,13 +426,21 @@ export function useHistoryView({
         !timeline.isPlaceholderData &&
         !transport.pending
       : requests.length > 0 && !personTracks.pending);
-  const moves = useMemo(
-    () =>
-      meSelected && segments !== undefined && !timeline.isPlaceholderData
-        ? movesOf(segments)
-        : movingStretches(allTracks.map((track) => track.points)),
-    [meSelected, segments, timeline.isPlaceholderData, allTracks],
-  );
+  const timelinePending = timeline.data?.pending ?? false;
+  const moves = useMemo(() => {
+    if (!meSelected || segments === undefined || timeline.isPlaceholderData) {
+      return movingStretches(allTracks.map((track) => track.points));
+    }
+    const processed = movesOf(segments);
+    if (!timelinePending) return processed;
+    // Still being worked out: what the points say moved after the last segment counts as moving,
+    // so that "Skip stops" does not jump over the live end the owner plays towards.
+    const processedTo = Math.max(...segments.map((segment) => Date.parse(segment.endedAt) / 1000));
+    const recent = allTracks.map((track) =>
+      track.points.filter((point) => point[2] >= processedTo),
+    );
+    return mergeIntervals([...processed, ...movingStretches(recent)]);
+  }, [meSelected, segments, timelinePending, timeline.isPlaceholderData, allTracks]);
   const quiet = useMemo(() => {
     const bounds = dayBounds(period.from, timeZone);
     return quietIntervals({ from: bounds.start, to: bounds.end }, moves);
@@ -452,6 +466,11 @@ export function useHistoryView({
   });
   usePlayerKeys(player);
   usePlaybackAnnouncer(playback);
+  const personRequest = useCallback(
+    (range: { from: string; to: string }) =>
+      other === null ? null : (personTrackRequests([other], selection.devicesOf, range)[0] ?? null),
+    [other, selection.devicesOf],
+  );
   usePlaybackPrefetch({
     active: active && playing,
     day: playback.day,
@@ -462,10 +481,7 @@ export function useHistoryView({
     moves,
     skipStops: playback.skipStops,
     me: meSelected ? { deviceIds: own?.deviceIds ?? null } : null,
-    personRequest:
-      other === null
-        ? null
-        : (range) => personTrackRequests([other], selection.devicesOf, range)[0] ?? null,
+    personRequest: other === null ? null : personRequest,
   });
   // A day whose tracks come back empty (the days endpoint counts points the track drops, as too
   // inaccurate) has nothing to play: on to the next day with data.
@@ -490,29 +506,29 @@ export function useHistoryView({
     }
   }, [playing, active, selectedKey, player.controls]);
   // Pausing, reaching the end and leaving write the day and the moment (in place of the entry);
-  // nothing is written while it plays.
+  // nothing is written while it plays. Leaving writes where it was, also after a seek made while
+  // paused; only a change of view or person (silent) writes nothing.
   const was = useRef({ status: playback.status, day: playback.day, clock: playback.clock });
   useEffect(() => {
     const before = was.current;
-    const ran = before.status === "playing" || before.status === "loading";
     if (playback.status !== "off")
       was.current = { status: playback.status, day: playback.day, clock: playback.clock };
     else was.current = { ...before, status: "off" };
+    const left = playback.status === "off" && before.status !== "off";
     const stopped =
-      playback.status === "paused" || playback.status === "ended" || playback.status === "off";
-    if (!ran || !stopped) return;
-    if (silentExit.current) {
-      silentExit.current = false;
-      return;
+      (playback.status === "paused" || playback.status === "ended") &&
+      (before.status === "playing" || before.status === "loading");
+    if (left && silentExit.current) silentExit.current = false;
+    else if (left || stopped) {
+      // Where it stopped: the state it stopped in, or, once it is off, the last one it was in.
+      const at = playback.status === "off" ? before : { day: playback.day, clock: playback.clock };
+      setScrub({
+        key: `${at.day}|${at.day}|${selected?.key ?? "everyone"}|${own?.deviceIds?.join(",") ?? "all"}`,
+        value: at.clock,
+      });
+      showMoment(at.day, atText(at.clock, timeZone));
     }
-    // Where it stopped: the state it stopped in, or, once it is off, the last one it was in.
-    const stoppedAt =
-      playback.status === "off" ? before : { day: playback.day, clock: playback.clock };
-    setScrub({
-      key: `${stoppedAt.day}|${stoppedAt.day}|${selected?.key ?? "everyone"}|${own?.deviceIds?.join(",") ?? "all"}`,
-      value: stoppedAt.clock,
-    });
-    showMoment(stoppedAt.day, atText(stoppedAt.clock, timeZone));
+    if (playback.status === "off") silentExit.current = false;
   }, [playback.status, playback.day, playback.clock, timeZone, showMoment, selected, own]);
   // What each drawn device was doing at the moment shown, for the strip that replaces the sidebar.
   const nowEntries = useMemo<NowEntry[]>(
@@ -672,8 +688,12 @@ export function useHistoryView({
         onChange={(value) => setScrub({ key: periodKey, value })}
         {...(playable
           ? {
-              onPlay: () =>
-                player.controls.enter(dayOf(scrubValue, timeZone), Math.round(scrubValue)),
+              onPlay: () => {
+                // The slider's end on a past day is the next day's midnight: start a minute short.
+                const last = dayBounds(dayOf(scrubValue - 1, timeZone), timeZone).end - 60;
+                const moment = Math.round(Math.min(scrubValue, last));
+                player.controls.enter(dayOf(moment, timeZone), moment);
+              },
             }
           : {})}
       />
@@ -709,7 +729,7 @@ export function useHistoryView({
         : drawsOwn
           ? `Map. Nothing was recorded for ${periodLabel}.`
           : `Map. Nothing to show for ${periodLabel}.`,
-      tracks: [...transport.tracks, ...peopleTracks],
+      tracks: mapTracks,
       transport: transport.transport,
       selectedSegmentId: shownSegment?.id ?? null,
       onSegmentClick: openFromMap,
@@ -730,8 +750,8 @@ export function useHistoryView({
       },
       focus: focus !== null && focus.period === periodKey ? focus : null,
       // While playing, the camera follows the cursor once it leaves the viewport.
-      ...(playing && cursors[0] !== undefined
-        ? { follow: { lon: cursors[0].lon, lat: cursors[0].lat } }
+      ...(playing && cursors.length > 0
+        ? { follow: cursors.map((cursor) => ({ lon: cursor.lon, lat: cursor.lat })) }
         : {}),
     },
     controls: playing ? null : (

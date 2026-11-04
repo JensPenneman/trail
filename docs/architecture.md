@@ -2923,24 +2923,36 @@ count among them, since they lead to signed-in pages.
     0.3 opacity (0.5 under `prefers-contrast: more`).
     *In the page.* The time slider spans the local day, 00:00 to 24:00 (today
     up to now, a period all its days), starts at the last recorded point and
-    has a Play button when someone is selected. `useHistoryView` takes
+    has a Play button when someone is selected (on a past day it starts a
+    minute short of the next midnight at the latest). `useHistoryView` takes
     `usePlayerState` first, so that the playing day replaces the address's
     period before the queries run; nothing is written to the address while it
-    plays. Pausing, the end and leaving write `date` and `at`
-    (`YYYY-MM-DDTHH:MM` in the account's time zone; `parseAt.ts`); the slider's
+    plays. Pausing and the end write `date` and `at`, and leaving writes where
+    it was, also after a seek made while paused (a change of view or person
+    writes nothing). `at` is `YYYY-MM-DDTHH:MM`, the wall-clock time in the
+    account's time zone (`parseAt.ts`: on a day of 23 or 25 hours the time
+    written is the time read; one the clock skips is ignored); the slider's
     own moves write `at` 400 ms after the last one, with replace; a value
     outside the day is ignored and a change of day or period drops it. While
     playing, the controls and the slider give way to the bar at the map's foot
     (on phones the sheet drops to its peek) and "At this moment" takes the
     sidebar's place on the panel; the sidebar stays mounted but hidden, its
     scroll and the page's are put back on leaving, and the focus goes to Pause
-    on entering and back to the slider's Play on leaving (Escape leaves).
-    Desktop widens the foot and narrows the panel (`--panel-width: 16rem`).
-    Someone who shares is played from `GET /api/v1/people/{userId}/days`
-    (`usePersonDays`, refetched on that person's live events). A day whose
-    tracks come back empty is skipped. The camera frames each day as it
-    loads and follows the cursor when it leaves the viewport (eased, at most
-    every 500 ms; a jump under reduced motion).
+    on entering and back to the slider's Play on leaving (Escape leaves;
+    turning the phone moves neither). The page's heading is then a hidden "History
+    playback". Desktop widens the foot and narrows the panel
+    (`--panel-width: 16rem`). Someone who shares is played from
+    `GET /api/v1/people/{userId}/days` (`usePersonDays`, refetched on that
+    person's live events). A day whose tracks come back empty is skipped. For
+    one's own days the moves are the timeline's, and while it is still being
+    worked out also what the points after its last segment say moved, so that
+    "Skip stops" does not jump over the live end. The map is handed its tracks
+    as new data only when the split moves (four times a second at most). The
+    camera frames each day as it loads and follows the cursors (all of them,
+    without zooming in) when one leaves the viewport less the fit's margin
+    (eased, at most every 500 ms; a jump under reduced motion); it leaves the
+    camera alone for five seconds after the person moved it and while a fit
+    runs (`followCamera.ts`).
   - **Heat** — all-time heatmap (`/api/heatmap` for the view once the map
     has stood still for 300 ms, its box rounded outward to a thousandth of a
     degree and its zoom to a whole level, so that small moves hit the

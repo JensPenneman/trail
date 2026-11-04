@@ -4,7 +4,16 @@ import { personDaysResponseSchema } from "@trail/contracts/person";
 import { useMemo } from "react";
 import { apiFetch } from "../api/apiFetch";
 import { queryKeys } from "../api/queryKeys";
-import type { PersonDays } from "../pages/map/history/playback";
+
+/**
+ * What someone else's days endpoint gives (`GET /api/v1/people/{id}/days`): the days they
+ * recorded something on, within the history they share; playback reads its next day from it.
+ */
+export interface PersonDays {
+  days: readonly { date: string; lastAt: string }[];
+  /** The answer reaches today. */
+  complete: boolean;
+}
 
 /**
  * The days someone recorded something, within the history they share

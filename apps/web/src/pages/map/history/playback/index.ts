@@ -6,16 +6,14 @@ export {
   dayBounds,
   dayOf,
   endOf,
+  mergeIntervals,
   movesOf,
   movingStretches,
   quietIntervals,
   splitTime,
 } from "./playbackModel";
 export { usePlaybackAnnouncer } from "./usePlaybackAnnouncer";
-export {
-  type PersonDays,
-  usePlaybackDays,
-} from "./usePlaybackDays";
+export { usePlaybackDays } from "./usePlaybackDays";
 export { usePlaybackPrefetch } from "./usePlaybackPrefetch";
 export { usePlayerEngine } from "./usePlayerEngine";
 export { usePlayerKeys } from "./usePlayerKeys";

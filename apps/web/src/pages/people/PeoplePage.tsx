@@ -302,19 +302,22 @@ export function PeoplePage() {
   // entry and back to the slider's Play on exit.
   const playing = content.player?.on === true;
   const scrolls = useRef<{ panel: number; page: number } | null>(null);
+  // Read when playback starts or ends; turning the phone while it plays moves nothing.
+  const wideNow = useRef(wide);
+  wideNow.current = wide;
   useEffect(() => {
     if (playing) {
       scrolls.current = { panel: panel.current?.scrollTop ?? 0, page: window.scrollY };
-      if (!wide) window.scrollTo({ top: 0, behavior: "instant" });
+      if (!wideNow.current) window.scrollTo({ top: 0, behavior: "instant" });
       document.querySelector<HTMLElement>("[data-player-toggle]")?.focus({ preventScroll: true });
     } else if (scrolls.current !== null) {
       const saved = scrolls.current;
       scrolls.current = null;
       if (panel.current !== null) panel.current.scrollTop = saved.panel;
-      if (!wide) window.scrollTo({ top: saved.page, behavior: "instant" });
+      if (!wideNow.current) window.scrollTo({ top: saved.page, behavior: "instant" });
       document.querySelector<HTMLElement>("[data-play]")?.focus({ preventScroll: true });
     }
-  }, [playing, wide]);
+  }, [playing]);
 
   // Beside the map History's foot floats over the map's bottom-left corner too: the key of what
   // the map draws stacks above it (`--foot-height`).

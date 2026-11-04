@@ -152,6 +152,15 @@ test("with reduced motion the clock moves in whole hours", async ({ page, accoun
   await bar.getByRole("radio", { name: "1 h/s" }).check();
   const readout = bar.locator(".player-bar__readout");
   await expect(readout).toHaveText(/(0[1-9]|1\d):00$/, { timeout: 30_000 });
+  // Whole hours at every look, a second apart, and the hours move on.
+  const hours: string[] = [];
+  for (let look = 0; look < 3; look++) {
+    const text = (await readout.textContent()) ?? "";
+    expect(text, `look ${look}`).toMatch(/\d\d:00$/);
+    hours.push(text);
+    await page.waitForTimeout(1_000);
+  }
+  expect(new Set(hours).size).toBeGreaterThan(1);
   await bar.getByRole("button", { name: "Pause", exact: true }).click();
   await expectAccessible(page, "playback paused, reduced motion");
 });

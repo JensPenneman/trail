@@ -17,10 +17,11 @@ export function parseAtText(value: string | null): string | null {
 }
 
 /**
- * The moment `?at=` names, in epoch seconds, in `timeZone`: the local day's
- * start and the time of day after it (so a day of 23 or 25 hours is right at
- * both ends). Null for a text that is not one, a day that does not exist or a
- * time that does not exist on its day.
+ * The moment `?at=` names, in epoch seconds: the wall-clock time `HH:MM` on the
+ * local day in `timeZone` (as `atText` writes it, so a pause at 14:00 on a day
+ * of 25 hours reloads at 14:00). Null for a text that is not one, a day that
+ * does not exist, or a time that does not exist on its day (the hour a clock
+ * skips); of a time that happens twice, the first.
  */
 export function momentOf(text: string | null, timeZone: string): number | null {
   const match = text === null ? null : shape.exec(text);
@@ -32,6 +33,18 @@ export function momentOf(text: string | null, timeZone: string): number | null {
   } catch {
     return null;
   }
-  const moment = start + Number(match[4]) * 3600 + Number(match[5]) * 60;
-  return atText(moment, timeZone).slice(0, 10) === day ? moment : null;
+  const wanted = Number(match[4]) * 3600 + Number(match[5]) * 60;
+  const wall = (time: number) => {
+    const { hour, minute, second } = zonedParts(time * 1000, timeZone);
+    return hour * 3600 + minute * 60 + second;
+  };
+  // From the elapsed time, closer to the wall-clock one by what the clock showed instead.
+  let moment = start + wanted;
+  for (let round = 0; round < 3; round++) {
+    const shown = atText(moment, timeZone);
+    if (shown === text) return moment;
+    if (shown.slice(0, 10) !== day) moment += shown < day ? 3600 : -3600;
+    else moment += wanted - wall(moment);
+  }
+  return atText(moment, timeZone) === text ? moment : null;
 }
