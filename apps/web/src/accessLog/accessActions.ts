@@ -31,6 +31,7 @@ const actionLabels: Readonly<Record<string, string>> = {
   getInsightsMode: "Insights of a transport mode",
   getInsightsTime: "When you travel",
   getInsightsRoads: "Roads you travel",
+  getInsightsWays: "Named roads you travel",
   listShares: "Your shares",
   createShare: "Started a share",
   updateShare: "Changed a share",

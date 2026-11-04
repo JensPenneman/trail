@@ -48,6 +48,27 @@ function intervalM(from: PiecePoint, to: PiecePoint): number {
 }
 
 /**
+ * The ways' metres of a piece: the whole move's, in the share the piece's distance is of the
+ * move's (what is known of where on the move they were is its points, which a piece has no more of).
+ */
+function wayTotalsOf(
+  features: Record<string, unknown>,
+  distanceM: number,
+): { wayTotals?: [number, number][] } {
+  const totals = features["wayTotals"];
+  const whole = features["distanceM"];
+  if (!Array.isArray(totals) || typeof whole !== "number" || whole <= 0) return {};
+  const factor = distanceM / whole;
+  return {
+    wayTotals: totals.flatMap((entry): [number, number][] =>
+      Array.isArray(entry) && typeof entry[0] === "number" && typeof entry[1] === "number"
+        ? [[entry[0], round(entry[1] * factor, 1)]]
+        : [],
+    ),
+  };
+}
+
+/**
  * A piece of a stored segment — the part beyond a window's end, or before its
  * start, that the window could not take in (docs/architecture.md §17.4) —
  * worked out from its own points, so that nothing counts twice: how many, how
@@ -116,6 +137,7 @@ export function pieceValues(
     centroid: points.length === 0 ? null : { lat: lat / points.length, lon: lon / points.length },
     features: {
       ...features,
+      ...wayTotalsOf(features, distanceM),
       durationS,
       distanceM: round(distanceM, 1),
       points: points.length,

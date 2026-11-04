@@ -2117,6 +2117,112 @@
         }
       }
     },
+    "/api/v1/insights/ways": {
+      "get": {
+        "operationId": "getInsightsWays",
+        "summary": "Get the named roads you travelled",
+        "description": "The roads you travelled most over a period of local days, for one transport mode or all of them, by the name OpenStreetMap gives them: ways of one name that lie together are one road, the same name in another town another. Each road has the distance, its share of the distance on named roads and the rough position of its centre (three decimals), so it needs `locations:read`. Moves without map data, or not worked out again yet after an upgrade, count towards `distanceM` only.\n\n**Access:** an API token with the scope `locations:read`, or a signed-in session.",
+        "tags": [
+          "Insights"
+        ],
+        "security": [
+          {
+            "bearer": [
+              "locations:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`.",
+              "example": "2026-09-28",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "First local day (the account's time zone). Left out: the first day with stops or moves, at most three years before `to`."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "Last local day, included. Left out: today. At most three years after `from`.",
+              "example": "2026-10-27",
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            "description": "Last local day, included. Left out: today. At most three years after `from`."
+          },
+          {
+            "in": "query",
+            "name": "devices",
+            "schema": {
+              "description": "Comma-separated device ids, at most 50. Leave it out for every device the token (or session) reaches.",
+              "example": "0199a0f3-5fec-72ad-a30c-5ab9d8908cd3,0199a0f4-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "schema": {
+              "description": "Only the moves in this mode; every move when left out.",
+              "example": "cycling",
+              "$ref": "#/components/schemas/TransportMode"
+            },
+            "description": "Only the moves in this mode; every move when left out."
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The named roads you travelled on.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightsWays"
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/people": {
       "get": {
         "operationId": "listPeople",
@@ -6651,6 +6757,137 @@
         ],
         "description": "Kinds of way grouped: `motorway` (motorways and trunk roads), `road` (primary to track), `cycleway`, `foot` (footways and paths), `rail`, `tram` (tram and light rail), `subway`, `ferry`, `none` (off every mapped way).",
         "example": "road"
+      },
+      "InsightsWays": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "The account's time zone, which the days follow.",
+            "example": "Europe/Brussels"
+          },
+          "period": {
+            "$ref": "#/components/schemas/InsightsPeriod"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The mode asked for; null: every mode."
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransportMode"
+            },
+            "description": "The modes moved in during the period (whatever `mode` asks for), in the order of `TransportMode`.",
+            "example": [
+              "walking",
+              "cycling",
+              "train"
+            ]
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Distance of the moves counted, metres.",
+            "example": 412380
+          },
+          "namedM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "The part of it on roads with a name, metres.",
+            "example": 116020
+          },
+          "ways": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightsWayRow"
+            },
+            "description": "The 50 roads travelled most, longest first."
+          },
+          "pending": {
+            "type": "boolean",
+            "description": "Recorded points of the period still wait for processing: the numbers may still change.",
+            "example": false
+          }
+        },
+        "required": [
+          "timezone",
+          "period",
+          "mode",
+          "modes",
+          "distanceM",
+          "namedM",
+          "ways",
+          "pending"
+        ],
+        "additionalProperties": false,
+        "description": "The named roads you travelled on."
+      },
+      "InsightsWayRow": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The road's name from OpenStreetMap.",
+            "example": "Kleine Beer"
+          },
+          "kind": {
+            "description": "The kind of way of the longest part of it.",
+            "$ref": "#/components/schemas/WayKind"
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Metres travelled on it.",
+            "example": 8240
+          },
+          "share": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Its part of the distance on named roads, 0 to 1.",
+            "example": 0.071
+          },
+          "ways": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "How many ways of OpenStreetMap it is made of.",
+            "example": 3
+          },
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90,
+            "description": "Latitude of its centre, three decimals: roads of one name are told apart by where they are.",
+            "example": 51.021
+          },
+          "lon": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180,
+            "description": "Longitude of its centre.",
+            "example": 4.482
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "distanceM",
+          "share",
+          "ways",
+          "lat",
+          "lon"
+        ],
+        "additionalProperties": false,
+        "description": "One named road you travelled on."
       },
       "Person": {
         "type": "object",

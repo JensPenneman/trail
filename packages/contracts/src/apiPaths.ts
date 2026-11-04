@@ -85,6 +85,7 @@ export const apiPaths = {
       mode: (mode: string) => `/api/v1/insights/modes/${id(mode)}`,
       time: "/api/v1/insights/time",
       roads: "/api/v1/insights/roads",
+      ways: "/api/v1/insights/ways",
     },
     people: {
       root: "/api/v1/people",

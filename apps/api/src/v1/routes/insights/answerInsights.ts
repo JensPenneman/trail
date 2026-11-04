@@ -24,6 +24,8 @@ export async function answerInsights<Body>(input: {
     devices?: readonly string[] | undefined;
   };
   range?: (scope: InsightsScope) => { startMs: number; endMs: number };
+  /** More the answer depends on, as part of the ETag (the map data behind names). */
+  extra?: (scope: InsightsScope) => Promise<unknown>;
   load: (scope: InsightsScope) => Promise<Body>;
 }): Promise<{ status: 304; etag: string } | { status: 200; body: Body; etag: string }> {
   const { ctx, auth } = input;
@@ -35,6 +37,7 @@ export async function answerInsights<Body>(input: {
   const etag = weakEtag(auth.user.id, input.operationId, [
     input.asked,
     await insightsValidator(ctx.db, scope, range),
+    ...(input.extra === undefined ? [] : [await input.extra(scope)]),
   ]);
   if (etagMatches(input.ifNoneMatch, etag)) return { status: 304, etag };
   return { status: 200, body: await input.load(scope), etag };
