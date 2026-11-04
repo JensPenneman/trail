@@ -9,8 +9,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
     "avatar name aside"
-    "avatar line line"
-    ". badge badge";
+    "avatar line line";
   align-items: center;
   gap: 0.125rem var(--space-3);
   min-width: 0;
@@ -86,11 +85,6 @@
   font-weight: 550;
   /* A part longer than the line still fits. */
   overflow-wrap: anywhere;
-}
-
-.person-summary__badge {
-  grid-area: badge;
-  margin-top: var(--space-1);
 }
 
 @media (forced-colors: active) {

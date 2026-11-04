@@ -1,40 +1,7 @@
-.person-card {
-  display: grid;
-  gap: var(--space-3);
-  min-width: 0;
-  padding: var(--space-4);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-l);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-1);
-}
-
-/* On the map: the accent edge, two pixels without moving the content. */
-.person-card--selected {
-  border-color: var(--color-accent);
-  box-shadow:
-    0 0 0 1px var(--color-accent),
-    var(--shadow-1);
-}
-
-/* Show on map and Details: one row on every screen. */
-.person-card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.person-card__details:not([hidden]) {
-  display: grid;
-}
-
-/* Opened up: each device, what the share includes, and the rest of the actions. */
+/* A person's devices, what the share includes and the rest of the actions, in their detail. */
 .person-details {
   display: grid;
   gap: var(--space-4);
-  padding-top: var(--space-3);
-  border-top: var(--border-width) solid var(--color-border);
 }
 
 .person-details__part {
@@ -138,12 +105,5 @@
 @media (max-width: 22rem) {
   .person-details__facts {
     grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (forced-colors: active) {
-  .person-card--selected {
-    border-color: Highlight;
-    outline: 1px solid Highlight;
   }
 }

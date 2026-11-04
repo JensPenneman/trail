@@ -79,7 +79,7 @@
     calc(var(--space-4) + var(--safe-left));
 }
 
-/* History's and Heat's details, above the people. */
+/* The view's own part of the list and of a detail: History's summary, Live's day so far. */
 .map-page__details {
   position: relative;
   display: grid;
@@ -173,122 +173,6 @@
   }
 }
 
-/*
- * The signed-in person as a person: the two lines the people below have too,
- * the quick toggle, Show on map and Details.
- */
-.me-card {
-  display: grid;
-  gap: var(--space-3);
-  min-width: 0;
-  padding: var(--space-4);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-l);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-1);
-}
-
-/* On the map: the accent edge, two pixels without moving the content (as on a person's card). */
-.me-card--shown {
-  border-color: var(--color-accent);
-  box-shadow:
-    0 0 0 1px var(--color-accent),
-    var(--shadow-1);
-}
-
-.me-card__setup {
-  color: var(--color-text-2);
-  font-size: var(--text-s);
-}
-
-.me-card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.me-card__details:not([hidden]) {
-  display: grid;
-}
-
-/* Everyone who shares with the signed-in person, a card each. */
-.people-list__cards {
-  display: grid;
-  gap: var(--space-4);
-  margin: 0;
-}
-
-@media (min-width: 40rem) and (max-width: 63.99rem) {
-  .people-list__cards {
-    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
-  }
-}
-
-/* Show everyone, pressed while the map shows everyone. */
-.people-list__everyone[aria-pressed="true"] {
-  background: var(--color-accent-soft);
-}
-
-.people-list__hidden > summary {
-  width: fit-content;
-}
-
-.people-list__hidden > .card {
-  margin-top: var(--space-2);
-}
-
-/* One's own side: Share my location, and the line that leads to Settings › Sharing. */
-.people-list__yours {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-3);
-  padding-top: var(--space-5);
-  border-top: var(--border-width) solid var(--color-border);
-}
-
-.people-list__sharing {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  min-height: var(--target);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-m);
-  color: var(--color-text);
-  text-decoration: none;
-}
-
-.people-list__sharing:hover {
-  background: var(--color-surface-2);
-  color: var(--color-text);
-  text-decoration: none;
-}
-
-.people-list__sharing-text {
-  display: grid;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.people-list__sharing-line {
-  color: var(--color-accent);
-  font-weight: 600;
-}
-
-.people-list__sharing:hover .people-list__sharing-line {
-  text-decoration: underline;
-}
-
-.people-list__sharing-where {
-  color: var(--color-text-2);
-  font-size: var(--text-s);
-}
-
-.people-list__sharing-chevron {
-  color: var(--color-text-2);
-}
-
 /* The map's device filter, folded away among the options: it is seldom what one looks for. */
 .map-page__advanced > summary {
   width: fit-content;
@@ -296,20 +180,4 @@
 
 .map-page__advanced[open] > summary {
   margin-bottom: var(--space-2);
-}
-
-@media (forced-colors: active) {
-  .people-list__everyone[aria-pressed="true"] {
-    outline: 2px solid Highlight;
-    outline-offset: -2px;
-  }
-
-  .me-card--shown {
-    border-color: Highlight;
-    outline: 1px solid Highlight;
-  }
-
-  .people-list__sharing-line {
-    color: LinkText;
-  }
 }

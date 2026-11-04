@@ -10,6 +10,7 @@ import { BatteryIndicator } from "../../ui/BatteryIndicator";
 import { Icon } from "../../ui/Icon";
 import { PlainList } from "../../ui/PlainList";
 import { RelativeTime } from "../../ui/RelativeTime";
+import "../../people/PersonDetails.css";
 
 interface MyDevicesProps {
   devices: readonly DeviceSummary[];
@@ -18,7 +19,7 @@ interface MyDevicesProps {
 }
 
 /**
- * The Me card, opened up: each of one's devices with when it last reported
+ * Me's devices, in their detail: each of one's devices with when it last reported
  * a position, its battery, that position with its accuracy, its movement and
  * trip — each linking to its page — and the way to Settings › Devices, where
  * the uploads are.

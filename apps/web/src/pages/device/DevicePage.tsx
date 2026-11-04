@@ -19,7 +19,6 @@ import { DeviceOverview } from "./DeviceOverview";
 import { DeviceUnavailable } from "./DeviceUnavailable";
 import { RenameDeviceDialog } from "./RenameDeviceDialog";
 import { RotateTokenDialog } from "./RotateTokenDialog";
-import { TravelModeSection } from "./TravelModeSection";
 import { useRoutedDevice } from "./useRoutedDevice";
 import "./DevicePage.css";
 
@@ -76,7 +75,6 @@ export function DevicePage() {
         deviceName={current.name}
         colorSlot={colors.slot(current.id)}
       />
-      {current.lastSeenAt === null ? null : <TravelModeSection device={current} />}
       <AlertsSection device={current} />
 
       <SettingsGroup title="What it sent">

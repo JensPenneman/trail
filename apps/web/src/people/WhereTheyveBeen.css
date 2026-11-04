@@ -1,4 +1,4 @@
-/* On a card while its person is on the map: their day, in a band of its own. */
+/* In the detail of a person selected on the map: their day, in a band of its own. */
 .where-been {
   display: grid;
   gap: var(--space-1);

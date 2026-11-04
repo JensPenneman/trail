@@ -46,14 +46,3 @@ export const chosenModes: readonly ChosenMode[] = [
   "plane",
   "stationary",
 ];
-
-/** The quick toggle's chips; the rest are under "Other". */
-export const quickModes: readonly ChosenMode[] = [
-  "walking",
-  "cycling",
-  "car",
-  "bus",
-  "train",
-  "tram",
-  "metro",
-];

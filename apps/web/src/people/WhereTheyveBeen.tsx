@@ -11,7 +11,7 @@ import { sharesHistory } from "./sharesHistory";
 import type { PersonTrackSummary } from "./summarizePersonTrack";
 import "./WhereTheyveBeen.css";
 
-/** The day or period whose track a card shows, and the way to another day. */
+/** The day or period whose track a detail shows, and the way to another day. */
 export interface WhereTheyveBeenPeriod {
   /** The day shown — today in Live, History's day — or null for History's period. */
   day: string | null;
@@ -30,13 +30,13 @@ interface WhereTheyveBeenProps {
   period: WhereTheyveBeenPeriod;
   /** Their track as the view asked for it; null when it asked for none (no device shown). */
   track: PersonTrackState | null;
-  /** The card's heading, which says whose day the buttons step. */
+  /** The detail's heading, which says whose day the buttons step. */
   titleId: string;
   now: number;
 }
 
 /**
- * Where someone who is on the map has been, on their card: the day with a
+ * Where the selected person has been, in their detail: the day with a
  * way to the one before and after — no further back than the history they
  * share, since every look there counts in their access log — and their track
  * for it in a line, "14.9 km · 06:30 – 07:15", from what their share's track
@@ -65,9 +65,8 @@ export function WhereTheyveBeen({ person, period, track, titleId, now }: WhereTh
   };
 
   return (
-    // No landmark: every card on the map has one, and its heading says what it is.
     <div className="where-been">
-      <h4 className="where-been__title">Where they’ve been</h4>
+      <h3 className="where-been__title">Where they’ve been</h3>
       {!sharesHistory(person) ? (
         <p className="where-been__line">Shares live location only</p>
       ) : (

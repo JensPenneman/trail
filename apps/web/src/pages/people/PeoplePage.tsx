@@ -1,6 +1,7 @@
-import type { Person, SharedDevice } from "@trail/contracts/person";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { DocumentTitle } from "../../app/DocumentTitle";
+import { offlineReasonId, useReadOnly } from "../../app/useReadOnly";
 import { useSessionUser } from "../../app/useSessionUser";
 import { useDeviceColors } from "../../devices/useDeviceColors";
 import { LazyTrailMap } from "../../map/LazyTrailMap";
@@ -16,9 +17,9 @@ import { useNow } from "../../time/useNow";
 import { LevelControl, levelLabels } from "../../transport/LevelControl";
 import { ModeLegend } from "../../transport/ModeLegend";
 import { useTrackLevel } from "../../transport/useTrackLevel";
+import { Button } from "../../ui/Button";
 import { Icon } from "../../ui/Icon";
 import { PageHeader } from "../../ui/PageHeader";
-import { useAnnounce } from "../../ui/useAnnounce";
 import { useMediaQuery } from "../../ui/useMediaQuery";
 import { useScrollableFocus } from "../../ui/useScrollableFocus";
 import { DeviceFilter, type DeviceFilterGroup } from "../map/DeviceFilter";
@@ -28,42 +29,40 @@ import { useLiveView } from "../map/live/useLiveView";
 import { MapOptions } from "../map/MapOptions";
 import type { MapPerson } from "../map/MapPerson";
 import { MapStyleControl } from "../map/MapStyleControl";
+import { withPerson } from "../map/mapSearchUpdates";
 import { type MapView, shownView, viewsFor } from "../map/mapViews";
 import { me } from "../map/me";
-import { PersonSelector } from "../map/PersonSelector";
 import { resolveMapSelection } from "../map/resolveMapSelection";
 import { useMapSearch } from "../map/useMapSearch";
 import { ViewSwitch } from "../map/ViewSwitch";
-import { MeCard } from "./MeCard";
 import { PeopleList } from "./PeopleList";
-import { everyoneToggled, selectionShowing } from "./peopleSelection";
+import { PersonPanel } from "./PersonPanel";
+import { usePanelFocus } from "./usePanelFocus";
+import { useSharingActions } from "./useSharingActions";
 import "./PeoplePage.css";
 
 const defaultThresholds = { liveMinutes: 15, staleHours: 12 };
 /** Where the map sits beside the panel instead of inside the scrolling page. */
 const besideThePanel = "(min-width: 64rem)";
-/** How close "Show on map" goes for someone the map shows already, by what their share reveals. */
-const focusZoom = { precise: 16, approximate: 14, area: 11 } as const;
-
-type Focus = { key: string; lon: number; lat: number; zoom: number };
 
 /**
  * The People page, Trail's home (docs/architecture.md §14): one map with its
- * three views — Live, History and Heat — and the choices they share (whose
- * data, which devices, the map style, the tracks' level), all in the URL;
- * beside it the people, as people rather than their devices: Me first, then
- * everyone who shares with the signed-in person, each where they are, what
- * they are doing and, while on the map, where they have been. "Show on map"
- * on a card makes that person the map's choice, and the page offers what can
- * be shown of them: one's own levels, timeline, visits, trips and heatmap only
- * while Me is chosen. Every view keeps its state and its queries in a hook
- * that asks for nothing while another view is shown, so the map itself, with
- * its camera, stays as it is when the view changes. What the devices send is
- * Settings › Devices'.
+ * three views — Live, History and Heat — and the choices they share (who is
+ * selected, which of their devices, the map style, the tracks' level), all in
+ * the URL; beside it the people, Find My style: a list with Me first and then
+ * everyone who shares with the signed-in person, each where they are and what
+ * they are doing. Selecting one (`?person=`) replaces the list with their
+ * detail and draws what can be drawn of them: one's own tracks, timeline,
+ * visits, trips and heatmap while Me is selected, someone's track where their
+ * share includes it. With nobody selected the map shows positions (Live) or
+ * everyone's tracks (History) and asks for no more. Every view keeps its state
+ * and its queries in a hook that asks for nothing while another view is shown,
+ * so the map itself, with its camera, stays as it is when the view changes.
+ * What the devices send is Settings › Devices'.
  */
 export function PeoplePage() {
   const user = useSessionUser();
-  const { search, today, setView, setPeople, setDevices, showDay, showHistoryDay, showRange } =
+  const { search, today, setView, setPerson, setDevices, showDay, showHistoryDay, showRange } =
     useMapSearch();
   const { level, setLevel } = useTrackLevel();
   const mapStyle = useMapStyle();
@@ -75,11 +74,12 @@ export function PeoplePage() {
   const now = useNow(15_000);
   const wide = useMediaQuery(besideThePanel);
   const scrollable = useScrollableFocus();
-  const announce = useAnnounce();
+  const readOnly = useReadOnly();
   const thresholds = config.data?.thresholds ?? defaultThresholds;
   const [viewport, setViewport] = useState<MapViewState | null>(null);
   // The device filter is folded away among the map's options, and open when an address sets one.
   const [filterOpen] = useState(() => search.devices !== null);
+  const sharing = useSharingActions(people.data ?? []);
 
   const available = useMemo<MapPerson[]>(
     () => [
@@ -100,43 +100,25 @@ export function PeoplePage() {
   const complete = devices.data !== undefined && (people.data !== undefined || people.isError);
   const selection = useMemo(
     () =>
-      resolveMapSelection({ people: search.people, devices: search.devices }, available, complete),
-    [search.people, search.devices, available, complete],
+      resolveMapSelection({ person: search.person, devices: search.devices }, available, complete),
+    [search.person, search.devices, available, complete],
   );
-  const shownKeys = selection.people.map((person) => person.key);
-  const meShown = shownKeys.includes(me);
-  // Heat is one's own: with only others chosen the page shows Live, and Heat again with Me.
-  const view = shownView(search.view, meShown);
+  const selected = selection.selected;
+  const selectedKey = selected?.key ?? null;
+  // Heat is one's own: with someone else selected the page shows Live, and Heat again with Me.
+  const heatOffered = selectedKey === null || selectedKey === me;
+  const view = shownView(search.view, heatOffered);
 
   // Heat frames the camera only when the page opened on it; the other views share theirs.
   const [openedOn] = useState(view);
   const [leftFirstView, setLeftFirstView] = useState(false);
   if (!leftFirstView && view !== openedOn) setLeftFirstView(true);
 
-  const shownPeople = useMemo(
-    () =>
-      (people.data ?? []).filter((person) =>
-        selection.people.some((selected) => selected.key === person.userId),
-      ),
-    [people.data, selection],
-  );
-
-  // On phones the map scrolls with the page: "Show on map" brings it into view.
-  const mapArea = useRef<HTMLDivElement>(null);
-  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const revealMap = useCallback(() => {
-    if (!wide) {
-      mapArea.current?.scrollIntoView({
-        block: "nearest",
-        behavior: reducedMotion ? "auto" : "smooth",
-      });
-    }
-  }, [wide, reducedMotion]);
-
+  const everyone = people.data ?? [];
   const shared = {
     selection,
     devices,
-    people: shownPeople,
+    people: everyone,
     colors,
     personColors,
     level,
@@ -168,60 +150,7 @@ export function PeoplePage() {
   });
   const content = view === "live" ? live : view === "history" ? history : heat;
 
-  // "Show on map" for someone shown already moves the camera, over the view's last move. Once the
-  // view moves it again (or another view is shown) that one is the latest, and Show on map's is done:
-  // the map remembers only the last move it made, so an old one handed back would be made again.
-  const [shownFocus, setShownFocus] = useState<{ focus: Focus; over: string | null } | null>(null);
-  const focusCount = useRef(0);
-  const viewFocus = content.map.focus ?? null;
-  const viewFocusKey = viewFocus?.key ?? null;
-  if (shownFocus !== null && shownFocus.over !== viewFocusKey) setShownFocus(null);
-  const focus =
-    shownFocus !== null && shownFocus.over === viewFocusKey ? shownFocus.focus : viewFocus;
-
-  const devicesOf = (person: string) =>
-    available.find((candidate) => candidate.key === person)?.devices.map((device) => device.id) ??
-    [];
-  /** Shows someone: them alone when the map does not show them yet, else the camera goes there. */
-  const show = (key: string, name: string, target: Omit<Focus, "key"> | null) => {
-    const next = selectionShowing(shownKeys, key);
-    if (next !== null) {
-      // A new choice frames itself: what the map draws for it has a camera fit of its own.
-      setPeople(next, devicesOf);
-    } else if (target !== null) {
-      focusCount.current += 1;
-      setShownFocus({
-        focus: { ...target, key: `show:${key}#${focusCount.current}` },
-        over: viewFocusKey,
-      });
-    }
-    revealMap();
-    announce(`The map shows ${name}.`);
-  };
-  const showMe = () => {
-    const latest = (devices.data ?? [])
-      .flatMap((device) => (device.lastLocation === null ? [] : [device.lastLocation]))
-      .sort((a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt))[0];
-    show(me, "you", latest === undefined ? null : { lon: latest.lon, lat: latest.lat, zoom: 15 });
-  };
-  const showPerson = (person: Person, device: SharedDevice) => {
-    if (device.location === null) return;
-    show(person.userId, person.displayName, {
-      lon: device.location.lon,
-      lat: device.location.lat,
-      zoom: focusZoom[person.share.precision],
-    });
-  };
-  const everyoneKeys = available.map((person) => person.key);
-  const everyoneShown = everyoneKeys.every((key) => shownKeys.includes(key));
-  const showEveryone = () => {
-    const next = everyoneToggled(shownKeys, everyoneKeys);
-    setPeople(next, devicesOf);
-    revealMap();
-    announce(next.length === 1 ? "The map shows you." : "The map shows everyone.");
-  };
-
-  // Where the people on the map have been: Live's today (a day back is History), History's day or
+  // Where the selected person has been: Live's today (a day back is History), History's day or
   // period. Heat draws nobody else.
   const period = search.period;
   const wherePeriod: WhereTheyveBeenPeriod | null =
@@ -237,38 +166,44 @@ export function PeoplePage() {
             opensHistory: false,
           }
         : null;
-  const whereOf = (person: Person) =>
-    wherePeriod === null || !shownKeys.includes(person.userId)
-      ? undefined
-      : { period: wherePeriod, track: content.personTracks.get(person.userId) ?? null };
 
-  // Beside the map the panel scrolls by itself: another view starts at its top.
+  // Beside the map the panel scrolls by itself: another view or person starts at its top.
   const panel = useRef<HTMLElement | null>(null);
+  const focusRef = usePanelFocus(selectedKey);
   const panelRef = useCallback(
     (element: HTMLElement | null) => {
       panel.current = element;
+      focusRef(element);
       return scrollable(element);
     },
-    [scrollable],
+    [scrollable, focusRef],
   );
-  const switchView = (next: MapView) => {
+  const toTop = () => {
     if (panel.current !== null) panel.current.scrollTop = 0;
+  };
+  const switchView = (next: MapView) => {
+    toTop();
     setView(next);
   };
+  const [params] = useSearchParams();
+  const linkTo = (person: string) => `?${withPerson(params, person).toString()}`;
+  const backTo = `?${withPerson(params, null).toString()}`;
 
-  // Heatmaps are one's own: in Heat, people do not apply and the filter lists one's devices.
-  const choosesPeople = available.length > 1 && view !== "heat";
-  const groups: DeviceFilterGroup[] = selection.people
-    .filter((person) => view !== "heat" || person.key === me)
-    .map((person) => ({
-      key: person.key,
-      name: person.name,
-      devices: person.devices.map((device) =>
-        person.key === me
-          ? { ...device, slot: colors.slot(device.id), palette: "device" as const }
-          : { ...device, slot: personColors.slot(person.key), palette: "person" as const },
-      ),
-    }));
+  // Devices to choose among: the selected person's (in Heat, one's own), when they have several.
+  const groups: DeviceFilterGroup[] =
+    selected === null || selected.devices.length < 2
+      ? []
+      : [
+          {
+            key: selected.key,
+            name: selected.name,
+            devices: selected.devices.map((device) =>
+              selected.key === me
+                ? { ...device, slot: colors.slot(device.id), palette: "device" as const }
+                : { ...device, slot: personColors.slot(selected.key), palette: "person" as const },
+            ),
+          },
+        ];
   const deviceCount = groups.reduce((sum, group) => sum + group.devices.length, 0);
   const shownCount = groups.reduce(
     (sum, group) =>
@@ -277,13 +212,6 @@ export function PeoplePage() {
   );
   const transport = content.transport;
   const summary = [
-    ...(choosesPeople
-      ? [
-          selection.people.length === available.length
-            ? "Everyone"
-            : selection.people.map((person) => person.name).join(", "),
-        ]
-      : []),
     // Which devices draw only matters when some do not.
     ...(deviceCount > 1 && shownCount < deviceCount
       ? [`${shownCount} of ${deviceCount} devices`]
@@ -291,6 +219,14 @@ export function PeoplePage() {
     ...(transport === null ? [] : [levelLabels[level]]),
     `${mapStyleLabels[mapStyle.choice]} map`,
   ].join(" · ");
+
+  // The view's part of the list and of every detail, with the label that names it.
+  const viewPanel =
+    content.panel === null ? null : (
+      <section className="map-page__details" aria-label={content.panelLabel}>
+        {content.panel}
+      </section>
+    );
 
   return (
     <div className="map-page">
@@ -301,25 +237,28 @@ export function PeoplePage() {
             title="People"
             titleId="people-page-title"
             description={content.description}
+            actions={
+              everyone.length === 0 ? undefined : (
+                <Button
+                  variant="ghost"
+                  icon="plus"
+                  iconOnly
+                  disabled={readOnly}
+                  aria-describedby={readOnly ? offlineReasonId : undefined}
+                  onClick={() => sharing.openShare()}
+                >
+                  Share my location
+                </Button>
+              )
+            }
           />
-          <ViewSwitch view={view} views={viewsFor(meShown)} onChange={switchView} />
+          <ViewSwitch view={view} views={viewsFor(heatOffered)} onChange={switchView} />
         </div>
         <div className="map-page__head">
           {content.controls === null ? null : (
             <div className="map-page__controls">{content.controls}</div>
           )}
           <MapOptions summary={summary}>
-            {choosesPeople ? (
-              <PersonSelector
-                people={available.map((person) => ({
-                  key: person.key,
-                  name: person.name,
-                  slot: person.key === me ? null : personColors.slot(person.key),
-                }))}
-                selected={shownKeys}
-                onChange={(next) => setPeople(next, devicesOf)}
-              />
-            ) : null}
             <MapStyleControl
               choice={mapStyle.choice}
               choices={mapStyle.choices}
@@ -353,12 +292,11 @@ export function PeoplePage() {
           ) : null}
         </div>
 
-        <div className="map-page__map" ref={mapArea}>
+        <div className="map-page__map">
           <div className="map-page__canvas">
             {mapStyle.style === null ? null : (
               <LazyTrailMap
                 {...content.map}
-                focus={focus}
                 mapStyle={mapStyle.style}
                 dark={mapStyle.dark}
                 notice={mapStyle.notice}
@@ -373,38 +311,36 @@ export function PeoplePage() {
         </div>
 
         <div className="map-page__body">
-          {view === "live" || content.panel === null ? null : (
-            <section className="map-page__details" aria-label={content.panelLabel}>
-              {content.panel}
-            </section>
+          {selectedKey === null ? (
+            <PeopleList
+              people={people}
+              devices={devices}
+              personColors={personColors}
+              now={now}
+              thresholds={thresholds}
+              linkTo={linkTo}
+              panel={viewPanel}
+              sharing={sharing}
+            />
+          ) : (
+            <PersonPanel
+              selected={selectedKey}
+              backTo={backTo}
+              name={user.displayName}
+              devices={devices}
+              people={people}
+              personColors={personColors}
+              now={now}
+              thresholds={thresholds}
+              content={content}
+              period={wherePeriod}
+              sharing={sharing}
+              onLeave={() => setPerson(null)}
+            />
           )}
-          <MeCard
-            name={user.displayName}
-            devices={devices}
-            now={now}
-            thresholds={thresholds}
-            shown={meShown}
-            onShowOnMap={showMe}
-          />
-          {/* Live's is one's day so far: where one has been today, right under where one is. */}
-          {view !== "live" || content.panel === null ? null : (
-            <section className="map-page__details" aria-label={content.panelLabel}>
-              {content.panel}
-            </section>
-          )}
-          <PeopleList
-            people={people}
-            shown={shownKeys}
-            everyone={available.length > 2 ? everyoneShown : null}
-            personColors={personColors}
-            now={now}
-            liveMinutes={thresholds.liveMinutes}
-            onShow={showPerson}
-            onShowEveryone={showEveryone}
-            whereOf={whereOf}
-          />
         </div>
       </section>
+      {sharing.dialogs}
       {content.dialog}
     </div>
   );
