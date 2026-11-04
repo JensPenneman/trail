@@ -15,7 +15,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useMediaQuery } from "../ui/useMediaQuery";
 import { absoluteSprite } from "./absoluteSprite";
 import { accuracyFeatures } from "./accuracyFeatures";
-import { ensureTrailLayers, trailSources, transportLayers } from "./ensureTrailLayers";
+import { dimOpacity, ensureTrailLayers, trailSources, transportLayers } from "./ensureTrailLayers";
 import { heatFeatures } from "./heatFeatures";
 import type {
   Bounds,
@@ -175,6 +175,7 @@ export function TrailMap({
   const fittedKey = useRef<string | null>(null);
   const focusedKey = useRef<string | null>(null);
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const moreContrast = useMediaQuery("(prefers-contrast: more)");
 
   const reportView = useEffectEvent((instance: MapLibreMap) => {
     const bounds = instance.getBounds();
@@ -290,8 +291,9 @@ export function TrailMap({
   }, [map, label]);
 
   useEffect(() => {
-    if (map !== null && styleVersion > 0 && styleReady.current) ensureTrailLayers(map, dark);
-  }, [map, styleVersion, dark]);
+    if (map !== null && styleVersion > 0 && styleReady.current)
+      ensureTrailLayers(map, dark, moreContrast ? dimOpacity.moreContrast : dimOpacity.normal);
+  }, [map, styleVersion, dark, moreContrast]);
 
   useEffect(() => {
     if (map !== null && styleVersion > 0 && styleReady.current) {

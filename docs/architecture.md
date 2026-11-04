@@ -1548,6 +1548,7 @@ People and Sharing):
 | `GET /api/v1/people` | `people:read` | people sharing with the caller, by name, with their shared devices |
 | `GET /api/v1/people/{userId}` | `people:read` | one of them; 404 for anyone else or a hidden person |
 | `GET /api/v1/people/{userId}/track` | `people:read` | shares with history only: points in `[from, to)` (≤ 93 days), `from` moved up to the start of the history, split and simplified as in §8.1 |
+| `GET /api/v1/people/{userId}/days` | `people:read` | shares with history only: `{ timezone, window { from, to }, days [{ date, deviceId, points, firstAt, lastAt }] }` — the days with points of the shared devices within the history, from `daily_stats` in the **owner's** zone (the zone their days are cut in); the window's first day, when the history begins inside it, is counted from `locations` from that instant on; no positions. Same grant as the track (`grantsViewer`: hidden, stopped, ended: 404; approximate: 404). The ETag hashes the answer with the share. The owner's access log gets one line with the devices and the window (`from`, `to` as local days), never the days; the share's last view is stamped |
 | `GET /api/v1/shares` | `shares:read` | current outgoing shares: `pending`, `joined`, `active`, `hidden` |
 | `POST /api/v1/shares` | `shares:write` + `locations:read` | start one (201) |
 | `PATCH /api/v1/shares/{id}` | `shares:write` + `locations:read` | change (duration from now, devices, precision, history, details) |
@@ -2824,6 +2825,34 @@ count among them, since they lead to signed-in pages.
     a moment; distance, points, first/last; the timeline of stops and moves,
     with a dialog to correct a mode; visits and trips of the day (Me's
     detail). Other people's tracks as their shares allow (below).
+    **Playback** has an engine in `pages/map/history/playback`, not yet
+    wired into the page: a pure model (`playbackModel`: local-day bounds, the
+    moves of the timeline or, from the points alone, movement stretches —
+    split at recording gaps, cut by three minutes below 0.6 m/s, kept at a
+    minute and 100 m — and the quiet stretches outside them, the next day with
+    data) and reducer (`playbackReducer`: playing, paused, loading, ended;
+    rates of 1, 5, 15 and 60 playback minutes per second; seeks and steps
+    clamped to the start moment and the last recorded point; midnight crosses
+    into the next day with data and waits for its tracks; "Skip stops" shows a
+    quiet stretch over two minutes for half a second and jumps to its end),
+    driven by hooks: `usePlayerEngine` runs the clock on animation frames, at
+    most 30 updates a second with each step capped at 250 ms (with reduced
+    motion one step a second), `usePlayerKeys` the keys on the window
+    (Space, arrows, Shift with them for moves, Escape; it leaves alone what
+    is handled, modified, in inputs and dialogs, and Space on a button),
+    `usePlaybackDays` the days with data (one's own from `/api/stats/days` in
+    windows of 400 days; someone else's from an answer handed in),
+    `usePlaybackPrefetch` the next day's queries kept mounted from 90 % of a
+    day, `usePlaybackAnnouncer` the day changes and the end. The bar
+    (`PlayerBar`, region "Playback") and the strip of what each device was
+    doing (`NowStrip`, "At this moment") are presentational. For the map,
+    `tracksToMap`, `levelTracksToMap` and `useTransportMap` take an `until`
+    (the cursor, rounded by `splitTime` so that the split moves four times a
+    second at most) and give what lies after it as `dimmed` tracks and
+    Transport segments (a connector or stop after it whole, a move cut at the
+    cursor by `splitTrackAt` into two halves that keep its id); the caller
+    dims visit dots with `MapPoint.dimmed`. `ensureTrailLayers` draws them at
+    0.3 opacity (0.5 under `prefers-contrast: more`).
   - **Heat** — all-time heatmap (`/api/heatmap` for the view once the map
     has stood still for 300 ms, its box rounded outward to a thousandth of a
     degree and its zoom to a whole level, so that small moves hit the

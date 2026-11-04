@@ -1,7 +1,7 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { describe, expect, it } from "vitest";
 import { dataLayerPlacement } from "../src/map/dataLayerPlacement";
-import { ensureTrailLayers } from "../src/map/ensureTrailLayers";
+import { dimOpacity, ensureTrailLayers } from "../src/map/ensureTrailLayers";
 import { asStyleLayers, darkLayers, libertyLayers } from "./support/basemapLayers";
 
 interface FakeLayer {
@@ -11,7 +11,7 @@ interface FakeLayer {
 }
 
 /** Just enough of a MapLibre map to add, find and move layers in a style's order. */
-function fakeMap(layers: FakeLayer[], sources = new Set<string>()) {
+function fakeMap(layers: FakeLayer[], sources = new Set<string>(), paint?: Map<string, unknown>) {
   const indexOf = (id: string | undefined) =>
     id === undefined ? layers.length : layers.findIndex((layer) => layer.id === id);
   const map = {
@@ -26,7 +26,9 @@ function fakeMap(layers: FakeLayer[], sources = new Set<string>()) {
       const [layer] = layers.splice(indexOf(id), 1);
       if (layer !== undefined) layers.splice(indexOf(beforeId), 0, layer);
     },
-    setPaintProperty: () => undefined,
+    setPaintProperty: (id: string, property: string, value: unknown) => {
+      paint?.set(`${id}/${property}`, value);
+    },
     setFilter: () => undefined,
   };
   return map as unknown as MapLibreMap;
@@ -146,5 +148,45 @@ describe("ensureTrailLayers in OpenFreeMap's styles", () => {
     expect(layers[0]?.id).toBe("imagery");
     expect(layers.slice(1).every((layer) => layer.id.startsWith("trail-"))).toBe(true);
     expect(layers[1]?.id).toBe("trail-heat");
+  });
+});
+
+describe("the layers' fade for what the playback cursor has not reached", () => {
+  const faded = (dim?: number) => {
+    const paint = new Map<string, unknown>();
+    const layers: FakeLayer[] = asStyleLayers(libertyLayers);
+    if (dim === undefined) ensureTrailLayers(fakeMap(layers, new Set(), paint), false);
+    else ensureTrailLayers(fakeMap(layers, new Set(), paint), false, dim);
+    return paint;
+  };
+  const fade = (opacity: number) => ["case", ["==", ["get", "dimmed"], true], opacity, 1];
+
+  it("fades dimmed features of every line and dot layer to 0.3, and leaves the rest whole", () => {
+    const paint = faded();
+    for (const layer of [
+      "trail-track-casing",
+      "trail-track-line",
+      "trail-transport-gaps",
+      "trail-transport-casing",
+      "trail-transport-line",
+      "trail-transport-review",
+      "trail-transport-stop-paths",
+    ]) {
+      expect(paint.get(`${layer}/line-opacity`), layer).toEqual(fade(0.3));
+    }
+    for (const layer of ["trail-transport-stops", "trail-visits"]) {
+      expect(paint.get(`${layer}/circle-opacity`), layer).toEqual(fade(0.3));
+      expect(paint.get(`${layer}/circle-stroke-opacity`), layer).toEqual(fade(0.3));
+    }
+    // The accuracy rings and the cursors are not played tracks.
+    expect(paint.has("trail-accuracy-fill/fill-opacity")).toBe(false);
+    expect(paint.has("trail-cursors/circle-opacity")).toBe(false);
+  });
+
+  it("fades less where more contrast is asked for", () => {
+    expect(dimOpacity).toEqual({ normal: 0.3, moreContrast: 0.5 });
+    const paint = faded(dimOpacity.moreContrast);
+    expect(paint.get("trail-track-line/line-opacity")).toEqual(fade(0.5));
+    expect(paint.get("trail-visits/circle-stroke-opacity")).toEqual(fade(0.5));
   });
 });
