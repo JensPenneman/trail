@@ -26,7 +26,9 @@ export function DeviceFilter({ groups, selected, onChange }: DeviceFilterProps) 
     base: string;
   } | null>(null);
   const addressKey = selected === null ? "" : `ids:${selected.join(",")}`;
-  // A press is kept only against the address it was made on: once that moves, the address rules.
+  // A press lasts until the address moves: from then on the address rules, also when it comes
+  // back to where the press was made.
+  if (pending !== null && pending.base !== addressKey) setPending(null);
   const shown = pending !== null && pending.base === addressKey ? pending.value : selected;
   const all = groups.flatMap((group) => group.devices.map((device) => device.id));
   const isOn = (deviceId: string) => shown === null || shown.includes(deviceId);

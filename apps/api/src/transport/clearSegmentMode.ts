@@ -22,10 +22,10 @@ export async function clearSegmentMode(
   db: Database,
   access: DeviceAccess,
   segmentId: string,
-  options: { queue: boolean },
+  options: { queue: boolean; lockWaitMs: number },
 ): Promise<{ segment: Segment; revoked: { from: Date; to: Date }[] }> {
   const found = await findSegment(db, access, segmentId);
-  return correctionTransaction(db, found.device_id, async (tx) => {
+  return correctionTransaction(db, found.device_id, options.lockWaitMs, async (tx) => {
     const segment = await findSegment(tx, access, segmentId, { forUpdate: true });
     await assertMoveOver(tx, segment);
     const override = segment.features["override"];

@@ -45,7 +45,11 @@ const errorOf = (body: unknown) => apiErrorSchema.parse(body).error;
 
 beforeAll(async () => {
   await resetDatabase();
-  t = await createTestContext({ waySource: new FixtureWaySource(), apiTokens: tokens });
+  t = await createTestContext({
+    waySource: new FixtureWaySource(),
+    apiTokens: tokens,
+    env: { PROCESSING_CORRECTION_WAIT_MS: "300" },
+  });
   ({ agent: owner, cookie: ownerCookie } = await signUpWithCookie(t.app, ownerEmail));
   stranger = agentFor(t.app);
   await signUp(stranger, new SoftwareAuthenticator(), "stranger@allowed.test");
@@ -407,6 +411,7 @@ describe("PUT and DELETE /api/v1/segments/{id}/mode", () => {
         () => owner.delete(apiPaths.v1.segments.mode(move.id)).set("Origin", testOrigin),
       ]) {
         const refused = await call().expect(409);
+        expect(refused.headers["retry-after"]).toBe("5");
         expect(errorOf(refused.body)).toMatchObject({
           code: "conflict",
           message: "Still processing this device's data, try again in a moment.",
@@ -416,13 +421,19 @@ describe("PUT and DELETE /api/v1/segments/{id}/mode", () => {
       release();
       await pass;
     }
+    // The bound was local to the corrections' transactions: the pool's connections have none.
+    const after = await t.ctx.db.transaction(async (tx) => {
+      const result = await tx.execute<{ lock_timeout: string }>(sql`SHOW lock_timeout`);
+      return result.rows[0]?.lock_timeout;
+    });
+    expect(after).toBe("0");
     await owner
       .put(apiPaths.v1.segments.mode(move.id))
       .set("Origin", testOrigin)
       .send({ mode: "metro" })
       .expect(200);
     await owner.delete(apiPaths.v1.segments.mode(move.id)).set("Origin", testOrigin).expect(200);
-  }, 60_000);
+  });
 
   it("refuses a stop, an unknown mode, foreign ids and missing scopes", async () => {
     const { items } = await timeline(owner, { devices: train });

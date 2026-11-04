@@ -1,4 +1,4 @@
-import { act, screen } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Segment } from "@trail/contracts/transport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -118,6 +118,8 @@ describe("SegmentDialog and a move that is still going on", () => {
     await person.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText(/^Back to the detected mode/)).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    // The button went with the failure: the focus is on the answer, not lost to the page.
+    await waitFor(() => expect(screen.getByText(/^Back to the detected mode/)).toHaveFocus());
     expect(calls).toBe(2);
   });
 });

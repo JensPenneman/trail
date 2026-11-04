@@ -324,8 +324,10 @@ People (and agents) can put a mode right, with `locations:write` and
   come. A move is over once a later segment of the device exists, or 30
   minutes passed since its last point and no point after it waits to be
   processed. While a long pass over the device's data runs they wait up to
-  10 seconds for it, then answer `409` ("Still processing this device's
-  data, try again in a moment."): the call can simply be repeated. For the
+  10 seconds for it (`PROCESSING_CORRECTION_WAIT_MS`), then answer `409`
+  ("Still processing this device's data, try again in a moment.") with
+  `Retry-After: 5`: that `409`, unlike the others here, can simply be
+  repeated. For the
   move you are on, use the next call.
 - `POST /api/v1/devices/{id}/mode` with `{ "mode": "train" }` says how the
   device travels from now on — until `until`, if given, the first detected

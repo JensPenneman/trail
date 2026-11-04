@@ -207,8 +207,8 @@ and the API none of the worker's:
 - **Per-device advisory locks** (`deviceLock.ts`) are the cluster's: a pass in
   the worker and a deletion or a corrected mode in the API exclude each other
   across processes. A correction (a move's mode set or reset) waits for the
-  lock at most 10 s (`lock_timeout`, `correctionTransaction`) and then answers
-  `409` to be tried again, instead of hanging behind a long pass.
+  lock at most 10 s (`PROCESSING_CORRECTION_WAIT_MS`, `lock_timeout`,
+  `correctionTransaction`) and then answers `409` with `Retry-After` to be tried again, instead of hanging behind a long pass.
 - **`segments` events cross with `NOTIFY`**: the pass ends with
   `pg_notify('trail_processing', …)` inside its transaction, and the API's
   listener republishes the message on its bus (§9) — in role `all` too, so
@@ -303,6 +303,7 @@ All configuration is environment variables, validated at boot with zod
 | `PROCESSING_STOP_MIN_S` | `180` | The shortest stop |
 | `PROCESSING_PASS_MAX_POINTS` | `60000` | A processing pass reads at most this many points (1 000 or more); bigger work is split first (§17.4) |
 | `PROCESSING_PASS_MAX_SPAN_HOURS` | `36` | The points a pass takes on span at most this long |
+| `PROCESSING_CORRECTION_WAIT_MS` | `10000` | How long a correction (a move's mode) waits for a pass over the device before it answers `409` with `Retry-After` (50 to 120 000) |
 | `MAP_DATA_REGIONS` | `belgium` | The regions whose map data the server keeps (names of `scripts/mapdata/regions.json`), comma-separated; set but empty: none. The world overview comes with any region (§10) |
 | `MAP_DATA_REGISTRY` | `ghcr.io/jenspenneman/trail-mapdata` | Where the map data artefacts come from (§13.2): a registry host and a repository, no scheme and no tag; always HTTPS |
 | `MAP_DATA_REGISTRY_TOKEN` | empty (anonymous) | `<user>:<token>` for a private registry or package, sent to its token service only (GHCR: a classic token with `read:packages`) |

@@ -24,6 +24,7 @@ export const resetSegmentMode = defineRoute(
   async ({ ctx, auth, params }) => {
     const { segment, revoked } = await clearSegmentMode(ctx.db, auth, params.id, {
       queue: ctx.processing.enabled,
+      lockWaitMs: ctx.config.processing.correctionWaitMs,
     });
     if (revoked.length > 0) {
       ctx.processing.notify();

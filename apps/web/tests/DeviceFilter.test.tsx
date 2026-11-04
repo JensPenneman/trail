@@ -38,4 +38,18 @@ describe("the device filter", () => {
     expect(screen.getByRole("checkbox", { name: "Car" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Phone" })).not.toBeChecked();
   });
+
+  it("does not bring a press back when the address returns to where it was made", async () => {
+    const onChange = vi.fn();
+    const view = render(<DeviceFilter groups={groups} selected={null} onChange={onChange} />);
+    // A: every device. Press Car off (pending ["phone"], made on A) …
+    await userEvent.setup().click(screen.getByRole("checkbox", { name: "Car" }));
+    // … the address moves to B (only the car) …
+    view.rerender(<DeviceFilter groups={groups} selected={["car"]} onChange={onChange} />);
+    expect(screen.getByRole("checkbox", { name: "Phone" })).not.toBeChecked();
+    // … and Back to A: the boxes show A, not the press.
+    view.rerender(<DeviceFilter groups={groups} selected={null} onChange={onChange} />);
+    expect(screen.getByRole("checkbox", { name: "Car" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Phone" })).toBeChecked();
+  });
 });

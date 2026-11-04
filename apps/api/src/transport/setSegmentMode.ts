@@ -21,12 +21,13 @@ export async function setSegmentMode(
   segmentId: string,
   mode: ChosenMode,
   source: ModeOverrideSource,
+  lockWaitMs: number,
 ): Promise<Segment> {
   const found = await findSegment(db, access, segmentId);
   if (found.kind === "stop") {
     throw new HttpError(409, "conflict", "A stop has no transport mode; set the mode of a move.");
   }
-  return correctionTransaction(db, found.device_id, async (tx) => {
+  return correctionTransaction(db, found.device_id, lockWaitMs, async (tx) => {
     // Read again under the lock: a window processed meanwhile may have replaced it.
     const segment = await findSegment(tx, access, segmentId, { forUpdate: true });
     await assertMoveOver(tx, segment);

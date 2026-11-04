@@ -14,10 +14,10 @@ export async function lockDeviceProcessing(tx: Executor, deviceId: string): Prom
   );
 }
 
-/** How long a person's correction waits for a pass over the device's data before it asks to retry. */
-const correctionLockWaitMs = 10_000;
-
 /** What the person is told when the wait ran out (the web app shows it beside a retry). */
+/** Seconds a client is told to wait before it repeats a correction that found the device busy. */
+const retryAfterS = "5";
+
 export const stillProcessingMessage = "Still processing this device's data, try again in a moment.";
 
 /**
@@ -28,8 +28,8 @@ export const stillProcessingMessage = "Still processing this device's data, try 
 export async function correctionTransaction<T>(
   db: Database,
   deviceId: string,
+  waitMs: number,
   body: (tx: Transaction) => Promise<T>,
-  waitMs: number = correctionLockWaitMs,
 ): Promise<T> {
   try {
     return await db.transaction(async (tx) => {
@@ -40,7 +40,9 @@ export async function correctionTransaction<T>(
   } catch (error) {
     // 55P03: lock_not_available, what `lock_timeout` raises.
     if (errorCodes(error).includes("55P03")) {
-      throw new HttpError(409, "conflict", stillProcessingMessage);
+      throw new HttpError(409, "conflict", stillProcessingMessage, undefined, {
+        "Retry-After": retryAfterS,
+      });
     }
     throw error;
   }
