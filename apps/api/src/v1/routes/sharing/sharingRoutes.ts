@@ -5,6 +5,7 @@ import { createShareLink } from "./createShareLink";
 import { deleteShare } from "./deleteShare";
 import { deleteShareLink } from "./deleteShareLink";
 import { getPerson } from "./getPerson";
+import { getPersonDays } from "./getPersonDays";
 import { getPersonTrack } from "./getPersonTrack";
 import { hideIncomingShare } from "./hideIncomingShare";
 import { listIncomingShares } from "./listIncomingShares";
@@ -19,6 +20,7 @@ export const sharingRoutes: readonly V1Route[] = [
   listPeople,
   getPerson,
   getPersonTrack,
+  getPersonDays,
   listShares,
   createShare,
   updateShare,

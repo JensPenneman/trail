@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { expectAccessible } from "./support/expectAccessible";
+import { openGroup } from "./support/mapControls";
 import { overlandBatch } from "./support/overlandBatch";
 import { sharingFriend } from "./support/sharingFriend";
 import { test } from "./support/test";
@@ -74,7 +75,7 @@ test("the Hidden level opens from its row, takes the focus and gives it back", a
   await expect(row).toBeFocused();
   await page.goForward();
   await page.getByRole("button", { name: `Show ${name} again` }).click();
-  await expect(page.getByText("Nobody is hidden.")).toBeVisible();
+  await expect(page.getByText("Nobody is hidden.", { exact: true })).toBeVisible();
   // The pressed button went with its row: the focus is on the heading, not lost to the page.
   await expect(page.getByRole("heading", { level: 2, name: "Hidden" })).toBeFocused();
 });
@@ -121,4 +122,71 @@ test("in History the peek still ends under the Me row, with the slider right bel
     return window.scrollY;
   });
   expect(lifted).toBeGreaterThan(0);
+});
+
+test("Me's page: the timeline open, the other groups folded, the devices a level away", async ({
+  page,
+  account,
+}) => {
+  test.slow();
+  await uploadedDevice(page, "Me page phone", overlandBatch(account.timezone));
+  await page.goto("/?person=me");
+  const me = page.getByRole("region", { name: "Me", exact: true });
+  await expect(me.getByRole("heading", { level: 2, name: "Me" })).toBeVisible();
+  await expect(me.getByRole("button", { name: "Timeline" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await expectAccessible(page, "Me's page in Live");
+
+  await page.goto("/?person=me&view=history");
+  await expect(page.getByRole("region", { name: "Visits", exact: true })).toHaveCount(0);
+  await openGroup(page, "Summary, visits and trips");
+  await expect(page.getByRole("region", { name: "Visits", exact: true })).toBeVisible();
+  await expectAccessible(page, "Me's page in History with the group open");
+
+  await page.goto("/?person=me&view=heat");
+  await openGroup(page, "Heat: totals, busiest places");
+  await expect(page.getByRole("region", { name: "Busiest places in view" })).toBeVisible();
+  await expectAccessible(page, "Me's page in Heat with the group open");
+
+  await page.goto("/?person=me");
+  await me.getByRole("link", { name: /^Your devices/ }).click();
+  await expect(page).toHaveURL(/[?&]list=devices/);
+  await expect(page.getByRole("heading", { level: 2, name: "Your devices" })).toBeFocused();
+  await expectAccessible(page, "Me's devices level");
+  await page.getByRole("link", { name: "Back to Me" }).click();
+  await expect(me.getByRole("link", { name: /^Your devices/ })).toBeFocused();
+  await expect(me.getByRole("link", { name: /^Sharing/ })).toHaveAttribute(
+    "href",
+    "/settings/sharing",
+  );
+});
+
+test("someone else's page: summary and devices folded, actions as rows", async ({
+  page,
+  account,
+  openBrowser,
+}) => {
+  test.slow();
+  await uploadedDevice(page, "Viewer phone", overlandBatch(account.timezone));
+  const friend = await sharingFriend(openBrowser, account, "pageperson", {
+    precision: "precise",
+    historyDays: 7,
+  });
+  const name = friend.account.displayName;
+  await page.goto(`/?person=${friend.account.id}&view=history`);
+  const them = page.getByRole("region", { name, exact: true });
+  await expect(them.getByRole("button", { name: "Summary", exact: true })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await openGroup(page, new RegExp(`^Device \\(1\\) · What ${name} shares with you`));
+  await expect(them.getByText(friend.device.name).first()).toBeVisible();
+  await expect(them.getByRole("link", { name: /^Open in Apple Maps/ })).toHaveAttribute(
+    "target",
+    "_blank",
+  );
+  await expect(them.getByRole("button", { name: `Hide ${name}` })).toBeVisible();
+  await expectAccessible(page, "someone else's page, devices open");
 });

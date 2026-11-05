@@ -149,9 +149,9 @@ needs them all. A signed-in session holds every scope.
 | `profile:read` | Read the account's name and time zone. |
 | `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |
 | `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |
-| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline). |
+| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline, Insights › Places and Named roads). |
 | `locations:write` | Correct how you travelled (transport mode overrides). |
-| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates. |
+| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates (Insights › Places and Named roads need locations:read). |
 | `people:read` | See the people who share their location with you. |
 | `shares:read` | List your shares, the ones you receive and your public links. |
 | `shares:write` | Start and stop sharing, hide people and manage public links. |
@@ -209,7 +209,7 @@ like its token, is changed in the dashboard only.
 
 The answers that are expensive to build, or large, carry a weak `ETag`:
 `GET /api/v1/tracks`, `GET /api/v1/segments`, `GET /api/v1/stats/days`,
-`GET /api/v1/people` and the four `GET /api/v1/insights/…`. Send it back as
+`GET /api/v1/people` and every `GET /api/v1/insights/…`. Send it back as
 `If-None-Match` with the same request, and while nothing the answer is made
 of has changed, the answer is `304 Not Modified` with no body — the copy you
 have is current. Otherwise you get the full answer with a new `ETag`.
@@ -323,7 +323,12 @@ People (and agents) can put a mode right, with `locations:write` and
   `409`, because the correction would cover the move only as far as it has
   come. A move is over once a later segment of the device exists, or 30
   minutes passed since its last point and no point after it waits to be
-  processed. For the move you are on, use the next call.
+  processed. While a long pass over the device's data runs they wait up to
+  10 seconds for it (`PROCESSING_CORRECTION_WAIT_MS`), then answer `409`
+  ("Still processing this device's data, try again in a moment.") with
+  `Retry-After: 5`: that `409`, unlike the others here, can simply be
+  repeated. For the
+  move you are on, use the next call.
 - `POST /api/v1/devices/{id}/mode` with `{ "mode": "train" }` says how the
   device travels from now on — until `until`, if given, the first detected
   stop of 10 minutes or more, or — after a stop — a move Trail reads as
@@ -342,8 +347,10 @@ correction or new data, read the timeline again.
 
 Insights are statistics of how you travelled, worked out from the stops and
 moves of the timeline — never from coordinates, so they need `history:read`
-only. A period is a range of local days in the account's time zone: `from`
-and `to` (both included, at most three years apart). Leave out `to` for today
+only; the exception is Places, below, which holds a centre per place and needs
+`locations:read`. A period is a range of local days in the account's time
+zone: `from` and `to` (both included, at most three years apart). Leave out
+`to` for today
 and `from` for the first day with stops or moves; `devices` narrows them to
 some devices. A move across the period's edge, or across midnight, counts in
 each day (and hour) with the part of its distance and time that falls there;
@@ -375,6 +382,47 @@ is true while recorded points of the period still wait for processing.
   `mode` or all. Shares are of the distance with map data (`mappedM`): moves
   without it — map data switched off or not fetched yet — count towards
   `distanceM` only.
+- `GET /api/v1/insights/ways` (`locations:read`) — the 25 roads travelled
+  most, by the name OpenStreetMap gives them, for one `mode` or all: the
+  `distanceM` and the number of `moves` on each, with `mappedM` (the distance
+  of the moves with map data) and `namedM` (the part of it on named roads).
+  Ways of one name in the same or touching cells of about 6 km are one road,
+  the same name further away another. Names and distances only; a road name says where
+  you were, hence `locations:read`. `modes` lists every mode moved in,
+  whatever `mode` asks for. `pending` is true while moves still wait for
+  their ways to be worked out after an upgrade. The answer has an `ETag`,
+  which also follows the map data and that fill.
+
+### Places
+
+`locations:read`, not `history:read`: these answers hold the centre of each
+place to four decimals (about 10 m), the same precision the timeline's stops
+give a token with that scope. A token with only `history:read` gets a `403`.
+They cover your own devices (or the token's); another person's device is a
+`404`, and nothing of anyone's share is ever in them. The period is as above.
+
+- `GET /api/v1/insights/places` — where the stops of the period add up. A
+  place is a cell of about 100 m (zoom 18 of the Web Mercator grid), with the
+  up to eight cells around it that have stops folded in (3 × 3 at most, the
+  one with most time claiming first). Each place has its `key`, its `centre`
+  (`[lon, lat]`, time-weighted), the time spent (`durationS`, your devices
+  joined, not added), `visits` (stays that started there in the period),
+  `days`, `firstAt` and `lastAt`, and a `name` from map data: a public
+  transport stop or airport within 150 m (`source: "stop"`, with its `kind`
+  and `distanceM`; the web app says "at" within 30 m, "near" beyond), else
+  the named road the device was on in the minute before it arrived and after
+  it left (`source: "road"`), else `null`. The fifty places with most time
+  come in `places`, the rest added up in `rest`, all of them in `totals`.
+- `GET /api/v1/insights/place?place=KEY` — one place: `place` (as above, with
+  the number of `cells` folded in), the time there per step (`series`), and
+  the days with time there, newest first (`days`: time, visits, first and last
+  moment). `KEY` is a key from the list (`x.y`, the cell's column and row);
+  a cell folded into a neighbour's place gives that place, and a key without
+  stays in the period gives `place: null`. The key is a query parameter and
+  never part of the path.
+
+Both answer with an `ETag` that also changes when the map data does (a new
+build or a refreshed tile may name a place differently).
 
 ## Errors
 
@@ -459,9 +507,19 @@ toggle, else the latest stop or move while it is recent) come along when
   the last `historyDays` days, or the last 12 hours for live-only shares.
   `distanceM` starts from your own most recently located device and needs
   `locations:read` as well. `GET /api/v1/people/{userId}/track` returns
-  their track for shares with history, never older than the history allows.
-  The people you look at see in their [access log](#access-log) that you
-  looked, when and at what — not from where or with which token.
+  their track for shares with history, never older than the history allows,
+  and `GET /api/v1/people/{userId}/days` the days they recorded something
+  within that history — per shared device and day, the points and the first
+  and last time, no positions (`people:read`; 404 as for the track). The
+  days are the **person's own**, cut at midnight in their account's time zone
+  (`timezone`), not in yours: that is where their daily totals are made, and
+  everyone who looks sees the same days. The window runs from the day their
+  history begins in, counted from the history's start on that first day (so
+  nothing older shows), to their today. The points are all that were
+  recorded, including ones the track leaves out as too inaccurate, so a day
+  can be listed and show no track. The answer has an `ETag`. The people you
+  look at see in their [access log](#access-log) that you looked, when and at
+  what — not from where or with which token.
 - `GET`, `POST /api/v1/shares` and `PATCH`, `DELETE /api/v1/shares/{id}`
   manage your own shares: listing needs `shares:read`, stopping
   `shares:write`, starting and changing `shares:write` and `locations:read`.

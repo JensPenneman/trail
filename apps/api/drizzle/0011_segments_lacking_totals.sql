@@ -1,0 +1,1 @@
+CREATE INDEX "segments_move_lacking_totals_idx" ON "segments" USING btree ("device_id","started_at") WHERE "segments"."kind" = 'move' AND NOT "segments"."features" ? 'wayTotals';

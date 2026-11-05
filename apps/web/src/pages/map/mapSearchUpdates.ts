@@ -43,8 +43,11 @@ export function withPerson(params: URLSearchParams, person: string | null): URLS
   return next;
 }
 
-/** A level of the sidebar below the root (`hidden`), or the root (null). */
-export function withList(params: URLSearchParams, list: "hidden" | null): URLSearchParams {
+/** A level of the sidebar below the root or below Me's page (`hidden`, `devices`), or none (null). */
+export function withList(
+  params: URLSearchParams,
+  list: "hidden" | "devices" | null,
+): URLSearchParams {
   const next = new URLSearchParams(params);
   if (list === null) next.delete("list");
   else next.set("list", list);

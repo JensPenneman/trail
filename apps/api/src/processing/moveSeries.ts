@@ -70,6 +70,8 @@ export interface MoveSeries {
    * Empty when the move has no mapped points.
    */
   wayKindAt: Uint8Array;
+  /** Per point: the OSM way it was matched to, 0 for none. Empty when the move has no mapped points. */
+  wayIdAt: Float64Array;
   /** Per point: near tram tracks, a cycleway, a footway. */
   nearTram: Uint8Array;
   nearCycleway: Uint8Array;
@@ -228,9 +230,12 @@ export function moveSeries(
   const speed = new Float64Array(count);
   const families: (Partial<WayShares> | null)[] = new Array(count).fill(null);
   const wayKindAt = new Uint8Array(mapped === null ? 0 : count);
+  // Way ids reach a few billion: a Float64Array holds them exactly.
+  const wayIdAt = new Float64Array(mapped === null ? 0 : count);
   if (mapped !== null) {
     for (let position = 0; position < count; position += 1) {
       wayKindAt[position] = kindPositions[mapped[position]?.wayKind ?? "other"];
+      wayIdAt[position] = mapped[position]?.wayId ?? 0;
     }
   }
   const ways = map?.ways ?? emptyWaySamples(count);
@@ -331,6 +336,7 @@ export function moveSeries(
     speed,
     families,
     wayKindAt,
+    wayIdAt,
     nearTram: ways.nearTram,
     nearCycleway: ways.nearCycleway,
     nearFoot: ways.nearFoot,
