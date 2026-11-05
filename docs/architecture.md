@@ -2878,6 +2878,7 @@ Settings is the current item on their pages too.
 | `/s` | a public link; its secret is the fragment, `/s#trls_…` (public) |
 | `/` | **People**, the home page: the map with Live, History and Heat, and the people list (signed in) |
 | `/insights`, `/insights/transport/:mode`, `/insights/time`, `/insights/roads` | Insights: the summary, a transport mode's screen, when you travel, roads — screens of one shell (list beside the screen on wide screens, one screen at a time on phones) |
+| `/insights/places`, `/insights/place?place=<key>`, `/insights/place/days?place=<key>` | Places, one place and all the days at it (levels 1, 2 and 3 of the shell); the place is only ever the query value `place` — keys never reach a path, so the server's request logs never hold one (§8.7) |
 | `/insights/transport/:mode/time`, `…/roads`, `…/speed`, `…/moves` | a mode's When, Roads, Speed and Longest moves, a level below its screen. `/insights/time?mode=X` and `/insights/roads?mode=X` of before redirect (replacing the entry, other parameters kept) to `…/transport/X/time` and `…/roads` (`legacyInsightsRedirect`, a route loader) |
 | `/settings` | Settings: on phones the list with search; on wide screens the first page (Profile) beside the list. An anchor of the single page of 0.2 (`/settings#tokens`, `#browsers`, …) opens its page (`settingsPathFor`) |
 | `/settings/profile`, `…/devices`, `…/passkeys`, `…/browsers`, `…/sharing`, `…/links`, `…/privacy/viewers`, `…/privacy/access-log`, `…/data`, `…/tokens`, `…/mcp`, `…/preferences`, `…/notifications`, `…/about`, `…/accounts` | a page of Settings each; `…/accounts` for administrators only, everyone else lands on `/settings`; `/settings/devices?add=1` opens Add device |
@@ -3277,12 +3278,13 @@ count among them, since they lead to signed-in pages.
   `prefers-reduced-motion`). The list has an untitled group with the summary
   (wide screens only, its value the total distance), "Modes" (a row per mode,
   most distance first, with its distance and share, "None" for a mode on
-  screen that had no moves) and "Patterns" (When you travel, Roads); the row
+  screen that had no moves) and "Patterns" (When you travel, Roads, Places); the row
   of the screen on show is `aria-current`. Levels (`insightsLevels.ts`): the
   summary is level 0, a mode's screen, When you travel and Roads level 1, the
   parts of a mode (below) level 2, whose way back leads to the mode — "‹ Car"
   — and which keep the mode's row current in the list; the key of a screen is
-  its path. Coming back to the summary hands focus to the row that was left
+  its path, and for the screens of a place its path with `?place=`, so that
+  the row of a place one comes back from is told from the others (`keyOf`). Coming back to the summary hands focus to the row that was left
   (`data-route-focus`; not for the list beside the screens, where the
   new screen's h1 takes focus whichever way one goes and the row left must
   not take it back), going in to the new screen's h1. One exception: pressing
@@ -3365,6 +3367,25 @@ count among them, since they lead to signed-in pages.
     the hero, the distance by kind of way, and how much of the distance map
     data covers; a notice where it covers none, and another where everything
     it covers is off the map. The chart by group of ways of before is gone.
+
+  - **Places** (`/insights/places`, from `GET /api/v1/insights/places`, scope
+    `locations:read`) — how many places the stops of the period add up to,
+    with the visits and the time ("312 visits · 640 hrs"), the time at the
+    top eight as a horizontal chart, and the first fifty as rows ("Gent-Sint-
+    Pieters · 12 hrs · 9 visits") with the rest summed under them ("and 12 more
+    places, 4 hrs"). A place is called by `placeLabel`: the stop within 30 m,
+    "Near <stop>" within 150 m, else the road its stays were on, else
+    "Unnamed place" with its coordinates. No stops: "No stops in October 2026".
+  - **A place** (`/insights/place?place=<key>`) — the time there, its visits
+    and days, a chart of the time per day, week or month, when one was first
+    and last there, and under "Days" the seven latest days as rows that open
+    History on that day (`/?view=history&date=…&person=me`) with "All N days"
+    after them. A key that folded into a neighbour's place resolves to that
+    place and the address keeps the key; a period without a visit there is
+    "No visits here in …", and a key that cannot be one asks for nothing.
+  - **Days at a place** (`…/place/days?place=<key>`) — every day with time
+    there, newest first, laid out only as it comes into view
+    (`content-visibility: auto`); its way back is "‹ <place>".
 
   The charts (`apps/web/src/charts/`, no library): `BarChart` (stacked or
   grouped, columns or horizontal bars; one series may give each row its own
@@ -4394,8 +4415,10 @@ security ones too.
   a range —, the list on a phone and beside the screen, the period bar's
   units, steps, custom range and Escape, the devices under Options, a mode's
   hero, rows and parts (When, Roads of each family, Speed, Longest moves) and
-  the way back with focus on its row, When you travel, Roads and the redirects
-  of the old addresses, the warm open from the browser's copy); a link to one move opening its dialog on the People
+  places (the rows and their labels, a place with its days and the way to all
+  of them, no visit, a key that is none, the days, focus back on the row of
+  the place among the others), the way back with focus on its row, When you
+  travel, Roads and the redirects of the old addresses, the warm open from the browser's copy); a link to one move opening its dialog on the People
   page; and the access log's pages (`accessLogHelpers.test.ts`: actor ids
   and their segments, the sentences and their plurals, the filters and the
   request they make, lines by local day across pages, folded lines, what a
@@ -4477,11 +4500,14 @@ security ones too.
   without map data, on both projects: the summary with the list beside it
   or after the chart, units and steps of the period and a custom range in
   its popover, an old `7d` address, a chart by keyboard — one tab stop, arrow
-  keys, the tooltip and Escape —, a mode's screen from its row and the way
+  keys, the tooltip and Escape —, places (a stay worked out into a place, named
+  "Unnamed place" without map data, then the place, its days and a day in
+  History, and focus back on the row of the place), a mode's screen from its row and the way
   back to the row, its Speed, When, Roads and Longest moves (a move opening
   History's dialog), the old When address with a mode redirecting, roads
   without map data, axe
-  on every screen and the open popover, and every screen at 320 px), the access log with what the server really recorded
+  on every screen and the open popover, and every screen — Places, a place and
+  its days included — at 320 px), the access log with what the server really recorded
   (`accessLog.spec.ts`: someone with a precise share and history reads your
   track in their browser and is under People with the sentence the summary's
   numbers make, on their page hour by hour and on the share's page; a public

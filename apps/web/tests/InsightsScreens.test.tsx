@@ -12,6 +12,9 @@ import {
   monthPeriod,
   octoberOverview,
   overview,
+  placeAnswer,
+  placeKeys,
+  placesAnswer,
   roadInsights,
   segmentId,
   septemberOverview,
@@ -960,6 +963,306 @@ describe("a mode's rows and their screens", () => {
     renderInsights("/insights/transport/teleport/speed");
     expect(await screen.findByRole("heading", { name: "No such mode" })).toBeVisible();
     expect(calls.some((call) => call.path.startsWith("/api/v1/insights"))).toBe(false);
+  });
+});
+
+describe("places", () => {
+  const placeRoutes = () => ({
+    ...octoberRoutes(),
+    "GET /api/v1/insights/places": { status: 200, body: placesAnswer() },
+    "GET /api/v1/insights/place": ({ url }: { url: URL }) => {
+      const street = url.searchParams.get("place") === placeKeys.street;
+      const answer = placeAnswer();
+      const [first] = placesAnswer().places.filter((entry) => entry.key === placeKeys.street);
+      return {
+        status: 200,
+        body:
+          street && first !== undefined && answer.place !== null
+            ? { ...answer, place: { ...answer.place, ...first, cells: 1 } }
+            : answer,
+      };
+    },
+  });
+
+  it("counts the places, charts the top ones and lists them with what each is called", async () => {
+    mockApi(placeRoutes());
+    renderInsights("/insights/places?period=2026-10");
+    expect(await screen.findByRole("heading", { level: 1, name: "Places" })).toBeVisible();
+    const tiles = await hero();
+    expect(within(tiles).getByText("16")).toBeVisible();
+    expect(within(tiles).getByText("28 visits · 100 hrs")).toBeVisible();
+    expect(await screen.findByRole("figure", { name: "Time at your top places" })).toBeVisible();
+
+    const station = await screen.findByRole("link", {
+      name: /^Gent-Sint-Pieters 12 hrs · 9 visits$/,
+    });
+    expect(station).toHaveAttribute(
+      "href",
+      `/insights/place?period=2026-10&place=${placeKeys.station}`,
+    );
+    // Within 30 m the place is the stop; within 150 m it is near it; else the road.
+    expect(screen.getByRole("link", { name: /^Near Korenmarkt 10 hrs · 7 visits$/ })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^Kerkstraat 2 hrs · 3 visits$/ })).toBeVisible();
+    // Without a name, the coordinates tell it from the others.
+    expect(
+      screen.getByRole("link", {
+        name: /^Unnamed place 51\.0362° N, 3\.7104° E 1 hr · 6 visits$/,
+      }),
+    ).toBeVisible();
+    expect(screen.getByText("and 12 more places, 4 hrs")).toBeVisible();
+    await waitFor(() => expect(document.title).toBe("Places · Insights · Trail"));
+  });
+
+  it("says when there were no stops", async () => {
+    mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/places": {
+        status: 200,
+        body: placesAnswer({
+          totals: { places: 0, durationS: 0, visits: 0 },
+          places: [],
+          rest: { places: 0, durationS: 0, visits: 0 },
+        }),
+      },
+    });
+    renderInsights("/insights/places?period=2026-10");
+    expect(await screen.findByRole("heading", { name: "No stops in October 2026" })).toBeVisible();
+  });
+
+  it("is a row of the list, current on its screens", async () => {
+    mockApi(placeRoutes());
+    renderInsights(`/insights/place?period=2026-10&place=${placeKeys.station}`, { wide: true });
+    const nav = await screen.findByRole("navigation", { name: "Insights" });
+    expect(await within(nav).findByRole("link", { name: "Places" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(nav).getByRole("link", { name: "Places" })).toHaveAttribute(
+      "href",
+      "/insights/places?period=2026-10",
+    );
+  });
+
+  it("shows one place: the time there, how it went, the first and last time, the latest days", async () => {
+    const { calls } = mockApi(placeRoutes());
+    renderInsights(`/insights/place?period=2026-10&place=${placeKeys.station}`);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Gent-Sint-Pieters" }),
+    ).toBeVisible();
+    const tiles = await hero();
+    expect(within(tiles).getByText("Time here")).toBeVisible();
+    expect(within(tiles).getByText("12 hrs")).toBeVisible();
+    expect(within(tiles).getByText("9 visits on 9 days")).toBeVisible();
+    expect(await screen.findByRole("figure", { name: "Time here per day" })).toBeVisible();
+    expect(screen.getByText("First here")).toBeVisible();
+    expect(screen.getByText("Last here")).toBeVisible();
+
+    const days = screen.getByRole("list", { name: "Days" });
+    const rows = within(days).getAllByRole("link");
+    // The seven latest, then the way to all of them.
+    expect(rows).toHaveLength(8);
+    expect(rows[0]).toHaveAttribute("href", "/?view=history&date=2026-10-28&person=me");
+    expect(rows[0]).toHaveTextContent("Wed 28 Oct");
+    expect(rows[0]).toHaveTextContent("9 hrs 12 mins · 2 visits");
+    expect(within(days).getByRole("link", { name: "All 9 days" })).toHaveAttribute(
+      "href",
+      `/insights/place/days?period=2026-10&place=${placeKeys.station}`,
+    );
+    expect(lastQuery(calls, "/api/v1/insights/place").get("place")).toBe(placeKeys.station);
+    await waitFor(() =>
+      expect(document.title).toBe("Gent-Sint-Pieters · Places · Insights · Trail"),
+    );
+    expect(screen.getByRole("link", { name: "Back to Places" })).toHaveAttribute(
+      "href",
+      "/insights/places?period=2026-10",
+    );
+  });
+
+  it("names a place without a name by where it is, and says when there is no visit", async () => {
+    mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/place": {
+        status: 200,
+        body: placeAnswer({ place: null, days: [], series: [] }),
+      },
+    });
+    renderInsights(`/insights/place?period=2026-10&place=${placeKeys.unnamed}`);
+    expect(
+      await screen.findByRole("heading", { name: "No visits here in October 2026" }),
+    ).toBeVisible();
+    expect(screen.getAllByRole("link", { name: /Back to Places/ }).length).toBeGreaterThan(0);
+  });
+
+  it("asks for nothing when the address names no place", async () => {
+    const { calls } = mockApi(placeRoutes());
+    renderInsights("/insights/place?period=2026-10&place=../../etc");
+    expect(await screen.findByRole("heading", { name: "No such place" })).toBeVisible();
+    expect(calls.some((call) => call.path.startsWith("/api/v1/insights/place"))).toBe(false);
+  });
+
+  it("lists all the days at a place, newest first, each opening its day in History", async () => {
+    mockApi(placeRoutes());
+    renderInsights(`/insights/place/days?period=2026-10&place=${placeKeys.station}`);
+    expect(await screen.findByRole("heading", { level: 1, name: "Days" })).toBeVisible();
+    const tiles = await hero();
+    expect(within(tiles).getByText("9 days")).toBeVisible();
+    const rows = await screen.findAllByRole("link", { name: /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) / });
+    expect(rows).toHaveLength(9);
+    expect(rows.at(-1)).toHaveAttribute("href", "/?view=history&date=2026-10-02&person=me");
+    expect(screen.getByRole("link", { name: "Back to Gent-Sint-Pieters" })).toHaveAttribute(
+      "href",
+      `/insights/place?period=2026-10&place=${placeKeys.station}`,
+    );
+    await waitFor(() =>
+      expect(document.title).toBe("Days · Gent-Sint-Pieters · Places · Insights · Trail"),
+    );
+  });
+
+  it("names the place in its title from the list it came from, before its own answer is there", async () => {
+    const browser = userEvent.setup();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+    mockApi({
+      ...placeRoutes(),
+      "GET /api/v1/insights/place": async () => {
+        await held;
+        return { status: 200, body: placeAnswer() };
+      },
+    });
+    renderInsights("/insights/places?period=2026-10");
+    await browser.click(await screen.findByRole("link", { name: /^Near Korenmarkt / }));
+    // The answer is held: the title that takes focus is already the name.
+    const title = await screen.findByRole("heading", { level: 1, name: "Near Korenmarkt" });
+    await waitFor(() => expect(title).toHaveFocus());
+    release();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Gent-Sint-Pieters" }),
+    ).toBeVisible();
+  });
+
+  it("numbers the places of the chart that are called the same", async () => {
+    const [first, , , unnamed] = placesAnswer().places;
+    if (first === undefined || unnamed === undefined) throw new Error("no places");
+    mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/places": {
+        status: 200,
+        body: placesAnswer({
+          places: [unnamed, { ...unnamed, key: "134500.89300" }, first],
+        }),
+      },
+    });
+    renderInsights("/insights/places?period=2026-10");
+    const chart = await screen.findByRole("figure", { name: "Time at your top places" });
+    expect(within(chart).getByRole("img", { name: "Unnamed place" })).toBeInTheDocument();
+    expect(within(chart).getByRole("img", { name: "Unnamed place (2)" })).toBeInTheDocument();
+  });
+
+  it("says first and last here as facts", async () => {
+    mockApi(placeRoutes());
+    renderInsights(`/insights/place?period=2026-10&place=${placeKeys.station}`);
+    const first = await screen.findByText("First here");
+    expect(first.tagName).toBe("DT");
+    expect(first.closest("dl")).toHaveTextContent(/Last here/);
+  });
+
+  it("keeps the key of the address when the answer's place is another cell's: the days and the way back use it", async () => {
+    const folded = "134218.89013";
+    mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/place": {
+        status: 200,
+        // The place the address's cell was folded into: another key, the same place.
+        body: placeAnswer(),
+      },
+    });
+    renderInsights(`/insights/place?period=2026-10&place=${folded}`);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Gent-Sint-Pieters" }),
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "All 9 days" })).toHaveAttribute(
+      "href",
+      `/insights/place/days?period=2026-10&place=${folded}`,
+    );
+    expect(screen.getByRole("heading", { name: "Days" })).toBeVisible();
+  });
+
+  it("goes back from the days to the place with the key of the address", async () => {
+    const folded = "134218.89013";
+    mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/place": { status: 200, body: placeAnswer() },
+    });
+    renderInsights(`/insights/place/days?period=2026-10&place=${folded}`);
+    expect(await screen.findByRole("link", { name: "Back to Gent-Sint-Pieters" })).toHaveAttribute(
+      "href",
+      `/insights/place?period=2026-10&place=${folded}`,
+    );
+  });
+
+  it.each([
+    [
+      "Places",
+      "/insights/places?period=2026-10",
+      "GET /api/v1/insights/places",
+      () => placesAnswer({ pending: true }),
+    ],
+    [
+      "a place",
+      `/insights/place?period=2026-10&place=${placeKeys.station}`,
+      "GET /api/v1/insights/place",
+      () => placeAnswer({ pending: true }),
+    ],
+  ])("says so while processing catches up: %s", async (_what, url, route, body) => {
+    mockApi({ ...octoberRoutes(), [route]: { status: 200, body: body() } });
+    renderInsights(url);
+    expect(await screen.findByText("Processing is still catching up")).toBeVisible();
+  });
+
+  it.each([
+    [
+      "Places",
+      "/insights/places?period=2026-10",
+      "GET /api/v1/insights/places",
+      () => placesAnswer(),
+    ],
+    [
+      "a place",
+      `/insights/place?period=2026-10&place=${placeKeys.station}`,
+      "GET /api/v1/insights/place",
+      () => placeAnswer(),
+    ],
+  ])("asks again when %s could not be loaded", async (_what, url, route, body) => {
+    const browser = userEvent.setup();
+    let failing = true;
+    mockApi({
+      ...octoberRoutes(),
+      [route]: () => (failing ? { status: 500, body: {} } : { status: 200, body: body() }),
+    });
+    renderInsights(url);
+    expect(await screen.findByText("Insights could not be loaded")).toBeVisible();
+    failing = false;
+    await browser.click(screen.getByRole("button", { name: /retry|try again/i }));
+    await waitFor(() => expect(screen.queryByText("Insights could not be loaded")).toBeNull());
+  });
+
+  it("goes back to the row of the place among the others, with focus there", async () => {
+    const browser = userEvent.setup();
+    mockApi(placeRoutes());
+    const { router } = renderInsights("/insights/places?period=2026-10");
+    await browser.click(await screen.findByRole("link", { name: /^Kerkstraat / }));
+    const title = await screen.findByRole("heading", { level: 1, name: "Kerkstraat" });
+    await waitFor(() => expect(title).toHaveFocus());
+    expect(router.state.location.pathname).toBe("/insights/place");
+
+    await browser.click(screen.getByRole("link", { name: "Back to Places" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/insights/places"));
+    expect(router.state.historyAction).toBe("POP");
+    const row = await screen.findByRole("link", { name: /^Kerkstraat / });
+    await waitFor(() => expect(row).toHaveFocus());
+    expect(screen.getByRole("link", { name: /^Gent-Sint-Pieters / })).not.toHaveFocus();
   });
 });
 
