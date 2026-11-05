@@ -75,15 +75,6 @@ export function HeatDetails({
 
   return (
     <>
-      {heatmap.isError ? (
-        <ErrorState
-          title="The heatmap could not be loaded"
-          error={heatmap.error}
-          onRetry={() => void heatmap.refetch()}
-          retrying={heatmap.isFetching}
-        />
-      ) : null}
-
       <section className="section" aria-labelledby={totalsId}>
         <SectionTitle id={totalsId}>Totals</SectionTitle>
         {devices.isPending || days.isPending ? (
