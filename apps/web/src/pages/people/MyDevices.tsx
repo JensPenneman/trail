@@ -17,6 +17,8 @@ interface MyDevicesProps {
   devices: readonly DeviceSummary[];
   now: number;
   thresholds: { liveMinutes: number; staleHours: number };
+  /** Without its own heading: the level it is in has the name (the region is still "Your devices"). */
+  untitled?: boolean;
 }
 
 /**
@@ -25,15 +27,20 @@ interface MyDevicesProps {
  * trip — each linking to its page — and the way to Settings › Devices, where
  * the uploads are.
  */
-export function MyDevices({ devices, now, thresholds }: MyDevicesProps) {
+export function MyDevices({ devices, now, thresholds, untitled = false }: MyDevicesProps) {
   const format = useFormatter();
   const titleId = useId();
   return (
-    <section className="person-details" aria-labelledby={titleId}>
+    <section
+      className="person-details"
+      {...(untitled ? { "aria-label": "Your devices" } : { "aria-labelledby": titleId })}
+    >
       <div className="person-details__part">
-        <h3 className="person-details__title" id={titleId}>
-          Your devices
-        </h3>
+        {untitled ? null : (
+          <h3 className="person-details__title" id={titleId}>
+            Your devices
+          </h3>
+        )}
         <PlainList className="person-details__devices">
           {devices.map((device) => {
             const location = device.lastLocation;

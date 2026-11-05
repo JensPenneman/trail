@@ -30,6 +30,29 @@ const empty: GeoJSONSourceSpecification = {
   data: { type: "FeatureCollection", features: [] },
 };
 
+/** How faded what lies ahead of the playback cursor is drawn (more where contrast is asked for). */
+export const dimOpacity = { normal: 0.3, moreContrast: 0.5 } as const;
+
+/** Opaque, and `opacity` for a feature that carries `dimmed`: the part of a line still ahead. */
+const fade = (opacity: number): ExpressionSpecification => [
+  "case",
+  ["==", ["get", "dimmed"], true],
+  opacity,
+  1,
+];
+
+/** The layers whose features may be dimmed, by what their opacity is called. */
+const fadedLines = [
+  "trail-track-casing",
+  "trail-track-line",
+  "trail-transport-gaps",
+  "trail-transport-casing",
+  "trail-transport-line",
+  "trail-transport-review",
+  "trail-transport-stop-paths",
+] as const;
+const fadedCircles = ["trail-transport-stops", "trail-visits"] as const;
+
 /** A square's colour: the step of the ramp its `shade` (1–6) names, for a dark or a light map. */
 function heatColor(dark: boolean): ExpressionSpecification {
   const ramp = dark ? heatRamp.dark : heatRamp.light;
@@ -54,9 +77,14 @@ function heatColor(dark: boolean): ExpressionSpecification {
  * Adds Trail's sources and layers to the current style (again after every
  * style switch, which drops them). Fills and lines go over every shape of the
  * basemap and under its names (see dataLayerPlacement), so street and place
- * names stay readable; visit and scrubber dots go on top.
+ * names stay readable; visit and scrubber dots go on top. What the playback
+ * cursor has not reached (`dimmed` features) is faded to `dim`.
  */
-export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
+export function ensureTrailLayers(
+  map: MapLibreMap,
+  dark: boolean,
+  dim: number = dimOpacity.normal,
+): void {
   for (const id of Object.values(trailSources)) {
     if (map.getSource(id) === undefined) map.addSource(id, empty);
   }
@@ -259,6 +287,12 @@ export function ensureTrailLayers(map: MapLibreMap, dark: boolean): void {
     });
   }
   map.setPaintProperty("trail-cursors", "circle-stroke-color", surface);
+
+  for (const id of fadedLines) map.setPaintProperty(id, "line-opacity", fade(dim));
+  for (const id of fadedCircles) {
+    map.setPaintProperty(id, "circle-opacity", fade(dim));
+    map.setPaintProperty(id, "circle-stroke-opacity", fade(dim));
+  }
 
   // Last, once Trail's other layers are in: the names a style draws under its roads and
   // boundaries go over Trail's fills and lines, but under the circles (a style whose last

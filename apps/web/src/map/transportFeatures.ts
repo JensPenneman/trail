@@ -6,6 +6,7 @@ interface TransportProperties {
   selectable: boolean;
   color: string;
   review: boolean;
+  dimmed?: true;
 }
 
 /** Whether a stop is drawn with its path: its points spread farther than a jump that shows. */
@@ -39,6 +40,7 @@ export function transportFeatures(segments: readonly MapTransportSegment[]): {
       selectable: segment.selectable,
       color: segment.color,
       review: segment.review,
+      ...(segment.dimmed === true ? { dimmed: true as const } : {}),
     };
     if (segment.kind === "stop") {
       const place = segment.place ?? segment.line[0];

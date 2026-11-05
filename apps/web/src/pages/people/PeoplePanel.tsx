@@ -8,15 +8,20 @@ import type { WhereTheyveBeenPeriod } from "../../people/WhereTheyveBeen";
 import { Button } from "../../ui/Button";
 import { PageHeader } from "../../ui/PageHeader";
 import type { MapViewContent } from "../map/MapViewContent";
+import { me } from "../map/me";
+import { DevicesLevel } from "./DevicesLevel";
+import type { Groups } from "./groupState";
 import { HiddenPeople } from "./HiddenPeople";
+import { MePage } from "./MePage";
 import { PeopleRoot } from "./PeopleRoot";
-import { PersonPanel } from "./PersonPanel";
+import { PersonPage } from "./PersonPage";
 import { type SharingActions, shareOfflineId } from "./useSharingActions";
 
 /** Which level of the sidebar is shown: the root, the Hidden list, or someone's page. */
 type PanelLevelKey =
   | { level: "root" }
   | { level: "hidden" }
+  | { level: "devices" }
   | { level: "person"; selected: string };
 
 interface PeoplePanelProps {
@@ -34,14 +39,18 @@ interface PeoplePanelProps {
   hiddenTo: string;
   /** The root, from someone's page. */
   backTo: string;
-  /** The level above the Hidden list (the root, with the page's other choices kept). */
+  /** The level above a level (the root from Hidden, Me's page from its devices), choices kept. */
   levelBackTo: string;
+  /** Me's devices, a level of Me's page. */
+  devicesTo: string;
   query: string;
   onQuery: (query: string) => void;
   name: string;
   content: MapViewContent;
   period: WhereTheyveBeenPeriod | null;
   sharing: SharingActions;
+  /** Which folded groups of the page shown are open. */
+  groups: Groups;
   onLeave: (key: string) => void;
 }
 
@@ -63,12 +72,14 @@ export function PeoplePanel({
   hiddenTo,
   backTo,
   levelBackTo,
+  devicesTo,
   query,
   onQuery,
   name,
   content,
   period,
   sharing,
+  groups,
   onLeave,
 }: PeoplePanelProps) {
   const readOnly = useReadOnly();
@@ -110,12 +121,31 @@ export function PeoplePanel({
           />
         ) : at.level === "hidden" ? (
           <HiddenPeople backTo={levelBackTo} foot={foot} />
-        ) : (
-          <PersonPanel
-            selected={at.selected}
+        ) : at.level === "devices" ? (
+          <DevicesLevel
+            backTo={levelBackTo}
+            devices={devices}
+            now={now}
+            thresholds={thresholds}
+            foot={foot}
+          />
+        ) : at.selected === me ? (
+          <MePage
             backTo={backTo}
+            devicesTo={devicesTo}
+            foot={foot}
             name={name}
             devices={devices}
+            now={now}
+            thresholds={thresholds}
+            content={content}
+            sharing={sharing}
+            groups={groups}
+          />
+        ) : (
+          <PersonPage
+            selected={at.selected}
+            backTo={backTo}
             people={people}
             personColors={personColors}
             now={now}
@@ -123,6 +153,7 @@ export function PeoplePanel({
             content={content}
             period={period}
             sharing={sharing}
+            groups={groups}
             foot={foot}
             onLeave={onLeave}
           />

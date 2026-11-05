@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { openGroup } from "./support/mapControls";
 import { overlandBatch } from "./support/overlandBatch";
 import { sharingFriend } from "./support/sharingFriend";
 import { test } from "./support/test";
@@ -23,8 +24,8 @@ test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account 
   for (const [path, heading, loaded] of [
     ["/", "People", "Me"],
     ["/?person=me", "People", "Timeline"],
-    ["/?view=history", "People", "30 points"],
-    ["/?view=heat", "People", /^\d+ points$/],
+    ["/?view=history&person=me", "People", "Summary, visits and trips"],
+    ["/?view=heat&person=me", "People", "Heat: totals, busiest places"],
     ["/settings", "Settings", "Privacy & data"],
     ["/settings/profile", "Profile", "Time zone"],
     ["/settings/devices", "Devices", "30 points in total"],
@@ -92,9 +93,9 @@ test("the People page with someone who shares fits a 320 px wide screen", async 
     ["/", name, null],
     ["/?person=me", "Timeline", "Me"],
     [`/?person=${friend.account.id}`, "Where they’ve been", name],
-    [`/?view=history&person=${friend.account.id}`, `${name} · ${friend.device.name}`, name],
+    [`/?view=history&person=${friend.account.id}`, "Summary", name],
     ["/", name, null],
-    ["/?view=heat&person=me", "Your devices", "Me"],
+    ["/?view=heat&person=me", "Heat: totals, busiest places", "Me"],
   ] as const) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
@@ -105,14 +106,22 @@ test("the People page with someone who shares fits a 320 px wide screen", async 
         : page.getByRole("region", { name: detail, exact: true }),
     ).toBeVisible();
     await expect(page.getByText(loaded).first()).toBeVisible();
+    // The wide parts are in the folded groups: open them all before measuring.
+    const folded = page.locator(".settings-group__toggle[aria-expanded=false]");
+    const groups = await folded.count();
+    for (let opened = 0; opened < groups; opened++) {
+      await folded.first().click({ timeout: 10_000 });
+      await expect(folded).toHaveCount(groups - opened - 1, { timeout: 10_000 });
+    }
     expect(await overflow(page), path).toBe(0);
   }
   // Their detail and Me's, with each device and the terms of the share: they fit too.
   await page.goto(`/?view=history&person=${friend.account.id}`);
+  await openGroup(page, /^Device \(1\) · What /);
   await expect(page.getByText("Last 7 days")).toBeVisible();
   expect(await overflow(page), "their detail").toBe(0);
   await page.goto("/?view=history&person=me");
-  await expect(page.getByRole("heading", { name: "Your devices" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Your devices/ })).toBeVisible();
   expect(await overflow(page), "Me's detail").toBe(0);
 });
 

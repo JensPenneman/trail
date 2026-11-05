@@ -24,6 +24,8 @@ interface PersonSummaryProps {
   freshness: { recordedAt: string; live: boolean; asOf?: boolean } | null;
   /** What they are doing now, or why nothing can be said ("No recent location"). */
   doing: string | null;
+  /** After what they are doing, on the same line: "2 devices" on Me's page. */
+  detail?: string;
   /** Right of the name: the distance from you. */
   distance?: ReactNode;
   /** Right of the name, before the distance: the battery, when their share includes it. */
@@ -45,6 +47,7 @@ export function PersonSummary({
   avatar,
   freshness,
   doing,
+  detail,
   distance,
   battery,
 }: PersonSummaryProps) {
@@ -99,6 +102,13 @@ export function PersonSummary({
           </>
         )}
         {doing === null ? null : <span className="person-summary__doing">{unbroken(doing)}</span>}
+        {detail === undefined ? null : (
+          <>
+            <span aria-hidden="true"> · </span>
+            <span className="visually-hidden">, </span>
+            <span className="person-summary__doing">{unbroken(detail)}</span>
+          </>
+        )}
       </p>
     </div>
   );

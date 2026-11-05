@@ -1,0 +1,29 @@
+.now-strip {
+  min-width: 0;
+}
+
+.now-strip__list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.now-strip__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.now-strip__name {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.now-strip__facts,
+.now-strip__none {
+  grid-column: 2;
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+}

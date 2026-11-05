@@ -1,5 +1,8 @@
 import { type RefObject, useEffect } from "react";
 
+/** Sent on the page when the sheet's peek height changes (and so where its half detent is). */
+export const peekChanged = "peekchange";
+
 /**
  * The phone sheet's peek height (`--sheet-peek` of the page): just what says
  * where one is — the search and the Me row at the root, the header of a
@@ -64,10 +67,11 @@ export function usePeekHeight(
       watch(end);
       for (const child of sheet.children) watch(child);
       const height = end.getBoundingClientRect().bottom - sheet.getBoundingClientRect().top;
-      page.style.setProperty(
-        "--sheet-peek",
-        `min(${Math.ceil(height + 16)}px, 45svh, calc(var(--sheet-view) / 2 - var(--space-8)))`,
-      );
+      const value = `min(${Math.ceil(height + 16)}px, 45svh, calc(var(--sheet-view) / 2 - var(--space-8)))`;
+      if (page.style.getPropertyValue("--sheet-peek") === value) return;
+      page.style.setProperty("--sheet-peek", value);
+      // The half detent moves with the peek: whoever lifted the sheet to it can follow.
+      page.dispatchEvent(new CustomEvent(peekChanged));
     }
     measure();
     // What appears or goes (the slider, a notice, the setup card) is a change of the tree.

@@ -10,7 +10,7 @@ interface EmptyStateProps {
   children?: ReactNode;
   action?: ReactNode;
   /** Heading level inside the page outline. */
-  level?: 2 | 3;
+  level?: 2 | 3 | 4;
   /** Under the section title around it, one level down from the sections' own. */
   nested?: boolean;
 }
@@ -25,7 +25,11 @@ export function EmptyState({
 }: EmptyStateProps) {
   // Unless the page says which, a level under whatever it sits in (a detail's parts are h3).
   const sections = use(SectionLevel);
-  const Heading = `h${level ?? (nested ? sections + 1 : sections)}` as "h2" | "h3" | "h4";
+  const Heading = `h${Math.min(level ?? (nested ? sections + 1 : sections), 5)}` as
+    | "h2"
+    | "h3"
+    | "h4"
+    | "h5";
   return (
     <div className="empty-state">
       <span className="empty-state__icon">

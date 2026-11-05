@@ -42,7 +42,7 @@ import { resolveMapSelection } from "../map/resolveMapSelection";
 import { useMapSearch } from "../map/useMapSearch";
 import { PeoplePanel } from "./PeoplePanel";
 import { usePanelFocus } from "./usePanelFocus";
-import { usePeekHeight } from "./usePeekHeight";
+import { peekChanged, usePeekHeight } from "./usePeekHeight";
 import { useSharingActions } from "./useSharingActions";
 import "./PeoplePage.css";
 
@@ -98,6 +98,10 @@ export function PeoplePage() {
   const sharing = useSharingActions(people.data ?? []);
   // What the people are searched for: kept here, so going to someone's page and back keeps it.
   const [query, setQuery] = useState("");
+  // The folded groups that are open, kept here so that a level of a page and back finds them.
+  const [openGroups, setOpenGroups] = useState<Readonly<Record<string, boolean>>>({
+    "me:Timeline": true,
+  });
 
   const available = useMemo<MapPerson[]>(
     () => [
@@ -210,7 +214,7 @@ export function PeoplePage() {
   // Beside the map the panel scrolls by itself: another view or person starts at its top.
   const panel = useRef<HTMLElement | null>(null);
   // The level shown, for the focus that follows it: someone's key, `list:hidden`, or the root.
-  const levelKey = selectedKey ?? (search.list === "hidden" ? "list:hidden" : null);
+  const levelKey = search.list === null ? selectedKey : `list:${search.list}`;
   const focusRef = usePanelFocus(
     levelKey,
     levelKey?.startsWith("list:") === true ||
@@ -228,13 +232,41 @@ export function PeoplePage() {
   // Phones: selecting someone lifts the sheet to its half detent, where the detail reads well.
   const snaps = useRef<HTMLDivElement | null>(null);
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const lifted = useRef(selectedKey);
+  // A person the address names when the page opens (and who loads after it) is not a selection
+  // to lift the sheet for: the sheet stays where the person left it.
+  const lifted = useRef<string | null>(search.person);
   useEffect(() => {
     const before = lifted.current;
     lifted.current = selectedKey;
-    if (wide || selectedKey === null || before === selectedKey) return;
+    if (wide || selectedKey === null || before === selectedKey) return undefined;
     const half = snaps.current?.querySelector<HTMLElement>("[data-detent=half]");
     half?.scrollIntoView?.({ block: "start", behavior: reducedMotion ? "instant" : "smooth" });
+    // The new level's peek is measured just after: the detent moves, and the sheet follows it
+    // until the person takes hold of it or a moment has passed.
+    const page = half?.closest<HTMLElement>(".map-page");
+    if (half == null || page == null) return undefined;
+    const lifting = performance.now();
+    const follow = () => {
+      // Lowered since (to peek, by the page or the person): not lifted again.
+      if (window.scrollY <= 0 && performance.now() - lifting > 300) {
+        stop();
+        return;
+      }
+      half.scrollIntoView?.({ block: "start", behavior: "instant" });
+    };
+    const stop = () => {
+      page.removeEventListener(peekChanged, follow);
+      window.removeEventListener("pointerdown", stop);
+      window.removeEventListener("wheel", stop);
+      window.removeEventListener("keydown", stop);
+      clearTimeout(timer);
+    };
+    const timer = setTimeout(stop, 2000);
+    page.addEventListener(peekChanged, follow);
+    window.addEventListener("pointerdown", stop, { once: true });
+    window.addEventListener("wheel", stop, { once: true });
+    window.addEventListener("keydown", stop, { once: true });
+    return stop;
   }, [selectedKey, wide, reducedMotion]);
   // Focus on the bar, the map or its buttons, which a lifted sheet covers: lower the sheet to its
   // peek, so what has focus can be seen (WCAG 2.4.11).
@@ -260,6 +292,22 @@ export function PeoplePage() {
     return () => element.removeEventListener("focusin", onStageFocus);
   }, []);
   usePeekHeight(panel, levelKey, !wide);
+  // Beside the map History's foot floats over the map's bottom-left corner too: the key of what
+  // the map draws stacks above it (`--foot-height`).
+  const hasFoot = content.foot !== null;
+  useEffect(() => {
+    const page = stage.current?.closest<HTMLElement>(".map-page");
+    const element = stage.current?.querySelector<HTMLElement>(".map-page__foot");
+    if (!hasFoot || page == null || element == null || !wide) return undefined;
+    const publish = () => page.style.setProperty("--foot-height", `${element.offsetHeight}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      page.style.removeProperty("--foot-height");
+    };
+  }, [wide, hasFoot]);
   const toTop = () => {
     if (panel.current !== null) panel.current.scrollTop = 0;
   };
@@ -271,7 +319,9 @@ export function PeoplePage() {
   const linkTo = (person: string) => `?${withPerson(params, person).toString()}`;
   const backTo = `?${withPerson(params, null).toString()}`;
   const hiddenTo = `?${withList(params, "hidden").toString()}`;
-  // Back from the Hidden list keeps what else the address says (Heat's own devices included).
+  const devicesTo = `?${withList(params, "devices").toString()}`;
+  // Back from a level (the Hidden list, Me's devices) keeps what else the address says (Heat's
+  // own devices included).
   const levelBackTo = `?${withList(params, null).toString()}`;
 
   // Devices to choose among, when there are several: the selected person's; in Heat one's own,
@@ -371,11 +421,8 @@ export function PeoplePage() {
           )}
           {content.chip}
         </div>
+        {content.legend === null ? null : <div className="map-page__legend">{content.legend}</div>}
         {wide ? foot : null}
-        {/* What the view says of itself, for those who cannot see the map. */}
-        {content.description === null || content.description === undefined ? null : (
-          <div className="visually-hidden">{content.description}</div>
-        )}
       </div>
 
       {/* Phones: the room the map shows through; presses fall on the map under it. */}
@@ -388,11 +435,13 @@ export function PeoplePage() {
         panelRef={panelRef}
         foot={wide ? null : foot}
         at={
-          selectedKey !== null
-            ? { level: "person", selected: selectedKey }
-            : search.list === "hidden"
-              ? { level: "hidden" }
-              : { level: "root" }
+          search.list === "devices"
+            ? { level: "devices" }
+            : selectedKey !== null
+              ? { level: "person", selected: selectedKey }
+              : search.list === "hidden"
+                ? { level: "hidden" }
+                : { level: "root" }
         }
         people={people}
         devices={devices}
@@ -402,6 +451,7 @@ export function PeoplePage() {
         linkTo={linkTo}
         hiddenTo={hiddenTo}
         backTo={backTo}
+        devicesTo={devicesTo}
         levelBackTo={levelBackTo}
         query={query}
         onQuery={setQuery}
@@ -409,6 +459,11 @@ export function PeoplePage() {
         content={content}
         period={wherePeriod}
         sharing={sharing}
+        groups={{
+          isOpen: (title) => openGroups[`${selectedKey ?? ""}:${title}`] === true,
+          set: (title, open) =>
+            setOpenGroups((current) => ({ ...current, [`${selectedKey ?? ""}:${title}`]: open })),
+        }}
         onLeave={leavePerson}
       />
       {sharing.dialogs}

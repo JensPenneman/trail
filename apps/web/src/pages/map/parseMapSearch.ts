@@ -10,8 +10,11 @@ export interface MapSearch {
   person: string | null;
   /** The devices shown of the selected person; null shows all of them. */
   devices: readonly string[] | null;
-  /** A level of the sidebar below the root (`?list=hidden`); only where nobody is selected. */
-  list: "hidden" | null;
+  /**
+   * A level of the sidebar below the root: `hidden` where nobody is selected,
+   * `devices` on Me's page (`?person=me&list=devices`).
+   */
+  list: "hidden" | "devices" | null;
   /** The History view's day or period (kept while another view is shown). */
   period: Omit<HistorySelection, "deviceIds">;
 }
@@ -40,6 +43,13 @@ function parsePerson(params: URLSearchParams): string | null {
   return params.has("segment") ? me : null;
 }
 
+/** The level named by `?list=`, where it can be: Hidden at the root, the devices on Me's page. */
+function parseList(person: string | null, value: string | null): "hidden" | "devices" | null {
+  if (person === null && value === "hidden") return "hidden";
+  if (person === me && value === "devices") return "devices";
+  return null;
+}
+
 /**
  * Reads the People page's URL defensively, like History always did: an
  * unknown view is Live, a hand-edited or outdated link falls back to defaults
@@ -53,7 +63,7 @@ export function parseMapSearch(params: URLSearchParams, today: string): MapSearc
   return {
     view: isMapView(view) ? view : "live",
     person,
-    list: person === null && params.get("list") === "hidden" ? "hidden" : null,
+    list: parseList(person, params.get("list")),
     devices: deviceIds,
     period,
   };

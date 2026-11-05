@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { expectAccessible } from "./support/expectAccessible";
+import { openGroup } from "./support/mapControls";
 import { overlandBatch, withBattery } from "./support/overlandBatch";
 import { postOverland } from "./support/postOverland";
 import { signUp } from "./support/signUp";
@@ -62,6 +63,7 @@ test("someone you share with sees you live, may hide you, and loses you when you
 
   await row.click();
   const card = friend.page.getByRole("region", { name: account.displayName, exact: true });
+  await openGroup(friend.page, /^Device \(1\) · What /);
   await expect(card.getByText("Sharer’s phone")).toBeVisible();
   // Hiding leaves the detail for the list, and says so.
   await card.getByRole("button", { name: `Hide ${account.displayName}` }).click();
