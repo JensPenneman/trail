@@ -97,11 +97,9 @@ describe("reading the address of Insights", () => {
     expect(isInsightsRange("2023-10-27", "2026-10-27")).toBe(false);
   });
 
-  it("drops devices and a mode that cannot be one", () => {
-    const read = address(`devices=${device.toUpperCase()},nope,${device}&mode=cycling`);
-    expect(read.devices).toEqual([device]);
-    expect(read.mode).toBe("cycling");
-    expect(address("devices=nope&mode=hovercraft")).toMatchObject({ devices: null, mode: null });
+  it("drops devices that cannot be one", () => {
+    expect(address(`devices=${device.toUpperCase()},nope,${device}`).devices).toEqual([device]);
+    expect(address("devices=nope").devices).toBeNull();
   });
 });
 
@@ -118,15 +116,14 @@ describe("the days a period asks for", () => {
     expect(periodRange(period("period=7d"), today)).toEqual({ from: "2026-10-29", to: today });
   });
 
-  it("builds the request from the address, with the mode only where asked", () => {
-    const read = address(`period=2026-10&devices=${device}&mode=car`);
+  it("builds the request from the address", () => {
+    const read = address(`period=2026-10&devices=${device}`);
     expect(insightsParams(read, today)).toEqual({
       from: "2026-10-01",
       to: "2026-10-31",
       deviceIds: [device],
       mode: null,
     });
-    expect(insightsParams(read, today, true).mode).toBe("car");
   });
 });
 

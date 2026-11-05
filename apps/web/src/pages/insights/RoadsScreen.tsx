@@ -1,35 +1,33 @@
-import { useId, useMemo } from "react";
-import { BarChart } from "../../charts/BarChart";
 import { useFormatter } from "../../format/useFormatter";
 import { useInsightsRoads } from "../../queries/useInsightsRoads";
-import { transportModeInfo } from "../../transport/transportModes";
 import { EmptyState } from "../../ui/EmptyState";
 import { ErrorState } from "../../ui/ErrorState";
 import { LoadingBlock } from "../../ui/LoadingBlock";
 import { Notice } from "../../ui/Notice";
 import { Skeleton } from "../../ui/Skeleton";
+import { InsightsHero } from "./InsightsHero";
 import { InsightsScreen } from "./InsightsScreen";
-import { axisFormats } from "./insightsFormat";
 import { insightsRootPath } from "./insightsLevels";
 import { insightsLink } from "./insightsLinks";
 import { useInsightsPeriod } from "./useInsightsPeriod";
 import { WayKindBars } from "./WayKindBars";
-import { wayFamilyLabels } from "./wayLabels";
+import { wayKindLabels } from "./wayLabels";
 
 /**
  * Roads (`/insights/roads`): the kinds of road and railway travelled on, from
- * the map matching of the moves, for every mode or the one chosen.
+ * the map matching of the moves, under the kind with the most distance.
  */
 export function RoadsScreen() {
   const state = useInsightsPeriod();
   const format = useFormatter();
-  const axes = useMemo(() => axisFormats(format), [format]);
-  const kindsId = useId();
-  const familiesId = useId();
-  const roads = useInsightsRoads(state.query(true));
+  const roads = useInsightsRoads(state.query());
   const data = roads.data;
-  const mode = state.mode;
-  const tone = mode ?? "accent";
+  const top = data?.kinds
+    .filter((entry) => entry.kind !== "other")
+    .reduce<(typeof data.kinds)[number] | null>(
+      (best, entry) => (best === null || entry.distanceM > best.distanceM ? entry : best),
+      null,
+    );
 
   return (
     <InsightsScreen
@@ -42,6 +40,7 @@ export function RoadsScreen() {
     >
       {roads.isPending ? (
         <LoadingBlock label="Loading roads">
+          <Skeleton height="6rem" />
           <Skeleton height="16rem" />
         </LoadingBlock>
       ) : roads.isError ? (
@@ -57,7 +56,14 @@ export function RoadsScreen() {
             <p>Choose another period, or another device.</p>
           </EmptyState>
         </div>
-      ) : roads.data.mappedM <= 0 ? (
+      ) : roads.data.mappedM > 0 && (top === null || top === undefined) ? (
+        <Notice tone="info" title="Off the map">
+          <p>
+            The map data holds no road or railway near these moves, so there is no kind of way to
+            name.
+          </p>
+        </Notice>
+      ) : roads.data.mappedM <= 0 || top === null || top === undefined ? (
         <Notice tone="info" title="No map data for these moves">
           <p>
             Trail lays moves onto OpenStreetMap's roads and railways once it has the map of their
@@ -66,37 +72,12 @@ export function RoadsScreen() {
         </Notice>
       ) : (
         <>
-          {mode === null ? null : (
-            <p className="muted">Counting {transportModeInfo[mode].label.toLowerCase()} only.</p>
-          )}
-          <section className="section" aria-labelledby={kindsId}>
-            <h2 className="section__title" id={kindsId}>
-              By kind of way
-            </h2>
-            <WayKindBars title="Distance by kind of way" kinds={roads.data.kinds} tone={tone} />
-          </section>
-          <section className="section" aria-labelledby={familiesId}>
-            <h2 className="section__title" id={familiesId}>
-              In groups
-            </h2>
-            <BarChart
-              title="Distance by group of ways"
-              summary={`${format.distance(roads.data.mappedM)} with map data, of ${format.distance(roads.data.distanceM)} in all.`}
-              series={[{ key: "distance", label: "Distance", tone }]}
-              rows={roads.data.families.map((row) => ({
-                key: row.family,
-                label: wayFamilyLabels[row.family],
-                values: [row.distanceM],
-              }))}
-              orientation="horizontal"
-              valueLabels
-              formatValue={(metres) =>
-                `${format.distance(metres)} · ${format.percent(roads.data.mappedM > 0 ? metres / roads.data.mappedM : 0)}`
-              }
-              formatTick={axes.distance}
-              categoryLabel="Group of ways"
-            />
-          </section>
+          <InsightsHero
+            label={`On ${wayKindLabels[top.kind].toLowerCase()}`}
+            value={format.percent(top.share)}
+            detail={`of ${format.distance(roads.data.mappedM)} with map data`}
+          />
+          <WayKindBars title="Distance by kind of way" kinds={roads.data.kinds} tone="accent" />
           {roads.data.mappedM < roads.data.distanceM * 0.995 ? (
             <p className="muted">
               Map data covers {format.percent(roads.data.mappedM / roads.data.distanceM)} of this

@@ -13,6 +13,7 @@ import {
   octoberOverview,
   overview,
   roadInsights,
+  segmentId,
   septemberOverview,
   timeInsights,
 } from "./support/insightsFixtures";
@@ -621,7 +622,29 @@ describe("a mode's screen", () => {
 });
 
 describe("when you travel", () => {
-  it("draws the hours of the week, for every mode or the one the address names", async () => {
+  it("draws the hours of the week under the time on the move", async () => {
+    const { calls } = mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/time": { status: 200, body: timeInsights() },
+    });
+    renderInsights("/insights/time?period=2026-10");
+    expect(await screen.findByRole("heading", { level: 1, name: "When you travel" })).toBeVisible();
+    const grid = await screen.findByRole("figure", {
+      name: "Time on the move by weekday and hour",
+    });
+    expect(grid).toHaveAccessibleDescription(
+      "Most often on Wednesday at 08:00 (45 mins); 1 hr 15 mins on the move in all.",
+    );
+    expect(within(grid).getByRole("img", { name: "Wednesday, 08:00–09:00" })).toBeInTheDocument();
+    const tiles = await hero();
+    expect(within(tiles).getByText("1 hr 15 mins")).toBeVisible();
+    expect(within(tiles).getByText("Most often on Wednesday at 08:00")).toBeVisible();
+    expect(screen.queryByRole("combobox", { name: "Mode" })).toBeNull();
+    expect(lastQuery(calls, "/api/v1/insights/time").get("from")).toBe("2026-10-01");
+    expect(lastQuery(calls, "/api/v1/insights/time").has("mode")).toBe(false);
+  });
+
+  it("sends an address with a mode to the mode's own When, keeping the rest", async () => {
     const { calls } = mockApi({
       ...octoberRoutes(),
       "GET /api/v1/insights/time": ({ url }) => ({
@@ -631,40 +654,62 @@ describe("when you travel", () => {
         }),
       }),
     });
-    const view = renderInsights("/insights/time?period=2026-10");
-    expect(await screen.findByRole("heading", { level: 1, name: "When you travel" })).toBeVisible();
-    const grid = await screen.findByRole("figure", {
-      name: "Time on the move by weekday and hour",
-    });
-    expect(grid).toHaveAccessibleDescription(
-      "Most often on Wednesday at 08:00 (45 mins); 1 hr 15 mins on the move in all.",
-    );
-    expect(within(grid).getByRole("img", { name: "Wednesday, 08:00–09:00" })).toBeInTheDocument();
-    // The mode has no control of its own any more.
-    expect(screen.queryByRole("combobox", { name: "Mode" })).toBeNull();
-    expect(lastQuery(calls, "/api/v1/insights/time").get("from")).toBe("2026-10-01");
-
-    await view.router.navigate("/insights/time?period=2026-10&mode=cycling");
+    const { router } = renderInsights("/insights/time?mode=cycling&period=2026-10");
     expect(
       await screen.findByRole("figure", { name: "Time by cycling by weekday and hour" }),
     ).toBeVisible();
+    expect(router.state.location.pathname).toBe("/insights/transport/cycling/time");
+    expect(router.state.location.search).toBe("?period=2026-10");
+    // Replaced: Back does not return to the old address.
+    expect(router.state.historyAction).toBe("REPLACE");
     expect(lastQuery(calls, "/api/v1/insights/time").get("mode")).toBe("cycling");
+    expect(screen.getByRole("heading", { level: 1, name: "When" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Back to Cycling" })).toHaveAttribute(
+      "href",
+      "/insights/transport/cycling?period=2026-10",
+    );
+  });
+
+  it("leaves a mode that does not exist to the screen for every mode", async () => {
+    mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/time": { status: 200, body: timeInsights() },
+    });
+    const { router } = renderInsights("/insights/time?mode=hovercraft");
+    expect(
+      await screen.findByRole("figure", { name: "Time on the move by weekday and hour" }),
+    ).toBeVisible();
+    expect(router.state.location.pathname).toBe("/insights/time");
   });
 });
 
 describe("roads", () => {
-  it("lists the kinds and groups of ways, with the share of each", async () => {
+  it("names the kind of way with the most distance, and lists the kinds with their shares", async () => {
     mockApi({
       ...octoberRoutes(),
       "GET /api/v1/insights/roads": { status: 200, body: roadInsights() },
     });
     renderInsights("/insights/roads?period=2026-10");
     expect(await screen.findByRole("heading", { level: 1, name: "Roads" })).toBeVisible();
+    const tiles = await hero();
+    expect(within(tiles).getByText("On railways")).toBeVisible();
+    expect(within(tiles).getByText("87%")).toBeVisible();
+    expect(within(tiles).getByText("of 66.0 km with map data")).toBeVisible();
     const kinds = await screen.findByRole("figure", { name: "Distance by kind of way" });
     expect(within(kinds).getByRole("img", { name: "Railways" })).toHaveAccessibleDescription(
       "57.6 km · 87%",
     );
-    expect(screen.getByRole("figure", { name: "Distance by group of ways" })).toBeVisible();
+    expect(screen.queryByRole("figure", { name: "Distance by group of ways" })).toBeNull();
+    expect(screen.queryByText(/Map data covers/)).toBeNull();
+  });
+
+  it("says how much of the distance the map data covers", async () => {
+    mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/roads": { status: 200, body: roadInsights({ mappedM: 33_000 }) },
+    });
+    renderInsights("/insights/roads?period=2026-10");
+    expect(await screen.findByText(/^Map data covers 50% of this distance/)).toBeVisible();
   });
 
   it("says when the moves have no map data", async () => {
@@ -677,6 +722,244 @@ describe("roads", () => {
     });
     renderInsights("/insights/roads?period=2026-10");
     expect(await screen.findByText("No map data for these moves")).toBeVisible();
+  });
+});
+
+describe("a mode's rows and their screens", () => {
+  const modeRoutes = (mode: "train" | "cycling" | "plane" | "boat", overrides = {}) => ({
+    ...octoberRoutes(),
+    [`GET /api/v1/insights/modes/${mode}`]: {
+      status: 200,
+      body: modeInsights({ mode, period: monthPeriod("2026-10"), ...overrides }),
+    },
+    "GET /api/v1/insights/time": ({ url }: { url: URL }) => ({
+      status: 200,
+      body: timeInsights({ mode: url.searchParams.get("mode") === mode ? mode : null }),
+    }),
+  });
+
+  it("lists When, Roads, Speed and Longest moves with what each says", async () => {
+    mockApi(modeRoutes("train"));
+    renderInsights("/insights/transport/train?period=2026-10");
+    await screen.findByRole("heading", { level: 1, name: "Train" });
+    expect(
+      await screen.findByRole("link", { name: "When Mostly Wednesdays · busiest at 08:00" }),
+    ).toHaveAttribute("href", "/insights/transport/train/time?period=2026-10");
+    expect(screen.getByRole("link", { name: "Roads 96% on railway track" })).toHaveAttribute(
+      "href",
+      "/insights/transport/train/roads?period=2026-10",
+    );
+    expect(screen.getByRole("link", { name: "Speed Typically 96 km/h" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Longest moves 60.0 km · Wed 21 Oct" })).toBeVisible();
+  });
+
+  it("has no Roads row for a mode that is not laid onto the map", async () => {
+    mockApi(modeRoutes("plane", { rail: null, stationStops: null }));
+    renderInsights("/insights/transport/plane?period=2026-10");
+    await screen.findByRole("link", { name: /^Speed/ });
+    expect(screen.queryByRole("link", { name: /^Roads/ })).toBeNull();
+  });
+
+  it("opens a row, with the title in focus, and goes back to it", async () => {
+    const browser = userEvent.setup();
+    mockApi(modeRoutes("train"));
+    const { router } = renderInsights("/insights/transport/train?period=2026-10");
+    await browser.click(await screen.findByRole("link", { name: /^Speed / }));
+    const title = await screen.findByRole("heading", { level: 1, name: "Speed" });
+    await waitFor(() => expect(title).toHaveFocus());
+    await waitFor(() => expect(document.title).toBe("Speed · Train · Insights · Trail"));
+    await browser.click(screen.getByRole("link", { name: "Back to Train" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/insights/transport/train"));
+    expect(router.state.historyAction).toBe("POP");
+    const row = await screen.findByRole("link", { name: /^Speed / });
+    await waitFor(() => expect(row).toHaveFocus());
+  });
+
+  it("shows a mode's hours of the week", async () => {
+    const { calls } = mockApi(modeRoutes("cycling"));
+    renderInsights("/insights/transport/cycling/time?period=2026-10");
+    expect(
+      await screen.findByRole("figure", { name: "Time by cycling by weekday and hour" }),
+    ).toBeVisible();
+    expect(lastQuery(calls, "/api/v1/insights/time").get("mode")).toBe("cycling");
+    await waitFor(() => expect(document.title).toBe("When · Cycling · Insights · Trail"));
+  });
+
+  it("shows how much of a train's distance was on the rails, and its halts", async () => {
+    mockApi(modeRoutes("train"));
+    renderInsights("/insights/transport/train/roads?period=2026-10");
+    const tiles = await hero();
+    expect(within(tiles).getByText("On railway track")).toBeVisible();
+    expect(within(tiles).getByText("96%")).toBeVisible();
+    expect(within(tiles).getByText("3 halts at stations, 3 a ride")).toBeVisible();
+    expect(await screen.findByRole("figure", { name: "Distance by kind of way" })).toBeVisible();
+  });
+
+  it("shows the kind of road a bike took, and says when there is no map data", async () => {
+    const roads = {
+      distanceM: 6000,
+      mappedM: 6000,
+      kinds: [
+        { kind: "residential" as const, distanceM: 2280, share: 0.38 },
+        { kind: "cycleway" as const, distanceM: 3720, share: 0.62 },
+      ],
+    };
+    mockApi(modeRoutes("cycling", { rail: null, stationStops: null, roads }));
+    const view = renderInsights("/insights/transport/cycling/roads?period=2026-10");
+    const tiles = await hero();
+    expect(within(tiles).getByText("On cycleways")).toBeVisible();
+    expect(within(tiles).getByText("62%")).toBeVisible();
+    expect(await screen.findByRole("figure", { name: "Distance by kind of road" })).toBeVisible();
+    view.unmount();
+
+    mockApi(
+      modeRoutes("cycling", {
+        rail: null,
+        stationStops: null,
+        roads: { distanceM: 6000, mappedM: 0, kinds: [] },
+      }),
+    );
+    renderInsights("/insights/transport/cycling/roads?period=2026-10");
+    expect(await screen.findByText("No map data for these moves")).toBeVisible();
+  });
+
+  it("states a boat's share on ferry routes, and a plane has no roads", async () => {
+    mockApi(modeRoutes("boat", { rail: null, ferry: { distanceM: 800, share: 0.8 } }));
+    const view = renderInsights("/insights/transport/boat/roads?period=2026-10");
+    expect(within(await hero()).getByText("80%")).toBeVisible();
+    expect(screen.getByText("On ferry routes")).toBeVisible();
+    view.unmount();
+    mockApi(modeRoutes("plane", { rail: null, stationStops: null }));
+    renderInsights("/insights/transport/plane/roads?period=2026-10");
+    expect(await screen.findByRole("heading", { name: "No roads for plane" })).toBeVisible();
+  });
+
+  it("shows the typical speed, the moves by speed and the fastest move in History", async () => {
+    mockApi(modeRoutes("train"));
+    renderInsights("/insights/transport/train/speed?period=2026-10");
+    const tiles = await hero();
+    expect(within(tiles).getByText("Typical speed")).toBeVisible();
+    expect(within(tiles).getByText("96 km/h")).toBeVisible();
+    expect(within(tiles).getByText("Average 80 km/h")).toBeVisible();
+    expect(await screen.findByRole("figure", { name: "Moves by speed" })).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Fastest move 141 km/h top · Wed 21 Oct" }),
+    ).toHaveAttribute("href", `/?view=history&date=2026-10-21&person=me&segment=${segmentId}`);
+  });
+
+  it("lists the longest moves, each opening its day in History", async () => {
+    const [ride] = modeInsights().topMoves.longest;
+    if (ride === undefined) throw new Error("no move");
+    const moves = [21, 14, 9, 7, 2].map((day, index) => ({
+      ...ride,
+      segmentId: `019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d4${index}`,
+      startedAt: `2026-10-${String(day).padStart(2, "0")}T06:42:10.000Z`,
+      distanceM: 60_000 - index * 10_000,
+    }));
+    mockApi(
+      modeRoutes("train", {
+        topMoves: { longest: moves, fastest: [ride], recent: [ride] },
+      }),
+    );
+    renderInsights("/insights/transport/train/moves?period=2026-10");
+    const tiles = await hero();
+    expect(within(tiles).getByText("Longest move")).toBeVisible();
+    expect(within(tiles).getByText("60.0 km")).toBeVisible();
+    expect(within(tiles).getByText("Wed 21 Oct")).toBeVisible();
+    const list = await screen.findByRole("list", { name: "The longest" });
+    const rows = within(list).getAllByRole("link");
+    expect(rows).toHaveLength(5);
+    expect(rows[0]).toHaveTextContent("Wed 21 Oct, 08:42");
+    expect(rows[0]).toHaveTextContent("60.0 km · 45 mins · 80 km/h average");
+    expect(rows[0]).toHaveAttribute(
+      "href",
+      "/?view=history&date=2026-10-21&person=me&segment=019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d40",
+    );
+    expect(rows[4]).toHaveAttribute(
+      "href",
+      "/?view=history&date=2026-10-02&person=me&segment=019a1f7e-3c55-7b42-9d0e-5b7f3a1c2d44",
+    );
+    expect(rows[4]).toHaveTextContent("20.0 km");
+  });
+
+  it("counts a single halt as one, says so when a mode has no time, and when the map holds nothing near", async () => {
+    mockApi(modeRoutes("train", { stationStops: 1 }));
+    const view = renderInsights("/insights/transport/train/roads?period=2026-10");
+    expect(await within(await hero()).findByText("1 halt at stations, 1 a ride")).toBeVisible();
+    view.unmount();
+
+    mockApi({
+      ...modeRoutes("cycling", { rail: null, stationStops: null }),
+      "GET /api/v1/insights/time": {
+        status: 200,
+        body: timeInsights({
+          mode: "cycling",
+          cells: timeInsights().cells.map((cell) => ({ ...cell, durationS: 0 })),
+        }),
+      },
+    });
+    const empty = renderInsights("/insights/transport/cycling/time?period=2026-10");
+    expect(await screen.findByRole("heading", { name: "No cycling in this period" })).toBeVisible();
+    expect(screen.queryByRole("figure")).toBeNull();
+    empty.unmount();
+
+    const roads = {
+      distanceM: 6000,
+      mappedM: 1000,
+      kinds: [{ kind: "other" as const, distanceM: 1000, share: 1 }],
+    };
+    mockApi(modeRoutes("cycling", { rail: null, stationStops: null, roads }));
+    const mode = renderInsights("/insights/transport/cycling/roads?period=2026-10");
+    expect(await screen.findByText("Off the map")).toBeVisible();
+    mode.unmount();
+    mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/roads": {
+        status: 200,
+        body: roadInsights({
+          mappedM: 1000,
+          kinds: [{ kind: "other", distanceM: 1000, share: 1 }],
+        }),
+      },
+    });
+    renderInsights("/insights/roads?period=2026-10");
+    expect(await screen.findByText("Off the map")).toBeVisible();
+  });
+
+  it("sends the Roads address of before with a mode to the mode's own, keeping the rest", async () => {
+    mockApi(modeRoutes("cycling", { rail: null, stationStops: null }));
+    const { router } = renderInsights("/insights/roads?mode=cycling&period=2026-10&devices=");
+    await screen.findByRole("heading", { level: 1, name: "Roads" });
+    expect(router.state.location.pathname).toBe("/insights/transport/cycling/roads");
+    expect(router.state.location.search).toBe("?period=2026-10&devices=");
+    expect(router.state.historyAction).toBe("REPLACE");
+  });
+
+  it.each([
+    ["When you travel", "/insights/time"],
+    ["Roads", "/insights/roads"],
+  ])("goes back from %s to its row on the summary, with focus there", async (name, path) => {
+    const browser = userEvent.setup();
+    mockApi({
+      ...octoberRoutes(),
+      "GET /api/v1/insights/time": { status: 200, body: timeInsights() },
+      "GET /api/v1/insights/roads": { status: 200, body: roadInsights() },
+    });
+    const { router } = renderInsights("/insights?period=2026-10");
+    await browser.click(await screen.findByRole("link", { name }));
+    await waitFor(() => expect(router.state.location.pathname).toBe(path));
+    await screen.findByRole("heading", { level: 1, name });
+    await browser.click(screen.getByRole("link", { name: "Back to Insights" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/insights"));
+    const row = await screen.findByRole("link", { name });
+    await waitFor(() => expect(row).toHaveFocus());
+  });
+
+  it("names no mode that does not exist on a part of a mode either", async () => {
+    const { calls } = mockApi(standardRoutes());
+    renderInsights("/insights/transport/teleport/speed");
+    expect(await screen.findByRole("heading", { name: "No such mode" })).toBeVisible();
+    expect(calls.some((call) => call.path.startsWith("/api/v1/insights"))).toBe(false);
   });
 });
 

@@ -21,8 +21,8 @@ export interface InsightsPeriodState extends InsightsAddress {
   today: string;
   /** The local days asked for; `from` null: from the first day with data. */
   range: { from: string | null; to: string };
-  /** The request of a screen; `withMode` for the screens that filter by a mode. */
-  query: (withMode?: boolean) => InsightsParams;
+  /** The request of a screen; a screen of a mode adds the mode itself. */
+  query: () => InsightsParams;
   /** Another unit around the same day (a step back can undo it). */
   chooseUnit: (unit: PeriodUnit) => void;
   /** A custom range of days (a step back can undo it). */
@@ -52,7 +52,7 @@ export function useInsightsPeriod(): InsightsPeriodState {
     params,
     today,
     range: periodRange(period, today),
-    query: (filtered = false) => insightsParams(address, today, filtered),
+    query: () => insightsParams(address, today),
     chooseUnit: (unit) =>
       setParams((current) => withPeriod(current, periodInUnit(period, unit, today))),
     chooseRange: (first, last) =>
