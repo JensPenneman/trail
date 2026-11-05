@@ -670,8 +670,12 @@ describe("a quick toggle across the parts of a stay", () => {
     });
     await upload(device.token, days);
     await settle(device.id);
+    // The worker's own run may still be storing the older parts of the split job when the queue
+    // reads empty on a slow host: wait for them rather than judge the first look.
+    await expect
+      .poll(async () => (await storedStops(device.id)).length, { timeout: 30_000, interval: 500 })
+      .toBeGreaterThan(1);
     const parts = await storedStops(device.id);
-    expect(parts.length).toBeGreaterThan(1);
     // The train set an hour before the last part began: the parts after it are the same stay.
     const lastPart = Date.parse(parts.at(-1)?.from ?? "") / 1000;
     await toggle(device.id, lastPart - 3600, "train");
