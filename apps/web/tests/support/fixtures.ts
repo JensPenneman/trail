@@ -283,6 +283,12 @@ export function sharedDevice(overrides: Partial<SharedDevice> = {}): SharedDevic
   };
 }
 
+/** The same shared device, last seen at `recordedAt` (or with no location: null). */
+export function seenAt(device: SharedDevice, recordedAt: string | null): SharedDevice {
+  if (recordedAt === null || device.location === null) return { ...device, location: null };
+  return { ...device, location: { ...device.location, recordedAt } };
+}
+
 /** Ana shares precisely with details; Bob approximately, without details, until tonight. */
 export const ana = (overrides: Partial<Person> = {}): Person => ({
   userId: ids.ana,

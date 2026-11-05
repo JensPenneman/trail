@@ -6,6 +6,7 @@ import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { paramsOf } from "./support/addressParams";
 import { config, ids, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
+import { openGroup } from "./support/openGroup";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
 
@@ -28,7 +29,6 @@ describe("the People page, Live", () => {
     renderPage(<PeoplePage />, { url: "/?person=me", user });
     expect(screen.getByRole("heading", { level: 1, name: "People" })).toBeInTheDocument();
     expect(view("Live")).toBeChecked();
-    expect(screen.getByText(/^Where you are now · /)).toBeInTheDocument();
     // Everyone's position stays on the map: two devices of one's own, Ana's and bob's.
     expect(await screen.findByRole("img", { name: /^Map of your track today/ })).toHaveAttribute(
       "data-positions",
@@ -76,7 +76,7 @@ describe("the People page, Live", () => {
       },
     });
     renderPage(<PeoplePage />, { user });
-    const list = screen.getByRole("list", { name: "People" });
+    const list = screen.getByRole("list", { name: "Me" });
     expect(await within(list).findByText("Your devices could not be loaded")).toBeInTheDocument();
     expect(within(list).getByText("Database down")).toBeInTheDocument();
     expect(within(list).getByRole("button", { name: "Try again" })).toBeInTheDocument();
@@ -104,8 +104,10 @@ describe("the People page, Live", () => {
 describe("the People page, History", () => {
   it("shows the day's totals, visits, trips and a time slider for Me", async () => {
     mockApi(standardRoutes());
+    const person = userEvent.setup();
     renderPage(<PeoplePage />, { url: "/?view=history&person=me", user });
     expect(view("History")).toBeChecked();
+    await openGroup(person, "Summary, visits and trips");
     expect(await screen.findByText("1.3 km")).toBeInTheDocument();
     expect(screen.getByText(/3 points/)).toBeInTheDocument();
     expect(await screen.findByRole("slider", { name: "Position at" })).toBeInTheDocument();
@@ -213,8 +215,10 @@ describe("the People page, History", () => {
 describe("the People page, Heat", () => {
   it("summarises everything recorded and hands the heatmap its place", async () => {
     mockApi(standardRoutes());
-    renderPage(<PeoplePage />, { url: "/?view=heat", user });
+    const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: "/?view=heat&person=me", user });
     expect(view("Heat")).toBeChecked();
+    await openGroup(person, "Heat: totals, busiest places");
     // 184,322 + 41,207 points over both devices.
     expect(await screen.findByText("225,529")).toBeInTheDocument();
     expect(
@@ -257,6 +261,7 @@ describe("switching views", () => {
     await person.click(screen.getByRole("button", { name: "Previous day" }));
 
     await person.click(view("Heat"));
+    await openGroup(person, "Heat: totals, busiest places");
     expect(await screen.findByText("184,322")).toBeInTheDocument();
     expect(map()).toBe(canvas);
     await waitFor(() => expect(map()).toHaveAttribute("data-heat", "2"));
@@ -299,6 +304,7 @@ describe("switching views", () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
     renderPage(<PeoplePage />, { url: "/?view=history&person=me", user });
+    await openGroup(person, "Summary, visits and trips");
     await person.click(await screen.findByRole("button", { name: /Show this visit on the map/ }));
     expect(map().getAttribute("data-focus")).toMatch(/^visit:/);
     await person.click(view("Live"));
@@ -308,7 +314,7 @@ describe("switching views", () => {
     expect(map().getAttribute("data-focus")).toMatch(/^segment:/);
     await person.click(view("History"));
     expect(map()).toHaveAttribute("data-focus", "");
-    // Nor after another day from History's own controls.
+    // Nor after another day from History's own controls (the group stays open across views).
     await person.click(await screen.findByRole("button", { name: /Show this visit on the map/ }));
     expect(map().getAttribute("data-focus")).toMatch(/^visit:/);
     await person.click(screen.getByRole("button", { name: "Previous day" }));

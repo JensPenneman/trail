@@ -3,6 +3,7 @@ import type { MapPerson } from "../src/pages/map/MapPerson";
 import {
   withDay,
   withDevices,
+  withList,
   withPerson,
   withRange,
   withView,
@@ -21,9 +22,23 @@ describe("the People page's URL", () => {
     expect(parse("")).toEqual({
       view: "live",
       person: null,
+      list: null,
       devices: null,
       period: { mode: "day", from: today, to: today },
     });
+  });
+
+  it("reads a level below the root only where nobody is selected", () => {
+    expect(parse("list=hidden").list).toBe("hidden");
+    expect(parse("list=nonsense").list).toBeNull();
+    expect(parse("person=me&list=hidden").list).toBeNull();
+  });
+
+  it("drops the level when someone is selected, and sets it again", () => {
+    const hidden = withList(new URLSearchParams("view=history&list=hidden"), "hidden");
+    expect(hidden.toString()).toBe("view=history&list=hidden");
+    expect(withPerson(hidden, "me").toString()).toBe("view=history&person=me");
+    expect(withList(hidden, null).toString()).toBe("view=history");
   });
 
   it("reads the view, the person, the devices and History's day or period", () => {
@@ -32,6 +47,7 @@ describe("the People page's URL", () => {
     ).toEqual({
       view: "history",
       person: anna,
+      list: null,
       devices: ["a", "b"],
       period: { mode: "range", from: "2026-10-01", to: "2026-10-07" },
     });
