@@ -207,6 +207,10 @@ and the API none of the worker's:
 - **Per-device advisory locks** (`deviceLock.ts`) are the cluster's: a pass in
   the worker and a deletion or a corrected mode in the API exclude each other
   across processes.
+- **`heat` events** cross the same way: when `HeatDaysScheduler` commits a device's rebuild of
+  the per-day cells (some seconds after the pass) it sends one for the days rebuilt, which
+  only the heat answers react to (`invalidateStopHeat`) — the pass's `segments` event
+  already told the timeline, the levels and Insights.
 - **`segments` events cross with `NOTIFY`**: the pass ends with
   `pg_notify('trail_processing', …)` inside its transaction, and the API's
   listener republishes the message on its bus (§9) — in role `all` too, so

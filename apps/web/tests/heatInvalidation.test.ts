@@ -1,6 +1,8 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { type HeatmapParams, queryKeys } from "../src/api/queryKeys";
+import { applyServerEvent } from "../src/live/applyServerEvent";
+import { createLiveStore } from "../src/live/createLiveStore";
 import { resyncAfterGap } from "../src/live/resyncAfterGap";
 import { invalidateStopHeat, staleProcessed } from "../src/live/staleProcessed";
 import { pendingRetryMs, sameHeatKind } from "../src/queries/useHeatmap";
@@ -121,5 +123,21 @@ describe("asking again for an answer still being worked out", () => {
       timezone: "UTC",
     });
     expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+  });
+
+  it("goes stale with a heat event, and the pass's other answers do not", () => {
+    const client = new QueryClient();
+    const heatKey = queryKeys.heatmap(params({ heat: "moving" }));
+    const timelineKey = ["timeline", { from: "2026-11-05" }] as const;
+    client.setQueryData(heatKey, { pending: true });
+    client.setQueryData(timelineKey, { items: [] });
+    applyServerEvent(client, createLiveStore(), {
+      type: "heat",
+      deviceId: "00000000-0000-4000-8000-000000000001",
+      from: "2026-11-05T00:00:00.000Z",
+      to: "2026-11-06T00:00:00.000Z",
+    });
+    expect(client.getQueryState(heatKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(timelineKey)?.isInvalidated).toBe(false);
   });
 });

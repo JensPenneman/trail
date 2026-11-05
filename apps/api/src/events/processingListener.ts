@@ -191,7 +191,7 @@ export class ProcessingListener {
 
   #publish(notice: SegmentsNotice): void {
     this.#bus.publish(notice.userId, {
-      type: "segments",
+      type: notice.kind === "heat" ? "heat" : "segments",
       deviceId: notice.deviceId,
       from: notice.from.toISOString(),
       to: notice.to.toISOString(),

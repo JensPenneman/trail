@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { ServerEvent } from "@trail/contracts/events";
 import type { TracksResponse } from "@trail/contracts/track";
+import type { SessionUser } from "@trail/contracts/user";
 import { queryKeys } from "../api/queryKeys";
 import { removeDeviceFromCache } from "../devices/removeDeviceFromCache";
 import { upsertDeviceInCache } from "../devices/upsertDeviceInCache";
@@ -11,7 +12,7 @@ import { appendTrackPoints } from "./appendTrackPoints";
 import { applyDaysEvent } from "./applyDaysEvent";
 import type { LiveStore } from "./createLiveStore";
 import { isRangeParams } from "./isRangeParams";
-import { staleProcessed } from "./staleProcessed";
+import { invalidateStopHeat, staleProcessed } from "./staleProcessed";
 
 /** The server's default `maxAccuracy` for `/api/tracks`, which the web app never overrides. */
 const trackMaxAccuracyM = 200;
@@ -68,6 +69,15 @@ export function applyServerEvent(
       // current mode, the statistics of Insights and the digests' stamps changed — of that
       // device, in that window only.
       staleProcessed(queryClient, event, "event");
+      return;
+    case "heat":
+      // The cells of the movement measures were made again: only heat answers are asked for anew.
+      void invalidateStopHeat(queryClient, {
+        deviceId: event.deviceId,
+        from: event.from,
+        to: event.to,
+        timezone: queryClient.getQueryData<SessionUser | null>(queryKeys.session)?.timezone ?? null,
+      });
       return;
     case "session-ended":
       // The route guard takes the person to the sign-in page, with a way back here.

@@ -173,10 +173,11 @@ export class HeatDaysScheduler {
           await allowLongStatements(tx);
           await lockDeviceProcessing(tx, deviceId);
           await rebuildHeatDays(tx, deviceId, timezone, days);
-          // The owner's streams learn of the new cells with the commit, as they do of a pass: the
+          // The owner's streams learn of the new cells with the commit, as they do of a pass (a `heat` event, which only heat answers react to): the
           // heat answers that waited for them are asked for again.
           const sorted = [...days].sort();
           await notifySegments(tx, {
+            kind: "heat",
             userId: own[0]?.user_id ?? "",
             deviceId,
             from: new Date(startOfLocalDay(sorted[0] ?? "1970-01-01", timezone)),

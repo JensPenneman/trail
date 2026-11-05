@@ -214,7 +214,7 @@ describe("the per-day cells of a pass", () => {
     const heard: string[] = [];
     listener.on("notification", (message) => {
       const notice = message.payload === undefined ? null : decodeSegmentsNotice(message.payload);
-      if (notice !== null && notice.deviceId === device) heard.push(notice.deviceId);
+      if (notice !== null && notice.deviceId === device) heard.push(notice.kind ?? "segments");
     });
     await listener.query(`LISTEN ${processingChannel}`);
     try {
@@ -240,6 +240,8 @@ describe("the per-day cells of a pass", () => {
       expect(heard).toEqual([]);
       await new HeatDaysScheduler(t.ctx.db, logger).flush();
       await vi.waitFor(() => expect(heard.length).toBeGreaterThan(0), { timeout: 3000 });
+      // A `heat` notice: the pass already told the rest with its `segments` event.
+      expect(new Set(heard)).toEqual(new Set(["heat"]));
     } finally {
       await listener.end();
     }
