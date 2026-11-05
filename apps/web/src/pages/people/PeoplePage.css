@@ -241,6 +241,11 @@
     padding: 0;
   }
 
+  /* The key of the map stacks above the slider, however narrow the map is. */
+  .map-page[data-foot] .map-page__legend {
+    bottom: calc(2.75rem + var(--foot-height, 0px) + var(--space-2));
+  }
+
   .map-page__foot .scrubber {
     box-shadow: var(--shadow-3);
   }

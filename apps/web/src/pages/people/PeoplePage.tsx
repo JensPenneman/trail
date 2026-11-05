@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -23,7 +24,10 @@ import { useDevices } from "../../queries/useDevices";
 import { usePeople } from "../../queries/usePeople";
 import { useNow } from "../../time/useNow";
 import { LevelControl } from "../../transport/LevelControl";
-import { ModeLegend } from "../../transport/ModeLegend";
+import { PathKey } from "../../transport/PathKey";
+import type { LegendDevice } from "../../transport/PathLegend";
+import { PathOptions } from "../../transport/PathOptions";
+import { usePathColour } from "../../transport/usePathColour";
 import { useTrackLevel } from "../../transport/useTrackLevel";
 import { Icon } from "../../ui/Icon";
 import { useMediaQuery } from "../../ui/useMediaQuery";
@@ -94,6 +98,7 @@ export function PeoplePage() {
   const devices = useDevices();
   const people = usePeople();
   const colors = useDeviceColors({ dark: mapStyle.dark });
+  const pathColour = usePathColour(level, { dark: mapStyle.dark, timeZone: user.timezone });
   const personColors = usePersonColors({ dark: mapStyle.dark });
   const now = useNow(15_000);
   const wide = useMediaQuery(besideThePanel);
@@ -102,6 +107,20 @@ export function PeoplePage() {
   const [viewport, setViewport] = useState<MapViewState | null>(null);
   // Where the floating controls end, measured: they wrap on narrow screens.
   const [overlayEnd, setOverlayEnd] = useState(56);
+  // The height of the history slider over the foot of a wide map: the key stacks above it.
+  const [footHeight, setFootHeight] = useState(0);
+  const measureFoot = useCallback((element: HTMLDivElement | null) => {
+    if (element === null) {
+      setFootHeight(0);
+      return undefined;
+    }
+    const update = () => setFootHeight(element.offsetHeight);
+    update();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   // The device filter is folded away among the map's options, and open when an address sets one.
   const [filterOpen] = useState(() => search.devices !== null);
   const sharing = useSharingActions(people.data ?? []);
@@ -180,6 +199,7 @@ export function PeoplePage() {
     colors,
     personColors,
     level,
+    colouring: pathColour.colouring,
     dark: mapStyle.dark,
     today,
     timeZone: user.timezone,
@@ -223,6 +243,7 @@ export function PeoplePage() {
   const { fit: contentFit, ...mapProps } = content.map;
   // The key held back counts as fitted when the hold ends: the map is where the person put it, so
   // only another key (another day, another view) frames anything later.
+  const pathKeyId = useId();
   const [heldFitKey, setHeldFitKey] = useState<string | null>(null);
   const holdingKey = fitHeld ? (contentFit?.key ?? null) : null;
   useEffect(() => {
@@ -424,13 +445,42 @@ export function PeoplePage() {
     0,
   );
   const transport = content.transport;
+  // The devices and the person whose lines are on the map, for the legend of the Device colouring.
+  const legendDevices: LegendDevice[] = [
+    ...(available.find((person) => person.key === me)?.devices ?? []).map((device) => ({
+      ...device,
+      slot: colors.slot(device.id),
+      palette: "device" as const,
+    })),
+    // Each sharer whose track is drawn is a row of their own, in their colour.
+    ...available
+      .filter(
+        (person) =>
+          person.key !== me &&
+          person.devices.some((device) =>
+            (content.map.tracks ?? []).some((track) => track.id === device.id),
+          ),
+      )
+      .map((person) => ({
+        id: person.key,
+        name: person.name,
+        slot: personColors.slot(person.key),
+        palette: "person" as const,
+        drawn: true,
+      })),
+  ];
   // Which devices draw only matters when some do not: it shows on the button, as the map shows less.
   const note =
     deviceCount > 1 && shownCount < deviceCount ? `${shownCount} of ${deviceCount} devices` : null;
 
   // The history slider: over the foot of the map beside the panel, in the sheet on phones right
   // under the Me row or the person's header (so not in the sheet's peek).
-  const foot = content.foot === null ? null : <div className="map-page__foot">{content.foot}</div>;
+  const foot =
+    content.foot === null ? null : (
+      <div className="map-page__foot" ref={wide ? measureFoot : undefined}>
+        {content.foot}
+      </div>
+    );
   const options = (
     <MapOptions note={note}>
       <MapStyleControl
@@ -455,12 +505,13 @@ export function PeoplePage() {
           <LevelControl level={level} available={transport.available} onChange={setLevel} />
         </div>
       )}
-      {transport !== null && level === "inferred" ? (
-        <ModeLegend
-          modes={transport.modes}
-          review={transport.review}
-          stopPaths={transport.stopPaths}
-          gaps={transport.gaps}
+      {transport !== null ? (
+        <PathOptions
+          colour={pathColour.colour}
+          options={pathColour.options}
+          onChange={pathColour.setColour}
+          legend={transport.legend}
+          devices={legendDevices}
         />
       ) : null}
       {deviceCount > 1 ? (
@@ -479,8 +530,11 @@ export function PeoplePage() {
     <div
       className="map-page"
       data-view={view}
+      data-foot={wide && foot !== null ? "" : undefined}
       {...(playing ? { "data-playing": "" } : {})}
-      style={{ "--overlay-end": `${overlayEnd}px` } as CSSProperties}
+      style={
+        { "--overlay-end": `${overlayEnd}px`, "--foot-height": `${footHeight}px` } as CSSProperties
+      }
     >
       <DocumentTitle title={`${content.title} · People`} />
       <div className="map-page__stage" ref={stage}>
@@ -496,6 +550,9 @@ export function PeoplePage() {
           {mapStyle.style === null ? null : (
             <LazyTrailMap
               {...mapProps}
+              {...(content.legend === null && transport?.legend.key != null
+                ? { describedBy: pathKeyId }
+                : {})}
               mapStyle={mapStyle.style}
               dark={mapStyle.dark}
               notice={mapStyle.notice}
@@ -508,7 +565,15 @@ export function PeoplePage() {
           )}
           {content.chip}
         </div>
-        {content.legend === null ? null : <div className="map-page__legend">{content.legend}</div>}
+        {(content.legend ??
+        (transport?.legend.key == null ? null : (
+          <PathKey legend={transport.legend} id={pathKeyId} />
+        ))) ? (
+          <div className="map-page__legend">
+            {content.legend ??
+              (transport === null ? null : <PathKey legend={transport.legend} id={pathKeyId} />)}
+          </div>
+        ) : null}
         {wide ? foot : null}
       </div>
 

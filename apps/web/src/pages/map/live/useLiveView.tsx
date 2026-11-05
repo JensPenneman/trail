@@ -10,6 +10,8 @@ import { liveWindowOpen } from "../../../live/liveWindowOpen";
 import { useLiveState } from "../../../live/useLiveState";
 import { boundsOf } from "../../../map/boundsOf";
 import type { MapPosition } from "../../../map/mapTypes";
+import { colourTracks } from "../../../map/pathColour/colourRuns";
+import type { PathColouring } from "../../../map/pathColour/pathColours";
 import { positionExtent } from "../../../map/positionExtent";
 import { tracksToMap } from "../../../map/tracksToMap";
 import { personPositions } from "../../../people/personPositions";
@@ -39,6 +41,8 @@ export interface LiveViewInput {
   colors: DeviceColors;
   personColors: PersonColors;
   level: ProcessingLevel;
+  /** How the own lines are coloured (Device, Speed, Time of day, or Mode at Transport). */
+  colouring: PathColouring;
   dark: boolean;
   today: string;
   timeZone: string;
@@ -63,6 +67,7 @@ export function useLiveView({
   colors,
   personColors,
   level,
+  colouring,
   dark,
   today,
   timeZone,
@@ -112,8 +117,15 @@ export function useLiveView({
     [devices.data, selection],
   );
 
-  const rawTracks = useMemo(() => tracksToMap(trackList ?? [], colors.hex), [trackList, colors]);
-  const transport = useTransportMap(range, level, rawTracks, { dark, device: colors.hex });
+  const rawTracks = useMemo(
+    () => tracksToMap(colourTracks(trackList ?? [], colouring), colors.hex),
+    [trackList, colors, colouring],
+  );
+  const transport = useTransportMap(range, level, rawTracks, {
+    dark,
+    device: colors.hex,
+    colouring,
+  });
   const peopleTracks = useMemo(
     () =>
       requests.flatMap((request, index) =>

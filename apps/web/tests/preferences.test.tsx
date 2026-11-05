@@ -165,6 +165,7 @@ describe("Settings › Preferences", () => {
 
   it("saves what the heatmap counts and what the paths are coloured by", async () => {
     window.localStorage.setItem("trail.heat", "time");
+    window.localStorage.setItem("trail.color", "speed");
     try {
       const person = userEvent.setup();
       const { calls } = renderSignedIn(<PreferencesPage />, "/settings/preferences", user);
@@ -183,6 +184,8 @@ describe("Settings › Preferences", () => {
       expect(colour).toHaveValue("mode");
       await person.selectOptions(colour, "time");
       expect(await screen.findByText("Colour paths by saved: Time of day.")).toBeInTheDocument();
+      // This browser follows the account again for the colouring too.
+      expect(window.localStorage.getItem("trail.color")).toBeNull();
       await waitFor(() =>
         expect(calls.filter((call) => call.method === "PATCH").map((call) => call.body)).toEqual([
           { preferences: { heat: "visits" } },
