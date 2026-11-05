@@ -45,7 +45,7 @@ describe("useHeatChoice", () => {
   });
 
   it("ignores a remembered value it does not know", () => {
-    window.localStorage.setItem("trail.heat", "speed");
+    window.localStorage.setItem("trail.heat", "sped");
     expect(render("/", null).result.current.choice.heat).toBe("points");
   });
 });
