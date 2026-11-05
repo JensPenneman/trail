@@ -5,8 +5,10 @@ import {
   localDate,
   mapView,
   openDeviceFilter,
+  openGroup,
   openMapOptions,
   openPeriodPicker,
+  showView,
 } from "./support/mapControls";
 import { overlandBatch } from "./support/overlandBatch";
 import { test } from "./support/test";
@@ -32,19 +34,21 @@ test("Live, History and Heat share one map and keep their place in the URL", asy
   const sameCanvas = () =>
     canvas.evaluate((element, name) => element === Reflect.get(window, name), canvasMarked);
 
-  await mapView(page, "History").click();
+  await showView(page, "History");
   await expect(page).toHaveURL(/\/\?person=me&view=history$/);
-  await expect(page.getByRole("region", { name: "Summary", exact: true })).toContainText(
-    "30 points",
-  );
   await expect(page.getByRole("slider", { name: "Position at" })).toBeVisible();
   await expect(page).toHaveTitle("History · People · Trail");
   // Switching keeps focus on the switch, where the person is.
   await expect(mapView(page, "History")).toBeFocused();
+  await openGroup(page, "Summary, visits and trips");
+  await expect(page.getByRole("region", { name: "Summary", exact: true })).toContainText(
+    "30 points",
+  );
 
-  await mapView(page, "Heat").click();
+  await showView(page, "Heat");
   await expect(page).toHaveURL(/\/\?person=me&view=heat$/);
   await expect(canvas).toHaveAccessibleName(/^Heatmap of all recorded points/);
+  await openGroup(page, "Heat: totals, busiest places");
   await expect(
     page.getByRole("region", { name: "Busiest places in view" }).getByRole("listitem").first(),
   ).toContainText(/\d+ points/);
@@ -86,9 +90,10 @@ test("the old addresses of History and Explore, and deep links, open the right v
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`/\\?view=history&date=${yesterday}&level=raw$`));
 
-  await page.goto(`/?view=history&from=${weekAgo}&to=${today}`);
+  await page.goto(`/?view=history&person=me&from=${weekAgo}&to=${today}`);
   await openPeriodPicker(page);
   await expect(page.getByRole("radio", { name: "Period" })).toBeChecked();
+  await openGroup(page, "Summary, visits and trips");
   await expect(page.getByRole("region", { name: "Summary", exact: true })).toContainText(
     "Linked phone",
   );
@@ -118,11 +123,13 @@ test("the device filter, folded away in Map options, narrows every view and stay
   // The last device stays: an empty map explains nothing.
   await expect(filter.getByRole("checkbox", { name: "Kept phone" })).toBeDisabled();
 
-  await mapView(page, "History").click();
+  await showView(page, "History");
+  await openGroup(page, "Summary, visits and trips");
   const summary = page.getByRole("region", { name: "Summary", exact: true });
   await expect(summary.getByRole("listitem")).toHaveCount(1);
   await expect(summary).toContainText("Kept phone");
   await page.reload();
+  await openGroup(page, "Summary, visits and trips");
   await expect(summary.getByRole("listitem")).toHaveCount(1);
   await expect(mapView(page, "History")).toBeChecked();
 });

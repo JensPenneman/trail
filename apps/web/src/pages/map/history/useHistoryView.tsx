@@ -2,7 +2,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { Person } from "@trail/contracts/person";
 import type { ProcessingLevel } from "@trail/contracts/transport";
-import { useId, useMemo, useRef, useState } from "react";
+import { type ReactNode, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { DeviceColors } from "../../../devices/useDeviceColors";
 import { useFormatter } from "../../../format/useFormatter";
@@ -349,19 +349,105 @@ export function useHistoryView({
       ? (deviceList.find((device) => device.id === deviceId)?.name ?? "Removed device")
       : null;
   const day = period.mode === "day" ? period.from : null;
-  // Nobody with history and none of one's own: nothing to say here, their detail says why.
-  const quiet = !drawsOwn && withHistory.length === 0 && personTracks.error === null;
+
+  // Their tracks, device by device: Me's group of it, and the one of someone else's page.
+  const summary =
+    range !== null && tracks.isPending ? (
+      <LoadingBlock label="Loading tracks">
+        <Skeleton height="1.5rem" width="40%" />
+        <Skeleton height="4.5rem" />
+      </LoadingBlock>
+    ) : hasData ? (
+      <PeriodSummary
+        untitled
+        tracks={allTracks}
+        nameOf={nameOf}
+        swatchOf={swatchOf}
+        withDate={withDate}
+      />
+    ) : null;
+  const nothingRecorded =
+    period.mode === "day"
+      ? `Nothing recorded on ${format.day(period.from)}`
+      : "Nothing recorded in this period";
+  // At the map's foot, where the day's slider would be: why there is nothing to scrub.
+  const personError =
+    personTracks.error === null ? null : (
+      <ErrorState title="Tracks of people could not be loaded" error={personTracks.error} />
+    );
+  let notice: ReactNode = null;
+  if (range !== null && tracks.isError) {
+    notice = (
+      <ErrorState
+        title="Tracks could not be loaded"
+        error={tracks.error}
+        onRetry={() => void tracks.refetch()}
+        retrying={tracks.isFetching}
+      />
+    );
+  } else if (!(range !== null && tracks.isPending) && !hasData) {
+    if (drawsOwn) {
+      notice = (
+        <div className="card">
+          <EmptyState
+            icon="history"
+            title={nothingRecorded}
+            action={
+              period.mode === "day" && !calendarOpen ? (
+                <Button
+                  icon="calendar"
+                  onClick={() => {
+                    setFromPanel(true);
+                    setCalendarOpen(true);
+                  }}
+                >
+                  Find a day with data
+                </Button>
+              ) : undefined
+            }
+          >
+            <p>
+              Days with points have a dot in the calendar. Points with an accuracy worse than 200 m
+              are left out of tracks.
+            </p>
+          </EmptyState>
+        </div>
+      );
+    } else if (withHistory.length > 0 && !personTracks.pending) {
+      // Someone else alone: their tracks, or their page says why there are none.
+      notice = (
+        <div className="card">
+          <EmptyState icon="history" title={nothingRecorded}>
+            <p>
+              Only what {format.list(withHistory.map((person) => person.displayName))}{" "}
+              {withHistory.length === 1 ? "shares" : "share"} with you appears here.
+            </p>
+          </EmptyState>
+        </div>
+      );
+    }
+  }
+  const scrubber =
+    span === null ? null : (
+      <TimeScrubber
+        start={span.start}
+        end={span.end}
+        value={scrubValue}
+        withDate={withDate}
+        readouts={readouts}
+        onChange={(value) => setScrub({ key: periodKey, value })}
+      />
+    );
 
   return {
     title: "History",
-    description: period.mode === "range" ? periodLabel : undefined,
     map: {
       label: hasData
         ? meSelected
-          ? `Map of the tracks for ${periodLabel}. Totals, the timeline, visits and trips are listed on this page.`
+          ? `Map of the tracks for ${periodLabel}. The timeline, visits and trips are on your page.`
           : selected === null
-            ? `Map of the tracks for ${periodLabel}. Totals are listed on this page.`
-            : `Map of ${other?.displayName ?? "their"}’s tracks for ${periodLabel}. Their totals are listed on this page.`
+            ? `Map of the tracks for ${periodLabel}.`
+            : `Map of ${other?.displayName ?? "their"}’s tracks for ${periodLabel}. Their totals are on their page.`
         : drawsOwn
           ? `Map. Nothing was recorded for ${periodLabel}.`
           : `Map. Nothing to show for ${periodLabel}.`,
@@ -431,116 +517,40 @@ export function useHistoryView({
           <Spinner size="s" /> Updating
         </p>
       ) : null,
+    legend: null,
+    // What there is to say of the day or period besides the slider: nothing recorded, or an error.
     foot:
-      span === null ? null : (
-        <TimeScrubber
-          start={span.start}
-          end={span.end}
-          value={scrubValue}
-          withDate={withDate}
-          readouts={readouts}
-          onChange={(value) => setScrub({ key: periodKey, value })}
-        />
+      personError === null && notice === null && scrubber === null ? null : (
+        <>
+          {personError}
+          {notice}
+          {scrubber}
+        </>
       ),
-    panelLabel: "Totals",
-    panel: quiet ? null : (
-      <>
-        {personTracks.error === null ? null : (
-          <ErrorState title="Tracks of people could not be loaded" error={personTracks.error} />
-        )}
-        {range !== null && tracks.isPending ? (
-          <LoadingBlock label="Loading tracks">
-            <Skeleton height="1.5rem" width="40%" />
-            <Skeleton height="4.5rem" />
-          </LoadingBlock>
-        ) : range !== null && tracks.isError ? (
-          <ErrorState
-            title="Tracks could not be loaded"
-            error={tracks.error}
-            onRetry={() => void tracks.refetch()}
-            retrying={tracks.isFetching}
-          />
-        ) : hasData ? (
-          <PeriodSummary
-            tracks={allTracks}
-            nameOf={nameOf}
-            swatchOf={swatchOf}
-            withDate={withDate}
-          />
-        ) : !drawsOwn ? (
-          // Someone else alone: their tracks, or their detail says why there are none.
-          withHistory.length === 0 ? null : personTracks.pending ? (
-            <LoadingBlock label="Loading tracks">
-              <Skeleton height="4.5rem" />
-            </LoadingBlock>
-          ) : (
-            <div className="card">
-              <EmptyState
-                icon="history"
-                title={
-                  period.mode === "day"
-                    ? `Nothing recorded on ${format.day(period.from)}`
-                    : "Nothing recorded in this period"
-                }
-              >
-                <p>
-                  Only what {format.list(withHistory.map((person) => person.displayName))}{" "}
-                  {withHistory.length === 1 ? "shares" : "share"} with you appears here.
-                </p>
-              </EmptyState>
-            </div>
-          )
-        ) : (
-          <div className="card">
-            <EmptyState
-              icon="history"
-              title={
-                period.mode === "day"
-                  ? `Nothing recorded on ${format.day(period.from)}`
-                  : "Nothing recorded in this period"
-              }
-              action={
-                period.mode === "day" && !calendarOpen ? (
-                  <Button
-                    icon="calendar"
-                    onClick={() => {
-                      setFromPanel(true);
-                      setCalendarOpen(true);
-                    }}
-                  >
-                    Find a day with data
-                  </Button>
-                ) : undefined
-              }
-            >
-              <p>
-                Days with points have a dot in the calendar. Points with an accuracy worse than 200
-                m are left out of tracks.
-              </p>
-            </EmptyState>
-          </div>
-        )}
-      </>
+    timelineLabel: "",
+    timeline: !meSelected ? null : (
+      <DayTimeline
+        regionLabel="Timeline"
+        segments={segments}
+        pending={timeline.data?.pending ?? false}
+        loading={timeline.isPending}
+        error={timeline.isError ? timeline.error : null}
+        onRetry={() => void timeline.refetch()}
+        deviceName={deviceName}
+        day={day}
+        onOpen={(segment) => {
+          setOpenSegment(segment.id);
+          focusOn(
+            { lon: segment.centroid.lon, lat: segment.centroid.lat, zoom: 13 },
+            `segment:${segment.id}`,
+          );
+        }}
+      />
     ),
-    mineLabel: "Timeline, visits and trips",
-    mine: !meSelected ? null : (
+    meGroupTitle: "Summary, visits and trips",
+    meGroup: !meSelected ? null : (
       <>
-        <DayTimeline
-          segments={segments}
-          pending={timeline.data?.pending ?? false}
-          loading={timeline.isPending}
-          error={timeline.isError ? timeline.error : null}
-          onRetry={() => void timeline.refetch()}
-          deviceName={deviceName}
-          day={day}
-          onOpen={(segment) => {
-            setOpenSegment(segment.id);
-            focusOn(
-              { lon: segment.centroid.lon, lat: segment.centroid.lat, zoom: 13 },
-              `segment:${segment.id}`,
-            );
-          }}
-        />
+        {summary}
 
         <VisitList
           visits={visitList}
@@ -577,6 +587,7 @@ export function useHistoryView({
         />
       </>
     ),
+    personGroup: meSelected || selected === null ? null : summary,
     personTracks: trackStates,
     dialog:
       shownSegment === null ? null : (

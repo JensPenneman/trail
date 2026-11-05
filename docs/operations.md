@@ -609,6 +609,7 @@ interface is there for it).
 | `PROCESSING_OVERPASS_URL=` (empty) | No map data: stops, moves and modes are still worked out, without map evidence |
 | `PROCESSING_OVERPASS_DAILY_MB=100` | A smaller daily download budget |
 | `PROCESSING_MAX_ACCURACY_M`, `PROCESSING_STOP_MIN_S` | The two thresholds worth tuning: points left out as inaccurate (150 m), the shortest stop (180 s) |
+| `PROCESSING_CORRECTION_WAIT_MS` | How long a mode correction waits for a pass over the device (10 000 ms) before it answers `409` and `Retry-After: 5` |
 | `PROCESSING_PASS_MAX_POINTS`, `PROCESSING_PASS_MAX_SPAN_HOURS` | The most one pass reads (60 000 points) and spans (36 hours); bigger work is split into passes first. Lower them on a small machine; a very large value works everything in one pass, as before 0.6 |
 
 **Reprocess** after changing those thresholds, or to fill in the map after a

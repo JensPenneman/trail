@@ -40,7 +40,7 @@
   font-weight: 600;
 }
 
-/* Phones: the popover spans the map under the bar (MapPopover.css), so the button is no anchor. */
+/* Phones: the popover spans the bar's width, left of the zoom column (MapPopover.css), so the button is no anchor. */
 @media (max-width: 63.99rem) {
   .map-options {
     position: static;

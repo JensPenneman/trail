@@ -1,0 +1,11 @@
+/* A level below the root replaces it. */
+.panel-level {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.panel-level__empty {
+  color: var(--color-text-2);
+}
