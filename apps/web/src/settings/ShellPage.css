@@ -46,12 +46,12 @@
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 0;
-  transition: opacity var(--duration-fast) ease;
+  /* Shown or not at once: a fade would leave it half see-through, and half the contrast, for a while. */
+  visibility: hidden;
 }
 
 .shell-page__bar[data-compact] .shell-page__compact-title {
-  opacity: 1;
+  visibility: visible;
 }
 
 .shell-page__header {
