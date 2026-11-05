@@ -290,11 +290,13 @@ describe("Settings › Devices › a device", () => {
     await person.click(within(dialog).getByRole("button", { name: "Delete device" }));
 
     expect(await screen.findByText("iPhone 16 was deleted.")).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe("/settings/devices");
+    // The list is the page again once the transition has committed, and has its devices once the
+    // list is asked for again after the delete: each is awaited, none is assumed.
+    await waitFor(() => expect(router.state.location.pathname).toBe("/settings/devices"));
     // Back in the history: Back does not lead to the page of the gone device.
     expect(router.state.historyAction).toBe("POP");
+    expect(await screen.findByRole("article", { name: "Car" })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole("article", { name: "iPhone 16" })).toBeNull());
-    expect(screen.getByRole("article", { name: "Car" })).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByRole("heading", { level: 1, name: "Devices" })).toHaveFocus(),
     );

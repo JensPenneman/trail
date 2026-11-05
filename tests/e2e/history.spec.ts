@@ -1,6 +1,7 @@
 import { expect } from "@playwright/test";
 import { daysResponseSchema } from "@trail/contracts/stats";
 import { tracksResponseSchema } from "@trail/contracts/track";
+import { openGroup, openPeriodPicker } from "./support/mapControls";
 import { overlandBatch } from "./support/overlandBatch";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
@@ -34,6 +35,7 @@ test("History shows today's distance, points, visits and trips, and the time scr
   expect(track.distanceM).toBeGreaterThan(10_000);
 
   await page.goto("/?view=history&person=me");
+  await openGroup(page, "Summary, visits and trips");
   const summary = page.getByRole("region", { name: "Summary", exact: true });
   await expect(summary.getByRole("listitem")).toHaveCount(1);
   await expect(summary).toContainText("Commuter");
@@ -58,18 +60,17 @@ test("History shows today's distance, points, visits and trips, and the time scr
       minute: "2-digit",
     }).format(Date.parse(instant));
   const points = batch.locations.filter((record) => record.properties["action"] === undefined);
-  const first = points.find((record) => record.properties["type"] !== "trip");
   const last = points.filter((record) => record.properties["type"] !== "trip").at(-1);
   const slider = page.getByRole("slider", { name: "Position at" });
   const where = page.locator(".scrubber__where");
   await expect(where).toHaveText(/^50\.9853° N, 3\.5329° E/);
   await expect(page.locator("output")).toHaveText(time(String(last?.properties["timestamp"])));
   await slider.focus();
+  // The slider spans the local day: Home is midnight, End the end of the day (today: now).
   await slider.press("Home");
-  await expect(where).toHaveText(/^51\.0357° N, 3\.7108° E/);
-  await expect(page.locator("output")).toHaveText(time(String(first?.properties["timestamp"])));
+  await expect(page.locator("output")).toHaveText("00:00");
   await slider.press("End");
-  await expect(where).toHaveText(/^50\.9853° N, 3\.5329° E/);
+  await expect(page.locator("output")).toHaveText(/^\d\d:\d\d$/);
 
   // The calendar marks the day once the daily statistics, recomputed about ten seconds
   // after an upload, have caught up.
@@ -86,6 +87,6 @@ test("History shows today's distance, points, visits and trips, and the time scr
     )
     .toBe(30);
   await page.reload();
-  await page.getByRole("button", { name: /, choose another day$/ }).click();
+  await openPeriodPicker(page);
   await expect(page.getByRole("button", { name: /, today, 30 points$/ })).toBeVisible();
 });

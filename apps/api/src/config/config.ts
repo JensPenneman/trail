@@ -67,6 +67,8 @@ interface ProcessingSettings {
   passMaxPoints: number;
   /** The points a pass reads span at most this long. */
   passMaxSpanHours: number;
+  /** A correction waits this long for a pass over the device before it answers 409 (retryable). */
+  correctionWaitMs: number;
 }
 
 /** Map data from the registry (docs/architecture.md §4, docs/design/self-hosted-maps.md §4). */

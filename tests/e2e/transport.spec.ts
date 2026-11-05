@@ -6,7 +6,7 @@ import {
   timelineResponseSchema,
 } from "@trail/contracts/transport";
 import { expectAccessible } from "./support/expectAccessible";
-import { openMapOptions } from "./support/mapControls";
+import { closeMapOptions, openMapOptions } from "./support/mapControls";
 import {
   dayStartMarginMs,
   type OverlandBatch,
@@ -167,7 +167,11 @@ test("levels change the tracks, and a move's mode can be put right", async ({ pa
   await page.getByRole("radio", { name: "Transport" }).click();
   await expect(page.getByRole("radio", { name: "Transport" })).toBeChecked();
 
+  // A correction takes the device's processing lock, so it waits behind whatever is being worked
+  // out: it is made once nothing is.
+  await processed(page);
   // Open the ride, call it a bus ride, then hand it back to the inference.
+  await closeMapOptions(page);
   await page.getByRole("button", { name: /^Details of the cycling from/ }).click();
   // The dialog is named after the mode, which changes below: find it by role alone.
   const dialog = page.getByRole("dialog");
@@ -265,6 +269,7 @@ test("a stop shows the walk within it, and a silent phone shows as no data", asy
   const legend = page.getByRole("region", { name: "Map legend" });
   await expect(legend.getByText("Moved within a stop")).toBeVisible();
   await expect(legend.getByText("No data: a gap in the recording")).toBeVisible();
+  await closeMapOptions(page);
   await expectAccessible(page, "History with a stop's walk and a gap");
 
   await timeline.getByRole("button", { name: /^Details of the stop from/ }).click();

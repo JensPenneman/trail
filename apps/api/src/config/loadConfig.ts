@@ -129,6 +129,7 @@ export function loadConfig(
       stopMinS: env.PROCESSING_STOP_MIN_S,
       passMaxPoints: env.PROCESSING_PASS_MAX_POINTS,
       passMaxSpanHours: env.PROCESSING_PASS_MAX_SPAN_HOURS,
+      correctionWaitMs: env.PROCESSING_CORRECTION_WAIT_MS,
     },
     mapData: {
       regions: env.MAP_DATA_REGIONS,

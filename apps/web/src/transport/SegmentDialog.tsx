@@ -1,5 +1,5 @@
 import { type ChosenMode, moveOverHint, type Segment } from "@trail/contracts/transport";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useReadOnly } from "../app/useReadOnly";
 import { useFormatter } from "../format/useFormatter";
 import { visibleGapM } from "../map/lineGeometry";
@@ -36,6 +36,11 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
   const underWay = useMoveUnderWay(segment);
   const offlineId = useId();
   const [saved, setSaved] = useState<string | null>(null);
+  // What was last tried (a mode, or null for a reset), for the retry beside a failure.
+  const [tried, setTried] = useState<{ mode: ChosenMode | null } | null>(null);
+  // The failure stays on screen (a retry shows it with a busy button) until an answer comes.
+  const [failure, setFailure] = useState<string | null>(null);
+  const savedRef = useRef<HTMLParagraphElement | null>(null);
   const move = segment.kind === "move";
   const mode = segment.mode ?? "stationary";
   const info = transportModeInfo[mode];
@@ -46,10 +51,16 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
       ? segment.modeInferred
       : null;
 
-  const apply = (next: ChosenMode | null) => {
+  const apply = (next: ChosenMode | null, retry = false) => {
     setSaved(null);
+    setTried({ mode: next });
+    if (!retry) setFailure(null);
     change.mutate(next, {
+      onError: (error) => setFailure(errorMessage(error)),
       onSuccess: (response) => {
+        setFailure(null);
+        // The failure (and the button that was pressed) goes: the focus goes to the answer.
+        if (retry) setTimeout(() => savedRef.current?.focus(), 0);
         const now = response.segment.mode ?? "unknown";
         setSaved(
           next === null
@@ -179,12 +190,29 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
                 )}
               </>
             )}
-            {change.isError ? (
-              <Notice tone="danger" role="alert" title="The mode could not be saved">
-                <p>{errorMessage(change.error)}</p>
+            {failure !== null ? (
+              <Notice
+                tone="danger"
+                role="alert"
+                title="The mode could not be saved"
+                action={
+                  tried === null ? undefined : (
+                    <Button
+                      icon="refresh"
+                      busy={change.isPending}
+                      disabled={readOnly}
+                      aria-describedby={readOnly ? offlineId : undefined}
+                      onClick={() => apply(tried.mode, true)}
+                    >
+                      Try again
+                    </Button>
+                  )
+                }
+              >
+                <p>{failure}</p>
               </Notice>
             ) : null}
-            <p className="segment-dialog__saved" role="status">
+            <p className="segment-dialog__saved" role="status" tabIndex={-1} ref={savedRef}>
               {saved}
             </p>
           </>

@@ -75,6 +75,12 @@ afterAll(async () => {
   await api.close();
 });
 
+/**
+ * What a wait for the worker's pass, or for what it announces, allows: the passes of these tests
+ * are seconds of work on a quiet machine and many times that on a host at full load.
+ */
+const slowHostMs = 30_000;
+
 describe("an API in role api and a worker on one database", () => {
   let commuter = { id: "", token: "" };
 
@@ -93,93 +99,103 @@ describe("an API in role api and a worker on one database", () => {
     expect(await readHeartbeats(api.ctx.db)).toEqual([]);
   });
 
-  it("the worker's pass reaches the API's streams through the processing channel", async () => {
-    const events = await SseClient.connect(api.app, cookie);
-    try {
-      await events.waitFor("hello");
-      await worker.loop.flush();
-      expect(await queued(commuter.id)).toEqual([]);
-      expect(await segmentCount(commuter.id)).toBe(3);
-      const event = await events.waitFor("segments");
-      expect(event.deviceId).toBe(commuter.id);
-      expect(Date.parse(event.from)).toBeLessThanOrEqual(morning * 1000);
-      expect(Date.parse(event.to)).toBeGreaterThan(morning * 1000);
-    } finally {
-      events.close();
-    }
-  });
+  it(
+    "the worker's pass reaches the API's streams through the processing channel",
+    async () => {
+      const events = await SseClient.connect(api.app, cookie);
+      try {
+        await events.waitFor("hello");
+        await worker.loop.flush();
+        expect(await queued(commuter.id)).toEqual([]);
+        expect(await segmentCount(commuter.id)).toBe(3);
+        const event = await events.waitFor("segments", slowHostMs);
+        expect(event.deviceId).toBe(commuter.id);
+        expect(Date.parse(event.from)).toBeLessThanOrEqual(morning * 1000);
+        expect(Date.parse(event.to)).toBeGreaterThan(morning * 1000);
+      } finally {
+        events.close();
+      }
+    },
+    3 * slowHostMs,
+  );
 });
 
 describe("the API's listener", () => {
-  it("comes back after its connection is dropped and announces what it missed", async () => {
-    const bus = new EventBus();
-    const received: ServerEvent[] = [];
-    bus.subscribe(ownerId, {
-      sessionId: "listener-test",
-      send: (event) => received.push(event),
-      close: () => {},
-    });
-    // The pause before reconnecting is held until the pass below has committed.
-    const pauses: number[] = [];
-    let paused = () => {};
-    const reconnectPending = new Promise<void>((resolve) => {
-      paused = resolve;
-    });
-    let release = () => {};
-    const released = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const listener = new ProcessingListener({
-      connectionString: testDatabaseUrl,
-      bus,
-      logger: createLogger({ level: "silent" }),
-      wait: async (ms) => {
-        pauses.push(ms);
-        paused();
-        await released;
-      },
-    });
-    await listener.start();
-    try {
-      expect(listener.listening).toBe(true);
-      const first = listener.backendPid;
-      expect(first).not.toBeNull();
-      // The server ends the connection, as a restart of Postgres or a broken network does.
-      await api.ctx.db.execute(sql`SELECT pg_terminate_backend(${first})`);
-      await reconnectPending;
+  it(
+    "comes back after its connection is dropped and announces what it missed",
+    async () => {
+      const bus = new EventBus();
+      const received: ServerEvent[] = [];
+      bus.subscribe(ownerId, {
+        sessionId: "listener-test",
+        send: (event) => received.push(event),
+        close: () => {},
+      });
+      // The pause before reconnecting is held until the pass below has committed.
+      const pauses: number[] = [];
+      let paused = () => {};
+      const reconnectPending = new Promise<void>((resolve) => {
+        paused = resolve;
+      });
+      let release = () => {};
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const listener = new ProcessingListener({
+        connectionString: testDatabaseUrl,
+        bus,
+        logger: createLogger({ level: "silent" }),
+        wait: async (ms) => {
+          pauses.push(ms);
+          paused();
+          await released;
+        },
+      });
+      await listener.start();
+      try {
+        expect(listener.listening).toBe(true);
+        const first = listener.backendPid;
+        expect(first).not.toBeNull();
+        // The server ends the connection, as a restart of Postgres or a broken network does.
+        await api.ctx.db.execute(sql`SELECT pg_terminate_backend(${first})`);
+        await reconnectPending;
+        expect(listener.listening).toBe(false);
+
+        // A pass commits meanwhile: its message finds nobody on this listener's connection.
+        const driver = await newDevice("Driver");
+        await upload(driver.token, motorwayDrive(morning + 3600));
+        await worker.loop.flush();
+        expect(await segmentCount(driver.id)).toBeGreaterThan(0);
+        expect(segmentsOf(received, driver.id)).toEqual([]);
+
+        release();
+        await eventually(
+          "the missed pass announced",
+          () => segmentsOf(received, driver.id).length > 0,
+          slowHostMs,
+        );
+        expect(listener.listening).toBe(true);
+        expect(listener.backendPid).not.toBe(first);
+        expect(pauses).toEqual([1000]);
+        const [missed] = segmentsOf(received, driver.id);
+        expect(missed).toMatchObject({ type: "segments", deviceId: driver.id });
+
+        // Later passes arrive as they commit.
+        const seen = received.length;
+        await upload(driver.token, motorwayDrive(morning + 5 * 3600));
+        await worker.loop.flush();
+        await eventually(
+          "the next pass announced",
+          () => segmentsOf(received.slice(seen), driver.id).length > 0,
+          slowHostMs,
+        );
+      } finally {
+        await listener.stop();
+      }
       expect(listener.listening).toBe(false);
-
-      // A pass commits meanwhile: its message finds nobody on this listener's connection.
-      const driver = await newDevice("Driver");
-      await upload(driver.token, motorwayDrive(morning + 3600));
-      await worker.loop.flush();
-      expect(await segmentCount(driver.id)).toBeGreaterThan(0);
-      expect(segmentsOf(received, driver.id)).toEqual([]);
-
-      release();
-      await eventually(
-        "the missed pass announced",
-        () => segmentsOf(received, driver.id).length > 0,
-      );
-      expect(listener.listening).toBe(true);
-      expect(listener.backendPid).not.toBe(first);
-      expect(pauses).toEqual([1000]);
-      const [missed] = segmentsOf(received, driver.id);
-      expect(missed).toMatchObject({ type: "segments", deviceId: driver.id });
-
-      // Later passes arrive as they commit.
-      const seen = received.length;
-      await upload(driver.token, motorwayDrive(morning + 5 * 3600));
-      await worker.loop.flush();
-      await eventually(
-        "the next pass announced",
-        () => segmentsOf(received.slice(seen), driver.id).length > 0,
-      );
-    } finally {
-      await listener.stop();
-    }
-    expect(listener.listening).toBe(false);
-  });
+    },
+    3 * slowHostMs,
+  );
 
   it("lets go at once when stopped in the middle of a reconnect's catch-up", async () => {
     let paused = () => {};
@@ -228,39 +244,47 @@ describe("the API's listener", () => {
 });
 
 describe("heartbeats", () => {
-  it("are written by a running worker, read by the API and pruned an hour after the last", async () => {
-    const beating = await createWorkerContext();
-    const { id } = beating.loop;
-    try {
-      await beating.loop.start();
-      const [seen] = (await readHeartbeats(api.ctx.db)).filter((row) => row.id === id);
-      expect(seen).toMatchObject({
-        id,
-        version: beating.config.build.version,
-        jobId: null,
-        passes: 0,
-        points: 0,
-      });
-      expect(Math.abs(Date.now() - (seen?.lastSeenAt.getTime() ?? 0))).toBeLessThan(10_000);
+  it(
+    "are written by a running worker, read by the API and pruned an hour after the last",
+    async () => {
+      const beating = await createWorkerContext();
+      const { id } = beating.loop;
+      try {
+        await beating.loop.start();
+        const [seen] = (await readHeartbeats(api.ctx.db)).filter((row) => row.id === id);
+        expect(seen).toMatchObject({
+          id,
+          version: beating.config.build.version,
+          jobId: null,
+          passes: 0,
+          points: 0,
+        });
+        expect(Math.abs(Date.now() - (seen?.lastSeenAt.getTime() ?? 0))).toBeLessThan(10_000);
 
-      // Nothing in this process wakes the worker: it finds the upload's window in the queue.
-      const walker = await newDevice("Walker");
-      await upload(walker.token, walkInTown(morning + 8 * 3600));
-      await eventually("the walk processed", async () => (await queued(walker.id)).length === 0);
-      expect(await segmentCount(walker.id)).toBeGreaterThan(0);
-    } finally {
-      await beating.close();
-    }
-    // The last beat, written by the stop, counts the passes (one per batch of the upload, or one).
-    const [last] = (await readHeartbeats(api.ctx.db)).filter((row) => row.id === id);
-    expect(last?.passes).toBeGreaterThanOrEqual(1);
-    expect(last?.points).toBeGreaterThan(0);
+        // Nothing in this process wakes the worker: it finds the upload's window in the queue.
+        const walker = await newDevice("Walker");
+        await upload(walker.token, walkInTown(morning + 8 * 3600));
+        await eventually(
+          "the walk processed",
+          async () => (await queued(walker.id)).length === 0,
+          slowHostMs,
+        );
+        expect(await segmentCount(walker.id)).toBeGreaterThan(0);
+      } finally {
+        await beating.close();
+      }
+      // The last beat, written by the stop, counts the passes (one per batch of the upload, or one).
+      const [last] = (await readHeartbeats(api.ctx.db)).filter((row) => row.id === id);
+      expect(last?.passes).toBeGreaterThanOrEqual(1);
+      expect(last?.points).toBeGreaterThan(0);
 
-    await api.ctx.db.execute(sql`
+      await api.ctx.db.execute(sql`
       UPDATE processing_workers SET last_seen_at = now() - interval '61 minutes' WHERE id = ${id}
     `);
-    const pruned = await pruneExpiredData(api.ctx.db, api.ctx.config);
-    expect(pruned.processingWorkers).toBe(1);
-    expect((await readHeartbeats(api.ctx.db)).map((row) => row.id)).not.toContain(id);
-  });
+      const pruned = await pruneExpiredData(api.ctx.db, api.ctx.config);
+      expect(pruned.processingWorkers).toBe(1);
+      expect((await readHeartbeats(api.ctx.db)).map((row) => row.id)).not.toContain(id);
+    },
+    3 * slowHostMs,
+  );
 });

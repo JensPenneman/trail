@@ -8,6 +8,7 @@ import { applyServerEvent } from "../src/live/applyServerEvent";
 import { createLiveStore } from "../src/live/createLiveStore";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { localDayRange } from "../src/time/localDayRange";
+import { startOfLocalDay } from "../src/time/startOfLocalDay";
 import { paramsOf } from "./support/addressParams";
 import { dayStamp, ids, levelTracks, timeline, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
@@ -20,7 +21,23 @@ vi.mock("../src/map/LazyTrailMap", async () => ({
 
 afterEach(() => {
   window.localStorage.clear();
+  vi.useRealTimers();
 });
+
+/**
+ * The clock at 14:00 on the account's today. The fixture's train ride ends at 07:38 of the day it
+ * is asked for: with the real clock before then (or within the half hour after it) the move is
+ * still under way and the dialog offers no picker, whatever the time of day the suite runs at.
+ */
+function afternoon() {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Brussels" }).format(
+    new Date(),
+  );
+  vi.useFakeTimers({
+    toFake: ["Date"],
+    now: startOfLocalDay(today, "Europe/Brussels") + 14 * 3_600_000,
+  });
+}
 
 describe("the Transport level on History", () => {
   it("draws stops and moves by mode, with a legend and the day's timeline", async () => {
@@ -56,6 +73,7 @@ describe("the Transport level on History", () => {
   });
 
   it("opens a move, confirms or changes its mode, and resets it", async () => {
+    afternoon();
     let current = timeline(new Date().toISOString())[1];
     const api = mockApi({
       ...standardRoutes(),
@@ -295,6 +313,7 @@ describe("continuity at the Transport level", () => {
 
 describe("a link to one move", () => {
   it("opens its details on its day, and closing them drops the link", async () => {
+    afternoon();
     mockApi(standardRoutes());
     const person = userEvent.setup();
     const { router } = renderPage(<PeoplePage />, {

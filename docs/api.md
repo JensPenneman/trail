@@ -149,9 +149,9 @@ needs them all. A signed-in session holds every scope.
 | `profile:read` | Read the account's name and time zone. |
 | `devices:read` | List the devices with their name, status, last-seen time and battery, not where they are. |
 | `devices:write` | Rename devices, switch their alerts and queue settings presets; never their tokens. |
-| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline, Insights › Places). |
+| `locations:read` | Read positions: where the devices are now and where they have been (points, visits, the heatmap, tracks, the timeline, Insights › Places and Named roads). |
 | `locations:write` | Correct how you travelled (transport mode overrides). |
-| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates (Insights › Places needs locations:read). |
+| `history:read` | Read trips, daily statistics, activity and insights: the history without coordinates (Insights › Places and Named roads need locations:read). |
 | `people:read` | See the people who share their location with you. |
 | `shares:read` | List your shares, the ones you receive and your public links. |
 | `shares:write` | Start and stop sharing, hide people and manage public links. |
@@ -323,7 +323,12 @@ People (and agents) can put a mode right, with `locations:write` and
   `409`, because the correction would cover the move only as far as it has
   come. A move is over once a later segment of the device exists, or 30
   minutes passed since its last point and no point after it waits to be
-  processed. For the move you are on, use the next call.
+  processed. While a long pass over the device's data runs they wait up to
+  10 seconds for it (`PROCESSING_CORRECTION_WAIT_MS`), then answer `409`
+  ("Still processing this device's data, try again in a moment.") with
+  `Retry-After: 5`: that `409`, unlike the others here, can simply be
+  repeated. For the
+  move you are on, use the next call.
 - `POST /api/v1/devices/{id}/mode` with `{ "mode": "train" }` says how the
   device travels from now on — until `until`, if given, the first detected
   stop of 10 minutes or more, or — after a stop — a move Trail reads as
@@ -377,6 +382,16 @@ is true while recorded points of the period still wait for processing.
   `mode` or all. Shares are of the distance with map data (`mappedM`): moves
   without it — map data switched off or not fetched yet — count towards
   `distanceM` only.
+- `GET /api/v1/insights/ways` (`locations:read`) — the 25 roads travelled
+  most, by the name OpenStreetMap gives them, for one `mode` or all: the
+  `distanceM` and the number of `moves` on each, with `mappedM` (the distance
+  of the moves with map data) and `namedM` (the part of it on named roads).
+  Ways of one name in the same or touching cells of about 6 km are one road,
+  the same name further away another. Names and distances only; a road name says where
+  you were, hence `locations:read`. `modes` lists every mode moved in,
+  whatever `mode` asks for. `pending` is true while moves still wait for
+  their ways to be worked out after an upgrade. The answer has an `ETag`,
+  which also follows the map data and that fill.
 
 ### Places
 

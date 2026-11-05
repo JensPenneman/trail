@@ -206,7 +206,9 @@ and the API none of the worker's:
   3 s later, as before.
 - **Per-device advisory locks** (`deviceLock.ts`) are the cluster's: a pass in
   the worker and a deletion or a corrected mode in the API exclude each other
-  across processes.
+  across processes. A correction (a move's mode set or reset) waits for the
+  lock at most 10 s (`PROCESSING_CORRECTION_WAIT_MS`, `lock_timeout`,
+  `correctionTransaction`) and then answers `409` with `Retry-After` to be tried again, instead of hanging behind a long pass.
 - **`segments` events cross with `NOTIFY`**: the pass ends with
   `pg_notify('trail_processing', …)` inside its transaction, and the API's
   listener republishes the message on its bus (§9) — in role `all` too, so
@@ -301,6 +303,7 @@ All configuration is environment variables, validated at boot with zod
 | `PROCESSING_STOP_MIN_S` | `180` | The shortest stop |
 | `PROCESSING_PASS_MAX_POINTS` | `60000` | A processing pass reads at most this many points (1 000 or more); bigger work is split first (§17.4) |
 | `PROCESSING_PASS_MAX_SPAN_HOURS` | `36` | The points a pass takes on span at most this long |
+| `PROCESSING_CORRECTION_WAIT_MS` | `10000` | How long a correction (a move's mode) waits for a pass over the device before it answers `409` with `Retry-After` (50 to 120 000) |
 | `MAP_DATA_REGIONS` | `belgium` | The regions whose map data the server keeps (names of `scripts/mapdata/regions.json`), comma-separated; set but empty: none. The world overview comes with any region (§10) |
 | `MAP_DATA_REGISTRY` | `ghcr.io/jenspenneman/trail-mapdata` | Where the map data artefacts come from (§13.2): a registry host and a repository, no scheme and no tag; always HTTPS |
 | `MAP_DATA_REGISTRY_TOKEN` | empty (anonymous) | `<user>:<token>` for a private registry or package, sent to its token service only (GHCR: a classic token with `read:packages`) |
@@ -1752,6 +1755,7 @@ Contracts:
 | `GET /api/v1/insights/roads?from&to&devices&mode` | `{ timezone, period, mode, modes, distanceM, mappedM, kinds, families, pending }` |
 | `GET /api/v1/insights/places?from&to&devices` (`locations:read`) | `{ timezone, period, totals { places, durationS, visits }, places [≤ 50: { key, centre, name, durationS, visits, days, firstAt, lastAt }], rest { places, durationS, visits }, pending }` |
 | `GET /api/v1/insights/place?place&from&to&devices` (`locations:read`) | `{ timezone, period (with bucket, buckets), place (summary + cells) or null, series [{ bucket, durationS, visits }], days [{ date, durationS, visits, firstAt, lastAt }, newest first], pending }` |
+| `GET /api/v1/insights/ways?from&to&devices&mode` (`locations:read`) | `{ timezone, period, mode, modes, mappedM, namedM, ways [≤ 25: { name, kind, distanceM, moves }], pending }` |
 
 - **The period** is local days in the owner's zone, `from` and `to`
   included, at most three years (`lastInsightsDay`: the day before the same
@@ -1795,6 +1799,32 @@ Contracts:
   are the kinds grouped as the inference groups them (`wayFamilyOf`); the
   rail share of trains, trams and metros is rail, light rail, tram and subway
   track, the ferry share of boats ferry routes.
+- **Named roads.** `features.wayTotals` (§17.3) holds the metres on each OSM
+  way of a move, `[wayId, metres]`: ways of 25 m or more, longest first, at
+  most 64, half of each interval counting for each of its end points, as for
+  `wayKinds`; `null` for a move without map data, absent for a move the
+  feature backfill (§17.4) has not reached. `GET /api/v1/insights/ways`
+  reads every mode's moves (for `modes`) and prorates those of the asked mode
+  over the period's hours like the roads, adds the ways up (the longest 20 000
+  are looked up), takes the newest row of `osm_ways` with a `name` for each,
+  and makes roads of them: the ways of one name whose bounding-box centres lie
+  in one zoom-12 cell (about 6 km wide at 51° N) or touching ones (union-find
+  over the 8 neighbours) are one road. Villages of one name in touching cells
+  therefore merge, and a chain of touching cells can merge a wider area; the
+  same name two cells (12 km) or more away is another road. The answer is `{ mappedM, namedM, ways
+  [≤ 25: name, kind (the longest way's), distanceM, moves] }`: the centres
+  serve the grouping on the server and are not answered. `mappedM` is the
+  distance of moves with map data, `namedM` the part on named roads, `moves`
+  the distinct moves on any of a road's ways. `pending` is also true while a
+  move in the period lacks its totals; the web refetches named roads while
+  `pending` and otherwise goes by the ETag, since the fill changes no day
+  stamp. `features` grows by up to about 1.3 KB per move (64 ways; about
+  0.5 KB measured on seeded moves), read with the move's other features.
+  The threat model: names of roads the owner (or a token with `locations:read`
+  for those devices) travelled and metres, no time of day, no position, no
+  person; a road name says where one was, hence `locations:read`; devices go
+  through `resolveDeviceIds` (foreign: 404); the access log keeps `{ from, to,
+  devices, mode }` and no names; a name is OpenStreetMap data, shown as text.
 - `pending` is the timeline's (`hasPendingWork` over the period's devices
   and instants). A request covering three years reads at most the segments
   of those years and builds about 26 000 local hours in some 30 ms.
@@ -2076,7 +2106,7 @@ hashed for nothing. The dashboard's routers use `answerConditionally`, v1
 | `GET /api/v1/segments` | raw and processed (the cursor and limit are in the query) |
 | `GET /api/stats/days`, `/api/v1/stats/days` | the body: a few hundred small rows with their stamps |
 | `GET /api/heatmap` | the devices, the sum of their point counters (an upload of points too inaccurate for the cells moves it: a needless 200, never a wrong 304), the newest `updated_at` of their rows, which a deletion sets (as many points uploaded as deleted would leave the sum as it was), and the generation of rebuilt cells (`heatGeneration`, which the start-up fill moves) |
-| `GET /api/v1/insights/*` | the scope (zone, period, devices) and over the segments of the period — the overview's with the period before — their count, newest `computed_at`, versions and the sums of their bounds, and `pending`; Places and Place add `mapStamp` (the newest `osm_tiles.fetched_at` and the builds of the ready regions), since names come from map data. The road a place is named after comes from the points around its stays (`processed_points.way_id`) and is not in the validator: a pass that moves only those points shows in the name once a stay or the map data changes |
+| `GET /api/v1/insights/*` | the scope (zone, period, devices) and over the segments of the period — the overview's with the period before — their count, newest `computed_at`, versions and the sums of their bounds, and `pending`; Places, Place and the named roads add `mapStamp` (the newest `osm_tiles.fetched_at` and the builds of the ready regions), since names come from map data, and the named roads how many moves of the period still lack their totals (the fill changes no stamp). The road a place is named after comes from the points around its stays (`processed_points.way_id`) and is not in the validator: a pass that moves only those points shows in the name once a stay or the map data changes |
 | `GET /api/v1/people` | the body (projecting it is cheap: the saving is bytes and parsing) |
 
 A 304 is a look (§8.8). Measured in the development container on a processed
@@ -2868,8 +2898,8 @@ count among them, since they lead to signed-in pages.
     a moment; distance, points, first/last; the timeline of stops and moves,
     with a dialog to correct a mode; visits and trips of the day (Me's
     detail). Other people's tracks as their shares allow (below).
-    **Playback** has an engine in `pages/map/history/playback`, not yet
-    wired into the page: a pure model (`playbackModel`: local-day bounds, the
+    **Playback** plays History back from any moment to the last recorded
+    point (below). Its engine is in `pages/map/history/playback`: a pure model (`playbackModel`: local-day bounds, the
     moves of the timeline or, from the points alone, movement stretches —
     split at recording gaps, cut by three minutes below 0.6 m/s, kept at a
     minute and 100 m — and the quiet stretches outside them, the next day with
@@ -2896,6 +2926,38 @@ count among them, since they lead to signed-in pages.
     cursor by `splitTrackAt` into two halves that keep its id); the caller
     dims visit dots with `MapPoint.dimmed`. `ensureTrailLayers` draws them at
     0.3 opacity (0.5 under `prefers-contrast: more`).
+    *In the page.* The time slider spans the local day, 00:00 to 24:00 (today
+    up to now, a period all its days), starts at the last recorded point and
+    has a Play button when someone is selected (on a past day it starts a
+    minute short of the next midnight at the latest). `useHistoryView` takes
+    `usePlayerState` first, so that the playing day replaces the address's
+    period before the queries run; nothing is written to the address while it
+    plays. Pausing and the end write `date` and `at`, and leaving writes where
+    it was, also after a seek made while paused (a change of view or person
+    writes nothing). `at` is `YYYY-MM-DDTHH:MM`, the wall-clock time in the
+    account's time zone (`parseAt.ts`: on a day of 23 or 25 hours the time
+    written is the time read; one the clock skips is ignored); the slider's
+    own moves write `at` 400 ms after the last one, with replace; a value
+    outside the day is ignored and a change of day or period drops it. While
+    playing, the controls and the slider give way to the bar at the map's foot
+    (on phones the sheet drops to its peek) and "At this moment" takes the
+    sidebar's place on the panel; the sidebar stays mounted but hidden, its
+    scroll and the page's are put back on leaving, and the focus goes to Pause
+    on entering and back to the slider's Play on leaving (Escape leaves;
+    turning the phone moves neither). The page's heading is then a hidden "History
+    playback". Desktop widens the foot and narrows the panel
+    (`--panel-width: 16rem`). Someone who shares is played from
+    `GET /api/v1/people/{userId}/days` (`usePersonDays`, refetched on that
+    person's live events). A day whose tracks come back empty is skipped. For
+    one's own days the moves are the timeline's, and while it is still being
+    worked out also what the points after its last segment say moved, so that
+    "Skip stops" does not jump over the live end. The map is handed its tracks
+    as new data only when the split moves (four times a second at most). The
+    camera frames each day as it loads and follows the cursors (all of them,
+    without zooming in) when one leaves the viewport less the fit's margin
+    (eased, at most every 500 ms; a jump under reduced motion); it leaves the
+    camera alone for five seconds after the person moved it and while a fit
+    runs (`followCamera.ts`).
   - **Heat** — all-time heatmap (`/api/heatmap` for the view once the map
     has stood still for 300 ms, its box rounded outward to a thousandth of a
     degree and its zoom to a whole level, so that small moves hit the
@@ -2946,7 +3008,8 @@ count among them, since they lead to signed-in pages.
   the screen is not wide enough for both), the map fits tracks under the
   controls (`fit.inset`: below the bar, left of the zoom column on phones),
   and History's time slider floats at the map's foot (in the sheet on phones,
-  right under the Me row or the person's header, not in the peek). The
+  right under the Me row or the person's header, not in the peek), with
+  Heat's key at its bottom-left. The
   DOM order is the controls, the map, then the panel, so the keyboard meets
   them in that order.
 
@@ -3023,10 +3086,8 @@ count among them, since they lead to signed-in pages.
   to the next such button, or to the heading when none is left), and "Nobody
   is hidden" when none is. The root carries no description of the view, no
   History summary, no Heat totals, no "You share with N people" line and no
-  card for when nobody shares: the view's description stays on the page only
-  as a visually hidden block next to the map (the person pages that follow
-  fold it into the map's accessible label), and with nobody sharing the root is
-  just the Me row. Rows are one
+  card for when nobody shares: what a view says of itself is the map's
+  accessible label, and with nobody sharing the root is just the Me row. Rows are one
   router link each to their page (`PersonRow`; its name is all it says, in
   order, and it has no heading) and are laid out lazily
   (`content-visibility: auto`). A row reads in two lines (`PersonSummary`,
@@ -3052,16 +3113,33 @@ count among them, since they lead to signed-in pages.
   of the sheet's view, so that selecting someone has a half detent to lift
   the sheet to; History's slider sits right under what is measured, not in it.
 
-  **The detail** replaces the list (`PersonPanel`): a back link ("Back to
-  People"), the name as an h2 with the row's two lines, and what the view
-  and the person have. For **Me**: the view's part (Live: "Your day so far";
-  History: the summary, timeline, visits and trips), then, always, **Your
-  devices** (`MyDevices`: each by name, linked to its page in Settings ›
-  Devices, with when it last reported a position — "Waiting for the first
-  upload" before it did — battery, that position with its accuracy, movement
-  ("Last reported movement" once it is not live) and trip, and the way to
-  Settings › Devices), the hint with the way to the device's setup while no
-  device has uploaded, and "Connect your first phone" when there is none.
+  **The pages** replace the root (`MePage`, `PersonPage`; the groups are
+  `SettingsDisclosureGroup`: a heading with a button inside it, `aria-expanded`
+  and `aria-controls`, its content rendered only while it is open): a back
+  link ("Back to People"), the name as an h2 with the row's two lines (Me's
+  also says "2 devices"), History's slider under it on phones, and the groups
+  and rows of the person. **Me's page**: the hint with the way to the device's
+  setup while no device has uploaded, and "Connect your first phone" when
+  there is none; the group **Timeline**, open (Live: today, in a region "Your
+  day so far"; History: the day or period); the view's other group, folded —
+  History's "Summary, visits and trips" (the regions keep their names), Heat's
+  "Heat: totals, busiest places", whose 12-month totals are asked for only once
+  it is opened; a row **Your devices** with their count, which opens a level
+  of the page (`?person=me&list=devices`: a back link "Back to Me", the h2 "Your
+  devices" in focus, then `MyDevices`: each by name, linked to its page in
+  Settings › Devices, with when it last reported a position — "Waiting for the
+  first upload" before it did — battery, that position with its accuracy,
+  movement ("Last reported movement" once it is not live) and trip, and the way
+  to Settings › Devices); and a row **Sharing** ("You share with 2 people · 1
+  waits for you to confirm") to Settings › Sharing. A group stays as one left it
+  while the view changes. What the views say about the map is the map's
+  accessible label (no description line in the sidebar); Heat's key floats
+  small over the map's bottom-left corner (`legend`), and what History has to
+  say of a day with nothing recorded ("Nothing recorded on …", with "Find a day
+  with data") or of tracks that could not be loaded is at the map's foot, where
+  the slider would be. Heat's own foot holds its error (with Retry) and the
+  notice that the heatmap was truncated, whoever is selected, and on wide
+  screens the key stacks above whatever the foot holds (`--foot-height`).
   For someone who shares: **where they've been** (`WhereTheyveBeen`): the day
   — Today in Live, History's day, or History's period — with Previous and
   Next day (in Live a day back is History's, one step of the history,
@@ -3076,15 +3154,16 @@ count among them, since they lead to signed-in pages.
   recorded", read "14.9 km, from 06:30 to 07:15"), "Nothing recorded on Mon
   26 Oct", "Shares the last 7 days only" where the server moved the start up,
   "Shares no device right now"; a share without history says "Shares live
-  location only" and is asked for nothing. Then the view's part (History's
-  summary of their tracks) and `PersonDetails`: each shared device (updated,
-  doing, battery, accuracy, trip, distance — "Not shared" where the share
-  leaves battery and activity out, "—" where it includes them but nothing
-  recent is known), what they share (precision, where they've been, battery
-  and activity, until, since), Apple Maps and Google Maps links, Share back —
-  or, when you share with them, "You share with <name>" and Stop
-  (`StopShareDialog`) — and Hide, which returns to the list and is announced
-  ("Ana is hidden. Show them again under Hidden."). Each person has a colour
+  location only" and is asked for nothing. Then, folded, History's group **Summary** (their tracks, device
+  by device) and the group **Devices (n) · What <name> shares with you**
+  (`PersonDevices`: each shared device — updated, doing, battery, accuracy,
+  trip, distance, "Not shared" where the share leaves battery and activity out,
+  "—" where it includes them but nothing recent is known; `ShareTerms`:
+  precision, where they've been, battery and activity, until, since). Last the
+  rows of what can be done: "Open in Apple Maps" and "Open in Google Maps" (new
+  tab), Share back — or, when you share with them, "You share with <name>"
+  and Stop (`StopShareDialog`) — and "Hide <name>", which returns to the
+  root and is announced ("Ana is hidden. Show them again under Hidden."). Each person has a colour
   from `personPalette`, a second ring beside the device colours, assigned in
   the order they started sharing. **Share my location** (`ShareDialog`):
   address (with the people who share with you as suggestions), devices,
@@ -3938,7 +4017,11 @@ security ones too.
   → train → walk, a tram, a ferry, a flight, a phone on a desk); a benchmark
   holds a dense day of 21 000 points to its CPU budget, and `wayKinds.test.ts`
   puts every journey on its kinds of way (adding up to the whole and, by
-  family, to the family shares). Insights' pure parts
+  family, to the family shares); `wayTotals.test.ts` the metres on each way of
+  a hand-made move and of its pieces, `groupWays.test.ts` the roads made of
+  ways and the prorating over a period, `insightsWaysApi.test.ts` the
+  operation (names, grouping, mode, devices, scope, ETag) and the feature
+  backfill (it fills what processing wrote, resumes, runs once, changes no stamp). Insights' pure parts
   (`insightsCalendar.test.ts`, `insightsAggregation.test.ts`): the local hours
   of a period across both changes of the clocks, in zones half an hour off
   UTC and in one that skips midnight; moves prorated over them at local
@@ -4291,7 +4374,9 @@ security ones too.
   level deeper (its uploads and raw points, remote settings, its setup, back
   with the focus on the row), token rotation, renaming, deleting (from the
   list: back in the history, Back not to the gone device), History and its
-  scrubber,
+  scrubber and playback (from midnight to the last point, the empty day
+  skipped, the address while it plays and after, Escape; paused and ended
+  scanned, and a run with reduced motion),
   the heatmap (its squares on the map, found by their colours in a
   screenshot of the canvas, its key and the busiest places), sign-in by email,
   passkey button and autofill, invitations and
@@ -4699,7 +4784,11 @@ average speed, the acceleration variance of dense intervals, the shares of the
 distance by matched way family (rail, subway, tram, motorway, road, cycleway,
 foot, ferry, none) and by way kind (`wayKinds`: every kind, a matched point
 without one counting as `other`; summed by family they give the family
-shares), and near tram tracks, cycleways and footways (they run beside
+shares), the metres on each matched OSM way (`wayTotals`: `[wayId, metres]`
+of 25 m or more, longest first, at most 64, half of each interval to each end
+point; a piece of a cut move gets the whole's, scaled by its share of the
+distance and cut at 25 m — an approximation until a window reads it again),
+and near tram tracks, cycleways and footways (they run beside
 roads), the corridor ratio (samples every 250 m along the straight
 lines between points within 200 m of a railway, and of a motorway), pauses
 inside the move (≤ 1 m/s for ≥ 15 s, or one slow reading between long
@@ -4868,6 +4957,26 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   is matched with the cached map data, or waits for its tiles. So a change
   that turns points of stops into moves (inferred version 3: stops that end
   when the phone leaves) needs the inferred level alone.
+- **Feature backfill.** A feature that can be derived from rows already stored
+  needs no new level: `processingFeatureVersions` (`processingVersion.ts`)
+  lists them, `processing_state` key `features` records the version each was
+  filled in at, and at every start the worker runs `runFeatureBackfill` apart
+  from the queue, held off while a pass of its own is at work. It fills the
+  features whose version is old, and any a move still lacks (the partial index
+  `segments_move_lacking_totals_idx` lists them, empty once done), so a move
+  left behind never stays `pending`. Device by device and UTC day, newest
+  first, one transaction per day under the device's processing lock (a live
+  pass never overlaps it) and an advisory lock for the fill (one process fills
+  at a time; another leaves it), one SQL statement from the stored processed
+  points: nothing is loaded, no map data, no matching, and neither `version`
+  nor `computed_at` changes; a move that has the feature by then is left
+  alone. `wayTotals` 1 (Insights › named roads) counts as the pipeline does:
+  each interval between kept points along `path_map` when both ends are mapped,
+  else the chord of the averaged points, half to each end point's way, ways of
+  25 m or more, to 0.1 m (the test compares it with the pipeline's own totals
+  on curved and sparse journeys). Measured in the dev container on 10 000
+  moves of 40 points: 5.6 s, about 1 800 moves (70 000 points) per second.
+  The heat days of the map are planned on the same mechanism.
 - `trail reprocess [--device <id>] [--from <iso> --to <iso>] [--from-level
   averaged|mapped|inferred]` queues the range in day windows, then processes
   them itself with the map data already cached; tiles still missing are left
