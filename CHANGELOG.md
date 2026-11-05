@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.9.0](https://github.com/JensPenneman/trail/compare/v0.8.1...v0.9.0) (2026-11-05)
+
+
+### Features
+
+* **api:** days with data for a person who shares ([#114](https://github.com/JensPenneman/trail/issues/114)) ([7bd905a](https://github.com/JensPenneman/trail/commit/7bd905aa9c3717661c0fdb2a59b12b58f958f63a))
+* **api:** heat by time on the move and speed, and values on the tracks API ([#128](https://github.com/JensPenneman/trail/issues/128)) ([f8dfdbd](https://github.com/JensPenneman/trail/commit/f8dfdbd38a385e1c4a30f92ed02350aff162d8fe))
+* **api:** heat by time spent and visits, with every cell the view can hold ([#117](https://github.com/JensPenneman/trail/issues/117)) ([77eef29](https://github.com/JensPenneman/trail/commit/77eef2932c7d480a8135b7f9f39cf30eb4621d46))
+* **api:** named roads in Insights ([#115](https://github.com/JensPenneman/trail/issues/115)) ([1dfa9ec](https://github.com/JensPenneman/trail/commit/1dfa9ec56098b0f2d42c7e4834e907aca5b666ff))
+* **api:** places in Insights ([#113](https://github.com/JensPenneman/trail/issues/113)) ([8abefa1](https://github.com/JensPenneman/trail/commit/8abefa1e0e26874dfb8d1c4323b47d9e3b1c6b2d))
+* **web:** a playback engine for History, with dimmed track ahead of the cursor ([#111](https://github.com/JensPenneman/trail/issues/111)) ([93ed09b](https://github.com/JensPenneman/trail/commit/93ed09b75347a79a82014d0c5e52f9d5bb16d029))
+* **web:** choose what the heatmap shows, with a key on the map ([#129](https://github.com/JensPenneman/trail/issues/129)) ([28654cc](https://github.com/JensPenneman/trail/commit/28654cc760b5283e5f254de0fd66f63473c36da0))
+* **web:** Insights by week, month and year, one screen at a time ([#124](https://github.com/JensPenneman/trail/issues/124)) ([d77a587](https://github.com/JensPenneman/trail/commit/d77a5871e7166ed8514cf885d1d7e5a856cec7c9))
+* **web:** Insights rows for when, roads, speed and the longest moves ([#126](https://github.com/JensPenneman/trail/issues/126)) ([3fb4713](https://github.com/JensPenneman/trail/commit/3fb4713a89e5b25f94280ba895fc4744dcdd140d))
+* **web:** places in Insights ([#127](https://github.com/JensPenneman/trail/issues/127)) ([b32cc5f](https://github.com/JensPenneman/trail/commit/b32cc5f3b2cac0b3b644d34ec4b2b6ea5de817b5))
+* **web:** play History back from any moment to the last recorded point ([#125](https://github.com/JensPenneman/trail/issues/125)) ([1bdbae3](https://github.com/JensPenneman/trail/commit/1bdbae348931672ef625dda46ce3d78e3e92ab4e))
+* **web:** see where you spent time from Insights ([#131](https://github.com/JensPenneman/trail/issues/131)) ([78a39f6](https://github.com/JensPenneman/trail/commit/78a39f6f79a9eb9c93df6f9a64274e15b583fd37))
+* **web:** the People sidebar lists people first, one level at a time ([#112](https://github.com/JensPenneman/trail/issues/112)) ([4b09e84](https://github.com/JensPenneman/trail/commit/4b09e84106a0cb4531a397b592475ec9ce1f3124))
+
+
+### Bug Fixes
+
+* a mode correction waits only briefly for processing, and the device filter toggles at once ([#121](https://github.com/JensPenneman/trail/issues/121)) ([228fe32](https://github.com/JensPenneman/trail/commit/228fe323b45f52af55125f97dec969bf4b782893))
+
 ## [0.8.1](https://github.com/JensPenneman/trail/compare/v0.8.0...v0.8.1) (2026-11-04)
 
 
