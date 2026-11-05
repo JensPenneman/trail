@@ -5,13 +5,22 @@ export class HttpError extends Error {
   readonly status: number;
   readonly code: ErrorCode;
   readonly fields: Record<string, string[]> | undefined;
+  /** Response headers the answer carries (`Retry-After` on a retryable one). */
+  readonly headers: Record<string, string> | undefined;
 
-  constructor(status: number, code: ErrorCode, message: string, fields?: Record<string, string[]>) {
+  constructor(
+    status: number,
+    code: ErrorCode,
+    message: string,
+    fields?: Record<string, string[]>,
+    headers?: Record<string, string>,
+  ) {
     super(message);
     this.name = "HttpError";
     this.status = status;
     this.code = code;
     this.fields = fields;
+    this.headers = headers;
   }
 }
 
