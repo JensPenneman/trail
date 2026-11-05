@@ -1053,8 +1053,10 @@ JSON `404 not_found`. Stack traces are logged, never sent.
 
 - **Preferences** (`preferences.ts`): defaults an account takes to every
   browser — `mapStyle` (`auto|light|dark|satellite`), `level`
-  (`raw|averaged|mapped|inferred`) and `showOwnActivity` (whether the access
-  log lists the account's own activity too). `PATCH /api/me { preferences }`
+  (`raw|averaged|mapped|inferred`), `heat` (`points|time|visits`: what the
+  heatmap counts), `color` (`mode|device|speed|time`: what the paths are
+  coloured by; used by the colouring to come) and `showOwnActivity` (whether
+  the access log lists the account's own activity too). `PATCH /api/me { preferences }`
   changes the ones it names and leaves the others: the statement merges them
   into the stored object (`preferences || $patch`), so two changes at once
   keep each other's. A name it does not know, or a value outside a
@@ -1063,7 +1065,7 @@ JSON `404 not_found`. Stack traces are logged, never sent.
   `SessionUser.preferences` (the session, `GET/PATCH /api/me`, the sign-in
   answers) has every one filled in — a preference never set, or holding a
   value this version does not know (a later release's), reads as its default
-  (`auto`, `inferred`, `false`). They are the owner's only: the v1 profile,
+  (`auto`, `inferred`, `points`, `mode`, `false`). They are the owner's only: the v1 profile,
   MCP, shares, links and the administrators' account list do not carry them.
 - **Visits** returned are those recorded, arrived or departed inside the
   range, or spanning it; iOS reports a visit on arrival and again on
@@ -1127,14 +1129,33 @@ the coarsest stored level that is finer (`storedCellZoom`, s = 1 or 2 levels
 finer, at most 4 × 4 stored cells to a cell):
 `SELECT x >> s, y >> s, sum(count) … GROUP BY 1, 2`. The viewport is
 widened to whole cells (`heatCellWindow`), so a cell at its edge counts every
-point it holds, as it does in the middle. The answer is the cell centres
-summed across the requested devices (the antimeridian handled when
-`west > east`), at most 20 000 cells (highest counts first,
-`truncated: true`). The query is a range scan of the primary key
+point it holds, as it does in the middle. The answer is
+`[x, y, value]` tiles of `cellZoom` — whole numbers — summed across the
+requested devices (the antimeridian handled when `west > east`), busiest first,
+`truncated: true` when the view held more than `heatCellCap`: as many cells as
+the viewport can, at most 65 536 (cells are 11 to 23 px wide, and a 3840 × 2160
+screen holds some 64 800 of the narrowest). `GET /api/v1/heatmap` keeps its
+centres `[lon, lat, count]` and its 20 000. The query is a range scan of the primary key
 `(device_id, z, x, y)` and a hash aggregate: measured on the production data
 (1.2 M points; 6 350 cells at level 18, 28 035 at level 20) every viewport of
 the dashboard answers in under 10 ms, and in at most about 30 ms on cells
 fifteen times denser — no further index is needed.
+
+`heat=time` and `heat=visits` (with `from` and `to`, local days of the
+account's zone, at most three years, the Insights scope; points are all time and
+take no period) count the stops instead (`findStopCells`): the stays of the
+period (`servedSegments`, a long stay one stop) clipped to it, each in the cell
+its centre lies in (`tileSql`, the expression the stored cells are made with,
+guarded against `tileMath` at 6, 13 and 20 by `heatStops.test.ts`), and the
+stays of one cell merged where they overlap or touch — two phones at one place
+count once, so a cell's time is the time somebody was there — a visit being a
+merged stay that overlaps the period. Whole cells, busiest first by time or
+visits, `heatCellCap` of them. The answer echoes `heat` and `period` and says
+`pending` while recent days are still being worked out (`hasPendingWork`). The
+ETag takes the view and period and `insightsValidator` (read before the cells);
+a pass or a new time zone moves it. About as costly as an Insights figure (tens
+of ms). The web keeps these answers stale while processing changes the
+history (`staleProcessed`, `resyncAfterGap`); the heat of points never is.
 
 Every upload adds its points to the six stored levels in its one statement
 (§6.2). Level 20 costs a batch of 1 000 points of a drive 30 to 60 ms (an
@@ -2105,7 +2126,7 @@ hashed for nothing. The dashboard's routers use `answerConditionally`, v1
 | `GET /api/v1/tracks` | the raw strings at level `raw`, raw and processed otherwise |
 | `GET /api/v1/segments` | raw and processed (the cursor and limit are in the query) |
 | `GET /api/stats/days`, `/api/v1/stats/days` | the body: a few hundred small rows with their stamps |
-| `GET /api/heatmap` | the devices, the sum of their point counters (an upload of points too inaccurate for the cells moves it: a needless 200, never a wrong 304), the newest `updated_at` of their rows, which a deletion sets (as many points uploaded as deleted would leave the sum as it was), and the generation of rebuilt cells (`heatGeneration`, which the start-up fill moves) |
+| `GET /api/heatmap` | for points: the devices, the sum of their point counters (an upload of points too inaccurate for the cells moves it: a needless 200, never a wrong 304), the newest `updated_at` of their rows, which a deletion sets (as many points uploaded as deleted would leave the sum as it was), and the generation of rebuilt cells (`heatGeneration`, which the start-up fill moves); for time and visits: the Insights scope (zone, period, devices) and `insightsValidator` over the stays of the period, with `pending`, read before the cells; for time on the move, speed and top speed: the same scope and `insightsValidator`, `heatDaysValidator` (the rows of the period's days at level 12: their count, newest `computed_at` and points) and the generation of rebuilds, with the mode, read before the cells |
 | `GET /api/v1/insights/*` | the scope (zone, period, devices) and over the segments of the period — the overview's with the period before — their count, newest `computed_at`, versions and the sums of their bounds, and `pending`; Places, Place and the named roads add `mapStamp` (the newest `osm_tiles.fetched_at` and the builds of the ready regions), since names come from map data, and the named roads how many moves of the period still lack their totals (the fill changes no stamp). The road a place is named after comes from the points around its stays (`processed_points.way_id`) and is not in the validator: a pass that moves only those points shows in the name once a stay or the map data changes |
 | `GET /api/v1/people` | the body (projecting it is cheap: the saving is bytes and parsing) |
 
@@ -2957,7 +2978,16 @@ count among them, since they lead to signed-in pages.
     (eased, at most every 500 ms; a jump under reduced motion); it leaves the
     camera alone for five seconds after the person moved it and while a fit
     runs (`followCamera.ts`).
-  - **Heat** — all-time heatmap (`/api/heatmap` for the view once the map
+  - **Heat** — heatmap (`/api/heatmap` — `heat=points|time|visits`, `?heat=`
+    in the address, read by `useHeatChoice` like the level — the address ›
+    this browser › the preference `heat` › points; the view still asks for
+    points, its controls for the other measures follow in the UI change; a period of the stop measures is `?from=`
+    and `?to=`, shared with History, and a period longer than 93 days stays
+    behind when History opens; `?c=lon,lat,zoom` is a camera a link names,
+    read into `MapSearch.camera`; the cells are `[x, y, value]` tiles, packed
+    as 32-bit integers in the copy on this device (`heatmap` keeps the newest
+    sixty, per zone), and a view keeps the previous cells while panning only
+    when measure, period and devices are the same) for the view once the map
     has stood still for 300 ms, its box rounded outward to a thousandth of a
     degree and its zoom to a whole level, so that small moves hit the
     cache), totals and the busiest places in view. The cells are drawn as
@@ -3705,7 +3735,7 @@ memory only.
   | `timeline` | today | as `tracks` (raw and processed) | as `tracks` | as `tracks` |
   | `visits`, `trips` | — | as `tracks` (raw) | as `tracks` | 90 d |
   | `days` | the current month (≤ 32 days covering today) | 60 s | ETag | 90 d |
-  | `heatmap` | — (the newest 20 kept) | 5 min | ETag | 30 d |
+  | `heatmap` | — (the newest 60 kept) | 5 min | ETag | 30 d |
   | `insights` | — | 5 min | ETag | 30 d |
   | `device-mode` | the device that reported last | 30 s | as is | 1 d |
   | `activity` | — | 5 min | as is | 7 d |
@@ -3740,12 +3770,13 @@ memory only.
   the cells of a heat view go into one buffer each, column after column, as
   64-bit floats with NaN for null — 48 bytes a track point, exactly the
   numbers the server sent (32-bit floats would round 5.3; 32-bit seconds end
-  in 2038). On every read (`decodeEntry`) an entry of another format, owner
+  in 2038) — except heat cells, which are whole numbers: unsigned 32-bit
+  rows, 12 bytes a cell, an answer with a number that does not fit not kept. On every read (`decodeEntry`) an entry of another format, owner
   or zone, past its TTL, damaged or no longer what its contract allows is
   deleted and counted; the contracts' schemas are loaded with the first
   answer of their kind (`cacheCodecs.ts`), so a public page loads none.
 - **Budgets** (`sweepEntries.ts`): no entry over 4 MB; past 32 MB the sweep
-  removes, least recently shown first, heat views beyond the newest 20,
+  removes, least recently shown first, heat views beyond the newest 60,
   settled days and ranges, then Insights, then the rest — never the warm set
   while it is current, never today; past 64 MB nothing is written until it
   ran. It runs two seconds after start-up, every hour and after a write
@@ -4103,8 +4134,12 @@ security ones too.
   dashboard's routes, scopes, device restrictions and other accounts' ids.
   `history.test.ts` holds the heatmap at every zoom from 0 to 18 (levels 6
   to 20) against the finest stored cells summed, several devices summed, a
-  whole cell at the edge of the view, the antimeridian and the cap of 20 000
-  cells; `heatLevels.test.ts` the start-up fill: nothing to do while the
+  whole cell at the edge of the view, the antimeridian and the cap of 65 536
+  cells (`heatCellCap.test.ts` the cap and the schemas, `heatStops.test.ts`
+  time and visits: clipping, a stay one visit, two devices once, cells at 6,
+  13 and 20, the antimeridian, the ceiling, the period, `pending`, the ETag
+  after a stop and a change of zone, a foreign device, the tile maths of SQL,
+  the stored cells and `tileMath` agreeing); `heatLevels.test.ts` the start-up fill: nothing to do while the
   levels agree, level 20 built for the points from before it (an upload
   after the upgrade counted once), what an older release left behind after
   a rollback (its uploads, its rebuild) repaired, a stop after one device

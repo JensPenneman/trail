@@ -78,12 +78,29 @@ describe("preferences", () => {
     expect(defaultPreferences).toEqual({
       mapStyle: "auto",
       level: "inferred",
+      heat: "points",
+      color: "mode",
       showOwnActivity: false,
     });
     expect(preferencesSchema.parse({ level: "raw" })).toEqual({
       ...defaultPreferences,
       level: "raw",
     });
+  });
+
+  it("take the heat measure and the colouring of the paths, and refuse others", () => {
+    expect(preferencesSchema.parse({ heat: "visits", color: "speed" })).toMatchObject({
+      heat: "visits",
+      color: "speed",
+    });
+    for (const bad of [{ heat: "speed" }, { color: "altitude" }]) {
+      expect(updateMeRequestSchema.safeParse({ preferences: bad }).success).toBe(false);
+    }
+    expect(updateMeRequestSchema.parse({ preferences: { heat: "time", color: "device" } })).toEqual(
+      {
+        preferences: { heat: "time", color: "device" },
+      },
+    );
   });
 
   it("change only the ones named, and no name they do not know", () => {

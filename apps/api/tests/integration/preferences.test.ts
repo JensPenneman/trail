@@ -75,6 +75,7 @@ describe("preferences (PATCH /api/me)", () => {
     });
     // The session of every later request carries them; nothing else was stored.
     expect(await preferencesOf(owner)).toEqual({
+      ...defaultPreferences,
       mapStyle: "dark",
       level: "raw",
       showOwnActivity: true,

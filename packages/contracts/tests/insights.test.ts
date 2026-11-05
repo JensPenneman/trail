@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  insightsModeFilterQuerySchema,
-  insightsQuerySchema,
-  lastInsightsDay,
-} from "../src/insights";
+import { insightsModeFilterQuerySchema, insightsQuerySchema } from "../src/insights";
+import { lastInsightsDay } from "../src/period";
 
 describe("Insights queries", () => {
   it("take a period of local days, both ends optional", () => {

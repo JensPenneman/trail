@@ -8,7 +8,9 @@ import type { LevelPoint } from "@trail/contracts/transport";
  * tuples is some 50 000 objects for IndexedDB to clone, write, read and clone
  * again; one ArrayBuffer is a copy. 64 bits for every column, so the numbers
  * come back exactly as the server sent them: 32-bit floats would turn a speed
- * of 5.3 into 5.300000190734863, and 32-bit seconds end in 2038.
+ * of 5.3 into 5.300000190734863, and 32-bit seconds end in 2038. Heat cells are
+ * whole numbers that fit 32 bits (a tile of zoom 20, a count or the seconds of a
+ * period of three years): they are packed as unsigned integers, 12 bytes a cell.
  */
 export interface PackedRows {
   packed: ArrayBuffer;
@@ -34,7 +36,11 @@ function packRows(rows: readonly Row[], width: number): PackedRows {
 export const isArrayBuffer = (value: unknown): value is ArrayBuffer =>
   Object.prototype.toString.call(value) === "[object ArrayBuffer]";
 
-const isPacked = (value: unknown, width: number): value is PackedRows => {
+const isPacked = (
+  value: unknown,
+  width: number,
+  bytes: number = Float64Array.BYTES_PER_ELEMENT,
+): value is PackedRows => {
   if (typeof value !== "object" || value === null) return false;
   if (!("packed" in value) || !("n" in value) || !("width" in value)) return false;
   return (
@@ -43,7 +49,7 @@ const isPacked = (value: unknown, width: number): value is PackedRows => {
     Number.isInteger(value.n) &&
     value.n >= 0 &&
     value.width === width &&
-    value.packed.byteLength === value.n * width * Float64Array.BYTES_PER_ELEMENT
+    value.packed.byteLength === value.n * width * bytes
   );
 };
 
@@ -110,6 +116,41 @@ function unpackTriples(value: unknown): unknown[] | null {
 
 export const unpackLevelPoints = (value: unknown): unknown[] | null => unpackTriples(value);
 
-export const packHeatCells = (cells: HeatmapResponse["cells"]): PackedRows => packRows(cells, 3);
+const maxCellValue = 0xffff_ffff;
 
-export const unpackHeatCells = (value: unknown): unknown[] | null => unpackTriples(value);
+/** Heat cells `[x, y, value]` as unsigned 32-bit integers, column after column. */
+export function packHeatCells(cells: HeatmapResponse["cells"]): PackedRows {
+  const n = cells.length;
+  const columns = new Uint32Array(n * 3);
+  for (let index = 0; index < n; index += 1) {
+    const cell = cells[index] as readonly [number, number, number];
+    for (let column = 0; column < 3; column += 1) {
+      const value = cell[column] ?? 0;
+      // A typed array would wrap what does not fit: an answer like that is not kept.
+      if (!Number.isInteger(value) || value < 0 || value > maxCellValue) {
+        throw new RangeError(`A heat cell holds ${value}, which does not fit 32 bits`);
+      }
+      columns[column * n + index] = value;
+    }
+  }
+  return { packed: columns.buffer, n, width: 3 };
+}
+
+/**
+ * The cells for the contract's schema to check, or null when `value` is not what `packHeatCells`
+ * made — an entry from before the cells were whole numbers (64-bit floats) included.
+ */
+export function unpackHeatCells(value: unknown): unknown[] | null {
+  if (!isPacked(value, 3, Uint32Array.BYTES_PER_ELEMENT)) return null;
+  const { n } = value;
+  const column = (index: number) =>
+    new Uint32Array(value.packed, index * n * Uint32Array.BYTES_PER_ELEMENT, n);
+  const [x, y, count] = [column(0), column(1), column(2)] as [
+    Uint32Array,
+    Uint32Array,
+    Uint32Array,
+  ];
+  const rows: unknown[] = new Array(n);
+  for (let index = 0; index < n; index += 1) rows[index] = [x[index], y[index], count[index]];
+  return rows;
+}

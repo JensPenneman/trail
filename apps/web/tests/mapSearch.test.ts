@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { resolveHeatMeasure } from "../src/pages/map/heat/useHeatChoice";
 import type { MapPerson } from "../src/pages/map/MapPerson";
 import {
   withDay,
   withDevices,
+  withHeatPeriod,
   withList,
+  withoutCamera,
+  withoutLens,
   withPerson,
   withRange,
   withView,
 } from "../src/pages/map/mapSearchUpdates";
 import { shownView, viewsFor } from "../src/pages/map/mapViews";
-import { parseMapSearch } from "../src/pages/map/parseMapSearch";
+import { parseCamera, parseHeatPeriod, parseMapSearch } from "../src/pages/map/parseMapSearch";
 import { resolveMapSelection } from "../src/pages/map/resolveMapSelection";
 
 const today = "2026-10-26";
@@ -25,6 +29,9 @@ describe("the People page's URL", () => {
       list: null,
       devices: null,
       period: { mode: "day", from: today, to: today },
+      heat: null,
+      heatPeriod: null,
+      camera: null,
       at: null,
     });
   });
@@ -56,6 +63,9 @@ describe("the People page's URL", () => {
       list: null,
       devices: ["a", "b"],
       period: { mode: "range", from: "2026-10-01", to: "2026-10-07" },
+      heat: null,
+      heatPeriod: { from: "2026-10-01", to: "2026-10-07" },
+      camera: null,
       at: null,
     });
     expect(parse("view=heat&date=2026-10-20").period).toEqual({
@@ -221,5 +231,141 @@ describe("the map's selection", () => {
     expect(loaded.selected).toBeNull();
     expect(loaded.filter).toBeNull();
     expect(loaded.own).toEqual({ deviceIds: null });
+  });
+});
+
+describe("Heat in the People page's URL", () => {
+  it("reads the measure, and nothing for what it does not know", () => {
+    expect(parse("view=heat&heat=time").heat).toBe("time");
+    expect(parse("heat=visits").heat).toBe("visits");
+    for (const bad of ["", "speed", "TIME", "points,time"]) {
+      expect(parse(`heat=${bad}`).heat).toBeNull();
+    }
+  });
+
+  it("resolves address, then the browser's choice, then the preference, then points", () => {
+    expect(resolveHeatMeasure("visits", "time", "points")).toBe("visits");
+    expect(resolveHeatMeasure(null, "time", "visits")).toBe("time");
+    expect(resolveHeatMeasure(null, null, "visits")).toBe("visits");
+    expect(resolveHeatMeasure(null, null, undefined)).toBe("points");
+    // An address that is not a measure is no address.
+    expect(resolveHeatMeasure("speed", "time", "visits")).toBe("time");
+  });
+
+  it("reads a period of up to three years, which History would cut to 93 days", () => {
+    expect(parseHeatPeriod(new URLSearchParams("from=2025-11-01&to=2026-10-01"), today)).toEqual({
+      from: "2025-11-01",
+      to: "2026-10-01",
+    });
+    expect(parse("view=history&from=2025-11-01&to=2026-10-01").period.to).toBe("2026-02-01");
+    // Reversed dates are put in order, the future is pulled back to today, three years is the end.
+    expect(parseHeatPeriod(new URLSearchParams("from=2026-10-20&to=2026-10-01"), today)).toEqual({
+      from: "2026-10-01",
+      to: "2026-10-20",
+    });
+    expect(parseHeatPeriod(new URLSearchParams("from=2026-10-01&to=2027-01-01"), today)).toEqual({
+      from: "2026-10-01",
+      to: today,
+    });
+    expect(parseHeatPeriod(new URLSearchParams("from=2020-01-01&to=2026-10-01"), today)).toEqual({
+      from: "2020-01-01",
+      to: "2022-12-31",
+    });
+    for (const half of ["from=2026-10-01", "to=2026-10-01", "from=x&to=y", ""]) {
+      expect(parseHeatPeriod(new URLSearchParams(half), today)).toBeNull();
+    }
+  });
+
+  it("changes the period as a step of its own, keeping the day, and all time drops both", () => {
+    const next = withHeatPeriod(new URLSearchParams("view=heat&date=2026-10-20"), {
+      from: "2026-10-01",
+      to: "2026-10-31",
+    });
+    expect(next.toString()).toBe("view=heat&date=2026-10-20&from=2026-10-01&to=2026-10-31");
+    expect(withHeatPeriod(next, null).toString()).toBe("view=heat&date=2026-10-20");
+  });
+
+  it("takes a period over 93 days along to no other view, and a shorter one along", () => {
+    const long = new URLSearchParams("view=heat&heat=time&from=2026-01-01&to=2026-10-01");
+    expect(withView(long, "history").has("from")).toBe(false);
+    expect(withView(long, "history").has("to")).toBe(false);
+    expect(withView(long, "history").get("heat")).toBe("time");
+    const short = new URLSearchParams("view=heat&from=2026-10-01&to=2026-10-10");
+    expect(withView(short, "history").get("from")).toBe("2026-10-01");
+    // From another view to Heat nothing is dropped.
+    const history = new URLSearchParams("view=history&from=2026-10-01&to=2026-10-31");
+    expect(withView(history, "heat").get("to")).toBe("2026-10-31");
+    // Not dates: left alone.
+    expect(withView(new URLSearchParams("view=heat&from=a&to=b"), "live").get("from")).toBe("a");
+  });
+
+  it("takes the lens off together: measure, period and mode, keeping the rest", () => {
+    const lensed = new URLSearchParams(
+      "view=heat&heat=visits&from=2026-10-01&to=2026-10-31&mode=cycling&devices=a&date=2026-10-02",
+    );
+    expect(withoutLens(lensed).toString()).toBe("view=heat&devices=a&date=2026-10-02");
+  });
+});
+
+describe("the camera of a link", () => {
+  it("reads lon, lat and zoom, within the world", () => {
+    expect(parseCamera("3.7174,51.0543,14.5")).toEqual({ lon: 3.7174, lat: 51.0543, zoom: 14.5 });
+    expect(parseCamera("-180,-85.0511,0")).toEqual({ lon: -180, lat: -85.0511, zoom: 0 });
+    expect(parse("view=heat&c=3.7,51,12").camera).toEqual({ lon: 3.7, lat: 51, zoom: 12 });
+  });
+
+  it("rounds a camera to the precision the address is written in: five decimals, two for the zoom", () => {
+    expect(parseCamera("3.7174449,51.0543051,14.5678")).toEqual({
+      lon: 3.71744,
+      lat: 51.05431,
+      zoom: 14.57,
+    });
+    expect(parse("view=heat&c=3.123456789,51.987654321,12.004").camera).toEqual({
+      lon: 3.12346,
+      lat: 51.98765,
+      zoom: 12,
+    });
+  });
+
+  it("ignores what is not a camera", () => {
+    for (const bad of [
+      null,
+      "",
+      "3.7,51",
+      "3.7,51,12,1",
+      "a,b,c",
+      "181,51,12",
+      "3.7,86,12",
+      "3.7,51,23",
+      "3.7,51,-1",
+      "3.7,51,",
+      "1e3,51,12",
+      "NaN,51,12",
+    ]) {
+      expect(parseCamera(bad), String(bad)).toBeNull();
+    }
+  });
+
+  it("is dropped by itself, keeping the rest", () => {
+    expect(withoutCamera(new URLSearchParams("view=heat&c=3.7,51,12&heat=time")).toString()).toBe(
+      "view=heat&heat=time",
+    );
+  });
+});
+
+describe("the slider's moment and Heat's period", () => {
+  const at = "at=2026-10-02T12:30";
+
+  it("is dropped by another Heat period, by the lens taken off, and by the long period left behind", () => {
+    const heat = `view=heat&from=2026-10-01&to=2026-10-07&${at}`;
+    expect(
+      withHeatPeriod(new URLSearchParams(heat), { from: "2026-09-01", to: "2026-09-30" }).has("at"),
+    ).toBe(false);
+    expect(withHeatPeriod(new URLSearchParams(heat), null).has("at")).toBe(false);
+    expect(withoutLens(new URLSearchParams(`${heat}&heat=time`)).has("at")).toBe(false);
+    const long = new URLSearchParams(`view=heat&from=2026-01-01&to=2026-10-07&${at}`);
+    expect(withView(long, "history").has("at")).toBe(false);
+    // A period History reads stays, with its moment.
+    expect(withView(new URLSearchParams(heat), "history").get("at")).toBe("2026-10-02T12:30");
   });
 });

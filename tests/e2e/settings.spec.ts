@@ -300,9 +300,12 @@ test("the account's preferences are what the map opens with", async ({ page, acc
   await expect(page.getByText("Detail of the tracks saved: Raw.")).toBeAttached();
   await page.getByRole("switch", { name: "Your own activity" }).check();
   await expect(page.getByText("The access log lists your own activity too.")).toBeAttached();
+  // What was not set reads as its default: the heatmap counts points, the paths are coloured by mode.
   expect((await currentUser(page)).preferences).toEqual({
     mapStyle: "dark",
     level: "raw",
+    heat: "points",
+    color: "mode",
     showOwnActivity: true,
   });
 

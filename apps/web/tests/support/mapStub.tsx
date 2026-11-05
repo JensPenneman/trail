@@ -25,7 +25,13 @@ export function MapStub(props: TrailMapProps) {
       data-positions={props.positions?.length ?? 0}
       data-heat={props.heat?.cells.length ?? 0}
       data-fit={props.fit?.key ?? ""}
+      data-fit-bounds={JSON.stringify(props.fit?.bounds ?? null)}
       data-focus={props.focus?.key ?? ""}
+      data-focus-at={JSON.stringify(
+        props.focus === undefined || props.focus === null
+          ? null
+          : [props.focus.lon, props.focus.lat],
+      )}
       data-follow={props.follow?.map((point) => `${point.lon},${point.lat}`).join(";") ?? ""}
       data-dimmed={
         (props.tracks?.filter((track) => track.dimmed === true).length ?? 0) +

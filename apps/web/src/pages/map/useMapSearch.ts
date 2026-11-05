@@ -5,7 +5,10 @@ import {
   withAt,
   withDay,
   withDevices,
+  withHeatPeriod,
   withMoment,
+  withoutCamera,
+  withoutLens,
   withPerson,
   withRange,
   withView,
@@ -33,6 +36,12 @@ export interface MapSearchControls {
   /** History on a day, from another view: one step of the history for both. */
   showHistoryDay: (date: string) => void;
   showRange: (from: string, to: string) => void;
+  /** Heat's period (`null`: all time): a step of its own, keeping the day. */
+  setHeatPeriod: (period: { from: string; to: string } | null) => void;
+  /** Takes the lens off Heat (measure, period, mode), in place of its entry. */
+  clearLens: () => void;
+  /** The camera of a link is the map's own from here on: drops `c`, in place of its entry. */
+  releaseCamera: () => void;
   /** The slider's moment, in place of the entry (it follows the slider; nothing to go Back to). */
   setAt: (at: string) => void;
   /** A day and a moment on it, in place of the entry: where playback paused, ended or was left. */
@@ -123,6 +132,17 @@ export function useMapSearch(): MapSearchControls {
     (from: string, to: string) => update((current) => withRange(current, from, to)),
     [update],
   );
+  const setHeatPeriod = useCallback(
+    (period: { from: string; to: string } | null) =>
+      update((current) => withHeatPeriod(current, period)),
+    [update],
+  );
+  const clearLens = useCallback(() => update((current) => withoutLens(current), true), [update]);
+  const releaseCamera = useCallback(() => {
+    // The address as it is now: a camera already dropped is not dropped again.
+    if (!latest.current.has("c")) return;
+    update((current) => withoutCamera(current), true);
+  }, [update]);
   const setAt = useCallback(
     (at: string) => update((current) => withAt(current, at), true),
     [update],
@@ -141,6 +161,9 @@ export function useMapSearch(): MapSearchControls {
     showDay,
     showHistoryDay,
     showRange,
+    setHeatPeriod,
+    clearLens,
+    releaseCamera,
     setAt,
     showMoment,
   };

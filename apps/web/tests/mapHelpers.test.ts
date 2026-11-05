@@ -23,6 +23,25 @@ describe("map helpers", () => {
       bbox: "3.512,50.98,3.721,51.06",
       zoom: 12,
       deviceIds: null,
+      heat: "points",
+      from: null,
+      to: null,
+    });
+    // A period belongs to the measures that have one; points are all time.
+    const view = { bounds: [3.5, 51, 3.7, 51.1], zoom: 12 } as const;
+    const period = { from: "2026-10-01", to: "2026-10-31" };
+    expect(heatmapParamsFor(view, null, { heat: "time", period })).toMatchObject({
+      heat: "time",
+      ...period,
+    });
+    expect(heatmapParamsFor(view, null, { heat: "visits", period: null })).toMatchObject({
+      heat: "visits",
+      from: null,
+      to: null,
+    });
+    expect(heatmapParamsFor(view, null, { heat: "points", period })).toMatchObject({
+      from: null,
+      to: null,
     });
     expect(heatmapParamsFor({ bounds: [-200, -95, 200, 95], zoom: 0.4 }, ["a"]).bbox).toBe(
       "-180,-90,180,90",

@@ -1,9 +1,5 @@
-import {
-  type InsightsBucket,
-  type InsightsPeriod,
-  insightsMaxYears,
-  lastInsightsDay,
-} from "@trail/contracts/insights";
+import type { InsightsBucket, InsightsPeriod } from "@trail/contracts/insights";
+import { insightsMaxYears, lastInsightsDay } from "@trail/contracts/period";
 import { HttpError } from "../http/httpError";
 import { addDays, daysBetween, isoWeekday } from "../lib/calendarDate";
 

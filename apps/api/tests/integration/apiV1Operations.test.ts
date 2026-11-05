@@ -4,6 +4,7 @@ import { tokenVerificationSchema } from "@trail/contracts/apiToken";
 import { deviceResponseSchema } from "@trail/contracts/device";
 import { deviceUpdateResponseSchema } from "@trail/contracts/devicePublic";
 import { apiErrorSchema } from "@trail/contracts/errors";
+import { heatmapResponseSchema } from "@trail/contracts/heatmap";
 import { heatmapPublicResponseSchema } from "@trail/contracts/heatmapPublic";
 import { locationsPageSchema } from "@trail/contracts/location";
 import { pointPageSchema, pointSchema } from "@trail/contracts/locationPublic";
@@ -13,6 +14,7 @@ import { visitsPublicResponseSchema } from "@trail/contracts/visitPublic";
 import { sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { tileCentre } from "../../src/heatmap/tileMath";
 import { bearer, createApiToken } from "../support/apiTokenFlows";
 import { type Agent, agentFor, signUp } from "../support/authFlows";
 import { createDevice, postOverland } from "../support/deviceFlows";
@@ -461,9 +463,18 @@ describe("history", () => {
     const heatmap = heatmapPublicResponseSchema.parse(
       (await as("full", `${apiPaths.v1.heatmap}?${query(viewport)}`).expect(200)).body,
     );
-    expect(heatmap).toEqual(
+    // The dashboard's tiles, as the centres the public operation has always answered.
+    const dashboard = heatmapResponseSchema.parse(
       (await owner.get(`${apiPaths.heatmap}?${query(viewport)}`).expect(200)).body,
     );
+    expect(heatmap).toEqual({
+      cellZoom: dashboard.cellZoom,
+      cells: dashboard.cells.map(([x, y, count]) => {
+        const [lon, lat] = tileCentre(x, y, dashboard.cellZoom);
+        return [Math.round(lon * 1e6) / 1e6, Math.round(lat * 1e6) / 1e6, count];
+      }),
+      truncated: dashboard.truncated,
+    });
     expect(heatmap.cells.reduce((sum, cell) => sum + cell[2], 0)).toBe(31 + 1200);
   });
 
