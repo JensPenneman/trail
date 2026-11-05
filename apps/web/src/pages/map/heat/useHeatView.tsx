@@ -26,6 +26,9 @@ const mapLabels: Record<HeatMeasure, string> = {
   points: "Heatmap of all recorded points in view: everywhere your devices have been.",
   time: "Heatmap of time spent at places in view: where you stayed longest.",
   visits: "Heatmap of visits to places in view: where you stopped most often.",
+  moving: "Heatmap of time on the move in view: where you travelled most.",
+  speed: "Heatmap of average speed in view: where you moved fastest on average.",
+  topspeed: "Heatmap of top speed in view: the fastest you went.",
 };
 
 export interface HeatViewInput {
