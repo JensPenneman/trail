@@ -807,6 +807,16 @@
           },
           {
             "in": "query",
+            "name": "values",
+            "schema": {
+              "description": "Comma-separated, at most three of `speed`, `altitude` and `accuracy`: each point then carries them after `t`, in this order. `speed` is the recorded speed on `raw` and the averaged one on the other levels; `altitude` and `accuracy` are the fix's own. Left out: points are `[lon, lat, t]`.",
+              "example": "speed,altitude",
+              "type": "string"
+            },
+            "description": "Comma-separated, at most three of `speed`, `altitude` and `accuracy`: each point then carries them after `t`, in this order. `speed` is the recorded speed on `raw` and the averaged one on the other levels; `altitude` and `accuracy` are the fix's own. Left out: points are `[lon, lat, t]`."
+          },
+          {
+            "in": "query",
             "name": "maxPoints",
             "schema": {
               "default": 8000,
@@ -5016,6 +5026,17 @@
             "description": "The level asked for.",
             "$ref": "#/components/schemas/ProcessingLevel"
           },
+          "values": {
+            "description": "The values each point carries after `t`, in order (the query's `values`); left out when none were asked for.",
+            "example": [
+              "speed",
+              "altitude"
+            ],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LevelValue"
+            }
+          },
           "availableLevel": {
             "description": "The level every point of the response reached. Lower than `level` while points wait for processing or map data.",
             "$ref": "#/components/schemas/ProcessingLevel"
@@ -5062,6 +5083,16 @@
         ],
         "additionalProperties": false,
         "description": "Tracks at a level of calculation."
+      },
+      "LevelValue": {
+        "type": "string",
+        "enum": [
+          "speed",
+          "altitude",
+          "accuracy"
+        ],
+        "description": "`speed` in m/s, `altitude` in metres and `accuracy` (the horizontal accuracy of the fix) in metres.",
+        "example": "speed"
       },
       "TrackSegment": {
         "type": "object",
@@ -5250,10 +5281,14 @@
             "maximum": 9007199254740991
           }
         ],
-        "items": false,
+        "items": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
         "minItems": 3,
-        "maxItems": 3,
-        "description": "`[lon, lat, t]`: WGS84 degrees and the time in epoch seconds. On the mapped level the way's shape between two recorded points carries interpolated times.",
+        "description": "`[lon, lat, t]`: WGS84 degrees and the time in epoch seconds, then — for `values` on the query — those values in the order asked for, `null` where a point has none. On the mapped level the way's shape between two recorded points carries interpolated times and the speed of the point it leads to.",
         "example": [
           3.7104,
           51.0362,

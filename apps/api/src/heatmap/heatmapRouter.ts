@@ -1,5 +1,9 @@
 import { apiPaths } from "@trail/contracts/apiPaths";
-import { type HeatmapResponse, heatmapQuerySchema } from "@trail/contracts/heatmap";
+import {
+  type HeatmapResponse,
+  heatMovementMeasures,
+  heatmapQuerySchema,
+} from "@trail/contracts/heatmap";
 import express, { type Router } from "express";
 import type { AppContext } from "../appContext";
 import { requireAuth } from "../auth/requestAuth";
@@ -13,9 +17,11 @@ import { insightsScope } from "../insights/insightsScope";
 import { insightsValidator } from "../insights/insightsValidator";
 import { hasPendingWork } from "../processing/processingQueue";
 import { chooseCellZoom } from "./chooseCellZoom";
+import { findDayCells } from "./findDayCells";
 import { findHeatCells } from "./findHeatCells";
 import { findStopCells } from "./findStopCells";
 import { heatCellCap } from "./heatCellCap";
+import { heatDaysMarked, heatDaysMissing, heatDaysValidator } from "./heatDaysValidator";
 import { heatValidator } from "./heatValidator";
 
 /**
@@ -46,8 +52,53 @@ export function heatmapRouter(ctx: AppContext): Router {
         const body: HeatmapResponse = {
           heat: "points",
           ...found,
+          mode: null,
           period: null,
           pending: false,
+        };
+        return body;
+      });
+    } else if (heatMovementMeasures.has(query.heat)) {
+      // Time on the move, speed and top speed: the per-day cells, of one mode or every one.
+      const scope = await insightsScope(
+        ctx.db,
+        auth,
+        { from: query.from, to: query.to, devices: query.deviceIds },
+        undefined,
+        { hours: false },
+      );
+      const range = { startMs: scope.start.getTime(), endMs: scope.end.getTime() };
+      const etag = weakEtag(auth.user.id, apiPaths.heatmap, [
+        {
+          bbox: query.bbox,
+          zoom: query.zoom,
+          heat: query.heat,
+          mode: query.mode ?? null,
+          period: scope.period,
+        },
+        await insightsValidator(ctx.db, scope, range),
+        await heatDaysValidator(ctx.db, scope.deviceIds, scope.period),
+      ]);
+      status = await answerConditionally(req, res, etag, async () => {
+        const found = await findDayCells(ctx.db, {
+          deviceIds: scope.deviceIds,
+          heat: query.heat as "moving" | "speed" | "topspeed",
+          mode: query.mode ?? null,
+          bbox: query.bbox,
+          cellZoom,
+          from: scope.period.from,
+          to: scope.period.to,
+          limit,
+        });
+        const body: HeatmapResponse = {
+          heat: query.heat,
+          ...found,
+          mode: query.mode ?? null,
+          period: { from: scope.period.from, to: scope.period.to },
+          pending:
+            (await hasPendingWork(ctx.db, scope.deviceIds, scope.start, scope.end)) ||
+            (await heatDaysMarked(ctx.db, scope.deviceIds, scope.period)) > 0 ||
+            (await heatDaysMissing(ctx.db, scope.deviceIds, scope.period, scope.timezone)),
         };
         return body;
       });
@@ -82,6 +133,7 @@ export function heatmapRouter(ctx: AppContext): Router {
         const body: HeatmapResponse = {
           heat: query.heat,
           ...found,
+          mode: null,
           period: { from: scope.period.from, to: scope.period.to },
           pending: await hasPendingWork(ctx.db, scope.deviceIds, scope.start, scope.end),
         };

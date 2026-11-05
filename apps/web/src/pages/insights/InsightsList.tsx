@@ -12,6 +12,7 @@ import "./InsightsList.css";
 const patterns = [
   { path: "/insights/time", label: "When you travel", icon: "calendar", tone: "blue" },
   { path: "/insights/roads", label: "Roads", icon: "route", tone: "orange" },
+  { path: "/insights/places", label: "Places", icon: "pin", tone: "red" },
 ] as const;
 
 /**
@@ -87,7 +88,12 @@ export function InsightsList({ placement }: { placement: "root" | "sidebar" }) {
             icon={pattern.icon}
             tone={pattern.tone}
             label={pattern.label}
-            current={path === pattern.path}
+            current={
+              path === pattern.path ||
+              // A place and its days belong to Places.
+              (pattern.path === "/insights/places" &&
+                (path === "/insights/place" || path.startsWith("/insights/place/")))
+            }
             returnFocus={returnFocus}
           />
         ))}

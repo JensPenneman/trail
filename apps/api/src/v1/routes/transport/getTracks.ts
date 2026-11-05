@@ -35,6 +35,7 @@ export const getTracks = defineRoute(
       deviceIds,
       level: query.level,
       maxPoints: query.maxPoints,
+      values: query.values ?? [],
     };
     // The raw level needs nothing of processing.
     const parts = query.level === "raw" ? "raw" : "processed";
@@ -46,6 +47,7 @@ export const getTracks = defineRoute(
       to,
       level: query.level,
       maxPoints: query.maxPoints,
+      values: query.values ?? [],
     });
     return { status: 200, body: { ...tracks, stamps: dayStampsOf(days) }, etag };
   },

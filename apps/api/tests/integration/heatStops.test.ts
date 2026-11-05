@@ -240,7 +240,8 @@ describe("heat=time and heat=visits", () => {
       { heat: "points" },
       { heat: "time", from: "2026-10-25", to: "2026-10-21" },
       { heat: "visits", from: "2020-01-01", to: "2026-10-21" },
-      { heat: "speed" },
+      { heat: "bogus" },
+      { heat: "time", mode: "car" },
     ]) {
       await heat(bad).expect(400);
     }
