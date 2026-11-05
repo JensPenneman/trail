@@ -6,19 +6,20 @@ import { transportModeInfo } from "../../transport/transportModes";
 import { ErrorState } from "../../ui/ErrorState";
 import { LoadingBlock } from "../../ui/LoadingBlock";
 import { Skeleton } from "../../ui/Skeleton";
-import { InsightsFrame } from "./InsightsFrame";
-import { periodPhrase } from "./insightsSearch";
-import { ModeSwitch } from "./ModeSwitch";
-import { useInsightsSearch } from "./useInsightsSearch";
+import { InsightsScreen } from "./InsightsScreen";
+import { insightsRootPath } from "./insightsLevels";
+import { insightsLink } from "./insightsLinks";
+import { useInsightsPeriod } from "./useInsightsPeriod";
 
 const pad = (value: number) => String(value).padStart(2, "0");
 
 /**
  * When you travel (`/insights/time`): the hours of the week you spend on the
- * move — every mode, or the one chosen — as a grid of weekdays by hours.
+ * move — every mode, or the one the address names — as a grid of weekdays by
+ * hours.
  */
-export function InsightsTimePage() {
-  const state = useInsightsSearch();
+export function WhenScreen() {
+  const state = useInsightsPeriod();
   const format = useFormatter();
   const time = useInsightsTime(state.query(true));
   const data = time.data;
@@ -51,17 +52,16 @@ export function InsightsTimePage() {
         : `Most often on ${rows[busiest.row]?.label ?? ""} at ${pad(busiest.hour)}:00 (${format.duration(busiest.value)}); ${format.duration(total)} on the move in all.`;
     return { rows, columns, values, summary };
   }, [data, format]);
-  const mode = state.search.mode;
+  const mode = state.mode;
   const subject =
     mode === null ? "on the move" : `by ${transportModeInfo[mode].label.toLowerCase()}`;
 
   return (
-    <InsightsFrame
+    <InsightsScreen
       state={state}
       title="When you travel"
       documentTitle="When you travel · Insights"
-      description={`The hours of the week you spend ${subject}, in ${periodPhrase(state.search, format)}.`}
-      filter={<ModeSwitch value={mode} modes={data?.modes ?? []} onChange={state.chooseMode} />}
+      up={{ to: insightsLink(insightsRootPath, state.params), label: "Insights", always: false }}
       pending={data?.pending ?? false}
       updating={time.isPlaceholderData}
     >
@@ -88,6 +88,6 @@ export function InsightsTimePage() {
           categoryLabel="Day"
         />
       )}
-    </InsightsFrame>
+    </InsightsScreen>
   );
 }
