@@ -57,6 +57,7 @@ export function parseHeatPeriod(
   if (a === null || b === null) return null;
   const [from, to] = a <= b ? [a, b] : [b, a];
   const last = lastInsightsDay(from);
+  // biome-ignore lint/complexity/useMathMinMax: dates are strings, which Math.min cannot compare
   return { from, to: to > last ? last : to };
 }
 

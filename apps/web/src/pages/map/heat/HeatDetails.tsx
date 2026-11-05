@@ -12,6 +12,7 @@ import { LoadingBlock } from "../../../ui/LoadingBlock";
 import { PlainList } from "../../../ui/PlainList";
 import { SectionTitle } from "../../../ui/SectionTitle";
 import { Skeleton } from "../../../ui/Skeleton";
+import { valueText } from "./heatMeasures";
 import "./HeatView.css";
 
 /** The stats API allows 400 days per request. */
@@ -23,6 +24,8 @@ interface HeatDetailsProps {
   deviceIds: readonly string[] | null;
   today: string;
   heatmap: UseQueryResult<HeatmapResponse>;
+  /** The period the answer covers in words, for the stop measures; null for points. */
+  periodText: string | null;
   /** Moves the map to a busy place. */
   onShow: (place: { lon: number; lat: number; zoom: number }) => void;
 }
@@ -34,7 +37,14 @@ interface HeatDetailsProps {
  * busiest places, is said at the map's foot, whoever is selected.) It is rendered only while the group is open, so the
  * 12-month request is made only then.
  */
-export function HeatDetails({ devices, deviceIds, today, heatmap, onShow }: HeatDetailsProps) {
+export function HeatDetails({
+  devices,
+  deviceIds,
+  today,
+  heatmap,
+  periodText,
+  onShow,
+}: HeatDetailsProps) {
   const format = useFormatter();
   const totalsId = useId();
   const busiestId = useId();
@@ -56,7 +66,10 @@ export function HeatDetails({ devices, deviceIds, today, heatmap, onShow }: Heat
   );
   const totalPoints = selected.reduce((sum, device) => sum + device.counts.total, 0);
   const busiest = useMemo(
-    () => (heatmap.data === undefined ? [] : heatPlaces(heatmap.data, 5)),
+    () =>
+      heatmap.data === undefined
+        ? []
+        : heatPlaces(heatmap.data, 5).map(({ lon, lat, value }) => ({ lon, lat, count: value })),
     [heatmap.data],
   );
 
@@ -111,15 +124,18 @@ export function HeatDetails({ devices, deviceIds, today, heatmap, onShow }: Heat
           </LoadingBlock>
         ) : busiest.length === 0 ? (
           <p className="muted">
-            Nothing recorded in this part of the map. Zoom out or move the map to where you have
-            been.
+            {heatmap.data.heat === "points"
+              ? "Nothing recorded in this part of the map. Zoom out or move the map to where you have been."
+              : `No stops in this part of the map${periodText === null ? "" : ` for ${periodText}`}. Zoom out or move the map to where you have been.`}
           </p>
         ) : (
           <PlainList ordered className="row-list card card--flush">
-            {busiest.map(({ lon, lat, value: count }) => (
+            {busiest.map(({ lon, lat, count }) => (
               <li key={`${lon},${lat}`} className="row-list__item">
                 <div className="row-list__main">
-                  <p className="row-list__title">{format.count(count)} points</p>
+                  <p className="row-list__title">
+                    {valueText(heatmap.data?.heat ?? "points", count, format)}
+                  </p>
                   <p className="row-list__meta">{format.coordinates(lat, lon)}</p>
                 </div>
                 <Button

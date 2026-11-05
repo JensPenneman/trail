@@ -51,7 +51,7 @@ test("Live, History and Heat share one map and keep their place in the URL", asy
   await openGroup(page, "Heat: totals, busiest places");
   await expect(
     page.getByRole("region", { name: "Busiest places in view" }).getByRole("listitem").first(),
-  ).toContainText(/\d+ points/);
+  ).toContainText(/\d+ points?/);
   expect(await sameCanvas()).toBe(true);
 
   // Back goes through the views again, on the same map.

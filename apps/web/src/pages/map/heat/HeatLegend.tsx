@@ -1,60 +1,71 @@
-import { useId } from "react";
+import type { HeatMeasure } from "@trail/contracts/heatmap";
+import type { ReactNode } from "react";
 import { useFormatter } from "../../../format/useFormatter";
 import { heatRamp } from "../../../map/heatRamp";
 import { type HeatScale, heatShadeOf } from "../../../map/heatScale";
-import { PlainList } from "../../../ui/PlainList";
-import "./HeatLegend.css";
+import { MapKey } from "../MapKey";
+import { classLabels, heatMeasureInfo } from "./heatMeasures";
 
 interface HeatLegendProps {
-  /** The scale the map colours its squares with now. */
-  scale: HeatScale;
+  /** The element id the map's canvas describes itself by. */
+  id: string;
+  /** What the answer on screen counts (its own, not the one asked for). */
+  heat: HeatMeasure;
+  /** The scale the map colours its squares with now; null while the answer is on its way. */
+  scale: HeatScale | null;
+  /** What the answer covers, in words: "All time", "Since 4 Nov 2023", "1–31 Oct 2026". */
+  detail: string | null;
   /** Whether the map is dark (dark or satellite): the swatches are the colours drawn on it. */
   dark: boolean;
+  /** What to say when there are no classes: loading, or nothing in view. */
+  status: string | null;
+  /** The answer is incomplete (cut at the ceiling) or recent days are still being worked out. */
+  truncated: boolean;
+  pending: boolean;
+  /** A way to ask again, when the answer could not be loaded. */
+  retry?: ReactNode;
 }
 
 /**
- * The key of the heatmap: every colour on the map with the counts it stands
- * for, from the fewest points to the most. "Rarely" and "Often" are only a
- * visual cue; the counts say it in words.
+ * The key of the heatmap: every colour on the map with what it stands for, from least to most,
+ * for the measure on screen and its period. The ends are a visual cue; the classes say it in words.
  */
-export function HeatLegend({ scale, dark }: HeatLegendProps) {
+export function HeatLegend({
+  id,
+  heat,
+  scale,
+  detail,
+  dark,
+  status,
+  truncated,
+  pending,
+  retry,
+}: HeatLegendProps) {
   const format = useFormatter();
-  const titleId = useId();
+  const info = heatMeasureInfo[heat];
   const ramp = dark ? heatRamp.dark : heatRamp.light;
-  const classes = scale.starts.length;
-  if (classes === 0) return null;
+  const classes = scale?.starts.length ?? 0;
+  const labels = scale === null ? [] : classLabels(heat, scale.starts, format);
   return (
-    <div className="map-heat-legend">
-      <p className="map-heat-legend__title" id={titleId}>
-        Points recorded in each square
-      </p>
-      <PlainList className="map-heat-legend__scale" labelledBy={titleId}>
-        <li className="map-heat-legend__end" aria-hidden="true">
-          Rarely
-        </li>
-        {scale.starts.map((start, index) => {
-          const next = scale.starts[index + 1];
-          const label =
-            next === undefined
-              ? `${format.count(start)} or more`
-              : next - 1 === start
-                ? format.count(start)
-                : `${format.count(start)}–${format.count(next - 1)}`;
-          return (
-            <li key={start} className="map-heat-legend__item">
-              <span
-                className="map-heat-legend__swatch"
-                style={{ backgroundColor: ramp[heatShadeOf(index, classes) - 1] }}
-                aria-hidden="true"
-              />
-              {label}
-            </li>
-          );
-        })}
-        <li className="map-heat-legend__end" aria-hidden="true">
-          Often
-        </li>
-      </PlainList>
-    </div>
+    <MapKey
+      id={id}
+      title={info.title}
+      detail={detail}
+      items={
+        classes === 0
+          ? null
+          : labels.map((label, index) => ({
+              label,
+              color: ramp[heatShadeOf(index, classes) - 1] ?? "",
+            }))
+      }
+      ends={info.ends}
+      status={status}
+      notes={[
+        ...(truncated ? ["Busiest places only: zoom in to see every place"] : []),
+        ...(pending ? ["Recent days are still being worked out"] : []),
+        ...(retry === null || retry === undefined ? [] : [retry]),
+      ]}
+    />
   );
 }

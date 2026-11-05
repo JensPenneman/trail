@@ -50,7 +50,7 @@ test("nothing scrolls sideways on a 320 px wide screen", async ({ page, account 
   ] as const) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1, name: heading, exact: true })).toBeVisible();
-    await expect(page.getByText(loaded).first()).toBeVisible();
+    await expect(page.getByText(loaded).locator("visible=true").first()).toBeVisible();
     expect(await overflow(page), path).toBe(0);
   }
   await page.goto("/settings/devices?add=1");
@@ -105,7 +105,7 @@ test("the People page with someone who shares fits a 320 px wide screen", async 
         ? page.getByRole("list", { name: "Sharing with you", exact: true })
         : page.getByRole("region", { name: detail, exact: true }),
     ).toBeVisible();
-    await expect(page.getByText(loaded).first()).toBeVisible();
+    await expect(page.getByText(loaded).locator("visible=true").first()).toBeVisible();
     // The wide parts are in the folded groups: open them all before measuring.
     const folded = page.locator(".settings-group__toggle[aria-expanded=false]");
     const groups = await folded.count();

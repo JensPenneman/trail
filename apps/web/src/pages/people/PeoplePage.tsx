@@ -12,6 +12,7 @@ import { DocumentTitle } from "../../app/DocumentTitle";
 import { useStickyBanner } from "../../app/StickyBannerContext";
 import { useSessionUser } from "../../app/useSessionUser";
 import { useDeviceColors } from "../../devices/useDeviceColors";
+import { cameraDiffers } from "../../map/cameraDiffers";
 import { LazyTrailMap } from "../../map/LazyTrailMap";
 import type { MapViewState } from "../../map/mapTypes";
 import { useMapStyle } from "../../map/useMapStyle";
@@ -28,6 +29,8 @@ import { Icon } from "../../ui/Icon";
 import { useMediaQuery } from "../../ui/useMediaQuery";
 import { useScrollableFocus } from "../../ui/useScrollableFocus";
 import { DeviceFilter, type DeviceFilterGroup } from "../map/DeviceFilter";
+import { HeatOptions } from "../map/heat/HeatOptions";
+import { useHeatChoice } from "../map/heat/useHeatChoice";
 import { useHeatView } from "../map/heat/useHeatView";
 import { useHistoryView } from "../map/history/useHistoryView";
 import { useLiveView } from "../map/live/useLiveView";
@@ -78,9 +81,13 @@ export function PeoplePage() {
     showDay,
     showHistoryDay,
     showRange,
+    setHeatPeriod,
+    clearLens,
+    releaseCamera,
     setAt,
     showMoment,
   } = useMapSearch();
+  const { heat: heatMeasure, setHeat } = useHeatChoice();
   const { level, setLevel } = useTrackLevel();
   const mapStyle = useMapStyle();
   const config = useConfig();
@@ -150,6 +157,20 @@ export function PeoplePage() {
   const [openedOn] = useState(view);
   const [leftFirstView, setLeftFirstView] = useState(false);
   if (!leftFirstView && view !== openedOn) setLeftFirstView(true);
+  // A link's camera (`?c=`) is where the map starts, once: the view the page opened on does not
+  // fit (its key changes as its data arrives) until the map has left the camera; another view
+  // frames what it shows as always.
+  const [camera] = useState(search.camera);
+  const [cameraReleased, setCameraReleased] = useState(false);
+  // The view the address names, as the page opened: what the page shows may settle after it.
+  const [loadedView] = useState(search.view);
+  const initialView = useMemo(
+    () =>
+      camera === null
+        ? undefined
+        : { center: [camera.lon, camera.lat] as const, zoom: camera.zoom },
+    [camera],
+  );
 
   const everyone = people.data ?? [];
   const shared = {
@@ -184,18 +205,34 @@ export function PeoplePage() {
     selection,
     devices,
     viewport,
-    framesCamera: openedOn === "heat" && !leftFirstView,
+    framesCamera: openedOn === "heat" && !leftFirstView && camera === null,
     dark: mapStyle.dark,
     today,
+    measure: heatMeasure,
+    period: search.heatPeriod,
+    onClearLens: () => {
+      clearLens();
+      // The chip goes with it: focus stays on the map's controls instead of falling to the page.
+      stage.current?.querySelector<HTMLButtonElement>(".map-options__toggle")?.focus();
+    },
   });
   const content = view === "live" ? live : view === "history" ? history : heat;
   // The map fits what it shows under the controls: below the bar, and left of the zoom column on
   // phones, where the bar is as wide as the map less that column.
+  const fitHeld = camera !== null && !cameraReleased && search.view === loadedView;
+  const { fit: contentFit, ...mapProps } = content.map;
+  // The key held back counts as fitted when the hold ends: the map is where the person put it, so
+  // only another key (another day, another view) frames anything later.
+  const [heldFitKey, setHeldFitKey] = useState<string | null>(null);
+  const holdingKey = fitHeld ? (contentFit?.key ?? null) : null;
+  useEffect(() => {
+    if (holdingKey !== null) setHeldFitKey(holdingKey);
+  }, [holdingKey]);
   const fit =
-    content.map.fit === undefined
+    contentFit === undefined || fitHeld || contentFit.key === heldFitKey
       ? undefined
       : {
-          ...content.map.fit,
+          ...contentFit,
           inset: { top: overlayEnd + 8, right: wide ? 0 : 64 },
         };
 
@@ -288,6 +325,18 @@ export function PeoplePage() {
     if (Math.min(rect.bottom, sheetTop) - rect.top >= 44) return;
     window.scrollTo({ top: 0, behavior: reducedMotion ? "instant" : "smooth" });
   };
+  // The first view the map reports that is not the camera of the link frees the address of it.
+  const cameraLeft = useRef(false);
+  const onViewChange = useCallback(
+    (next: MapViewState) => {
+      setViewport(next);
+      if (camera === null || cameraLeft.current || !cameraDiffers(camera, next)) return;
+      cameraLeft.current = true;
+      setCameraReleased(true);
+      releaseCamera();
+    },
+    [camera, releaseCamera],
+  );
   const stage = useRef<HTMLDivElement | null>(null);
   const onStageFocus = useEffectEvent(lowerSheet);
   useEffect(() => {
@@ -389,6 +438,15 @@ export function PeoplePage() {
         choices={mapStyle.choices}
         onChange={mapStyle.setChoice}
       />
+      {view === "heat" ? (
+        <HeatOptions
+          heat={heatMeasure}
+          onHeat={setHeat}
+          period={search.heatPeriod}
+          onPeriod={setHeatPeriod}
+          today={today}
+        />
+      ) : null}
       {transport === null ? null : (
         <div className="map-page__level">
           <p className="map-options__label" aria-hidden="true">
@@ -437,12 +495,13 @@ export function PeoplePage() {
         <div className="map-page__canvas">
           {mapStyle.style === null ? null : (
             <LazyTrailMap
-              {...content.map}
+              {...mapProps}
               mapStyle={mapStyle.style}
               dark={mapStyle.dark}
               notice={mapStyle.notice}
               {...(fit === undefined ? {} : { fit })}
-              onViewChange={setViewport}
+              {...(initialView === undefined ? {} : { initialView })}
+              onViewChange={onViewChange}
               // One finger pans: on phones the page scrolls through the sheet, not the map.
               cooperativeGestures={false}
             />

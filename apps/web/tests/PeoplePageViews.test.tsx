@@ -240,9 +240,8 @@ describe("the People page, Heat", () => {
 describe("the People page, Heat, places from tiles", () => {
   it("lists the busiest places at the centres of their tiles and frames the camera on them", async () => {
     mockApi(standardRoutes());
-    renderPage(<PeoplePage />, { url: "/?view=heat&person=me", user });
-    // The busiest places are in Me's Heat group, which is folded until it is opened.
     const person = userEvent.setup();
+    renderPage(<PeoplePage />, { url: "/?view=heat&person=me", user });
     await openGroup(person, "Heat: totals, busiest places");
     const busiest = await screen.findByRole("region", { name: "Busiest places in view" });
     // The fixture's tiles of zoom 15 decode to these centres, busiest first: a tile read as a

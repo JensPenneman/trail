@@ -87,6 +87,18 @@ export const durationLadders: readonly HeatLadder[] = [
   fixed([minute, hour, day, week]),
 ];
 
+/** Speeds in cm/s of round km/h: 1, 2, 3, 5, 8, 10, 15, 20, 30, 40, 50, 70, 100, 150, 200 km/h. */
+const kmh = (values: readonly number[]): readonly number[] =>
+  values.map((value) => Math.round((value * 100) / 3.6));
+
+/** Speeds (cm/s), the finest series that fits six classes down to one that always does. */
+export const speedLadders: readonly HeatLadder[] = [
+  fixed(kmh([1, 2, 3, 5, 8, 10, 15, 20, 30, 40, 50, 70, 100, 150, 200])),
+  fixed(kmh([1, 3, 10, 30, 70, 150])),
+  fixed(kmh([1, 10, 50, 150])),
+  fixed(kmh([1, 100])),
+];
+
 /**
  * The classes for the counts of the cells in view (docs/architecture.md §14):
  * from the smallest count up to the busiest few per cent, the classes start

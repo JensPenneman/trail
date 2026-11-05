@@ -45,7 +45,7 @@ test("Heat draws the heatmap of every point and lists the busiest places", async
   const busiest = page
     .getByRole("region", { name: "Busiest places in view" })
     .getByRole("listitem");
-  await expect(busiest.first()).toContainText(/\d+ points/);
+  await expect(busiest.first()).toContainText(/\d+ points?/);
   await expect(
     fact(page.getByRole("region", { name: "Totals", exact: true }), "Points"),
   ).toHaveText("30");

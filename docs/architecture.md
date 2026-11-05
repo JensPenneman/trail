@@ -3026,8 +3026,29 @@ count among them, since they lead to signed-in pages.
     runs (`followCamera.ts`).
   - **Heat** — heatmap (`/api/heatmap` — `heat=points|time|visits`, `?heat=`
     in the address, read by `useHeatChoice` like the level — the address ›
-    this browser › the preference `heat` › points; the view still asks for
-    points, its controls for the other measures follow in the UI change; a period of the stop measures is `?from=`
+    this browser › the preference `heat` › points; the view asks for it. Map
+    options in Heat hold **Heat by** (Points recorded · Time spent at places ·
+    Visits to places) and, for the stop measures, **Period** (All time · Last 7
+    days · Last 30 days · Last 12 months · Custom period…, which opens From, To
+    and Show period with its mistakes said: From after To, over three years;
+    a later day is today; a preset shows when the address' dates match it,
+    else "Custom: 3 Oct – 2 Nov"). A period filtering the answer shows a chip
+    in Heat's controls row ("October 2026", "2026", "1 Oct – 15 Oct 2026")
+    whose ✕, named "Show all time", takes `heat`, `from` and `to` off the
+    address in place of its entry, so Back still returns to the Insights page
+    that sent one here. The key is a titled section over the map's bottom-left
+    corner (`MapKey`, the map's canvas described by it): the measure's title,
+    what it covers ("Since 4 Nov 2023", "1–31 Oct 2026"), its classes as a list
+    named by the title in words ("under 5 min", "5–15 min", "1 day or more" for
+    time), "Loading…" until an answer for this measure and period is in,
+    "Nothing in view for this period", "Recent days are still being worked
+    out", "Busiest places only: zoom in to see every place" when the ceiling cut
+    the cells, or "The heatmap could not be loaded" with Retry. A link's
+    camera `?c=lon,lat,zoom` starts the map there and holds back the first fit;
+    the address drops it, in place of its entry, with the first view that is
+    off it by a hundredth of a zoom or two pixels. The busiest places follow the
+    measure ("3 hr 20 min", "12 visits"). Settings › Preferences has the
+    rows "Heat by" and "Colour paths by"; a period of the stop measures is `?from=`
     and `?to=`, shared with History, and a period longer than 93 days stays
     behind when History opens; `?c=lon,lat,zoom` is a camera a link names,
     read into `MapSearch.camera`; the cells are `[x, y, value]` tiles, packed

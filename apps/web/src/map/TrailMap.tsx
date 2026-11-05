@@ -74,6 +74,8 @@ export interface TrailMapProps {
   /** The camera moves to this point once per `key` (a key shown again does not move it again). */
   focus?: { key: string; lon: number; lat: number; zoom: number } | null;
   initialView?: { center: readonly [number, number]; zoom: number };
+  /** The id of the element that describes the map (a key), for assistive technology. */
+  describedBy?: string;
   onViewChange?: (view: MapViewState) => void;
   /** Two-finger pan on touch screens, for maps embedded in a scrolling page (may change). */
   cooperativeGestures?: boolean;
@@ -167,6 +169,7 @@ export function TrailMap({
   follow,
   focus,
   initialView,
+  describedBy,
   onViewChange,
   cooperativeGestures = false,
   notice = null,
@@ -306,6 +309,14 @@ export function TrailMap({
   useEffect(() => {
     map?.getCanvas().setAttribute("aria-label", label);
   }, [map, label]);
+
+  // The key (or whatever else explains the map) is what the canvas is described by.
+  useEffect(() => {
+    const canvas = map?.getCanvas();
+    if (canvas === undefined) return;
+    if (describedBy === undefined) canvas.removeAttribute("aria-describedby");
+    else canvas.setAttribute("aria-describedby", describedBy);
+  }, [map, describedBy]);
 
   useEffect(() => {
     if (map !== null && styleVersion > 0 && styleReady.current)
