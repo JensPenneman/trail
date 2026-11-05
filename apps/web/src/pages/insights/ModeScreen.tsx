@@ -1,78 +1,37 @@
-import { type TransportMode, transportModes } from "@trail/contracts/transport";
-import { useParams } from "react-router";
 import { useFormatter } from "../../format/useFormatter";
 import { useInsightsMode } from "../../queries/useInsightsMode";
 import { useInsightsOverview } from "../../queries/useInsightsOverview";
+import { SettingsGroup } from "../../settings/SettingsGroup";
+import { SettingsRow } from "../../settings/SettingsRow";
 import { transportModeInfo } from "../../transport/transportModes";
 import { EmptyState } from "../../ui/EmptyState";
 import { ErrorState } from "../../ui/ErrorState";
-import { LinkButton } from "../../ui/LinkButton";
 import { LoadingBlock } from "../../ui/LoadingBlock";
 import { Skeleton } from "../../ui/Skeleton";
 import { heroChange, InsightsHero } from "./InsightsHero";
 import { InsightsScreen } from "./InsightsScreen";
 import { formatKmh } from "./insightsFormat";
-import { insightsRootPath } from "./insightsLevels";
+import { modePath } from "./insightsLevels";
 import { insightsLink } from "./insightsLinks";
 import { periodLabel } from "./insightsPeriod";
 import { ModeTrend } from "./ModeTrend";
+import { longestFact, modeFamily, roadsFact, speedFact, whenFact } from "./modeFacts";
+import { type ModeContext, WithMode } from "./modeRoute";
 import { useInsightsComparison } from "./useInsightsComparison";
-import { useInsightsPeriod } from "./useInsightsPeriod";
 
-const isMode = (value: string | undefined): value is TransportMode =>
-  (transportModes as readonly (string | undefined)[]).includes(value);
-
-/**
- * One mode's screen (`/insights/transport/:mode`): its distance against the
- * period before, and how it went over the period. Naming a mode Trail does
- * not know asks for nothing.
- */
-export function ModeScreen() {
-  const { mode: param } = useParams();
-  const mode = isMode(param) ? param : null;
-  const state = useInsightsPeriod();
+function Body({ mode, label, state, up }: ModeContext) {
   const format = useFormatter();
   const insights = useInsightsMode(mode, state.query());
-  const overview = useInsightsOverview(state.query(), { enabled: mode !== null });
+  const overview = useInsightsOverview(state.query());
   // The comparison belongs to the period the answers are of, not to the one they replace.
   const comparison = useInsightsComparison(
     state,
     insights.isPlaceholderData || overview.isPlaceholderData ? undefined : overview.data,
-    { enabled: mode !== null },
   );
-  const label = mode === null ? "Unknown mode" : transportModeInfo[mode].label;
-  const up = { to: insightsLink(insightsRootPath, state.params), label: "Insights", always: false };
-
-  if (mode === null) {
-    return (
-      <InsightsScreen
-        state={state}
-        title={label}
-        documentTitle="Insights"
-        up={up}
-        pending={false}
-        updating={false}
-        periodBar={false}
-      >
-        <div className="card">
-          <EmptyState
-            icon="unknown"
-            title="No such mode"
-            action={
-              <LinkButton to={up.to} icon="insights">
-                Back to Insights
-              </LinkButton>
-            }
-          >
-            <p>The address names a transport mode Trail does not know.</p>
-          </EmptyState>
-        </div>
-      </InsightsScreen>
-    );
-  }
-
   const data = insights.data;
   const none = data !== undefined && data.totals.durationS <= 0 && data.totals.moves === 0;
+  const to = (part?: Parameters<typeof modePath>[1]) =>
+    insightsLink(modePath(mode, part), state.params);
   return (
     <InsightsScreen
       state={state}
@@ -137,8 +96,53 @@ export function ModeScreen() {
             )}
           />
           <ModeTrend insights={insights.data} />
+          <SettingsGroup title="Details">
+            <SettingsRow
+              kind="link"
+              to={to("time")}
+              icon="calendar"
+              tone="blue"
+              label="When"
+              value={whenFact(insights.data, format)}
+            />
+            {modeFamily(mode) === null ? null : (
+              <SettingsRow
+                kind="link"
+                to={to("roads")}
+                icon="route"
+                tone="orange"
+                label="Roads"
+                value={roadsFact(insights.data, format)}
+              />
+            )}
+            <SettingsRow
+              kind="link"
+              to={to("speed")}
+              icon="speed"
+              tone="green"
+              label="Speed"
+              value={speedFact(insights.data, format)}
+            />
+            <SettingsRow
+              kind="link"
+              to={to("moves")}
+              icon="route"
+              tone="purple"
+              label="Longest moves"
+              value={longestFact(insights.data, format)}
+            />
+          </SettingsGroup>
         </>
       )}
     </InsightsScreen>
   );
+}
+
+/**
+ * One mode's screen (`/insights/transport/:mode`): its distance against the
+ * period before, how it went over the period, and rows to its When, Roads,
+ * Speed and Longest moves. Naming a mode Trail does not know asks for nothing.
+ */
+export function ModeScreen() {
+  return <WithMode part={false} render={(context) => <Body {...context} />} />;
 }

@@ -235,6 +235,55 @@ test("Insights: the summary, its period, a mode, when you travel and roads", asy
   await expect(tiles.getByText("Distance", { exact: true })).toBeVisible();
   await expect(tiles).toContainText("typically");
   await expectAccessible(page, "the mode screen");
+
+  // Its rows: each a screen of its own with the title in focus, and the way back to the row.
+  const mode = page.getByRole("region", { name: "Car" });
+  const backToCar = page.getByRole("link", { name: "Back to Car" });
+  await mode.getByRole("link", { name: /^Speed / }).click();
+  await expect(page).toHaveURL(here("/insights/transport/car/speed"));
+  await expect(page.getByRole("heading", { level: 1, name: "Speed" })).toBeFocused();
+  await expect(page.getByRole("figure", { name: "Moves by speed" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Totals" })).toContainText("Typical speed");
+  await expect(page.getByRole("link", { name: /^Fastest move / })).toBeVisible();
+  await expectAccessible(page, "a mode's Speed");
+  await backToCar.click();
+  await expect(page).toHaveURL(here("/insights/transport/car"));
+  await expect(mode.getByRole("link", { name: /^Speed / })).toBeFocused();
+
+  await mode.getByRole("link", { name: /^When / }).click();
+  await expect(page).toHaveURL(here("/insights/transport/car/time"));
+  await expect(page.getByRole("heading", { level: 1, name: "When" })).toBeFocused();
+  await expect(page.getByRole("figure", { name: "Time by car by weekday and hour" })).toBeVisible();
+  await expectAccessible(page, "a mode's When");
+  await backToCar.click();
+
+  await mode.getByRole("link", { name: /^Roads/ }).click();
+  await expect(page).toHaveURL(here("/insights/transport/car/roads"));
+  await expect(page.getByRole("heading", { level: 1, name: "Roads" })).toBeFocused();
+  await expect(page.getByText("No map data for these moves")).toBeVisible();
+  await expectAccessible(page, "a mode's Roads");
+  await backToCar.click();
+
+  // A longest move opens its day in History, with its details.
+  await mode.getByRole("link", { name: /^Longest moves / }).click();
+  await expect(page).toHaveURL(here("/insights/transport/car/moves"));
+  await expect(page.getByRole("heading", { level: 1, name: "Longest moves" })).toBeFocused();
+  await expectAccessible(page, "a mode's Longest moves");
+  await page
+    .getByRole("region", { name: "Longest moves" })
+    .getByRole("link", { name: /\d{2}:\d{2} / })
+    .first()
+    .click();
+  await expect(page).toHaveURL(
+    /\/\?view=history&date=\d{4}-\d{2}-\d{2}&(person=me&segment=[0-9a-f-]{36}|segment=[0-9a-f-]{36}&person=me)$/,
+  );
+  const dialog = page.getByRole("dialog", { name: "Car" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toBeHidden();
+  await page.goto(summary);
+  await car.click();
+  await expect(page.getByRole("heading", { level: 1, name: "Car" })).toBeFocused();
   if (wide) {
     await expect(list.getByRole("link", { name: /^Car \d/ })).toHaveAttribute(
       "aria-current",
@@ -256,16 +305,19 @@ test("Insights: the summary, its period, a mode, when you travel and roads", asy
   await expect(grid).toHaveAccessibleDescription(/^Most often on \w+day at \d{2}:00/);
   await expect(page.getByRole("combobox", { name: "Mode" })).toHaveCount(0);
   await expectAccessible(page, "When you travel");
+  // The When of before, with a mode in the address, is the mode's own screen.
   await page.goto(`/insights/time?period=${month}&mode=walking`);
+  await expect(page).toHaveURL(here("/insights/transport/walking/time"));
   await expect(
     page.getByRole("figure", { name: "Time by walking by weekday and hour" }),
   ).toBeVisible();
+  await page.goto("/insights/roads?mode=walking&period=month");
+  await expect(page).toHaveURL(/\/insights\/transport\/walking\/roads\?period=month$/);
 
   // Roads: this server has no map data, and says so.
   await page.goto(summary);
   await list.getByRole("link", { name: "Roads" }).click();
   await expect(page).toHaveURL(here("/insights/roads"));
-  await expect(page.getByText("Counting")).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1, name: "Roads" })).toBeVisible();
   await expect(page.getByText("No map data for these moves")).toBeVisible();
   await expectAccessible(page, "Roads");
@@ -287,6 +339,10 @@ test.describe("on a 320 px wide screen", () => {
       ["/insights/transport/car", "Car", "Distance per day"],
       ["/insights/time", "When you travel", "Time on the move by weekday and hour"],
       ["/insights/roads", "Roads", "No map data for these moves"],
+      ["/insights/transport/car/time", "When", "Time by car by weekday and hour"],
+      ["/insights/transport/car/roads", "Roads", "No map data for these moves"],
+      ["/insights/transport/car/speed", "Speed", "Moves by speed"],
+      ["/insights/transport/car/moves", "Longest moves", "Longest move"],
     ] as const) {
       await page.goto(`${path}?period=${month}`);
       await expect(

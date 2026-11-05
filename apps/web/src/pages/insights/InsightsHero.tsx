@@ -9,7 +9,8 @@ interface InsightsHeroProps {
   label: string;
   value: ReactNode;
   detail?: ReactNode;
-  change: HeroChange;
+  /** Left out where the number is not compared (the pattern screens). */
+  change?: HeroChange;
 }
 
 /** What the hero says about the period before: a change, or why there is none to state. */
@@ -39,6 +40,8 @@ export function heroChange(
 
 /** The one number a screen is about: large, with a line under it and the change against the period before. */
 export function InsightsHero({ label, value, detail, change }: InsightsHeroProps) {
+  const delta = change?.delta ?? null;
+  const note = change?.note ?? null;
   return (
     <div className="insights-hero">
       <StatTiles label="Totals">
@@ -46,10 +49,10 @@ export function InsightsHero({ label, value, detail, change }: InsightsHeroProps
           label={label}
           value={value}
           {...(detail === undefined ? {} : { detail })}
-          delta={change.delta}
+          delta={delta}
         />
       </StatTiles>
-      {change.note === null ? null : <p className="muted insights-hero__note">{change.note}</p>}
+      {note === null ? null : <p className="muted insights-hero__note">{note}</p>}
     </div>
   );
 }
