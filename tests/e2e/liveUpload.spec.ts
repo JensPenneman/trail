@@ -69,7 +69,7 @@ test("a new phone's first upload turns up in Settings › Devices by itself, and
     .getByRole("navigation", { name: "Main" })
     .getByRole("link", { name: "People", exact: true })
     .click();
-  const me = page.getByRole("list", { name: "People", exact: true }).getByRole("link", {
+  const me = page.getByRole("list", { name: "Me", exact: true }).getByRole("link", {
     name: /^Me/,
   });
   await expect(me.getByText("Live", { exact: true })).toBeVisible();

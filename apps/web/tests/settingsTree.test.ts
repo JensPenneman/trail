@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { addDevicePath, devicePath, devicesPath } from "../src/devices/devicePaths";
+import { fold } from "../src/format/fold";
 import { settingsBadgeValue } from "../src/settings/settingsBadges";
-import { fold, searchSettings, settingsSearchIndex } from "../src/settings/settingsSearchIndex";
+import { searchSettings, settingsSearchIndex } from "../src/settings/settingsSearchIndex";
 import {
   settingsGroupsFor,
   settingsItemPath,

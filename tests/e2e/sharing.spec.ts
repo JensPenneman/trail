@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { expectAccessible } from "./support/expectAccessible";
+import { openGroup } from "./support/mapControls";
 import { overlandBatch, withBattery } from "./support/overlandBatch";
 import { postOverland } from "./support/postOverland";
 import { signUp } from "./support/signUp";
@@ -37,9 +38,9 @@ test("someone you share with sees you live, may hide you, and loses you when you
     shared.getByText(`${friendAccount.displayName} can see your location now`),
   ).toBeVisible();
   await shared.getByRole("button", { name: "Done" }).click();
-  // The line under the people says so, and leads to the list in Settings.
-  await page.getByRole("link", { name: /^You share with 1 person/ }).click();
-  await expect(page).toHaveURL(/\/settings\/sharing$/);
+  // The list of whom one shares with is Settings › Sharing's, not the root's.
+  await expect(page.getByRole("link", { name: /^You share with/ })).toHaveCount(0);
+  await page.goto("/settings/sharing");
   await expect(youShareWith(page).getByText("Sees you")).toBeVisible();
 
   await friend.page.goto("/");
@@ -62,19 +63,23 @@ test("someone you share with sees you live, may hide you, and loses you when you
 
   await row.click();
   const card = friend.page.getByRole("region", { name: account.displayName, exact: true });
+  await openGroup(friend.page, /^Device \(1\) · What /);
   await expect(card.getByText("Sharer’s phone")).toBeVisible();
   // Hiding leaves the detail for the list, and says so.
   await card.getByRole("button", { name: `Hide ${account.displayName}` }).click();
   await expect(card).toBeHidden();
   await expect(row).toBeHidden();
-  await expect(friend.page.getByText("Hidden (1)")).toBeVisible();
+  await expect(friend.page.getByRole("link", { name: "Hidden (1)" })).toBeVisible();
   await expect(
     friend.page.getByText(`${account.displayName} is hidden. Show them again under Hidden.`),
   ).toBeAttached();
   // The sharer sees it at once, through their own live stream.
   await expect(youShareWith(page).getByText("Hid you")).toBeVisible();
-  await friend.page.getByText("Hidden (1)").click();
+  await friend.page.getByRole("link", { name: "Hidden (1)" }).click();
+  await expect(friend.page.getByRole("heading", { level: 2, name: "Hidden" })).toBeFocused();
   await friend.page.getByRole("button", { name: `Show ${account.displayName} again` }).click();
+  await expect(friend.page.getByText("Nobody is hidden.")).toBeVisible();
+  await friend.page.getByRole("link", { name: "Back to People" }).click();
   await expect(row).toBeVisible();
 
   // Each person has a page of their own in Settings › Sharing; stopping is there.
@@ -87,10 +92,11 @@ test("someone you share with sees you live, may hide you, and loses you when you
     .getByRole("button", { name: "Stop sharing" })
     .click();
   await expect(row).toBeHidden();
-  await expect(friend.page.getByText("Nobody shares with you yet")).toBeVisible();
+  await expect(friend.page.getByRole("heading", { name: "Sharing with you" })).toBeHidden();
   expect(await friend.page.evaluate(() => Reflect.get(window, "trailE2eSamePage"))).toBe(true);
   await friend.page.reload();
-  await expect(friend.page.getByText("Nobody shares with you yet")).toBeVisible();
+  await expect(friend.page.getByRole("heading", { level: 1, name: "People" })).toBeVisible();
+  await expect(friend.page.getByRole("heading", { name: "Sharing with you" })).toHaveCount(0);
   await expect(
     youShareWith(page).getByText("Nobody sees your location.", { exact: false }),
   ).toBeVisible();

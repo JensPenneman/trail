@@ -1,17 +1,20 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { expectAccessible } from "./support/expectAccessible";
-import { localDate, mapView, openMapOptions } from "./support/mapControls";
+import { localDate, mapView, openGroup, openMapOptions, showView } from "./support/mapControls";
 import { overlandBatch, withBattery } from "./support/overlandBatch";
 import { postOverland } from "./support/postOverland";
 import { sharingFriend } from "./support/sharingFriend";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
 
-const peopleList = (page: Page) => page.getByRole("list", { name: "People", exact: true });
-const meRow = (page: Page) => peopleList(page).getByRole("link", { name: /^Me(\s|$)/ });
+/** Me's own list, and the group of those who share with you. */
+const meList = (page: Page) => page.getByRole("list", { name: "Me", exact: true });
+const sharingList = (page: Page) =>
+  page.getByRole("list", { name: "Sharing with you", exact: true });
+const meRow = (page: Page) => meList(page).getByRole("link", { name: /^Me(\s|$)/ });
 /** The row of someone: the name, then a space or the end, so a longer name does not match. */
 const personRow = (page: Page, name: string) =>
-  peopleList(page).getByRole("link", {
+  sharingList(page).getByRole("link", {
     name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`),
   });
 /** A person's detail replaces the list; the region is named by their name. */
@@ -63,7 +66,7 @@ test("a person's detail shows them alone, with only what their share allows", as
   // The fixture's phone is on a bike ride at 18 km/h, 90 seconds ago.
   await expect(meRow(page).getByText(/18\skm\/h$/)).toBeVisible();
   await expect(meRow(page).getByText("Live", { exact: true })).toBeVisible();
-  await expect(peopleList(page).getByRole("link")).toHaveCount(3);
+  await expect(sharingList(page).getByRole("link")).toHaveCount(2);
   await expect(personRow(page, historianName).getByText(/18\skm\/h$/)).toBeVisible();
   await expect(page.getByText(historian.device.name)).toHaveCount(0);
   await expect(page.getByRole("link", { name: "My phone" })).toHaveCount(0);
@@ -86,10 +89,12 @@ test("a person's detail shows them alone, with only what their share allows", as
   await personRow(page, roughName).click();
   await expect(page).toHaveURL(new RegExp(`/\\?person=${rough.account.id}$`));
   await expect(page.getByRole("heading", { level: 2, name: roughName })).toBeFocused();
-  await expect(peopleList(page)).toHaveCount(0);
+  await expect(meList(page)).toHaveCount(0);
+  await expect(sharingList(page)).toHaveCount(0);
   await expect(myDay(page)).toHaveCount(0);
   await expect(whereBeen(detail(page, roughName))).toContainText("Shares live location only");
-  // Their devices and the terms of their share are right in the detail.
+  // Their devices and the terms of their share are in a group of their page, folded.
+  await openGroup(page, /^Device \(1\) · What /);
   await expect(detail(page, roughName).getByText(rough.device.name)).toBeVisible();
   await expect(
     detail(page, roughName).getByText("Approximate location, within about 500 m"),
@@ -105,7 +110,7 @@ test("a person's detail shows them alone, with only what their share allows", as
   await expect(page.getByRole("group", { name: "Detail of the tracks" })).toHaveCount(0);
   await expectAccessible(page, "Live with someone else selected");
 
-  await mapView(page, "History").click();
+  await showView(page, "History");
   await expect(page).toHaveURL(/[?&]view=history/);
   await expect(whereBeen(detail(page, roughName))).toContainText("Shares live location only");
   for (const name of ["Summary", ...ownOnly]) {
@@ -118,10 +123,8 @@ test("a person's detail shows them alone, with only what their share allows", as
   await backToList(page).click();
   await expect(personRow(page, roughName)).toBeFocused();
   await expect(page).toHaveURL(/\/\?view=history$/);
-  const summary = page.getByRole("region", { name: "Summary", exact: true });
-  await expect(summary).toContainText(`${historianName} · ${historian.device.name}`);
-  await expect(summary).toContainText("My phone");
-  for (const name of ownOnly) {
+  // The root has no summary: History's overview is the map's, and the people's own pages.
+  for (const name of ["Summary", ...ownOnly]) {
     await expect(page.getByRole("region", { name, exact: true }), name).toHaveCount(0);
   }
   await expect(page.getByRole("slider", { name: "Position at" })).toBeVisible();
@@ -129,12 +132,15 @@ test("a person's detail shows them alone, with only what their share allows", as
   await expectAccessible(page, "History's overview");
 
   // Someone who shares their history, alone: their track, still nothing of one's own.
+  const summary = page.getByRole("region", { name: "Summary", exact: true });
   await personRow(page, historianName).click();
   await expect(page).toHaveURL(
     (url) =>
       url.searchParams.get("view") === "history" &&
       url.searchParams.get("person") === historian.account.id,
   );
+  // Their summary is a folded group of their page.
+  await openGroup(page, "Summary");
   await expect(summary.getByRole("listitem")).toHaveCount(1);
   await expect(summary).toContainText(`${historianName} · ${historian.device.name}`);
   await expect(summary).not.toContainText("My phone");
@@ -153,7 +159,7 @@ test("a person's detail shows them alone, with only what their share allows", as
   await expect(page.getByRole("group", { name: "Detail of the tracks" })).toHaveCount(0);
   await expectAccessible(page, "History of someone who shares it");
   // Live has their day too; a day back is History's.
-  await mapView(page, "Live").click();
+  await showView(page, "Live");
   await expect(theirDay.getByText("Today", { exact: true })).toBeVisible();
   await theirDay.getByRole("button", { name: "Previous day" }).click();
   await expect(page).toHaveURL(
@@ -191,20 +197,24 @@ test("a person's detail shows them alone, with only what their share allows", as
   await meRow(page).click();
   await expect(page).toHaveURL((url) => url.searchParams.get("person") === "me");
   await expect(detail(page, "Me")).toBeVisible();
+  // The timeline is open; the summary, visits and trips are one folded group.
+  await expect(page.getByRole("region", { name: "Timeline", exact: true })).toBeVisible();
+  await openGroup(page, "Summary, visits and trips");
   await expect(summary).toContainText("My phone");
   for (const name of ownOnly) {
     await expect(page.getByRole("region", { name, exact: true }), name).toBeVisible();
   }
   await openMapOptions(page);
   await expect(page.getByRole("group", { name: "Detail of the tracks" })).toBeVisible();
-  // Always: the devices, in the detail and not behind a button.
-  await expect(detail(page, "Me").getByRole("link", { name: "My phone" })).toBeVisible();
+  // The devices are a level of Me's page, one row away.
+  await expect(detail(page, "Me").getByRole("link", { name: /^Your devices/ })).toBeVisible();
   await expectAccessible(page, "History in Me's detail");
-  await mapView(page, "Live").click();
+  await showView(page, "Live");
   await expect(myDay(page).getByRole("heading", { name: "Timeline" })).toBeVisible();
   await expectAccessible(page, "Live in Me's detail");
-  await mapView(page, "Heat").click();
+  await showView(page, "Heat");
   await expect(page).toHaveURL(/[?&]view=heat/);
+  await openGroup(page, "Heat: totals, busiest places");
   await expect(
     page.getByRole("region", { name: "Busiest places in view" }).getByRole("listitem").first(),
   ).toContainText(/\d+ points/);
@@ -244,6 +254,7 @@ test("the list kept live, and sharing back and stopping from a detail", async ({
   await expect(farRow.getByText(/km$/).first()).toContainText("≈");
   await expect(page.getByText("Live updates on")).toBeAttached();
   await farRow.click();
+  await openGroup(page, /^Device \(1\) · What /);
   await expect(detail(page, farName).getByText("Area only, within about 5 km")).toBeVisible();
   await backToList(page).click();
 
@@ -281,9 +292,9 @@ test("the list kept live, and sharing back and stopping from a detail", async ({
     nearDetail.getByRole("button", { name: `Share back with ${nearName}` }),
   ).toBeVisible();
 
-  // The quiet line under the list says whom one shares with, and leads to Settings › Sharing.
+  // The root has no line about one's own side: that is Settings › Sharing's.
   await backToList(page).click();
-  await expect(page.getByRole("link", { name: /^You share with nobody/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /^You share with/ })).toHaveCount(0);
 
   // A link from before the single selection (the old People page's Show on map) selects them.
   await page.goto(`/?view=live&people=${far.account.id}`);

@@ -66,6 +66,11 @@ export interface MapSearch {
   person: string | null;
   /** The devices shown of the selected person; null shows all of them. */
   devices: readonly string[] | null;
+  /**
+   * A level of the sidebar below the root: `hidden` where nobody is selected,
+   * `devices` on Me's page (`?person=me&list=devices`).
+   */
+  list: "hidden" | "devices" | null;
   /** The History view's day or period (kept while another view is shown). */
   period: Omit<HistorySelection, "deviceIds">;
   /** What Heat counts, when the address says; null leaves it to the remembered choice and the preference. */
@@ -107,6 +112,13 @@ function parsePerson(params: URLSearchParams): string | null {
   return params.has("segment") ? me : null;
 }
 
+/** The level named by `?list=`, where it can be: Hidden at the root, the devices on Me's page. */
+function parseList(person: string | null, value: string | null): "hidden" | "devices" | null {
+  if (person === null && value === "hidden") return "hidden";
+  if (person === me && value === "devices") return "devices";
+  return null;
+}
+
 /**
  * Reads the People page's URL defensively, like History always did: an
  * unknown view is Live, a hand-edited or outdated link falls back to defaults
@@ -116,9 +128,11 @@ function parsePerson(params: URLSearchParams): string | null {
 export function parseMapSearch(params: URLSearchParams, today: string): MapSearch {
   const view = params.get("view");
   const { deviceIds, ...period } = parseHistorySelection(params, today);
+  const person = parsePerson(params);
   return {
     view: isMapView(view) ? view : "live",
-    person: parsePerson(params),
+    person,
+    list: parseList(person, params.get("list")),
     devices: deviceIds,
     period,
     heat: parseHeatMeasure(params.get("heat")),

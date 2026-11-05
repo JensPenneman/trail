@@ -7,6 +7,7 @@ import { PersonSummary } from "../../people/PersonSummary";
 import { personSummaryProps } from "../../people/personSummaryProps";
 import { Icon } from "../../ui/Icon";
 import { useMeSummary } from "./useMeSummary";
+import "./PersonRow.css";
 
 interface PersonRowProps {
   person: Person;

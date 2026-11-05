@@ -10,7 +10,6 @@ import {
 import { useSearchParams } from "react-router";
 import { DocumentTitle } from "../../app/DocumentTitle";
 import { useStickyBanner } from "../../app/StickyBannerContext";
-import { useReadOnly } from "../../app/useReadOnly";
 import { useSessionUser } from "../../app/useSessionUser";
 import { useDeviceColors } from "../../devices/useDeviceColors";
 import { LazyTrailMap } from "../../map/LazyTrailMap";
@@ -25,9 +24,7 @@ import { useNow } from "../../time/useNow";
 import { LevelControl } from "../../transport/LevelControl";
 import { ModeLegend } from "../../transport/ModeLegend";
 import { useTrackLevel } from "../../transport/useTrackLevel";
-import { Button } from "../../ui/Button";
 import { Icon } from "../../ui/Icon";
-import { PageHeader } from "../../ui/PageHeader";
 import { useMediaQuery } from "../../ui/useMediaQuery";
 import { useScrollableFocus } from "../../ui/useScrollableFocus";
 import { DeviceFilter, type DeviceFilterGroup } from "../map/DeviceFilter";
@@ -38,15 +35,15 @@ import { MapOptions } from "../map/MapOptions";
 import { MapOverlay } from "../map/MapOverlay";
 import type { MapPerson } from "../map/MapPerson";
 import { MapStyleControl } from "../map/MapStyleControl";
-import { withPerson } from "../map/mapSearchUpdates";
+import { withList, withPerson } from "../map/mapSearchUpdates";
 import { type MapView, shownView, viewsFor } from "../map/mapViews";
 import { me } from "../map/me";
 import { resolveMapSelection } from "../map/resolveMapSelection";
 import { useMapSearch } from "../map/useMapSearch";
-import { PeopleList } from "./PeopleList";
-import { PersonPanel } from "./PersonPanel";
+import { PeoplePanel } from "./PeoplePanel";
 import { usePanelFocus } from "./usePanelFocus";
-import { shareOfflineId, useSharingActions } from "./useSharingActions";
+import { peekChanged, usePeekHeight } from "./usePeekHeight";
+import { useSharingActions } from "./useSharingActions";
 import "./PeoplePage.css";
 
 const defaultThresholds = { liveMinutes: 15, staleHours: 12 };
@@ -92,7 +89,6 @@ export function PeoplePage() {
   const now = useNow(15_000);
   const wide = useMediaQuery(besideThePanel);
   const scrollable = useScrollableFocus();
-  const readOnly = useReadOnly();
   const thresholds = config.data?.thresholds ?? defaultThresholds;
   const [viewport, setViewport] = useState<MapViewState | null>(null);
   // Where the floating controls end, measured: they wrap on narrow screens.
@@ -100,6 +96,12 @@ export function PeoplePage() {
   // The device filter is folded away among the map's options, and open when an address sets one.
   const [filterOpen] = useState(() => search.devices !== null);
   const sharing = useSharingActions(people.data ?? []);
+  // What the people are searched for: kept here, so going to someone's page and back keeps it.
+  const [query, setQuery] = useState("");
+  // The folded groups that are open, kept here so that a level of a page and back finds them.
+  const [openGroups, setOpenGroups] = useState<Readonly<Record<string, boolean>>>({
+    "me:Timeline": true,
+  });
 
   const available = useMemo<MapPerson[]>(
     () => [
@@ -183,7 +185,7 @@ export function PeoplePage() {
   });
   const content = view === "live" ? live : view === "history" ? history : heat;
   // The map fits what it shows under the controls: below the bar, and left of the zoom column on
-  // phones, where the bar spans the map.
+  // phones, where the bar is as wide as the map less that column.
   const fit =
     content.map.fit === undefined
       ? undefined
@@ -211,9 +213,12 @@ export function PeoplePage() {
 
   // Beside the map the panel scrolls by itself: another view or person starts at its top.
   const panel = useRef<HTMLElement | null>(null);
+  // The level shown, for the focus that follows it: someone's key, `list:hidden`, or the root.
+  const levelKey = search.list === null ? selectedKey : `list:${search.list}`;
   const focusRef = usePanelFocus(
-    selectedKey,
-    available.some((person) => person.key === selectedKey),
+    levelKey,
+    levelKey?.startsWith("list:") === true ||
+      available.some((person) => person.key === selectedKey),
     selection.implied,
   );
   const panelRef = useCallback(
@@ -227,13 +232,41 @@ export function PeoplePage() {
   // Phones: selecting someone lifts the sheet to its half detent, where the detail reads well.
   const snaps = useRef<HTMLDivElement | null>(null);
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const lifted = useRef(selectedKey);
+  // A person the address names when the page opens (and who loads after it) is not a selection
+  // to lift the sheet for: the sheet stays where the person left it.
+  const lifted = useRef<string | null>(search.person);
   useEffect(() => {
     const before = lifted.current;
     lifted.current = selectedKey;
-    if (wide || selectedKey === null || before === selectedKey) return;
+    if (wide || selectedKey === null || before === selectedKey) return undefined;
     const half = snaps.current?.querySelector<HTMLElement>("[data-detent=half]");
     half?.scrollIntoView?.({ block: "start", behavior: reducedMotion ? "instant" : "smooth" });
+    // The new level's peek is measured just after: the detent moves, and the sheet follows it
+    // until the person takes hold of it or a moment has passed.
+    const page = half?.closest<HTMLElement>(".map-page");
+    if (half == null || page == null) return undefined;
+    const lifting = performance.now();
+    const follow = () => {
+      // Lowered since (to peek, by the page or the person): not lifted again.
+      if (window.scrollY <= 0 && performance.now() - lifting > 300) {
+        stop();
+        return;
+      }
+      half.scrollIntoView?.({ block: "start", behavior: "instant" });
+    };
+    const stop = () => {
+      page.removeEventListener(peekChanged, follow);
+      window.removeEventListener("pointerdown", stop);
+      window.removeEventListener("wheel", stop);
+      window.removeEventListener("keydown", stop);
+      clearTimeout(timer);
+    };
+    const timer = setTimeout(stop, 2000);
+    page.addEventListener(peekChanged, follow);
+    window.addEventListener("pointerdown", stop, { once: true });
+    window.addEventListener("wheel", stop, { once: true });
+    window.addEventListener("keydown", stop, { once: true });
+    return stop;
   }, [selectedKey, wide, reducedMotion]);
   // Focus on the bar, the map or its buttons, which a lifted sheet covers: lower the sheet to its
   // peek, so what has focus can be seen (WCAG 2.4.11).
@@ -258,6 +291,23 @@ export function PeoplePage() {
     element.addEventListener("focusin", onStageFocus);
     return () => element.removeEventListener("focusin", onStageFocus);
   }, []);
+  usePeekHeight(panel, levelKey, !wide);
+  // Beside the map History's foot floats over the map's bottom-left corner too: the key of what
+  // the map draws stacks above it (`--foot-height`).
+  const hasFoot = content.foot !== null;
+  useEffect(() => {
+    const page = stage.current?.closest<HTMLElement>(".map-page");
+    const element = stage.current?.querySelector<HTMLElement>(".map-page__foot");
+    if (!hasFoot || page == null || element == null || !wide) return undefined;
+    const publish = () => page.style.setProperty("--foot-height", `${element.offsetHeight}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      page.style.removeProperty("--foot-height");
+    };
+  }, [wide, hasFoot]);
   const toTop = () => {
     if (panel.current !== null) panel.current.scrollTop = 0;
   };
@@ -268,6 +318,11 @@ export function PeoplePage() {
   const [params] = useSearchParams();
   const linkTo = (person: string) => `?${withPerson(params, person).toString()}`;
   const backTo = `?${withPerson(params, null).toString()}`;
+  const hiddenTo = `?${withList(params, "hidden").toString()}`;
+  const devicesTo = `?${withList(params, "devices").toString()}`;
+  // Back from a level (the Hidden list, Me's devices) keeps what else the address says (Heat's
+  // own devices included).
+  const levelBackTo = `?${withList(params, null).toString()}`;
 
   // Devices to choose among, when there are several: the selected person's; in Heat one's own,
   // whoever is selected (nobody's else is offered there). Choosing some selects Me (adoptPerson).
@@ -297,15 +352,8 @@ export function PeoplePage() {
   const note =
     deviceCount > 1 && shownCount < deviceCount ? `${shownCount} of ${deviceCount} devices` : null;
 
-  // The view's part of the list and of every detail, with the label that names it.
-  const viewPanel =
-    content.panel === null ? null : (
-      <section className="map-page__details" aria-label={content.panelLabel}>
-        {content.panel}
-      </section>
-    );
-
-  // The history slider: over the foot of the map beside the panel, first in the sheet on phones.
+  // The history slider: over the foot of the map beside the panel, in the sheet on phones right
+  // under the Me row or the person's header (so not in the sheet's peek).
   const foot = content.foot === null ? null : <div className="map-page__foot">{content.foot}</div>;
   const options = (
     <MapOptions note={note}>
@@ -373,6 +421,7 @@ export function PeoplePage() {
           )}
           {content.chip}
         </div>
+        {content.legend === null ? null : <div className="map-page__legend">{content.legend}</div>}
         {wide ? foot : null}
       </div>
 
@@ -382,62 +431,41 @@ export function PeoplePage() {
         <span className="map-page__snap map-page__snap--peek" />
         <span className="map-page__snap map-page__snap--half" data-detent="half" />
       </div>
-      <section className="map-page__panel" aria-labelledby="people-page-title" ref={panelRef}>
-        <span className="map-page__grabber" aria-hidden="true" />
-        {wide ? null : foot}
-        <div className="map-page__top">
-          <PageHeader
-            title="People"
-            titleId="people-page-title"
-            description={content.description}
-            actions={
-              // Not while the list is known to be empty: the card says so and has the button.
-              people.isSuccess && everyone.length === 0 ? undefined : (
-                <Button
-                  variant="ghost"
-                  icon="plus"
-                  iconOnly
-                  disabled={readOnly}
-                  aria-describedby={readOnly ? shareOfflineId : undefined}
-                  onClick={() => sharing.openShare()}
-                >
-                  Share my location
-                </Button>
-              )
-            }
-          />
-          {sharing.offlineReason}
-        </div>
-        <div className="map-page__body">
-          {selectedKey === null ? (
-            <PeopleList
-              people={people}
-              devices={devices}
-              personColors={personColors}
-              now={now}
-              thresholds={thresholds}
-              linkTo={linkTo}
-              panel={viewPanel}
-              sharing={sharing}
-            />
-          ) : (
-            <PersonPanel
-              selected={selectedKey}
-              backTo={backTo}
-              name={user.displayName}
-              devices={devices}
-              people={people}
-              personColors={personColors}
-              now={now}
-              thresholds={thresholds}
-              content={content}
-              period={wherePeriod}
-              sharing={sharing}
-              onLeave={leavePerson}
-            />
-          )}
-        </div>
-      </section>
+      <PeoplePanel
+        panelRef={panelRef}
+        foot={wide ? null : foot}
+        at={
+          search.list === "devices"
+            ? { level: "devices" }
+            : selectedKey !== null
+              ? { level: "person", selected: selectedKey }
+              : search.list === "hidden"
+                ? { level: "hidden" }
+                : { level: "root" }
+        }
+        people={people}
+        devices={devices}
+        personColors={personColors}
+        now={now}
+        thresholds={thresholds}
+        linkTo={linkTo}
+        hiddenTo={hiddenTo}
+        backTo={backTo}
+        devicesTo={devicesTo}
+        levelBackTo={levelBackTo}
+        query={query}
+        onQuery={setQuery}
+        name={user.displayName}
+        content={content}
+        period={wherePeriod}
+        sharing={sharing}
+        groups={{
+          isOpen: (title) => openGroups[`${selectedKey ?? ""}:${title}`] === true,
+          set: (title, open) =>
+            setOpenGroups((current) => ({ ...current, [`${selectedKey ?? ""}:${title}`]: open })),
+        }}
+        onLeave={leavePerson}
+      />
       {sharing.dialogs}
       {content.dialog}
     </div>
