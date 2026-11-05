@@ -86,6 +86,26 @@ describe("the summary", () => {
     expect(asked).toHaveLength(2);
   });
 
+  it("opens the time of the period on the map, as a lens, from its own row", async () => {
+    mockApi(octoberRoutes());
+    const view = renderInsights("/insights?period=2026-10");
+    await hero();
+    const group = screen.getByRole("list", { name: "On the map" });
+    expect(within(group).getByRole("link", { name: "Where you spent time" })).toHaveAttribute(
+      "href",
+      "/?view=heat&heat=time&from=2026-10-01&to=2026-10-31",
+    );
+    view.unmount();
+
+    mockApi(octoberRoutes());
+    renderInsights(`/insights?period=all&devices=${ids.phone}`);
+    await hero();
+    expect(screen.getByRole("link", { name: "Where you spent time" })).toHaveAttribute(
+      "href",
+      `/?view=heat&heat=time&devices=${ids.phone}`,
+    );
+  });
+
   it("compares the month that goes on with the same days of the month before", async () => {
     const first = `${today().slice(0, 7)}-01`;
     const before = shiftMonth(first, -1);

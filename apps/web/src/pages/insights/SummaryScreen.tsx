@@ -1,5 +1,7 @@
 import { useFormatter } from "../../format/useFormatter";
 import { useInsightsOverview } from "../../queries/useInsightsOverview";
+import { SettingsGroup } from "../../settings/SettingsGroup";
+import { SettingsRow } from "../../settings/SettingsRow";
 import { sideBySide } from "../../settings/sideBySide";
 import { EmptyState } from "../../ui/EmptyState";
 import { ErrorState } from "../../ui/ErrorState";
@@ -9,6 +11,7 @@ import { useMediaQuery } from "../../ui/useMediaQuery";
 import { heroChange, InsightsHero } from "./InsightsHero";
 import { InsightsList } from "./InsightsList";
 import { InsightsScreen } from "./InsightsScreen";
+import { timeOnMap } from "./insightsLens";
 import { periodLabel, periodPhrase } from "./insightsPeriod";
 import { ModeSeriesChart } from "./ModeSeriesChart";
 import { useInsightsComparison } from "./useInsightsComparison";
@@ -77,6 +80,15 @@ export function SummaryScreen() {
             )}
           />
           <ModeSeriesChart overview={overview.data} />
+          <SettingsGroup title="On the map">
+            <SettingsRow
+              kind="away"
+              to={timeOnMap(state.period, state.devices, state.today)}
+              icon="map"
+              tone="green"
+              label="Where you spent time"
+            />
+          </SettingsGroup>
         </>
       )}
       {wide ? null : <InsightsList placement="root" />}
