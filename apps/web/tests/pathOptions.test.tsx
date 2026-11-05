@@ -82,11 +82,11 @@ describe("what the level's tracks are asked for", () => {
   const trackCalls = (calls: { path: string; url?: string }[]) =>
     calls.filter((call) => call.path === "/api/v1/tracks");
 
-  it("is the altitude or the accuracy for those colourings only, and nothing else", async () => {
+  it("is the speed, or the altitude with the accuracy, for those colourings only", async () => {
     for (const [colour, values] of [
-      ["accuracy", "accuracy"],
-      ["altitude", "altitude"],
-      ["speed", null],
+      ["accuracy", "altitude,accuracy"],
+      ["altitude", "altitude,accuracy"],
+      ["speed", "speed"],
       ["device", null],
       ["confidence", null],
     ] as const) {

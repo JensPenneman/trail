@@ -172,6 +172,9 @@ export function colourLevelTracks(
   // The values the points carry after `t`, in the order the query asked for them.
   const asked = response.values?.indexOf(colouring.by as LevelValue) ?? -1;
   const valueColumn = asked < 0 ? null : 3 + asked;
+  // The server's own speed, where it was asked for: else distance over time.
+  const speedAt = response.values?.indexOf("speed") ?? -1;
+  const speedColumn = speedAt < 0 ? null : 3 + speedAt;
   const segments = response.segments.flatMap((segment): ColouredSegment[] => {
     if (segment.kind === "stop" || segment.points.length < 2) return [segment];
     // A move is one line, as under Mode: a pause inside it is a stretch of some speed, not a cut.
@@ -179,7 +182,7 @@ export function colourLevelTracks(
       segment.points,
       edgeClasses(segment.points, {
         by: colouring.by,
-        speedColumn: null,
+        speedColumn,
         valueColumn,
         ...(colouring.scale === undefined ? {} : { scale: colouring.scale }),
         onFoot: colouring.onFoot === true,

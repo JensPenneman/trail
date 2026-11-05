@@ -204,6 +204,30 @@ describe("colourLevelTracks", () => {
     expect(coloured.segments[1]?.color).toBeUndefined();
   });
 
+  it("takes the server's speed where it was asked for, else distance over time", () => {
+    const response = levelResponse("averaged");
+    const [segment] = response.segments;
+    if (segment === undefined) throw new Error("no segment");
+    // Ten seconds and some 7 m apart (0.7 m/s by distance), but the server says 20 m/s.
+    const points = [
+      [3.7, 51, 1_793_000_000, 20],
+      [3.70001, 51, 1_793_000_010, 20],
+      [3.70002, 51, 1_793_000_020, 20],
+    ] as never;
+    const told = colourLevelTracks(
+      { ...response, values: ["speed"], segments: [{ ...segment, points }] } as never,
+      colouring("speed"),
+      device,
+    );
+    expect(told.segments.map((piece) => piece.color)).toEqual([speedRamp.light[4]]);
+    const worked = colourLevelTracks(
+      { ...response, segments: [{ ...segment, points }] } as never,
+      colouring("speed"),
+      device,
+    );
+    expect(worked.segments.map((piece) => piece.color)).toEqual([speedRamp.light[0]]);
+  });
+
   it("reads the altitude and the accuracy from the column the query asked them in", () => {
     const response = levelResponse("averaged");
     const [segment] = response.segments;

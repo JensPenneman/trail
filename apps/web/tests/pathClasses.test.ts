@@ -40,6 +40,9 @@ describe("accuracy and altitude classes", () => {
     expect(altitudeScale([8, 8])).toEqual([9, 10, 11, 12]);
     expect(altitudeScale([-4.5, -1])).toEqual([-4, -3, -2, -1]);
     expect(altitudeScale([])).toBeNull();
+    // One spike of a fix does not squeeze the rest into one class.
+    const flat = Array.from({ length: 200 }, (_, index) => 10 + (index % 50));
+    expect(altitudeScale([...flat, 9000])).toEqual([20, 30, 40, 50]);
   });
 
   it("classes each interval by the mean altitude of its ends, and by the worse accuracy, null when none is known", () => {

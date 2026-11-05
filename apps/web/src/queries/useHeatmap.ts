@@ -4,9 +4,21 @@ import { heatmapResponseSchema } from "@trail/contracts/heatmap";
 import { type HeatmapParams, queryKeys } from "../api/queryKeys";
 import { cachedFetch } from "../cache/cachedFetch";
 import { freshFor } from "../cache/cachePolicy";
+import { useLiveState } from "../live/useLiveState";
 
-/** How long an answer that is still being worked out waits before it is asked for again. */
-const pendingRetryMs = 10_000;
+/**
+ * When an answer that says recent days are still being worked out is asked for again, if the event
+ * stream does not tell: the stream's `segments` event, sent when the cells are made, refetches it
+ * (`invalidateStopHeat`). Without a stream it is polled, 10 s, then 30 s, then every 60 s.
+ */
+export function pendingRetryMs(
+  pending: boolean,
+  connection: "connecting" | "open" | "reconnecting",
+  answers: number,
+): number | false {
+  if (!pending || connection === "open") return false;
+  return [10_000, 30_000, 60_000][Math.min(Math.max(answers, 1) - 1, 2)] ?? 60_000;
+}
 
 /**
  * Density cells in the viewport. The previous cells stay visible while panning, but only while
@@ -14,6 +26,7 @@ const pendingRetryMs = 10_000;
  * measure's cells would be drawn with this one's key.
  */
 export function useHeatmap(params: HeatmapParams | null) {
+  const { connection } = useLiveState();
   return useQuery({
     queryKey: params === null ? queryKeys.all.heatmap : queryKeys.heatmap(params),
     queryFn: ({ client, queryKey, signal }) =>
@@ -24,9 +37,8 @@ export function useHeatmap(params: HeatmapParams | null) {
     placeholderData: (previous, previousQuery) =>
       params !== null && sameHeatKind(previousQuery?.queryKey[1], params) ? previous : undefined,
     staleTime: freshFor("heatmap"),
-    // An answer that says recent days are still being worked out is asked for again until they are:
-    // no event tells of the per-day cells, which are made some seconds after a pass.
-    refetchInterval: (query) => (query.state.data?.pending === true ? pendingRetryMs : false),
+    refetchInterval: (query) =>
+      pendingRetryMs(query.state.data?.pending === true, connection, query.state.dataUpdateCount),
   });
 }
 

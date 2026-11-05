@@ -2,7 +2,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { HeatMeasure } from "@trail/contracts/heatmap";
 import type { TransportMode } from "@trail/contracts/transport";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useFormatter } from "../../../format/useFormatter";
 import { boundsOf } from "../../../map/boundsOf";
 import { heatmapParamsFor } from "../../../map/heatmapParamsFor";
@@ -104,6 +104,12 @@ export function useHeatView({
     [devices.data],
   );
   const shown = active ? heatmap.data : undefined;
+  // The zoom the answer on screen was asked for at: a kept placeholder belongs to the request
+  // before, not to the view now.
+  const answeredAt = useRef<number | null>(null);
+  if (heatmap.data !== undefined && !heatmap.isPlaceholderData && settledView !== null) {
+    answeredAt.current = Math.round(settledView.zoom);
+  }
   // One scale for the squares on the map and the legend, from the cells in view.
   const heat = useMemo<MapHeat | null>(
     () =>
@@ -136,8 +142,7 @@ export function useHeatView({
   const filtered = periodFilters || modeFilters;
   const answered = shown ?? null;
   // The server answers at zoom 18 for the cells of zoom 19 and 20 of the movement measures.
-  const askedCellZoom =
-    settledView === null ? null : Math.min(20, Math.round(settledView.zoom) + 5);
+  const askedCellZoom = answeredAt.current === null ? null : Math.min(20, answeredAt.current + 5);
   const larger = answered !== null && askedCellZoom !== null && answered.cellZoom < askedCellZoom;
   const deviceCount = (deviceIds ?? (devices.data ?? []).map((device) => device.id)).length;
   const periodText =

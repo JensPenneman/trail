@@ -40,17 +40,15 @@ export function classAbove(value: number, edges: readonly number[]): number {
 
 /**
  * Where the five classes of the altitude begin, in whole metres of a step of 1, 2 or 5 times a
- * power of ten, so that what is drawn spans them: four edges from the lowest altitude's step.
- * Null when nothing drawn has an altitude.
+ * power of ten, so that what is drawn spans them: four edges from the lowest altitude's step. The
+ * extremes are left out (the 2nd to the 98th percentile): one spike of a fix does not squeeze
+ * the rest into one class. Null when nothing drawn has an altitude.
  */
 export function altitudeScale(values: Iterable<number>): readonly number[] | null {
-  let low = Number.POSITIVE_INFINITY;
-  let high = Number.NEGATIVE_INFINITY;
-  for (const value of values) {
-    if (value < low) low = value;
-    if (value > high) high = value;
-  }
-  if (!Number.isFinite(low)) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  const low = sorted[Math.floor(0.02 * (sorted.length - 1))] ?? 0;
+  const high = sorted[Math.ceil(0.98 * (sorted.length - 1))] ?? low;
   const wanted = Math.max(1, (high - low) / 5);
   const power = 10 ** Math.floor(Math.log10(wanted));
   const step =

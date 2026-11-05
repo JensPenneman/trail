@@ -1,5 +1,5 @@
 import { type PathColour, pathColours } from "@trail/contracts/preferences";
-import type { ProcessingLevel } from "@trail/contracts/transport";
+import type { LevelValue, ProcessingLevel } from "@trail/contracts/transport";
 
 /** What the lines of the tracks are coloured by (docs/architecture.md §14), as the controls name them. */
 export const pathColourLabels: Readonly<Record<PathColour, string>> = {
@@ -51,11 +51,12 @@ export function resolvePathColour(
 
 /**
  * What a level's tracks have to be asked for (`values=` on `/api/v1/tracks`) to colour by `by`:
- * the altitude or the accuracy of each point. The raw level has both already, and speed is worked
- * out from the points.
+ * the server's speed, or the altitude and the accuracy together (one entry in the cache whichever
+ * of the two is chosen). The raw level has them all already.
  */
-export function levelValuesFor(by: PathColour): readonly ("altitude" | "accuracy")[] {
-  return by === "altitude" || by === "accuracy" ? [by] : [];
+export function levelValuesFor(by: PathColour): readonly LevelValue[] {
+  if (by === "speed") return ["speed"];
+  return by === "altitude" || by === "accuracy" ? ["altitude", "accuracy"] : [];
 }
 
 /** How the lines are coloured now: what by, on which map, in which zone. */

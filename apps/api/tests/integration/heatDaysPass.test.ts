@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
+import pg from "pg";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { decodeSegmentsNotice, processingChannel } from "../../src/events/processingNotify";
 import { HeatDaysScheduler } from "../../src/heatmap/heatDaysScheduler";
 import { signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
@@ -204,5 +206,42 @@ describe("the per-day cells of a pass", () => {
     }
     await new HeatDaysScheduler(t.ctx.db, logger).flush();
     expect(await count("heat_day_marks", device)).toBe(0);
+  });
+
+  it("tells the owner's streams when a device's rebuild commits, and not when it fails", async () => {
+    const listener = new pg.Client({ connectionString: t.ctx.config.databaseUrl });
+    await listener.connect();
+    const heard: string[] = [];
+    listener.on("notification", (message) => {
+      const notice = message.payload === undefined ? null : decodeSegmentsNotice(message.payload);
+      if (notice !== null && notice.deviceId === device) heard.push(notice.deviceId);
+    });
+    await listener.query(`LISTEN ${processingChannel}`);
+    try {
+      const day = (
+        await t.ctx.db.execute<{ day: string }>(
+          sql`SELECT (started_at AT TIME ZONE 'UTC')::date::text AS day FROM segments WHERE device_id = ${device}::uuid LIMIT 1`,
+        )
+      ).rows[0]?.day;
+      await t.ctx.db.execute(
+        sql`INSERT INTO heat_day_marks (device_id, day) VALUES (${device}::uuid, ${day}::date) ON CONFLICT DO NOTHING`,
+      );
+      await t.ctx.db.execute(
+        sql.raw(
+          `ALTER TABLE heat_days ADD CONSTRAINT heat_days_boom2 CHECK (device_id <> '${device}'::uuid) NOT VALID`,
+        ),
+      );
+      try {
+        await new HeatDaysScheduler(t.ctx.db, logger).flush();
+      } finally {
+        await t.ctx.db.execute(sql`ALTER TABLE heat_days DROP CONSTRAINT heat_days_boom2`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(heard).toEqual([]);
+      await new HeatDaysScheduler(t.ctx.db, logger).flush();
+      await vi.waitFor(() => expect(heard.length).toBeGreaterThan(0), { timeout: 3000 });
+    } finally {
+      await listener.end();
+    }
   });
 });

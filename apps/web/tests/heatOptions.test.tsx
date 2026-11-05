@@ -376,7 +376,7 @@ describe("the measures of movement", () => {
     expect(screen.getByText("Sums the devices' time")).toBeInTheDocument();
   });
 
-  it("asks again while the answer says recent days are still being worked out", async () => {
+  it("without a stream asks again while the answer says recent days are still being worked out", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       let asked = 0;

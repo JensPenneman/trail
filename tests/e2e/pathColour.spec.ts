@@ -132,12 +132,17 @@ test("Accuracy at Averaged colours by fixed metres and shows its key", async ({
 }) => {
   expect(account.email).toBeTruthy();
   await uploadedDevice(page, "Walker", walkAndDrive());
+  const asked = page.waitForRequest(
+    (request) =>
+      request.url().includes("/api/v1/tracks?") && request.url().includes("level=averaged"),
+  );
   await page.goto("/?view=history&person=me&level=averaged&color=accuracy");
+  // Asked for the altitude with the accuracy: one entry whichever of the two is chosen.
+  expect(new URL((await asked).url()).searchParams.get("values")).toBe("altitude,accuracy");
   const key = page.getByRole("list", { name: "Accuracy" });
   await expect(key).toBeVisible({ timeout: 30_000 });
   await expect(key.getByText("10 m or better")).toBeVisible();
   await expect(key.getByText("worse than 100 m")).toBeVisible();
-  // The level's tracks were asked for the accuracy, and only for that.
   await openMapOptions(page);
   await expect(page.getByRole("combobox", { name: "Colour by" })).toHaveValue("accuracy");
   await expectAccessible(page, "The accuracy key over the map");
