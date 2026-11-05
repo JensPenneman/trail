@@ -493,7 +493,7 @@ test.describe("on a 320 px wide screen", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: heading, exact: true }),
       ).toBeVisible();
-      await expect(page.getByText(loaded).first()).toBeVisible();
+      await expect(page.getByText(loaded).locator("visible=true").first()).toBeVisible();
       expect(await overflow(page), path).toBe(0);
       await expectAccessible(page, `${path} at 320 px`);
     }

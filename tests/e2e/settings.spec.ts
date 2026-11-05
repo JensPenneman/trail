@@ -25,7 +25,7 @@ const title = (page: Page, name: string) =>
 async function open(page: Page, path: string, name: string, ready: string | RegExp) {
   await page.goto(path);
   await expect(title(page, name)).toBeVisible();
-  await expect(page.getByText(ready).first()).toBeVisible();
+  await expect(page.getByText(ready).locator("visible=true").first()).toBeVisible();
 }
 
 /** An unsafe request of the signed-in page, from its own origin as the CSRF guard asks. */

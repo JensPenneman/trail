@@ -15,7 +15,8 @@ async function open(
 ): Promise<void> {
   await page.goto(path);
   await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
-  if (ready !== undefined) await expect(page.getByText(ready).first()).toBeVisible();
+  if (ready !== undefined)
+    await expect(page.getByText(ready).locator("visible=true").first()).toBeVisible();
 }
 
 test.describe("accessibility", () => {
