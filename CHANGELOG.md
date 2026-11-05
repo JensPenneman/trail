@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.0](https://github.com/JensPenneman/trail/compare/v0.9.0...v0.10.0) (2026-11-05)
+
+
+### Features
+
+* **web:** colour the paths by speed, time of day, device or mode ([#132](https://github.com/JensPenneman/trail/issues/132)) ([e8c7296](https://github.com/JensPenneman/trail/commit/e8c7296821d77eabdc265cd52a5c06d9fb4b8b85))
+* **web:** heat by time on the move and speed, paths by altitude, accuracy and confidence ([#134](https://github.com/JensPenneman/trail/issues/134)) ([dbfba2e](https://github.com/JensPenneman/trail/commit/dbfba2e074afacc3fc5165aa13fda1aa2aa80977))
+
+
 ## [0.9.0](https://github.com/JensPenneman/trail/compare/v0.8.1...v0.9.0) (2026-11-05)
 
 
