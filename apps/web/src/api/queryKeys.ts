@@ -121,6 +121,9 @@ export const queryKeys = {
     ["insights", "mode", mode, params] as const,
   insightsTime: (params: InsightsParams) => ["insights", "time", params] as const,
   insightsRoads: (params: InsightsParams) => ["insights", "roads", params] as const,
+  insightsPlaces: (params: InsightsParams) => ["insights", "places", params] as const,
+  insightsPlace: (place: string, params: InsightsParams) =>
+    ["insights", "place", place, params] as const,
   personTracksOf: (userId: string) => ["person-tracks", userId] as const,
   personTracks: (userId: string, params: PersonTrackParams) =>
     ["person-tracks", userId, params] as const,

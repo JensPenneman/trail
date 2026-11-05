@@ -11,12 +11,21 @@ export const insightsRootPath = "/insights";
 export function levelOf(pathname: string): number {
   const parts = pathname.split("/").filter((part) => part !== "");
   if (parts.length <= 1) return 0;
+  // A place is a level below Places, and its days one more.
+  if (parts[1] === "place") return parts[2] === "days" ? 3 : 2;
   return parts[1] === "transport" && parts.length >= 4 ? 2 : 1;
 }
 
-/** What tells one screen from another: its path (the period and devices are the same screen's). */
-export function keyOf({ pathname }: ShellAddress): string {
-  return pathname.replace(/\/+$/, "") || "/";
+/**
+ * What tells one screen from another: its path (the period and devices are
+ * the same screen's), and for the screens of a place the place, so that the
+ * row of the place one comes back from is told from the others.
+ */
+export function keyOf({ pathname, search }: ShellAddress): string {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  if (path !== "/insights/place" && path !== "/insights/place/days") return path;
+  const place = new URLSearchParams(search).get("place");
+  return place === null ? path : `${path}?place=${place}`;
 }
 
 /** The parts of a mode, each a screen two levels down. */

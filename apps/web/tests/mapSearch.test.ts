@@ -238,7 +238,7 @@ describe("Heat in the People page's URL", () => {
   it("reads the measure, and nothing for what it does not know", () => {
     expect(parse("view=heat&heat=time").heat).toBe("time");
     expect(parse("heat=visits").heat).toBe("visits");
-    for (const bad of ["", "speed", "TIME", "points,time"]) {
+    for (const bad of ["", "sped", "TIME", "points,time"]) {
       expect(parse(`heat=${bad}`).heat).toBeNull();
     }
   });
@@ -249,7 +249,7 @@ describe("Heat in the People page's URL", () => {
     expect(resolveHeatMeasure(null, null, "visits")).toBe("visits");
     expect(resolveHeatMeasure(null, null, undefined)).toBe("points");
     // An address that is not a measure is no address.
-    expect(resolveHeatMeasure("speed", "time", "visits")).toBe("time");
+    expect(resolveHeatMeasure("sped", "time", "visits")).toBe("time");
   });
 
   it("reads a period of up to three years, which History would cut to 93 days", () => {

@@ -1,7 +1,9 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Database } from "../db/database";
 import { devices } from "../db/schema/devices";
+import { users } from "../db/schema/users";
 import { notifySegments } from "../events/processingNotify";
+import { heatDaysOf } from "../heatmap/heatDaysOf";
 import { lockDeviceProcessing } from "./deviceLock";
 import { persistWindow } from "./persistWindow";
 import type { ProcessingConfig } from "./processingConfig";
@@ -43,6 +45,8 @@ export interface WindowOutcome {
   points: number;
   segments: number;
   missingTiles: readonly TileKey[];
+  /** The local days (in the owner's zone) the pass touched, whose per-day heat cells are to be rebuilt. */
+  heatDays: string[];
 }
 
 const levels: readonly FromLevel[] = ["averaged", "mapped", "inferred"];
@@ -89,8 +93,9 @@ export async function processWindow(
   return db.transaction(async (tx) => {
     await lockDeviceProcessing(tx, deviceId);
     const [owner] = await tx
-      .select({ userId: devices.userId })
+      .select({ userId: devices.userId, timezone: users.timezone })
       .from(devices)
+      .innerJoin(users, eq(users.id, devices.userId))
       .where(eq(devices.id, deviceId))
       .limit(1);
     if (owner === undefined) return null;
@@ -151,6 +156,15 @@ export async function processWindow(
       versions: processingVersions,
       config,
     });
+    // The days it touched in the owner's zone are marked, in this transaction: their cells for the
+    // heatmap are rebuilt once the pass has committed, apart from it (HeatDaysScheduler), and a
+    // crash before then loses nothing.
+    const heatDays = heatDaysOf(window.from, window.to, owner.timezone);
+    await tx.execute(sql`
+      INSERT INTO heat_day_marks (device_id, day, marked_at)
+      SELECT ${deviceId}::uuid, d::date, now() FROM unnest(${sql.param(heatDays)}::text[]) AS d
+      ON CONFLICT (device_id, day) DO UPDATE SET marked_at = excluded.marked_at
+    `);
     // The older part of a split keeps the rows' reason and level; an upload's is repair: history
     // that must not hold up the fresh points of other devices.
     if (split.older !== null) {
@@ -182,6 +196,7 @@ export async function processWindow(
       points: raw.length,
       segments: result.segments.length,
       missingTiles: waitFor,
+      heatDays,
     };
   });
 }

@@ -85,6 +85,20 @@
       "when": 1793818755959,
       "tag": "0011_segments_lacking_totals",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793822439571,
+      "tag": "0012_heat_days",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793827571854,
+      "tag": "0013_heat_day_marks",
+      "breakpoints": true
     }
   ]
 }

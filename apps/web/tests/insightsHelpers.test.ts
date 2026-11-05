@@ -3,8 +3,8 @@ import { createFormatter } from "../src/format/createFormatter";
 import { bucketLabels } from "../src/pages/insights/bucketLabels";
 import { foldModes } from "../src/pages/insights/foldModes";
 import { axisFormats, changeOf } from "../src/pages/insights/insightsFormat";
-import { levelOf } from "../src/pages/insights/insightsLevels";
-import { moveOnMap } from "../src/pages/insights/insightsLinks";
+import { keyOf, levelOf } from "../src/pages/insights/insightsLevels";
+import { moveOnMap, placeLink } from "../src/pages/insights/insightsLinks";
 import {
   longestFact,
   modeFamily,
@@ -12,6 +12,7 @@ import {
   speedFact,
   whenFact,
 } from "../src/pages/insights/modeFacts";
+import { placeLabel } from "../src/pages/insights/placeLabel";
 import { modeInsights } from "./support/insightsFixtures";
 
 const format = createFormatter("en-GB", "Europe/Brussels");
@@ -147,5 +148,65 @@ describe("the facts on a mode's rows", () => {
     expect(levelOf("/insights/time")).toBe(1);
     expect(levelOf("/insights/transport/car")).toBe(1);
     expect(levelOf("/insights/transport/car/speed")).toBe(2);
+    expect(levelOf("/insights/places")).toBe(1);
+    expect(levelOf("/insights/place")).toBe(2);
+    expect(levelOf("/insights/place/days")).toBe(3);
+  });
+
+  it("tells the screens of two places apart by their key, and others by their path", () => {
+    const at = (pathname: string, search = "") => keyOf({ pathname, search });
+    expect(at("/insights/place", "?period=2026-10&place=134217.89012")).toBe(
+      "/insights/place?place=134217.89012",
+    );
+    expect(at("/insights/place/days", "?place=134217.89012&period=year")).toBe(
+      "/insights/place/days?place=134217.89012",
+    );
+    expect(at("/insights/place", "?place=134300.89100")).not.toBe(
+      at("/insights/place", "?place=134217.89012"),
+    );
+    expect(at("/insights/transport/car/", "?place=1.2")).toBe("/insights/transport/car");
+    expect(at("/insights/places", "?period=2026-10")).toBe("/insights/places");
+  });
+
+  it("puts the place in the query, with the period and devices, never in the path", () => {
+    const current = new URLSearchParams("period=2026-10&devices=&mode=car&view=x");
+    expect(placeLink("/insights/place", current, "134217.89012")).toBe(
+      "/insights/place?period=2026-10&place=134217.89012",
+    );
+    expect(placeLink("/insights/place/days", new URLSearchParams(), "1.2")).toBe(
+      "/insights/place/days?place=1.2",
+    );
+  });
+});
+
+describe("what a place is called", () => {
+  const centre: [number, number] = [3.7104, 51.0362];
+  const stop = (distanceM: number) => ({
+    centre,
+    name: { text: "Korenmarkt", source: "stop" as const, kind: "tram_stop" as const, distanceM },
+  });
+
+  it.each([
+    [0, "Korenmarkt"],
+    [12, "Korenmarkt"],
+    // The stop itself up to 30 m; near it from there to 150 m.
+    [30, "Korenmarkt"],
+    [31, "Near Korenmarkt"],
+    [150, "Near Korenmarkt"],
+  ])("a stop %i m away is %s", (distanceM, title) => {
+    expect(placeLabel(stop(distanceM), format)).toEqual({ title, detail: null });
+  });
+
+  it("is the road where a stay was on one, and the coordinates where there is no name", () => {
+    expect(
+      placeLabel(
+        { centre, name: { text: "Kerkstraat", source: "road", kind: null, distanceM: 0 } },
+        format,
+      ),
+    ).toEqual({ title: "Kerkstraat", detail: null });
+    expect(placeLabel({ centre, name: null }, format)).toEqual({
+      title: "Unnamed place",
+      detail: "51.0362° N, 3.7104° E",
+    });
   });
 });

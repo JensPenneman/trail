@@ -240,13 +240,36 @@ export const timelineResponseSchema = z
   .meta({ id: "Timeline", description: "Stops and moves, one page." });
 export type TimelineResponse = z.infer<typeof timelineResponseSchema>;
 
-/** `[lon, lat, t]`: WGS84 degrees and epoch seconds. */
-export const levelPointSchema = z.tuple([z.number(), z.number(), z.number().int()]).meta({
-  id: "LevelPoint",
+/** What a point of a track can carry besides its place and time: `values=` names them. */
+export const levelValues = ["speed", "altitude", "accuracy"] as const;
+export const levelValueSchema = z.enum(levelValues).meta({
+  id: "LevelValue",
   description:
-    "`[lon, lat, t]`: WGS84 degrees and the time in epoch seconds. On the mapped level the way's shape between two recorded points carries interpolated times.",
-  example: [3.7104, 51.0362, 1_793_000_000],
+    "`speed` in m/s, `altitude` in metres and `accuracy` (the horizontal accuracy of the fix) in metres.",
+  example: "speed",
 });
+export type LevelValue = z.infer<typeof levelValueSchema>;
+
+/** `values=speed,altitude`: at most three, none twice. */
+const valuesParam = z
+  .string()
+  .transform((value) => value.split(",").filter((part) => part.length > 0))
+  .pipe(
+    z
+      .array(levelValueSchema)
+      .max(3)
+      .refine((names) => new Set(names).size === names.length, { message: "Name a value once" }),
+  );
+
+/** `[lon, lat, t, …values]`: WGS84 degrees, epoch seconds, then the values asked for, null where unknown. */
+export const levelPointSchema = z
+  .tuple([z.number(), z.number(), z.number().int()], z.number().nullable())
+  .meta({
+    id: "LevelPoint",
+    description:
+      "`[lon, lat, t]`: WGS84 degrees and the time in epoch seconds, then — for `values` on the query — those values in the order asked for, `null` where a point has none. On the mapped level the way's shape between two recorded points carries interpolated times and the speed of the point it leads to.",
+    example: [3.7104, 51.0362, 1_793_000_000],
+  });
 export type LevelPoint = z.infer<typeof levelPointSchema>;
 
 /** `GET /api/v1/tracks` */
@@ -262,6 +285,11 @@ export const levelTracksQuerySchema = z
       example: "2026-10-26T23:00:00Z",
     }),
     level: processingLevelSchema.default("raw"),
+    values: valuesParam.optional().meta({
+      description:
+        "Comma-separated, at most three of `speed`, `altitude` and `accuracy`: each point then carries them after `t`, in this order. `speed` is the recorded speed on `raw` and the averaged one on the other levels; `altitude` and `accuracy` are the fix's own. Left out: points are `[lon, lat, t]`.",
+      example: "speed,altitude",
+    }),
     maxPoints: z.coerce.number().int().min(100).max(50_000).default(8000).meta({
       description: "At most this many points per device; longer tracks are simplified.",
       example: 8000,
@@ -315,6 +343,14 @@ export type LevelTrackSegment = z.infer<typeof levelTrackSegmentSchema>;
 export const levelTracksResponseSchema = z
   .object({
     level: processingLevelSchema.meta({ description: "The level asked for." }),
+    values: z
+      .array(levelValueSchema)
+      .optional()
+      .meta({
+        description:
+          "The values each point carries after `t`, in order (the query's `values`); left out when none were asked for.",
+        example: ["speed", "altitude"],
+      }),
     availableLevel: processingLevelSchema.meta({
       description:
         "The level every point of the response reached. Lower than `level` while points wait for processing or map data.",

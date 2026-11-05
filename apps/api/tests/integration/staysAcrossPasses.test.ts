@@ -22,7 +22,7 @@ import { lockDeviceProcessing } from "../../src/processing/deviceLock";
 import type { RawPoint } from "../../src/processing/pipelineTypes";
 import { enqueueWindow, takeDeviceWindows } from "../../src/processing/processingQueue";
 import { processWindow } from "../../src/processing/processWindow";
-import { loadOverrides, loadStayBefore } from "../../src/processing/windowData";
+import { loadOverrides, loadStayBefore, maxExtensionMs } from "../../src/processing/windowData";
 import { loadCurrentModes } from "../../src/sharing/currentModes";
 import { createApiToken } from "../support/apiTokenFlows";
 import { type Agent, signUpWithCookie } from "../support/authFlows";
@@ -663,7 +663,11 @@ describe("a quick toggle across the parts of a stay", () => {
   it("keeps a toggle set during a three-day stay until the device leaves, for the ride", {
     timeout: 300_000,
   }, async () => {
-    // Three days at home up to two hours ago, a point a minute: worked out in parts.
+    // Three days at home up to two hours ago, a point a minute, worked out in parts. How one upload
+    // of it is cut depends on how its batches' windows fall into passes: a pass that ends near the
+    // stay's start grows forward over all of it (whole segments, two days out at most) and stores
+    // one stop. So the parts are made here: the first 60 hours are worked out, then the rest, whose
+    // pass starts more than the two days a window grows back after the stay began and must cut it.
     const device = await newDevice("Toggle at home for days");
     const now = Math.floor(Date.now() / 1000);
     const days = stay(home, {
@@ -672,14 +676,19 @@ describe("a quick toggle across the parts of a stay", () => {
       intervalS: 60,
       seed: 131,
     });
-    await upload(device.token, days);
+    const cut = (days[0]?.t ?? 0) + maxExtensionMs / 1000 + 12 * 3600;
+    await upload(
+      device.token,
+      days.filter((point) => point.t < cut),
+    );
     await settle(device.id);
-    // The worker's own run may still be storing the older parts of the split job when the queue
-    // reads empty on a slow host: wait for them rather than judge the first look.
-    await expect
-      .poll(async () => (await storedStops(device.id)).length, { timeout: 30_000, interval: 500 })
-      .toBeGreaterThan(1);
+    await upload(
+      device.token,
+      days.filter((point) => point.t >= cut),
+    );
+    await settle(device.id);
     const parts = await storedStops(device.id);
+    expect(parts.length).toBeGreaterThan(1);
     // The train set an hour before the last part began: the parts after it are the same stay.
     const lastPart = Date.parse(parts.at(-1)?.from ?? "") / 1000;
     await toggle(device.id, lastPart - 3600, "train");

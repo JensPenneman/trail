@@ -34,6 +34,18 @@ export const insightsRoute: RouteObject = {
       lazy: () => import("./LongestMovesScreen").then((m) => ({ Component: m.LongestMovesScreen })),
     },
     {
+      path: "places",
+      lazy: () => import("./PlacesScreen").then((m) => ({ Component: m.PlacesScreen })),
+    },
+    {
+      path: "place",
+      lazy: () => import("./PlaceScreen").then((m) => ({ Component: m.PlaceScreen })),
+    },
+    {
+      path: "place/days",
+      lazy: () => import("./PlaceDaysScreen").then((m) => ({ Component: m.PlaceDaysScreen })),
+    },
+    {
       path: "time",
       loader: ({ request }) => legacyInsightsRedirect(request, "time"),
       lazy: () => import("./WhenScreen").then((m) => ({ Component: m.WhenScreen })),

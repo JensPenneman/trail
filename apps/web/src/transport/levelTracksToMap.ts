@@ -70,7 +70,7 @@ export function levelTracksToMap(
   }
   const transport: MapTransportSegment[] = [];
   // Where each device's line got to: the last point of its previous stop or move, and when.
-  const reached = new Map<string, readonly [number, number, number]>();
+  const reached = new Map<string, LevelPoint>();
   for (const [index, segment] of response.segments.entries()) {
     const points = line(segment.points);
     if (segment.kind === "track") {
