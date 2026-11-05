@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useDays } from "../../../../queries/useDays";
+import type { PersonDays } from "../../../../queries/usePersonDays";
 import { addDays } from "../../../../time/addDays";
 
 /** The stats API allows 400 days a request. */
@@ -14,17 +15,6 @@ export interface PlaybackDays {
   /** When the last point of each of those days was recorded, epoch seconds. */
   lastAt: ReadonlyMap<string, number>;
   /** The list reaches today: no later day can still turn up. */
-  complete: boolean;
-}
-
-/**
- * What someone else's days endpoint gives (`GET /api/v1/people/{id}/days`,
- * which arrives with the playback wiring): the caller asks, this hook only
- * reads. Days without points are not in it.
- */
-export interface PersonDays {
-  days: readonly { date: string; lastAt: string }[];
-  /** The answer reaches today. */
   complete: boolean;
 }
 

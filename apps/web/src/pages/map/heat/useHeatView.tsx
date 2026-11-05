@@ -156,6 +156,7 @@ export function useHeatView({
     meGroupTitle: "Heat: totals, busiest places",
     personGroup: null,
     // Heatmaps are one's own: nobody else's track is asked for.
+    player: null,
     personTracks: inactiveView.personTracks,
     dialog: null,
   };
