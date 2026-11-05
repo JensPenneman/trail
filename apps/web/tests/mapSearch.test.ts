@@ -25,6 +25,7 @@ describe("the People page's URL", () => {
       list: null,
       devices: null,
       period: { mode: "day", from: today, to: today },
+      at: null,
     });
   });
 
@@ -41,6 +42,11 @@ describe("the People page's URL", () => {
     expect(withList(hidden, null).toString()).toBe("view=history");
   });
 
+  it("reads a moment of the day, and ignores one outside it", () => {
+    expect(parse("view=history&date=2026-10-20&at=2026-10-20T14:30").at).toBe("2026-10-20T14:30");
+    expect(parse("view=history&at=nonsense").at).toBeNull();
+  });
+
   it("reads the view, the person, the devices and History's day or period", () => {
     expect(
       parse(`view=history&person=${anna.toUpperCase()}&devices=a,b&from=2026-10-01&to=2026-10-07`),
@@ -50,6 +56,7 @@ describe("the People page's URL", () => {
       list: null,
       devices: ["a", "b"],
       period: { mode: "range", from: "2026-10-01", to: "2026-10-07" },
+      at: null,
     });
     expect(parse("view=heat&date=2026-10-20").period).toEqual({
       mode: "day",

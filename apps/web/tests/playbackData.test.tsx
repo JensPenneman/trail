@@ -6,11 +6,9 @@ import { dayBounds } from "../src/pages/map/history/playback/playbackModel";
 import type { PlaybackState } from "../src/pages/map/history/playback/playbackReducer";
 import { initialPlayback } from "../src/pages/map/history/playback/playbackReducer";
 import { usePlaybackAnnouncer } from "../src/pages/map/history/playback/usePlaybackAnnouncer";
-import {
-  type PersonDays,
-  usePlaybackDays,
-} from "../src/pages/map/history/playback/usePlaybackDays";
+import { usePlaybackDays } from "../src/pages/map/history/playback/usePlaybackDays";
 import { usePlaybackPrefetch } from "../src/pages/map/history/playback/usePlaybackPrefetch";
+import type { PersonDays } from "../src/queries/usePersonDays";
 import { useTransportMap } from "../src/transport/useTransportMap";
 import { ids, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
