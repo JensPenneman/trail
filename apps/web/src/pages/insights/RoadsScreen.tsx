@@ -8,11 +8,11 @@ import { ErrorState } from "../../ui/ErrorState";
 import { LoadingBlock } from "../../ui/LoadingBlock";
 import { Notice } from "../../ui/Notice";
 import { Skeleton } from "../../ui/Skeleton";
-import { InsightsFrame } from "./InsightsFrame";
+import { InsightsScreen } from "./InsightsScreen";
 import { axisFormats } from "./insightsFormat";
-import { periodPhrase } from "./insightsSearch";
-import { ModeSwitch } from "./ModeSwitch";
-import { useInsightsSearch } from "./useInsightsSearch";
+import { insightsRootPath } from "./insightsLevels";
+import { insightsLink } from "./insightsLinks";
+import { useInsightsPeriod } from "./useInsightsPeriod";
 import { WayKindBars } from "./WayKindBars";
 import { wayFamilyLabels } from "./wayLabels";
 
@@ -20,24 +20,23 @@ import { wayFamilyLabels } from "./wayLabels";
  * Roads (`/insights/roads`): the kinds of road and railway travelled on, from
  * the map matching of the moves, for every mode or the one chosen.
  */
-export function InsightsRoadsPage() {
-  const state = useInsightsSearch();
+export function RoadsScreen() {
+  const state = useInsightsPeriod();
   const format = useFormatter();
   const axes = useMemo(() => axisFormats(format), [format]);
   const kindsId = useId();
   const familiesId = useId();
   const roads = useInsightsRoads(state.query(true));
   const data = roads.data;
-  const mode = state.search.mode;
+  const mode = state.mode;
   const tone = mode ?? "accent";
 
   return (
-    <InsightsFrame
+    <InsightsScreen
       state={state}
       title="Roads"
       documentTitle="Roads · Insights"
-      description={`The roads and railways you travelled on${mode === null ? "" : ` by ${transportModeInfo[mode].label.toLowerCase()}`}, in ${periodPhrase(state.search, format)}.`}
-      filter={<ModeSwitch value={mode} modes={data?.modes ?? []} onChange={state.chooseMode} />}
+      up={{ to: insightsLink(insightsRootPath, state.params), label: "Insights", always: false }}
       pending={data?.pending ?? false}
       updating={roads.isPlaceholderData}
     >
@@ -55,7 +54,7 @@ export function InsightsRoadsPage() {
       ) : roads.data.distanceM <= 0 ? (
         <div className="card">
           <EmptyState icon="route" title="No moves in this period">
-            <p>Choose a longer period, another mode or another device.</p>
+            <p>Choose another period, or another device.</p>
           </EmptyState>
         </div>
       ) : roads.data.mappedM <= 0 ? (
@@ -67,6 +66,9 @@ export function InsightsRoadsPage() {
         </Notice>
       ) : (
         <>
+          {mode === null ? null : (
+            <p className="muted">Counting {transportModeInfo[mode].label.toLowerCase()} only.</p>
+          )}
           <section className="section" aria-labelledby={kindsId}>
             <h2 className="section__title" id={kindsId}>
               By kind of way
@@ -103,6 +105,6 @@ export function InsightsRoadsPage() {
           ) : null}
         </>
       )}
-    </InsightsFrame>
+    </InsightsScreen>
   );
 }

@@ -1,0 +1,21 @@
+.insights-screen__content {
+  display: grid;
+  align-content: start;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+/* The one number of a screen, larger than a tile among others. */
+.insights-hero {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.insights-hero .stat-tile__value {
+  font-size: var(--text-3xl);
+}
+
+.insights-hero__note {
+  margin: 0;
+}

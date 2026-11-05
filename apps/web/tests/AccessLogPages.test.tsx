@@ -8,9 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { actorSegment } from "../src/accessLog/actorAddress";
 import { RequireSession } from "../src/app/RequireSession";
 import { useRouteFocus } from "../src/app/useRouteFocus";
-import { WhoViewedYouCard } from "../src/pages/insights/WhoViewedYouCard";
 import { settingsRoute } from "../src/settings/settingsRoutes";
-import { accessLine, busySummary, emptySummary, page } from "./support/accessLogFixtures";
+import { accessLine, busySummary, page } from "./support/accessLogFixtures";
 import { ids, outgoingShare, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
 import { renderPage } from "./support/renderPage";
@@ -543,32 +542,5 @@ describe("the usage of a token, a link and a share", () => {
     renderSettings(`/settings/tokens/${ids.token}`);
     expect(await screen.findByText("Not used in the last 30 days.")).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Last actions" })).not.toBeInTheDocument();
-  });
-});
-
-describe("Insights' card of who viewed you", () => {
-  it("shows who looked this month, and who most, with the way to the whole page", async () => {
-    mockApi({ ...standardRoutes(), "GET /api/v1/access-log/summary": summaryRoute(busySummary) });
-    renderPage(<WhoViewedYouCard />, { path: "/insights", user });
-    const card = await screen.findByRole("region", { name: "Who viewed you" });
-    expect(within(card).getByText("People").closest(".stat-tile")).toHaveTextContent("116 looks");
-    expect(within(card).getByText("Ana Bell looked most often: 46 times.")).toBeInTheDocument();
-    expect(within(card).getByRole("link", { name: /^See who viewed you/ })).toHaveAttribute(
-      "href",
-      "/settings/privacy/viewers",
-    );
-  });
-
-  it("is not there while nobody but you looked", async () => {
-    const { calls } = mockApi({
-      ...standardRoutes(),
-      "GET /api/v1/access-log/summary": () => ({
-        status: 200,
-        body: { ...emptySummary(30), own: busySummary(30).own },
-      }),
-    });
-    renderPage(<WhoViewedYouCard />, { path: "/insights", user });
-    await waitFor(() => expect(queriesOf(calls, "/api/v1/access-log/summary")).toHaveLength(1));
-    expect(screen.queryByRole("region", { name: "Who viewed you" })).not.toBeInTheDocument();
   });
 });
