@@ -2878,6 +2878,7 @@ Settings is the current item on their pages too.
 | `/s` | a public link; its secret is the fragment, `/s#trls_…` (public) |
 | `/` | **People**, the home page: the map with Live, History and Heat, and the people list (signed in) |
 | `/insights`, `/insights/transport/:mode`, `/insights/time`, `/insights/roads` | Insights: the summary, a transport mode's screen, when you travel, roads — screens of one shell (list beside the screen on wide screens, one screen at a time on phones) |
+| `/insights/transport/:mode/time`, `…/roads`, `…/speed`, `…/moves` | a mode's When, Roads, Speed and Longest moves, a level below its screen. `/insights/time?mode=X` and `/insights/roads?mode=X` of before redirect (replacing the entry, other parameters kept) to `…/transport/X/time` and `…/roads` (`legacyInsightsRedirect`, a route loader) |
 | `/settings` | Settings: on phones the list with search; on wide screens the first page (Profile) beside the list. An anchor of the single page of 0.2 (`/settings#tokens`, `#browsers`, …) opens its page (`settingsPathFor`) |
 | `/settings/profile`, `…/devices`, `…/passkeys`, `…/browsers`, `…/sharing`, `…/links`, `…/privacy/viewers`, `…/privacy/access-log`, `…/data`, `…/tokens`, `…/mcp`, `…/preferences`, `…/notifications`, `…/about`, `…/accounts` | a page of Settings each; `…/accounts` for administrators only, everyone else lands on `/settings`; `/settings/devices?add=1` opens Add device |
 | `/settings/devices/:deviceId`, `…/passkeys/:id`, `…/sharing/:shareId`, `…/links/:id`, `…/tokens/:id`, `…/privacy/viewers/:actor` | the page of one device, passkey, share, public link, API token or viewer — an actor of the access log, its actor id (§8.8) as base64url |
@@ -3278,11 +3279,15 @@ count among them, since they lead to signed-in pages.
   most distance first, with its distance and share, "None" for a mode on
   screen that had no moves) and "Patterns" (When you travel, Roads); the row
   of the screen on show is `aria-current`. Levels (`insightsLevels.ts`): the
-  summary is level 0, every other screen level 1; the key of a screen is its
-  path. Coming back to the summary hands focus to the row that was left
+  summary is level 0, a mode's screen, When you travel and Roads level 1, the
+  parts of a mode (below) level 2, whose way back leads to the mode — "‹ Car"
+  — and which keep the mode's row current in the list; the key of a screen is
+  its path. Coming back to the summary hands focus to the row that was left
   (`data-route-focus`; not for the list beside the screens, where the
   new screen's h1 takes focus whichever way one goes and the row left must
-  not take it back), going in to the new screen's h1. Every screen has the title
+  not take it back), going in to the new screen's h1. One exception: pressing
+  a mode's row in the list from one of the mode's parts goes up a level, so
+  focus goes to the row of the part left on the mode's screen. Every screen has the title
   "<screen> · Insights" and a notice while processing has work in the period
   ("Processing is still catching up"). Choosing another period or other devices
   is announced politely once its answer is there ("October 2026: 66 km");
@@ -3292,8 +3297,7 @@ count among them, since they lead to signed-in pages.
   or year, all of the history, or a custom range of local days (three years
   at most), and the state is the URL: `?period=week|month|year|all` for the
   current one, `2026-W44`, `2026-10`, `2026` for a fixed one, `from=…&to=…`
-  for a range (which overrides `period`), plus `devices=` and, on When you
-  travel and Roads, `mode=` (no control for it yet). No parameter is this
+  for a range (which overrides `period`), plus `devices=`. No parameter is this
   month; whatever is in the future or cannot be one is this month too
   (`parseInsightsAddress`, `insightsPeriod.ts`); the old `7d|30d|90d` still
   open, as custom ranges ending today, and are never written. A current
@@ -3330,14 +3334,37 @@ count among them, since they lead to signed-in pages.
     the patterns stay.
   - **A mode** (`/insights/transport/:mode`) — the mode's distance (time,
     moves, typical speed beneath) against the same mode in the period before,
-    and the distance over the period as a line; no moves: "No cycling in this
-    period". An unknown mode is a screen saying so ("No such mode", "Back to
-    Insights"), asking for nothing.
+    the distance over the period as a line, and rows to its parts, each with
+    what it says (`modeFacts.ts`): When ("Mostly Mondays · busiest at 08:00"), Roads
+    ("62% on cycleways", "94% on railway track", "80% on ferry routes"; no
+    row for planes and the other modes not laid onto the map), Speed
+    ("Typically 17 km/h") and Longest moves ("23.4 km · Tue 7 Oct"). No
+    moves: "No cycling in this period", no rows. An unknown mode (or part of
+    one) is a screen saying so ("No such mode", "Back to Insights"), asking
+    for nothing.
+  - **A mode's When** (`…/time`) — the mode's hours of the week as a grid,
+    from `GET …/time?mode=`, under the time on the move and when it is most.
+  - **A mode's Roads** (`…/roads`) — a hero by family: the kind of road with
+    the most distance (walking, running, cycling, car, bus), the share on
+    railway track with the halts at stations a ride (train, tram — "tram
+    stops" —, metro), the share on ferry routes (boat); the distance by kind
+    of way beneath, how much of the distance map data covers, and a notice
+    where it covers none.
+  - **A mode's Speed** (`…/speed`) — the typical speed with the average
+    beneath, the moves by median speed as a histogram, and a row to the
+    fastest move in History.
+  - **A mode's Longest moves** (`…/moves`) — the longest move as the hero and
+    the five longest as rows, each opening History on the move's local day
+    with its details (`/?view=history&date=…&person=me&segment=<id>`:
+    `useHistoryView` opens the dialog of the segment the address names once
+    the day's timeline has it, and closing it drops the parameter).
   - **When you travel** (`/insights/time`) — time on the move in every hour
-    of every weekday as a grid, for every mode or the one `mode=` names.
-  - **Roads** (`/insights/roads`) — the distance by kind of way and by group
-    of ways, for every mode or the one `mode=` names, with how much of the
-    distance map data covers; a notice where it covers none.
+    of every weekday as a grid, under the time on the move in all and when it
+    is most.
+  - **Roads** (`/insights/roads`) — the kind of way with the most distance as
+    the hero, the distance by kind of way, and how much of the distance map
+    data covers; a notice where it covers none, and another where everything
+    it covers is off the map. The chart by group of ways of before is gone.
 
   The charts (`apps/web/src/charts/`, no library): `BarChart` (stacked or
   grouped, columns or horizontal bars; one series may give each row its own
@@ -4360,13 +4387,15 @@ security ones too.
   days asked for, steps across year ends, a unit change around the same day,
   the address written back, what a period is compared with and how it is
   named) and its words (`insightsHelpers.test.ts`: changes against the period
-  before, "None in …", ticks, the steps' names, folding modes), and its
+  before, "None in …", ticks, the steps' names, folding modes, the facts on a
+  mode's rows, the links into History, the levels), and its
   screens against a mocked API (`InsightsScreens.test.tsx`: the summary and
   its comparisons — complete, still going, empty, all of the history,
   a range —, the list on a phone and beside the screen, the period bar's
   units, steps, custom range and Escape, the devices under Options, a mode's
-  hero and the way back with focus on its row, When you travel and Roads, the
-  warm open from the browser's copy); a link to one move opening its dialog on the People
+  hero, rows and parts (When, Roads of each family, Speed, Longest moves) and
+  the way back with focus on its row, When you travel, Roads and the redirects
+  of the old addresses, the warm open from the browser's copy); a link to one move opening its dialog on the People
   page; and the access log's pages (`accessLogHelpers.test.ts`: actor ids
   and their segments, the sentences and their plurals, the filters and the
   request they make, lines by local day across pages, folded lines, what a
@@ -4449,7 +4478,9 @@ security ones too.
   or after the chart, units and steps of the period and a custom range in
   its popover, an old `7d` address, a chart by keyboard — one tab stop, arrow
   keys, the tooltip and Escape —, a mode's screen from its row and the way
-  back to the row, when you travel with a mode, roads without map data, axe
+  back to the row, its Speed, When, Roads and Longest moves (a move opening
+  History's dialog), the old When address with a mode redirecting, roads
+  without map data, axe
   on every screen and the open popover, and every screen at 320 px), the access log with what the server really recorded
   (`accessLog.spec.ts`: someone with a precise share and history reads your
   track in their browser and is under People with the sentence the summary's

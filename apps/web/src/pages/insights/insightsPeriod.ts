@@ -1,5 +1,4 @@
 import { lastInsightsDay } from "@trail/contracts/period";
-import { type TransportMode, transportModes } from "@trail/contracts/transport";
 import type { InsightsParams } from "../../api/queryKeys";
 import type { Formatter } from "../../format/createFormatter";
 import { addDays } from "../../time/addDays";
@@ -29,13 +28,11 @@ export type InsightsPeriod =
   | CalendarPeriod
   | { kind: "custom"; first: string; last: string };
 
-/** What an Insights address says: the period, the devices counted and the mode of the screens that filter by one. */
+/** What an Insights address says: the period and the devices counted. */
 export interface InsightsAddress {
   period: InsightsPeriod;
   /** The devices counted; null for all of them. */
   devices: readonly string[] | null;
-  /** The mode of the screens that filter by one; null for every mode. */
-  mode: TransportMode | null;
 }
 
 const deviceId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -130,7 +127,7 @@ function parsePeriodValue(value: string, today: string): InsightsPeriod | null {
 /**
  * Reads the address defensively, like the People page does: a period it does
  * not know is this month, a custom range that the API would refuse too, and
- * devices or a mode that cannot be one are dropped.
+ * devices that cannot be one are dropped.
  */
 export function parseInsightsAddress(params: URLSearchParams, today: string): InsightsAddress {
   const from = params.get("from");
@@ -144,14 +141,10 @@ export function parseInsightsAddress(params: URLSearchParams, today: string): In
     .split(",")
     .map((part) => part.trim().toLowerCase())
     .filter((part) => deviceId.test(part));
-  const mode = params.get("mode");
   return {
     period:
       custom ?? (named === null ? null : parsePeriodValue(named, today)) ?? defaultPeriod(today),
     devices: devices.length === 0 ? null : [...new Set(devices)],
-    mode: (transportModes as readonly (string | null)[]).includes(mode)
-      ? (mode as TransportMode)
-      : null,
   };
 }
 
@@ -165,16 +158,12 @@ export function periodRange(
   return { from: period.first, to: current ? today : period.last };
 }
 
-/** The request of a screen; `withMode` for the screens that filter by a mode. */
-export function insightsParams(
-  address: InsightsAddress,
-  today: string,
-  withMode = false,
-): InsightsParams {
+/** The request of a screen; a screen of a mode adds the mode itself. */
+export function insightsParams(address: InsightsAddress, today: string): InsightsParams {
   return {
     ...periodRange(address.period, today),
     deviceIds: address.devices,
-    mode: withMode ? address.mode : null,
+    mode: null,
   };
 }
 
@@ -197,7 +186,7 @@ function periodValue(period: InsightsPeriod): string | null {
   }
 }
 
-/** The parameters after choosing a period; the devices and the mode stay. */
+/** The parameters after choosing a period; the devices stay. */
 export function withPeriod(current: URLSearchParams, period: InsightsPeriod): URLSearchParams {
   const next = new URLSearchParams(current);
   next.delete("period");

@@ -129,8 +129,13 @@ distance says how it compares with the period before — the whole of it, or
 while the period goes on the same days of it ("12% more than September") —
 and the chart under it shows the distance per day, week or month stacked by
 mode. A list beside the screen (on phones, after the chart) opens each mode,
-with its part of the distance: its distance against the period before, its
-typical speed and how it went over the period. **When you travel** shows the
+with its part of the distance. A mode's screen shows its distance
+against the period before and how it went over the period, then opens its
+**When** (the hours of the week you use it), **Roads** (the kinds of road it
+took you on — or for trains, trams and metros how much was on the rails and
+how often they halted at a station), **Speed** (how fast it mostly went, and
+the fastest move) and **Longest moves** (each opening that day in History with
+the move's details). **When you travel** shows the
 hours of the week you spend on the move, **Roads** the kinds of road and
 railway you travelled on.
 
