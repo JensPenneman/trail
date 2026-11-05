@@ -206,7 +206,9 @@ and the API none of the worker's:
   3 s later, as before.
 - **Per-device advisory locks** (`deviceLock.ts`) are the cluster's: a pass in
   the worker and a deletion or a corrected mode in the API exclude each other
-  across processes.
+  across processes. A correction (a move's mode set or reset) waits for the
+  lock at most 10 s (`PROCESSING_CORRECTION_WAIT_MS`, `lock_timeout`,
+  `correctionTransaction`) and then answers `409` with `Retry-After` to be tried again, instead of hanging behind a long pass.
 - **`heat` events** cross the same way: when `HeatDaysScheduler` commits a device's rebuild of
   the per-day cells (some seconds after the pass) it sends one for the days rebuilt, which
   only the heat answers react to (`invalidateStopHeat`) — the pass's `segments` event
@@ -305,6 +307,7 @@ All configuration is environment variables, validated at boot with zod
 | `PROCESSING_STOP_MIN_S` | `180` | The shortest stop |
 | `PROCESSING_PASS_MAX_POINTS` | `60000` | A processing pass reads at most this many points (1 000 or more); bigger work is split first (§17.4) |
 | `PROCESSING_PASS_MAX_SPAN_HOURS` | `36` | The points a pass takes on span at most this long |
+| `PROCESSING_CORRECTION_WAIT_MS` | `10000` | How long a correction (a move's mode) waits for a pass over the device before it answers `409` with `Retry-After` (50 to 120 000) |
 | `MAP_DATA_REGIONS` | `belgium` | The regions whose map data the server keeps (names of `scripts/mapdata/regions.json`), comma-separated; set but empty: none. The world overview comes with any region (§10) |
 | `MAP_DATA_REGISTRY` | `ghcr.io/jenspenneman/trail-mapdata` | Where the map data artefacts come from (§13.2): a registry host and a repository, no scheme and no tag; always HTTPS |
 | `MAP_DATA_REGISTRY_TOKEN` | empty (anonymous) | `<user>:<token>` for a private registry or package, sent to its token service only (GHCR: a classic token with `read:packages`) |
@@ -2878,7 +2881,9 @@ Settings is the current item on their pages too.
 | `/login`, `/invite/:token`, `/link/:token` | sign-in and sign-up (public) |
 | `/s` | a public link; its secret is the fragment, `/s#trls_…` (public) |
 | `/` | **People**, the home page: the map with Live, History and Heat, and the people list (signed in) |
-| `/insights`, `/insights/transport/:mode`, `/insights/time`, `/insights/roads` | Insights: the overview, a transport mode's page, when you travel, roads |
+| `/insights`, `/insights/transport/:mode`, `/insights/time`, `/insights/roads` | Insights: the summary, a transport mode's screen, when you travel, roads — screens of one shell (list beside the screen on wide screens, one screen at a time on phones) |
+| `/insights/places`, `/insights/place?place=<key>`, `/insights/place/days?place=<key>` | Places, one place and all the days at it (levels 1, 2 and 3 of the shell); the place is only ever the query value `place` — keys never reach a path, so the server's request logs never hold one (§8.7) |
+| `/insights/transport/:mode/time`, `…/roads`, `…/speed`, `…/moves` | a mode's When, Roads, Speed and Longest moves, a level below its screen. `/insights/time?mode=X` and `/insights/roads?mode=X` of before redirect (replacing the entry, other parameters kept) to `…/transport/X/time` and `…/roads` (`legacyInsightsRedirect`, a route loader) |
 | `/settings` | Settings: on phones the list with search; on wide screens the first page (Profile) beside the list. An anchor of the single page of 0.2 (`/settings#tokens`, `#browsers`, …) opens its page (`settingsPathFor`) |
 | `/settings/profile`, `…/devices`, `…/passkeys`, `…/browsers`, `…/sharing`, `…/links`, `…/privacy/viewers`, `…/privacy/access-log`, `…/data`, `…/tokens`, `…/mcp`, `…/preferences`, `…/notifications`, `…/about`, `…/accounts` | a page of Settings each; `…/accounts` for administrators only, everyone else lands on `/settings`; `/settings/devices?add=1` opens Add device |
 | `/settings/devices/:deviceId`, `…/passkeys/:id`, `…/sharing/:shareId`, `…/links/:id`, `…/tokens/:id`, `…/privacy/viewers/:actor` | the page of one device, passkey, share, public link, API token or viewer — an actor of the access log, its actor id (§8.8) as base64url |
@@ -2963,8 +2968,8 @@ count among them, since they lead to signed-in pages.
     a moment; distance, points, first/last; the timeline of stops and moves,
     with a dialog to correct a mode; visits and trips of the day (Me's
     detail). Other people's tracks as their shares allow (below).
-    **Playback** has an engine in `pages/map/history/playback`, not yet
-    wired into the page: a pure model (`playbackModel`: local-day bounds, the
+    **Playback** plays History back from any moment to the last recorded
+    point (below). Its engine is in `pages/map/history/playback`: a pure model (`playbackModel`: local-day bounds, the
     moves of the timeline or, from the points alone, movement stretches —
     split at recording gaps, cut by three minutes below 0.6 m/s, kept at a
     minute and 100 m — and the quiet stretches outside them, the next day with
@@ -2991,6 +2996,38 @@ count among them, since they lead to signed-in pages.
     cursor by `splitTrackAt` into two halves that keep its id); the caller
     dims visit dots with `MapPoint.dimmed`. `ensureTrailLayers` draws them at
     0.3 opacity (0.5 under `prefers-contrast: more`).
+    *In the page.* The time slider spans the local day, 00:00 to 24:00 (today
+    up to now, a period all its days), starts at the last recorded point and
+    has a Play button when someone is selected (on a past day it starts a
+    minute short of the next midnight at the latest). `useHistoryView` takes
+    `usePlayerState` first, so that the playing day replaces the address's
+    period before the queries run; nothing is written to the address while it
+    plays. Pausing and the end write `date` and `at`, and leaving writes where
+    it was, also after a seek made while paused (a change of view or person
+    writes nothing). `at` is `YYYY-MM-DDTHH:MM`, the wall-clock time in the
+    account's time zone (`parseAt.ts`: on a day of 23 or 25 hours the time
+    written is the time read; one the clock skips is ignored); the slider's
+    own moves write `at` 400 ms after the last one, with replace; a value
+    outside the day is ignored and a change of day or period drops it. While
+    playing, the controls and the slider give way to the bar at the map's foot
+    (on phones the sheet drops to its peek) and "At this moment" takes the
+    sidebar's place on the panel; the sidebar stays mounted but hidden, its
+    scroll and the page's are put back on leaving, and the focus goes to Pause
+    on entering and back to the slider's Play on leaving (Escape leaves;
+    turning the phone moves neither). The page's heading is then a hidden "History
+    playback". Desktop widens the foot and narrows the panel
+    (`--panel-width: 16rem`). Someone who shares is played from
+    `GET /api/v1/people/{userId}/days` (`usePersonDays`, refetched on that
+    person's live events). A day whose tracks come back empty is skipped. For
+    one's own days the moves are the timeline's, and while it is still being
+    worked out also what the points after its last segment say moved, so that
+    "Skip stops" does not jump over the live end. The map is handed its tracks
+    as new data only when the split moves (four times a second at most). The
+    camera frames each day as it loads and follows the cursors (all of them,
+    without zooming in) when one leaves the viewport less the fit's margin
+    (eased, at most every 500 ms; a jump under reduced motion); it leaves the
+    camera alone for five seconds after the person moved it and while a fit
+    runs (`followCamera.ts`).
   - **Heat** — heatmap (`/api/heatmap` — `heat=points|time|visits`, `?heat=`
     in the address, read by `useHeatChoice` like the level — the address ›
     this browser › the preference `heat` › points; the view asks for it. Map
@@ -3251,7 +3288,9 @@ count among them, since they lead to signed-in pages.
   small over the map's bottom-left corner (`legend`), and what History has to
   say of a day with nothing recorded ("Nothing recorded on …", with "Find a day
   with data") or of tracks that could not be loaded is at the map's foot, where
-  the slider would be.
+  the slider would be. Heat's own foot holds its error (with Retry) and the
+  notice that the heatmap was truncated, whoever is selected, and on wide
+  screens the key stacks above whatever the foot holds (`--foot-height`).
   For someone who shares: **where they've been** (`WhereTheyveBeen`): the day
   — Today in Live, History's day, or History's period — with Previous and
   Next day (in Live a day back is History's, one step of the history,
@@ -3306,53 +3345,131 @@ count among them, since they lead to signed-in pages.
   before, and they are not cached once off screen (`gcTime` 0); `person`
   events refetch them.
 - **Insights** (`pages/insights/`) — how the signed-in person travelled,
-  from the operations of §8.7, on four pages that share a heading, a
-  navigation of their own (Overview · When you travel · Roads; a mode's page
-  has a way back instead), one row of filters above everything they scope and
-  a notice while processing has work in the period ("Processing is still
-  catching up"). The state is the URL: `?period=7d|30d|90d|year|all` or
-  `?from=…&to=…` (a custom range of local days, three years at most), plus
-  `devices=` and, on When you travel and Roads, `mode=`; the default (the
-  last 30 days, every device, every mode) is left out, anything that cannot
-  be one is dropped (`parseInsightsSearch`), and links between the pages keep
-  the period and the devices (`insightsLink`). A new period or mode is a step
-  of the history; device toggles replace it. The period's chips and a custom
-  range behind the last one (`PeriodPicker`), the device filter of the People
-  page when there are two devices or more. Refetching keeps the previous
-  numbers on screen, dimmed (`aria-busy`); `segments` events refetch every
-  Insights query.
-  - **Overview** (`/insights`) — tiles for distance, time on the move, moves,
-    stops and active days, each with its change against the period of as
-    many days before ("12% more than the 30 days before", "3 fewer than …";
-    none for all of the history, nor against a period without moves); the
-    distance by mode as one bar per mode in its colour, labelled with the
-    distance and share; the distance or time per day, week or month stacked
+  from the operations of §8.7, as screens in the same frame as Settings
+  (`SideBySideShell`, below): on wide screens the list of screens
+  (`InsightsList`, `nav` "Insights") stands beside the screen at every level,
+  on phones it is a part of the summary, after the hero and the chart, and
+  every other screen has the display to itself under a bar with the way back
+  ("‹ Insights"), sliding in from the right and out to the left (none under
+  `prefers-reduced-motion`). The list has an untitled group with the summary
+  (wide screens only, its value the total distance), "Modes" (a row per mode,
+  most distance first, with its distance and share, "None" for a mode on
+  screen that had no moves) and "Patterns" (When you travel, Roads, Places); the row
+  of the screen on show is `aria-current`. Levels (`insightsLevels.ts`): the
+  summary is level 0, a mode's screen, When you travel and Roads level 1, the
+  parts of a mode (below) level 2, whose way back leads to the mode — "‹ Car"
+  — and which keep the mode's row current in the list; the key of a screen is
+  its path, and for the screens of a place its path with `?place=`, so that
+  the row of a place one comes back from is told from the others (`keyOf`). Coming back to the summary hands focus to the row that was left
+  (`data-route-focus`; not for the list beside the screens, where the
+  new screen's h1 takes focus whichever way one goes and the row left must
+  not take it back), going in to the new screen's h1. One exception: pressing
+  a mode's row in the list from one of the mode's parts goes up a level, so
+  focus goes to the row of the part left on the mode's screen. Every screen has the title
+  "<screen> · Insights" and a notice while processing has work in the period
+  ("Processing is still catching up"). Choosing another period or other devices
+  is announced politely once its answer is there ("October 2026: 66 km");
+  opening a screen or refetching the same period announces nothing.
+
+  The period is a calendar week (Monday first, as the API's series), month
+  or year, all of the history, or a custom range of local days (three years
+  at most), and the state is the URL: `?period=week|month|year|all` for the
+  current one, `2026-W44`, `2026-10`, `2026` for a fixed one, `from=…&to=…`
+  for a range (which overrides `period`), plus `devices=`. No parameter is this
+  month; whatever is in the future or cannot be one is this month too
+  (`parseInsightsAddress`, `insightsPeriod.ts`); the old `7d|30d|90d` still
+  open, as custom ranges ending today, and are never written. A current
+  period asks for its first day to today, a complete one for all its days,
+  all of the history leaves out `from`. Under every title the period bar
+  (`InsightsPeriodBar`): the unit as radios "Week · Month · Year · All" (a
+  step of the history, around the day the shown period ends on or today), the
+  steppers "Previous month" / "Next month" (replacing the entry; Next is
+  `aria-disabled` at the present; none for all of the history and ranges),
+  the period's name as a button ("October 2026, choose a custom period")
+  that opens a popover with From, To and Show (Escape and Show return focus
+  to the button), and "Options" — with a note "1 of 2 devices" while
+  filtered — whose popover holds "Advanced" (open at once while a filter is on) and the device filter of the
+  People page (neither with a single device). The popovers do not trap focus
+  (`useDismiss`). Refetching keeps the previous numbers on screen
+  (`aria-busy`); `segments` events refetch every Insights query.
+
+  A screen's number is its hero (`InsightsHero`): one large tile and its
+  change against the period before, never coloured good or bad. A calendar
+  period is compared with the whole period before, or, while it goes on, with
+  the same days of it (clipped to its length: 30 March against 1–28
+  February), which takes a second `overview` call
+  (`useInsightsComparison`, `comparisonOf`): "12% more than September", "…
+  than the same days of October", "… than 12–18 Oct", "… than 2025", the year
+  added when it differs. A custom or rolling range keeps the API's `previous`
+  ("… than the 12 days before"); all of the history has none. Where the
+  period before holds nothing, a muted "Nothing recorded in September to
+  compare with." stands in place of the arrow; where this measure had none
+  there, "None in September".
+  - **Summary** (`/insights`) — the distance, with the time on the move and
+    the moves (for all of the history, since when), and one chart of the distance per day, week or month stacked
     by mode in the modes' fixed order, past seven modes the smallest folding
-    into "Other modes" (`foldModes`); the table of modes — distance,
-    time, moves, average speed, share and change — whose rows open the modes'
-    pages; and, once someone but you looked at your data in the last 30
-    days, **Who viewed you** (`WhoViewedYouCard`): people, link visitors and
-    token calls, who looked most often, and the way to Settings › Who viewed
-    you. It follows the access log, not the period of the page.
-  - **A mode** (`/insights/transport/:mode`) — tiles (distance, time, moves,
-    average and typical speed, the longest move, the top speed), the
-    distance over the period as a line, distance or time per hour of the day
-    and per weekday, then by mode: the distance by kind of road (walking,
-    running, cycling, car, bus), the share on railway track and the halts at
-    stations (train, tram, metro), the share on ferry routes (boat), with a
-    word when map data is missing or covers only part; the top moves
-    (Longest · Fastest · Latest, five each), each with "Show on the map",
-    which opens History on the move's local day with its details
-    (`/?view=history&date=…&segment=<id>`: `useHistoryView` opens the
-    dialog of the segment the address names once the day's timeline has it,
-    and closing it drops the parameter); and the moves by median speed as a
-    histogram. An unknown mode is a page saying so, asking for nothing.
+    into "Other modes" (`foldModes`). No moves: "No moves in October 2026",
+    the patterns stay.
+    Under it the group "On the map" has one away row, "Where you spent time",
+    which opens the People map in Heat with the period and devices of the
+    screen (`insightsLens.ts`: `/?view=heat&heat=time&from=F&to=T[&devices=…]`,
+    a current period to today, all of the history without `from` and `to`) as a
+    new step of the history. The map's chip that names the lens and the Back
+    that returns here belong to the heat view; a mode's "Where you went" and a
+    place's "Show on the map" wait for its second slice and for the map's
+    camera parameter.
+  - **A mode** (`/insights/transport/:mode`) — the mode's distance (time,
+    moves, typical speed beneath) against the same mode in the period before,
+    the distance over the period as a line, and rows to its parts, each with
+    what it says (`modeFacts.ts`): When ("Mostly Mondays · busiest at 08:00"), Roads
+    ("62% on cycleways", "94% on railway track", "80% on ferry routes"; no
+    row for planes and the other modes not laid onto the map), Speed
+    ("Typically 17 km/h") and Longest moves ("23.4 km · Tue 7 Oct"). No
+    moves: "No cycling in this period", no rows. An unknown mode (or part of
+    one) is a screen saying so ("No such mode", "Back to Insights"), asking
+    for nothing.
+  - **A mode's When** (`…/time`) — the mode's hours of the week as a grid,
+    from `GET …/time?mode=`, under the time on the move and when it is most.
+  - **A mode's Roads** (`…/roads`) — a hero by family: the kind of road with
+    the most distance (walking, running, cycling, car, bus), the share on
+    railway track with the halts at stations a ride (train, tram — "tram
+    stops" —, metro), the share on ferry routes (boat); the distance by kind
+    of way beneath, how much of the distance map data covers, and a notice
+    where it covers none.
+  - **A mode's Speed** (`…/speed`) — the typical speed with the average
+    beneath, the moves by median speed as a histogram, and a row to the
+    fastest move in History.
+  - **A mode's Longest moves** (`…/moves`) — the longest move as the hero and
+    the five longest as rows, each opening History on the move's local day
+    with its details (`/?view=history&date=…&person=me&segment=<id>`:
+    `useHistoryView` opens the dialog of the segment the address names once
+    the day's timeline has it, and closing it drops the parameter).
   - **When you travel** (`/insights/time`) — time on the move in every hour
-    of every weekday as a grid, for every mode or the one chosen (the modes
-    of the period in a select).
-  - **Roads** (`/insights/roads`) — the distance by kind of way and by group
-    of ways, for every mode or one, with how much of the distance map data
-    covers; a notice where it covers none.
+    of every weekday as a grid, under the time on the move in all and when it
+    is most.
+  - **Roads** (`/insights/roads`) — the kind of way with the most distance as
+    the hero, the distance by kind of way, and how much of the distance map
+    data covers; a notice where it covers none, and another where everything
+    it covers is off the map. The chart by group of ways of before is gone.
+
+  - **Places** (`/insights/places`, from `GET /api/v1/insights/places`, scope
+    `locations:read`) — how many places the stops of the period add up to,
+    with the visits and the time ("312 visits · 640 hrs"), the time at the
+    top eight as a horizontal chart, and the first fifty as rows ("Gent-Sint-
+    Pieters · 12 hrs · 9 visits") with the rest summed under them ("and 12 more
+    places, 4 hrs"). A place is called by `placeLabel`: the stop within 30 m,
+    "Near <stop>" within 150 m, else the road its stays were on, else
+    "Unnamed place" with its coordinates. No stops: "No stops in October 2026".
+  - **A place** (`/insights/place?place=<key>`) — the time there, its visits
+    and days, a chart of the time per day, week or month, when one was first
+    and last there, and under "Days" the seven latest days as rows that open
+    History on that day (`/?view=history&date=…&person=me`) with "All N days"
+    after them. A key that folded into a neighbour's place resolves to that
+    place and the address keeps the key; a period without a visit there is
+    "No visits here in …", and a key that cannot be one asks for nothing.
+  - **Days at a place** (`…/place/days?place=<key>`) — every day with time
+    there, newest first, laid out only as it comes into view
+    (`content-visibility: auto`); its way back is "‹ <place>".
 
   The charts (`apps/web/src/charts/`, no library): `BarChart` (stacked or
   grouped, columns or horizontal bars; one series may give each row its own
@@ -3408,12 +3525,15 @@ count among them, since they lead to signed-in pages.
   right of a row from the lists the pages load anyway (one cache) — the
   display name; the number of devices, passkeys, browsers, people shared
   with, working links ("3 active") and active tokens; how many people, links
-  and tokens looked in the last 30 days (the summary Who viewed you and
-  Insights' card load too); whether alerts are on; the version — and to
+  and tokens looked in the last 30 days (the summary Who viewed you loads
+  too); whether alerts are on; the version — and to
   search one's devices, by name, app and device ID ("Account › Devices",
   leading to the device's page).
 
-  The frame (`SettingsShell`): on phones (below 64rem) the list — the search
+  The frame (`SettingsShell`, a thin wrapper of `SideBySideShell`, which
+  Insights uses too: the shell takes `levelOf`, `keyOf`, its list and whether
+  the list also stands at the root; its context gives rows `keyOf` and
+  `inShell`): on phones (below 64rem) the list — the search
   field, then the groups as inset cards of rows — is the page at `/settings`,
   and every other page has the screen to itself under a bar with the way back
   and the page's title, which starts large and moves into the bar once it
@@ -3432,9 +3552,10 @@ count among them, since they lead to signed-in pages.
   arrow for a page outside Settings: the API reference outside the app, a
   device's History in it (`away`, a link that keeps no way back into
   Settings); a row's link is named by its label and described by the rest; `useSettingsLink` gives it, and a device's card,
-  where it was opened from and the focus on the way back), `SettingsPage` (a
-  region named by its h1, the bar, the title and description; for the part
-  of an item the way back is the item's page, by the item's name) and
+  where it was opened from and the focus on the way back), `SettingsPage` (the
+  tree's title and way back over `ShellPage`: a region named by its h1, the
+  bar, the title and description; for the part of an item the way back is the
+  item's page, by the item's name) and
   `SettingsSearch`. Every page has the document title "<page> · Settings"
   ("<item> · <page> · Settings" one level deeper, "<part> · <item> · <page> ·
   Settings" for the part of an item) and takes focus when it opens; coming back up, focus returns to the row of the
@@ -4366,12 +4487,22 @@ security ones too.
   placement) and components (named and described figures, marks with their
   values as descriptions, one tab stop and the arrow keys, tooltips by
   pointer, focus and Escape, tables, empty charts without NaN, a row's own
-  tone); Insights' address (`parseInsightsSearch` and the parameters it
-  changes), its words (changes against the period before, ticks, the steps'
-  names, folding modes) and its four pages against a mocked API (periods and
-  devices in the address and the requests, a custom range, the
-  processing notice, a mode's link to the map, the mode switch, a page
-  without map data); a link to one move opening its dialog on the People
+  tone); Insights' period (`insightsPeriod.test.ts`: the address read
+  defensively — weeks, months, years, the old rolling periods, ranges —, the
+  days asked for, steps across year ends, a unit change around the same day,
+  the address written back, what a period is compared with and how it is
+  named) and its words (`insightsHelpers.test.ts`: changes against the period
+  before, "None in …", ticks, the steps' names, folding modes, the facts on a
+  mode's rows, the links into History, the levels), and its
+  screens against a mocked API (`InsightsScreens.test.tsx`: the summary and
+  its comparisons — complete, still going, empty, all of the history,
+  a range —, the list on a phone and beside the screen, the period bar's
+  units, steps, custom range and Escape, the devices under Options, a mode's
+  hero, rows and parts (When, Roads of each family, Speed, Longest moves) and
+  places (the rows and their labels, a place with its days and the way to all
+  of them, no visit, a key that is none, the days, focus back on the row of
+  the place among the others), the way back with focus on its row, When you
+  travel, Roads and the redirects of the old addresses, the warm open from the browser's copy); a link to one move opening its dialog on the People
   page; and the access log's pages (`accessLogHelpers.test.ts`: actor ids
   and their segments, the sentences and their plurals, the filters and the
   request they make, lines by local day across pages, folded lines, what a
@@ -4379,7 +4510,7 @@ security ones too.
   you with and without one's own activity and its switch saving the
   preference, a period in the address, a viewer's page with its lines,
   the access log's filters, Load more with the cursor, empty and error
-  states, the use on a token's, link's and share's page, Insights' card).
+  states, the use on a token's, link's and share's page).
 - `tests/e2e` — Playwright against the built stack. `playwright.config.ts`
   starts `scripts/e2e-server.mjs`: it empties the `trail_e2e` database
   (`E2E_DATABASE_URL`; any database not named `trail…e2e` is refused) and runs
@@ -4407,7 +4538,9 @@ security ones too.
   level deeper (its uploads and raw points, remote settings, its setup, back
   with the focus on the row), token rotation, renaming, deleting (from the
   list: back in the history, Back not to the gone device), History and its
-  scrubber,
+  scrubber and playback (from midnight to the last point, the empty day
+  skipped, the address while it plays and after, Escape; paused and ended
+  scanned, and a run with reduced motion),
   the heatmap (its squares on the map, found by their colours in a
   screenshot of the canvas, its key and the busiest places), sign-in by email,
   passkey button and autofill, invitations and
@@ -4448,11 +4581,17 @@ security ones too.
   pages —, focus on the new page's heading, `/people` leading home with its
   parameters, `/devices?add=1` and a device's old address leading into
   Settings in place of the old entry), Insights (a walk and a drive worked out by the server
-  without map data: the overview and its numbers, another period in the
-  address, a chart by keyboard — one tab stop, arrow keys, the tooltip and
-  Escape —, a mode's page from the table and its link to the move on the
-  map, when you travel with a mode, roads without map data, and every page
-  at 320 px), the access log with what the server really recorded
+  without map data, on both projects: the summary with the list beside it
+  or after the chart, units and steps of the period and a custom range in
+  its popover, an old `7d` address, a chart by keyboard — one tab stop, arrow
+  keys, the tooltip and Escape —, places (a stay worked out into a place, named
+  "Unnamed place" without map data, then the place, its days and a day in
+  History, and focus back on the row of the place), a mode's screen from its row and the way
+  back to the row, its Speed, When, Roads and Longest moves (a move opening
+  History's dialog), the old When address with a mode redirecting, roads
+  without map data, axe
+  on every screen and the open popover, and every screen — Places, a place and
+  its days included — at 320 px), the access log with what the server really recorded
   (`accessLog.spec.ts`: someone with a precise share and history reads your
   track in their browser and is under People with the sentence the summary's
   numbers make, on their page hour by hour and on the share's page; a public

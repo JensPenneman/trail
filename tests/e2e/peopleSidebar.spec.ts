@@ -75,7 +75,7 @@ test("the Hidden level opens from its row, takes the focus and gives it back", a
   await expect(row).toBeFocused();
   await page.goForward();
   await page.getByRole("button", { name: `Show ${name} again` }).click();
-  await expect(page.getByText("Nobody is hidden.")).toBeVisible();
+  await expect(page.getByText("Nobody is hidden.", { exact: true })).toBeVisible();
   // The pressed button went with its row: the focus is on the heading, not lost to the page.
   await expect(page.getByRole("heading", { level: 2, name: "Hidden" })).toBeFocused();
 });

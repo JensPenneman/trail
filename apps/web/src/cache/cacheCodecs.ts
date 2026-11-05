@@ -52,6 +52,10 @@ const schemas: Record<CodecName, (queryKey: readonly unknown[]) => Promise<ZodTy
         return insights.insightsTimeSchema;
       case "roads":
         return insights.insightsRoadsSchema;
+      case "places":
+        return insights.insightsPlacesSchema;
+      case "place":
+        return insights.insightsPlaceSchema;
       default:
         return null;
     }

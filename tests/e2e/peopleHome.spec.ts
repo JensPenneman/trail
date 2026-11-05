@@ -217,7 +217,7 @@ test("a person's detail shows them alone, with only what their share allows", as
   await openGroup(page, "Heat: totals, busiest places");
   await expect(
     page.getByRole("region", { name: "Busiest places in view" }).getByRole("listitem").first(),
-  ).toContainText(/\d+ points/);
+  ).toContainText(/\d+ points?/);
   await expectAccessible(page, "Heat on the People page");
 });
 

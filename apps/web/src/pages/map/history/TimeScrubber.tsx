@@ -1,5 +1,6 @@
 import { useId } from "react";
 import { useFormatter } from "../../../format/useFormatter";
+import { Button } from "../../../ui/Button";
 import { DeviceSwatch } from "../../../ui/DeviceSwatch";
 import { PlainList } from "../../../ui/PlainList";
 import type { PositionAtTime } from "./positionAt";
@@ -23,11 +24,16 @@ interface TimeScrubberProps {
   withDate: boolean;
   readouts: readonly ScrubberReadout[];
   onChange: (value: number) => void;
+  /** Starts playback from `value`; without it (nobody selected) there is no Play button. */
+  onPlay?: () => void;
 }
 
 /**
- * A slider through the recorded time: the map marks where each device was at
- * that moment, and the same positions are written out below the slider.
+ * A slider through the day (or the days of a period), from midnight to the end
+ * of the last of them — to now, for today: the map marks where each device was
+ * at that moment, and the same positions are written out below the slider. It
+ * starts at the last recorded point. "Play" plays History from the moment the
+ * slider is at.
  */
 export function TimeScrubber({
   start,
@@ -36,6 +42,7 @@ export function TimeScrubber({
   withDate,
   readouts,
   onChange,
+  onPlay,
 }: TimeScrubberProps) {
   const format = useFormatter();
   const id = useId();
@@ -53,6 +60,11 @@ export function TimeScrubber({
         <output className="scrubber__time" htmlFor={id}>
           {label(value)}
         </output>
+        {onPlay === undefined ? null : (
+          <Button variant="primary" icon="play" onClick={onPlay} data-play>
+            Play
+          </Button>
+        )}
       </div>
       <input
         id={id}

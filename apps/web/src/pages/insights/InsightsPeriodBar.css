@@ -1,0 +1,159 @@
+/* Under a screen's title: the unit of the period, the period with its steppers, the options. */
+
+.insights-bar {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.insights-bar__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+}
+
+.insights-bar__label,
+.insights-bar__options {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--target);
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-m);
+  background: var(--color-surface);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.insights-bar__options {
+  padding-inline: var(--space-4);
+  font-weight: 600;
+}
+
+.insights-bar__label:hover,
+.insights-bar__options:hover {
+  background: var(--color-surface-2);
+}
+
+.insights-bar__label .icon,
+.insights-bar__options .icon {
+  flex-shrink: 0;
+  color: var(--color-text-2);
+}
+
+.insights-bar__label-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insights-bar__chevron {
+  transition: rotate var(--duration-fast) ease;
+}
+
+.insights-bar__label[aria-expanded="true"] .insights-bar__chevron {
+  rotate: 180deg;
+}
+
+.insights-bar__note {
+  color: var(--color-text-2);
+  font-weight: 500;
+  font-size: var(--text-s);
+}
+
+/* Next at the present: still there to find, dimmed, and it does nothing. */
+.insights-bar__row .button[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.insights-bar__range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-3);
+}
+
+.insights-bar__apply {
+  margin-top: calc(var(--text-s) * 1.5 + var(--space-1));
+}
+
+@container (max-width: 26rem) {
+  .insights-bar__range {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .insights-bar__apply {
+    grid-column: 1 / -1;
+    margin-top: 0;
+  }
+}
+
+.insights-popover {
+  position: relative;
+  min-width: 0;
+}
+
+/* The options are the last button of the row: their popover grows towards the start. */
+.insights-popover__body.insights-popover__body--end {
+  inset-inline: auto 0;
+}
+
+.insights-popover__body {
+  position: absolute;
+  inset-block-start: calc(100% + var(--space-2));
+  inset-inline-start: 0;
+  z-index: 20;
+  display: grid;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  width: 23.5rem;
+  max-width: calc(100vw - 2 * var(--space-4));
+  max-height: 70dvh;
+  padding: var(--space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-l);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-3);
+  container-type: inline-size;
+}
+
+@media (max-width: 40rem) {
+  .insights-popover {
+    position: static;
+  }
+
+  .insights-bar {
+    position: relative;
+  }
+
+  .insights-popover__body,
+  .insights-popover__body.insights-popover__body--end {
+    inset-inline: 0;
+    width: auto;
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .insights-bar__chevron {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .insights-bar__label,
+  .insights-bar__options,
+  .insights-popover__body {
+    border-color: CanvasText;
+  }
+}

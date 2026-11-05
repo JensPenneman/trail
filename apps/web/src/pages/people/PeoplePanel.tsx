@@ -1,7 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { Person } from "@trail/contracts/person";
-import type { ReactNode, Ref } from "react";
+import { type ReactNode, type Ref, useRef } from "react";
 import { useReadOnly } from "../../app/useReadOnly";
 import type { PersonColors } from "../../people/usePersonColors";
 import type { WhereTheyveBeenPeriod } from "../../people/WhereTheyveBeen";
@@ -10,6 +10,7 @@ import { PageHeader } from "../../ui/PageHeader";
 import type { MapViewContent } from "../map/MapViewContent";
 import { me } from "../map/me";
 import { DevicesLevel } from "./DevicesLevel";
+import type { Groups } from "./groupState";
 import { HiddenPeople } from "./HiddenPeople";
 import { MePage } from "./MePage";
 import { PeopleRoot } from "./PeopleRoot";
@@ -27,6 +28,10 @@ interface PeoplePanelProps {
   panelRef: Ref<HTMLElement>;
   /** The history slider on phones, right under the header of the level; null beside the map. */
   foot: ReactNode;
+  /** The playback bar on phones, in the sheet while it plays; null beside the map. */
+  bar: ReactNode;
+  /** What stands in for the sidebar's content while History plays ("At this moment"). */
+  strip: ReactNode;
   at: PanelLevelKey;
   people: UseQueryResult<Person[]>;
   devices: UseQueryResult<DeviceSummary[]>;
@@ -48,6 +53,8 @@ interface PeoplePanelProps {
   content: MapViewContent;
   period: WhereTheyveBeenPeriod | null;
   sharing: SharingActions;
+  /** Which folded groups of the page shown are open. */
+  groups: Groups;
   onLeave: (key: string) => void;
 }
 
@@ -59,6 +66,8 @@ interface PeoplePanelProps {
 export function PeoplePanel({
   panelRef,
   foot,
+  bar,
+  strip,
   at,
   people,
   devices,
@@ -76,12 +85,13 @@ export function PeoplePanel({
   content,
   period,
   sharing,
+  groups,
   onLeave,
 }: PeoplePanelProps) {
   const readOnly = useReadOnly();
-  return (
-    <section className="map-page__panel" aria-labelledby="people-page-title" ref={panelRef}>
-      <span className="map-page__grabber" aria-hidden="true" />
+  const playing = strip !== null;
+  const sidebar = (
+    <>
       <div className="map-page__top">
         <PageHeader
           title="People"
@@ -136,6 +146,7 @@ export function PeoplePanel({
             thresholds={thresholds}
             content={content}
             sharing={sharing}
+            groups={groups}
           />
         ) : (
           <PersonPage
@@ -148,11 +159,39 @@ export function PeoplePanel({
             content={content}
             period={period}
             sharing={sharing}
+            groups={groups}
             foot={foot}
             onLeave={onLeave}
           />
         )}
       </div>
+    </>
+  );
+  // While it plays the same element is handed on again, so that the hidden content is not
+  // rendered at every tick of the clock.
+  const kept = useRef<ReactNode>(sidebar);
+  if (!playing) kept.current = sidebar;
+  return (
+    <section
+      className="map-page__panel"
+      {...(playing
+        ? { "aria-label": "History playback" }
+        : { "aria-labelledby": "people-page-title" })}
+      ref={panelRef}
+    >
+      <span className="map-page__grabber" aria-hidden="true" />
+      {/* Mounted all along, hidden while playing: what is open and typed in it stays. */}
+      <div hidden={playing}>{playing ? kept.current : sidebar}</div>
+      {playing ? (
+        <>
+          {/* The page's own heading is in the hidden sidebar: this one says what is on screen. */}
+          <h1 className="visually-hidden">History playback</h1>
+          {bar}
+          <div className="map-page__now" data-peek-end>
+            {strip}
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }

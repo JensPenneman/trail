@@ -7,6 +7,7 @@ import { EmptyState } from "../../ui/EmptyState";
 import { ErrorState } from "../../ui/ErrorState";
 import { LinkButton } from "../../ui/LinkButton";
 import type { useMeSummary } from "./useMeSummary";
+import "./PersonPage.css";
 
 interface MeDetailsProps {
   devices: UseQueryResult<DeviceSummary[]>;

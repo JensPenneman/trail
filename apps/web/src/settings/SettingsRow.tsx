@@ -1,10 +1,11 @@
 import { type ReactNode, useId } from "react";
-import { Link, useLocation } from "react-router";
+import { Link } from "react-router";
 import { offlineReasonId, useReadOnly } from "../app/useReadOnly";
 import { Icon } from "../ui/Icon";
 import type { IconName } from "../ui/iconPaths";
 import { Spinner } from "../ui/Spinner";
 import { Switch } from "../ui/Switch";
+import { useSettingsShell } from "./SettingsShellContext";
 import { SettingsTile } from "./SettingsTile";
 import type { SettingsTone } from "./settingsTree";
 import { useSettingsLink } from "./useSettingsLink";
@@ -30,6 +31,12 @@ interface LinkRow extends RowLook {
   keepScroll?: boolean;
   /** Names the row for the one that comes back to it (`data-row`): focus returns there. */
   dataRow?: string;
+  /**
+   * Whether coming back from the screen the row opens hands focus to this row
+   * (the default). Off for a list that stands beside the screens: there the
+   * screen's title takes focus, and a row must not take it back.
+   */
+  returnFocus?: boolean;
 }
 
 interface ExternalRow extends RowLook {
@@ -107,6 +114,7 @@ function LinkRowBody({
   current,
   keepScroll,
   dataRow,
+  returnFocus,
   nameIds,
   describedBy,
   children,
@@ -115,18 +123,19 @@ function LinkRowBody({
   current: boolean;
   keepScroll: boolean;
   dataRow: string | undefined;
+  returnFocus: boolean;
   nameIds: string;
   describedBy: string | undefined;
   children: ReactNode;
 }) {
-  const link = useSettingsLink(to);
-  // Where a link of Settings was opened from is Settings' own business: outside it (the People
-  // page's levels) the history carries nothing.
-  const inSettings = useLocation().pathname.startsWith("/settings");
+  const link = useSettingsLink(to, { returnFocus });
+  // Where a link was opened from is the shells' own business (Settings, Insights): outside one
+  // (the People page's levels) the history carries nothing.
+  const { inShell } = useSettingsShell();
   return (
     <Link
       to={to}
-      {...(inSettings ? link : {})}
+      {...(inShell ? link : {})}
       {...(keepScroll ? { preventScrollReset: true } : {})}
       {...(dataRow === undefined ? {} : { "data-row": dataRow })}
       className="settings-row__body settings-row__body--interactive"
@@ -209,6 +218,7 @@ export function SettingsRow(props: SettingsRowProps) {
             current={props.current === true}
             keepScroll={props.keepScroll === true}
             dataRow={props.dataRow}
+            returnFocus={props.returnFocus !== false}
             nameIds={nameIds}
             describedBy={describedBy}
           >

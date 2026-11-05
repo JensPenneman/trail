@@ -2,9 +2,11 @@ import { startTransition, useCallback, useEffect, useMemo, useOptimistic, useRef
 import { useSearchParams } from "react-router";
 import { useToday } from "../../time/useToday";
 import {
+  withAt,
   withDay,
   withDevices,
   withHeatPeriod,
+  withMoment,
   withoutCamera,
   withoutLens,
   withPerson,
@@ -40,6 +42,10 @@ export interface MapSearchControls {
   clearLens: () => void;
   /** The camera of a link is the map's own from here on: drops `c`, in place of its entry. */
   releaseCamera: () => void;
+  /** The slider's moment, in place of the entry (it follows the slider; nothing to go Back to). */
+  setAt: (at: string) => void;
+  /** A day and a moment on it, in place of the entry: where playback paused, ended or was left. */
+  showMoment: (day: string, at: string) => void;
 }
 
 /**
@@ -137,6 +143,14 @@ export function useMapSearch(): MapSearchControls {
     if (!latest.current.has("c")) return;
     update((current) => withoutCamera(current), true);
   }, [update]);
+  const setAt = useCallback(
+    (at: string) => update((current) => withAt(current, at), true),
+    [update],
+  );
+  const showMoment = useCallback(
+    (day: string, at: string) => update((current) => withMoment(current, day, at, today), true),
+    [update, today],
+  );
   return {
     search,
     today,
@@ -150,5 +164,7 @@ export function useMapSearch(): MapSearchControls {
     setHeatPeriod,
     clearLens,
     releaseCamera,
+    setAt,
+    showMoment,
   };
 }

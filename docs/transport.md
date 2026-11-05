@@ -122,17 +122,22 @@ again, and the statistics count it.
 ## Insights
 
 The **Insights** tab adds it all up: how far you went, how long you were on
-the move, how many moves and stops, and on how many days — for the last 7,
-30 or 90 days, this year, all your history or days you choose, and for all
-your devices or some. Each number says how it compares with as many days
-before. Below them: your distance by mode, the distance (or time) per day,
-week or month stacked by mode, and a table of modes. A mode opens its own
-page: its speeds, your longest and fastest moves (each with **Show on the
-map**, which opens that day with the move's details), when you use it by hour
-and weekday, the kinds of road it took you on — or for trains, trams and
-metros how much was on the rails and how often they halted at a station —
-and its moves by speed. **When you travel** shows the hours of the week you
-spend on the move, **Roads** the kinds of road and railway you travelled on.
+the move and how many moves — for a week, a month or a year (this month to
+begin with, with arrows to the one before and after), all your history or
+days you choose, and for all your devices or some (under **Options**). The
+distance says how it compares with the period before — the whole of it, or
+while the period goes on the same days of it ("12% more than September") —
+and the chart under it shows the distance per day, week or month stacked by
+mode. A list beside the screen (on phones, after the chart) opens each mode,
+with its part of the distance. A mode's screen shows its distance
+against the period before and how it went over the period, then opens its
+**When** (the hours of the week you use it), **Roads** (the kinds of road it
+took you on — or for trains, trams and metros how much was on the rails and
+how often they halted at a station), **Speed** (how fast it mostly went, and
+the fastest move) and **Longest moves** (each opening that day in History with
+the move's details). **When you travel** shows the
+hours of the week you spend on the move, **Roads** the kinds of road and
+railway you travelled on.
 
 Every chart can be read with the keyboard — Tab to it, then the arrow keys —
 and has its numbers as a table under **Show the numbers**. A move counts in

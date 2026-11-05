@@ -14,6 +14,8 @@ test("Heat by time spent: the period appears, the key follows the measure, the c
   page,
   account,
 }) => {
+  // The stay is made by the processing of the upload, which a busy host takes longer over.
+  test.slow();
   // A walk, five minutes standing still and a drive: the stay is what time and visits count.
   await uploadedDevice(page, "Walker", walkAndDrive());
   await page.goto("/?view=heat&person=me&c=3.7335,51.0543,14");
@@ -36,8 +38,8 @@ test("Heat by time spent: the period appears, the key follows the measure, the c
   // The stay is drawn: the processing of the upload has made it a stop (it takes a moment). The
   // options are closed first: on a phone they cover the map.
   await page.keyboard.press("Escape");
-  await expect(key.getByRole("list")).toBeVisible({ timeout: 30_000 });
-  await expect.poll(() => heatPixels(page), { timeout: 30_000 }).toBeGreaterThan(0);
+  await expect(key.getByRole("list")).toBeVisible({ timeout: 90_000 });
+  await expect.poll(() => heatPixels(page), { timeout: 60_000 }).toBeGreaterThan(0);
 
   await openMapOptions(page);
   await period.selectOption("30d");

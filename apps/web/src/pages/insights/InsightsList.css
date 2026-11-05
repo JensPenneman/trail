@@ -1,0 +1,11 @@
+.insights-list {
+  display: grid;
+  align-content: start;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+/* Beside the screens: denser, the groups closer together. */
+.insights-list--sidebar {
+  gap: var(--space-4);
+}

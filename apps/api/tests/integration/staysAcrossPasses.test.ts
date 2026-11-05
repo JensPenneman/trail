@@ -18,10 +18,11 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
 import { countStops } from "../../src/insights/insightMoves";
+import { lockDeviceProcessing } from "../../src/processing/deviceLock";
 import type { RawPoint } from "../../src/processing/pipelineTypes";
 import { enqueueWindow, takeDeviceWindows } from "../../src/processing/processingQueue";
 import { processWindow } from "../../src/processing/processWindow";
-import { loadOverrides, loadStayBefore } from "../../src/processing/windowData";
+import { loadOverrides, loadStayBefore, maxExtensionMs } from "../../src/processing/windowData";
 import { loadCurrentModes } from "../../src/sharing/currentModes";
 import { createApiToken } from "../support/apiTokenFlows";
 import { type Agent, signUpWithCookie } from "../support/authFlows";
@@ -116,14 +117,17 @@ const storedStops = async (deviceId: string) =>
   ).rows;
 
 /**
- * Works a device's queue out until nothing of it is left. The worker's own run (woken by the
- * upload's NOTIFY) can take a pass alongside `flush`, and `flush` returns once nothing is due while
- * that pass is still at work, so the older part of a split job may not be stored yet: each round
- * waits for the run in progress, and the queue being empty says every pass has committed.
+ * Works a device's queue out until nothing of it is left, and until no pass of the device is at
+ * work. The worker's own run (woken by the upload's NOTIFY) can take a pass alongside `flush`,
+ * and `flush` returns once nothing is due while that pass is still at work, so the older part of
+ * a split job may not be stored yet. A window is worked out in one transaction that holds the
+ * device's processing lock, so taking that lock waits for the pass in flight to commit; the
+ * queue is read after it, and being empty then says every pass has committed.
  */
 async function settle(deviceId: string): Promise<void> {
   for (let round = 0; round < 10; round += 1) {
     await t.ctx.processing.flush();
+    await t.ctx.db.transaction((tx) => lockDeviceProcessing(tx, deviceId));
     const queued = await t.ctx.db.execute<{ count: number }>(
       sql`SELECT count(*)::int AS count FROM processing_queue WHERE device_id = ${deviceId}`,
     );
@@ -659,7 +663,11 @@ describe("a quick toggle across the parts of a stay", () => {
   it("keeps a toggle set during a three-day stay until the device leaves, for the ride", {
     timeout: 300_000,
   }, async () => {
-    // Three days at home up to two hours ago, a point a minute: worked out in parts.
+    // Three days at home up to two hours ago, a point a minute, worked out in parts. How one upload
+    // of it is cut depends on how its batches' windows fall into passes: a pass that ends near the
+    // stay's start grows forward over all of it (whole segments, two days out at most) and stores
+    // one stop. So the parts are made here: the first 60 hours are worked out, then the rest, whose
+    // pass starts more than the two days a window grows back after the stay began and must cut it.
     const device = await newDevice("Toggle at home for days");
     const now = Math.floor(Date.now() / 1000);
     const days = stay(home, {
@@ -668,7 +676,16 @@ describe("a quick toggle across the parts of a stay", () => {
       intervalS: 60,
       seed: 131,
     });
-    await upload(device.token, days);
+    const cut = (days[0]?.t ?? 0) + maxExtensionMs / 1000 + 12 * 3600;
+    await upload(
+      device.token,
+      days.filter((point) => point.t < cut),
+    );
+    await settle(device.id);
+    await upload(
+      device.token,
+      days.filter((point) => point.t >= cut),
+    );
     await settle(device.id);
     const parts = await storedStops(device.id);
     expect(parts.length).toBeGreaterThan(1);

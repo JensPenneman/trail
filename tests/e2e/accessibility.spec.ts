@@ -15,7 +15,8 @@ async function open(
 ): Promise<void> {
   await page.goto(path);
   await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
-  if (ready !== undefined) await expect(page.getByText(ready).first()).toBeVisible();
+  if (ready !== undefined)
+    await expect(page.getByText(ready).locator("visible=true").first()).toBeVisible();
 }
 
 test.describe("accessibility", () => {
@@ -70,7 +71,7 @@ test.describe("accessibility", () => {
     await open(page, "/?view=heat&person=me", "People", "Heat: totals, busiest places");
     await openGroup(page, "Heat: totals, busiest places");
     await expect(page.getByRole("region", { name: "Busiest places in view" })).toBeVisible();
-    await expect(page.getByText(/^\d+ points$/).first()).toBeVisible();
+    await expect(page.getByText(/^\d+ points?$/).first()).toBeVisible();
     await expectAccessible(page, "People's Heat");
     // Settings › Devices, a device's page and the pages of its parts.
     await open(page, "/settings/devices", "Devices", "Checked phone");

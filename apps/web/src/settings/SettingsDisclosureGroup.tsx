@@ -1,5 +1,6 @@
 import { type ReactNode, useId } from "react";
 import { Icon } from "../ui/Icon";
+import { SectionLevel } from "../ui/SectionTitle";
 import "./SettingsGroup.css";
 
 interface SettingsDisclosureGroupProps {
@@ -44,7 +45,8 @@ export function SettingsDisclosureGroup({
       </Title>
       {open ? (
         <div className="settings-group__open" id={bodyId}>
-          {children}
+          {/* The headings inside are one level under the group's own. */}
+          <SectionLevel value={titleAs === "h2" ? 3 : 4}>{children}</SectionLevel>
         </div>
       ) : null}
     </div>

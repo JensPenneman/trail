@@ -72,6 +72,7 @@ describe("loadConfig", () => {
         stopMinS: 180,
         passMaxPoints: 60_000,
         passMaxSpanHours: 36,
+        correctionWaitMs: 10_000,
       },
       mapData: {
         regions: ["belgium"],
@@ -139,6 +140,7 @@ describe("loadConfig", () => {
       stopMinS: 300,
       passMaxPoints: 20_000,
       passMaxSpanHours: 12,
+      correctionWaitMs: 10_000,
     });
     expect(
       issuesOf({ ...minimal, PROCESSING_ENABLED: "yes", PROCESSING_OVERPASS_URL: "ftp://x" }),

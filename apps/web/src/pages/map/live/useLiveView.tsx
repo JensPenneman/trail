@@ -303,6 +303,7 @@ export function useLiveView({
     meGroup: null,
     meGroupTitle: "",
     personGroup: null,
+    player: null,
     personTracks: trackStates,
     dialog:
       shownSegment === null ? null : (
