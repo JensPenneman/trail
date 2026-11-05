@@ -5,7 +5,7 @@ import { attachBrowserCache } from "../src/cache/attachBrowserCache";
 import { createBrowserCache } from "../src/cache/browserCache";
 import { cacheKey } from "../src/cache/cacheKey";
 import { type CacheStore, openCacheStore, type WriteOutcome } from "../src/cache/openCacheStore";
-import { freshIndexedDb, openTestStore, seedEntry, settle } from "./support/cacheHarness";
+import { freshIndexedDb, openTestStore, seedEntry } from "./support/cacheHarness";
 import { device, ids, user } from "./support/fixtures";
 
 const devicesKey = cacheKey(user.id, queryKeys.devices);
@@ -163,7 +163,13 @@ describe("the copy when the browser runs out of room", () => {
     await cache.signedIn(user);
     client.setQueryData(queryKeys.devices, { devices: [device()] });
     cache.persistNow(queryKeys.devices);
-    await settle(50);
+    // The chain write → quota refusal → sweep → write again, awaited by what it ends in, not for
+    // a while: two writes, and the entry stored (one refusal) or the page memory only (two).
+    await vi.waitFor(async () => {
+      expect(cramped.write).toHaveBeenCalledTimes(2);
+      expect(cache.stats.get().memoryOnly).toBe(refusals > 1);
+      expect((await inner.read(devicesKey)) !== null).toBe(refusals < 2);
+    });
     return { cache, inner, ...cramped };
   }
 
