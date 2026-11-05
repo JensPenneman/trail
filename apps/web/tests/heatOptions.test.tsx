@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PeoplePage } from "../src/pages/people/PeoplePage";
@@ -77,7 +77,14 @@ describe("Heat's options", () => {
       within(heatBy)
         .getAllByRole("option")
         .map((option) => option.textContent),
-    ).toEqual(["Points recorded", "Time spent at places", "Visits to places"]);
+    ).toEqual([
+      "Points recorded",
+      "Time spent at places",
+      "Visits to places",
+      "Time on the move",
+      "Average speed",
+      "Top speed",
+    ]);
     expect(screen.queryByRole("combobox", { name: "Period" })).not.toBeInTheDocument();
     await person.selectOptions(heatBy, "time");
     const period = await screen.findByRole("combobox", { name: "Period" });
@@ -286,6 +293,135 @@ describe("Heat's key", () => {
     const items = await within(busiest).findAllByRole("listitem");
     expect(items[0]).toHaveTextContent("3 hrs 20 mins");
     expect(items[1]).toHaveTextContent("5 mins");
+  });
+});
+
+describe("the measures of movement", () => {
+  it("offers a mode for them only, asks for it and keeps it in the address", async () => {
+    const { calls } = mockApi(heatRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, {
+      url: "/?view=heat&person=me&heat=moving",
+      user,
+    });
+    await openOptions(person);
+    const mode = await screen.findByRole("combobox", { name: "Mode" });
+    expect(mode).toHaveValue("");
+    expect(within(mode).getAllByRole("option")[0]).toHaveTextContent("Every mode");
+    await person.selectOptions(mode, "car");
+    await waitFor(() =>
+      expect(
+        calls.some((call) => call.url?.includes("heat=moving") && call.url.includes("mode=car")),
+      ).toBe(true),
+    );
+    expect(new URLSearchParams(router.state.location.search).get("mode")).toBe("car");
+    expect(
+      await screen.findByRole("button", { name: "Show all time and every mode" }),
+    ).toBeInTheDocument();
+    await person.selectOptions(screen.getByRole("combobox", { name: "Heat by" }), "points");
+    expect(screen.queryByRole("combobox", { name: "Mode" })).not.toBeInTheDocument();
+    expect(
+      calls
+        .filter((call) => call.url?.includes("heat=points"))
+        .every((call) => !call.url?.includes("mode=")),
+    ).toBe(true);
+  });
+
+  it("tells the speeds in km/h in the key, and the time of several devices as a sum", async () => {
+    mockApi(
+      heatRoutes((heat) =>
+        heat === "speed"
+          ? {
+              heat,
+              cellZoom: 15,
+              cells: [[16705, 10972, 1_400]],
+              truncated: false,
+              period: { from: "2025-11-01", to: today },
+              pending: false,
+              mode: null,
+            }
+          : null,
+      ),
+    );
+    renderPage(<PeoplePage />, { url: "/?view=heat&person=me&heat=speed", user });
+    const key = await screen.findByRole("list", { name: "Average speed in each square" });
+    expect(
+      within(key)
+        .getAllByRole("listitem")
+        .some((item) => /km\/h/.test(item.textContent ?? "")),
+    ).toBe(true);
+  });
+
+  it("says the squares are larger when the server answered at a coarser zoom, and that devices sum", async () => {
+    mockApi(
+      heatRoutes((heat) =>
+        heat === "moving"
+          ? {
+              heat,
+              cellZoom: 18,
+              cells: [[16705, 10972, 1_400]],
+              truncated: false,
+              period: { from: "2025-11-01", to: today },
+              pending: false,
+              mode: null,
+            }
+          : null,
+      ),
+    );
+    renderPage(<PeoplePage />, {
+      url: "/?view=heat&person=me&heat=moving&c=3.7217,51.0543,15",
+      user,
+    });
+    expect(await screen.findByText("Larger squares at this zoom")).toBeInTheDocument();
+    expect(screen.getByText("Sums the devices' time")).toBeInTheDocument();
+  });
+
+  it("without a stream asks again while the answer says recent days are still being worked out", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let asked = 0;
+      mockApi(
+        heatRoutes((heat) => {
+          if (heat !== "moving") return null;
+          asked += 1;
+          return {
+            heat,
+            cellZoom: 15,
+            cells: asked === 1 ? [] : [[16705, 10972, 1_400]],
+            truncated: false,
+            period: { from: "2025-11-01", to: today },
+            pending: asked === 1,
+            mode: null,
+          };
+        }),
+      );
+      renderPage(<PeoplePage />, { url: "/?view=heat&person=me&heat=moving", user });
+      expect(await screen.findByText("Recent days are still being worked out")).toBeInTheDocument();
+      await act(() => vi.advanceTimersByTimeAsync(10_500));
+      await waitFor(() =>
+        expect(
+          screen.queryByText("Recent days are still being worked out"),
+        ).not.toBeInTheDocument(),
+      );
+      expect(asked).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("names the mode in the chip, and its ✕ shows every mode again", async () => {
+    mockApi(heatRoutes());
+    const person = userEvent.setup();
+    const { router } = renderPage(<PeoplePage />, {
+      url: "/?view=heat&person=me&heat=moving&from=2026-10-01&to=2026-10-31&mode=cycling",
+      user,
+    });
+    expect(await screen.findByText("October 2026 · Cycling")).toBeInTheDocument();
+    await person.click(screen.getByRole("button", { name: "Show all time and every mode" }));
+    await waitFor(() => expect(screen.queryByText(/October 2026/)).not.toBeInTheDocument());
+    const search = new URLSearchParams(router.state.location.search);
+    expect(search.has("mode")).toBe(false);
+    expect(search.has("from")).toBe(false);
   });
 });
 

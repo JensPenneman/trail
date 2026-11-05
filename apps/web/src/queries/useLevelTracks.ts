@@ -19,7 +19,13 @@ export function useLevelTracks(params: LevelTracksParams | null) {
         query:
           params === null
             ? {}
-            : { from: params.from, to: params.to, level: params.level, devices: params.deviceIds },
+            : {
+                from: params.from,
+                to: params.to,
+                level: params.level,
+                devices: params.deviceIds,
+                values: params.values,
+              },
       }),
     enabled: params !== null,
     placeholderData: keepPreviousData,

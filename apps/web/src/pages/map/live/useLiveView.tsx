@@ -12,6 +12,7 @@ import { boundsOf } from "../../../map/boundsOf";
 import type { MapPosition } from "../../../map/mapTypes";
 import { colourTracks } from "../../../map/pathColour/colourRuns";
 import type { PathColouring } from "../../../map/pathColour/pathColours";
+import { withAltitudeScale } from "../../../map/pathColour/withAltitudeScale";
 import { positionExtent } from "../../../map/positionExtent";
 import { tracksToMap } from "../../../map/tracksToMap";
 import { personPositions } from "../../../people/personPositions";
@@ -117,14 +118,19 @@ export function useLiveView({
     [devices.data, selection],
   );
 
+  // The altitude's classes are cut from what is drawn.
+  const scaled = useMemo(
+    () => withAltitudeScale(trackList ?? [], colouring),
+    [trackList, colouring],
+  );
   const rawTracks = useMemo(
-    () => tracksToMap(colourTracks(trackList ?? [], colouring), colors.hex),
-    [trackList, colors, colouring],
+    () => tracksToMap(colourTracks(trackList ?? [], scaled), colors.hex),
+    [trackList, colors, scaled],
   );
   const transport = useTransportMap(range, level, rawTracks, {
     dark,
     device: colors.hex,
-    colouring,
+    colouring: scaled,
   });
   const peopleTracks = useMemo(
     () =>

@@ -7,6 +7,8 @@ export const processingChannel = "trail_processing";
 
 /** A pass finished a window of a device's history: the owner's streams refetch `[from, to)`. */
 export interface SegmentsNotice {
+  /** `heat`: only the per-day cells of the window were made again (no pass), so only heat answers change. */
+  kind?: "segments" | "heat";
   userId: string;
   deviceId: string;
   from: Date;
@@ -14,7 +16,7 @@ export interface SegmentsNotice {
 }
 
 const segmentsMessageSchema = z.object({
-  t: z.literal("segments"),
+  t: z.enum(["segments", "heat"]),
   u: z.uuid(),
   d: z.uuid(),
   from: z.iso.datetime(),
@@ -24,7 +26,7 @@ const segmentsMessageSchema = z.object({
 /** The message's text: about 160 bytes, far under the 8000 that NOTIFY carries. */
 export function encodeSegmentsNotice(notice: SegmentsNotice): string {
   return JSON.stringify({
-    t: "segments",
+    t: notice.kind ?? "segments",
     u: notice.userId,
     d: notice.deviceId,
     from: notice.from.toISOString(),
@@ -45,8 +47,8 @@ export function decodeSegmentsNotice(payload: string): SegmentsNotice | null {
   }
   const parsed = segmentsMessageSchema.safeParse(value);
   if (!parsed.success) return null;
-  const { u, d, from, to } = parsed.data;
-  return { userId: u, deviceId: d, from: new Date(from), to: new Date(to) };
+  const { t, u, d, from, to } = parsed.data;
+  return { kind: t, userId: u, deviceId: d, from: new Date(from), to: new Date(to) };
 }
 
 /**

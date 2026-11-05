@@ -22,6 +22,10 @@ interface HeatLegendProps {
   /** The answer is incomplete (cut at the ceiling) or recent days are still being worked out. */
   truncated: boolean;
   pending: boolean;
+  /** The server answered at a coarser level than the zoom asks (cells of zoom 19 and 20). */
+  larger?: boolean;
+  /** More than one device is counted and their time on the move is added. */
+  sumsDevices?: boolean;
   /** A way to ask again, when the answer could not be loaded. */
   retry?: ReactNode;
 }
@@ -39,6 +43,8 @@ export function HeatLegend({
   status,
   truncated,
   pending,
+  larger,
+  sumsDevices,
   retry,
 }: HeatLegendProps) {
   const format = useFormatter();
@@ -64,6 +70,8 @@ export function HeatLegend({
       notes={[
         ...(truncated ? ["Busiest places only: zoom in to see every place"] : []),
         ...(pending ? ["Recent days are still being worked out"] : []),
+        ...(larger === true ? ["Larger squares at this zoom"] : []),
+        ...(sumsDevices === true ? ["Sums the devices' time"] : []),
         ...(retry === null || retry === undefined ? [] : [retry]),
       ]}
     />

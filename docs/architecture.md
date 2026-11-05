@@ -209,6 +209,10 @@ and the API none of the worker's:
   across processes. A correction (a move's mode set or reset) waits for the
   lock at most 10 s (`PROCESSING_CORRECTION_WAIT_MS`, `lock_timeout`,
   `correctionTransaction`) and then answers `409` with `Retry-After` to be tried again, instead of hanging behind a long pass.
+- **`heat` events** cross the same way: when `HeatDaysScheduler` commits a device's rebuild of
+  the per-day cells (some seconds after the pass) it sends one for the days rebuilt, which
+  only the heat answers react to (`invalidateStopHeat`) — the pass's `segments` event
+  already told the timeline, the levels and Insights.
 - **`segments` events cross with `NOTIFY`**: the pass ends with
   `pg_notify('trail_processing', …)` inside its transaction, and the API's
   listener republishes the message on its bus (§9) — in role `all` too, so
@@ -3028,13 +3032,18 @@ count among them, since they lead to signed-in pages.
     in the address, read by `useHeatChoice` like the level — the address ›
     this browser › the preference `heat` › points; the view asks for it. Map
     options in Heat hold **Heat by** (Points recorded · Time spent at places ·
-    Visits to places) and, for the stop measures, **Period** (All time · Last 7
+    Visits to places · Time on the move · Average speed · Top speed — the last
+    three from the per-day cells, `heat=moving|speed|topspeed`, speeds in cm/s
+    and told in km/h) and, for the measures of movement, a **Mode** select
+    ("Every mode" and the modes, `?mode=`, in the address only and never
+    remembered, a step of the history) and, for all but points, **Period** (All time · Last 7
     days · Last 30 days · Last 12 months · Custom period…, which opens From, To
     and Show period with its mistakes said: From after To, over three years;
     a later day is today; a preset shows when the address' dates match it,
     else "Custom: 3 Oct – 2 Nov"). A period filtering the answer shows a chip
     in Heat's controls row ("October 2026", "2026", "1 Oct – 15 Oct 2026")
-    whose ✕, named "Show all time", takes `heat`, `from` and `to` off the
+    (with a mode, "October 2026 · Cycling") whose ✕, named "Show all time" ("Show all
+    time and every mode"), takes `heat`, `from`, `to` and `mode` off the
     address in place of its entry, so Back still returns to the Insights page
     that sent one here. The key is a titled section over the map's bottom-left
     corner (`MapKey`, the map's canvas described by it): the measure's title,
@@ -3042,7 +3051,10 @@ count among them, since they lead to signed-in pages.
     named by the title in words ("under 5 min", "5–15 min", "1 day or more" for
     time), "Loading…" until an answer for this measure and period is in,
     "Nothing in view for this period", "Recent days are still being worked
-    out", "Busiest places only: zoom in to see every place" when the ceiling cut
+    out" (the answer is asked for again every ten seconds while it says so),
+    "Larger squares at this zoom" when the server answered at level 18 for the
+    cells of level 19 and 20 of the movement measures, "Sums the devices' time"
+    for time on the move with more than one device, "Busiest places only: zoom in to see every place" when the ceiling cut
     the cells, or "The heatmap could not be loaded" with Retry. A link's
     camera `?c=lon,lat,zoom` starts the map there and holds back the first fit;
     the address drops it, in place of its entry, with the first view that is
@@ -3132,8 +3144,17 @@ count among them, since they lead to signed-in pages.
 
   **Colour by** (`usePathColour`, `map/pathColour/`) sets what one's own lines
   are coloured by: Mode (Transport only: the colour of the move's mode),
-  Device (the device's colour, stops included at Transport), Speed or Time of
-  day. It resolves like the level: `?color=` › `trail.color` on this browser ›
+  Device (the device's colour, stops included at Transport), Speed, Time of
+  day, Altitude (every level: five steps of round metres, 1, 2 or 5 times a
+  power of ten, cut from the altitudes drawn: `altitudeScale`), Accuracy (every
+  level: fixed at 10, 25, 50 and 100 m, the worse the stronger, an interval as
+  inaccurate as its worse end) or Mode confidence (Transport only: one colour
+  per move, steps 1, 3 and 5 of the ramp for "Sure" from 0.8 or chosen,
+  "Fairly sure" and "Unsure" under 0.5 or to review). Altitude and accuracy
+  come from the raw points at Raw and from `values=` elsewhere
+  (`levelValuesFor`: asked for only by those colourings, in the level
+  tracks' key); the level's points keep `3 + values.length` columns in the
+  copy on this device (`packLevelPoints`). It resolves like the level: `?color=` › `trail.color` on this browser ›
   the preference `color` › Mode at Transport, else Device; an option the level
   does not offer is skipped, never rewritten (Raw with `color=mode` is by
   device). Choosing replaces the entry and is remembered; saving the

@@ -2,6 +2,9 @@ import { sql } from "drizzle-orm";
 import type { Logger } from "pino";
 import { allowLongStatements } from "../db/allowLongStatements";
 import type { Database } from "../db/database";
+import { notifySegments } from "../events/processingNotify";
+import { addDays } from "../lib/calendarDate";
+import { startOfLocalDay } from "../lib/startOfLocalDay";
 import { lockDeviceProcessing } from "../processing/deviceLock";
 import { rebuildHeatDays } from "./rebuildHeatDays";
 
@@ -15,6 +18,7 @@ interface MarkRow extends Record<string, unknown> {
   day: string;
   marked_at: string;
   timezone: string;
+  user_id: string;
 }
 
 /**
@@ -143,7 +147,7 @@ export class HeatDaysScheduler {
     try {
       marks = (
         await this.#db.execute<MarkRow>(sql`
-          SELECT m.device_id, m.day::text AS day, m.marked_at::text AS marked_at, u.timezone
+          SELECT m.device_id, m.day::text AS day, m.marked_at::text AS marked_at, u.timezone, d.user_id
           FROM heat_day_marks m JOIN devices d ON d.id = m.device_id JOIN users u ON u.id = d.user_id
           ORDER BY m.device_id, m.day
         `)
@@ -169,6 +173,16 @@ export class HeatDaysScheduler {
           await allowLongStatements(tx);
           await lockDeviceProcessing(tx, deviceId);
           await rebuildHeatDays(tx, deviceId, timezone, days);
+          // The owner's streams learn of the new cells with the commit, as they do of a pass (a `heat` event, which only heat answers react to): the
+          // heat answers that waited for them are asked for again.
+          const sorted = [...days].sort();
+          await notifySegments(tx, {
+            kind: "heat",
+            userId: own[0]?.user_id ?? "",
+            deviceId,
+            from: new Date(startOfLocalDay(sorted[0] ?? "1970-01-01", timezone)),
+            to: new Date(startOfLocalDay(addDays(sorted.at(-1) ?? "1970-01-01", 1), timezone)),
+          });
           // A mark made again meanwhile (its `marked_at` is later) stays for the next run.
           for (const mark of own) {
             await tx.execute(sql`

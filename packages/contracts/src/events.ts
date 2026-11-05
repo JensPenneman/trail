@@ -81,6 +81,17 @@ export const serverEventSchema = z.discriminatedUnion("type", [
     to: z.iso.datetime(),
   }),
   /**
+   * The per-day cells of the heatmap's measures of movement were made again for
+   * `[from, to)` of a device (some seconds after a pass, which a `segments` event
+   * announces): only the heat answers of those days are out of date.
+   */
+  z.object({
+    type: z.literal("heat"),
+    deviceId: z.uuid(),
+    from: z.iso.datetime(),
+    to: z.iso.datetime(),
+  }),
+  /**
    * The daily statistics summed up some of a device's days again (after
    * uploads or a deletion), told to the owner's streams only, never to the
    * people the device is shared with. `dates` are those days and `days` their

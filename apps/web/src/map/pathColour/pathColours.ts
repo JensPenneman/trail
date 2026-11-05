@@ -1,5 +1,5 @@
 import { type PathColour, pathColours } from "@trail/contracts/preferences";
-import type { ProcessingLevel } from "@trail/contracts/transport";
+import type { LevelValue, ProcessingLevel } from "@trail/contracts/transport";
 
 /** What the lines of the tracks are coloured by (docs/architecture.md §14), as the controls name them. */
 export const pathColourLabels: Readonly<Record<PathColour, string>> = {
@@ -7,11 +7,16 @@ export const pathColourLabels: Readonly<Record<PathColour, string>> = {
   device: "Device",
   speed: "Speed",
   time: "Time of day",
+  altitude: "Altitude",
+  accuracy: "Accuracy",
+  confidence: "Mode confidence",
 };
 
 /** The options a level supports: Transport colours by mode too; the others have no modes to show. */
 export function pathColoursFor(level: ProcessingLevel): readonly PathColour[] {
-  return level === "inferred" ? ["mode", "device", "speed", "time"] : ["device", "speed", "time"];
+  return level === "inferred"
+    ? ["mode", "device", "speed", "time", "altitude", "accuracy", "confidence"]
+    : ["device", "speed", "time", "altitude", "accuracy"];
 }
 
 /** What a level is coloured by when nobody chose: Transport by mode, the rest by device. */
@@ -44,6 +49,16 @@ export function resolvePathColour(
   return defaultPathColour(level);
 }
 
+/**
+ * What a level's tracks have to be asked for (`values=` on `/api/v1/tracks`) to colour by `by`:
+ * the server's speed, or the altitude and the accuracy together (one entry in the cache whichever
+ * of the two is chosen). The raw level has them all already.
+ */
+export function levelValuesFor(by: PathColour): readonly LevelValue[] {
+  if (by === "speed") return ["speed"];
+  return by === "altitude" || by === "accuracy" ? ["altitude", "accuracy"] : [];
+}
+
 /** How the lines are coloured now: what by, on which map, in which zone. */
 export interface PathColouring {
   by: PathColour;
@@ -53,4 +68,6 @@ export interface PathColouring {
   timeZone: string;
   /** Every move drawn is on foot: the speed key and bands are paces. */
   onFoot?: boolean;
+  /** For the altitude: where its classes begin, in metres, from what is drawn. */
+  scale?: readonly number[];
 }

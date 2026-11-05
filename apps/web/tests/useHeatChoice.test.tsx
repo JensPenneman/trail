@@ -44,6 +44,22 @@ describe("useHeatChoice", () => {
     expect(window.localStorage.getItem("trail.heat")).toBe("time");
   });
 
+  it("takes a mode from the address for the movement measures only, and does not remember it", () => {
+    expect(render("/?heat=moving&mode=car", null).result.current.choice.mode).toBe("car");
+    expect(render("/?heat=speed&mode=cycling", null).result.current.choice.mode).toBe("cycling");
+    // Points, time and visits have no mode; a name that is no mode is none.
+    expect(render("/?heat=points&mode=car", null).result.current.choice.mode).toBeNull();
+    expect(render("/?heat=topspeed&mode=hovercraft", null).result.current.choice.mode).toBeNull();
+    const { result } = render("/?heat=moving&date=2026-10-20", null);
+    act(() => result.current.choice.setMode("train"));
+    expect(new URLSearchParams(result.current.location.search).get("mode")).toBe("train");
+    expect(new URLSearchParams(result.current.location.search).get("date")).toBe("2026-10-20");
+    expect(result.current.choice.mode).toBe("train");
+    act(() => result.current.choice.setMode(null));
+    expect(new URLSearchParams(result.current.location.search).has("mode")).toBe(false);
+    expect(window.localStorage.getItem("trail.mode")).toBeNull();
+  });
+
   it("ignores a remembered value it does not know", () => {
     window.localStorage.setItem("trail.heat", "sped");
     expect(render("/", null).result.current.choice.heat).toBe("points");

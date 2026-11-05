@@ -4,7 +4,8 @@ import type { RangeParams } from "../api/queryKeys";
 import { useFormatter } from "../format/useFormatter";
 import type { MapTrack, MapTransportSegment } from "../map/mapTypes";
 import { colourLevelTracks } from "../map/pathColour/colourRuns";
-import type { PathColouring } from "../map/pathColour/pathColours";
+import { altitudeScale } from "../map/pathColour/pathClasses";
+import { levelValuesFor, type PathColouring } from "../map/pathColour/pathColours";
 import { type PathLegendModel, pathLegend } from "../map/pathColour/pathLegend";
 import { showsPath } from "../map/transportFeatures";
 import { useLevelTracks } from "../queries/useLevelTracks";
@@ -53,10 +54,14 @@ export function useTransportMap(
   until?: number,
 ): TransportMap {
   const format = useFormatter();
-  const levelTracks = useLevelTracks(
-    level === "raw" || range === null ? null : { ...range, level },
-  );
   const { dark, device, colouring } = colors;
+  // Altitude and accuracy are asked for only by the colourings that read them: Raw has them all.
+  const values = colouring === undefined ? [] : levelValuesFor(colouring.by);
+  const levelTracks = useLevelTracks(
+    level === "raw" || range === null
+      ? null
+      : { ...range, level, ...(values.length === 0 ? {} : { values }) },
+  );
   const data = levelTracks.data;
   const pending =
     level !== "raw" && range !== null && (levelTracks.isPending || levelTracks.isPlaceholderData);
@@ -114,6 +119,21 @@ export function useTransportMap(
       ...asked,
       onFoot: data.level === "inferred" && moves > 0 && onFoot,
     };
+    if (asked.by === "altitude") {
+      // The classes are cut from what the level's tracks carry, as Raw's are from its own.
+      const at = data.values?.indexOf("altitude") ?? -1;
+      const heights: number[] = [];
+      if (at >= 0) {
+        for (const segment of data.segments) {
+          for (const point of segment.points) {
+            const height = point[3 + at];
+            if (typeof height === "number") heights.push(height);
+          }
+        }
+      }
+      const scale = altitudeScale(heights);
+      if (scale !== null) colouredBy.scale = scale;
+    }
     const response = colourLevelTracks(data, colouredBy, device);
     const layers = levelTracksToMap(response, { device, mode: (value) => palette[value] });
     const inferred = data.level === "inferred";
@@ -137,8 +157,8 @@ export function useTransportMap(
           stopPaths,
           gaps,
           stops: found.has("stationary"),
-          unknownSpeed:
-            colouredBy.by === "speed" &&
+          unknownClass:
+            ["speed", "altitude", "accuracy", "confidence"].includes(colouredBy.by) &&
             response.segments.some(
               (segment) => segment.kind !== "stop" && segment.color === palette.unknown,
             ),

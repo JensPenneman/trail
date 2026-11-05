@@ -1,7 +1,7 @@
 import type { PathColour } from "@trail/contracts/preferences";
 import type { TransportMode } from "@trail/contracts/transport";
 import type { Formatter } from "../../format/createFormatter";
-import { paceBands, speedBands } from "./pathClasses";
+import { accuracyEdges, paceBands, speedBands } from "./pathClasses";
 import type { PathColouring } from "./pathColours";
 import { speedRamp, timeTones } from "./pathPalette";
 
@@ -15,7 +15,7 @@ interface LegendItem {
 export interface PathLegendModel {
   by: PathColour;
   /** The sequential key (speed or pace): the five steps and the words at its ends; null for the rest. */
-  key: { title: string; steps: LegendItem[]; ends: readonly [string, string] } | null;
+  key: { title: string; steps: LegendItem[]; ends?: readonly [string, string] } | null;
   /** The classes of a categorical colouring (time of day); empty otherwise. */
   classes: LegendItem[];
   /** The devices drawn, for the device colouring's legend. */
@@ -29,8 +29,8 @@ export interface PathLegendModel {
     gaps: boolean;
     /** A stop is drawn (grey under the colourings that colour moves only). */
     stops: boolean;
-    /** A stretch whose speed cannot be told is drawn in the unknown grey. */
-    unknownSpeed: boolean;
+    /** A stretch the colouring cannot class (no speed, no altitude…) is drawn in the unknown grey. */
+    unknownClass: boolean;
   };
 }
 
@@ -41,6 +41,18 @@ const bandLabels = (onFoot: boolean, format: Formatter): string[] => {
   }
   const [a, b, c, d] = paceBands.map((value) => format.pace(value));
   return [`slower than ${a}`, `${a} to ${b}`, `${b} to ${c}`, `${c} to ${d}`, `faster than ${d}`];
+};
+
+const accuracyLabels = (): string[] => {
+  const [a, b, c, d] = accuracyEdges;
+  return [`${a} m or better`, `${a}–${b} m`, `${b}–${c} m`, `${c}–${d} m`, `worse than ${d} m`];
+};
+
+/** The ranges of the altitude's five classes, from the edges the drawn altitudes were cut at. */
+const altitudeLabels = (scale: readonly number[]): string[] => {
+  const [a, b, c, d] = scale;
+  if (a === undefined || b === undefined || c === undefined || d === undefined) return [];
+  return [`under ${a} m`, `${a}–${b}`, `${b}–${c}`, `${c}–${d}`, `${d} m or more`];
 };
 
 const hour = (value: number, format: Formatter): string =>
@@ -60,23 +72,43 @@ export function pathLegend(
     stopPaths: boolean;
     gaps: boolean;
     stops?: boolean;
-    unknownSpeed?: boolean;
+    unknownClass?: boolean;
   },
   format: Formatter,
 ): PathLegendModel {
   const scheme = colouring.dark ? "dark" : "light";
   const onFoot = colouring.onFoot === true;
+  const ramp = (labels: readonly string[], steps: readonly number[]): LegendItem[] =>
+    labels.map((label, index) => ({
+      label,
+      color: speedRamp[scheme][steps[index] ?? index] ?? "",
+    }));
+  const all = [0, 1, 2, 3, 4];
   const key =
     colouring.by === "speed"
       ? {
           title: onFoot ? "Pace" : "Speed",
-          steps: bandLabels(onFoot, format).map((label, index) => ({
-            label,
-            color: speedRamp[scheme][index] ?? "",
-          })),
+          steps: ramp(bandLabels(onFoot, format), all),
           ends: ["Slower", "Faster"] as readonly [string, string],
         }
-      : null;
+      : colouring.by === "accuracy"
+        ? {
+            title: "Accuracy",
+            steps: ramp(accuracyLabels(), all),
+            ends: ["Better", "Worse"] as readonly [string, string],
+          }
+        : colouring.by === "altitude" && colouring.scale !== undefined
+          ? {
+              title: "Altitude",
+              steps: ramp(altitudeLabels(colouring.scale), all),
+              ends: ["Lower", "Higher"] as readonly [string, string],
+            }
+          : colouring.by === "confidence"
+            ? {
+                title: "Mode confidence",
+                steps: ramp(["Sure", "Fairly sure", "Unsure"], [0, 2, 4]),
+              }
+            : null;
   const classes =
     colouring.by === "time"
       ? [
@@ -100,7 +132,7 @@ export function pathLegend(
       stopPaths: drawn.stopPaths,
       gaps: drawn.gaps,
       stops: drawn.stops === true,
-      unknownSpeed: drawn.unknownSpeed === true,
+      unknownClass: drawn.unknownClass === true,
     },
   };
 }

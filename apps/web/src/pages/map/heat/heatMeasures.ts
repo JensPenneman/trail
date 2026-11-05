@@ -1,4 +1,8 @@
-import { type HeatMeasure, heatPeriodMeasures } from "@trail/contracts/heatmap";
+import {
+  type HeatMeasure,
+  heatMovementMeasures,
+  heatPeriodMeasures,
+} from "@trail/contracts/heatmap";
 import type { Formatter } from "../../../format/createFormatter";
 import {
   countLadders,
@@ -59,8 +63,17 @@ export const heatMeasureInfo: Readonly<Record<HeatMeasure, HeatMeasureInfo>> = {
 };
 
 /** The measures "Heat by" offers, in order. */
-/** The measures "Heat by" offers; the movement measures come with their own controls. */
-export const heatChoices: readonly HeatMeasure[] = ["points", "time", "visits"];
+export const heatChoices: readonly HeatMeasure[] = [
+  "points",
+  "time",
+  "visits",
+  "moving",
+  "speed",
+  "topspeed",
+];
+
+/** The measures of movement: they take a mode and count what the per-day cells hold. */
+export const hasMode = (heat: HeatMeasure): boolean => heatMovementMeasures.has(heat);
 
 /** Whether the measure covers a period (all but the points). */
 export const hasPeriod = (heat: HeatMeasure): boolean => heatPeriodMeasures.has(heat);

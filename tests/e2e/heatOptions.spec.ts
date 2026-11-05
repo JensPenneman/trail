@@ -72,6 +72,37 @@ test("Heat by time spent: the period appears, the key follows the measure, the c
   await expect(page.getByRole("list", { name: "Points recorded in each square" })).toBeVisible();
 });
 
+test("Heat by time on the move: a mode of its own, the km/h of its key, the chip with the mode", async ({
+  page,
+  account,
+}) => {
+  test.slow();
+  expect(account.email).toBeTruthy();
+  // The drive of fifteen minutes at 50 km/h is a car move once the upload is processed.
+  await uploadedDevice(page, "Walker", walkAndDrive());
+  await page.goto("/?view=heat&person=me&c=3.7335,51.0543,14");
+  await openMapOptions(page);
+  await expect(page.getByRole("combobox", { name: "Mode" })).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Heat by" }).selectOption("moving");
+  await expect(page).toHaveURL(/[?&]heat=moving/);
+  await page.getByRole("combobox", { name: "Mode" }).selectOption("car");
+  await expect(page).toHaveURL(/[?&]mode=car/);
+  const key = page.getByRole("region", { name: "Time on the move in each square" });
+  await expect(key).toBeVisible();
+  await expectAccessible(page, "Heat by time on the move with its mode");
+  await page.keyboard.press("Escape");
+  await expect(key.getByRole("list")).toBeVisible({ timeout: 60_000 });
+  await expect.poll(() => heatPixels(page), { timeout: 60_000 }).toBeGreaterThan(0);
+  await expect(page.getByRole("button", { name: "Show all time and every mode" })).toBeVisible();
+
+  // Average speed is told in km/h, over the same mode.
+  await openMapOptions(page);
+  await page.getByRole("combobox", { name: "Heat by" }).selectOption("speed");
+  await expect(page.getByRole("combobox", { name: "Mode" })).toHaveValue("car");
+  const speeds = page.getByRole("region", { name: "Average speed in each square" });
+  await expect(speeds.getByText(/km\/h/).first()).toBeVisible({ timeout: 60_000 });
+});
+
 test("the lens an Insights page sets: the camera, the chip, its ✕ in place of its entry, Back to Insights", async ({
   page,
   account,

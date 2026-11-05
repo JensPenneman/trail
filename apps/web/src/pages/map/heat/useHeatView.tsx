@@ -1,6 +1,7 @@
-import type { UseQueryResult } from "@tanstack/react-query";
+import { type UseQueryResult, useQueryClient } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { HeatMeasure } from "@trail/contracts/heatmap";
+import type { TransportMode } from "@trail/contracts/transport";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useFormatter } from "../../../format/useFormatter";
 import { boundsOf } from "../../../map/boundsOf";
@@ -8,7 +9,7 @@ import { heatmapParamsFor } from "../../../map/heatmapParamsFor";
 import { heatScale } from "../../../map/heatScale";
 import { heatPlaces } from "../../../map/heatTiles";
 import type { Bounds, MapHeat, MapViewState } from "../../../map/mapTypes";
-import { useHeatmap } from "../../../queries/useHeatmap";
+import { heatAnsweredZoom, useHeatmap } from "../../../queries/useHeatmap";
 import { Button } from "../../../ui/Button";
 import { Spinner } from "../../../ui/Spinner";
 import { useDebouncedValue } from "../../../ui/useDebouncedValue";
@@ -17,18 +18,18 @@ import type { MapSelection } from "../resolveMapSelection";
 import { HeatDetails } from "./HeatDetails";
 import { HeatLegend } from "./HeatLegend";
 import { HeatLens } from "./HeatLens";
-import { hasPeriod, heatMeasureInfo } from "./heatMeasures";
+import { hasMode, hasPeriod, heatMeasureInfo } from "./heatMeasures";
 import type { HeatPeriod } from "./heatPeriod";
 import { periodDetail, periodLabel } from "./lensLabel";
 
 /** What the map says of itself, by what it counts. */
 const mapLabels: Record<HeatMeasure, string> = {
+  moving: "Heatmap of time on the move in view: where you travelled longest.",
+  speed: "Heatmap of average speed in view: where you moved fastest on average.",
+  topspeed: "Heatmap of top speed in view: where you went fastest.",
   points: "Heatmap of all recorded points in view: everywhere your devices have been.",
   time: "Heatmap of time spent at places in view: where you stayed longest.",
   visits: "Heatmap of visits to places in view: where you stopped most often.",
-  moving: "Heatmap of time on the move in view: where you travelled most.",
-  speed: "Heatmap of average speed in view: where you moved fastest on average.",
-  topspeed: "Heatmap of top speed in view: the fastest you went.",
 };
 
 export interface HeatViewInput {
@@ -48,7 +49,9 @@ export interface HeatViewInput {
   measure: HeatMeasure;
   /** The period in the address; null: all time. */
   period: HeatPeriod | null;
-  /** Takes the lens (measure, period) off the address. */
+  /** One mode's moves, for the measures of movement; null: every mode. */
+  mode: TransportMode | null;
+  /** Takes the lens (measure, period, mode) off the address. */
   onClearLens: () => void;
 }
 
@@ -69,6 +72,7 @@ export function useHeatView({
   today,
   measure,
   period,
+  mode,
   onClearLens,
 }: HeatViewInput): MapViewContent {
   const format = useFormatter();
@@ -85,7 +89,7 @@ export function useHeatView({
   const heatmap = useHeatmap(
     !active || settledView === null
       ? null
-      : heatmapParamsFor(settledView, deviceIds, { heat: measure, period }),
+      : heatmapParamsFor(settledView, deviceIds, { heat: measure, period, mode }),
   );
   // Opened here: start where the devices are now, else the map's default view.
   const initialBounds = useMemo(
@@ -100,6 +104,10 @@ export function useHeatView({
     [devices.data],
   );
   const shown = active ? heatmap.data : undefined;
+  // The zoom the answer on screen was asked for at: a kept placeholder belongs to the request
+  // before, not to the view now.
+  const queryClient = useQueryClient();
+  const answeredAt = heatAnsweredZoom(queryClient, shown);
   // One scale for the squares on the map and the legend, from the cells in view.
   const heat = useMemo<MapHeat | null>(
     () =>
@@ -127,8 +135,14 @@ export function useHeatView({
 
   // What the answer on screen says it covers, not what was asked for: a measure or period just
   // chosen shows "Loading…" under its own title until its cells arrive.
-  const filtered = hasPeriod(measure) && period !== null;
+  const periodFilters = hasPeriod(measure) && period !== null;
+  const modeFilters = hasMode(measure) && mode !== null;
+  const filtered = periodFilters || modeFilters;
   const answered = shown ?? null;
+  // The server answers at zoom 18 for the cells of zoom 19 and 20 of the movement measures.
+  const askedCellZoom = answeredAt === null ? null : Math.min(20, answeredAt + 5);
+  const larger = answered !== null && askedCellZoom !== null && answered.cellZoom < askedCellZoom;
+  const deviceCount = (deviceIds ?? (devices.data ?? []).map((device) => device.id)).length;
   const periodText =
     answered?.period != null
       ? periodDetail(answered.period, !filtered && hasPeriod(answered.heat), format)
@@ -166,8 +180,13 @@ export function useHeatView({
         : {}),
       focus,
     },
-    controls:
-      filtered && period !== null ? <HeatLens period={period} onClear={onClearLens} /> : null,
+    controls: filtered ? (
+      <HeatLens
+        period={periodFilters ? period : null}
+        mode={modeFilters ? mode : null}
+        onClear={onClearLens}
+      />
+    ) : null,
     transport: null,
     chip: heatmap.isFetching ? (
       <p className="map-page__chip" aria-hidden="true">
@@ -185,6 +204,8 @@ export function useHeatView({
         status={keyStatus}
         truncated={answered?.truncated === true}
         pending={answered?.pending === true}
+        larger={larger}
+        sumsDevices={answered?.heat === "moving" && deviceCount > 1}
         retry={
           heatmap.isError ? (
             <Button

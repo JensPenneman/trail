@@ -7,6 +7,7 @@ import { useCacheBytes } from "../../cache/useCacheBytes";
 import { useCacheEnabled } from "../../cache/useCacheEnabled";
 import { useFormatter } from "../../format/useFormatter";
 import { isMapStyleChoice, mapStyleChoices, mapStyleLabels } from "../../map/mapStyleChoices";
+import { pathColourLabels } from "../../map/pathColour/pathColours";
 import { useConfig } from "../../queries/useConfig";
 import { useUpdatePreferences } from "../../queries/useUpdatePreferences";
 import { SettingsGroup } from "../../settings/SettingsGroup";
@@ -20,13 +21,6 @@ import { heatChoices, heatMeasureInfo } from "../map/heat/heatMeasures";
 const isLevel = (value: string): value is (typeof processingLevels)[number] =>
   (processingLevels as readonly string[]).includes(value);
 
-const colourLabels: Readonly<Record<Preferences["color"], string>> = {
-  mode: "Mode",
-  device: "Device",
-  speed: "Speed",
-  time: "Time of day",
-};
-
 const isHeat = (value: string): value is Preferences["heat"] =>
   (heatMeasures as readonly string[]).includes(value);
 const isColour = (value: string): value is Preferences["color"] =>
@@ -35,7 +29,8 @@ const isColour = (value: string): value is Preferences["color"] =>
 /** What is said once a change is saved. */
 function savedText(change: Partial<Preferences>): string {
   if (change.heat !== undefined) return `Heat by saved: ${heatMeasureInfo[change.heat].option}.`;
-  if (change.color !== undefined) return `Colour paths by saved: ${colourLabels[change.color]}.`;
+  if (change.color !== undefined)
+    return `Colour paths by saved: ${pathColourLabels[change.color]}.`;
   if (change.mapStyle !== undefined) return `Map style saved: ${mapStyleLabels[change.mapStyle]}.`;
   if (change.level !== undefined)
     return `Detail of the tracks saved: ${levelLabels[change.level]}.`;
@@ -145,7 +140,7 @@ export function PreferencesPage() {
           label="Colour paths by"
           detail="What the lines of the tracks are coloured by, where the level of the tracks offers it."
           selected={preferences.color}
-          options={pathColours.map((value) => ({ value, label: colourLabels[value] }))}
+          options={pathColours.map((value) => ({ value, label: pathColourLabels[value] }))}
           onChange={(value) => {
             if (isColour(value)) save({ color: value });
           }}

@@ -52,6 +52,7 @@ const heat = (index: number) =>
       zoom: 12,
       deviceIds: null,
       heat: "points",
+      mode: null,
       from: null,
       to: null,
     }),

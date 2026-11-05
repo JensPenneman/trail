@@ -27,11 +27,15 @@ export type HeatmapParams = {
   /** The local days of time and visits; null for points (all time) and for the default period. */
   from: string | null;
   to: string | null;
+  /** One mode's moves, for the measures of movement; null: every mode. */
+  mode: string | null;
 };
 
 /** A range at a level of calculation (`/api/v1/tracks`). */
 export type LevelTracksParams = RangeParams & {
   level: "raw" | "averaged" | "mapped" | "inferred";
+  /** What each point carries after `t` (`values=`); left out when none are needed. */
+  values?: readonly ("speed" | "altitude" | "accuracy")[];
 };
 
 /**

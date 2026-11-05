@@ -93,7 +93,11 @@ describe("preferences", () => {
       heat: "visits",
       color: "speed",
     });
-    for (const bad of [{ heat: "sped" }, { color: "altitude" }]) {
+    // The colourings of the second slice are taken too.
+    for (const color of ["altitude", "accuracy", "confidence"]) {
+      expect(updateMeRequestSchema.safeParse({ preferences: { color } }).success).toBe(true);
+    }
+    for (const bad of [{ heat: "sped" }, { color: "height" }]) {
       expect(updateMeRequestSchema.safeParse({ preferences: bad }).success).toBe(false);
     }
     expect(updateMeRequestSchema.parse({ preferences: { heat: "time", color: "device" } })).toEqual(

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  accuracyEdges,
+  altitudeScale,
+  classAbove,
   edgeClasses,
   edgeSpeeds,
   type PathPoint,
@@ -17,6 +20,57 @@ const at = (metres: number, t: number, ...rest: (number | null)[]): PathPoint =>
   t,
   ...rest,
 ];
+
+describe("accuracy and altitude classes", () => {
+  it("class an accuracy at 10, 25, 50 and 100 m, the edge in the better class, worse stronger", () => {
+    expect(accuracyEdges).toEqual([10, 25, 50, 100]);
+    expect(
+      [5, 10, 10.5, 25, 50.1, 100, 101].map((value) => classAbove(value, accuracyEdges)),
+    ).toEqual([0, 0, 1, 1, 3, 3, 4]);
+  });
+
+  it("cuts the altitude in five steps of round metres from what is drawn", () => {
+    // 12–88 m: a step of 20 from 0 m.
+    expect(altitudeScale([12, 40, 88])).toEqual([20, 40, 60, 80]);
+    // A coast: 0–6 m is steps of 2 from 0.
+    expect(altitudeScale([0, 3, 6])).toEqual([2, 4, 6, 8]);
+    // A mountain: 1 200–3 400 m is steps of 500 from 1 000.
+    expect(altitudeScale([1200, 3400])).toEqual([1500, 2000, 2500, 3000]);
+    // Flat or one reading: steps of one metre; below sea level too.
+    expect(altitudeScale([8, 8])).toEqual([9, 10, 11, 12]);
+    expect(altitudeScale([-4.5, -1])).toEqual([-4, -3, -2, -1]);
+    expect(altitudeScale([])).toBeNull();
+    // One spike of a fix does not squeeze the rest into one class.
+    const flat = Array.from({ length: 200 }, (_, index) => 10 + (index % 50));
+    expect(altitudeScale([...flat, 9000])).toEqual([20, 30, 40, 50]);
+  });
+
+  it("classes each interval by the mean altitude of its ends, and by the worse accuracy, null when none is known", () => {
+    const points: PathPoint[] = [
+      at(0, 0, 5, 8, 12),
+      at(10, 10, 5, 30, 36),
+      at(20, 20, null, null, null),
+    ];
+    const base = { speedColumn: null, onFoot: false, timeZone: "UTC" } as const;
+    expect(
+      edgeClasses(points, { ...base, by: "altitude", valueColumn: 5, scale: [10, 20, 30, 40] }),
+    ).toEqual([2, 3]);
+    expect(edgeClasses(points, { ...base, by: "accuracy", valueColumn: 4 })).toEqual([2, 2]);
+    expect(edgeClasses(points.slice(1), { ...base, by: "accuracy", valueColumn: 3 })).toEqual([0]);
+    expect(edgeClasses(points, { ...base, by: "altitude", valueColumn: null })).toEqual([
+      null,
+      null,
+    ]);
+    expect(
+      edgeClasses(points.slice(2), {
+        ...base,
+        by: "altitude",
+        valueColumn: 5,
+        scale: [1, 2, 3, 4],
+      }),
+    ).toEqual([]);
+  });
+});
 
 describe("speed bands", () => {
   it("cut at 6, 15, 30 and 70 km/h, and at paces of 12:00, 9:00, 7:00 and 5:30 on foot", () => {

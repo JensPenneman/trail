@@ -1,10 +1,12 @@
 import type { HeatMeasure } from "@trail/contracts/heatmap";
+import { type TransportMode, transportModes } from "@trail/contracts/transport";
 import { type FormEvent, useState } from "react";
 import { useFormatter } from "../../../format/useFormatter";
+import { transportModeInfo } from "../../../transport/transportModes";
 import { Button } from "../../../ui/Button";
 import { SelectField } from "../../../ui/SelectField";
 import { TextField } from "../../../ui/TextField";
-import { hasPeriod, heatChoices, heatMeasureInfo } from "./heatMeasures";
+import { hasMode, hasPeriod, heatChoices, heatMeasureInfo } from "./heatMeasures";
 import { type HeatPeriod, presetOf, presetPeriod, resolveCustom } from "./heatPeriod";
 import { periodLabel } from "./lensLabel";
 import "./HeatOptions.css";
@@ -16,6 +18,9 @@ interface HeatOptionsProps {
   period: HeatPeriod | null;
   onPeriod: (period: HeatPeriod | null) => void;
   today: string;
+  /** One mode's moves, for the measures of movement; null: every mode. */
+  mode: TransportMode | null;
+  onMode: (mode: TransportMode | null) => void;
 }
 
 const customValue = "custom";
@@ -25,7 +30,15 @@ const customValue = "custom";
  * measures that cover a period, which. A preset shows when the address' dates match it relative to
  * today; any other period reads "Custom: 3 Oct – 2 Nov", and "Custom period…" opens the form.
  */
-export function HeatOptions({ heat, onHeat, period, onPeriod, today }: HeatOptionsProps) {
+export function HeatOptions({
+  heat,
+  onHeat,
+  period,
+  onPeriod,
+  today,
+  mode,
+  onMode,
+}: HeatOptionsProps) {
   const format = useFormatter();
   const preset = presetOf(period, today);
   const [editing, setEditing] = useState(false);
@@ -53,6 +66,28 @@ export function HeatOptions({ heat, onHeat, period, onPeriod, today }: HeatOptio
           </option>
         ))}
       </SelectField>
+      {hasMode(heat) ? (
+        <SelectField
+          label="Mode"
+          value={mode ?? ""}
+          onChange={(event) =>
+            onMode(
+              event.currentTarget.value === ""
+                ? null
+                : (event.currentTarget.value as TransportMode),
+            )
+          }
+        >
+          <option value="">Every mode</option>
+          {transportModes
+            .filter((choice) => choice !== "stationary")
+            .map((choice) => (
+              <option key={choice} value={choice}>
+                {transportModeInfo[choice].label}
+              </option>
+            ))}
+        </SelectField>
+      ) : null}
       {hasPeriod(heat) ? (
         <>
           <SelectField

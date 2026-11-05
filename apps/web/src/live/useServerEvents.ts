@@ -15,6 +15,7 @@ const eventTypes = [
   "device-removed",
   "ingest",
   "segments",
+  "heat",
   "person",
   "share",
   "days",

@@ -1,15 +1,18 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { type HeatmapParams, queryKeys } from "../src/api/queryKeys";
+import { applyServerEvent } from "../src/live/applyServerEvent";
+import { createLiveStore } from "../src/live/createLiveStore";
 import { resyncAfterGap } from "../src/live/resyncAfterGap";
 import { invalidateStopHeat, staleProcessed } from "../src/live/staleProcessed";
-import { sameHeatKind } from "../src/queries/useHeatmap";
+import { pendingRetryMs, sameHeatKind } from "../src/queries/useHeatmap";
 
 const params = (overrides: Partial<HeatmapParams> = {}): HeatmapParams => ({
   bbox: "3.5,50.9,4,51.3",
   zoom: 12,
   deviceIds: null,
   heat: "points",
+  mode: null,
   from: null,
   to: null,
   ...overrides,
@@ -96,5 +99,45 @@ describe("the placeholder of a heat view", () => {
     expect(sameHeatKind(undefined, base)).toBe(false);
     // A key from before the measure existed is no match.
     expect(sameHeatKind({ bbox: "x", zoom: 1, deviceIds: null }, params())).toBe(false);
+  });
+});
+
+describe("asking again for an answer still being worked out", () => {
+  it("is left to the stream while it is open, and backs off 10, 30, 60 s without one", () => {
+    expect(pendingRetryMs(true, "open", 1)).toBe(false);
+    expect(pendingRetryMs(false, "reconnecting", 1)).toBe(false);
+    expect(pendingRetryMs(true, "connecting", 1)).toBe(10_000);
+    expect(pendingRetryMs(true, "reconnecting", 2)).toBe(30_000);
+    expect(pendingRetryMs(true, "reconnecting", 3)).toBe(60_000);
+    expect(pendingRetryMs(true, "reconnecting", 40)).toBe(60_000);
+  });
+
+  it("goes stale with a segments event for the days of a movement answer", () => {
+    const client = new QueryClient();
+    const key = queryKeys.heatmap(params({ heat: "moving", from: "2026-11-01", to: "2026-11-30" }));
+    client.setQueryData(key, { pending: true });
+    void invalidateStopHeat(client, {
+      deviceId: "d",
+      from: "2026-11-05T00:00:00Z",
+      to: "2026-11-06T00:00:00Z",
+      timezone: "UTC",
+    });
+    expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+  });
+
+  it("goes stale with a heat event, and the pass's other answers do not", () => {
+    const client = new QueryClient();
+    const heatKey = queryKeys.heatmap(params({ heat: "moving" }));
+    const timelineKey = ["timeline", { from: "2026-11-05" }] as const;
+    client.setQueryData(heatKey, { pending: true });
+    client.setQueryData(timelineKey, { items: [] });
+    applyServerEvent(client, createLiveStore(), {
+      type: "heat",
+      deviceId: "00000000-0000-4000-8000-000000000001",
+      from: "2026-11-05T00:00:00.000Z",
+      to: "2026-11-06T00:00:00.000Z",
+    });
+    expect(client.getQueryState(heatKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(timelineKey)?.isInvalidated).toBe(false);
   });
 });

@@ -18,7 +18,13 @@ describe("the processing channel's messages", () => {
       from: "2026-10-28T06:30:00.000Z",
       to: "2026-10-28T08:15:30.500Z",
     });
-    expect(decodeSegmentsNotice(payload)).toEqual(notice);
+    expect(decodeSegmentsNotice(payload)).toEqual({ ...notice, kind: "segments" });
+  });
+
+  it("tell a heat notice from a pass's", () => {
+    const heat = { ...notice, kind: "heat" as const };
+    expect(JSON.parse(encodeSegmentsNotice(heat)).t).toBe("heat");
+    expect(decodeSegmentsNotice(encodeSegmentsNotice(heat))).toEqual(heat);
   });
 
   it("stay far under the 8000 bytes NOTIFY carries", () => {

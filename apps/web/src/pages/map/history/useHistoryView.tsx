@@ -10,6 +10,7 @@ import { boundsOf } from "../../../map/boundsOf";
 import type { MapPoint } from "../../../map/mapTypes";
 import { colourTracks } from "../../../map/pathColour/colourRuns";
 import type { PathColouring } from "../../../map/pathColour/pathColours";
+import { withAltitudeScale } from "../../../map/pathColour/withAltitudeScale";
 import { tracksToMap } from "../../../map/tracksToMap";
 import { sharesHistory } from "../../../people/sharesHistory";
 import type { PersonColors } from "../../../people/usePersonColors";
@@ -269,15 +270,17 @@ export function useHistoryView({
     [requests, personTracks.data],
   );
   const visitList = mineRange === null ? undefined : visits.data;
+  // The altitude's classes are cut from what is drawn.
+  const scaled = useMemo(() => withAltitudeScale(trackList, colouring), [trackList, colouring]);
   const rawTracks = useMemo(
-    () => tracksToMap(colourTracks(trackList, colouring), colors.hex, until),
-    [trackList, colors, colouring, until],
+    () => tracksToMap(colourTracks(trackList, scaled), colors.hex, until),
+    [trackList, colors, scaled, until],
   );
   const transport = useTransportMap(
     range,
     level,
     rawTracks,
-    { dark, device: colors.hex, colouring },
+    { dark, device: colors.hex, colouring: scaled },
     until,
   );
   const peopleTracks = useMemo(

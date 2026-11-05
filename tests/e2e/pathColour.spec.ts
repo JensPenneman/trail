@@ -27,7 +27,13 @@ test("Speed colours the walk and the drive apart, with the key over the map", as
   const colourBy = page.getByRole("combobox", { name: "Colour by" });
   // Raw has no modes: device first, and the colour a device has.
   await expect(colourBy).toHaveValue("device");
-  await expect(colourBy.getByRole("option")).toHaveText(["Device", "Speed", "Time of day"]);
+  await expect(colourBy.getByRole("option")).toHaveText([
+    "Device",
+    "Speed",
+    "Time of day",
+    "Altitude",
+    "Accuracy",
+  ]);
   await expectAccessible(page, "Colour by with the device legend");
   await colourBy.selectOption("speed");
   await expect(page).toHaveURL(/[?&]color=speed/);
@@ -118,4 +124,26 @@ test("on foot the key is a pace, from slower to faster", async ({ page, account 
   await expect(key.getByText(/^slower than 12:00/)).toBeVisible();
   await expect(key.getByText(/^faster than 5:30/)).toBeVisible();
   await expectAccessible(page, "The pace key over the map");
+});
+
+test("Accuracy at Averaged colours by fixed metres and shows its key", async ({
+  page,
+  account,
+}) => {
+  expect(account.email).toBeTruthy();
+  await uploadedDevice(page, "Walker", walkAndDrive());
+  const asked = page.waitForRequest(
+    (request) =>
+      request.url().includes("/api/v1/tracks?") && request.url().includes("level=averaged"),
+  );
+  await page.goto("/?view=history&person=me&level=averaged&color=accuracy");
+  // Asked for the altitude with the accuracy: one entry whichever of the two is chosen.
+  expect(new URL((await asked).url()).searchParams.get("values")).toBe("altitude,accuracy");
+  const key = page.getByRole("list", { name: "Accuracy" });
+  await expect(key).toBeVisible({ timeout: 30_000 });
+  await expect(key.getByText("10 m or better")).toBeVisible();
+  await expect(key.getByText("worse than 100 m")).toBeVisible();
+  await openMapOptions(page);
+  await expect(page.getByRole("combobox", { name: "Colour by" })).toHaveValue("accuracy");
+  await expectAccessible(page, "The accuracy key over the map");
 });

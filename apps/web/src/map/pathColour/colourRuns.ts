@@ -1,8 +1,18 @@
 import type { Track } from "@trail/contracts/track";
 import { trackGapSeconds } from "@trail/contracts/trackSegments";
-import type { LevelTrackSegment, LevelTracksResponse } from "@trail/contracts/transport";
+import type {
+  LevelTrackSegment,
+  LevelTracksResponse,
+  LevelValue,
+} from "@trail/contracts/transport";
 import { modePalette } from "../../transport/modePalette";
-import { edgeClasses, type PathPoint, rawSpeedColumn } from "./pathClasses";
+import {
+  edgeClasses,
+  type PathPoint,
+  rawAccuracyColumn,
+  rawAltitudeColumn,
+  rawSpeedColumn,
+} from "./pathClasses";
 import type { PathColouring } from "./pathColours";
 import { speedRamp, timeTones } from "./pathPalette";
 
@@ -53,10 +63,18 @@ export function classColour(cls: number | null, colouring: PathColouring): strin
   return palette[cls] ?? modePalette[scheme].unknown;
 }
 
-const coloured = (
-  colouring: PathColouring,
-): colouring is PathColouring & { by: "speed" | "time" } =>
-  colouring.by === "speed" || colouring.by === "time";
+type RunColouring = PathColouring & { by: "speed" | "time" | "altitude" | "accuracy" };
+
+/** Colourings that cut a path into runs of a class (confidence colours a whole move). */
+const coloured = (colouring: PathColouring): colouring is RunColouring =>
+  colouring.by === "speed" ||
+  colouring.by === "time" ||
+  colouring.by === "altitude" ||
+  colouring.by === "accuracy";
+
+/** The column of a raw point the colouring reads, if any. */
+const rawColumnOf = (by: RunColouring["by"]): number | null =>
+  by === "altitude" ? rawAltitudeColumn : by === "accuracy" ? rawAccuracyColumn : null;
 
 /** A track with the colour its pieces are drawn in; none: the device's. */
 export type ColouredTrack = Track & { color?: string };
@@ -77,6 +95,8 @@ export function colourTracks(tracks: readonly Track[], colouring: PathColouring)
             edgeClasses(piece, {
               by: colouring.by,
               speedColumn: rawSpeedColumn,
+              valueColumn: rawColumnOf(colouring.by),
+              ...(colouring.scale === undefined ? {} : { scale: colouring.scale }),
               onFoot: colouring.onFoot === true,
               timeZone: colouring.timeZone,
             }),
@@ -89,6 +109,25 @@ export function colourTracks(tracks: readonly Track[], colouring: PathColouring)
   );
 }
 
+/**
+ * How sure the mode of a move is: 0 sure (a mode the person chose, or a confidence of 0.8 or
+ * more), 2 fairly sure, 4 unsure (under 0.5, or a move to review); null where there is no mode
+ * to be sure of. The steps of the line ramp, the strongest the least certain.
+ */
+export function confidenceClass(segment: {
+  confidence: number | null;
+  needsReview: boolean;
+  modeUser: string | null;
+  kind: string;
+}): number | null {
+  if (segment.kind !== "move") return null;
+  if (segment.needsReview) return 4;
+  if (segment.modeUser !== null) return 0;
+  if (segment.confidence === null) return null;
+  if (segment.confidence < 0.5) return 4;
+  return segment.confidence >= 0.8 ? 0 : 2;
+}
+
 /** A segment of a level's tracks with the colour it is drawn in; none: the mode's, or the device's. */
 type ColouredSegment = LevelTrackSegment & { color?: string };
 export type ColouredLevelTracks = Omit<LevelTracksResponse, "segments"> & {
@@ -98,8 +137,8 @@ export type ColouredLevelTracks = Omit<LevelTracksResponse, "segments"> & {
 /**
  * A level's tracks with colours: by speed or time of day a move or piece of track is split into its
  * runs (each keeps the segment's id and review mark; a stop keeps the stationary colour; a pause
- * inside a move is no cut), by device
- * every segment, stops included, has the device's colour, by mode the segments are as they were.
+ * inside a move is no cut), by the confidence of the mode a move is one colour, by device every
+ * segment, stops included, has the device's colour, by mode the segments are as they were.
  */
 export function colourLevelTracks(
   response: LevelTracksResponse,
@@ -118,7 +157,24 @@ export function colourLevelTracks(
         }
       : response;
   }
+  if (colouring.by === "confidence") {
+    // One colour for a whole move; a stop keeps its own, a piece of track no mode to be sure of.
+    return {
+      ...response,
+      segments: response.segments.map((segment) =>
+        segment.kind === "stop"
+          ? segment
+          : { ...segment, color: classColour(confidenceClass(segment), colouring) },
+      ),
+    };
+  }
   if (!coloured(colouring)) return response;
+  // The values the points carry after `t`, in the order the query asked for them.
+  const asked = response.values?.indexOf(colouring.by as LevelValue) ?? -1;
+  const valueColumn = asked < 0 ? null : 3 + asked;
+  // The server's own speed, where it was asked for: else distance over time.
+  const speedAt = response.values?.indexOf("speed") ?? -1;
+  const speedColumn = speedAt < 0 ? null : 3 + speedAt;
   const segments = response.segments.flatMap((segment): ColouredSegment[] => {
     if (segment.kind === "stop" || segment.points.length < 2) return [segment];
     // A move is one line, as under Mode: a pause inside it is a stretch of some speed, not a cut.
@@ -126,7 +182,9 @@ export function colourLevelTracks(
       segment.points,
       edgeClasses(segment.points, {
         by: colouring.by,
-        speedColumn: null,
+        speedColumn,
+        valueColumn,
+        ...(colouring.scale === undefined ? {} : { scale: colouring.scale }),
         onFoot: colouring.onFoot === true,
         timeZone: colouring.timeZone,
       }),
