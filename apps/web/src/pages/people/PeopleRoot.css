@@ -1,0 +1,65 @@
+/*
+ * The root of the sidebar, Find My style: rows that open a person's page, in
+ * groups, and the way back of the levels below it.
+ */
+.people-root {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.people-root__rows {
+  display: grid;
+  margin: 0;
+}
+
+.people-root__rows > li {
+  display: grid;
+  min-width: 0;
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.people-root__rows > li:last-child {
+  border-bottom: 0;
+}
+
+/* Rows below the fold are not laid out until they come near. */
+.people-root__person {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 4.25rem;
+}
+
+.people-root__group {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.people-root__title {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  font-weight: 600;
+}
+
+.people-root__search {
+  position: relative;
+  display: block;
+}
+
+.people-root__search-icon {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: var(--space-3);
+  margin-block: auto;
+  color: var(--color-text-2);
+  pointer-events: none;
+}
+
+.people-root__search-input {
+  width: 100%;
+  padding-inline-start: calc(var(--space-3) + 1.5rem);
+}
+
+.people-root__none {
+  color: var(--color-text-2);
+}

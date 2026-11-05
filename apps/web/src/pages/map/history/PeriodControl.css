@@ -43,7 +43,7 @@
   rotate: 180deg;
 }
 
-/* Phones: the bar is the width of the map, and so is the popover (MapPopover.css). */
+/* Phones: the popover is as wide as the bar, which stops before the zoom column (MapPopover.css). */
 @media (max-width: 63.99rem) {
   .period-control {
     position: static;

@@ -79,13 +79,18 @@
     calc(var(--space-4) + var(--safe-left));
 }
 
-/* The view's own part of the list and of a detail: History's summary, Live's day so far. */
-.map-page__details {
-  position: relative;
-  display: grid;
-  align-content: start;
-  gap: var(--space-6);
-  min-width: 0;
+/* The key of what the map draws (Heat's colours): small, over the map's bottom-left corner. */
+.map-page__legend {
+  position: absolute;
+  inset: auto auto calc(2.25rem + var(--foot-height, 0px)) calc(var(--space-3) + var(--safe-left));
+  z-index: 3;
+  max-width: calc(100% - 2 * var(--space-3));
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-m);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  font-size: var(--text-s);
 }
 
 /* A small status chip floating over the map ("Updating"), top centre, under the bar when it is wide. */
@@ -124,6 +129,16 @@
     position: fixed;
     inset: var(--map-top) 0 calc(var(--map-bottom-gap) + var(--sheet-peek));
     z-index: 1;
+  }
+
+  /*
+   * A popover that reaches below the map is not hidden by the sheet: the stage rises over it. A
+   * sheet lifted over the map while a popover is open is covered by the map until the popover is
+   * closed (the first press, or Escape, closes it); the popover cannot rise alone, as it lives in
+   * the stage's stacking context.
+   */
+  .map-page__stage:has(.map-options.is-open, .period-control__popover) {
+    z-index: 3;
   }
 
   .map-page__spacer {
@@ -185,11 +200,6 @@
 
   .map-page .maplibregl-ctrl-bottom-left {
     padding-left: var(--safe-left);
-  }
-
-  /* MapLibre's zoom buttons sit below the bar, which spans the map. */
-  .map-page .maplibregl-ctrl-top-right {
-    margin-top: var(--overlay-end);
   }
 }
 

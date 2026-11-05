@@ -346,3 +346,59 @@
     outline-offset: -2px;
   }
 }
+
+/* A group that folds: the title is a button across the heading. */
+.settings-group__title--disclosure {
+  padding: 0;
+}
+
+.settings-group__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--target);
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-m);
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: start;
+}
+
+.settings-group__toggle:hover {
+  background: var(--color-surface-2);
+}
+
+.settings-group__chevron {
+  flex-shrink: 0;
+  transition: rotate var(--duration-fast) ease;
+}
+
+.settings-group__toggle[aria-expanded="true"] .settings-group__chevron {
+  rotate: 180deg;
+}
+
+/* What an open group holds: sections and lists that bring their own cards. */
+.settings-group__open {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+@media (forced-colors: active) {
+  .settings-group__toggle:hover,
+  .settings-group__toggle:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-group__chevron {
+    transition: none;
+  }
+}

@@ -26,6 +26,11 @@ interface DayTimelineProps {
   /** The day shown, or null for a period: times on other days get their date. */
   day: string | null;
   onOpen: (segment: Segment) => void;
+  /**
+   * The region's name when the section has no heading of its own, because a
+   * group above it is the heading (Me's page): "Timeline", "Your day so far".
+   */
+  regionLabel?: string;
 }
 
 /** Longer than this between two segments of a device, the timeline says there is no data. */
@@ -67,6 +72,7 @@ export function DayTimeline({
   deviceName,
   day,
   onOpen,
+  regionLabel,
 }: DayTimelineProps) {
   const format = useFormatter();
   const headingId = useId();
@@ -77,15 +83,26 @@ export function DayTimeline({
       : format.time(instant);
 
   return (
-    <section className="section" aria-labelledby={headingId}>
-      <div className="section__header">
-        <SectionTitle id={headingId}>Timeline</SectionTitle>
-        {pending ? (
-          <p className="section__description" role="status">
-            Still being worked out…
-          </p>
-        ) : null}
-      </div>
+    <section
+      className="section"
+      {...(regionLabel === undefined
+        ? { "aria-labelledby": headingId }
+        : { "aria-label": regionLabel })}
+    >
+      {regionLabel === undefined ? (
+        <div className="section__header">
+          <SectionTitle id={headingId}>Timeline</SectionTitle>
+          {pending ? (
+            <p className="section__description" role="status">
+              Still being worked out…
+            </p>
+          ) : null}
+        </div>
+      ) : pending ? (
+        <p className="section__description" role="status">
+          Still being worked out…
+        </p>
+      ) : null}
       {loading ? (
         <LoadingBlock label="Loading the timeline">
           <Skeleton height="4rem" />
@@ -94,7 +111,7 @@ export function DayTimeline({
         <ErrorState title="The timeline could not be loaded" error={error} onRetry={onRetry} />
       ) : (segments ?? []).length === 0 ? (
         <div className="card">
-          <EmptyState icon="route" title="No stops or moves yet" nested>
+          <EmptyState icon="route" title="No stops or moves yet" nested={regionLabel === undefined}>
             <p>
               Trail works out where you stopped and how you travelled shortly after the points
               arrive.

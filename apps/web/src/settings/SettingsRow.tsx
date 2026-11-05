@@ -1,5 +1,5 @@
 import { type ReactNode, useId } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { offlineReasonId, useReadOnly } from "../app/useReadOnly";
 import { Icon } from "../ui/Icon";
 import type { IconName } from "../ui/iconPaths";
@@ -26,6 +26,10 @@ interface LinkRow extends RowLook {
   to: string;
   /** The page on screen, or the page above the one on screen (the sidebar). */
   current?: boolean;
+  /** Keep the scroll position of the page: a row that opens a level of the same screen. */
+  keepScroll?: boolean;
+  /** Names the row for the one that comes back to it (`data-row`): focus returns there. */
+  dataRow?: string;
 }
 
 interface ExternalRow extends RowLook {
@@ -101,21 +105,30 @@ export type SettingsRowProps =
 function LinkRowBody({
   to,
   current,
+  keepScroll,
+  dataRow,
   nameIds,
   describedBy,
   children,
 }: {
   to: string;
   current: boolean;
+  keepScroll: boolean;
+  dataRow: string | undefined;
   nameIds: string;
   describedBy: string | undefined;
   children: ReactNode;
 }) {
   const link = useSettingsLink(to);
+  // Where a link of Settings was opened from is Settings' own business: outside it (the People
+  // page's levels) the history carries nothing.
+  const inSettings = useLocation().pathname.startsWith("/settings");
   return (
     <Link
       to={to}
-      {...link}
+      {...(inSettings ? link : {})}
+      {...(keepScroll ? { preventScrollReset: true } : {})}
+      {...(dataRow === undefined ? {} : { "data-row": dataRow })}
       className="settings-row__body settings-row__body--interactive"
       aria-labelledby={nameIds}
       aria-describedby={describedBy}
@@ -194,6 +207,8 @@ export function SettingsRow(props: SettingsRowProps) {
           <LinkRowBody
             to={props.to}
             current={props.current === true}
+            keepScroll={props.keepScroll === true}
+            dataRow={props.dataRow}
             nameIds={nameIds}
             describedBy={describedBy}
           >
