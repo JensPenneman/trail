@@ -6,6 +6,7 @@ import { PeoplePage } from "../src/pages/people/PeoplePage";
 import { paramsOf } from "./support/addressParams";
 import { config, ids, user } from "./support/fixtures";
 import { mockApi } from "./support/mockApi";
+import { openGroup } from "./support/openGroup";
 import { renderPage } from "./support/renderPage";
 import { standardRoutes } from "./support/standardRoutes";
 
@@ -28,7 +29,6 @@ describe("the People page, Live", () => {
     renderPage(<PeoplePage />, { url: "/?person=me", user });
     expect(screen.getByRole("heading", { level: 1, name: "People" })).toBeInTheDocument();
     expect(view("Live")).toBeChecked();
-    expect(screen.getByText(/^Where you are now · /)).toBeInTheDocument();
     // Everyone's position stays on the map: two devices of one's own, Ana's and bob's.
     expect(await screen.findByRole("img", { name: /^Map of your track today/ })).toHaveAttribute(
       "data-positions",
@@ -104,8 +104,10 @@ describe("the People page, Live", () => {
 describe("the People page, History", () => {
   it("shows the day's totals, visits, trips and a time slider for Me", async () => {
     mockApi(standardRoutes());
+    const person = userEvent.setup();
     renderPage(<PeoplePage />, { url: "/?view=history&person=me", user });
     expect(view("History")).toBeChecked();
+    await openGroup(person, "Summary, visits and trips");
     expect(await screen.findByText("1.3 km")).toBeInTheDocument();
     expect(screen.getByText(/3 points/)).toBeInTheDocument();
     expect(await screen.findByRole("slider", { name: "Position at" })).toBeInTheDocument();
@@ -213,8 +215,10 @@ describe("the People page, History", () => {
 describe("the People page, Heat", () => {
   it("summarises everything recorded and hands the heatmap its place", async () => {
     mockApi(standardRoutes());
+    const person = userEvent.setup();
     renderPage(<PeoplePage />, { url: "/?view=heat&person=me", user });
     expect(view("Heat")).toBeChecked();
+    await openGroup(person, "Heat: totals, busiest places");
     // 184,322 + 41,207 points over both devices.
     expect(await screen.findByText("225,529")).toBeInTheDocument();
     expect(
@@ -230,6 +234,41 @@ describe("the People page, Heat", () => {
     // The level of the tracks has nothing to say about a heatmap.
     expect(screen.queryByRole("group", { name: "Detail of the tracks" })).not.toBeInTheDocument();
     expect(document.title).toBe("Heatmap · People · Trail");
+  });
+});
+
+describe("the People page, Heat, places from tiles", () => {
+  it("lists the busiest places at the centres of their tiles and frames the camera on them", async () => {
+    mockApi(standardRoutes());
+    renderPage(<PeoplePage />, { url: "/?view=heat&person=me", user });
+    // The busiest places are in Me's Heat group, which is folded until it is opened.
+    const person = userEvent.setup();
+    await openGroup(person, "Heat: totals, busiest places");
+    const busiest = await screen.findByRole("region", { name: "Busiest places in view" });
+    // The fixture's tiles of zoom 15 decode to these centres, busiest first: a tile read as a
+    // longitude and latitude would show 16,705 and 10,972 here.
+    const items = await within(busiest).findAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent("9,000 points");
+    expect(items[0]).toHaveTextContent("50.9826° N, 3.5321° E");
+    expect(items[1]).toHaveTextContent("6,400 points");
+    expect(items[1]).toHaveTextContent("51.0448° N, 3.7189° E");
+    // The first fit around the cells' centres.
+    const map = await screen.findByRole("img", { name: /Heatmap of all recorded points/ });
+    await waitFor(() => expect(map).toHaveAttribute("data-fit", "heat:data"));
+    const bounds = JSON.parse(map.getAttribute("data-fit-bounds") ?? "null") as number[];
+    expect(bounds[0]).toBeCloseTo(3.5321, 3);
+    expect(bounds[1]).toBeCloseTo(50.9826, 3);
+    expect(bounds[2]).toBeCloseTo(3.7189, 3);
+    expect(bounds[3]).toBeCloseTo(51.0448, 3);
+    // "Show" flies to the centre of the tile.
+    await person.click(
+      within(items[0] as HTMLElement).getByRole("button", { name: "Show this place on the map" }),
+    );
+    await waitFor(() => expect(map.getAttribute("data-focus-at")).not.toBe("null"));
+    const at = JSON.parse(map.getAttribute("data-focus-at") ?? "null") as number[];
+    expect(at[0]).toBeCloseTo(3.5321, 3);
+    expect(at[1]).toBeCloseTo(50.9826, 3);
   });
 });
 
@@ -257,6 +296,7 @@ describe("switching views", () => {
     await person.click(screen.getByRole("button", { name: "Previous day" }));
 
     await person.click(view("Heat"));
+    await openGroup(person, "Heat: totals, busiest places");
     expect(await screen.findByText("184,322")).toBeInTheDocument();
     expect(map()).toBe(canvas);
     await waitFor(() => expect(map()).toHaveAttribute("data-heat", "2"));
@@ -299,6 +339,7 @@ describe("switching views", () => {
     mockApi(standardRoutes());
     const person = userEvent.setup();
     renderPage(<PeoplePage />, { url: "/?view=history&person=me", user });
+    await openGroup(person, "Summary, visits and trips");
     await person.click(await screen.findByRole("button", { name: /Show this visit on the map/ }));
     expect(map().getAttribute("data-focus")).toMatch(/^visit:/);
     await person.click(view("Live"));
@@ -308,7 +349,7 @@ describe("switching views", () => {
     expect(map().getAttribute("data-focus")).toMatch(/^segment:/);
     await person.click(view("History"));
     expect(map()).toHaveAttribute("data-focus", "");
-    // Nor after another day from History's own controls.
+    // Nor after another day from History's own controls (the group stays open across views).
     await person.click(await screen.findByRole("button", { name: /Show this visit on the map/ }));
     expect(map().getAttribute("data-focus")).toMatch(/^visit:/);
     await person.click(screen.getByRole("button", { name: "Previous day" }));

@@ -1,4 +1,4 @@
-import { lastInsightsDay } from "@trail/contracts/insights";
+import { lastInsightsDay } from "@trail/contracts/period";
 import type { InsightsParams } from "../../api/queryKeys";
 import type { Formatter } from "../../format/createFormatter";
 import { addDays } from "../../time/addDays";

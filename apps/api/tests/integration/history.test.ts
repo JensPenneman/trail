@@ -9,7 +9,7 @@ import { tripsResponseSchema } from "@trail/contracts/trip";
 import { visitsResponseSchema } from "@trail/contracts/visit";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { latToTileY, lonToTileX } from "../../src/heatmap/tileMath";
+import { latToTileY, lonToTileX, tileCentre } from "../../src/heatmap/tileMath";
 import { type Agent, agentFor, signUp } from "../support/authFlows";
 import { createDevice, postOverland } from "../support/deviceFlows";
 import { overlandFixture } from "../support/overlandFixture";
@@ -159,10 +159,8 @@ describe("heatmap", () => {
       (await owner.get(`${apiPaths.heatmap}?${query(values)}`).expect(200)).body,
     );
   /** The cells of a level as `x,y` → count, from what the API answers or from the finest stored level. */
-  const byTile = (cells: readonly (readonly [number, number, number])[], z: number) =>
-    new Map(
-      cells.map(([lon, lat, count]) => [`${lonToTileX(lon, z)},${latToTileY(lat, z)}`, count]),
-    );
+  const byTile = (cells: readonly (readonly [number, number, number])[]) =>
+    new Map(cells.map(([x, y, count]) => [`${x},${y}`, count]));
   const finestSummed = async (deviceId: string, z: number) => {
     const shift = 20 - z;
     const rows = await t.ctx.db.execute<{ x: number; y: number; total: number }>(sql`
@@ -172,15 +170,18 @@ describe("heatmap", () => {
     return new Map(rows.rows.map((row) => [`${row.x},${row.y}`, row.total]));
   };
 
-  it("returns cell centres in the viewport with all-time counts", async () => {
+  it("returns the tiles of the cells in the viewport with all-time counts", async () => {
     const heatmap = await heatmapOf({ ...viewport, zoom: 11, deviceIds: rideId });
     // Five levels finer than the map: 16 px cells.
     expect(heatmap.cellZoom).toBe(16);
     expect(heatmap.truncated).toBe(false);
     expect(heatmap.cells.reduce((sum, cell) => sum + cell[2], 0)).toBe(31);
-    for (const [lon, lat] of heatmap.cells) {
-      expect(lon).toBeGreaterThan(3.4);
-      expect(lat).toBeLessThan(51.1);
+    expect(heatmap).toMatchObject({ heat: "points", period: null, pending: false });
+    for (const [x, y] of heatmap.cells) {
+      expect(x).toBeGreaterThanOrEqual(lonToTileX(3.4, 16));
+      expect(x).toBeLessThanOrEqual(lonToTileX(3.8, 16));
+      expect(y).toBeGreaterThanOrEqual(latToTileY(51.1, 16));
+      expect(y).toBeLessThanOrEqual(latToTileY(50.9, 16));
     }
     const counts = heatmap.cells.map(([, , count]) => count);
     expect(counts).toEqual([...counts].sort((a, b) => b - a));
@@ -192,9 +193,7 @@ describe("heatmap", () => {
       const level = Math.min(20, Math.max(6, zoom + 5));
       expect(heatmap.cellZoom, `zoom ${zoom}`).toBe(level);
       // The levels between the stored ones hold exactly what the finest one does, summed.
-      expect(byTile(heatmap.cells, level), `zoom ${zoom}`).toEqual(
-        await finestSummed(rideId, level),
-      );
+      expect(byTile(heatmap.cells), `zoom ${zoom}`).toEqual(await finestSummed(rideId, level));
     }
   });
 
@@ -211,7 +210,7 @@ describe("heatmap", () => {
     for (const [tile, count] of await finestSummed(denseId, 13)) {
       summed.set(tile, (summed.get(tile) ?? 0) + count);
     }
-    expect(byTile(both.cells, 13)).toEqual(summed);
+    expect(byTile(both.cells)).toEqual(summed);
   });
 
   it("counts a whole cell at the edge of the view", async () => {
@@ -219,14 +218,15 @@ describe("heatmap", () => {
     const all = await heatmapOf({ ...viewport, zoom: 8, deviceIds: rideId });
     const [busiest] = all.cells;
     if (busiest === undefined) throw new Error("the ride has no cells");
-    const [lon, lat, count] = busiest;
+    const [x, y, count] = busiest;
+    const [lon, lat] = tileCentre(x, y, 13);
     // A view that only grazes the cell's middle still gets every point of it.
     const grazing = await heatmapOf({
       bbox: [lon - 0.0001, lat - 0.0001, lon + 0.0001, lat + 0.0001].join(","),
       zoom: 8,
       deviceIds: rideId,
     });
-    expect(grazing.cells).toEqual([[lon, lat, count]]);
+    expect(grazing.cells).toEqual([[x, y, count]]);
   });
 
   it("is empty elsewhere and handles the antimeridian", async () => {
@@ -238,27 +238,35 @@ describe("heatmap", () => {
       .get(`${apiPaths.heatmap}?${query({ bbox: "170,-10,-170,10", zoom: 3 })}`)
       .expect(200);
     expect(heatmapResponseSchema.parse(pacific.body)).toEqual({
+      heat: "points",
+      mode: null,
       cellZoom: 8,
       cells: [],
       truncated: false,
+      period: null,
+      pending: false,
     });
   });
 
-  it("keeps to the 20 000 busiest cells and says so", async () => {
+  it("holds every cell the view can, up to 65 536 of the busiest, and says so past that", async () => {
     const many = await createDevice(owner, { name: "Many places" });
     const manyId = many.device.id;
-    // 20 001 cells of level 18, four apart: each one alone in its cell of level 16 too.
+    // 65 537 cells of level 18, four apart: each one alone in its cell of level 16 too.
     await t.ctx.db.execute(sql`
       INSERT INTO heat_cells (device_id, z, x, y, count, first_at, last_at)
-      SELECT ${manyId}::uuid, 18, 134000 + (n % 200) * 4, 87500 + (n / 200) * 4, 1 + n % 997, now(), now()
-      FROM generate_series(0, 20000) AS n
+      SELECT ${manyId}::uuid, 18, 134000 + (n % 300) * 4, 87500 + (n / 300) * 4, 1 + n % 997, now(), now()
+      FROM generate_series(0, 65536) AS n
     `);
     try {
+      // 20 001 cells fit: the dashboard no longer stops at the v1 limit.
+      const some = await heatmapOf({ bbox: "4,50.5,4.8,51.5", zoom: 13, deviceIds: manyId });
+      expect(some.truncated).toBe(false);
+      expect(some.cells.length).toBeGreaterThan(20_000);
       for (const zoom of [13, 11]) {
-        const heatmap = await heatmapOf({ bbox: "4,50.8,5.2,51.3", zoom, deviceIds: manyId });
+        const heatmap = await heatmapOf({ bbox: "3.9,50.4,6,51.3", zoom, deviceIds: manyId });
         expect(heatmap.cellZoom, `zoom ${zoom}`).toBe(zoom + 5);
         expect(heatmap.truncated, `zoom ${zoom}`).toBe(true);
-        expect(heatmap.cells, `zoom ${zoom}`).toHaveLength(20_000);
+        expect(heatmap.cells, `zoom ${zoom}`).toHaveLength(65_536);
         const counts = heatmap.cells.map(([, , count]) => count);
         expect(counts[0]).toBe(997);
         expect(counts).toEqual([...counts].sort((a, b) => b - a));

@@ -1,30 +1,20 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
-import { useEffect, useId, useMemo, useState } from "react";
-import { useFormatter } from "../../../format/useFormatter";
+import { useEffect, useMemo, useState } from "react";
 import { boundsOf } from "../../../map/boundsOf";
 import { heatmapParamsFor } from "../../../map/heatmapParamsFor";
 import { heatScale } from "../../../map/heatScale";
+import { heatPlaces } from "../../../map/heatTiles";
 import type { Bounds, MapHeat, MapViewState } from "../../../map/mapTypes";
-import { useDays } from "../../../queries/useDays";
 import { useHeatmap } from "../../../queries/useHeatmap";
-import { addDays } from "../../../time/addDays";
-import { Button } from "../../../ui/Button";
 import { ErrorState } from "../../../ui/ErrorState";
-import { LoadingBlock } from "../../../ui/LoadingBlock";
 import { Notice } from "../../../ui/Notice";
-import { PlainList } from "../../../ui/PlainList";
-import { SectionTitle } from "../../../ui/SectionTitle";
-import { Skeleton } from "../../../ui/Skeleton";
 import { Spinner } from "../../../ui/Spinner";
 import { useDebouncedValue } from "../../../ui/useDebouncedValue";
 import { inactiveView, type MapViewContent } from "../MapViewContent";
 import type { MapSelection } from "../resolveMapSelection";
+import { HeatDetails } from "./HeatDetails";
 import { HeatLegend } from "./HeatLegend";
-import "./HeatView.css";
-
-/** The stats API allows 400 days per request. */
-const statsDays = 400;
 
 export interface HeatViewInput {
   active: boolean;
@@ -43,9 +33,10 @@ export interface HeatViewInput {
 
 /**
  * Heat: everywhere the devices have been, as a heatmap of all recorded
- * points, with totals and the busiest places in view. Heatmaps cover the
- * signed-in person's own devices only (Heat is offered while nobody or Me is selected). Asks for nothing while another view
- * is shown.
+ * points; its key floats over the map, its totals and busiest places are the
+ * Heat group of Me's page. Heatmaps cover the signed-in person's own devices
+ * only (Heat is offered while nobody or Me is selected). Asks for nothing
+ * while another view is shown.
  */
 export function useHeatView({
   active,
@@ -56,9 +47,6 @@ export function useHeatView({
   dark,
   today,
 }: HeatViewInput): MapViewContent {
-  const format = useFormatter();
-  const totalsId = useId();
-  const busiestId = useId();
   const [focus, setFocus] = useState<{
     key: string;
     lon: number;
@@ -71,24 +59,6 @@ export function useHeatView({
   const heatmap = useHeatmap(
     !active || settledView === null ? null : heatmapParamsFor(settledView, deviceIds),
   );
-  const days = useDays(
-    active ? { from: addDays(today, -(statsDays - 1)), to: today, deviceIds } : null,
-  );
-
-  const deviceList = devices.data ?? [];
-  const yearly = useMemo(() => {
-    const dates = new Set<string>();
-    let distance = 0;
-    let first: string | null = null;
-    for (const day of days.data?.days ?? []) {
-      if (day.points === 0) continue;
-      dates.add(day.date);
-      distance += day.distanceM;
-      if (first === null || day.date < first) first = day.date;
-    }
-    return { days: dates.size, distance, first };
-  }, [days.data]);
-
   // Opened here: start where the devices are now, else the map's default view.
   const initialBounds = useMemo(
     () =>
@@ -102,7 +72,6 @@ export function useHeatView({
     [devices.data],
   );
   const shown = active ? heatmap.data : undefined;
-  const cells = shown?.cells ?? [];
   // One scale for the squares on the map and the legend, from the cells in view.
   const heat = useMemo<MapHeat | null>(
     () =>
@@ -120,22 +89,16 @@ export function useHeatView({
   useEffect(() => {
     if (!framesCamera || dataBounds !== null || heatmap.data === undefined) return;
     if (heatmap.data.cells.length === 0) return;
-    setDataBounds(boundsOf(heatmap.data.cells.map(([lon, lat]) => [lon, lat] as const)));
+    setDataBounds(boundsOf(heatPlaces(heatmap.data).map(({ lon, lat }) => [lon, lat] as const)));
   }, [framesCamera, heatmap.data, dataBounds]);
-  const busiest = useMemo(() => [...cells].sort((a, b) => b[2] - a[2]).slice(0, 5), [cells]);
 
   if (!active) return inactiveView;
 
-  const selectedDevices = deviceList.filter(
-    (device) => deviceIds === null || deviceIds.includes(device.id),
-  );
-  const totalPoints = selectedDevices.reduce((sum, device) => sum + device.counts.total, 0);
-
   return {
     title: "Heatmap",
-    description: "Everywhere your devices have been, as a heatmap of every recorded point.",
     map: {
-      label: "Heatmap of all recorded points in view. The busiest places are listed on this page.",
+      label:
+        "Heatmap of all recorded points in view: everywhere your devices have been. The busiest places are under Heat on your page.",
       heat,
       ...(framesCamera
         ? {
@@ -158,110 +121,42 @@ export function useHeatView({
         <Spinner size="s" /> Loading heatmap
       </p>
     ) : null,
-    foot: null,
-    mine: null,
-    mineLabel: "",
-    panelLabel: "Totals and busiest places",
-    panel: (
-      <>
-        {heat === null ? null : <HeatLegend scale={heat.scale} dark={dark} />}
-        {heatmap.isError ? (
-          <ErrorState
-            title="The heatmap could not be loaded"
-            error={heatmap.error}
-            onRetry={() => void heatmap.refetch()}
-            retrying={heatmap.isFetching}
-          />
-        ) : null}
-        {heatmap.data?.truncated === true ? (
-          <Notice tone="info" title="Showing the busiest places only">
-            <p>This view holds more cells than one map can draw. Zoom in to see every place.</p>
-          </Notice>
-        ) : null}
-
-        <section className="section" aria-labelledby={totalsId}>
-          <SectionTitle id={totalsId}>Totals</SectionTitle>
-          {devices.isPending || days.isPending ? (
-            <LoadingBlock label="Loading totals">
-              <Skeleton height="6rem" />
-            </LoadingBlock>
-          ) : days.isError ? (
+    // The key of the squares' colours, small over the map's bottom-left corner.
+    legend: heat === null ? null : <HeatLegend scale={heat.scale} dark={dark} />,
+    // What could go wrong with the heatmap itself, at the map's foot whoever is selected.
+    foot:
+      !heatmap.isError && heatmap.data?.truncated !== true ? null : (
+        <>
+          {heatmap.isError ? (
             <ErrorState
-              title="Totals could not be loaded"
-              error={days.error}
-              onRetry={() => void days.refetch()}
+              title="The heatmap could not be loaded"
+              error={heatmap.error}
+              onRetry={() => void heatmap.refetch()}
+              retrying={heatmap.isFetching}
             />
-          ) : (
-            <div className="card heat-view__totals">
-              <dl className="stats">
-                <div className="stats__item">
-                  <dt>Points</dt>
-                  <dd>{format.count(totalPoints)}</dd>
-                </div>
-                <div className="stats__item">
-                  <dt>Days with data</dt>
-                  <dd>{format.count(yearly.days)}</dd>
-                </div>
-                <div className="stats__item">
-                  <dt>Distance</dt>
-                  <dd>{format.distance(yearly.distance)}</dd>
-                </div>
-                <div className="stats__item">
-                  <dt>Earliest day</dt>
-                  <dd>{yearly.first === null ? "—" : format.date(yearly.first)}</dd>
-                </div>
-              </dl>
-              <p className="heat-view__note">
-                Points count everything ever recorded; days, distance and the earliest day cover the
-                last 12 months.
-              </p>
-            </div>
-          )}
-        </section>
-
-        <section className="section" aria-labelledby={busiestId}>
-          <SectionTitle id={busiestId}>Busiest places in view</SectionTitle>
-          {heatmap.data === undefined ? (
-            <LoadingBlock label="Loading places">
-              <Skeleton height="3rem" />
-              <Skeleton height="3rem" />
-            </LoadingBlock>
-          ) : busiest.length === 0 ? (
-            <p className="muted">
-              Nothing recorded in this part of the map. Zoom out or move the map to where you have
-              been.
-            </p>
-          ) : (
-            <PlainList ordered className="row-list card card--flush">
-              {busiest.map(([lon, lat, count]) => (
-                <li key={`${lon},${lat}`} className="row-list__item">
-                  <div className="row-list__main">
-                    <p className="row-list__title">{format.count(count)} points</p>
-                    <p className="row-list__meta">{format.coordinates(lat, lon)}</p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    icon="pin"
-                    aria-label="Show this place on the map"
-                    onClick={() =>
-                      setFocus({
-                        key: `${lon},${lat}:${Date.now()}`,
-                        lon,
-                        lat,
-                        zoom: Math.min(17, (heatmap.data?.cellZoom ?? 12) - 2),
-                      })
-                    }
-                  >
-                    Show
-                  </Button>
-                </li>
-              ))}
-            </PlainList>
-          )}
-        </section>
-      </>
+          ) : null}
+          {heatmap.data?.truncated === true ? (
+            <Notice tone="info" title="Showing the busiest places only">
+              <p>This view holds more cells than one map can draw. Zoom in to see every place.</p>
+            </Notice>
+          ) : null}
+        </>
+      ),
+    timeline: null,
+    timelineLabel: "",
+    meGroup: (
+      <HeatDetails
+        devices={devices}
+        deviceIds={deviceIds}
+        today={today}
+        heatmap={heatmap}
+        onShow={(place) => setFocus({ key: `${place.lon},${place.lat}:${Date.now()}`, ...place })}
+      />
     ),
+    meGroupTitle: "Heat: totals, busiest places",
+    personGroup: null,
     // Heatmaps are one's own: nobody else's track is asked for.
+    player: null,
     personTracks: inactiveView.personTracks,
     dialog: null,
   };

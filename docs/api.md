@@ -290,7 +290,12 @@ below it that exists yet — points that arrived seconds ago are still raw,
 areas without map data averaged — and `availableLevel` names the level every
 point reached, each segment's `level` its own. Points are `[lon, lat, t]`:
 WGS84 degrees and epoch seconds (the way's shape between two mapped points
-carries interpolated times). At `inferred` the segments are the timeline's
+carries interpolated times). `values=speed,altitude,accuracy` (at most three,
+none twice) adds them after `t` in the order asked, `null` where a point has
+none, and `values` in the answer says which (it is left out when none were asked): the speed in m/s is the recorded
+one at `raw` and the averaged one at the other levels, altitude and accuracy
+in metres are the fix's own; the way's shape between mapped points takes the
+speed of the point it leads to and has no altitude or accuracy. At `inferred` the segments are the timeline's
 stops and moves with their modes — a stop with its place (`centroid`) and its
 points, where the device went within it — and consecutive segments share
 their boundary point, except across a recording gap; at the other levels they
@@ -323,7 +328,12 @@ People (and agents) can put a mode right, with `locations:write` and
   `409`, because the correction would cover the move only as far as it has
   come. A move is over once a later segment of the device exists, or 30
   minutes passed since its last point and no point after it waits to be
-  processed. For the move you are on, use the next call.
+  processed. While a long pass over the device's data runs they wait up to
+  10 seconds for it (`PROCESSING_CORRECTION_WAIT_MS`), then answer `409`
+  ("Still processing this device's data, try again in a moment.") with
+  `Retry-After: 5`: that `409`, unlike the others here, can simply be
+  repeated. For the
+  move you are on, use the next call.
 - `POST /api/v1/devices/{id}/mode` with `{ "mode": "train" }` says how the
   device travels from now on — until `until`, if given, the first detected
   stop of 10 minutes or more, or — after a stop — a move Trail reads as

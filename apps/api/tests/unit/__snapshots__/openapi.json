@@ -807,6 +807,16 @@
           },
           {
             "in": "query",
+            "name": "values",
+            "schema": {
+              "description": "Comma-separated, at most three of `speed`, `altitude` and `accuracy`: each point then carries them after `t`, in this order. `speed` is the recorded speed on `raw` and the averaged one on the other levels; `altitude` and `accuracy` are the fix's own. Left out: points are `[lon, lat, t]`.",
+              "example": "speed,altitude",
+              "type": "string"
+            },
+            "description": "Comma-separated, at most three of `speed`, `altitude` and `accuracy`: each point then carries them after `t`, in this order. `speed` is the recorded speed on `raw` and the averaged one on the other levels; `altitude` and `accuracy` are the fix's own. Left out: points are `[lon, lat, t]`."
+          },
+          {
+            "in": "query",
             "name": "maxPoints",
             "schema": {
               "default": 8000,
@@ -984,7 +994,7 @@
       "put": {
         "operationId": "setSegmentMode",
         "summary": "Set a move's mode",
-        "description": "Corrects the transport mode of a move: the mode applies to the move's time and wins over the inference, also when the history is processed again. The inferred mode stays visible as `modeInferred`. Setting the mode it already has changes nothing. A stop has no mode, and a move still under way cannot be set until it is over (after a stop or 30 minutes without new points): `409`. For the move you are on, use `POST /api/v1/devices/{id}/mode`.\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
+        "description": "Corrects the transport mode of a move: the mode applies to the move's time and wins over the inference, also when the history is processed again. The inferred mode stays visible as `modeInferred`. Setting the mode it already has changes nothing. A stop has no mode, and a move still under way cannot be set until it is over (after a stop or 30 minutes without new points): `409`. While a long pass over the device's data runs it waits up to 10 seconds for it, then answers `409` (try again). For the move you are on, use `POST /api/v1/devices/{id}/mode`.\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
         "tags": [
           "Timeline"
         ],
@@ -1075,7 +1085,7 @@
       "delete": {
         "operationId": "resetSegmentMode",
         "summary": "Reset a move's mode",
-        "description": "Withdraws the correction that set the move's mode — a mode set from a moment on with it, for every move it covered — so the inferred mode counts again. The segment answers with the inferred mode at once; the span is worked out again within seconds (a `segments` event follows). Without a correction nothing changes. A move that is still under way cannot be reset until it is over (after a stop or 30 minutes without new points): `409`.\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
+        "description": "Withdraws the correction that set the move's mode — a mode set from a moment on with it, for every move it covered — so the inferred mode counts again. The segment answers with the inferred mode at once; the span is worked out again within seconds (a `segments` event follows). Without a correction nothing changes. A move that is still under way cannot be reset until it is over (after a stop or 30 minutes without new points): `409`. While a long pass over the device's data runs it waits up to 10 seconds for it, then answers `409` (try again).\n\n**Access:** an API token with the scopes `locations:read` and `locations:write`, or a signed-in session.",
         "tags": [
           "Timeline"
         ],
@@ -5016,6 +5026,17 @@
             "description": "The level asked for.",
             "$ref": "#/components/schemas/ProcessingLevel"
           },
+          "values": {
+            "description": "The values each point carries after `t`, in order (the query's `values`); left out when none were asked for.",
+            "example": [
+              "speed",
+              "altitude"
+            ],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LevelValue"
+            }
+          },
           "availableLevel": {
             "description": "The level every point of the response reached. Lower than `level` while points wait for processing or map data.",
             "$ref": "#/components/schemas/ProcessingLevel"
@@ -5062,6 +5083,16 @@
         ],
         "additionalProperties": false,
         "description": "Tracks at a level of calculation."
+      },
+      "LevelValue": {
+        "type": "string",
+        "enum": [
+          "speed",
+          "altitude",
+          "accuracy"
+        ],
+        "description": "`speed` in m/s, `altitude` in metres and `accuracy` (the horizontal accuracy of the fix) in metres.",
+        "example": "speed"
       },
       "TrackSegment": {
         "type": "object",
@@ -5250,10 +5281,14 @@
             "maximum": 9007199254740991
           }
         ],
-        "items": false,
+        "items": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
         "minItems": 3,
-        "maxItems": 3,
-        "description": "`[lon, lat, t]`: WGS84 degrees and the time in epoch seconds. On the mapped level the way's shape between two recorded points carries interpolated times.",
+        "description": "`[lon, lat, t]`: WGS84 degrees and the time in epoch seconds, then — for `values` on the query — those values in the order asked for, `null` where a point has none. On the mapped level the way's shape between two recorded points carries interpolated times and the speed of the point it leads to.",
         "example": [
           3.7104,
           51.0362,

@@ -34,15 +34,17 @@ export const processingVersions = { averaged: 1, mapped: 1, inferred: 3 } as con
 export type ProcessingVersions = Readonly<Record<FromLevel, number>>;
 
 /**
- * Features of the stored segments that are filled in afterwards, from rows already derived, without
+ * Features of the stored data that are filled in afterwards, from rows already derived, without
  * working the history out again (processing/featureBackfill.ts, docs/architecture.md §17.4): the
  * version of each, as `processing_state` records it under `features`. New windows write them from
  * the pipeline; a bump runs the fill once more over the history.
  *
  * - wayTotals 1: `features.wayTotals`, the metres on each way of a mapped move (Insights › named
  *   roads), from the stored processed points.
+ * - heatDays 1: the rows of `heat_days` (the heatmap by time on the move and speed), from the
+ *   stored processed points and the segments, a local day at a time.
  */
-export const processingFeatureVersions = { wayTotals: 1 } as const;
+export const processingFeatureVersions = { wayTotals: 1, heatDays: 1 } as const;
 
 /** A feature of the segments that the backfill fills in. */
 export type ProcessingFeature = keyof typeof processingFeatureVersions;

@@ -8,10 +8,13 @@ import { heatCellZooms } from "./heatCellLevels";
  * a level falls behind when it was not kept — a level a release added (20)
  * misses the points uploaded before it, after a rollback to a release without
  * it that release's uploads skip it and its rebuilds drop it, and a level that
- * lost cells some other way is short too.
+ * lost cells some other way is short too. `stored` names the levels of the table (`heat_days`'s three).
  */
-export function levelsToRebuild(totals: ReadonlyMap<number, number>): number[] {
-  const highest = Math.max(0, ...heatCellZooms.map((level) => totals.get(level) ?? 0));
+export function levelsToRebuild(
+  totals: ReadonlyMap<number, number>,
+  stored: readonly number[] = heatCellZooms,
+): number[] {
+  const highest = Math.max(0, ...stored.map((level) => totals.get(level) ?? 0));
   if (highest === 0) return [];
-  return heatCellZooms.filter((level) => (totals.get(level) ?? 0) < highest);
+  return stored.filter((level) => (totals.get(level) ?? 0) < highest);
 }

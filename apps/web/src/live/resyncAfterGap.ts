@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { queryKeys } from "../api/queryKeys";
+import { invalidateStopHeat } from "./staleProcessed";
 
 /**
  * Events sent while the stream was down are lost (or the server could not
@@ -26,4 +27,5 @@ export function resyncAfterGap(queryClient: QueryClient): void {
   ]) {
     void queryClient.invalidateQueries({ queryKey });
   }
+  void invalidateStopHeat(queryClient);
 }

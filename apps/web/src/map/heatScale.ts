@@ -27,30 +27,65 @@ const maxClasses = heatShades;
  */
 const topShare = 0.03;
 
-interface RoundSeries {
-  /** The round numbers of a decade: 1, 2 and 5 make 1 2 5 10 20 50 100 … */
-  mantissas: readonly number[];
-  /** Every decade, or every second one (1 100 10 000 …). */
-  decades: number;
+/** A series of class starts: the round numbers that classes may begin at, finest series first. */
+export interface HeatLadder {
+  /** Every start of the series up to `upTo`, ascending. */
+  startsUpTo(upTo: number): number[];
   /** With up to two starts too many it keeps the highest ones rather than giving way. */
   keepsHighest?: true;
 }
 
-/** Finest first; the last always fits (counts never span ten decades). */
-const roundSeries: readonly RoundSeries[] = [
-  { mantissas: [1, 2, 5], decades: 1 },
-  { mantissas: [1, 3], decades: 1, keepsHighest: true },
-  { mantissas: [1], decades: 1 },
-  { mantissas: [1], decades: 2 },
+/** 1, 2 and 5 of every decade, and so on: the round numbers of a decade, or every second decade. */
+function decades(mantissas: readonly number[], step: number): (upTo: number) => number[] {
+  return (upTo) => {
+    const values: number[] = [];
+    for (let decade = 0; 10 ** decade <= upTo; decade += step) {
+      for (const mantissa of mantissas) values.push(mantissa * 10 ** decade);
+    }
+    return values;
+  };
+}
+
+/** Counts (points, visits). The last ladder always fits (counts never span ten decades). */
+export const countLadders: readonly HeatLadder[] = [
+  { startsUpTo: decades([1, 2, 5], 1) },
+  { startsUpTo: decades([1, 3], 1), keepsHighest: true },
+  { startsUpTo: decades([1], 1) },
+  { startsUpTo: decades([1], 2) },
 ];
 
-function seriesValues(series: RoundSeries, upTo: number): number[] {
-  const values: number[] = [];
-  for (let decade = 0; 10 ** decade <= upTo; decade += series.decades) {
-    for (const mantissa of series.mantissas) values.push(mantissa * 10 ** decade);
-  }
-  return values;
-}
+const minute = 60;
+const hour = 3600;
+const day = 86_400;
+const week = 7 * day;
+
+/** The round numbers of a time spent, in seconds: minutes, hours, days, weeks. */
+const fixed = (values: readonly number[]): HeatLadder => ({
+  startsUpTo: (upTo) => values.filter((value) => value <= upTo),
+});
+
+/** Seconds spent: the finest series that fits six classes, down to one that always does. */
+export const durationLadders: readonly HeatLadder[] = [
+  fixed([
+    ...[1, 2, 5, 10, 15, 30].map((m) => m * minute),
+    ...[1, 2, 3, 6, 12].map((h) => h * hour),
+    ...[1, 2].map((d) => d * day),
+    ...[1, 2, 4].map((w) => w * week),
+  ]),
+  fixed([
+    ...[1, 5, 15].map((m) => m * minute),
+    ...[1, 3, 12].map((h) => h * hour),
+    ...[1, 3].map((d) => d * day),
+    ...[1, 4].map((w) => w * week),
+  ]),
+  fixed([
+    ...[1, 15].map((m) => m * minute),
+    ...[1, 6].map((h) => h * hour),
+    day,
+    ...[1, 4].map((w) => w * week),
+  ]),
+  fixed([minute, hour, day, week]),
+];
 
 /**
  * The classes for the counts of the cells in view (docs/architecture.md §14):
@@ -62,7 +97,10 @@ function seriesValues(series: RoundSeries, upTo: number): number[] {
  * Panning changes the counts a little but rarely the round numbers, so the
  * colours stay put.
  */
-export function heatScale(counts: readonly number[]): HeatScale {
+export function heatScale(
+  counts: readonly number[],
+  ladders: readonly HeatLadder[] = countLadders,
+): HeatScale {
   const sorted = counts
     .filter((count) => Number.isFinite(count) && count > 0)
     .sort((a, b) => a - b);
@@ -71,8 +109,8 @@ export function heatScale(counts: readonly number[]): HeatScale {
   const top = sorted[sorted.length - 1 - Math.floor(sorted.length * topShare)] ?? lowest;
   const wanted = maxClasses - 1;
   let starts: number[] = [];
-  for (const series of roundSeries) {
-    starts = seriesValues(series, top).filter((value) => value > lowest && value <= top);
+  for (const series of ladders) {
+    starts = series.startsUpTo(top).filter((value) => value > lowest && value <= top);
     if (starts.length <= wanted) break;
     if (series.keepsHighest === true && starts.length <= wanted + 2) {
       starts = starts.slice(-wanted);

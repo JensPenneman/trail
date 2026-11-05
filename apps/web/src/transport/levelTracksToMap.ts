@@ -1,4 +1,4 @@
-import type { LevelTracksResponse, TransportMode } from "@trail/contracts/transport";
+import type { LevelPoint, LevelTracksResponse, TransportMode } from "@trail/contracts/transport";
 import { metresBetween, visibleGapM } from "../map/lineGeometry";
 import type { MapTrack, MapTransportSegment } from "../map/mapTypes";
 import { splitTrackAt } from "../map/splitTrackAt";
@@ -22,7 +22,7 @@ export function levelTracksToMap(
   colors: { device: (deviceId: string) => string; mode: (mode: TransportMode) => string },
   until?: number,
 ): { tracks: MapTrack[]; transport: MapTransportSegment[] } {
-  const line = (points: readonly (readonly [number, number, number])[]) =>
+  const line = (points: readonly LevelPoint[]) =>
     points.map((point) => [point[0], point[1]] as const);
   if (response.level !== "inferred") {
     const byDevice = new Map<
@@ -60,7 +60,7 @@ export function levelTracksToMap(
   }
   const transport: MapTransportSegment[] = [];
   // Where each device's line got to: the last point of its previous stop or move, and when.
-  const reached = new Map<string, readonly [number, number, number]>();
+  const reached = new Map<string, LevelPoint>();
   for (const [index, segment] of response.segments.entries()) {
     const points = line(segment.points);
     if (segment.kind === "track") {

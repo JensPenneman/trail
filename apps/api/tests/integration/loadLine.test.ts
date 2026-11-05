@@ -63,9 +63,21 @@ const loadLines = () =>
 
 describe("the load line", () => {
   it("logs the minute's uploads, points and processing queue, and nothing of the device", async () => {
+    // The upload is counted when it is answered, but its window is queued afterwards, in the
+    // background: a sample between the two would see the upload and no row. The queue is looked at
+    // before sampling starts, and the meter keeps what it was told until the first sample.
+    await postOverland(t.app, token, overlandFixture()).expect(200);
+    await vi.waitFor(
+      async () => {
+        const { rows } = await t.ctx.db.execute(
+          sql`SELECT count(*)::int AS n FROM processing_queue`,
+        );
+        expect(rows[0]?.["n"]).toBe(1);
+      },
+      { timeout: 10_000, interval: 20 },
+    );
     const job = loadLineJob(t.ctx, 200);
     try {
-      await postOverland(t.app, token, overlandFixture()).expect(200);
       // The minute of the upload, and the next one, which starts again from zero.
       await vi.waitFor(
         () => {

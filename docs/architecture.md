@@ -206,7 +206,9 @@ and the API none of the worker's:
   3 s later, as before.
 - **Per-device advisory locks** (`deviceLock.ts`) are the cluster's: a pass in
   the worker and a deletion or a corrected mode in the API exclude each other
-  across processes.
+  across processes. A correction (a move's mode set or reset) waits for the
+  lock at most 10 s (`PROCESSING_CORRECTION_WAIT_MS`, `lock_timeout`,
+  `correctionTransaction`) and then answers `409` with `Retry-After` to be tried again, instead of hanging behind a long pass.
 - **`segments` events cross with `NOTIFY`**: the pass ends with
   `pg_notify('trail_processing', …)` inside its transaction, and the API's
   listener republishes the message on its bus (§9) — in role `all` too, so
@@ -301,6 +303,7 @@ All configuration is environment variables, validated at boot with zod
 | `PROCESSING_STOP_MIN_S` | `180` | The shortest stop |
 | `PROCESSING_PASS_MAX_POINTS` | `60000` | A processing pass reads at most this many points (1 000 or more); bigger work is split first (§17.4) |
 | `PROCESSING_PASS_MAX_SPAN_HOURS` | `36` | The points a pass takes on span at most this long |
+| `PROCESSING_CORRECTION_WAIT_MS` | `10000` | How long a correction (a move's mode) waits for a pass over the device before it answers `409` with `Retry-After` (50 to 120 000) |
 | `MAP_DATA_REGIONS` | `belgium` | The regions whose map data the server keeps (names of `scripts/mapdata/regions.json`), comma-separated; set but empty: none. The world overview comes with any region (§10) |
 | `MAP_DATA_REGISTRY` | `ghcr.io/jenspenneman/trail-mapdata` | Where the map data artefacts come from (§13.2): a registry host and a repository, no scheme and no tag; always HTTPS |
 | `MAP_DATA_REGISTRY_TOKEN` | empty (anonymous) | `<user>:<token>` for a private registry or package, sent to its token service only (GHCR: a classic token with `read:packages`) |
@@ -415,6 +418,34 @@ the time, checked like `devices.source`; rows from before it are Overland's),
 data): `id`, `device_id` → devices (cascade), `received_at`, `reason`,
 `record` (jsonb). Kept forever, like every other recorded row: it is raw phone
 data that a later fix may still recover.
+
+**heat_days** — the heatmap's time on the move and speed, per local day:
+PK `(device_id, z, x, y, day, mode)`, `z` ∈ {12, 15, 18}; `points`,
+`move_s` (the seconds to the next kept point inside a move; an interval over
+600 s, a recording gap, is left out whole rather than cut, as scaling a gap
+would invent movement), `distance_m`, `speed_s` (speed times those seconds), `max_speed`,
+`computed_at`; `mode` is the move's, `stationary` in a stop and `unknown`
+outside any segment (a check lists the twelve); index `(device_id, day)`;
+cascades with the device. A derived table (migration 0012): made by
+`rebuildHeatDays` from the kept processed points and the segments, one
+statement per set of days — the interval from a kept point to the next
+belongs to the first one's cell, day (in the owner's zone) and mode, the
+mode found by carrying the latest segment start forward over the points,
+positions the mapped ones else the averaged. About 125 to 500 rows a
+device-day. A rebuild of a day of 20 000 points takes about 130 ms (dev
+container); a pass does not do it: it marks the days it touched in
+`heat_day_marks` (migration 0013) in its own transaction, and once it has
+committed `HeatDaysScheduler` rebuilds them in a run 15 s later, each device in a
+transaction of its own under its processing lock, each run of consecutive days
+in one statement, and deletes the marks it served (one made again meanwhile
+stays). An error there is logged and never rolls back or retries a pass; the
+device that failed waits, twice as long each time (a wait of its own, so that
+the marks of the others are served meanwhile and a sooner wake-up is never held
+back by a later retry); a crash loses nothing, since the marks are rows, and at
+start the days of the last 30 whose points or segments are newer than their
+cells are marked (device by device, in primary-key order) and the marks drained.
+An answer of the measures of movement is `pending` while a day of its period is
+marked, and its tag moves with the marks.
 
 **heat_cells** — pre-aggregated all-time density for the heatmap: PK
 `(device_id, z, x, y)`; `count` (int), `first_at`, `last_at`. `z` ∈ {6, 9, 12,
@@ -1050,8 +1081,10 @@ JSON `404 not_found`. Stack traces are logged, never sent.
 
 - **Preferences** (`preferences.ts`): defaults an account takes to every
   browser — `mapStyle` (`auto|light|dark|satellite`), `level`
-  (`raw|averaged|mapped|inferred`) and `showOwnActivity` (whether the access
-  log lists the account's own activity too). `PATCH /api/me { preferences }`
+  (`raw|averaged|mapped|inferred`), `heat` (`points|time|visits`: what the
+  heatmap counts), `color` (`mode|device|speed|time`: what the paths are
+  coloured by; used by the colouring to come) and `showOwnActivity` (whether
+  the access log lists the account's own activity too). `PATCH /api/me { preferences }`
   changes the ones it names and leaves the others: the statement merges them
   into the stored object (`preferences || $patch`), so two changes at once
   keep each other's. A name it does not know, or a value outside a
@@ -1060,7 +1093,7 @@ JSON `404 not_found`. Stack traces are logged, never sent.
   `SessionUser.preferences` (the session, `GET/PATCH /api/me`, the sign-in
   answers) has every one filled in — a preference never set, or holding a
   value this version does not know (a later release's), reads as its default
-  (`auto`, `inferred`, `false`). They are the owner's only: the v1 profile,
+  (`auto`, `inferred`, `points`, `mode`, `false`). They are the owner's only: the v1 profile,
   MCP, shares, links and the administrators' account list do not carry them.
 - **Visits** returned are those recorded, arrived or departed inside the
   range, or spanning it; iOS reports a visit on arrival and again on
@@ -1124,14 +1157,46 @@ the coarsest stored level that is finer (`storedCellZoom`, s = 1 or 2 levels
 finer, at most 4 × 4 stored cells to a cell):
 `SELECT x >> s, y >> s, sum(count) … GROUP BY 1, 2`. The viewport is
 widened to whole cells (`heatCellWindow`), so a cell at its edge counts every
-point it holds, as it does in the middle. The answer is the cell centres
-summed across the requested devices (the antimeridian handled when
-`west > east`), at most 20 000 cells (highest counts first,
-`truncated: true`). The query is a range scan of the primary key
+point it holds, as it does in the middle. The answer is
+`[x, y, value]` tiles of `cellZoom` — whole numbers — summed across the
+requested devices (the antimeridian handled when `west > east`), busiest first,
+`truncated: true` when the view held more than `heatCellCap`: as many cells as
+the viewport can, at most 65 536 (cells are 11 to 23 px wide, and a 3840 × 2160
+screen holds some 64 800 of the narrowest). `GET /api/v1/heatmap` keeps its
+centres `[lon, lat, count]` and its 20 000. The query is a range scan of the primary key
 `(device_id, z, x, y)` and a hash aggregate: measured on the production data
 (1.2 M points; 6 350 cells at level 18, 28 035 at level 20) every viewport of
 the dashboard answers in under 10 ms, and in at most about 30 ms on cells
 fifteen times denser — no further index is needed.
+
+`heat=moving`, `heat=speed` and `heat=topspeed` (with the same period, and `mode`
+to count one mode's moves only; the answer says which) come from `heat_days`
+(`findDayCells`): the stored level is the first of 12, 15, 18 as fine as the
+cell zoom (finer zooms are answered at 18, `cellZoom` says so), summed over the
+devices and days. Time on the move adds the devices' seconds (two phones on one
+journey count twice, unlike the stops); the average speed is `speed_s` over
+`move_s`, in cm/s, told from ten seconds of movement in a cell; the top speed
+is the fastest in the cell, in cm/s. The ETag takes the view, period and mode,
+`insightsValidator`, `heatDaysValidator` (the period's rows at level 12: count,
+newest `computed_at`, points) and the generation of rebuilds; `pending` is also
+true while a day of the period has points and no cells yet — history the
+features backfill (§17.4) has not reached.
+
+`heat=time` and `heat=visits` (with `from` and `to`, local days of the
+account's zone, at most three years, the Insights scope; points are all time and
+take no period) count the stops instead (`findStopCells`): the stays of the
+period (`servedSegments`, a long stay one stop) clipped to it, each in the cell
+its centre lies in (`tileSql`, the expression the stored cells are made with,
+guarded against `tileMath` at 6, 13 and 20 by `heatStops.test.ts`), and the
+stays of one cell merged where they overlap or touch — two phones at one place
+count once, so a cell's time is the time somebody was there — a visit being a
+merged stay that overlaps the period. Whole cells, busiest first by time or
+visits, `heatCellCap` of them. The answer echoes `heat` and `period` and says
+`pending` while recent days are still being worked out (`hasPendingWork`). The
+ETag takes the view and period and `insightsValidator` (read before the cells);
+a pass or a new time zone moves it. About as costly as an Insights figure (tens
+of ms). The web keeps these answers stale while processing changes the
+history (`staleProcessed`, `resyncAfterGap`); the heat of points never is.
 
 Every upload adds its points to the six stored levels in its one statement
 (§6.2). Level 20 costs a batch of 1 000 points of a drive 30 to 60 ms (an
@@ -2102,7 +2167,7 @@ hashed for nothing. The dashboard's routers use `answerConditionally`, v1
 | `GET /api/v1/tracks` | the raw strings at level `raw`, raw and processed otherwise |
 | `GET /api/v1/segments` | raw and processed (the cursor and limit are in the query) |
 | `GET /api/stats/days`, `/api/v1/stats/days` | the body: a few hundred small rows with their stamps |
-| `GET /api/heatmap` | the devices, the sum of their point counters (an upload of points too inaccurate for the cells moves it: a needless 200, never a wrong 304), the newest `updated_at` of their rows, which a deletion sets (as many points uploaded as deleted would leave the sum as it was), and the generation of rebuilt cells (`heatGeneration`, which the start-up fill moves) |
+| `GET /api/heatmap` | for points: the devices, the sum of their point counters (an upload of points too inaccurate for the cells moves it: a needless 200, never a wrong 304), the newest `updated_at` of their rows, which a deletion sets (as many points uploaded as deleted would leave the sum as it was), and the generation of rebuilt cells (`heatGeneration`, which the start-up fill moves); for time and visits: the Insights scope (zone, period, devices) and `insightsValidator` over the stays of the period, with `pending`, read before the cells; for time on the move, speed and top speed: the same scope and `insightsValidator`, `heatDaysValidator` (the rows of the period's days at level 12: their count, newest `computed_at` and points, and the marks waiting) and the generation of rebuilds, with the mode, read before the cells |
 | `GET /api/v1/insights/*` | the scope (zone, period, devices) and over the segments of the period — the overview's with the period before — their count, newest `computed_at`, versions and the sums of their bounds, and `pending`; Places, Place and the named roads add `mapStamp` (the newest `osm_tiles.fetched_at` and the builds of the ready regions), since names come from map data, and the named roads how many moves of the period still lack their totals (the fill changes no stamp). The road a place is named after comes from the points around its stays (`processed_points.way_id`) and is not in the validator: a pass that moves only those points shows in the name once a stay or the map data changes |
 | `GET /api/v1/people` | the body (projecting it is cheap: the saving is bytes and parsing) |
 
@@ -2317,7 +2382,11 @@ runs in the worker (§3) — or in the API's process too, in role `all`.
   Changing the time zone (`PATCH /api/me`) rebuilds every day of the user's
   devices in the background, then publishes `resync`.
 - once, 5 s after the start — the heat levels of every device whose totals
-  disagree are rebuilt from its points (`fillHeatLevels`, §8.2). A shutdown
+  disagree are rebuilt from its points (`fillHeatLevels`, §8.2), and a level
+  of `heat_days` that misses points is made again with the device's others
+  (`fillHeatDayLevels`, comparing each device over its newest 90 days of rows
+  so that a start does not scan every row; older gaps are `trail recompute`'s; the heatmap's ETags
+  move). A shutdown
   does not wait for it: it is cancelled and rolls back.
 - every minute — the API's `load` log line at `info` (docs/perf/README.md): the
   minute's event-loop delay (p50, p99, max), the pool (connections, idle,
@@ -2895,8 +2964,8 @@ count among them, since they lead to signed-in pages.
     a moment; distance, points, first/last; the timeline of stops and moves,
     with a dialog to correct a mode; visits and trips of the day (Me's
     detail). Other people's tracks as their shares allow (below).
-    **Playback** has an engine in `pages/map/history/playback`, not yet
-    wired into the page: a pure model (`playbackModel`: local-day bounds, the
+    **Playback** plays History back from any moment to the last recorded
+    point (below). Its engine is in `pages/map/history/playback`: a pure model (`playbackModel`: local-day bounds, the
     moves of the timeline or, from the points alone, movement stretches —
     split at recording gaps, cut by three minutes below 0.6 m/s, kept at a
     minute and 100 m — and the quiet stretches outside them, the next day with
@@ -2923,7 +2992,48 @@ count among them, since they lead to signed-in pages.
     cursor by `splitTrackAt` into two halves that keep its id); the caller
     dims visit dots with `MapPoint.dimmed`. `ensureTrailLayers` draws them at
     0.3 opacity (0.5 under `prefers-contrast: more`).
-  - **Heat** — all-time heatmap (`/api/heatmap` for the view once the map
+    *In the page.* The time slider spans the local day, 00:00 to 24:00 (today
+    up to now, a period all its days), starts at the last recorded point and
+    has a Play button when someone is selected (on a past day it starts a
+    minute short of the next midnight at the latest). `useHistoryView` takes
+    `usePlayerState` first, so that the playing day replaces the address's
+    period before the queries run; nothing is written to the address while it
+    plays. Pausing and the end write `date` and `at`, and leaving writes where
+    it was, also after a seek made while paused (a change of view or person
+    writes nothing). `at` is `YYYY-MM-DDTHH:MM`, the wall-clock time in the
+    account's time zone (`parseAt.ts`: on a day of 23 or 25 hours the time
+    written is the time read; one the clock skips is ignored); the slider's
+    own moves write `at` 400 ms after the last one, with replace; a value
+    outside the day is ignored and a change of day or period drops it. While
+    playing, the controls and the slider give way to the bar at the map's foot
+    (on phones the sheet drops to its peek) and "At this moment" takes the
+    sidebar's place on the panel; the sidebar stays mounted but hidden, its
+    scroll and the page's are put back on leaving, and the focus goes to Pause
+    on entering and back to the slider's Play on leaving (Escape leaves;
+    turning the phone moves neither). The page's heading is then a hidden "History
+    playback". Desktop widens the foot and narrows the panel
+    (`--panel-width: 16rem`). Someone who shares is played from
+    `GET /api/v1/people/{userId}/days` (`usePersonDays`, refetched on that
+    person's live events). A day whose tracks come back empty is skipped. For
+    one's own days the moves are the timeline's, and while it is still being
+    worked out also what the points after its last segment say moved, so that
+    "Skip stops" does not jump over the live end. The map is handed its tracks
+    as new data only when the split moves (four times a second at most). The
+    camera frames each day as it loads and follows the cursors (all of them,
+    without zooming in) when one leaves the viewport less the fit's margin
+    (eased, at most every 500 ms; a jump under reduced motion); it leaves the
+    camera alone for five seconds after the person moved it and while a fit
+    runs (`followCamera.ts`).
+  - **Heat** — heatmap (`/api/heatmap` — `heat=points|time|visits`, `?heat=`
+    in the address, read by `useHeatChoice` like the level — the address ›
+    this browser › the preference `heat` › points; the view still asks for
+    points, its controls for the other measures follow in the UI change; a period of the stop measures is `?from=`
+    and `?to=`, shared with History, and a period longer than 93 days stays
+    behind when History opens; `?c=lon,lat,zoom` is a camera a link names,
+    read into `MapSearch.camera`; the cells are `[x, y, value]` tiles, packed
+    as 32-bit integers in the copy on this device (`heatmap` keeps the newest
+    sixty, per zone), and a view keeps the previous cells while panning only
+    when measure, period and devices are the same) for the view once the map
     has stood still for 300 ms, its box rounded outward to a thousandth of a
     degree and its zoom to a whole level, so that small moves hit the
     cache), totals and the busiest places in view. The cells are drawn as
@@ -2973,7 +3083,8 @@ count among them, since they lead to signed-in pages.
   the screen is not wide enough for both), the map fits tracks under the
   controls (`fit.inset`: below the bar, left of the zoom column on phones),
   and History's time slider floats at the map's foot (in the sheet on phones,
-  right under the Me row or the person's header, not in the peek). The
+  right under the Me row or the person's header, not in the peek), with
+  Heat's key at its bottom-left. The
   DOM order is the controls, the map, then the panel, so the keyboard meets
   them in that order.
 
@@ -3050,10 +3161,8 @@ count among them, since they lead to signed-in pages.
   to the next such button, or to the heading when none is left), and "Nobody
   is hidden" when none is. The root carries no description of the view, no
   History summary, no Heat totals, no "You share with N people" line and no
-  card for when nobody shares: the view's description stays on the page only
-  as a visually hidden block next to the map (the person pages that follow
-  fold it into the map's accessible label), and with nobody sharing the root is
-  just the Me row. Rows are one
+  card for when nobody shares: what a view says of itself is the map's
+  accessible label, and with nobody sharing the root is just the Me row. Rows are one
   router link each to their page (`PersonRow`; its name is all it says, in
   order, and it has no heading) and are laid out lazily
   (`content-visibility: auto`). A row reads in two lines (`PersonSummary`,
@@ -3079,16 +3188,33 @@ count among them, since they lead to signed-in pages.
   of the sheet's view, so that selecting someone has a half detent to lift
   the sheet to; History's slider sits right under what is measured, not in it.
 
-  **The detail** replaces the list (`PersonPanel`): a back link ("Back to
-  People"), the name as an h2 with the row's two lines, and what the view
-  and the person have. For **Me**: the view's part (Live: "Your day so far";
-  History: the summary, timeline, visits and trips), then, always, **Your
-  devices** (`MyDevices`: each by name, linked to its page in Settings ›
-  Devices, with when it last reported a position — "Waiting for the first
-  upload" before it did — battery, that position with its accuracy, movement
-  ("Last reported movement" once it is not live) and trip, and the way to
-  Settings › Devices), the hint with the way to the device's setup while no
-  device has uploaded, and "Connect your first phone" when there is none.
+  **The pages** replace the root (`MePage`, `PersonPage`; the groups are
+  `SettingsDisclosureGroup`: a heading with a button inside it, `aria-expanded`
+  and `aria-controls`, its content rendered only while it is open): a back
+  link ("Back to People"), the name as an h2 with the row's two lines (Me's
+  also says "2 devices"), History's slider under it on phones, and the groups
+  and rows of the person. **Me's page**: the hint with the way to the device's
+  setup while no device has uploaded, and "Connect your first phone" when
+  there is none; the group **Timeline**, open (Live: today, in a region "Your
+  day so far"; History: the day or period); the view's other group, folded —
+  History's "Summary, visits and trips" (the regions keep their names), Heat's
+  "Heat: totals, busiest places", whose 12-month totals are asked for only once
+  it is opened; a row **Your devices** with their count, which opens a level
+  of the page (`?person=me&list=devices`: a back link "Back to Me", the h2 "Your
+  devices" in focus, then `MyDevices`: each by name, linked to its page in
+  Settings › Devices, with when it last reported a position — "Waiting for the
+  first upload" before it did — battery, that position with its accuracy,
+  movement ("Last reported movement" once it is not live) and trip, and the way
+  to Settings › Devices); and a row **Sharing** ("You share with 2 people · 1
+  waits for you to confirm") to Settings › Sharing. A group stays as one left it
+  while the view changes. What the views say about the map is the map's
+  accessible label (no description line in the sidebar); Heat's key floats
+  small over the map's bottom-left corner (`legend`), and what History has to
+  say of a day with nothing recorded ("Nothing recorded on …", with "Find a day
+  with data") or of tracks that could not be loaded is at the map's foot, where
+  the slider would be. Heat's own foot holds its error (with Retry) and the
+  notice that the heatmap was truncated, whoever is selected, and on wide
+  screens the key stacks above whatever the foot holds (`--foot-height`).
   For someone who shares: **where they've been** (`WhereTheyveBeen`): the day
   — Today in Live, History's day, or History's period — with Previous and
   Next day (in Live a day back is History's, one step of the history,
@@ -3103,15 +3229,16 @@ count among them, since they lead to signed-in pages.
   recorded", read "14.9 km, from 06:30 to 07:15"), "Nothing recorded on Mon
   26 Oct", "Shares the last 7 days only" where the server moved the start up,
   "Shares no device right now"; a share without history says "Shares live
-  location only" and is asked for nothing. Then the view's part (History's
-  summary of their tracks) and `PersonDetails`: each shared device (updated,
-  doing, battery, accuracy, trip, distance — "Not shared" where the share
-  leaves battery and activity out, "—" where it includes them but nothing
-  recent is known), what they share (precision, where they've been, battery
-  and activity, until, since), Apple Maps and Google Maps links, Share back —
-  or, when you share with them, "You share with <name>" and Stop
-  (`StopShareDialog`) — and Hide, which returns to the list and is announced
-  ("Ana is hidden. Show them again under Hidden."). Each person has a colour
+  location only" and is asked for nothing. Then, folded, History's group **Summary** (their tracks, device
+  by device) and the group **Devices (n) · What <name> shares with you**
+  (`PersonDevices`: each shared device — updated, doing, battery, accuracy,
+  trip, distance, "Not shared" where the share leaves battery and activity out,
+  "—" where it includes them but nothing recent is known; `ShareTerms`:
+  precision, where they've been, battery and activity, until, since). Last the
+  rows of what can be done: "Open in Apple Maps" and "Open in Google Maps" (new
+  tab), Share back — or, when you share with them, "You share with <name>"
+  and Stop (`StopShareDialog`) — and "Hide <name>", which returns to the
+  root and is announced ("Ana is hidden. Show them again under Hidden."). Each person has a colour
   from `personPalette`, a second ring beside the device colours, assigned in
   the order they started sharing. **Share my location** (`ShareDialog`):
   address (with the people who share with you as suggestions), devices,
@@ -3682,7 +3809,7 @@ memory only.
   | `timeline` | today | as `tracks` (raw and processed) | as `tracks` | as `tracks` |
   | `visits`, `trips` | — | as `tracks` (raw) | as `tracks` | 90 d |
   | `days` | the current month (≤ 32 days covering today) | 60 s | ETag | 90 d |
-  | `heatmap` | — (the newest 20 kept) | 5 min | ETag | 30 d |
+  | `heatmap` | — (the newest 60 kept) | 5 min | ETag | 30 d |
   | `insights` | — | 5 min | ETag | 30 d |
   | `device-mode` | the device that reported last | 30 s | as is | 1 d |
   | `activity` | — | 5 min | as is | 7 d |
@@ -3717,12 +3844,13 @@ memory only.
   the cells of a heat view go into one buffer each, column after column, as
   64-bit floats with NaN for null — 48 bytes a track point, exactly the
   numbers the server sent (32-bit floats would round 5.3; 32-bit seconds end
-  in 2038). On every read (`decodeEntry`) an entry of another format, owner
+  in 2038) — except heat cells, which are whole numbers: unsigned 32-bit
+  rows, 12 bytes a cell, an answer with a number that does not fit not kept. On every read (`decodeEntry`) an entry of another format, owner
   or zone, past its TTL, damaged or no longer what its contract allows is
   deleted and counted; the contracts' schemas are loaded with the first
   answer of their kind (`cacheCodecs.ts`), so a public page loads none.
 - **Budgets** (`sweepEntries.ts`): no entry over 4 MB; past 32 MB the sweep
-  removes, least recently shown first, heat views beyond the newest 20,
+  removes, least recently shown first, heat views beyond the newest 60,
   settled days and ranges, then Insights, then the rest — never the warm set
   while it is current, never today; past 64 MB nothing is written until it
   ran. It runs two seconds after start-up, every hour and after a write
@@ -4080,8 +4208,12 @@ security ones too.
   dashboard's routes, scopes, device restrictions and other accounts' ids.
   `history.test.ts` holds the heatmap at every zoom from 0 to 18 (levels 6
   to 20) against the finest stored cells summed, several devices summed, a
-  whole cell at the edge of the view, the antimeridian and the cap of 20 000
-  cells; `heatLevels.test.ts` the start-up fill: nothing to do while the
+  whole cell at the edge of the view, the antimeridian and the cap of 65 536
+  cells (`heatCellCap.test.ts` the cap and the schemas, `heatStops.test.ts`
+  time and visits: clipping, a stay one visit, two devices once, cells at 6,
+  13 and 20, the antimeridian, the ceiling, the period, `pending`, the ETag
+  after a stop and a change of zone, a foreign device, the tile maths of SQL,
+  the stored cells and `tileMath` agreeing); `heatLevels.test.ts` the start-up fill: nothing to do while the
   levels agree, level 20 built for the points from before it (an upload
   after the upgrade counted once), what an older release left behind after
   a rollback (its uploads, its rebuild) repaired, a stop after one device
@@ -4330,7 +4462,9 @@ security ones too.
   level deeper (its uploads and raw points, remote settings, its setup, back
   with the focus on the row), token rotation, renaming, deleting (from the
   list: back in the history, Back not to the gone device), History and its
-  scrubber,
+  scrubber and playback (from midnight to the last point, the empty day
+  skipped, the address while it plays and after, Escape; paused and ended
+  scanned, and a run with reduced motion),
   the heatmap (its squares on the map, found by their colours in a
   screenshot of the canvas, its key and the busiest places), sign-in by email,
   passkey button and autofill, invitations and
@@ -4924,7 +5058,9 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   at a time; another leaves it), one SQL statement from the stored processed
   points: nothing is loaded, no map data, no matching, and neither `version`
   nor `computed_at` changes; a move that has the feature by then is left
-  alone. `wayTotals` 1 (Insights › named roads) counts as the pipeline does:
+  alone. `heatDays` 1 fills `heat_days` the same way: the days with points
+  (the daily statistics) and no cells, newest first, each by `rebuildHeatDays`.
+  `wayTotals` 1 (Insights › named roads) counts as the pipeline does:
   each interval between kept points along `path_map` when both ends are mapped,
   else the chord of the averaged points, half to each end point's way, ways of
   25 m or more, to 0.1 m (the test compares it with the pipeline's own totals
@@ -4944,6 +5080,9 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
 
 ### 17.5 Overrides (the person wins)
 
+- A mode correction or its reset rewrites the per-day heat cells of the
+  days the move spans in the same transaction (`rebuildSegmentHeatDays`), so
+  the time on the move by mode follows it at once.
 - `PUT /api/v1/segments/{id}/mode { mode }` stores a `segment` override for
   the move's span and sets `mode_user` at once (the same mode again changes
   nothing). `DELETE` revokes the override that set the segment (a toggle with
@@ -5017,7 +5156,13 @@ days) answers `{ level, availableLevel, from, to, simplified, segments }`;
 a segment is `{ id, deviceId, kind, level, mode, modeInferred, modeUser,
 confidence, needsReview, startedAt, endedAt, distanceM, centroid, spreadM,
 points }` with points `[lon, lat, epochSeconds]` (the way's shape between
-mapped points carries interpolated times). `raw`, `averaged` and `mapped`
+mapped points carries interpolated times), and, for `values=speed,altitude,
+accuracy` (at most three, in the order asked; `values` is echoed, and left out when none were asked),
+`[lon, lat, epochSeconds, …values]` with null where unknown: the speed is the
+recorded one at `raw` and the averaged one (`processed_points.speed_avg`)
+elsewhere, altitude and accuracy are the fix's own, read from `locations`
+by primary key; the way's shape takes the speed of the point it leads to and
+no altitude or accuracy; the ETag's `asked` includes `values`. `raw`, `averaged` and `mapped`
 give pieces of track (`kind: "track"`, split at gaps over ten minutes;
 `centroid` and `spreadM` null); `inferred` gives the timeline's stops and
 moves — a stop with its place (`centroid`), its spread (`spreadM`, as in the

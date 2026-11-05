@@ -2,6 +2,7 @@ import { expect } from "@playwright/test";
 import { heatmapResponseSchema } from "@trail/contracts/heatmap";
 import { fact } from "./support/deviceCard";
 import { heatPixels } from "./support/heatPixels";
+import { openGroup } from "./support/mapControls";
 import { overlandBatch } from "./support/overlandBatch";
 import { test } from "./support/test";
 import { uploadedDevice } from "./support/uploadedDevice";
@@ -12,9 +13,17 @@ test("Heat draws the heatmap of every point and lists the busiest places", async
 }) => {
   await uploadedDevice(page, "Explorer", overlandBatch(account.timezone));
   const heatmap = page.waitForResponse((response) => response.url().includes("/api/heatmap?"));
-  await page.goto("/?view=heat");
+  await page.goto("/?view=heat&person=me");
   // The cells in view: the camera starts around the phone's latest position.
-  const { cells, cellZoom } = heatmapResponseSchema.parse(await (await heatmap).json());
+  const answer = heatmapResponseSchema.parse(await (await heatmap).json());
+  const { cells, cellZoom } = answer;
+  // Points, all time: tiles of the cell zoom with whole counts, nothing pending.
+  expect(answer).toMatchObject({ heat: "points", period: null, pending: false, truncated: false });
+  for (const [x, y] of cells) {
+    expect(Number.isInteger(x) && Number.isInteger(y)).toBe(true);
+    expect(x).toBeLessThan(2 ** cellZoom);
+    expect(y).toBeLessThan(2 ** cellZoom);
+  }
   const counted = cells.reduce((sum, [, , count]) => sum + count, 0);
   expect(counted).toBeGreaterThan(0);
   expect(counted).toBeLessThanOrEqual(30);
@@ -31,6 +40,8 @@ test("Heat draws the heatmap of every point and lists the busiest places", async
   await expect(classes.first()).toHaveText(/^\d[\d,]*(–\d[\d,]*)?$|or more$/);
   await expect(classes.last()).toHaveText(/^\d[\d,]* or more$/);
 
+  // The totals and the busiest places are Me's Heat group, which is folded until opened.
+  await openGroup(page, "Heat: totals, busiest places");
   const busiest = page
     .getByRole("region", { name: "Busiest places in view" })
     .getByRole("listitem");

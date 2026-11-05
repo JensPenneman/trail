@@ -1,4 +1,5 @@
 import type { DataAccessActorKind, DataAccessChannel } from "@trail/contracts/dataAccess";
+import type { HeatMeasure } from "@trail/contracts/heatmap";
 
 /* Type aliases rather than interfaces: they must be assignable to the query-string record of `apiFetch`. */
 
@@ -21,6 +22,11 @@ export type HeatmapParams = {
   bbox: string;
   zoom: number;
   deviceIds: readonly string[] | null;
+  /** What the cells count. */
+  heat: HeatMeasure;
+  /** The local days of time and visits; null for points (all time) and for the default period. */
+  from: string | null;
+  to: string | null;
 };
 
 /** A range at a level of calculation (`/api/v1/tracks`). */
@@ -91,6 +97,7 @@ export const queryKeys = {
     timeline: ["timeline"],
     deviceMode: ["device-mode"],
     personTracks: ["person-tracks"],
+    personDays: ["person-days"],
     insights: ["insights"],
     accessLog: ["access-log"],
   },
@@ -120,6 +127,7 @@ export const queryKeys = {
   personTracksOf: (userId: string) => ["person-tracks", userId] as const,
   personTracks: (userId: string, params: PersonTrackParams) =>
     ["person-tracks", userId, params] as const,
+  personDays: (userId: string) => ["person-days", userId] as const,
   passkeys: ["passkeys"],
   sessions: ["sessions"],
   apiTokens: ["api-tokens"],

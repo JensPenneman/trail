@@ -254,4 +254,30 @@ describe("the Hidden level", () => {
       expect(screen.getByRole("heading", { level: 2, name: "Hidden" })).toHaveFocus(),
     );
   });
+
+  it("forgets a press that failed: the row going later moves no focus", async () => {
+    let shown = false;
+    mockApi({
+      ...standardRoutes(),
+      "GET /api/v1/shares/incoming": () => ({
+        status: 200,
+        body: { shares: shown ? [] : [hiddenShare(ids.anaShare, "Cleo")] },
+      }),
+      [`POST /api/v1/shares/incoming/${ids.anaShare}/unhide`]: {
+        status: 503,
+        body: { error: { code: "unavailable", message: "Database down" } },
+      },
+    });
+    const person = userEvent.setup();
+    const { queryClient } = renderPage(<PeoplePage />, { url: "/?list=hidden", user });
+    await person.click(await screen.findByRole("button", { name: "Show Cleo again" }));
+    expect(await screen.findByText("Nobody was shown again")).toBeInTheDocument();
+    // Someone else shows her again, elsewhere: the list answers without her.
+    shown = true;
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    expect(await screen.findByText("Nobody is hidden.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Hidden" })).not.toHaveFocus();
+  });
 });

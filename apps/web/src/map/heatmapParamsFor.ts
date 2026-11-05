@@ -1,3 +1,4 @@
+import { type HeatMeasure, heatPeriodMeasures } from "@trail/contracts/heatmap";
 import type { HeatmapParams } from "../api/queryKeys";
 import type { MapViewState } from "./mapTypes";
 
@@ -13,6 +14,11 @@ const clamp = (value: number, min: number, max: number): number =>
 export function heatmapParamsFor(
   view: MapViewState,
   deviceIds: readonly string[] | null,
+  choice: {
+    heat: HeatMeasure;
+    /** The period asked for, `from` and `to` together; null: all time (the default period). */
+    period: { from: string; to: string } | null;
+  } = { heat: "points", period: null },
 ): HeatmapParams {
   const [west, south, east, north] = view.bounds;
   const down = (value: number) => Math.floor(value * 1000) / 1000;
@@ -23,5 +29,14 @@ export function heatmapParamsFor(
     clamp(up(east), -180, 180),
     clamp(up(north), -90, 90),
   ];
-  return { bbox: box.join(","), zoom: clamp(Math.round(view.zoom), 0, 24), deviceIds };
+  // Points are all time: a period belongs to the measures that have one.
+  const period = heatPeriodMeasures.has(choice.heat) ? choice.period : null;
+  return {
+    bbox: box.join(","),
+    zoom: clamp(Math.round(view.zoom), 0, 24),
+    deviceIds,
+    heat: choice.heat,
+    from: period?.from ?? null,
+    to: period?.to ?? null,
+  };
 }
