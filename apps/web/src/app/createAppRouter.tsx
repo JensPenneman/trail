@@ -1,4 +1,5 @@
 import { createBrowserRouter, type RouteObject, replace } from "react-router";
+import { insightsRoute } from "../pages/insights/insightsRoutes";
 import { NotFoundPage } from "../pages/notFound/NotFoundPage";
 import { settingsRoute } from "../settings/settingsRoutes";
 import { AppLoading } from "./AppLoading";
@@ -76,34 +77,7 @@ export function appRoutes(): RouteObject[] {
                   lazy: () =>
                     import("../pages/people/PeoplePage").then((m) => ({ Component: m.PeoplePage })),
                 },
-                {
-                  path: "insights",
-                  lazy: () =>
-                    import("../pages/insights/InsightsOverviewPage").then((m) => ({
-                      Component: m.InsightsOverviewPage,
-                    })),
-                },
-                {
-                  path: "insights/transport/:mode",
-                  lazy: () =>
-                    import("../pages/insights/InsightsModePage").then((m) => ({
-                      Component: m.InsightsModePage,
-                    })),
-                },
-                {
-                  path: "insights/time",
-                  lazy: () =>
-                    import("../pages/insights/InsightsTimePage").then((m) => ({
-                      Component: m.InsightsTimePage,
-                    })),
-                },
-                {
-                  path: "insights/roads",
-                  lazy: () =>
-                    import("../pages/insights/InsightsRoadsPage").then((m) => ({
-                      Component: m.InsightsRoadsPage,
-                    })),
-                },
+                insightsRoute,
                 settingsRoute,
               ],
             },

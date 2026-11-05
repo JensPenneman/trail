@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { addDevicePath, devicePath, devicesPath } from "../src/devices/devicePaths";
+import { fold } from "../src/format/fold";
 import { settingsBadgeValue } from "../src/settings/settingsBadges";
-import { fold, searchSettings, settingsSearchIndex } from "../src/settings/settingsSearchIndex";
+import { searchSettings, settingsSearchIndex } from "../src/settings/settingsSearchIndex";
 import {
   settingsGroupsFor,
   settingsItemPath,
@@ -149,6 +150,14 @@ describe("search in Settings", () => {
       "/settings/data#delete-account",
     ]);
     expect(found("sign out")[0]?.[0]).toBe("Sign out");
+  });
+
+  it("leads from Insights to who viewed you, which moved out of it", () => {
+    expect(found("insights")[0]).toEqual([
+      "Who viewed you",
+      "Privacy & data",
+      "/settings/privacy/viewers",
+    ]);
   });
 
   it("finds by other words, best matches of the name first", () => {

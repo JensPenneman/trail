@@ -5,6 +5,7 @@ import {
   withDay,
   withDevices,
   withHeatPeriod,
+  withList,
   withoutCamera,
   withoutLens,
   withPerson,
@@ -25,6 +26,7 @@ describe("the People page's URL", () => {
     expect(parse("")).toEqual({
       view: "live",
       person: null,
+      list: null,
       devices: null,
       period: { mode: "day", from: today, to: today },
       heat: null,
@@ -33,12 +35,26 @@ describe("the People page's URL", () => {
     });
   });
 
+  it("reads a level below the root only where nobody is selected", () => {
+    expect(parse("list=hidden").list).toBe("hidden");
+    expect(parse("list=nonsense").list).toBeNull();
+    expect(parse("person=me&list=hidden").list).toBeNull();
+  });
+
+  it("drops the level when someone is selected, and sets it again", () => {
+    const hidden = withList(new URLSearchParams("view=history&list=hidden"), "hidden");
+    expect(hidden.toString()).toBe("view=history&list=hidden");
+    expect(withPerson(hidden, "me").toString()).toBe("view=history&person=me");
+    expect(withList(hidden, null).toString()).toBe("view=history");
+  });
+
   it("reads the view, the person, the devices and History's day or period", () => {
     expect(
       parse(`view=history&person=${anna.toUpperCase()}&devices=a,b&from=2026-10-01&to=2026-10-07`),
     ).toEqual({
       view: "history",
       person: anna,
+      list: null,
       devices: ["a", "b"],
       period: { mode: "range", from: "2026-10-01", to: "2026-10-07" },
       heat: null,
@@ -289,6 +305,19 @@ describe("the camera of a link", () => {
     expect(parseCamera("3.7174,51.0543,14.5")).toEqual({ lon: 3.7174, lat: 51.0543, zoom: 14.5 });
     expect(parseCamera("-180,-85.0511,0")).toEqual({ lon: -180, lat: -85.0511, zoom: 0 });
     expect(parse("view=heat&c=3.7,51,12").camera).toEqual({ lon: 3.7, lat: 51, zoom: 12 });
+  });
+
+  it("rounds a camera to the precision the address is written in: five decimals, two for the zoom", () => {
+    expect(parseCamera("3.7174449,51.0543051,14.5678")).toEqual({
+      lon: 3.71744,
+      lat: 51.05431,
+      zoom: 14.57,
+    });
+    expect(parse("view=heat&c=3.123456789,51.987654321,12.004").camera).toEqual({
+      lon: 3.12346,
+      lat: 51.98765,
+      zoom: 12,
+    });
   });
 
   it("ignores what is not a camera", () => {

@@ -11,10 +11,10 @@ export interface Disclosure {
 /**
  * The disclosure pattern without its markup, for a button that sits apart
  * from what it opens (a card's row of actions, its details below): closed at
- * first.
+ * first, unless told otherwise.
  */
-export function useDisclosure(): Disclosure {
-  const [open, setOpen] = useState(false);
+export function useDisclosure(initiallyOpen = false): Disclosure {
+  const [open, setOpen] = useState(initiallyOpen);
   const contentId = useId();
   const toggle = useCallback(() => setOpen((current) => !current), []);
   return { open, toggle, contentId };

@@ -1,3 +1,4 @@
+import { fold } from "../format/fold";
 import type { IconName } from "../ui/iconPaths";
 import {
   type SettingsDetailId,
@@ -21,17 +22,6 @@ export interface SettingsSearchEntry {
   name: string;
   /** Everything it is found by, folded: label, keywords, its page and group. */
   terms: string;
-}
-
-/** Lower case, without accents and punctuation, "&" as "and": what search compares. */
-export function fold(text: string): string {
-  return text
-    .normalize("NFKD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replaceAll("&", " and ")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
 }
 
 /** An item search finds by its name (a device), on the page of its kind of item. */

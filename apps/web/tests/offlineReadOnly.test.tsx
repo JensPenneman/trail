@@ -33,7 +33,7 @@ describe("the People page offline", () => {
     await userEvent.setup().click(screen.getByRole("link", { name: /^Me/ }));
     expect(await screen.findByRole("region", { name: "Me" })).toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("link", { name: "Back to People" }));
-    expect(await screen.findByRole("list", { name: "People" })).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Me" })).toBeInTheDocument();
 
     onLine.mockReturnValue(true);
     window.dispatchEvent(new Event("online"));
