@@ -60,6 +60,11 @@ export interface MapViewContent {
    * been. Nobody else is in it.
    */
   personTracks: ReadonlyMap<string, PersonTrackState>;
+  /**
+   * Playback: while History plays, `on` is true and `strip` is what stands in for the
+   * sidebar's content ("At this moment"); null when nothing plays.
+   */
+  player: { on: boolean; strip: ReactNode } | null;
   /** A dialog the view opened (a stop's or move's details). */
   dialog: ReactNode;
 }
@@ -78,5 +83,6 @@ export const inactiveView: MapViewContent = {
   meGroupTitle: "",
   personGroup: null,
   personTracks: new Map(),
+  player: null,
   dialog: null,
 };

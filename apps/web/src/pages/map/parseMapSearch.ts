@@ -2,6 +2,7 @@ import { type HeatMeasure, heatMeasures } from "@trail/contracts/heatmap";
 import { lastInsightsDay } from "@trail/contracts/period";
 import { parseLocalDate } from "../../time/parseLocalDate";
 import type { HistorySelection } from "./history/HistorySelection";
+import { parseAtText } from "./history/parseAt";
 import { parseHistorySelection } from "./history/parseHistorySelection";
 import { isMapView, type MapView } from "./mapViews";
 import { me } from "./me";
@@ -71,6 +72,8 @@ export interface MapSearch {
    * `devices` on Me's page (`?person=me&list=devices`).
    */
   list: "hidden" | "devices" | null;
+  /** The moment of History's slider, `YYYY-MM-DDTHH:MM` (a text of that shape, else null). */
+  at: string | null;
   /** The History view's day or period (kept while another view is shown). */
   period: Omit<HistorySelection, "deviceIds">;
   /** What Heat counts, when the address says; null leaves it to the remembered choice and the preference. */
@@ -133,6 +136,7 @@ export function parseMapSearch(params: URLSearchParams, today: string): MapSearc
     view: isMapView(view) ? view : "live",
     person,
     list: parseList(person, params.get("list")),
+    at: parseAtText(params.get("at")),
     devices: deviceIds,
     period,
     heat: parseHeatMeasure(params.get("heat")),

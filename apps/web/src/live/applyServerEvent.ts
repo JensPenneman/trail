@@ -50,6 +50,10 @@ export function applyServerEvent(
         queryKey: queryKeys.personTracksOf(event.userId),
         refetchType: "active",
       });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.personDays(event.userId),
+        refetchType: "active",
+      });
       return;
     case "share":
       if (event.change === "revoked") {
