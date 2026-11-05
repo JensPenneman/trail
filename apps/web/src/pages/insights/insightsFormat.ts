@@ -43,8 +43,10 @@ export interface Change {
 
 /**
  * A change in words: by how much a measured amount (distance, time) moved,
- * in percent, or a count by how many — "12% more than the 30 days before",
- * "3 fewer than …", "As many as …". Null when there is nothing to compare with.
+ * in percent, or a count by how many — "12% more than September", "3 fewer
+ * than …", "As many as …". `compared` is what the days are compared with
+ * ("September", "the 12 days before"); where it had none of it, "None in …".
+ * Null when there is nothing to compare with.
  */
 export function changeOf(
   now: number,
@@ -53,8 +55,8 @@ export function changeOf(
   options: { kind: "amount" | "count"; format: Formatter },
 ): Change | null {
   if (before <= 0 && now <= 0) return null;
+  if (before <= 0) return { text: `None in ${compared}`, direction: "up" };
   if (options.kind === "amount") {
-    if (before <= 0) return { text: `More than ${compared}`, direction: "up" };
     const percent = Math.round(((now - before) / before) * 100);
     if (percent === 0) return { text: `About the same as ${compared}`, direction: "flat" };
     return {

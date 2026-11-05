@@ -33,7 +33,8 @@ interface HeatDetailsProps {
 /**
  * What Heat says in numbers, in Me's "Heat" group: the totals (points ever
  * recorded; days, distance and earliest day of the last 12 months) and the
- * busiest places in view. It is rendered only while the group is open, so the
+ * busiest places in view. (Whether the heatmap could be loaded, or is cut to its
+ * busiest places, is said at the map's foot, whoever is selected.) It is rendered only while the group is open, so the
  * 12-month request is made only then.
  */
 export function HeatDetails({
@@ -74,15 +75,6 @@ export function HeatDetails({
 
   return (
     <>
-      {heatmap.isError ? (
-        <ErrorState
-          title="The heatmap could not be loaded"
-          error={heatmap.error}
-          onRetry={() => void heatmap.refetch()}
-          retrying={heatmap.isFetching}
-        />
-      ) : null}
-
       <section className="section" aria-labelledby={totalsId}>
         <SectionTitle id={totalsId}>Totals</SectionTitle>
         {devices.isPending || days.isPending ? (

@@ -2,7 +2,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import type { DeviceSummary } from "@trail/contracts/device";
 import type { Person } from "@trail/contracts/person";
 import type { ProcessingLevel } from "@trail/contracts/transport";
-import { type ReactNode, useId, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { DeviceColors } from "../../../devices/useDeviceColors";
 import { useFormatter } from "../../../format/useFormatter";
@@ -14,6 +14,7 @@ import { tracksToMap } from "../../../map/tracksToMap";
 import { sharesHistory } from "../../../people/sharesHistory";
 import type { PersonColors } from "../../../people/usePersonColors";
 import { useDays } from "../../../queries/useDays";
+import { usePersonDays } from "../../../queries/usePersonDays";
 import { usePersonTracks } from "../../../queries/usePersonTracks";
 import { useTimeline } from "../../../queries/useTimeline";
 import { useTracks } from "../../../queries/useTracks";
@@ -22,8 +23,10 @@ import { useVisits } from "../../../queries/useVisits";
 import { addDays } from "../../../time/addDays";
 import { boundedRange } from "../../../time/boundedRange";
 import { shiftMonth } from "../../../time/shiftMonth";
+import { useNow } from "../../../time/useNow";
 import { DayTimeline } from "../../../transport/DayTimeline";
 import { SegmentDialog } from "../../../transport/SegmentDialog";
+import { transportModeInfo } from "../../../transport/transportModes";
 import { useTransportMap } from "../../../transport/useTransportMap";
 import { Button } from "../../../ui/Button";
 import { EmptyState } from "../../../ui/EmptyState";
@@ -31,6 +34,7 @@ import { ErrorState } from "../../../ui/ErrorState";
 import { LoadingBlock } from "../../../ui/LoadingBlock";
 import { Skeleton } from "../../../ui/Skeleton";
 import { Spinner } from "../../../ui/Spinner";
+import { useMediaQuery } from "../../../ui/useMediaQuery";
 import { fitKey } from "../fitKey";
 import { inactiveView, type MapViewContent } from "../MapViewContent";
 import { withPerson } from "../mapSearchUpdates";
@@ -42,6 +46,26 @@ import type { MapSelection } from "../resolveMapSelection";
 import { HistoryControls } from "./HistoryControls";
 import { type CalendarDay, MonthCalendar } from "./MonthCalendar";
 import { PeriodSummary } from "./PeriodSummary";
+import { atText, momentOf } from "./parseAt";
+import {
+  dayBounds,
+  dayOf,
+  endOf,
+  mergeIntervals,
+  movesOf,
+  movingStretches,
+  type NowEntry,
+  NowStrip,
+  PlayerBar,
+  quietIntervals,
+  splitTime,
+  usePlaybackAnnouncer,
+  usePlaybackDays,
+  usePlaybackPrefetch,
+  usePlayerEngine,
+  usePlayerKeys,
+  usePlayerState,
+} from "./playback";
 import { positionAt } from "./positionAt";
 import { type ScrubberReadout, TimeScrubber } from "./TimeScrubber";
 import { TripList } from "./TripList";
@@ -65,6 +89,12 @@ export interface HistoryViewInput {
   timeZone: string;
   showDay: (date: string) => void;
   showRange: (from: string, to: string) => void;
+  /** The slider's moment from the address, `YYYY-MM-DDTHH:MM`, if it has one. */
+  at: string | null;
+  /** The slider's moment, written to the address once it stops moving. */
+  setAt: (at: string) => void;
+  /** Where playback paused, ended or was left: a day and a moment on it. */
+  showMoment: (day: string, at: string) => void;
 }
 
 type Focus = { key: string; lon: number; lat: number; zoom: number };
@@ -80,7 +110,7 @@ type Focus = { key: string; lon: number; lat: number; zoom: number };
  */
 export function useHistoryView({
   active,
-  period,
+  period: urlPeriod,
   selection,
   devices,
   people,
@@ -93,8 +123,26 @@ export function useHistoryView({
   timeZone,
   showDay,
   showRange,
+  at,
+  setAt,
+  showMoment,
 }: HistoryViewInput): MapViewContent {
   const format = useFormatter();
+  // The player lives up here: the day it plays replaces the address's period before the queries
+  // below run, and what it knows of the data comes from those queries afterwards (`world`).
+  const player = usePlayerState();
+  const playback = player.state;
+  const playing = playback.status !== "off";
+  const period = useMemo<MapSearch["period"]>(
+    () => (playing ? { mode: "day", from: playback.day, to: playback.day } : urlPeriod),
+    [playing, playback.day, urlPeriod],
+  );
+  // What the map draws after the cursor is dimmed; rounded, so the tracks are cut four times a
+  // second at most however often the clock moves.
+  const until = playing ? splitTime(playback.clock, playback.rate) : undefined;
+  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  // The slider reaches to now, rounded to the minute, on today.
+  const nowS = Math.floor(useNow(60_000) / 60_000) * 60;
   const calendarId = useId();
   const [openSegment, setOpenSegment] = useState<string | null>(null);
   // A link to one move (`&segment=<id>`, Insights' "Show on the map") opens its details
@@ -222,18 +270,22 @@ export function useHistoryView({
   );
   const visitList = mineRange === null ? undefined : visits.data;
   const rawTracks = useMemo(
-    () => tracksToMap(colourTracks(trackList, colouring), colors.hex),
-    [trackList, colors, colouring],
+    () => tracksToMap(colourTracks(trackList, colouring), colors.hex, until),
+    [trackList, colors, colouring, until],
   );
-  const transport = useTransportMap(range, level, rawTracks, {
-    dark,
-    device: colors.hex,
-    colouring,
-  });
+  const transport = useTransportMap(
+    range,
+    level,
+    rawTracks,
+    { dark, device: colors.hex, colouring },
+    until,
+  );
   const peopleTracks = useMemo(
     () =>
-      theirs.flatMap(({ userId, track }) => tracksToMap([track], () => personColors.hex(userId))),
-    [theirs, personColors],
+      theirs.flatMap(({ userId, track }) =>
+        tracksToMap([track], () => personColors.hex(userId), until),
+      ),
+    [theirs, personColors, until],
   );
   const owners = useMemo(() => {
     const byDevice = new Map<string, { person: Person; name: string }>();
@@ -252,8 +304,17 @@ export function useHistoryView({
         color: colors.hex(visit.deviceId),
         lon: visit.lon,
         lat: visit.lat,
+        // A visit the cursor has not reached is dimmed, like the track ahead.
+        ...(until !== undefined && Date.parse(visit.arrivedAt ?? visit.recordedAt) / 1000 > until
+          ? { dimmed: true as const }
+          : {}),
       })),
-    [visitList, colors],
+    [visitList, colors, until],
+  );
+  // One array while its parts are the same: the map redraws the tracks when it changes.
+  const mapTracks = useMemo(
+    () => [...transport.tracks, ...peopleTracks],
+    [transport.tracks, peopleTracks],
   );
   const bounds = useMemo(
     () =>
@@ -266,7 +327,8 @@ export function useHistoryView({
     [transport, peopleTracks, visitPoints],
   );
 
-  // The slider spans the recorded time of the period; it starts at the latest point.
+  // The slider spans the day (or the days of the period) from midnight to the next midnight — on
+  // today to now — and starts at the latest recorded point; playing, it is the clock.
   const allTracks = useMemo(
     () => [...trackList, ...theirs.map(({ track }) => track)],
     [trackList, theirs],
@@ -282,10 +344,32 @@ export function useHistoryView({
     }
     return Number.isFinite(start) ? { start, end } : null;
   }, [allTracks]);
-  const scrubValue =
-    span === null
-      ? 0
-      : Math.min(span.end, Math.max(span.start, scrub?.key === periodKey ? scrub.value : span.end));
+  const sliderSpan = useMemo(() => {
+    const first = dayBounds(period.from, timeZone).start;
+    const last = dayBounds(period.to, timeZone).end;
+    const reach = period.to === today ? Math.max(first + 60, Math.min(last, nowS)) : last;
+    // What was recorded is within it (a clock a little ahead of the server's, a late upload).
+    return { start: first, end: span === null ? reach : Math.max(reach, span.end) };
+  }, [period.from, period.to, today, timeZone, nowS, span]);
+  const atMoment = momentOf(at, timeZone);
+  const startValue =
+    atMoment !== null && atMoment >= sliderSpan.start && atMoment <= sliderSpan.end
+      ? atMoment
+      : (span?.end ?? sliderSpan.end);
+  const scrubValue = playing
+    ? playback.clock
+    : Math.min(
+        sliderSpan.end,
+        Math.max(sliderSpan.start, scrub?.key === periodKey ? scrub.value : startValue),
+      );
+  // The slider's moment is written to the address once it has stopped moving for a moment.
+  useEffect(() => {
+    if (!active || playing || scrub === null || scrub.key !== periodKey) return undefined;
+    const text = atText(scrubValue, timeZone);
+    if (text === at) return undefined;
+    const timer = setTimeout(() => setAt(text), 400);
+    return () => clearTimeout(timer);
+  }, [active, playing, scrub, periodKey, scrubValue, timeZone, at, setAt]);
   const readouts = useMemo<ScrubberReadout[]>(
     () => [
       ...trackList.map((track) => ({
@@ -323,6 +407,171 @@ export function useHistoryView({
             ],
       ),
     [readouts, colors, personColors, owners],
+  );
+
+  // Playback. Who can be played: oneself, or someone whose share includes history.
+  const playable = selected !== null && (meSelected || (other !== null && sharesHistory(other)));
+  const personDays = usePersonDays(
+    playing && other !== null && sharesHistory(other) ? other.userId : null,
+    today,
+  );
+  const playDays = usePlaybackDays({
+    active: active && playing,
+    startDay: playback.startDay,
+    playingDay: playback.day,
+    today,
+    source: meSelected
+      ? { kind: "me", deviceIds: own?.deviceIds ?? null }
+      : { kind: "person", days: personDays },
+  });
+  // The playing day is loaded once what its moves and quiet stretches are made from is in:
+  // its tracks, and for one's own the timeline and the level's tracks (placeholder data is the
+  // previous day's).
+  const playingLoaded =
+    playing &&
+    (meSelected
+      ? range !== null &&
+        !tracks.isPending &&
+        !tracks.isPlaceholderData &&
+        !timeline.isPending &&
+        !timeline.isPlaceholderData &&
+        !transport.pending
+      : requests.length > 0 && !personTracks.pending);
+  const timelinePending = timeline.data?.pending ?? false;
+  const moves = useMemo(() => {
+    if (!meSelected || segments === undefined || timeline.isPlaceholderData) {
+      return movingStretches(allTracks.map((track) => track.points));
+    }
+    const processed = movesOf(segments);
+    if (!timelinePending) return processed;
+    // Still being worked out: what the points say moved after the last segment counts as moving,
+    // so that "Skip stops" does not jump over the live end the owner plays towards.
+    const processedTo = Math.max(...segments.map((segment) => Date.parse(segment.endedAt) / 1000));
+    const recent = allTracks.map((track) =>
+      track.points.filter((point) => point[2] >= processedTo),
+    );
+    return mergeIntervals([...processed, ...movingStretches(recent)]);
+  }, [meSelected, segments, timelinePending, timeline.isPlaceholderData, allTracks]);
+  const quiet = useMemo(() => {
+    const bounds = dayBounds(period.from, timeZone);
+    return quietIntervals({ from: bounds.start, to: bounds.end }, moves);
+  }, [period.from, timeZone, moves]);
+  const lastDay = playDays.days.at(-1) ?? null;
+  const guessedEnd = useMemo(() => {
+    const times = [...playDays.lastAt.values()];
+    return times.length === 0 ? null : Math.max(...times);
+  }, [playDays.lastAt]);
+  const finalDayLast = playingLoaded && playback.day === lastDay && span !== null ? span.end : null;
+  const end = endOf(guessedEnd, finalDayLast, playDays.complete);
+  usePlayerEngine(player, {
+    reducedMotion,
+    world: {
+      timeZone,
+      days: playDays.days,
+      daysComplete: playDays.complete,
+      moves,
+      quiet,
+      loaded: (day) => day === playback.day && playingLoaded,
+      end,
+    },
+  });
+  usePlayerKeys(player);
+  usePlaybackAnnouncer(playback);
+  const personRequest = useCallback(
+    (range: { from: string; to: string }) =>
+      other === null ? null : (personTrackRequests([other], selection.devicesOf, range)[0] ?? null),
+    [other, selection.devicesOf],
+  );
+  usePlaybackPrefetch({
+    active: active && playing,
+    day: playback.day,
+    clock: playback.clock,
+    days: playDays.days,
+    timeZone,
+    level,
+    moves,
+    skipStops: playback.skipStops,
+    me: meSelected ? { deviceIds: own?.deviceIds ?? null } : null,
+    personRequest: other === null ? null : personRequest,
+  });
+  // A day whose tracks come back empty (the days endpoint counts points the track drops, as too
+  // inaccurate) has nothing to play: on to the next day with data.
+  const nextWithData = playDays.days.find((candidate) => candidate > playback.day) ?? null;
+  useEffect(() => {
+    if (playback.status !== "playing" || !playingLoaded || allTracks.length > 0) return;
+    if (nextWithData !== null) player.controls.seek(dayBounds(nextWithData, timeZone).start);
+  }, [playback.status, playingLoaded, allTracks.length, nextWithData, timeZone, player.controls]);
+  // Changing view or person ends playback without writing the address (a hook does not unmount).
+  const startedOn = useRef<string | null>(null);
+  const silentExit = useRef(false);
+  const selectedKey = selected?.key ?? null;
+  useEffect(() => {
+    if (!playing) {
+      startedOn.current = null;
+      return;
+    }
+    startedOn.current ??= selectedKey ?? "";
+    if (!active || startedOn.current !== (selectedKey ?? "")) {
+      silentExit.current = true;
+      player.controls.exit();
+    }
+  }, [playing, active, selectedKey, player.controls]);
+  // Pausing, reaching the end and leaving write the day and the moment (in place of the entry);
+  // nothing is written while it plays. Leaving writes where it was, also after a seek made while
+  // paused; only a change of view or person (silent) writes nothing.
+  const was = useRef({ status: playback.status, day: playback.day, clock: playback.clock });
+  useEffect(() => {
+    const before = was.current;
+    if (playback.status !== "off")
+      was.current = { status: playback.status, day: playback.day, clock: playback.clock };
+    else was.current = { ...before, status: "off" };
+    const left = playback.status === "off" && before.status !== "off";
+    const stopped =
+      (playback.status === "paused" || playback.status === "ended") &&
+      (before.status === "playing" || before.status === "loading");
+    if (left && silentExit.current) silentExit.current = false;
+    else if (left || stopped) {
+      // Where it stopped: the state it stopped in, or, once it is off, the last one it was in.
+      const at = playback.status === "off" ? before : { day: playback.day, clock: playback.clock };
+      setScrub({
+        key: `${at.day}|${at.day}|${selected?.key ?? "everyone"}|${own?.deviceIds?.join(",") ?? "all"}`,
+        value: at.clock,
+      });
+      showMoment(at.day, atText(at.clock, timeZone));
+    }
+    if (playback.status === "off") silentExit.current = false;
+  }, [playback.status, playback.day, playback.clock, timeZone, showMoment, selected, own]);
+  // What each drawn device was doing at the moment shown, for the strip that replaces the sidebar.
+  const nowEntries = useMemo<NowEntry[]>(
+    () =>
+      readouts.map((readout) => {
+        const during = meSelected
+          ? (segments ?? []).find(
+              (segment) =>
+                segment.deviceId === readout.deviceId &&
+                Date.parse(segment.startedAt) / 1000 <= scrubValue &&
+                scrubValue < Date.parse(segment.endedAt) / 1000,
+            )
+          : undefined;
+        return {
+          id: readout.deviceId,
+          name: readout.name,
+          slot: readout.slot,
+          palette: readout.palette,
+          mode:
+            during === undefined
+              ? null
+              : during.kind === "stop"
+                ? "Stop"
+                : transportModeInfo[during.mode ?? "unknown"].label,
+          speed: readout.position?.speed ?? null,
+          position:
+            readout.position === null
+              ? null
+              : { lat: readout.position.lat, lon: readout.position.lon },
+        };
+      }),
+    [readouts, meSelected, segments, scrubValue],
   );
 
   // Another day drops it, so that coming back to its day does not make it again either, and
@@ -442,14 +691,42 @@ export function useHistoryView({
   const scrubber =
     span === null ? null : (
       <TimeScrubber
-        start={span.start}
-        end={span.end}
+        start={sliderSpan.start}
+        end={sliderSpan.end}
         value={scrubValue}
         withDate={withDate}
         readouts={readouts}
         onChange={(value) => setScrub({ key: periodKey, value })}
+        {...(playable
+          ? {
+              onPlay: () => {
+                // The slider's end on a past day is the next day's midnight: start a minute short.
+                const last = dayBounds(dayOf(scrubValue - 1, timeZone), timeZone).end - 60;
+                const moment = Math.round(Math.min(scrubValue, last));
+                player.controls.enter(dayOf(moment, timeZone), moment);
+              },
+            }
+          : {})}
       />
     );
+  const bar = (
+    <PlayerBar
+      status={playback.status === "off" ? "paused" : playback.status}
+      clock={playback.clock}
+      start={playback.start}
+      end={end}
+      latest={guessedEnd}
+      rate={playback.rate}
+      skipStops={playback.skipStops}
+      onToggle={player.controls.toggle}
+      onPreviousMove={() => player.controls.stepMove(-1)}
+      onNextMove={() => player.controls.stepMove(1)}
+      onRate={player.controls.setRate}
+      onSkipStops={player.controls.setSkipStops}
+      onSeek={player.controls.seek}
+      onExit={player.controls.exit}
+    />
+  );
 
   return {
     title: "History",
@@ -463,7 +740,7 @@ export function useHistoryView({
         : drawsOwn
           ? `Map. Nothing was recorded for ${periodLabel}.`
           : `Map. Nothing to show for ${periodLabel}.`,
-      tracks: [...transport.tracks, ...peopleTracks],
+      tracks: mapTracks,
       transport: transport.transport,
       selectedSegmentId: shownSegment?.id ?? null,
       onSegmentClick: openFromMap,
@@ -483,10 +760,14 @@ export function useHistoryView({
         maxZoom: 16,
       },
       focus: focus !== null && focus.period === periodKey ? focus : null,
+      // While playing, the camera follows the cursor once it leaves the viewport.
+      ...(playing && cursors.length > 0
+        ? { follow: cursors.map((cursor) => ({ lon: cursor.lon, lat: cursor.lat })) }
+        : {}),
     },
-    controls: (
+    controls: playing ? null : (
       <HistoryControls
-        selection={{ ...period, deviceIds: own?.deviceIds ?? null }}
+        selection={{ ...urlPeriod, deviceIds: own?.deviceIds ?? null }}
         today={today}
         onDay={(date) => {
           showDay(date);
@@ -531,14 +812,16 @@ export function useHistoryView({
       ) : null,
     legend: null,
     // What there is to say of the day or period besides the slider: nothing recorded, or an error.
-    foot:
-      personError === null && notice === null && scrubber === null ? null : (
-        <>
-          {personError}
-          {notice}
-          {scrubber}
-        </>
-      ),
+    foot: playing ? (
+      bar
+    ) : personError === null && notice === null && scrubber === null ? null : (
+      <>
+        {personError}
+        {notice}
+        {scrubber}
+      </>
+    ),
+    player: playing ? { on: true, strip: <NowStrip entries={nowEntries} /> } : null,
     timelineLabel: "",
     timeline: !meSelected ? null : (
       <DayTimeline

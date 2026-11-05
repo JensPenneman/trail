@@ -1,7 +1,8 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { Person } from "@trail/contracts/person";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useId } from "react";
 import { Link } from "react-router";
+import { offlineReasonId, useReadOnly } from "../../app/useReadOnly";
 import { useFormatter } from "../../format/useFormatter";
 import { appleMapsUrl, googleMapsUrl } from "../../people/mapLinks";
 import { PersonDevices } from "../../people/PersonDevices";
@@ -23,7 +24,9 @@ import { LoadingBlock } from "../../ui/LoadingBlock";
 import { SectionLevel } from "../../ui/SectionTitle";
 import { Skeleton } from "../../ui/Skeleton";
 import type { MapViewContent } from "../map/MapViewContent";
+import type { Groups } from "./groupState";
 import type { SharingActions } from "./useSharingActions";
+import "./PersonPage.css";
 
 interface PersonPageProps {
   /** The user id of someone who shares with the signed-in person. */
@@ -38,6 +41,7 @@ interface PersonPageProps {
   /** The day or period their track is for; null where the view draws no tracks of others (Heat). */
   period: WhereTheyveBeenPeriod | null;
   sharing: SharingActions;
+  groups: Groups;
   /** History's slider on phones: right under the header, so the sheet's peek does not hold it. */
   foot: ReactNode;
   /** Leaves the page for the root (after hiding someone). */
@@ -61,15 +65,16 @@ export function PersonPage({
   content,
   period,
   sharing,
+  groups,
   foot,
   onLeave,
 }: PersonPageProps) {
   const titleId = useId();
   const format = useFormatter();
-  const [opened, setOpened] = useState<Readonly<Record<string, boolean>>>({});
+  const readOnly = useReadOnly();
   const group = (title: string) => ({
-    open: opened[title] === true,
-    onOpenChange: (open: boolean) => setOpened((current) => ({ ...current, [title]: open })),
+    open: groups.isOpen(title),
+    onOpenChange: (open: boolean) => groups.set(title, open),
   });
   const back = (
     <Link to={backTo} className="back-link" preventScrollReset>
@@ -131,8 +136,16 @@ export function PersonPage({
           </SettingsDisclosureGroup>
         )}
         <SettingsDisclosureGroup title={devicesTitle} {...group("Devices")}>
-          <PersonDevices person={found} now={now} liveMinutes={thresholds.liveMinutes} />
-          <ShareTerms person={found} now={now} />
+          <section className="person-page__part" aria-label="Devices">
+            <h4 className="person-page__subtitle">
+              {found.devices.length === 1 ? "Device" : "Devices"}
+            </h4>
+            <PersonDevices person={found} now={now} liveMinutes={thresholds.liveMinutes} />
+          </section>
+          <section className="person-page__part" aria-label={`What ${name} shares with you`}>
+            <h4 className="person-page__subtitle">What {name} shares with you</h4>
+            <ShareTerms person={found} now={now} />
+          </section>
         </SettingsDisclosureGroup>
 
         {sharing.hideError === null ? null : (
@@ -168,6 +181,8 @@ export function PersonPage({
               end={
                 <Button
                   variant="danger-outline"
+                  disabled={readOnly}
+                  aria-describedby={readOnly ? offlineReasonId : undefined}
                   onClick={() => sharing.openStop(share)}
                   aria-label={`Stop sharing your location with ${name}`}
                 >

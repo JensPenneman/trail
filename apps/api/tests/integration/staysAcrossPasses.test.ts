@@ -18,6 +18,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
 import { countStops } from "../../src/insights/insightMoves";
+import { lockDeviceProcessing } from "../../src/processing/deviceLock";
 import type { RawPoint } from "../../src/processing/pipelineTypes";
 import { enqueueWindow, takeDeviceWindows } from "../../src/processing/processingQueue";
 import { processWindow } from "../../src/processing/processWindow";
@@ -116,14 +117,17 @@ const storedStops = async (deviceId: string) =>
   ).rows;
 
 /**
- * Works a device's queue out until nothing of it is left. The worker's own run (woken by the
- * upload's NOTIFY) can take a pass alongside `flush`, and `flush` returns once nothing is due while
- * that pass is still at work, so the older part of a split job may not be stored yet: each round
- * waits for the run in progress, and the queue being empty says every pass has committed.
+ * Works a device's queue out until nothing of it is left, and until no pass of the device is at
+ * work. The worker's own run (woken by the upload's NOTIFY) can take a pass alongside `flush`,
+ * and `flush` returns once nothing is due while that pass is still at work, so the older part of
+ * a split job may not be stored yet. A window is worked out in one transaction that holds the
+ * device's processing lock, so taking that lock waits for the pass in flight to commit; the
+ * queue is read after it, and being empty then says every pass has committed.
  */
 async function settle(deviceId: string): Promise<void> {
   for (let round = 0; round < 10; round += 1) {
     await t.ctx.processing.flush();
+    await t.ctx.db.transaction((tx) => lockDeviceProcessing(tx, deviceId));
     const queued = await t.ctx.db.execute<{ count: number }>(
       sql`SELECT count(*)::int AS count FROM processing_queue WHERE device_id = ${deviceId}`,
     );
@@ -670,8 +674,12 @@ describe("a quick toggle across the parts of a stay", () => {
     });
     await upload(device.token, days);
     await settle(device.id);
+    // The worker's own run may still be storing the older parts of the split job when the queue
+    // reads empty on a slow host: wait for them rather than judge the first look.
+    await expect
+      .poll(async () => (await storedStops(device.id)).length, { timeout: 30_000, interval: 500 })
+      .toBeGreaterThan(1);
     const parts = await storedStops(device.id);
-    expect(parts.length).toBeGreaterThan(1);
     // The train set an hour before the last part began: the parts after it are the same stay.
     const lastPart = Date.parse(parts.at(-1)?.from ?? "") / 1000;
     await toggle(device.id, lastPart - 3600, "train");

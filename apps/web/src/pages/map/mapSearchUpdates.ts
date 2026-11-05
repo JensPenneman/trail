@@ -22,6 +22,8 @@ export function withView(params: URLSearchParams, view: MapView): URLSearchParam
       if (Math.abs(daysBetween(from, to)) >= maxRangeDays) {
         next.delete("from");
         next.delete("to");
+        // The slider's moment belonged to the period that is gone.
+        next.delete("at");
       }
     } catch {
       // Not dates: History reads them as nothing.
@@ -69,20 +71,22 @@ export function withList(
   return next;
 }
 
-/** One day of History; today leaves the date out. */
+/** One day of History; today leaves the date out. Another day drops the slider's moment. */
 export function withDay(params: URLSearchParams, date: string, today: string): URLSearchParams {
   const next = new URLSearchParams(params);
   next.delete("from");
   next.delete("to");
+  next.delete("at");
   if (date === today) next.delete("date");
   else next.set("date", date);
   return next;
 }
 
-/** A period of History. */
+/** A period of History. Another period drops the slider's moment. */
 export function withRange(params: URLSearchParams, from: string, to: string): URLSearchParams {
   const next = new URLSearchParams(params);
   next.delete("date");
+  next.delete("at");
   next.set("from", from);
   next.set("to", to);
   return next;
@@ -97,6 +101,8 @@ export function withHeatPeriod(
   period: { from: string; to: string } | null,
 ): URLSearchParams {
   const next = new URLSearchParams(params);
+  // Another period drops the slider's moment, as History's does.
+  next.delete("at");
   if (period === null) {
     next.delete("from");
     next.delete("to");
@@ -117,6 +123,27 @@ export function withoutCamera(params: URLSearchParams): URLSearchParams {
 /** The lens Insights set on Heat taken off: the measure, the period and (D2) the mode, together. */
 export function withoutLens(params: URLSearchParams): URLSearchParams {
   const next = new URLSearchParams(params);
-  for (const name of ["heat", "from", "to", "mode"]) next.delete(name);
+  for (const name of ["heat", "from", "to", "mode", "at"]) next.delete(name);
   return next;
+}
+
+/** The slider's moment (`YYYY-MM-DDTHH:MM`), or none (null). */
+export function withAt(params: URLSearchParams, at: string | null): URLSearchParams {
+  const next = new URLSearchParams(params);
+  if (at === null) next.delete("at");
+  else next.set("at", at);
+  return next;
+}
+
+/**
+ * A moment of History: its day (today leaves the date out) and the time on it.
+ * What playback writes when it pauses, ends or is left.
+ */
+export function withMoment(
+  params: URLSearchParams,
+  day: string,
+  at: string,
+  today: string,
+): URLSearchParams {
+  return withAt(withDay(params, day, today), at);
 }

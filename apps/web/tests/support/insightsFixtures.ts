@@ -18,6 +18,58 @@ const totals = (overrides: Partial<InsightsOverview["totals"]> = {}) => ({
   ...overrides,
 });
 
+/** The days of a month as the API's series period: every day a step. */
+export function monthPeriod(month: string): InsightsOverview["period"] {
+  const [year = 0, number = 1] = month.split("-").map(Number);
+  const days = new Date(Date.UTC(year, number, 0)).getUTCDate();
+  const buckets = Array.from(
+    { length: days },
+    (_, index) => `${month}-${String(index + 1).padStart(2, "0")}`,
+  );
+  return {
+    from: `${month}-01`,
+    to: `${month}-${String(days).padStart(2, "0")}`,
+    days,
+    bucket: "day",
+    buckets,
+  };
+}
+
+/** October 2026: the week's train and bike ride, over a month. */
+export function octoberOverview(overrides: Partial<InsightsOverview> = {}): InsightsOverview {
+  return overview({ period: monthPeriod("2026-10"), ...overrides });
+}
+
+/** September 2026: more walking, a little less train, no cycling. */
+export function septemberOverview(overrides: Partial<InsightsOverview> = {}): InsightsOverview {
+  return overview({
+    period: monthPeriod("2026-09"),
+    totals: totals({ distanceM: 60_000, durationS: 6000, moves: 3, stops: 4, activeDays: 3 }),
+    modes: [
+      {
+        mode: "train",
+        distanceM: 50_000,
+        durationS: 2700,
+        moves: 1,
+        avgSpeedKmh: 66,
+        share: 0.833,
+        deltaDistanceM: 0,
+      },
+      {
+        mode: "walking",
+        distanceM: 10_000,
+        durationS: 3300,
+        moves: 2,
+        avgSpeedKmh: 5,
+        share: 0.167,
+        deltaDistanceM: 0,
+      },
+    ],
+    series: [],
+    ...overrides,
+  });
+}
+
 export function overview(overrides: Partial<InsightsOverview> = {}): InsightsOverview {
   return {
     timezone: "Europe/Brussels",
@@ -87,7 +139,7 @@ const ride = (overrides: Partial<InsightsMove> = {}): InsightsMove => ({
 });
 
 export function modeInsights(overrides: Partial<InsightsMode> = {}): InsightsMode {
-  const period = overview().period;
+  const period = overrides.period ?? overview().period;
   return {
     timezone: "Europe/Brussels",
     mode: "train",

@@ -1,0 +1,66 @@
+/* The frame of the screens that stand beside a list (Settings, Insights): one at a time on phones, the list beside the screen on wide screens. */
+
+.side-by-side {
+  display: grid;
+  align-content: start;
+  width: 100%;
+  max-width: calc(var(--reading-width) + var(--space-8) + var(--safe-left) + var(--safe-right));
+  margin: 0 auto;
+  padding: var(--space-4) calc(var(--space-4) + var(--safe-right)) var(--space-10)
+    calc(var(--space-4) + var(--safe-left));
+}
+
+.side-by-side__page {
+  min-width: 0;
+}
+
+@media (min-width: 64rem) {
+  .side-by-side {
+    grid-template-columns: 18.5rem minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-10);
+    max-width: calc(var(--page-width) + var(--safe-left) + var(--safe-right));
+    padding: var(--space-8) calc(var(--space-8) + var(--safe-right)) var(--space-12)
+      calc(var(--space-8) + var(--safe-left));
+  }
+
+  /* Its own scroll beside a long page; the room around it keeps focus rings visible. */
+  .side-by-side__sidebar {
+    position: sticky;
+    top: calc(var(--header-height) + var(--safe-top) + var(--space-6));
+    max-height: calc(100dvh - var(--header-height) - var(--safe-top) - var(--space-12));
+    margin: calc(var(--focus-width) * -2);
+    padding: calc(var(--focus-width) * 2);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .side-by-side__page {
+    max-width: var(--reading-width);
+  }
+}
+
+/* Phones: a page slides in from the right going deeper, from the left coming back. */
+@media (max-width: 63.99rem) and (prefers-reduced-motion: no-preference) {
+  .side-by-side__page[data-motion="push"] {
+    animation: side-by-side-push var(--duration-medium) var(--ease-out);
+  }
+
+  .side-by-side__page[data-motion="pop"] {
+    animation: side-by-side-pop var(--duration-medium) var(--ease-out);
+  }
+}
+
+@keyframes side-by-side-push {
+  from {
+    opacity: 0;
+    translate: 2.5rem 0;
+  }
+}
+
+@keyframes side-by-side-pop {
+  from {
+    opacity: 0;
+    translate: -2.5rem 0;
+  }
+}

@@ -1,0 +1,24 @@
+/* A person's page (and Me's) replaces the root. */
+.person-panel {
+  display: grid;
+  align-content: start;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.person-panel__setup {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}
+
+.person-page__part {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.person-page__subtitle {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+  font-weight: 650;
+}

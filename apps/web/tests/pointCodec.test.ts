@@ -89,6 +89,15 @@ describe("pointCodec", () => {
     ).toBe(true);
   });
 
+  it("refuses to pack a heat cell that does not fit 32 bits, instead of wrapping it", () => {
+    expect(() => packHeatCells([[1, 2, -1]])).toThrow(RangeError);
+    expect(() => packHeatCells([[1, 2, 4_294_967_296]])).toThrow(RangeError);
+    expect(() => packHeatCells([[1, 2, 1.5]])).toThrow(RangeError);
+    expect(unpackHeatCells(packHeatCells([[1, 2, 4_294_967_295]]))).toEqual([
+      [1, 2, 4_294_967_295],
+    ]);
+  });
+
   it("refuses heat cells it did not make, the old 64-bit float ones included", () => {
     const packed = packHeatCells([
       [1, 2, 3],

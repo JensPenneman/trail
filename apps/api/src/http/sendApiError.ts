@@ -11,5 +11,6 @@ export function sendApiError(res: Response, error: HttpError): void {
       ...(error.fields === undefined ? {} : { fields: error.fields }),
     },
   };
+  if (error.headers !== undefined) res.set(error.headers);
   res.status(error.status).json(body);
 }

@@ -50,7 +50,7 @@ export function usePanelFocus(
               ? panel.querySelector<HTMLElement>("[data-page-title]")
               : heading()))
           : null;
-    target?.focus();
+    target?.focus({ preventScroll: true });
   }, [selectedKey, resolved, implied]);
   return useCallback((element: HTMLElement | null) => {
     root.current = element;

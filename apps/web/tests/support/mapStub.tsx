@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { MapViewState } from "../../src/map/mapTypes";
 import type { TrailMapProps } from "../../src/map/TrailMap";
 
@@ -15,6 +15,11 @@ export const stubMap = {
 export function MapStub(props: TrailMapProps) {
   const { onViewChange, initialView } = props;
   latestReport = onViewChange ?? null;
+  // How often the tracks were handed over as another array: the real map redraws them each time.
+  const tracksSeen = useRef({ tracks: props.tracks, updates: 0 });
+  if (tracksSeen.current.tracks !== props.tracks) {
+    tracksSeen.current = { tracks: props.tracks, updates: tracksSeen.current.updates + 1 };
+  }
   // As a real map reports its view once loaded: where it was told to start, else Ghent.
   useEffect(() => {
     if (initialView === undefined) {
@@ -39,6 +44,7 @@ export function MapStub(props: TrailMapProps) {
       data-style={typeof props.mapStyle === "string" ? props.mapStyle : "document"}
       data-dark={String(props.dark)}
       data-tracks={props.tracks?.length ?? 0}
+      data-track-updates={tracksSeen.current.updates}
       data-transport={props.transport?.length ?? 0}
       data-positions={props.positions?.length ?? 0}
       aria-describedby={props.describedBy}
@@ -52,6 +58,11 @@ export function MapStub(props: TrailMapProps) {
           ? null
           : [props.focus.lon, props.focus.lat],
       )}
+      data-follow={props.follow?.map((point) => `${point.lon},${point.lat}`).join(";") ?? ""}
+      data-dimmed={
+        (props.tracks?.filter((track) => track.dimmed === true).length ?? 0) +
+        (props.transport?.filter((segment) => segment.dimmed === true).length ?? 0)
+      }
       data-notice={props.notice ?? ""}
     />
   );

@@ -1,3 +1,4 @@
+import { followDue, framePaddingOf, gestureQuietMs, outsideFrame } from "./followCamera";
 import "maplibre-gl/dist/maplibre-gl.css";
 import workerUrl from "virtual:maplibre-worker-url";
 import {
@@ -63,6 +64,13 @@ export interface TrailMapProps {
     /** Extra padding in px per side, for what floats over the map (controls). */
     inset?: { top?: number; right?: number };
   };
+  /**
+   * The points the camera follows while they are set (the playback cursors): when one leaves the
+   * viewport, less the margin a fit leaves, the camera eases to them (to all of them, without
+   * zooming in), at most twice a second; with reduced motion it jumps. It leaves the camera alone
+   * for a few seconds after the person moved it, and while a fit runs.
+   */
+  follow?: readonly { lon: number; lat: number }[] | null;
   /** The camera moves to this point once per `key` (a key shown again does not move it again). */
   focus?: { key: string; lon: number; lat: number; zoom: number } | null;
   initialView?: { center: readonly [number, number]; zoom: number };
@@ -158,6 +166,7 @@ export function TrailMap({
   cursors,
   heat,
   fit,
+  follow,
   focus,
   initialView,
   describedBy,
@@ -188,27 +197,30 @@ export function TrailMap({
     });
   });
 
+  /** What the camera keeps clear at each side: the fit's padding, with what floats over the map. */
+  const framePadding = useEffectEvent((instance: MapLibreMap) => {
+    const container = instance.getContainer();
+    return framePaddingOf(container.clientWidth, container.clientHeight, fit?.inset);
+  });
+  // The camera is left alone (by the follow) until this time: after a gesture, and during a fit.
+  const cameraBusyUntil = useRef(0);
+
   const fitNow = useEffectEvent((instance: MapLibreMap, animate: boolean) => {
     if (fit?.bounds === undefined || fit.bounds === null) return;
     const [west, south, east, north] = fit.bounds;
-    const container = instance.getContainer();
-    const padding = Math.round(Math.min(container.clientWidth, container.clientHeight) * 0.12);
-    const base = Math.max(24, Math.min(padding, 72));
+    const duration = 700;
+    const animated = animate && !reducedMotion;
+    cameraBusyUntil.current = performance.now() + (animated ? duration : 0) + 300;
     instance.fitBounds(
       [
         [west, south],
         [east, north],
       ],
       {
-        padding: {
-          top: base + (fit.inset?.top ?? 0),
-          right: base + (fit.inset?.right ?? 0),
-          bottom: base,
-          left: base,
-        },
+        padding: framePadding(instance),
         maxZoom: fit.maxZoom ?? 16,
-        animate: animate && !reducedMotion,
-        duration: 700,
+        animate: animated,
+        duration,
       },
     );
   });
@@ -264,6 +276,11 @@ export function TrailMap({
     });
     instance.on("load", () => reportView(instance));
     instance.on("moveend", () => reportView(instance));
+    // A person's own move (a drag, a pinch, a wheel; not one the camera made): the follow waits.
+    instance.on("movestart", (event) => {
+      if (event.originalEvent !== undefined)
+        cameraBusyUntil.current = performance.now() + gestureQuietMs;
+    });
     // After the listeners: the style's errors and its load reach them.
     instance.setStyle(initial.mapStyle, { transformStyle: absoluteSprite });
     setMap(instance);
@@ -435,6 +452,48 @@ export function TrailMap({
     fitNow(map, fittedKey.current !== null);
     fittedKey.current = fitKey;
   }, [map, fitKey, hasFitBounds]);
+
+  // Following: only when a point is out of the viewport (less the fit's margin), not more than
+  // twice a second (a fast cursor does not make the camera chase every frame), and not while the
+  // person has the camera or a fit runs.
+  const followKey = follow?.map((point) => `${point.lon},${point.lat}`).join(";") ?? "";
+  const followedAt = useRef(0);
+  const followNow = useEffectEvent((instance: MapLibreMap) => {
+    if (follow === undefined || follow === null || follow.length === 0) return;
+    const now = performance.now();
+    if (!followDue(now, followedAt.current, cameraBusyUntil.current)) return;
+    const { clientWidth: width, clientHeight: height } = instance.getContainer();
+    const margin = framePadding(instance);
+    const outside = follow.some((point) =>
+      outsideFrame(instance.project([point.lon, point.lat]), width, height, margin),
+    );
+    if (!outside) return;
+    followedAt.current = now;
+    const [first, ...rest] = follow;
+    if (first === undefined) return;
+    if (rest.length === 0) {
+      if (reducedMotion) instance.jumpTo({ center: [first.lon, first.lat] });
+      else instance.easeTo({ center: [first.lon, first.lat], duration: 400 });
+      return;
+    }
+    const lons = follow.map((point) => point.lon);
+    const lats = follow.map((point) => point.lat);
+    instance.fitBounds(
+      [
+        [Math.min(...lons), Math.min(...lats)],
+        [Math.max(...lons), Math.max(...lats)],
+      ],
+      {
+        padding: margin,
+        maxZoom: instance.getZoom(),
+        animate: !reducedMotion,
+        duration: 400,
+      },
+    );
+  });
+  useEffect(() => {
+    if (map !== null && followKey !== "") followNow(map);
+  }, [map, followKey]);
 
   const focusKey = focus?.key;
   const focusTarget = useEffectEvent((instance: MapLibreMap) => {
