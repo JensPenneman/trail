@@ -294,7 +294,7 @@ export const settingsNodes = [
     icon: "eye",
     tone: "purple",
     description: "Who looked at your location, and how often.",
-    keywords: ["who looked", "views", "visitors", "viewers", "watched", "privacy"],
+    keywords: ["who looked", "views", "visitors", "viewers", "watched", "privacy", "insights"],
     adminOnly: false,
     badge: "viewers",
     rows: [{ label: "Your own activity", keywords: ["own sessions", "yourself", "my browsers"] }],

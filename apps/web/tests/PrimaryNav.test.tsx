@@ -51,6 +51,11 @@ describe("the main navigation", () => {
     );
   });
 
+  it.each(["/insights", "/insights/time", "/insights/roads"])("marks Insights on %s", (path) => {
+    renderPage(<PrimaryNav />, { path, url: `${path}?period=2026-10` });
+    expect(current()).toEqual(["Insights"]);
+  });
+
   it("marks Settings on each of its pages", () => {
     renderPage(<PrimaryNav />, { path: "/settings/tokens/:tokenId", url: "/settings/tokens/abc" });
     expect(current()).toEqual(["Settings"]);

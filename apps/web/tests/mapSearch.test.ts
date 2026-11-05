@@ -32,6 +32,7 @@ describe("the People page's URL", () => {
       heat: null,
       heatPeriod: null,
       camera: null,
+      at: null,
     });
   });
 
@@ -48,6 +49,11 @@ describe("the People page's URL", () => {
     expect(withList(hidden, null).toString()).toBe("view=history");
   });
 
+  it("reads a moment of the day, and ignores one outside it", () => {
+    expect(parse("view=history&date=2026-10-20&at=2026-10-20T14:30").at).toBe("2026-10-20T14:30");
+    expect(parse("view=history&at=nonsense").at).toBeNull();
+  });
+
   it("reads the view, the person, the devices and History's day or period", () => {
     expect(
       parse(`view=history&person=${anna.toUpperCase()}&devices=a,b&from=2026-10-01&to=2026-10-07`),
@@ -60,6 +66,7 @@ describe("the People page's URL", () => {
       heat: null,
       heatPeriod: { from: "2026-10-01", to: "2026-10-07" },
       camera: null,
+      at: null,
     });
     expect(parse("view=heat&date=2026-10-20").period).toEqual({
       mode: "day",
@@ -307,6 +314,19 @@ describe("the camera of a link", () => {
     expect(parse("view=heat&c=3.7,51,12").camera).toEqual({ lon: 3.7, lat: 51, zoom: 12 });
   });
 
+  it("rounds a camera to the precision the address is written in: five decimals, two for the zoom", () => {
+    expect(parseCamera("3.7174449,51.0543051,14.5678")).toEqual({
+      lon: 3.71744,
+      lat: 51.05431,
+      zoom: 14.57,
+    });
+    expect(parse("view=heat&c=3.123456789,51.987654321,12.004").camera).toEqual({
+      lon: 3.12346,
+      lat: 51.98765,
+      zoom: 12,
+    });
+  });
+
   it("ignores what is not a camera", () => {
     for (const bad of [
       null,
@@ -330,5 +350,22 @@ describe("the camera of a link", () => {
     expect(withoutCamera(new URLSearchParams("view=heat&c=3.7,51,12&heat=time")).toString()).toBe(
       "view=heat&heat=time",
     );
+  });
+});
+
+describe("the slider's moment and Heat's period", () => {
+  const at = "at=2026-10-02T12:30";
+
+  it("is dropped by another Heat period, by the lens taken off, and by the long period left behind", () => {
+    const heat = `view=heat&from=2026-10-01&to=2026-10-07&${at}`;
+    expect(
+      withHeatPeriod(new URLSearchParams(heat), { from: "2026-09-01", to: "2026-09-30" }).has("at"),
+    ).toBe(false);
+    expect(withHeatPeriod(new URLSearchParams(heat), null).has("at")).toBe(false);
+    expect(withoutLens(new URLSearchParams(`${heat}&heat=time`)).has("at")).toBe(false);
+    const long = new URLSearchParams(`view=heat&from=2026-01-01&to=2026-10-07&${at}`);
+    expect(withView(long, "history").has("at")).toBe(false);
+    // A period History reads stays, with its moment.
+    expect(withView(new URLSearchParams(heat), "history").get("at")).toBe("2026-10-02T12:30");
   });
 });

@@ -79,19 +79,10 @@
     calc(var(--space-4) + var(--safe-left));
 }
 
-/* The view's own part of the list and of a detail: History's summary, Live's day so far. */
-.map-page__details {
-  position: relative;
-  display: grid;
-  align-content: start;
-  gap: var(--space-6);
-  min-width: 0;
-}
-
 /* The key of what the map draws (Heat's colours): small, over the map's bottom-left corner. */
 .map-page__legend {
   position: absolute;
-  inset: auto auto 2.25rem calc(var(--space-3) + var(--safe-left));
+  inset: auto auto calc(2.25rem + var(--foot-height, 0px)) calc(var(--space-3) + var(--safe-left));
   z-index: 3;
   max-width: calc(100% - 2 * var(--space-3));
   padding: var(--space-2) var(--space-3);
@@ -140,7 +131,12 @@
     z-index: 1;
   }
 
-  /* A popover that reaches below the map is not hidden by the sheet: the stage rises over it. */
+  /*
+   * A popover that reaches below the map is not hidden by the sheet: the stage rises over it. A
+   * sheet lifted over the map while a popover is open is covered by the map until the popover is
+   * closed (the first press, or Escape, closes it); the popover cannot rise alone, as it lives in
+   * the stage's stacking context.
+   */
   .map-page__stage:has(.map-options.is-open, .period-control__popover) {
     z-index: 3;
   }
@@ -284,4 +280,20 @@
   .map-page__grabber {
     background: CanvasText;
   }
+}
+
+/* While History plays the sidebar is a narrow strip of what each device is doing. */
+@media (min-width: 64rem) {
+  .map-page[data-playing] {
+    --panel-width: 16rem;
+  }
+
+  .map-page[data-playing] .map-page__foot {
+    width: min(100% - 2 * var(--space-6), 46rem);
+  }
+}
+
+.map-page__now {
+  padding: var(--space-4) calc(var(--space-4) + var(--safe-right)) var(--space-6)
+    calc(var(--space-4) + var(--safe-left));
 }

@@ -234,6 +234,9 @@ export const envSchema = z
     // split first (docs/architecture.md §17.4). A very large value restores unbounded passes.
     PROCESSING_PASS_MAX_POINTS: env(intSchema(1000, 100_000_000).default(60_000)),
     PROCESSING_PASS_MAX_SPAN_HOURS: env(intSchema(1, 87_600).default(36)),
+    // How long a person's correction (a move's mode) waits for a pass over the device's data
+    // before it answers 409 to be tried again (docs/architecture.md §17.4).
+    PROCESSING_CORRECTION_WAIT_MS: env(intSchema(50, 120_000).default(10_000)),
     // Only `trail load-fleet` reads these two (docs/perf/README.md): a load test's synthetic
     // accounts need LOAD_TEST=true and a deployment Launchway does not call production.
     LOAD_TEST: env(booleanSchema.default(false)),

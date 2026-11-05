@@ -97,6 +97,7 @@ export const queryKeys = {
     timeline: ["timeline"],
     deviceMode: ["device-mode"],
     personTracks: ["person-tracks"],
+    personDays: ["person-days"],
     insights: ["insights"],
     accessLog: ["access-log"],
   },
@@ -123,6 +124,7 @@ export const queryKeys = {
   personTracksOf: (userId: string) => ["person-tracks", userId] as const,
   personTracks: (userId: string, params: PersonTrackParams) =>
     ["person-tracks", userId, params] as const,
+  personDays: (userId: string) => ["person-days", userId] as const,
   passkeys: ["passkeys"],
   sessions: ["sessions"],
   apiTokens: ["api-tokens"],

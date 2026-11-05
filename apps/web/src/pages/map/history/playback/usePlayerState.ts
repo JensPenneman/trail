@@ -8,7 +8,7 @@ import {
 } from "./playbackReducer";
 
 /** What the bar, the keys and the clock do to the player. Stable: they read the latest world. */
-export interface PlayerControls {
+interface PlayerControls {
   enter: (day: string, clock: number) => void;
   play: () => void;
   pause: () => void;

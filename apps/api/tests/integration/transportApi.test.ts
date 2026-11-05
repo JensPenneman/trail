@@ -10,6 +10,7 @@ import {
 import { sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { lockDeviceProcessing } from "../../src/processing/deviceLock";
 import { type Agent, agentFor, signUp, signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
 import { FakeApiTokens, tokenPrincipal } from "../support/fakeApiTokens";
@@ -44,7 +45,11 @@ const errorOf = (body: unknown) => apiErrorSchema.parse(body).error;
 
 beforeAll(async () => {
   await resetDatabase();
-  t = await createTestContext({ waySource: new FixtureWaySource(), apiTokens: tokens });
+  t = await createTestContext({
+    waySource: new FixtureWaySource(),
+    apiTokens: tokens,
+    env: { PROCESSING_CORRECTION_WAIT_MS: "300" },
+  });
   ({ agent: owner, cookie: ownerCookie } = await signUpWithCookie(t.app, ownerEmail));
   stranger = agentFor(t.app);
   await signUp(stranger, new SoftwareAuthenticator(), "stranger@allowed.test");
@@ -376,6 +381,57 @@ describe("PUT and DELETE /api/v1/segments/{id}/mode", () => {
     await t.ctx.processing.flush();
     expect(await trainMove()).toMatchObject({ mode: "train", modeUser: null });
     // Resetting again is harmless.
+    await owner.delete(apiPaths.v1.segments.mode(move.id)).set("Origin", testOrigin).expect(200);
+  });
+
+  it("answers 409 to try again when a long pass holds the device, and works once it is over", async () => {
+    const move = await trainMove();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked: () => void = () => undefined;
+    const taken = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    // A pass in flight: the device's processing lock, held in a transaction of its own.
+    const pass = t.ctx.db.transaction(async (tx) => {
+      await lockDeviceProcessing(tx, train);
+      locked();
+      await held;
+    });
+    try {
+      await taken;
+      for (const call of [
+        () =>
+          owner
+            .put(apiPaths.v1.segments.mode(move.id))
+            .set("Origin", testOrigin)
+            .send({ mode: "metro" }),
+        () => owner.delete(apiPaths.v1.segments.mode(move.id)).set("Origin", testOrigin),
+      ]) {
+        const refused = await call().expect(409);
+        expect(refused.headers["retry-after"]).toBe("5");
+        expect(errorOf(refused.body)).toMatchObject({
+          code: "conflict",
+          message: "Still processing this device's data, try again in a moment.",
+        });
+      }
+    } finally {
+      release();
+      await pass;
+    }
+    // The bound was local to the corrections' transactions: the pool's connections have none.
+    const after = await t.ctx.db.transaction(async (tx) => {
+      const result = await tx.execute<{ lock_timeout: string }>(sql`SHOW lock_timeout`);
+      return result.rows[0]?.lock_timeout;
+    });
+    expect(after).toBe("0");
+    await owner
+      .put(apiPaths.v1.segments.mode(move.id))
+      .set("Origin", testOrigin)
+      .send({ mode: "metro" })
+      .expect(200);
     await owner.delete(apiPaths.v1.segments.mode(move.id)).set("Origin", testOrigin).expect(200);
   });
 

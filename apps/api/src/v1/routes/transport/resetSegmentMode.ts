@@ -13,7 +13,7 @@ export const resetSegmentMode = defineRoute(
     path: "/api/v1/segments/{id}/mode",
     operationId: "resetSegmentMode",
     summary: "Reset a move's mode",
-    description: `Withdraws the correction that set the move's mode — a mode set from a moment on with it, for every move it covered — so the inferred mode counts again. The segment answers with the inferred mode at once; the span is worked out again within seconds (a \`segments\` event follows). Without a correction nothing changes. A move that is still under way cannot be reset until it is over (${moveOverHint}): \`409\`.`,
+    description: `Withdraws the correction that set the move's mode — a mode set from a moment on with it, for every move it covered — so the inferred mode counts again. The segment answers with the inferred mode at once; the span is worked out again within seconds (a \`segments\` event follows). Without a correction nothing changes. A move that is still under way cannot be reset until it is over (${moveOverHint}): \`409\`. While a long pass over the device's data runs it waits up to 10 seconds for it, then answers \`409\` (try again).`,
     tags: ["Timeline"],
     // The answer carries the segment or the current mode: location data.
     auth: { scopes: ["locations:read", "locations:write"], all: true },
@@ -24,6 +24,7 @@ export const resetSegmentMode = defineRoute(
   async ({ ctx, auth, params }) => {
     const { segment, revoked } = await clearSegmentMode(ctx.db, auth, params.id, {
       queue: ctx.processing.enabled,
+      lockWaitMs: ctx.config.processing.correctionWaitMs,
     });
     if (revoked.length > 0) {
       ctx.processing.notify();

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { DeviceSwatch } from "../../ui/DeviceSwatch";
 import "./FilterChips.css";
 
@@ -19,12 +20,24 @@ interface DeviceFilterProps {
 
 /** Which devices to show, grouped by person; doubles as the legend for the track colours. */
 export function DeviceFilter({ groups, selected, onChange }: DeviceFilterProps) {
+  // The checkbox follows the press at once; the address catches up (it is the truth once it does).
+  const [pending, setPending] = useState<{
+    value: readonly string[] | null;
+    base: string;
+  } | null>(null);
+  const addressKey = selected === null ? "" : `ids:${selected.join(",")}`;
+  // A press lasts until the address moves: from then on the address rules, also when it comes
+  // back to where the press was made.
+  if (pending !== null && pending.base !== addressKey) setPending(null);
+  const shown = pending !== null && pending.base === addressKey ? pending.value : selected;
   const all = groups.flatMap((group) => group.devices.map((device) => device.id));
-  const isOn = (deviceId: string) => selected === null || selected.includes(deviceId);
+  const isOn = (deviceId: string) => shown === null || shown.includes(deviceId);
   const onCount = all.filter(isOn).length;
   const toggle = (deviceId: string, on: boolean) => {
     const next = all.filter((id) => (id === deviceId ? on : isOn(id)));
-    onChange(next.length === all.length ? null : next);
+    const value = next.length === all.length ? null : next;
+    setPending({ value, base: addressKey });
+    onChange(value);
   };
   const options = (devices: DeviceFilterGroup["devices"]) => (
     <div className="filter-chips__options">
