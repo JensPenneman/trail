@@ -5,6 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { RawPoint } from "../../src/processing/pipelineTypes";
 import { enqueueWindow } from "../../src/processing/processingQueue";
 import { planWindow } from "../../src/processing/runPipeline";
+import { parseTileKey } from "../../src/processing/tileCover";
+import { saveTile } from "../../src/processing/tileStore";
 import { type Agent, signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
 import { FixtureWaySource } from "../support/fixtureWaySource";
@@ -133,6 +135,9 @@ describe("with Overpass off", () => {
     // (inferred or by the person's word) it is drawn along the rails, region data and nothing else.
     const [move] = (await timeline(device.id)).filter((segment) => segment.kind === "move");
     if (move === undefined) throw new Error("no move");
+    // A verdict that rests on region data alone is drawn only once the mode is no longer to review:
+    // there is no mapped evidence beside it (a car on a road by the rails passes the judge there).
+    expect(move.alignedTo).toBe(move.mode === "train" && !move.needsReview ? "rail" : null);
     await owner
       .put(apiPaths.v1.segments.mode(move.id))
       .set("Origin", testOrigin)
@@ -193,6 +198,25 @@ describe("with Overpass off", () => {
     } finally {
       watch.stop();
     }
+  });
+
+  it("takes the tiles the cache still holds as rail data outside every region, the mapped level staying unmapped", async () => {
+    const device = await newDevice("Cached tiles, no region");
+    const points = ride(85_000, 95_000, base + 30 * hour, 12);
+    // An install that had Overpass on earlier: the tiles are in the cache, no region covers them.
+    for (const tile of planWindow(points, [], off.ctx.processing.config).tiles) {
+      const address = parseTileKey(tile);
+      if (address === null) throw new Error(`no tile ${tile}`);
+      await saveTile(t.ctx.db, address, await fixture.fetchTile(address), new Date());
+    }
+    await upload(device.token, points);
+    await off.ctx.processing.flush();
+    const [train] = await moves(device.id);
+    expect(train).toMatchObject({ status: "aligned", reason: "ok", source: "cache" });
+    // Not mapped: with Overpass off the mapped level is not worked out, whatever the cache holds.
+    expect(await counts(device.id)).toMatchObject({ mapped: 0, waiting: 0 });
+    expect((await counts(device.id)).railed).toBeGreaterThan(50);
+    await assertQueueInvariants(t.ctx.db, { deviceId: device.id });
   });
 
   it("calls a train that leaves the region no_map/outside_regions and serves it as recorded", async () => {

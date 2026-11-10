@@ -43,7 +43,7 @@ const trips = {
     seed: 2,
   }),
   // A car whose phone is no better than 30 m: the road 40 m beside the rails is within what the
-  // judge accepts, so its rail line is judged aligned although nobody is on a train.
+  // offsets accept, so only the mapped match (on the road) keeps its rail line from being aligned.
   car: railTrip(roadLine, {
     startT: base + 4 * hour,
     intervalS: 5,
@@ -209,6 +209,27 @@ describe("a train drawn along the railway", () => {
     expectPlaces(segment, await stored(move), [railPlace], "aligned");
   });
 
+  it("draws the points a train shares with its neighbours at their rail place on both sides", async () => {
+    const move = await moveOf("dense");
+    const response = await tracks().expect(200);
+    const segments = (response.body as LevelTracksResponse).segments;
+    const at = segments.findIndex((segment) => segment.id === move.id);
+    const train = segments[at];
+    const before = segments[at - 1];
+    const after = segments[at + 1];
+    if (train === undefined || before === undefined || after === undefined) {
+      throw new Error("the train has no neighbours");
+    }
+    const first = train.points[0];
+    const last = train.points.at(-1);
+    // The boundary is shared: the same moment, and the same place, so no break in the line.
+    expect(before.points.at(-1)?.slice(0, 3)).toEqual(first?.slice(0, 3));
+    expect(after.points[0]?.slice(0, 3)).toEqual(last?.slice(0, 3));
+    expect(before.alignedTo).toBeNull();
+    expect(after.alignedTo).toBeNull();
+    expectOnRails([first ?? [], last ?? []]);
+  });
+
   it("leaves the recorded line one level away: Mapped, Averaged and Raw carry no alignedTo", async () => {
     const move = await moveOf("dense");
     for (const level of ["mapped", "averaged", "raw"] as const) {
@@ -237,10 +258,11 @@ describe("a train drawn along the railway", () => {
         .filter((segment) => segment.kind === "stop")
         .every((segment) => segment.alignedTo === null),
     ).toBe(true);
-    // The car's rail line was judged aligned too, but the mode that counts is car: recorded.
+    // The car on the road beside the rails: the mapped match is on the road, so no rail line.
     const car = await moveOf("car");
     expect(car).toMatchObject({ mode: "car", alignedTo: null });
-    expect(await railVerdict(car.id)).toBe("aligned");
+    expect(await railVerdict(car.id)).toBe("poor");
+    expect(await railReason(car.id)).toBe("road");
     // A walk far from the tracks has a verdict that is not aligned.
     const walk = await moveOf("walk");
     expect(walk.alignedTo).toBeNull();
@@ -278,6 +300,13 @@ async function railVerdict(id: string): Promise<string | null> {
   return rows.rows[0]?.status ?? null;
 }
 
+async function railReason(id: string): Promise<string | null> {
+  const rows = await t.ctx.db.execute<{ reason: string | null }>(sql`
+    SELECT features->'railPath'->>'reason' AS reason FROM segments WHERE id = ${id}
+  `);
+  return rows.rows[0]?.reason ?? null;
+}
+
 const setMode = (id: string, mode: string) =>
   owner.put(apiPaths.v1.segments.mode(id)).set("Origin", testOrigin).send({ mode });
 
@@ -308,24 +337,18 @@ describe("a correction to or from train", () => {
     expect(queueAfter.rows).toEqual(queueBefore.rows);
   });
 
-  it("aligns a car whose line was judged along the rails as soon as it is a train", async () => {
+  it("leaves a car on a road beside the rails as recorded when it is called a train", async () => {
     const car = await moveOf("car");
     const rows = await stored(car);
-    const road = await served(car.id);
-    expect(road.segment.alignedTo).toBeNull();
+    expect(rows.every((row) => row.lat_rail === null)).toBe(true);
     const toTrain = await setMode(car.id, "train").expect(200);
-    expect(toTrain.body.segment).toMatchObject({ mode: "train", alignedTo: "rail" });
+    expect(toTrain.body.segment).toMatchObject({ mode: "train", alignedTo: null });
     const { segment } = await served(car.id);
-    expect(segment.alignedTo).toBe("rail");
-    expectPlaces(segment, rows, [railPlace], "car as train");
-    // The road beside the rails and the rails are 40 m apart: the line the person sees changed.
-    expect(JSON.stringify(segment.points)).not.toBe(JSON.stringify(road.segment.points));
-    expectOnRails(segment.points);
-    // Reset: the car again, recorded.
+    expect(segment.alignedTo).toBeNull();
+    expectPlaces(segment, rows, [mappedPlace, averagedPlace], "car as train");
     await owner.delete(apiPaths.v1.segments.mode(car.id)).set("Origin", testOrigin).expect(200);
     await t.ctx.processing.flush();
-    const after = await moveOf("car");
-    expect(after).toMatchObject({ mode: "car", alignedTo: null });
+    expect(await moveOf("car")).toMatchObject({ mode: "car", alignedTo: null });
   });
 
   it("leaves a walk far from the tracks as recorded when it is called a train", async () => {
@@ -353,6 +376,37 @@ describe("a correction to or from train", () => {
     const { segment } = await served(after.id);
     expect(segment.alignedTo).toBe("rail");
     expectOnRails(segment.points);
+  });
+});
+
+describe("a verdict that rests on a region's data alone", () => {
+  it("is served recorded while the mode is to review, and along the rails once it is not", async () => {
+    const move = await moveOf("dense");
+    const setRail = (source: string, review: boolean) =>
+      t.ctx.db.execute(sql`
+        UPDATE segments SET review = ${review},
+          features = jsonb_set(features, '{railPath,source}', to_jsonb(${source}::text))
+        WHERE id = ${move.id}
+      `);
+    try {
+      await setRail("region", true);
+      expect(await moveOf("dense")).toMatchObject({ needsReview: true, alignedTo: null });
+      expect((await served(move.id)).segment.alignedTo).toBeNull();
+      // The cache's verdict has the mapped evidence beside it: drawn whether or not to review.
+      await setRail("cache", true);
+      expect((await served(move.id)).segment.alignedTo).toBe("rail");
+      // The region's, once nobody has to review the mode.
+      await setRail("region", false);
+      expect((await served(move.id)).segment.alignedTo).toBe("rail");
+      // And once a person has said so, even if it was to review.
+      await setRail("region", true);
+      await setMode(move.id, "train").expect(200);
+      expect((await served(move.id)).segment.alignedTo).toBe("rail");
+    } finally {
+      await setRail("cache", false);
+      await owner.delete(apiPaths.v1.segments.mode(move.id)).set("Origin", testOrigin).expect(200);
+      await t.ctx.processing.flush();
+    }
   });
 });
 
@@ -397,12 +451,16 @@ describe("the kill switch PROCESSING_RAIL_ALIGN=false", () => {
   };
 
   it("hides every rail line at once, moves the ETags and changes nothing in the database", async () => {
-    // A car called a train: its rail line (on the rails) differs from the recorded one (the road).
-    const car = await moveOf("car");
-    await setMode(car.id, "train").expect(200);
+    // The rail places are nudged by a metre, so that the rail line differs from the recorded one
+    // (both lie on the same track, to the centimetre).
+    const car = await moveOf("dense");
+    await t.ctx.db.execute(sql`
+      UPDATE processed_points SET lat_rail = lat_rail + 0.00001
+      WHERE device_id = ${deviceId} AND lat_rail IS NOT NULL
+        AND recorded_at >= ${car.startedAt}::timestamptz AND recorded_at <= ${car.endedAt}::timestamptz
+    `);
     const on = await served(car.id);
     expect(on.segment.alignedTo).toBe("rail");
-    expectOnRails(on.segment.points);
     const before = await snapshot();
 
     const response = await offOwner

@@ -1,5 +1,5 @@
 import type { ChosenMode, TransportMode, WayKind } from "@trail/contracts/transport";
-import type { StopShape } from "./stayParts";
+import type { StopShape } from "./stopShape";
 
 /** A recorded point as the pipeline reads it from `locations`, oldest first. */
 export interface RawPoint {
@@ -143,6 +143,7 @@ export interface RailPathVerdict {
     | "routes"
     | "offsets"
     | "outliers"
+    | "road"
     | "no_rail"
     | "waiting"
     | "outside_regions"
@@ -155,6 +156,8 @@ export interface RailPathVerdict {
   p90Z: number;
   medianOffsetM: number;
   outlierShare: number;
+  /** The share of the part's points the mapped level put on a nearer street way; 0 without a mapped match. */
+  roadShare: number;
   /** The fastest implied speed of any straight leg of the part, m/s, rounded; 0 without one. */
   bridgedMaxSpeedMs: number;
   lengthM: number;

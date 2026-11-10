@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { KeptPoint } from "../../src/processing/keptPoint";
-import type { RailPoint } from "../../src/processing/pipelineTypes";
+import type { MappedPoint, RailPoint } from "../../src/processing/pipelineTypes";
 import { defaultProcessingConfig } from "../../src/processing/processingConfig";
 import { judgeRailPath } from "../../src/processing/rail/judgeRailPath";
 
@@ -77,6 +77,7 @@ describe("judgeRailPath", () => {
       p90Z: 0.5,
       medianOffsetM: 5,
       outlierShare: 0,
+      roadShare: 0,
       bridgedMaxSpeedMs: 0,
       lengthM: 10_000,
     });
@@ -180,6 +181,44 @@ describe("judgeRailPath", () => {
       point.z = 300 / 15;
     }
     expect(judge(car)).toMatchObject({ status: "poor", reason: "offsets" });
+  });
+
+  it("refuses a part the mapped level put on a street closer than the rail line: poor/road", () => {
+    const car = part(21);
+    for (const point of car.rail) {
+      point.offsetM = 40;
+      point.z = 40 / 30;
+    }
+    const onStreet = (
+      snapM: number,
+      wayKind: MappedPoint["wayKind"] = "secondary",
+    ): MappedPoint => ({
+      lat: 51,
+      lon: 3.7,
+      wayId: 7,
+      wayKind,
+      snapM,
+      path: null,
+    });
+    const verdict = (mapped: (MappedPoint | null)[]) =>
+      judgeRailPath(car.points, car.rail, config, "cache", mapped);
+    // Without a mapped match there is nothing to compare with: aligned, as the offsets alone say.
+    expect(judge(car)).toMatchObject({ status: "aligned", roadShare: 0 });
+    expect(verdict(car.points.map(() => onStreet(6)))).toMatchObject({
+      status: "poor",
+      reason: "road",
+      roadShare: 1,
+    });
+    // A mapped match on the rails themselves, or on a street no closer than the rails, is no road.
+    expect(verdict(car.points.map(() => onStreet(3, "rail")))).toMatchObject({ status: "aligned" });
+    expect(verdict(car.points.map(() => onStreet(30)))).toMatchObject({ status: "aligned" });
+    // Just under half the points: the threshold is "most".
+    const half = car.points.map((_, index) =>
+      index % 2 === 1 ? onStreet(6) : onStreet(3, "rail"),
+    );
+    expect(verdict(half)).toMatchObject({ status: "aligned", roadShare: 0.476 });
+    // Unmatched points leave the share alone.
+    expect(verdict(car.points.map(() => null))).toMatchObject({ status: "aligned", roadShare: 0 });
   });
 
   it("leaves the outliers out of the offsets and flags poor/outliers over 0.15 of the duration", () => {

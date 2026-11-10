@@ -86,10 +86,14 @@ describe("rail alignment bounds", () => {
     process.stdout.write(`rail align B3: ${raw.length} points in ${best.toFixed(1)} ms CPU\n`);
     expect(result.stats.runs).toBe(1);
     expect(result.points.every((point) => point.routed || point.legM === 0)).toBe(true);
-    // Every search stays within the 80 km and 400 hops of the config; this ride's gaps are 25 km.
-    expect(Math.max(...result.points.map((point) => point.legM))).toBeLessThanOrEqual(
-      config.maxRouteM,
+    // Every search stays within the 80 km and 400 hops of the config: the stats say what the largest
+    // was given (this ride's gaps are 25 km, so a search did reach out that far).
+    process.stdout.write(
+      `rail align B3: largest search bound ${Math.round(result.stats.maxSearchBoundM)} m, ${result.stats.maxSearchHops} hops, ${result.stats.searches} searches\n`,
     );
+    expect(result.stats.maxSearchBoundM).toBeGreaterThan(20_000);
+    expect(result.stats.maxSearchBoundM).toBeLessThanOrEqual(config.maxRouteM);
+    expect(result.stats.maxSearchHops).toBe(config.maxHops);
     expect(best).toBeLessThan(50);
   });
 });

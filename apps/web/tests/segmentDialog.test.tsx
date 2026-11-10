@@ -146,11 +146,30 @@ describe("SegmentDialog and a train drawn along the railway", () => {
     expect(screen.queryByText(/Drawn along the railway/)).not.toBeInTheDocument();
   });
 
-  it("keeps the line before the controls and out of the tab order", async () => {
-    show(aligned());
-    const person = userEvent.setup({ advanceTimers: () => undefined });
-    await person.tab();
-    expect(screen.getByText(line)).not.toHaveFocus();
-    expect(document.activeElement?.tagName).not.toBe("P");
+  it("keeps the line before the controls, and the first Tab lands where it did without the line", async () => {
+    const first = async (segment: Segment) => {
+      const view = show(segment);
+      const person = userEvent.setup({ advanceTimers: () => undefined });
+      await person.tab();
+      const landed = document.activeElement;
+      const name = landed?.textContent ?? "";
+      const label = landed?.getAttribute("aria-label") ?? "";
+      const line = screen.queryByText(/Drawn along the railway/);
+      const picked = picker();
+      const before =
+        line !== null && picked !== null
+          ? Boolean(line.compareDocumentPosition(picked) & Node.DOCUMENT_POSITION_FOLLOWING)
+          : null;
+      const tag = landed?.tagName ?? "";
+      view.unmount();
+      return { name, label, before, tag };
+    };
+    const without = await first({ ...aligned(), alignedTo: null });
+    const withLine = await first(aligned());
+    expect(withLine.before, "the line comes before the mode picker in the page").toBe(true);
+    expect(withLine.tag).not.toBe("P");
+    expect(withLine.name).toBe(without.name);
+    expect(withLine.label).toBe(without.label);
+    expect(withLine.tag).toBe(without.tag);
   });
 });

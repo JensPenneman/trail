@@ -44,18 +44,32 @@ describe("the rail core", () => {
     },
   );
 
-  it("only the pure processing modules are reached from the core", () => {
-    const reached = new Set(
-      files.flatMap((name) => importsOf(readFileSync(new URL(name, dir), "utf8"))),
-    );
-    for (const specifier of reached) {
-      if (!specifier.startsWith("../") || specifier.startsWith("../../")) continue;
-      const module = readFileSync(new URL(`../${specifier.slice(3)}.ts`, dir), "utf8");
-      for (const inner of importsOf(module)) {
-        expect(inner, `${specifier} imports ${inner}`).not.toMatch(
-          /\/db\/|\/http\/|\/config\/|logging|drizzle|^node:|pg$/,
-        );
+  it("reaches nothing impure through any chain of imports, type imports included", () => {
+    const root = new URL("../../src/", import.meta.url);
+    const start = [
+      ...files.map((name) => new URL(`processing/rail/${name}`, root)),
+      new URL("processing/matchLegs.ts", root),
+      new URL("processing/regionCoverage.ts", root),
+    ];
+    const forbidden =
+      /(^|\/)(db|http|config|logging|dataAccess|events)(\/|$)|drizzle|^node:|^pg$|fastify|hono|express|pino/i;
+    const seen = new Set<string>();
+    const chains: string[] = [];
+    const visit = (file: URL, via: string) => {
+      if (seen.has(file.href)) return;
+      seen.add(file.href);
+      for (const specifier of importsOf(readFileSync(file, "utf8"))) {
+        if (forbidden.test(specifier)) chains.push(`${via} -> ${specifier}`);
+        // Packages (the contracts) end the walk; a relative import is followed.
+        if (!specifier.startsWith(".")) continue;
+        const next = new URL(`${specifier}.ts`, file);
+        visit(next, `${via} -> ${specifier}`);
       }
-    }
+    };
+    for (const file of start) visit(file, file.pathname.split("/src/")[1] ?? file.pathname);
+    expect(chains).toEqual([]);
+    // The walk reached the modules it should have: the check is not vacuous.
+    expect([...seen].some((href) => href.endsWith("/processing/wayIndex.ts"))).toBe(true);
+    expect([...seen].some((href) => href.endsWith("/processing/pipelineTypes.ts"))).toBe(true);
   });
 });

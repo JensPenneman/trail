@@ -37,7 +37,8 @@ import { judgeRailPath } from "./rail/judgeRailPath";
 import { type RailContext, railContext, trainNetwork } from "./rail/railNetwork";
 import { couldBeTrain } from "./rail/trainPlausible";
 import { scorePart, splitMove } from "./splitMoves";
-import { continuesStop, type StopShape } from "./stayParts";
+import { continuesStop } from "./stayParts";
+import type { StopShape } from "./stopShape";
 import { isAirborne, moveTiles, type TileKey } from "./tileCover";
 import { WayGraph } from "./wayGraph";
 import { WayIndex } from "./wayIndex";
@@ -371,7 +372,7 @@ export function railPiece(
  * the highest number before it, so that the run a seam cuts through keeps one
  * number across it and runs further on never clash (the judge compares them).
  */
-function assembleRail(
+export function assembleRail(
   count: number,
   parts: readonly { stretch: Stretch; rail: RailPoint[] | null }[],
 ): RailPoint[] | null {
@@ -591,7 +592,15 @@ export function inferWindow(
   const segments = finished.map((draft) => {
     const railMove = draft.kind === "move" ? railMoves.get(draft.move) : undefined;
     if (draft.kind !== "move" || railMove === undefined) return toSegment(draft, kept, config);
-    const verdict = judgePart(draft, railMove, offsets[draft.move] ?? 0, kept, railPlaces, config);
+    const verdict = judgePart(
+      draft,
+      railMove,
+      offsets[draft.move] ?? 0,
+      kept,
+      mapped,
+      railPlaces,
+      config,
+    );
     return toSegment(draft, kept, config, verdict);
   });
 
@@ -646,6 +655,7 @@ function judgePart(
   railMove: RailMove,
   moveStart: number,
   kept: readonly KeptPoint[],
+  mapped: readonly (MappedPoint | null)[],
   railPlaces: (RailPlace | null)[],
   config: ProcessingConfig,
 ): RailPathVerdict {
@@ -666,12 +676,19 @@ function judgePart(
       p90Z: 0,
       medianOffsetM: 0,
       outlierShare: 0,
+      roadShare: 0,
       bridgedMaxSpeedMs: 0,
       lengthM: Math.round(lengthM),
     };
   }
   const places = railMove.places.slice(draft.first - moveStart, draft.last - moveStart + 1);
-  const verdict = judgeRailPath(points, places, config.rail.judge, railMove.source);
+  const verdict = judgeRailPath(
+    points,
+    places,
+    config.rail.judge,
+    railMove.source,
+    points.map((point) => mapped[point.index] ?? null),
+  );
   if (verdict.status !== "aligned") return verdict;
   for (const [position, point] of points.entries()) {
     const place = places[position];

@@ -1,6 +1,7 @@
 import { haversineM } from "../../tracks/haversine";
 import type { KeptPoint } from "../keptPoint";
-import type { RailPathVerdict, RailPoint } from "../pipelineTypes";
+import { wayClassOf } from "../mapData";
+import type { MappedPoint, RailPathVerdict, RailPoint } from "../pipelineTypes";
 import type { RailJudgeConfig } from "../processingConfig";
 import { weightedQuantile } from "../weightedQuantile";
 
@@ -24,6 +25,8 @@ const finite = (value: number): number => (Number.isFinite(value) ? value : 0);
  *   drawn straight is longer than `maxBridgedM`;
  * - offsets: the points that are no outliers lie too far from the line (median
  *   and p90 of z = offset over sigma, median offset in metres), time-weighted;
+ * - road: where a mapped match exists, most of the part is matched to street
+ *   ways closer than the rail line is (a car on a road beside the railway);
  * - outliers: too much of the part's duration was spent as outliers.
  *
  * A car on a motorway 300 m beside the rails has no rail in reach (no run),
@@ -35,6 +38,8 @@ export function judgeRailPath(
   rail: readonly RailPoint[],
   config: RailJudgeConfig,
   source: "cache" | "region" | null,
+  /** The part's mapped points, where the mapped level matched it (the cache's data); null: none to compare with. */
+  mapped: readonly (MappedPoint | null)[] | null = null,
 ): RailPathVerdict {
   let lengthM = 0;
   let coveredM = 0;
@@ -42,6 +47,8 @@ export function judgeRailPath(
   let routedM = 0;
   let longestBridgedM = 0;
   let bridgedMaxSpeedMs = 0;
+  let matched = 0;
+  let onRoad = 0;
   let steps = 0;
   let totalS = 0;
   let outlierS = 0;
@@ -69,6 +76,17 @@ export function judgeRailPath(
       bridgedMaxSpeedMs = Math.max(bridgedMaxSpeedMs, place.bridgedSpeedMs);
     }
     totalS += seconds;
+    const match = mapped?.[position];
+    if (match !== undefined && match !== null && match.wayKind !== null && place.offsetM !== null) {
+      matched += 1;
+      if (
+        wayClassOf(match.wayKind) === "street" &&
+        match.snapM !== null &&
+        match.snapM < config.roadSnapFactor * place.offsetM
+      ) {
+        onRoad += 1;
+      }
+    }
     if (place.run >= 0 && place.outlier) outlierS += seconds;
     if (place.run >= 0 && !place.outlier && place.z !== null && place.offsetM !== null) {
       zs.push(place.z);
@@ -84,6 +102,7 @@ export function judgeRailPath(
   const p90Z = finite(weightedQuantile(zs, weighted, 0.9));
   const medianOffsetM = finite(weightedQuantile(offsets, weighted, 0.5));
   const outlierShare = totalS > 0 ? outlierS / totalS : 0;
+  const roadShare = matched > 0 ? onRoad / matched : 0;
 
   let status: RailPathVerdict["status"] = "aligned";
   let reason: RailPathVerdict["reason"] = "ok";
@@ -106,6 +125,9 @@ export function judgeRailPath(
   ) {
     status = "poor";
     reason = "offsets";
+  } else if (roadShare > config.maxRoadShare) {
+    status = "poor";
+    reason = "road";
   } else if (outlierShare > config.maxOutlierShare) {
     status = "poor";
     reason = "outliers";
@@ -120,6 +142,7 @@ export function judgeRailPath(
     p90Z: round(p90Z, 2),
     medianOffsetM: round(medianOffsetM, 1),
     outlierShare: round(outlierShare, 3),
+    roadShare: round(roadShare, 3),
     bridgedMaxSpeedMs: round(bridgedMaxSpeedMs, 1),
     lengthM: Math.round(lengthM),
   };

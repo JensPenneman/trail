@@ -1,4 +1,5 @@
 import { type SQL, sql } from "drizzle-orm";
+import type { Position, StopShape } from "./stopShape";
 
 /*
  * The parts of a stay (docs/architecture.md §17.6). Bounded passes work a long
@@ -23,21 +24,6 @@ const travelGapS = 1800;
 const travelGapM = 300;
 /** Stops a short hole apart are one place when their middles lie within their spread, or this. */
 const samePlaceM = 100;
-
-interface Position {
-  lat: number;
-  lon: number;
-}
-
-/** What the rule reads of a stop: its times (epoch seconds), ends and middle, and its spread. */
-export interface StopShape {
-  startT: number;
-  endT: number;
-  start: Position;
-  end: Position;
-  centroid: Position;
-  spreadM: number | null;
-}
 
 /** Metres between two close positions (equirectangular), as `metresSql` reckons them. */
 export function metresBetween(from: Position, to: Position): number {
@@ -184,6 +170,7 @@ export function stayPartsSql(devices: SQL, from: SQL, to: SQL): SQL {
         (p.features->>'spreadM')::float8 AS spread_m,
         (p.features->>'lastPointT')::float8 AS last_point_t,
         p.features->'railPath'->>'status' AS rail_status,
+        p.features->'railPath'->>'source' AS rail_source,
         lag(p.kind) OVER w AS before_kind, lag(p.ended_at) OVER w AS before_end,
         lag(p.end_lat) OVER w AS before_end_lat, lag(p.end_lon) OVER w AS before_end_lon,
         lag(p.centroid_lat) OVER w AS before_lat, lag(p.centroid_lon) OVER w AS before_lon,

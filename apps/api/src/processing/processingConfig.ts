@@ -251,6 +251,13 @@ export interface RailJudgeConfig {
   readonly maxMedianOffsetM: number;
   /** The share of the part's duration spent as outliers: else `poor/outliers`. */
   readonly maxOutlierShare: number;
+  /**
+   * Where the mapped level matched the part: the share of its points that the mapped match put on a
+   * street way snapping closer than `roadSnapFactor` × their offset from the rail line; above
+   * `maxRoadShare` the part is a road beside the rails, not a train: `poor/road`.
+   */
+  readonly maxRoadShare: number;
+  readonly roadSnapFactor: number;
 }
 
 /** The named thresholds of the mode rules (km/h, shares 0–1, counts). */
@@ -381,6 +388,8 @@ export const defaultProcessingConfig: ProcessingConfig = {
       maxP90Z: 3,
       maxMedianOffsetM: 60,
       maxOutlierShare: 0.15,
+      maxRoadShare: 0.5,
+      roadSnapFactor: 0.5,
     },
   },
   features: {

@@ -4964,9 +4964,11 @@ straight and counted as bridged. The judge then decides, per part of a move
 (after the split and the corrections), whether the line may be drawn: at least
 1 km and three steps, 90 % of the length within runs (below half: `no_rail`),
 80 % of it routed with no bridged leg over 2 km, a median offset over accuracy
-of at most 1.5 (p90 3.0) and 60 m, and outliers over at most 15 % of the
-duration. The verdict is `features.railPath`: `status` `aligned|poor|no_rail|
-no_map`, a `reason`, `source` (`cache|region`) and the measures, without
+of at most 1.5 (p90 3.0) and 60 m, no more than half of the points matched by
+the mapped level to a street way snapping closer than half their offset from
+the rails (`poor/road`: a car on a road beside the railway, where a mapped
+match exists), and outliers over at most 15 % of the duration. The verdict is `features.railPath`: `status` `aligned|poor|no_rail|
+no_map`, a `reason` (`ok`, `short`, `coverage`, `routes`, `offsets`, `road`, `outliers`, `no_rail`, `waiting`, `outside_regions`, `deferred`), `source` (`cache|region`) and the measures, without
 coordinates. The tiles are the move's own: read from the tile cache where it
 holds them and from a loaded region wherever its polygon covers them (all
 four corners of the z14 tile inside, whatever the cache holds), so a ride the
@@ -4984,6 +4986,10 @@ and the mapped and averaged levels are never altered. A move cut at a pass's
 edge keeps the `railPath` it had (`pieceValues` leaves it alone): only its
 `lengthM` is then that of the whole part judged, a figure for tuning that
 nothing serves; the line served is the stored points', cut where the move is.
+The columns arrive by one `ALTER TABLE … ADD COLUMN` that waits for its lock at
+most 5 s (`lock_timeout`): behind an old worker's long pass a boot fails and
+the container restarts until it gets the lock, instead of holding up every
+reader of `processed_points` meanwhile.
 `PROCESSING_RAIL_ALIGN=false` stops it and hides what is stored at once, on the
 serving side alone (§17.7). Metro and tram are not aligned.
 
@@ -5325,7 +5331,11 @@ such a move, at `inferred` alone, the points are the rail places
 (`processed_points.lat_rail`, `lon_rail`, the rail's shape `path_rail` with
 interpolated times, its values as the way's shape has them), a point without
 one falling back to its mapped, else averaged place; the move counts as mapped
-for `level`. A correction away from train, or to train, therefore changes the
+for `level`; a verdict that rests on a region's data alone (`source: region`, so
+no mapped evidence beside it) is drawn only once the mode is not to review (a
+person's word settles it). The point a train shares with the segment before or
+after it is drawn at its rail place on both sides, so the line does not break at
+the boundary. A correction away from train, or to train, therefore changes the
 next read and the ETag with it (`computed_at` moves), with no reprocessing; a
 rail columns without a verdict (a write by an older image) are served as
 recorded; in an aligned move, a point without a rail place falls back to its

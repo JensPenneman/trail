@@ -1,12 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { MapData } from "../../src/processing/mapData";
-import { noRailPassStats, type RailPathVerdict } from "../../src/processing/pipelineTypes";
+import {
+  noRailPassStats,
+  type RailPathVerdict,
+  type RailPoint,
+} from "../../src/processing/pipelineTypes";
 import {
   defaultProcessingConfig,
   type ProcessingConfig,
 } from "../../src/processing/processingConfig";
+import { railContext } from "../../src/processing/rail/railNetwork";
 import {
   addRailCost,
+  assembleRail,
   finishWindow,
   inferWindow,
   mapPiece,
@@ -19,7 +25,15 @@ import {
 } from "../../src/processing/runPipeline";
 import { bikeRide, flight, motorwayDrive, walkInTown, walkTrainWalk } from "../support/journeys";
 import { moves, processWorld } from "../support/processWorld";
+import { railTrip } from "../support/railTrips";
+import { railWorld, roadLine } from "../support/railWorld";
 import { distanceToLine, railLine, toXY, worldMap } from "../support/syntheticWorld";
+
+// The real module, watched: whether the rail network (and with it the graph) is built at all.
+vi.mock("../../src/processing/rail/railNetwork", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/processing/rail/railNetwork")>();
+  return { ...actual, railContext: vi.fn(actual.railContext) };
+});
 
 const off: ProcessingConfig = {
   ...defaultProcessingConfig,
@@ -86,8 +100,13 @@ describe("the rail line in the pipeline", () => {
     expect(without.rail.every((place) => place === null)).toBe(true);
     expect(without.rail).toHaveLength(points.length);
     expect(without.segments.every((segment) => !("railPath" in segment.features))).toBe(true);
-    // Not even the rail graph is read: a throwing map would show it, but the index is built apart.
+    // Not even the rail network is built, let alone its graph: with it on it is.
     expect(Object.keys(trainOf(without).features)).not.toContain("railPath");
+    vi.mocked(railContext).mockClear();
+    processWorld(points, { config: off });
+    expect(railContext).not.toHaveBeenCalled();
+    processWorld(points);
+    expect(railContext).toHaveBeenCalled();
   });
 
   it("gives the same rail places when worked out again from the stored mapping", () => {
@@ -318,5 +337,124 @@ describe("the per-pass cap on rail-only tiles", () => {
       expect(railPath(move)).toMatchObject({ status: "no_map", reason: "deferred", source: null });
     }
     expect(result.rail.every((place) => place === null)).toBe(true);
+  });
+});
+
+describe("a move cut into stretches", () => {
+  const place = (run: number): RailPoint => ({
+    lat: run < 0 ? null : 51,
+    lon: run < 0 ? null : 3.7,
+    wayId: null,
+    run,
+    step: true,
+    outlier: false,
+    offsetM: run < 0 ? null : 1,
+    z: run < 0 ? null : 0.1,
+    routed: true,
+    legM: 10,
+    bridgedLegM: 0,
+    bridgedSpeedMs: 0,
+    path: null,
+  });
+  const stretch = (first: number, last: number) => ({
+    move: 0,
+    first,
+    last,
+    from: first,
+    to: last,
+    tiles: new Set<string>(),
+  });
+
+  it("numbers the runs along the move: the run a seam cuts keeps its number, later runs never clash", () => {
+    const runs = (parts: number[][]) =>
+      assembleRail(
+        parts.flat().length,
+        parts.map((part, index) => ({
+          stretch: stretch(
+            parts.slice(0, index).flat().length,
+            parts.slice(0, index + 1).flat().length - 1,
+          ),
+          rail: part.map(place),
+        })),
+      )?.map((entry) => entry.run);
+    // Each stretch numbers its runs from 0: the seam joins A's last run (1) with B's first (0).
+    expect(
+      runs([
+        [0, 0, 1, 1],
+        [0, 0, 1, -1, 2],
+      ]),
+    ).toEqual([0, 0, 1, 1, 1, 1, 2, -1, 3]);
+    expect(
+      runs([
+        [0, 0],
+        [0, 1],
+        [0, -1, 1],
+      ]),
+    ).toEqual([0, 0, 0, 1, 1, -1, 2]);
+    // A single stretch is as it was.
+    expect(runs([[0, 0, 1, -1, 2]])).toEqual([0, 0, 1, -1, 2]);
+  });
+
+  it("gives the same covered share when processed in pieces as whole, within one chord", () => {
+    const points = walkTrainWalk();
+    const whole = processWorld(points);
+    const cut: ProcessingConfig = {
+      ...defaultProcessingConfig,
+      mapping: { ...defaultProcessingConfig.mapping, pieceMaxTiles: 3 },
+    };
+    const pieces = planWindow(points, [], cut).pieces;
+    expect(pieces.length).toBeGreaterThan(1);
+    const split = processWorld(points, { config: cut });
+    const [wholeTrain, splitTrain] = [trainOf(whole), trainOf(split)].map(railPath);
+    expect(wholeTrain).toMatchObject({ status: "aligned" });
+    expect(splitTrain).toMatchObject({ status: "aligned" });
+    // One chord is a few hundred metres of 15 km.
+    expect(
+      Math.abs((splitTrain?.coveredShare ?? 0) - (wholeTrain?.coveredShare ?? 0)),
+    ).toBeLessThan(0.03);
+  });
+});
+
+describe("a car on a road beside the rails", () => {
+  // The road runs 40 m from track A; a phone no better than 30 m puts it within what the offsets
+  // accept, so only the mapped match (on the road, 6 m off) can say it is no train.
+  const drive = railTrip(roadLine, {
+    startT: 1_793_000_000,
+    intervalS: 5,
+    speedMs: 20,
+    noiseM: 6,
+    accuracy: 30,
+    motion: ["driving"],
+    seed: 5,
+  });
+
+  it("is not aligned where the mapped level matched it to the road: poor/road", () => {
+    const plan = planWindow(drive, [], defaultProcessingConfig);
+    const result = finishWindow(
+      plan,
+      { trips: [], overrides: [], map: railWorld(), available: plan.tiles },
+      defaultProcessingConfig,
+    );
+    const [car] = moves(result);
+    expect(railPath(car ?? { features: {} })).toMatchObject({ status: "poor", reason: "road" });
+    expect(result.rail.every((place) => place === null)).toBe(true);
+  });
+
+  it("would be aligned on the offsets alone: the check is the mapped match", () => {
+    const plan = planWindow(drive, [], defaultProcessingConfig);
+    const lenient: ProcessingConfig = {
+      ...defaultProcessingConfig,
+      rail: {
+        ...defaultProcessingConfig.rail,
+        judge: { ...defaultProcessingConfig.rail.judge, maxRoadShare: 1.1 },
+      },
+    };
+    const result = finishWindow(
+      plan,
+      { trips: [], overrides: [], map: railWorld(), available: plan.tiles },
+      lenient,
+    );
+    const [car] = moves(result);
+    expect(railPath(car ?? { features: {} })).toMatchObject({ status: "aligned" });
   });
 });

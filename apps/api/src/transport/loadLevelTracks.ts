@@ -350,10 +350,23 @@ function piecesOfSegments(
     loose = [];
   };
   let index = 0;
-  for (const row of rows) {
+  const alignedRows = rows.map((row) => toSegment(row, railAlign).alignedTo === "rail");
+  for (const [rowIndex, row] of rows.entries()) {
     const segment = toSegment(row, railAlign);
     const start = Date.parse(segment.startedAt) / 1000;
     const end = Date.parse(segment.endedAt) / 1000;
+    // The point shared with a neighbour drawn along the rails is drawn at its rail place on both
+    // sides, so the line does not break at the boundary.
+    const before = rows[rowIndex - 1];
+    const after = rows[rowIndex + 1];
+    const sharesRailStart =
+      alignedRows[rowIndex - 1] === true &&
+      before !== undefined &&
+      Date.parse(toIso(before.ended_at)) / 1000 === start;
+    const sharesRailEnd =
+      alignedRows[rowIndex + 1] === true &&
+      after !== undefined &&
+      Date.parse(toIso(after.started_at)) / 1000 === end;
     while (index < served.length && (served[index]?.t ?? 0) < start) {
       const entry = served[index];
       if (entry !== undefined) takeLoose(entry);
@@ -368,7 +381,14 @@ function piecesOfSegments(
       const entry = served[cursor];
       // A segment's line starts at its first point: the way's shape before it is the one before's.
       if (entry !== undefined && entry.t <= own) {
-        const drawn = rail ? alongRail(entry) : entry;
+        const atRailBoundary =
+          entry.rail !== undefined &&
+          ((sharesRailStart && entry.t === start) || (sharesRailEnd && entry.t === end));
+        const drawn = rail
+          ? alongRail(entry)
+          : atRailBoundary && entry.rail !== undefined
+            ? { ...entry, point: entry.rail.point }
+            : entry;
         inside.push(inside.length === 0 ? { ...drawn, vertices: noVertices } : drawn);
       }
       cursor += 1;

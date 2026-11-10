@@ -99,9 +99,9 @@ describe("the level tracks", () => {
       "averaged 300": "7e204cf31175b678",
       "mapped 8000": "c7ab3abaf1c18dbe",
       "mapped 300": "11ee18dbf0300745",
-      "inferred 8000": "4b9ad9ff0ed4fc49",
-      "inferred 300": "b244f6d8558b4bda",
-      "inferred commute": "964beb1117c897cd",
+      "inferred 8000": "88d4457957d445ab",
+      "inferred 300": "6b73a173edd7da2d",
+      "inferred commute": "ffcdc196704cc12f",
     });
   });
 });
@@ -109,7 +109,8 @@ describe("the level tracks", () => {
 describe("the train drawn along the railway", () => {
   it("changes the inferred hashes alone, and only for the move it aligned", async () => {
     // The pinned hashes above: raw, averaged and mapped are the ones from before the rail line;
-    // inferred differs by the train's points, which now lie on the rails.
+    // inferred differs by the train's points, which now lie on the rails, and by the point it shares
+    // with its neighbours, drawn at the rail place on both sides.
     const inferred = await owner
       .get(apiPaths.v1.tracks)
       .query({ ...day, level: "inferred", devices: commute })

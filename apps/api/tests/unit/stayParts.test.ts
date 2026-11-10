@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { continuesStop, metresBetween, type StopShape } from "../../src/processing/stayParts";
+import { continuesStop, metresBetween } from "../../src/processing/stayParts";
+import type { StopShape } from "../../src/processing/stopShape";
 import { haversineM } from "../../src/tracks/haversine";
 import { toLonLat, type Vertex } from "../support/syntheticWorld";
 
