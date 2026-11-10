@@ -54,9 +54,10 @@ param(
 # Every error is terminating, and the whole run is caught once at the bottom:
 # an unexpected failure must end the run with an ERROR line and exit code 1,
 # never with a quiet 0. Native commands report through $LASTEXITCODE, which is
-# checked after each one; their stderr is discarded (2>$null) or, where the
-# output is logged, read with the preference lowered (Invoke-DockerLogged),
-# since Windows PowerShell 5.1 turns redirected stderr into error records.
+# checked after each one. Every docker call goes through Invoke-Docker, which
+# lowers the preference around the call, because Windows PowerShell 5.1 turns
+# native stderr (Docker Desktop prints WARNING lines on healthy hosts) into
+# error records.
 # PowerShell variable names ignore case: no two names below may differ only by
 # case (a kept list once overwrote a constant that way).
 $ErrorActionPreference = 'Stop'
@@ -91,19 +92,31 @@ function Write-Log {
   }
 }
 
-function Invoke-DockerLogged {
-  # runs docker with stderr merged into the output; the exit code is left in
-  # $script:dockerRc; returns the output lines
-  param([string[]]$DockerArgs)
+function Invoke-Docker {
+  # The one way this script runs docker. Docker Desktop writes WARNING lines to
+  # stderr on healthy hosts, and Windows PowerShell 5.1 turns native stderr
+  # into a terminating error under $ErrorActionPreference = 'Stop', so the
+  # preference is lowered around the call only, and success is judged by the
+  # exit code alone (left in $script:dockerRc). Returns the stdout lines;
+  # with -Merge the stderr lines are included (for the logged prune calls).
+  param([string[]]$DockerArgs, [switch]$Merge)
   $saved = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
   try {
-    $lines = @(& docker @DockerArgs 2>&1)
+    $all = @(& docker @DockerArgs 2>&1)
     $script:dockerRc = $LASTEXITCODE
   } finally {
     $ErrorActionPreference = $saved
   }
-  return , $lines
+  $lines = @()
+  foreach ($item in $all) {
+    if ($item -is [System.Management.Automation.ErrorRecord]) {
+      if ($Merge) { $lines += "$item" }
+    } else {
+      $lines += "$item"
+    }
+  }
+  return $lines   # callers wrap the call in @() so that zero or one line stays a list
 }
 
 function ConvertFrom-DockerTime {
@@ -118,8 +131,8 @@ function ConvertFrom-DockerTime {
 function Get-ImageRefs {
   # 'repo:tag' of the images matching docker image ls filters; $null on failure
   param([string[]]$Filters)
-  $listed = @(& docker image ls @Filters --format '{{.Repository}}|{{.Tag}}' 2>$null)
-  if ($LASTEXITCODE -ne 0) { return $null }
+  $listed = @(Invoke-Docker (@('image', 'ls') + $Filters + @('--format', '{{.Repository}}|{{.Tag}}')))
+  if ($script:dockerRc -ne 0) { return $null }
   $found = @()
   foreach ($row in $listed) {
     $parts = "$row".Split('|')
@@ -133,8 +146,8 @@ function Get-ImageRefs {
 function Get-ImageInfo {
   # id and creation time of one tag, or $null
   param([string]$TagName)
-  $info = @(& docker image inspect --format '{{.Id}}|{{.Created}}' $TagName 2>$null)
-  if ($LASTEXITCODE -ne 0 -or $info.Count -eq 0) { return $null }
+  $info = @(Invoke-Docker @('image', 'inspect', '--format', '{{.Id}}|{{.Created}}', $TagName))
+  if ($script:dockerRc -ne 0 -or $info.Count -eq 0) { return $null }
   $fields = "$($info[0])".Split('|')
   if ($fields.Count -ne 2) { return $null }
   return [pscustomobject]@{ Tag = $TagName; Id = $fields[0]; Created = ConvertFrom-DockerTime $fields[1] }
@@ -147,8 +160,8 @@ function Invoke-Prune {
   Write-Log "prune-build-artifacts start ($mode) as $account"
 
   # Docker unreachable fails the task.
-  $null = & docker info 2>$null
-  if ($LASTEXITCODE -ne 0) {
+  $null = Invoke-Docker @('info')
+  if ($script:dockerRc -ne 0) {
     Write-Log 'ERROR: Docker is not reachable (docker info failed)'
     return 1
   }
@@ -158,14 +171,14 @@ function Invoke-Prune {
   # image look unused.
   $usedNames = @{}
   $usedIds = @{}
-  $containerIds = @(& docker ps -a -q 2>$null | Where-Object { $_ })
-  if ($LASTEXITCODE -ne 0) {
+  $containerIds = @(Invoke-Docker @('ps', '-a', '-q') | Where-Object { $_ })
+  if ($script:dockerRc -ne 0) {
     Write-Log 'ERROR: docker ps failed; removing nothing'
     return 1
   }
   if ($containerIds.Count -gt 0) {
-    $rows = @(& docker inspect --format '{{.Config.Image}}|{{.Image}}' $containerIds 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $rows.Count -eq 0) {
+    $rows = @(Invoke-Docker (@('inspect', '--format', '{{.Config.Image}}|{{.Image}}') + $containerIds))
+    if ($script:dockerRc -ne 0 -or $rows.Count -eq 0) {
       Write-Log 'ERROR: docker inspect of the containers returned nothing; removing nothing'
       return 1
     }
@@ -211,8 +224,8 @@ function Invoke-Prune {
         continue
       }
       # no -f: docker refuses an image that a container still uses
-      $null = & docker rmi $image.Tag 2>$null
-      if ($LASTEXITCODE -eq 0) {
+      $null = Invoke-Docker @('rmi', $image.Tag)
+      if ($script:dockerRc -eq 0) {
         Write-Log "removed $($image.Tag)"
       } else {
         Write-Log "kept $($image.Tag): docker refused to remove it (in use)"
@@ -223,12 +236,12 @@ function Invoke-Prune {
   # Dangling images of Trail's own, by label; prune spares images in use.
   foreach ($label in $PruneLabels) {
     if ($DryRun) {
-      $dangling = @(& docker image ls --filter 'dangling=true' --filter "label=$label" --format '{{.ID}}' 2>$null | Where-Object { $_ })
+      $dangling = @(Invoke-Docker @('image', 'ls', '--filter', 'dangling=true', '--filter', "label=$label", '--format', '{{.ID}}') | Where-Object { $_ })
       Write-Log "would run: docker image prune -f --filter label=$label ($($dangling.Count) dangling image(s) listed now)"
       continue
     }
     Write-Log "docker image prune -f --filter label=$label"
-    $output = Invoke-DockerLogged @('image', 'prune', '-f', '--filter', "label=$label")
+    $output = @(Invoke-Docker @('image', 'prune', '-f', '--filter', "label=$label") -Merge)
     foreach ($outLine in $output) { Write-Log "  $outLine" }
     if ($script:dockerRc -ne 0) {
       Write-Log "ERROR: docker image prune exited with $($script:dockerRc)"
@@ -241,7 +254,7 @@ function Invoke-Prune {
     Write-Log "would run: docker builder prune -f --max-used-space $BuildCacheMax"
   } else {
     Write-Log "docker builder prune -f --max-used-space $BuildCacheMax"
-    $output = Invoke-DockerLogged @('builder', 'prune', '-f', '--max-used-space', $BuildCacheMax)
+    $output = @(Invoke-Docker @('builder', 'prune', '-f', '--max-used-space', $BuildCacheMax) -Merge)
     foreach ($outLine in $output) { Write-Log "  $outLine" }
     if ($script:dockerRc -ne 0) {
       Write-Log "ERROR: docker builder prune exited with $($script:dockerRc)"
