@@ -87,3 +87,25 @@ export function verticesBetween(leg: Leg, from: number, to: number): [number, nu
   }
   return vertices;
 }
+
+/** The point at arc length `along` on a leg (clamped to its ends), with the way of its piece. */
+export function pointAtAlong(
+  leg: Leg,
+  along: number,
+): { x: number; y: number; along: number; way: number } {
+  const end = leg.along.at(-1) ?? 0;
+  const target = Math.min(end, Math.max(0, along));
+  for (let piece = 0; piece < leg.xs.length - 1; piece += 1) {
+    const start = leg.along[piece] ?? 0;
+    const stop = leg.along[piece + 1] ?? 0;
+    if (target > stop && piece < leg.xs.length - 2) continue;
+    const t = stop === start ? 0 : (target - start) / (stop - start);
+    return {
+      x: (leg.xs[piece] ?? 0) + t * ((leg.xs[piece + 1] ?? 0) - (leg.xs[piece] ?? 0)),
+      y: (leg.ys[piece] ?? 0) + t * ((leg.ys[piece + 1] ?? 0) - (leg.ys[piece] ?? 0)),
+      along: target,
+      way: leg.ways[piece] ?? -1,
+    };
+  }
+  return { x: leg.xs[0] ?? 0, y: leg.ys[0] ?? 0, along: 0, way: leg.ways[0] ?? -1 };
+}

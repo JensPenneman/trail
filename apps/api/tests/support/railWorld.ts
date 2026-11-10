@@ -11,7 +11,7 @@ import { subPath, toLonLat, travel, type Vertex } from "./syntheticWorld";
  *
  *  - a double-track main line, tracks A (y = 0) and B (y = 4.5), 100 km from
  *    west to east, with a gentle S-bend between 30 and 45 km;
- *  - a crossover between the two tracks at 5 km;
+ *  - a crossover between the two tracks at 5 km, and two inside the station;
  *  - a road 40 m south of track A from 2 to 5 km (it never touches the rails);
  *  - a six-track station at 10 km (A, B and four more, 4.5 m apart) with a yard
  *    and a siding (`service` tags) beside it;
@@ -115,6 +115,24 @@ addWay(
   [
     [4950, 0],
     [5050, trackSpacingM],
+  ],
+  { service: "crossover" },
+);
+
+// Two more inside the station, as stations have: A to B on the way in, B to A on the way out.
+addWay(
+  "rail",
+  [
+    [9250, 0],
+    [9350, trackSpacingM],
+  ],
+  { service: "crossover" },
+);
+addWay(
+  "rail",
+  [
+    [10_650, trackSpacingM],
+    [10_750, 0],
   ],
   { service: "crossover" },
 );

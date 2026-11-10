@@ -36,6 +36,8 @@ describe("railWorld", () => {
     expect(ways.filter((way) => way.kind === "secondary")).toHaveLength(1);
     expect(ways.flatMap((way) => (way.service === undefined ? [] : [way.service])).sort()).toEqual([
       "crossover",
+      "crossover",
+      "crossover",
       "siding",
       "yard",
     ]);

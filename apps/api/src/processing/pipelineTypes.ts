@@ -46,6 +46,61 @@ export interface MappedPoint {
   path: readonly (readonly [number, number])[] | null;
 }
 
+/**
+ * The rail line of one point (`alignToRail`): where the point lies on the
+ * railway, or nothing for a point outside every run of the stretch.
+ */
+export interface RailPoint {
+  /** Null: no rail place (the point is outside every run). */
+  lat: number | null;
+  lon: number | null;
+  /** OSM way id of the track; null without a place or on a straight leg. */
+  wayId: number | null;
+  /** The run (of the stretch) the point belongs to, -1 outside every run. */
+  run: number;
+  /** The point entered the model (the first, every `stepM`, the last). */
+  step: boolean;
+  /** Inside a run, but no track in reach: placed along the leg by its time share. */
+  outlier: boolean;
+  /** Distance between the averaged position and the rail place, metres; null without a place. */
+  offsetM: number | null;
+  /** The offset over the point's sigma; null without a place. */
+  z: number | null;
+  /** The leg into the point followed the rail network (false: the first point of a run, or a leg drawn straight). */
+  routed: boolean;
+  /** Length of the line drawn into the point from the one before in its run, metres. */
+  legM: number;
+  /** Length of the whole straight leg the point lies on, metres; 0 when its leg was routed. */
+  bridgedLegM: number;
+  /** The rail's shape between the previous point of the run and this one, `[lon, lat]`, both ends excluded. */
+  path: readonly (readonly [number, number])[] | null;
+}
+
+/** What the judge made of the rail line of a part of a move (`segments.features.railPath`); no coordinates. */
+export interface RailPathVerdict {
+  /** `aligned`: draw it; `poor`: a track was found but the match is not good enough; `no_rail`: no railway there; `no_map`: no rail data. */
+  status: "aligned" | "poor" | "no_rail" | "no_map";
+  reason:
+    | "ok"
+    | "short"
+    | "coverage"
+    | "routes"
+    | "offsets"
+    | "outliers"
+    | "no_rail"
+    | "waiting"
+    | "outside_regions";
+  /** Which source made the move's last tile available; null when not known (no map). */
+  source: "cache" | "region" | null;
+  coveredShare: number;
+  routedShare: number;
+  medianZ: number;
+  p90Z: number;
+  medianOffsetM: number;
+  outlierShare: number;
+  lengthM: number;
+}
+
 /** An iOS visit (CLVisit) as stops use it. */
 export interface VisitSpan {
   arrivedAt: number;

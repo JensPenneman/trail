@@ -37,6 +37,7 @@ export class WayGraph {
   readonly #seen: Int32Array;
   readonly #settled: Int32Array;
   #epoch = 0;
+  #settledCount = 0;
   readonly #heap = new MinHeap();
   #source: WayCandidate | null = null;
 
@@ -113,6 +114,11 @@ export class WayGraph {
     this.#settled = new Int32Array(nodeCount);
   }
 
+  /** Nodes settled by every search so far: the work the searches did. */
+  get settledCount(): number {
+    return this.#settledCount;
+  }
+
   get wayClass(): WayClass {
     return this.#wayClass;
   }
@@ -165,6 +171,7 @@ export class WayGraph {
       const node = this.#heap.pop();
       if (this.#settled[node] === this.#epoch) continue;
       this.#settled[node] = this.#epoch;
+      this.#settledCount += 1;
       pending.delete(node);
       const distance = this.#distance[node] ?? 0;
       const hops = this.#hops[node] ?? 0;

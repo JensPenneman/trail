@@ -108,6 +108,13 @@ export interface ProcessingConfig {
     /** A cached tile older than this keeps serving and is fetched again when a window needs it (PROCESSING_OSM_TTL_DAYS). */
     readonly tileMaxAgeDays: number;
   };
+  /**
+   * The rail alignment (docs/architecture.md §17.3, "Along the rails"): the
+   * second matcher that lays a train's points on the railway, and the judge
+   * that says whether its result may be drawn. Inferred level. Every number
+   * is a first-principles default to be tuned against real rides.
+   */
+  readonly rail: RailConfig;
   readonly features: {
     /** Interval speeds from pairs at most this far apart; sparser pairs use the distance along the track. */
     readonly pairMaxGapS: number;
@@ -158,6 +165,62 @@ export interface ProcessingConfig {
     /** … and below this one it is flagged for review. */
     readonly reviewBelow: number;
   };
+}
+
+/** The thresholds of `alignToRail` and of `judgeRailPath` (`ProcessingConfig.rail`). */
+export interface RailConfig {
+  /** Only points this far apart from the previous step enter the model; the ones between are projected onto its line. */
+  readonly stepM: number;
+  /** Emission sigma: max(accuracy, this). */
+  readonly minSigmaM: number;
+  /** Candidate radius: clamp(radiusSigmas × sigma, minRadiusM, maxRadiusM). */
+  readonly radiusSigmas: number;
+  readonly minRadiusM: number;
+  readonly maxRadiusM: number;
+  /** Tracks offered per step at most (a station has many side by side). */
+  readonly maxCandidates: number;
+  /** Added to the emission cost of a yard, siding or spur track: the main track wins in a station. */
+  readonly servicePenalty: number;
+  /** A run carries on across steps without a track in reach (a wrong fix, a cell tower, garbage in a tunnel) for at most this long … */
+  readonly maxOutlierS: number;
+  /** … and this far between the steps on either side. */
+  readonly maxOutlierM: number;
+  /** A run shorter than this (along the chords) is dropped: a walk past a station is not a train. */
+  readonly minRunM: number;
+  /** Route search bound: min(maxRouteM, routeFactor × chord + routeSlackM, maxSpeedMs × seconds + routeSlackM) and at most maxHops way changes. */
+  readonly maxRouteM: number;
+  readonly routeFactor: number;
+  readonly routeSlackM: number;
+  /** The fastest a train goes (high-speed lines stay below this), m/s: bounds the route by the time between two steps. */
+  readonly maxSpeedMs: number;
+  readonly maxHops: number;
+  /** Transition cost |route − chord| / β with β = max(betaMinM, betaChordFactor × chord). */
+  readonly betaMinM: number;
+  readonly betaChordFactor: number;
+  /** Extra cost of moving onto another way (rail ways are cut at every switch and bridge). */
+  readonly wayChangeCost: number;
+  /** Cost of a leg without a route within its bound; the leg is then drawn straight ("bridged"). */
+  readonly breakCost: number;
+  readonly judge: RailJudgeConfig;
+}
+
+/** What a part of a move must show for its rail line to be drawn (`judgeRailPath`). */
+export interface RailJudgeConfig {
+  /** A shorter part (chords of its averaged points), or one with fewer model steps, is too short to judge: `poor/short`. */
+  readonly minLengthM: number;
+  readonly minSteps: number;
+  /** The share of the length within rail runs: below `noRailShare` there is no railway there (`no_rail`), below `minCoveredShare` it is `poor/coverage`. */
+  readonly minCoveredShare: number;
+  readonly noRailShare: number;
+  /** The share of the aligned length that followed the network, and the longest leg that may be drawn straight: else `poor/routes`. */
+  readonly minRoutedShare: number;
+  readonly maxBridgedM: number;
+  /** Median and p90 of z (offset over sigma) and the median offset in metres of the points that are not outliers: else `poor/offsets`. */
+  readonly maxMedianZ: number;
+  readonly maxP90Z: number;
+  readonly maxMedianOffsetM: number;
+  /** The share of the part's duration spent as outliers: else `poor/outliers`. */
+  readonly maxOutlierShare: number;
 }
 
 /** The named thresholds of the mode rules (km/h, shares 0–1, counts). */
@@ -250,6 +313,39 @@ export const defaultProcessingConfig: ProcessingConfig = {
     pieceMaxTiles: 256,
     seamMarginM: 1500,
     tileMaxAgeDays: 90,
+  },
+  rail: {
+    stepM: 50,
+    minSigmaM: 15,
+    radiusSigmas: 3,
+    minRadiusM: 50,
+    maxRadiusM: 200,
+    maxCandidates: 6,
+    servicePenalty: 1,
+    maxOutlierS: 300,
+    maxOutlierM: 5000,
+    minRunM: 1000,
+    maxRouteM: 80_000,
+    routeFactor: 1.5,
+    routeSlackM: 500,
+    maxSpeedMs: 95,
+    maxHops: 400,
+    betaMinM: 30,
+    betaChordFactor: 0.15,
+    wayChangeCost: 0.2,
+    breakCost: 10,
+    judge: {
+      minLengthM: 1000,
+      minSteps: 3,
+      minCoveredShare: 0.9,
+      noRailShare: 0.5,
+      minRoutedShare: 0.9,
+      maxBridgedM: 2000,
+      maxMedianZ: 1.5,
+      maxP90Z: 3,
+      maxMedianOffsetM: 60,
+      maxOutlierShare: 0.15,
+    },
   },
   features: {
     pairMaxGapS: 600,
