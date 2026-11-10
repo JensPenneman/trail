@@ -329,7 +329,7 @@ preview push leaves a `trail-local:<commit>` and a
 the same Docker disk as the `trail-db` volume. [Pruning build
 leftovers](#pruning-build-leftovers) says what removes them. Launchway builds
 with `--pull` on every deployment, so a rollback to an older ref is always a
-rebuild (helped by the cache) that needs Docker Hub, npm and the map-asset
+rebuild (possibly a cold one: the cache cap does not protect the previous ref) that needs Docker Hub, npm and the map-asset
 downloads to be reachable, never a reuse of an old image.
 
 ### Pruning build leftovers
@@ -341,31 +341,60 @@ conductor installs it on the deploy host (LVJ) and registers the task; it is
 not part of any deployment. It:
 
 - removes `trail-local:*` and `trail-local-predeploy-dump:*` tags that no
-  container uses, keeping the four newest tags of each (by creation time), and
-  never forcing: an image a container uses survives;
-- removes dangling images with `docker image prune -f`, which spares images
-  in use;
-- caps the build cache with `docker builder prune -f --keep-storage 3GB`,
-  which leaves room for a fast rebuild of the previous production ref;
-- touches no other image, no volume and nothing named `zeus*`, and exits
-  non-zero only when Docker is unreachable (a removal that fails is logged and
-  skipped).
+  container uses, never forcing: an image a container uses survives. Per
+  repository it keeps the newest 2 images built by production's Compose
+  project (`-ProductionProject`, default `launchway-trail`; previews are
+  `launchway-trail-pr-<n>`), and apart from those the 4 newest of everything
+  else, by creation time, so preview pushes cannot push production's images
+  out;
+- removes dangling images of Trail's own only: one `docker image prune -f` per
+  label filter, `org.opencontainers.image.title=Trail` (the images of `app` and
+  `worker`) and `com.docker.compose.service=predeploy-dump` (the dump image),
+  which spares images in use. Images built before these labels existed are
+  not matched;
+- caps the build cache with `docker builder prune -f --max-used-space 3GB`
+  (`--keep-storage` is a deprecated alias of buildx's `--reserved-space`).
+  This is the one step that is not scoped to Trail: the cache cannot be limited
+  to a project, so it trims the whole builder, least recently used first. It
+  does not promise the layers of the previous production ref, so **a rollback
+  can be a cold rebuild**, which needs Docker Hub, npm and the map-asset
+  downloads to be reachable.
+
+No volume is ever touched, and no tag other than those two repositories. It
+exits non-zero when Docker is unreachable, when the containers or images
+cannot be listed (nothing is removed then), or when a prune command fails, so
+the task's Last Run Result shows it; a removal docker refuses (in use) is only
+logged.
 
 It logs one line per action to the console and to
-`%ProgramData%\trail-prune\prune-build-artifacts.log`. `-DryRun` only lists what it
-would remove. Copy it to a folder outside the checkouts (Launchway deletes
-those) and register it once, daily at night, in an elevated PowerShell, as the
-account that runs Docker Desktop:
+`%ProgramData%\trail-prune\prune-build-artifacts.log`; `-DryRun` only lists
+what it would remove. Copy it to a folder outside the checkouts (Launchway
+deletes those) and register it once, daily at night, as the account that runs
+Docker Desktop (which only runs while that user is logged on). Run the
+registration from a non-elevated PowerShell of that account, so that the log
+folder belongs to it; from an elevated one, grant the account Modify first:
+`icacls "$env:ProgramData\trail-prune" /grant "${env:USERDOMAIN}\${env:USERNAME}:(OI)(CI)M"`.
+The task runs without elevation, and an elevated console would not prove that
+it reaches Docker Desktop's pipe, so try it as a second task, with `-DryRun`:
 
 ```powershell
 New-Item -ItemType Directory -Force C:\ops\trail | Out-Null
 Copy-Item deploy\prune-build-artifacts.ps1 C:\ops\trail\
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\ops\trail\prune-build-artifacts.ps1'
-$trigger = New-ScheduledTaskTrigger -Daily -At 4:15am
+$script = 'C:\ops\trail\prune-build-artifacts.ps1'
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
-Register-ScheduledTask -TaskName 'Trail prune build artifacts' -Action $action -Trigger $trigger -Principal $principal
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\ops\trail\prune-build-artifacts.ps1 -DryRun   # list first
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+$trigger = New-ScheduledTaskTrigger -Daily -At 4:15am
+$live = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File $script"
+$dry = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File $script -DryRun"
+Register-ScheduledTask -TaskName 'Trail prune build artifacts' -Action $live -Trigger $trigger -Principal $principal -Settings $settings
+Register-ScheduledTask -TaskName 'Trail prune build artifacts (dry run)' -Action $dry -Principal $principal -Settings $settings
+Start-ScheduledTask -TaskName 'Trail prune build artifacts (dry run)'
+# once it has finished: LastTaskResult must be 0, and the log lists only trail-local tags
+(Get-ScheduledTaskInfo -TaskName 'Trail prune build artifacts (dry run)').LastTaskResult
+Get-Content "$env:ProgramData\trail-prune\prune-build-artifacts.log" -Tail 40
 ```
+
+The dry-run task has no trigger and stays registered for later checks.
 
 To prove a build without deploying:
 
@@ -508,14 +537,15 @@ runs the checks and can merge.
 
 Redeploy an older release in Launchway (the app's deployments list): it
 builds that release's commit again (Launchway builds with `--pull`, so it is
-always a rebuild, helped by the cache, that needs Docker Hub, npm and the
+always a rebuild, possibly a cold one, that needs Docker Hub, npm and the
 map-asset downloads to be reachable, also on the way back after a failed
 dump), with that release's `compose.yaml`. The deployment takes a dump first
 like any other ([the dump before an update](#the-dump-before-an-update)), of
 the database as the newer release left it; a rollback has no newer migration,
 so a failing dump cannot keep it from coming up. Migrations only move forward, so an older image runs against
-the newer schema; when that does not work, restore the dump made before the
-update (`BACKUP_DIR/pre-update/`, [Backups](#backups)). A release from before the `worker` service has
+the newer schema; when that does not work, restore the newest
+`trail-*-migrate.dump` in `BACKUP_DIR/pre-update/`, the dump taken before the
+release that migrated ([Backups](#backups)). A release from before the `worker` service has
 none: Launchway removes the `worker` container (`up --remove-orphans`) and
 that release's `app` processes in its own process, as it did then. Back on
 the newer release, run `trail recompute` ([Heatmap](#heatmap)): an older release keeps
@@ -567,7 +597,7 @@ back. Layout and retention:
 | (top) `trail-<timestamp>.dump` | every daily dump | `BACKUP_KEEP_DAYS` (14) |
 | `monthly/trail-<YYYY-MM>.dump` | the first dump of each month | `BACKUP_KEEP_MONTHS` (12; 0 = forever) |
 | `yearly/trail-<YYYY>.dump` | the first dump of each year | `BACKUP_KEEP_YEARS` (0 = forever) |
-| `pre-update/` | `trail-<UTC timestamp>-<commit>.dump`, one before every deployment ([below](#the-dump-before-an-update)), and those of the former standalone stack | the newest 3 (by `predeploy-dump`); `trail-<UTC timestamp>-<commit>-migrate.dump`, taken while a migration was pending, `BACKUP_KEEP_DAYS` |
+| `pre-update/` | `trail-<UTC timestamp>-<commit>.dump`, one before every deployment ([below](#the-dump-before-an-update)), and those of the former standalone stack | the newest 3 (by `predeploy-dump`), and none older than `BACKUP_KEEP_DAYS`; `trail-<UTC timestamp>-<commit>-migrate.dump`, taken while a migration was pending, `BACKUP_KEEP_DAYS` |
 
 Before every dump, `backup` deletes what is past its retention, except the
 newest daily dump: while backups keep failing, the last good one stays (and
@@ -670,7 +700,8 @@ data in the same volume, empty. Move the data with a dump:
 1. `docker stop launchway-trail-app-1`, then [dump now](#backups).
 2. In the pull request, also bump the `FROM` of `predeploy-dump`'s
    `dockerfile_inline` in `deploy/compose.yaml` and `backup`'s image:
-   Dependabot only sees `db`, and a `pg_dump` of the old major refuses the new
+   Dependabot bumps `db` and `backup` but cannot see the `FROM` of
+   `predeploy-dump`'s `dockerfile_inline`, and a `pg_dump` of the old major refuses the new
    server, which would fail the deployment at `up` (the new, empty database
    counts as a pending migration) until the rollback.
 3. Merge the pull request and release it; the deployment starts the new,

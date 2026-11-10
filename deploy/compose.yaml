@@ -109,7 +109,7 @@ services:
     # and a local tag cannot be pulled, so there is no pull_policy. The tag
     # carries the commit, so every deployment has an image of its own.
     # Launchway builds with `--pull` on every deployment, so a rollback is a
-    # rebuild (helped by the cache) that needs Docker Hub, npm and the
+    # rebuild (possibly a cold one) that needs Docker Hub, npm and the
     # map-asset downloads to be reachable. GIT_SHA is what /api/config reports.
     # TRAIL_IMAGE replaces the tag for local runs (compose.dev.yaml);
     # Launchway leaves it unset.
@@ -647,7 +647,7 @@ configs:
       trap 'stop=1' TERM INT
 
       # leftovers of a dump or copy that was interrupted
-      find "$$dir" -maxdepth 2 -type f -name '.trail-*.dump.partial' -exec rm -f {} +
+      find "$$dir" -maxdepth 2 -type f -name '.trail-*.dump.partial' -exec rm -f {} + || log "WARNING: cannot delete the partial dumps of an earlier run"
 
       log "daily backups at $$hour:00 $${TZ:-UTC} to BACKUP_DIR: daily $$keep_days days, monthly $$keep_months months, yearly $$keep_years years (0 = forever)"
       if [ "$$on_start" = true ] || ! dump_within 1440; then
