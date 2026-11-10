@@ -1,5 +1,5 @@
-# A local, production-like run of the working tree: builds the image instead
-# of pulling one from GHCR, runs it as `app` and as `worker` with the caps of
+# A local, production-like run of the working tree: builds the image (as
+# compose.yaml does for Launchway, under the tag TRAIL_IMAGE), runs it as `app` and as `worker` with the caps of
 # compose.yaml, and publishes the app on http://localhost:8080. Launchway
 # never uses this file. In deploy/.env (git-ignored; every variable is
 # explained in .env.example):
@@ -19,11 +19,15 @@
 
 services:
   app:
-    build:
-      context: ..
+    # the `build:` of compose.yaml; always rebuild here
     pull_policy: build
     ports:
       - "127.0.0.1:8080:8080"
+
+  # a local run has no backups to dump into
+  predeploy-dump:
+    environment:
+      PREDEPLOY_DUMP: skip
 
   worker:
     # the image `app` builds (TRAIL_IMAGE); there is nothing to pull

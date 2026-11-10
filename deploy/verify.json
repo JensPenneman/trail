@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "checks": [
+    {
+      "name": "health",
+      "method": "GET",
+      "path": "/api/health",
+      "status": 200,
+      "json": { "db": "ok" }
+    },
+    {
+      "name": "build",
+      "method": "GET",
+      "path": "/api/config",
+      "status": 200,
+      "json": { "version": "{version}", "commit": "{commit}" }
+    },
+    {
+      "name": "dashboard",
+      "method": "GET",
+      "path": "/",
+      "status": 200,
+      "contentType": "text/html"
+    },
+    {
+      "name": "ingest refuses an anonymous upload",
+      "method": "POST",
+      "path": "/api/overland",
+      "status": 401
+    }
+  ],
+  "soak": {
+    "path": "/api/health",
+    "status": 200,
+    "json": { "db": "ok", "processing.worker": "up" },
+    "durationSeconds": 600,
+    "intervalSeconds": 30,
+    "maxMisses": 1
+  }
+}

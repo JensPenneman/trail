@@ -88,7 +88,11 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
 CMD ["node", "--enable-source-maps", "apps/api/dist/main.mjs"]
 
 # Build metadata last: it changes on every build and must not invalidate the
-# layers above. CI passes all three; an empty value means "not set" to the app.
+# layers above. CI passes all three; an empty value means "not set" to the app,
+# and an unset APP_VERSION (a build from source, as Launchway does it, passes
+# only GIT_SHA) reports the package.json version the build stage bundled into
+# the API (apps/api/src/config/buildDefaults.ts), so /api/config names the
+# version of the checked-out ref. The image label stays empty then.
 ARG APP_VERSION=""
 ARG GIT_SHA=""
 ARG BUILD_TIME=""

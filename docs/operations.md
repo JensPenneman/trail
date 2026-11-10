@@ -23,10 +23,11 @@ unless noted.
 
 | Service | Image | Production | Preview |
 |---|---|---|---|
-| `app` | `ghcr.io/jenspenneman/trail:sha-<commit>` | API, the phones' ingest and the dashboard on port 8080 (`PROCESSING_ROLE: api`: it queues the processing) | the same, for the pull request's head commit |
+| `app` | `trail-local:<commit>`, built on the server from the deployed ref | API, the phones' ingest and the dashboard on port 8080 (`PROCESSING_ROLE: api`: it queues the processing) | the same, for the pull request's head commit |
 | `worker` | the same image, as `trail worker` | the processing worker (`PROCESSING_ROLE: worker`): the averaged, mapped and inferred levels, map data, the backfill; no HTTP server | the same; it idles on the empty database |
 | `db` | `postgres:18-alpine` | the database, in the volume `TRAIL_DB_VOLUME` | the database, in a volume of the preview's own project |
 | `backup` | `postgres:18-alpine` | daily `pg_dump` into `BACKUP_DIR` (profile `production`) | not started |
+| `predeploy-dump` | `trail-local-predeploy-dump:<commit>`, `postgres:18-alpine` plus the migrations' journal, built on the server | a one-shot: a verified dump into `BACKUP_DIR/pre-update/` before `app` and `worker` start, on every deployment | runs and skips (`LAUNCHWAY_ENVIRONMENT=preview`): no dump |
 
 `deploy/compose.yaml` fixes each container's role; `.env` cannot change it
 ([Processing](#processing)).
@@ -42,9 +43,10 @@ without a route out. `app` keeps the map data of its regions in
 the volume `<project>_trail-map` ([Map data](#map-data)) and serves the
 basemap from it ([The basemap](#the-basemap)).
 
-The app's image is never built on the server: GitHub Actions builds every
-commit and publishes its image as `sha-<first 7 characters of the commit>`
-([Images](#images)). The server runs the tests instead, for every push to
+Launchway builds the app's image on the server from the checked-out ref
+(`build:` in `deploy/compose.yaml`, [Images](#images)); GitHub Actions
+still builds and publishes `sha-<first 7 characters of the commit>`
+to GHCR, but no deployment pulls it. The server runs the tests instead, for every push to
 `main` and every pull request, in the development container
 ([Checks](#checks)).
 
@@ -119,13 +121,19 @@ log keeps who looked, 365 days by default), `SESSION_TTL_DAYS`,
 
 `BACKUP_DIR` must be absolute and must exist: a relative path would land in
 the deployment's checkout, which Launchway deletes after later deployments,
-and the mount does not create a missing folder (the `backup` container then
-fails to start, naming the path).
+and `backup`'s mount does not create a missing folder (the container then
+fails to start, naming the path). `predeploy-dump`'s mount does create one
+(Docker's short bind form, which Compose cannot switch with a variable), so a
+mistyped path gets an empty folder there. The dump service therefore refuses a
+folder that holds no daily `trail-*.dump` of `backup`'s. On a first install
+(no daily dump yet) create the marker file once: `touch
+$BACKUP_DIR/.trail-backup-dir`.
 
 Launchway adds its own variables to the `.env` it writes. Trail uses two:
-`LAUNCHWAY_COMMIT_SHA_SHORT` (the image tag `sha-<commit>`) and
+`LAUNCHWAY_COMMIT_SHA_SHORT` (the image tag `trail-local:<commit>` and the commit `/api/config` reports) and
 `LAUNCHWAY_PUBLIC_URL` (the https address of the deployment's host name, used
-when `PUBLIC_URL` is empty). `LAUNCHWAY_ENVIRONMENT` (`production` or
+when `PUBLIC_URL` is empty; Launchway leaves it empty for an app without a
+public route, which then needs `PUBLIC_URL` set). `LAUNCHWAY_ENVIRONMENT` (`production` or
 `preview`) and `LAUNCHWAY_PREVIEW_NUMBER` are available but unused.
 
 ### Preview variables
@@ -137,11 +145,16 @@ from the production variables, override these:
 
 ```ini
 COMPOSE_PROFILES=                  # no backup service, no host folder
+BACKUP_DIR=                        # empty, never production's: a preview mounts no host folder
 TRAIL_DB_VOLUME=                   # a volume of the preview's own project
 PUBLIC_URL=                        # the preview's own address (LAUNCHWAY_PUBLIC_URL)
 INGEST_BASE_URL=
 ALERT_NTFY_URL=                    # no alerts from test data
 ```
+
+An empty `BACKUP_DIR` matters as well: `predeploy-dump` then mounts a volume
+of the preview's own project, which is all a preview may mount (Launchway
+refuses every host bind there), where production's folder would be refused.
 
 `TRAIL_DB_VOLUME` matters most: a preview with the production volume would
 run a second Postgres on the production data and corrupt it.
@@ -262,11 +275,10 @@ deploys its head commit as the Compose project `launchway-trail-pr-<number>`
 on a host name of its own, and redeploys it on every push. Pull requests from
 forks get no preview, and CI never publishes their images.
 
-- **Image.** GitHub Actions publishes `sha-<commit>` for every push to a
-  branch of this repository a few minutes after the push, without waiting for
-  the [checks](#checks). Launchway retries the pull for up to an hour, so a
-  preview appears when its image does, also for a commit whose checks fail;
-  the pull request's statuses tell.
+- **Image.** Built on the server from the pull request's head commit at
+  every deployment ([Images](#images)), so a preview does not wait for CI and
+  appears also for a commit whose checks fail; the pull request's statuses
+  tell. A failed build fails the deployment.
 - **Database.** Empty, in a volume of the preview's project, removed with the
   preview. Migrations run on boot as in production.
 - **A migration regenerated after a rebase.** Drizzle applies only the
@@ -297,6 +309,34 @@ address without any setting ([Preview variables](#preview-variables)).
 
 ## Images
 
+Production and previews run an image **built on the server** from the
+deployed ref: `app` and `worker` in `deploy/compose.yaml` both carry
+`build: {context: .., dockerfile: Dockerfile, args: {GIT_SHA: <commit>}}` and
+the tag `trail-local:<commit>` (`TRAIL_IMAGE` replaces the tag for a local
+run, [Local run](#local-run)). No registry is involved, so `docker compose
+pull --ignore-buildable` has nothing to fetch for Trail (`db` and the dump
+service's `postgres:18-alpine` still come from Docker Hub). The commit is the
+`GIT_SHA` build argument; `APP_VERSION` is not passed, so `/api/config`
+reports the version of `package.json` at that commit. Each commit has its own
+tag, and nothing removes them: every production deployment and every
+preview push leaves a `trail-local:<commit>` image and build cache on the
+server, so a schedule has to prune the `trail-local` images except the running
+and the previous production tag, and run `docker builder prune
+--keep-storage`. The tag is also what makes a rollback to an older ref find its image again (or
+build it) instead of reusing the newest.
+
+To prove a build without deploying:
+
+```sh
+cd deploy && COMPOSE_PROFILES=production docker compose config > /dev/null   # resolves, profile on
+cd deploy && docker compose config > /dev/null                               # resolves, preview
+```
+
+(with `POSTGRES_PASSWORD`, `LAUNCHWAY_PUBLIC_URL` and
+`LAUNCHWAY_COMMIT_SHA_SHORT` set), then `docker compose build`.
+
+### Published images
+
 GitHub Actions (`.github/workflows/ci.yml`, job `image`) builds
 `ghcr.io/jenspenneman/trail` for amd64 and arm64 with provenance and an SBOM,
 for every commit and without waiting for the [checks](#checks):
@@ -310,16 +350,29 @@ for every commit and without waiting for the [checks](#checks):
 | pull request | nothing: build only (forks never publish) |
 
 Dependabot's branches only build, because their runs have a read-only token.
-Deployments always pin `sha-<commit>`; `latest` is only the newest build of
-`main`.
+These images are not what runs on the server; they remain for anyone who
+wants to run a commit elsewhere. `latest` is only the newest build of `main`.
 
 What is running: Settings > About in the dashboard, or
 
 ```sh
-curl -s https://trail.jenspenneman.com/api/config   # version, commit, builtAt
+curl -s https://trail.jenspenneman.com/api/config   # version, commit
 ```
 
-The commit is the short SHA of the image's `sha-<commit>` tag.
+The commit is the short SHA Launchway built from. `builtAt` is empty for an
+image built on the server.
+
+### Verifying a deployment
+
+`deploy/verify.json` says what "healthy" means, as data: `checks`, run once
+after a deployment, and a `soak` that watches it afterwards. Paths start with a
+single `/` (no backslash or control character, and the request must stay on the base URL's origin), methods are GET, HEAD or POST, and JSON keys are dot paths whose
+values are compared as strings; `{version}` is the version in `package.json`
+and `{commit}` the deployed commit. Run it from outside the app's network,
+through the edge: an upload to the ingest route over plain HTTP is answered
+403 ("Uploads need HTTPS") before the token is looked at, when `PUBLIC_URL`
+is an `https:` address, and the check expects the 401 of an anonymous upload
+over HTTPS.
 
 ## Checks
 
@@ -385,11 +438,14 @@ runs the checks and can merge.
 
 ## Rollback
 
-Redeploy an older release in Launchway (the app's deployments list): it pulls
-that release's `sha-<commit>` image again, with that release's
-`compose.yaml`. Migrations only move forward, so an older image runs against
+Redeploy an older release in Launchway (the app's deployments list): it
+builds that release's commit again (or finds its image `trail-local:<commit>`
+still on the server), with that release's `compose.yaml`. The deployment takes a dump first
+like any other ([the dump before an update](#the-dump-before-an-update)), of
+the database as the newer release left it; a rollback has no newer migration,
+so a failing dump cannot keep it from coming up. Migrations only move forward, so an older image runs against
 the newer schema; when that does not work, restore the dump made before the
-update ([Backups](#backups)). A release from before the `worker` service has
+update (`BACKUP_DIR/pre-update/`, [Backups](#backups)). A release from before the `worker` service has
 none: Launchway removes the `worker` container (`up --remove-orphans`) and
 that release's `app` processes in its own process, as it did then. Back on
 the newer release, run `trail recompute` ([Heatmap](#heatmap)): an older release keeps
@@ -441,7 +497,7 @@ back. Layout and retention:
 | (top) `trail-<timestamp>.dump` | every daily dump | `BACKUP_KEEP_DAYS` (14) |
 | `monthly/trail-<YYYY-MM>.dump` | the first dump of each month | `BACKUP_KEEP_MONTHS` (12; 0 = forever) |
 | `yearly/trail-<YYYY>.dump` | the first dump of each year | `BACKUP_KEEP_YEARS` (0 = forever) |
-| `pre-update/` | dumps of the former standalone stack, if any | `BACKUP_KEEP_DAYS` |
+| `pre-update/` | `trail-<UTC timestamp>-<commit>.dump`, one before every deployment ([below](#the-dump-before-an-update)), and those of the former standalone stack | `BACKUP_KEEP_DAYS` |
 
 Every dump holds the whole history, so the newest one is all a restore needs.
 It also dumps right after starting when the newest dump is more than a day
@@ -452,6 +508,55 @@ shows up as "Restarting".
 ```sh
 docker logs launchway-trail-backup-1   # "backup complete: trail-....dump, 1234 KiB in 2 s"
 ```
+
+### The dump before an update
+
+The one-shot service `predeploy-dump` runs before `app` and `worker` on every
+`docker compose up`, so a deployment has a restore point from just before it.
+In order, it:
+
+1. skips (exit 0) only when `LAUNCHWAY_ENVIRONMENT` is `preview`, or
+   `PREDEPLOY_DUMP=skip` (set by `deploy/compose.dev.yaml` for local runs);
+   anything else dumps, a missing `COMPOSE_PROFILES` included;
+2. refuses unless `/backups` already holds a daily `trail-*.dump` of
+   `backup`'s or the marker file `.trail-backup-dir`, so a mistyped
+   `BACKUP_DIR` is not filled (production's `D:\Backups\trail` holds daily
+   dumps, so it needs no marker);
+3. keeps the newest 3 files of `pre-update/` and refuses when the free space
+   is under twice the size of the newest dump (`backup` prunes before it dumps
+   too, so a full disk is never what stops the pruning);
+4. writes `BACKUP_DIR/pre-update/trail-<UTC timestamp>-<commit>.dump.partial`,
+   checks it with `pg_restore --list` and only then renames it to `.dump`.
+
+**When a failed or refused dump stops the update.** Only when the target ref
+ships a migration the database has not applied: the script compares the
+largest `"when"` of `apps/api/drizzle/meta/_journal.json` (copied into the
+dump image when it is built, so nothing from the checkout is bind-mounted)
+with `select
+max(created_at) from drizzle.__drizzle_migrations` (a failed query or an empty
+journal counts as pending). Then it exits 1, Compose does not start `app` and
+`worker`, and the deployment fails at `up` with *service "predeploy-dump"
+didn't complete successfully*. Without a pending migration, a rollback or an
+update of dependencies only, it logs `WARNING: pre-update dump failed; no
+migration pending` and exits 0, so the deployment goes on. It is a hard
+dependency on purpose: with `required: false` Compose starts the new
+containers after a failed dump, with only a warning.
+
+**Downtime.** Compose replaces `app` and `worker` before the dump runs (every
+service changes on every deployment), so each deployment is down from that
+replacement until the dump, the migrations and the start are done, and a
+failed dump with a pending migration leaves the replaced containers created
+and never started: nothing has touched the database, and production is down.
+The whole `up` has to fit Launchway's limits for it (15 minutes for the
+process, `--wait-timeout 600`). A dump takes about 55 to 81 seconds for
+~212 MB; one that takes minutes needs those raised.
+
+**The way back after a failed dump.** In Launchway, Trail → Deployments,
+redeploy the previous release: its journal has no newer migration than the
+database, so its own dump cannot block it. Read
+`docker logs launchway-trail-predeploy-dump-1` for the cause (a wrong password,
+a full or wrong `BACKUP_DIR`, a database that does not answer), fix it, then
+deploy the target again.
 
 **Dump now** (before a risky change):
 
@@ -1013,7 +1118,8 @@ Day-to-day development uses `npm run dev` instead (README).
 
 | Symptom | Cause and fix |
 |---|---|
-| The deployment fails at the pull of `sha-<commit>` | GitHub Actions has not published that commit's image yet (job `image` still running, or failed). Launchway retries for an hour; check the commit's CI run. |
+| The deployment fails at the build | The log of the deployment shows `docker compose build`: a failing `npm ci`, a download of the map assets (`scripts/map-assets.mjs`) or the build itself. Nothing in the registry is involved. |
+| The deployment fails at `up` with *predeploy-dump didn't complete successfully* | The dump before the update failed and the update ships a migration ([The dump before an update](#the-dump-before-an-update)); `app` and `worker` were not started. Redeploy the previous release first, then read `docker logs launchway-trail-predeploy-dump-1`, fix the cause and deploy again. |
 | A release was tagged but nothing deployed | The release is still a draft: CI publishes it after the images and the checks. Check the tag's CI run, job `release-gate`: its log shows the checks it waits for, or why it stopped ([Releases](#releases)). |
 | A pull request's `launchway/*` statuses stay *pending* | The node runs one check at a time and others are ahead, or it is down ([Checks](#checks)). |
 | A `launchway/*` status is *error* | The check could not run: the description names why (superseded, the image build, the node offline, a full queue). **Re-run** it on the Checks tab once the cause is gone. |
