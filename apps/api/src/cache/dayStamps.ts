@@ -81,10 +81,15 @@ const value = (part: string | number | null): string => (part === null ? "-" : S
  * (`computed_at`, which a pass and a mode correction move), versions and the
  * sums of their bounds (a pass cuts a segment of a neighbouring day without
  * rewriting it) and points — and whether a window waits for processing over
- * the day or such a stay; null while the day has no segment. Both carry
+ * the day or such a stay, and `rail-off` while the rail kill switch is off
+ * (the lines drawn change without any row changing); null while the day has no segment. Both carry
  * the device, the day and the time zone, so they never stand for another day.
  */
-export function stampDay(row: DayStampRow, timezone: string): Omit<StampedDay, "stat"> {
+export function stampDay(
+  row: DayStampRow,
+  timezone: string,
+  railAlign: boolean,
+): Omit<StampedDay, "stat"> {
   const day = [row.device_id, row.date, timezone].join("|");
   const raw = [
     `raw${rawRecipe}`,
@@ -111,6 +116,8 @@ export function stampDay(row: DayStampRow, timezone: string): Omit<StampedDay, "
     value(row.ends),
     value(row.points_of_parts),
     row.pending ? "pending" : "settled",
+    // What the processed answers draw depends on the rail kill switch (§17.3), which no stored row records: while it is off the stamp says so, so a flip either way changes every processed stamp and the browser asks again. With it on the stamp is what it always was.
+    ...(railAlign ? [] : ["rail-off"]),
   ].join("|");
   return {
     deviceId: row.device_id,
@@ -158,9 +165,15 @@ const statementNameOf = (text: string): string =>
  */
 export async function loadStampedDays(
   db: Database,
-  input: { deviceIds: readonly string[]; timezone: string; dates: readonly string[] },
+  input: {
+    deviceIds: readonly string[];
+    timezone: string;
+    dates: readonly string[];
+    /** `PROCESSING_RAIL_ALIGN`: part of the processed stamp while it is off. */
+    railAlign: boolean;
+  },
 ): Promise<StampedDay[]> {
-  const { deviceIds, timezone, dates } = input;
+  const { deviceIds, timezone, dates, railAlign } = input;
   if (deviceIds.length === 0 || dates.length === 0) return [];
   const sorted = [...dates].sort();
   const firstDate = sorted[0] ?? "";
@@ -271,7 +284,7 @@ export async function loadStampedDays(
     values: statement.params,
   });
   return result.rows.map((row) => ({
-    ...stampDay(row, timezone),
+    ...stampDay(row, timezone, railAlign),
     stat:
       row.points === null || row.first_at === null || row.last_at === null
         ? null

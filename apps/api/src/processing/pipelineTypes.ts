@@ -134,8 +134,8 @@ export const noRailPassStats = (): RailPassStats => ({
 
 /** What the judge made of the rail line of a part of a move (`segments.features.railPath`); no coordinates. */
 export interface RailPathVerdict {
-  /** `aligned`: draw it; `poor`: a track was found but the match is not good enough; `no_rail`: no railway there; `no_map`: no rail data. */
-  status: "aligned" | "poor" | "no_rail" | "no_map";
+  /** `aligned`: draw it; `poor`: a track was found but the match is not good enough; `no_rail`: no railway there; `no_map`: no rail data; `skipped`: left alone, the move could not be a train (a segment that ends up a train says so). */
+  status: "aligned" | "poor" | "no_rail" | "no_map" | "skipped";
   reason:
     | "ok"
     | "short"
@@ -147,7 +147,8 @@ export interface RailPathVerdict {
     | "no_rail"
     | "waiting"
     | "outside_regions"
-    | "deferred";
+    | "deferred"
+    | "not_train";
   /** Which source made the move's last tile available; null when not known (no map). */
   source: "cache" | "region" | null;
   coveredShare: number;
@@ -181,6 +182,17 @@ export interface ManualTrip {
   endedAt: number;
   /** Overland's trip mode (`walk`, `bicycle`, `train` …). */
   mode: string;
+}
+
+/** The aligned lines stored over a window: the move segments and the rail places of their points, by time. */
+export interface StoredRail {
+  segments: readonly {
+    startT: number;
+    endT: number;
+    pointCount: number;
+    verdict: RailPathVerdict;
+  }[];
+  places: ReadonlyMap<number, RailPlace>;
 }
 
 /** An active correction (`mode_overrides`), in creation order. */

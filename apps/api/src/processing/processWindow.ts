@@ -18,7 +18,6 @@ import {
   queuePriority,
 } from "./processingQueue";
 import { processingVersions } from "./processingVersion";
-import { couldBeTrain } from "./rail/trainPlausible";
 import type { RegionCoverageStore } from "./regionCoverageStore";
 import {
   addRailCost,
@@ -28,10 +27,12 @@ import {
   piecesToMap,
   planRailReads,
   planWindow,
+  plausibleMove,
   type RailInputs,
   type RailStretch,
   railPiece,
   type StretchMapping,
+  trainScore,
   type WindowPlan,
 } from "./runPipeline";
 import { splitJob } from "./splitJob";
@@ -49,6 +50,7 @@ import {
   loadRawPoints,
   loadStayBefore,
   loadStoredMapping,
+  loadStoredRail,
   loadTrips,
   loadVisits,
 } from "./windowData";
@@ -151,7 +153,7 @@ export async function processWindow(
             window.from,
             new Date(Math.min(...toggles.map((toggle) => toggle.from)) * 1000),
           );
-    const plan = planWindow(raw, visits, config);
+    const plan = planWindow(raw, visits, config, overrides);
     const { available, stale } = options.mapping
       ? await cachedTiles(tx, plan.tiles, staleBefore(config.mapping.tileMaxAgeDays, now))
       : { available: new Set<TileKey>(), stale: new Set<TileKey>() };
@@ -170,7 +172,7 @@ export async function processWindow(
         mappings.push(...stretches);
       }
     }
-    const rail = await railInputs(tx, plan, available, options, railStats);
+    const rail = await railInputs(tx, deviceId, plan, available, options, railStats);
     const result = inferWindow(
       plan,
       mappings,
@@ -248,6 +250,7 @@ export async function processWindow(
  */
 async function railInputs(
   tx: Executor,
+  deviceId: string,
   plan: WindowPlan,
   available: ReadonlySet<TileKey>,
   options: {
@@ -275,11 +278,22 @@ async function railInputs(
   }
   const covered = new Set(coverage?.covered(plan.tiles) ?? []);
   for (const tile of covered) railAvailable.add(tile);
-  return alignFrom(tx, plan, available, railAvailable, covered, config, stats, options.mapping);
+  return alignFrom(
+    tx,
+    deviceId,
+    plan,
+    available,
+    railAvailable,
+    covered,
+    config,
+    stats,
+    options.mapping,
+  );
 }
 
 async function alignFrom(
   tx: Executor,
+  deviceId: string,
   plan: WindowPlan,
   available: ReadonlySet<TileKey>,
   railAvailable: ReadonlySet<TileKey>,
@@ -288,14 +302,13 @@ async function alignFrom(
   stats: RailPassStats,
   waiting: boolean,
 ): Promise<RailInputs> {
-  for (const move of plan.moves) {
-    if (!move.airborne && !couldBeTrain(plan.kept.slice(move.first, move.last + 1), config.rail)) {
-      stats.notTrainMoves += 1;
-    }
+  for (const [number, move] of plan.moves.entries()) {
+    if (!move.airborne && !plausibleMove(plan, number, config)) stats.notTrainMoves += 1;
   }
   const { reads, deferred } = planRailReads(
     piecesToAlign(plan, available, railAvailable, config),
     config.rail.railOnlyMaxTilesPerPass,
+    (move) => trainScore(plan, move, config),
   );
   stats.deferredMoves += deferred.size;
   const stretches: RailStretch[] = [];
@@ -309,5 +322,19 @@ async function alignFrom(
     for (const stretch of aligned) addRailCost(stats, stretch.railCost);
     stretches.push(...aligned);
   }
-  return { available: railAvailable, covered, stretches, deferred, waiting };
+  // A deferral must never blank a line an earlier pass stored: the stored lines are read, in this transaction, only then.
+  const first = plan.raw[0];
+  const last = plan.raw.at(-1);
+  const stored =
+    deferred.size > 0 && first !== undefined && last !== undefined
+      ? await loadStoredRail(tx, deviceId, first.t, last.t)
+      : undefined;
+  return {
+    available: railAvailable,
+    covered,
+    stretches,
+    deferred,
+    ...(stored === undefined ? {} : { stored }),
+    waiting,
+  };
 }

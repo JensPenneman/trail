@@ -170,15 +170,16 @@ export function alignToRail(
     current.push(stepIndex);
   }
   if (current.length > 0) found.push(current);
-  const runs = found.filter((run) => {
+  const runLength = (stepIndexes: readonly number[]): number => {
     let length = 0;
-    for (let k = 1; k < run.length; k += 1) {
-      const a = steps[run[k - 1] ?? 0];
-      const b = steps[run[k] ?? 0];
+    for (let k = 1; k < stepIndexes.length; k += 1) {
+      const a = steps[stepIndexes[k - 1] ?? 0];
+      const b = steps[stepIndexes[k] ?? 0];
       if (a !== undefined && b !== undefined) length += chord(a, b);
     }
-    return length >= config.minRunM;
-  });
+    return length;
+  };
+  const runs = found.filter((run) => runLength(run) >= config.minRunM);
   stats.runs = runs.length;
   if (runs.length === 0) return { points: result, stats };
 
@@ -199,7 +200,13 @@ export function alignToRail(
     stats.maxSearchHops = config.maxHops;
   };
 
-  for (const [runNumber, run] of runs.entries()) {
+  // A run an impossible leg cuts in two goes on as a run of its own, numbered next.
+  const work = [...runs];
+  for (let runNumber = 0; runNumber < work.length; runNumber += 1) {
+    const run = work[runNumber];
+    if (run === undefined) continue;
+    // The steps the run keeps: all of them, until a step no leg can reach.
+    let usable = run.length;
     // Viterbi, forward, over the run's steps.
     const cost: Float64Array[] = run.map(
       (stepIndex) => new Float64Array(steps[stepIndex]?.states.length ?? 0),
@@ -225,7 +232,18 @@ export function alignToRail(
       if (to === undefined || here === undefined || pointers === undefined || jumps === undefined)
         continue;
       here.fill(Number.POSITIVE_INFINITY);
+      pointers.fill(-1);
       const targets = to.states.map((state) => state.candidate);
+      // The run may also begin here: the steps before it were outliers.
+      if (k <= config.maxOutlierSteps) {
+        for (const [toIndex, target] of to.states.entries()) {
+          const total = k * config.outlierCost + target.emission;
+          if (total < (here[toIndex] ?? Number.POSITIVE_INFINITY)) {
+            here[toIndex] = total;
+            pointers[toIndex] = -1;
+          }
+        }
+      }
       for (let skipped = 0; skipped <= config.maxOutlierSteps && skipped < k; skipped += 1) {
         const before = cost[k - 1 - skipped];
         const from = steps[run[k - 1 - skipped] ?? 0];
@@ -241,16 +259,20 @@ export function alignToRail(
         }
         const distance = chord(from, to);
         const beta = Math.max(config.betaMinM, config.betaChordFactor * distance);
+        const speed = distance / Math.max(1, to.t - from.t);
         for (const [fromIndex, source] of from.states.entries()) {
           const base = before[fromIndex] ?? Number.POSITIVE_INFINITY;
           if (!Number.isFinite(base)) continue;
           search(source.candidate, targets, from, to);
           for (const [toIndex, target] of to.states.entries()) {
             const route = graph.distanceTo(target.candidate);
+            // A straight leg faster than any train goes is a jump of the fix, not a ride: no leg at all.
             const transition = Number.isFinite(route)
               ? Math.abs(route - distance) / beta +
                 (source.candidate.way === target.candidate.way ? 0 : config.wayChangeCost)
-              : config.breakCost;
+              : speed > config.maxSpeedMs
+                ? Number.POSITIVE_INFINITY
+                : config.breakCost;
             const total = base + extra + transition + target.emission;
             if (total < (here[toIndex] ?? Number.POSITIVE_INFINITY)) {
               here[toIndex] = total;
@@ -260,21 +282,31 @@ export function alignToRail(
           }
         }
       }
+      // No leg reaches this step (every way in is a straight leg no train could ride): the run ends before it.
+      if (!here.some((value) => Number.isFinite(value))) {
+        const rest = run.slice(k);
+        if (runLength(rest) >= config.minRunM) work.splice(runNumber + 1, 0, rest);
+        usable = k;
+        break;
+      }
     }
 
-    // Backtrack: the steps the best path stands on, the ones it skipped left out.
-    const lastCost = cost.at(-1);
-    if (lastCost === undefined) continue;
-    let best = 0;
-    for (let stateIndex = 1; stateIndex < lastCost.length; stateIndex += 1) {
-      if ((lastCost[stateIndex] ?? 0) < (lastCost[best] ?? 0)) best = stateIndex;
+    // Backtrack: the steps the best path stands on, the ones it skipped left out. The path may
+    // end on any of the last steps, each one left out costing an outlier.
+    let best = { k: usable - 1, state: 0, total: Number.POSITIVE_INFINITY };
+    for (let k = usable - 1; k >= Math.max(0, usable - 1 - config.maxOutlierSteps); k -= 1) {
+      for (const [stateIndex, value] of (cost[k] ?? []).entries()) {
+        const total = value + (usable - 1 - k) * config.outlierCost;
+        if (total < best.total) best = { k, state: stateIndex, total };
+      }
     }
-    const path: { k: number; state: number }[] = [{ k: run.length - 1, state: best }];
+    if (!Number.isFinite(best.total)) continue;
+    const path: { k: number; state: number }[] = [{ k: best.k, state: best.state }];
     for (;;) {
       const here = path[path.length - 1];
-      if (here === undefined || here.k === 0) break;
-      const hop = jump[here.k]?.[here.state] ?? 1;
-      path.push({ k: here.k - hop, state: back[here.k]?.[here.state] ?? 0 });
+      const pointer = here === undefined ? -1 : (back[here.k]?.[here.state] ?? -1);
+      if (here === undefined || pointer < 0) break;
+      path.push({ k: here.k - (jump[here.k]?.[here.state] ?? 1), state: pointer });
     }
     path.reverse();
 
@@ -296,9 +328,18 @@ export function alignToRail(
       entry.z = offset / sigmaOf(position);
       Object.assign(entry, extra);
     };
-    const first = steps[run[0] ?? 0];
+    const first = steps[run[path[0]?.k ?? 0] ?? 0];
     const firstState = first?.states[path[0]?.state ?? 0]?.candidate;
     if (first === undefined || firstState === undefined) continue;
+    // Steps before the path's first one were outliers: they lie at the line's start.
+    const startStep = steps[run[0] ?? 0];
+    for (
+      let position = startStep?.position ?? first.position;
+      position < first.position;
+      position += 1
+    ) {
+      place(position, firstState, { outlier: true });
+    }
     place(first.position, firstState, {});
     for (let at = 1; at < path.length; at += 1) {
       const before = path[at - 1];
@@ -347,6 +388,16 @@ export function alignToRail(
               : between.map(([x, y]) => [projection.lon(x), projection.lat(y)] as [number, number]),
         });
         along = spot.along;
+      }
+    }
+    // Steps after the path's last one were outliers: they lie at the line's end.
+    const lastOfPath = path.at(-1);
+    const endStep = steps[run[lastOfPath?.k ?? 0] ?? 0];
+    const endSpot = endStep?.states[lastOfPath?.state ?? 0]?.candidate;
+    const lastStep = steps[run[usable - 1] ?? 0];
+    if (endStep !== undefined && endSpot !== undefined && lastStep !== undefined) {
+      for (let position = endStep.position + 1; position <= lastStep.position; position += 1) {
+        place(position, endSpot, { outlier: true });
       }
     }
   }

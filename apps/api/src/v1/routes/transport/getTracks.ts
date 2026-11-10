@@ -24,11 +24,16 @@ export const getTracks = defineRoute(
     const from = new Date(query.from);
     const to = new Date(query.to);
     // The stamps before the points (docs/architecture.md §8.9).
-    const { deviceIds, days } = await stampRange(ctx.db, auth, {
-      deviceIds: query.devices,
-      from,
-      to,
-    });
+    const { deviceIds, days } = await stampRange(
+      ctx.db,
+      auth,
+      {
+        deviceIds: query.devices,
+        from,
+        to,
+      },
+      ctx.config.processing.railAlign,
+    );
     const asked = {
       from: from.toISOString(),
       to: to.toISOString(),

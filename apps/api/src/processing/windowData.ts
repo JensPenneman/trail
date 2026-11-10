@@ -6,8 +6,11 @@ import type {
   ManualTrip,
   MappedPoint,
   OverrideSpan,
+  RailPathVerdict,
+  RailPlace,
   RawPoint,
   StayBefore,
+  StoredRail,
   VisitSpan,
 } from "./pipelineTypes";
 import { continuesBeforeSql, stayStartedAfterSql } from "./stayParts";
@@ -550,4 +553,64 @@ export async function loadStoredMapping(
     });
   }
   return points.map((point) => byTime.get(point.t) ?? null);
+}
+
+interface StoredRailSegmentRow extends Record<string, unknown> {
+  started_at: string;
+  ended_at: string;
+  point_count: number;
+  verdict: RailPathVerdict;
+}
+
+interface StoredRailPointRow extends Record<string, unknown> {
+  recorded_at: string;
+  lat_rail: number;
+  lon_rail: number;
+  path_rail: [number, number][] | null;
+}
+
+/**
+ * The aligned rail lines stored over `from..to`: the move segments whose
+ * verdict is `aligned` and the rail places of the points in between. A read
+ * inside the pass's transaction, like `loadStoredMapping`: nothing is queued
+ * and no state changes. Only read when a deferral could blank a line.
+ */
+export async function loadStoredRail(
+  db: Executor,
+  deviceId: string,
+  from: number,
+  to: number,
+): Promise<StoredRail> {
+  const segments = await db.execute<StoredRailSegmentRow>(sql`
+    SELECT started_at::text, ended_at::text, point_count, features->'railPath' AS verdict
+    FROM segments
+    WHERE device_id = ${deviceId} AND kind = 'move'
+      AND started_at >= to_timestamp(${from}) AND ended_at <= to_timestamp(${to})
+      AND features->'railPath'->>'status' = 'aligned'
+  `);
+  const places = new Map<number, RailPlace>();
+  if (segments.rows.length > 0) {
+    const points = await db.execute<StoredRailPointRow>(sql`
+      SELECT recorded_at::text, lat_rail, lon_rail, path_rail
+      FROM processed_points
+      WHERE device_id = ${deviceId} AND lat_rail IS NOT NULL
+        AND recorded_at >= to_timestamp(${from}) AND recorded_at <= to_timestamp(${to})
+    `);
+    for (const row of points.rows) {
+      places.set(epoch(row.recorded_at), {
+        lat: row.lat_rail,
+        lon: row.lon_rail,
+        path: row.path_rail,
+      });
+    }
+  }
+  return {
+    segments: segments.rows.map((row) => ({
+      startT: epoch(row.started_at),
+      endT: epoch(row.ended_at),
+      pointCount: row.point_count,
+      verdict: row.verdict,
+    })),
+    places,
+  };
 }

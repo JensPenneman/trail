@@ -25,16 +25,24 @@ export class DailyStatsScheduler {
   readonly #logger: Logger;
   readonly #bus: EventBus | null;
   readonly #delayMs: number;
+  readonly #railAlign: boolean;
   #pending: Batch = new Map();
   #timer: NodeJS.Timeout | undefined;
   #running: Promise<void> | null = null;
   #stopped = false;
 
-  constructor(db: Database, logger: Logger, bus: EventBus | null, delayMs = 10_000) {
+  constructor(
+    db: Database,
+    logger: Logger,
+    bus: EventBus | null,
+    delayMs = 10_000,
+    railAlign = true,
+  ) {
     this.#db = db;
     this.#logger = logger;
     this.#bus = bus;
     this.#delayMs = delayMs;
+    this.#railAlign = railAlign;
   }
 
   /** Days whose points changed: summed up again with the next pass, then announced. */
@@ -143,6 +151,7 @@ export class DailyStatsScheduler {
       deviceIds: [owner.id],
       timezone: owner.timezone,
       dates,
+      railAlign: this.#railAlign,
     });
     const event: ServerEvent = {
       type: "days",

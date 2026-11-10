@@ -3,7 +3,12 @@ import type { Segment } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { RawPoint } from "../../src/processing/pipelineTypes";
+import {
+  defaultProcessingConfig,
+  type ProcessingConfig,
+} from "../../src/processing/processingConfig";
 import { enqueueWindow } from "../../src/processing/processingQueue";
+import { RegionCoverageStore } from "../../src/processing/regionCoverageStore";
 import { planWindow } from "../../src/processing/runPipeline";
 import { parseTileKey } from "../../src/processing/tileCover";
 import { saveTile } from "../../src/processing/tileStore";
@@ -11,6 +16,7 @@ import { type Agent, signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
 import { FixtureWaySource } from "../support/fixtureWaySource";
 import { uploadJourney } from "../support/overlandPoints";
+import { PassRunner } from "../support/passRunner";
 import { assertQueueInvariants, assertSegmentInvariants } from "../support/processingInvariants";
 import { importRailRegion, removeRailRegionBuilds } from "../support/railRegionBuild";
 import { railTrip } from "../support/railTrips";
@@ -282,5 +288,96 @@ describe("a region swapped between passes", () => {
     expect(bare).toMatchObject({ status: "no_rail", reason: "no_rail" });
     expect((await counts(device.id)).railed).toBe(0);
     await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
+  });
+});
+
+describe("the per-pass cap on rail-only reads, with Overpass off", () => {
+  const rideA = ride(20_000, 30_000, base + 33 * hour, 21);
+  const rideB = ride(35_000, 45_000, base + 36 * hour, 22);
+  const tilesOf = (points: readonly RawPoint[]) =>
+    planWindow(points, [], defaultProcessingConfig).tiles.size;
+  // One ride's tiles fit, both do not; the two rides are pieces of their own.
+  const cap = Math.max(tilesOf(rideA), tilesOf(rideB));
+  const withCap = (railOnlyMaxTilesPerPass: number, pieceMaxTiles = cap): ProcessingConfig => ({
+    ...defaultProcessingConfig,
+    mapping: { ...defaultProcessingConfig.mapping, pieceMaxTiles },
+    rail: { ...defaultProcessingConfig.rail, railOnlyMaxTilesPerPass },
+  });
+  const runner = (config: ProcessingConfig) =>
+    new PassRunner({
+      db: t.ctx.db,
+      config,
+      mapping: false,
+      regions: new RegionCoverageStore(),
+    });
+  const snapshot = async (deviceId: string) => ({
+    state: (await t.ctx.db.execute(sql`SELECT * FROM processing_state ORDER BY key`)).rows,
+    queue: (
+      await t.ctx.db.execute(
+        sql`SELECT count(*)::int AS n FROM processing_queue WHERE device_id = ${deviceId}`,
+      )
+    ).rows,
+  });
+
+  it("defers one of two trains without queueing anything, the operator's reprocess of its day aligns it, and a later deferring pass keeps the line", async () => {
+    expect(tilesOf(rideA) + tilesOf(rideB)).toBeGreaterThan(cap);
+    const device = await newDevice("Two trains, a small cap");
+    await upload(device.token, [...rideA, ...rideB]);
+    const before = await snapshot(device.id);
+    const first = await runner(withCap(cap)).drain();
+    expect(first.reduce((sum, pass) => sum + pass.outcome.rail.deferredMoves, 0)).toBe(1);
+    const statuses = (await moves(device.id)).map((move) => `${move.status}/${move.reason}`);
+    expect(statuses.filter((status) => status === "aligned/ok")).toHaveLength(1);
+    expect(statuses.filter((status) => status === "no_map/deferred")).toHaveLength(1);
+    // Nothing waits for it and no processing state moved.
+    expect(await snapshot(device.id)).toEqual({ ...before, queue: [{ n: 0 }] });
+    await assertQueueInvariants(t.ctx.db, { deviceId: device.id });
+
+    // The documented recovery: the deferred ride's own bounds, worked again from the inferred level.
+    const [deferred] = (
+      await t.ctx.db.execute<{ from: string; to: string }>(sql`
+        SELECT started_at::text AS "from", ended_at::text AS "to" FROM segments
+        WHERE device_id = ${device.id} AND features->'railPath'->>'reason' = 'deferred'
+      `)
+    ).rows;
+    if (deferred === undefined) throw new Error("no deferred ride");
+    await enqueueWindow(t.ctx.db, {
+      deviceId: device.id,
+      from: new Date(deferred.from),
+      to: new Date(deferred.to),
+      reason: "reprocess",
+      fromLevel: "inferred",
+    });
+    await runner(withCap(cap)).drain();
+    expect((await moves(device.id)).map((move) => `${move.status}/${move.reason}`)).toEqual([
+      "aligned/ok",
+      "aligned/ok",
+    ]);
+
+    // A pass that defers everything leaves the stored lines and still serves them along the rails.
+    for (const segment of (await timeline(device.id)).filter((item) => item.kind === "move")) {
+      await owner
+        .put(apiPaths.v1.segments.mode(segment.id))
+        .set("Origin", testOrigin)
+        .send({ mode: "train" })
+        .expect(200);
+    }
+    await enqueueWindow(t.ctx.db, {
+      deviceId: device.id,
+      from: new Date((base + 30 * hour) * 1000),
+      to: new Date((base + 40 * hour) * 1000),
+      reason: "reprocess",
+      fromLevel: "inferred",
+    });
+    const deferring = await runner(withCap(0)).drain();
+    expect(deferring.reduce((sum, pass) => sum + pass.outcome.rail.deferredMoves, 0)).toBe(2);
+    expect((await moves(device.id)).map((move) => `${move.status}/${move.reason}`)).toEqual([
+      "aligned/ok",
+      "aligned/ok",
+    ]);
+    const served = (await timeline(device.id)).filter((item) => item.kind === "move");
+    expect(served).toHaveLength(2);
+    for (const segment of served) expect(segment.alignedTo).toBe("rail");
+    expect((await counts(device.id)).railed).toBeGreaterThan(100);
   });
 });

@@ -13,6 +13,7 @@ export async function stampRange(
   db: Database,
   access: DeviceAccess & { user: { timezone: string } },
   range: { deviceIds?: readonly string[] | undefined; from: Date; to: Date },
+  railAlign: boolean,
 ): Promise<{ deviceIds: string[]; days: StampedDay[] }> {
   const deviceIds = (await resolveDeviceIds(db, access, range.deviceIds)).map(
     (device) => device.id,
@@ -22,6 +23,7 @@ export async function stampRange(
     deviceIds,
     timezone,
     dates: localDaysOf(range, timezone),
+    railAlign,
   });
   return { deviceIds, days };
 }

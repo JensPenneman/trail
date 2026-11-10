@@ -25,11 +25,16 @@ export function visitsRouter(ctx: AppContext): Router {
     const query = parseQuery(eventRangeQuerySchema, req);
     const from = new Date(query.from);
     const to = new Date(query.to);
-    const { deviceIds, days } = await stampRange(ctx.db, auth, {
-      deviceIds: query.deviceIds,
-      from,
-      to,
-    });
+    const { deviceIds, days } = await stampRange(
+      ctx.db,
+      auth,
+      {
+        deviceIds: query.deviceIds,
+        from,
+        to,
+      },
+      ctx.config.processing.railAlign,
+    );
     const asked = { from: from.toISOString(), to: to.toISOString(), deviceIds };
     const etag = weakEtag(auth.user.id, apiPaths.visits, [asked, dayValidator(days)]);
     const status = await answerConditionally(req, res, etag, async () => {

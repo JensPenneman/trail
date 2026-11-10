@@ -210,7 +210,7 @@ export interface RailConfig {
    */
   readonly outlierCost: number;
   readonly maxOutlierSteps: number;
-  /** A move that never goes faster than this (its p90 kept speed, m/s) or is shorter than `minRunM` is no train: it is not aligned and gets no verdict. */
+  /** A move that covers less than `minRunM` at or above this speed (m/s; chords between kept points) is no train, unless a person set it to train: it is not aligned and a segment of it that ends up a train is written `skipped/not_train`. */
   readonly minTrainSpeedMs: number;
   /**
    * A rail-only read (a ride that only a loaded region covers) takes at most
@@ -225,10 +225,15 @@ export interface RailConfig {
    */
   readonly railOnlyMaxTiles: number;
   /**
-   * Rail-only tiles read in one pass at most (about 1.3 s at the measured
-   * 2.5 ms a tile, 3 s at 6 ms). A move whose pieces would go beyond it is
-   * judged `no_map/deferred` and keeps its recorded line until a later pass
-   * over its window judges it again; nothing is queued for that.
+   * Rail-only tiles read in one pass at most. Measured on a copy of production
+   * data (rehearsal 2, a loaded laptop): 133 tiles in 1.3 s, about 10 ms a tile
+   * (63 ms p50 and 1.2 s p95 a pass; the earlier 2.5 ms was an underestimate),
+   * so 100 tiles read in about one second. Pieces are taken by how train-like
+   * their moves are, and a move whose pieces would go beyond the cap is judged
+   * `no_map/deferred`: it keeps its recorded line, never replaces a stored
+   * aligned one, and nothing is queued. With Overpass on the window is worked
+   * again once its mapped tiles arrive; with it off the operator reworks the
+   * day (`trail reprocess`, docs/architecture.md §17.3).
    */
   readonly railOnlyMaxTilesPerPass: number;
   readonly judge: RailJudgeConfig;
@@ -376,7 +381,7 @@ export const defaultProcessingConfig: ProcessingConfig = {
     maxOutlierSteps: 3,
     minTrainSpeedMs: 11,
     railOnlyMaxTiles: 64,
-    railOnlyMaxTilesPerPass: 512,
+    railOnlyMaxTilesPerPass: 100,
     judge: {
       minLengthM: 1000,
       minSteps: 3,

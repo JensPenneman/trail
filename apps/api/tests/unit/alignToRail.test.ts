@@ -329,6 +329,71 @@ describe("alignToRail", () => {
     }
   });
 
+  describe("a jump at the first or the last step of a run, and a leg no train could ride", () => {
+    const mainTracks = [trackA, trackB] as Vertex[][];
+    const distanceToMain = (lonLat: readonly [number, number]): number => {
+      const vertex = toXY({ lon: lonLat[0], lat: lonLat[1] });
+      return Math.min(...mainTracks.map((line) => distanceToLine(vertex, line)));
+    };
+    const ride = () =>
+      railRide(subPath(trackA, 12_500, 15_500), { intervalS: 5, noiseM: 3, accuracy: 15, seed: 9 });
+    const shifted = (raw: RawPoint[], at: readonly number[], dy: number) =>
+      raw.map((point, index) => {
+        if (!at.includes(index)) return point;
+        const [x, y] = toXY({ lat: point.lat, lon: point.lon });
+        const [lon, lat] = toLonLat(x, y + dy);
+        return { ...point, lat, lon };
+      });
+
+    it("passes a 150 m jump at the first step and another at the last as outliers, with no straight leg", () => {
+      const raw = ride();
+      const last = raw.length - 1;
+      const aligned = align(shifted(raw, [0, last], -150));
+      expect(aligned.stats.runs).toBe(1);
+      expect(aligned.points[0]?.outlier).toBe(true);
+      expect(aligned.points[last]?.outlier).toBe(true);
+      expect(aligned.points.filter((point) => point.outlier).length).toBe(2);
+      for (const vertex of servedVertices(aligned.points)) {
+        expect(distanceToMain(vertex)).toBeLessThan(1);
+      }
+      for (const point of aligned.points) expect(point.bridgedLegM).toBe(0);
+      // The run is placed from its first point to its last.
+      expect(aligned.points.every((point) => point.run === 0)).toBe(true);
+    });
+
+    it("counts those outliers in the verdict's outlier share", () => {
+      const raw = ride();
+      const aligned = align(shifted(raw, [0, raw.length - 1], -150));
+      const verdict = judgeRailPath(
+        aligned.kept,
+        aligned.points,
+        defaultProcessingConfig.rail.judge,
+        "cache",
+      );
+      expect(verdict.outlierShare).toBeGreaterThan(0);
+      expect(verdict).toMatchObject({ status: "aligned", bridgedMaxSpeedMs: 0 });
+    });
+
+    it("places no straight leg faster than the fastest train, and splits the run where one would be", () => {
+      // 2 km on the line, then 5 s later 7 km further along it: a fix that jumped, 1 400 m/s.
+      const before = railRide(subPath(trackA, 11_000, 13_000), { intervalS: 5, seed: 3 });
+      const after = railRide(subPath(trackA, 20_000, 22_000), { intervalS: 5, seed: 4 });
+      const gap = (before.at(-1)?.t ?? 0) + 5 - (after[0]?.t ?? 0);
+      const aligned = align([...before, ...after.map((point) => ({ ...point, t: point.t + gap }))]);
+      expect(aligned.stats.runs).toBe(1);
+      for (const point of aligned.points) {
+        expect(point.bridgedSpeedMs).toBeLessThanOrEqual(config.maxSpeedMs);
+      }
+      const runs = new Set(aligned.points.filter((point) => point.run >= 0).map((p) => p.run));
+      expect(runs.size).toBe(2);
+      // The two halves are placed on the rails, each in a run of its own.
+      expect(aligned.points[0]?.run).not.toBe(aligned.points.at(-1)?.run);
+      for (const vertex of servedVertices(aligned.points)) {
+        expect(distanceToRails(vertex)).toBeLessThan(1);
+      }
+    });
+  });
+
   it("routes a 25 km gap and bridges one beyond the route bound", () => {
     const withGap = (toX: number, gapM: number) => {
       const first = railRide(subPath(trackA, 1000, 1500), { intervalS: 5 });

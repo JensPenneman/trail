@@ -2129,7 +2129,7 @@ parse them:
 | Stamp | Canonical string | Moves with |
 |---|---|---|
 | `raw` | `raw1`, device, date, zone; `daily_stats` (points, distance, first and last point); the visits touching the day (`visitTouches`, the finders' rule) — their count and the sum of their recorded times; the trips touching it (`tripTouches`) — count and sum of their starts; on the owner's current day the device's counter and newest point | an upload of the day's points (today at once, a past day once its statistics ran after their 10-s debounce), a deletion, a new visit or trip; never a re-sent upload of duplicates |
-| `processed` | `processed2`, device, date, zone; the stored segments of the stays overlapping the day — every part of a stay the timeline serves as one stop (§17.6, `stayPartsSql`), also its parts on other days — count, newest `computed_at`, lowest and highest version, the sums of their starts, ends and points; whether a waiting window (a queue row without missing tiles, as `hasPendingWork`) overlaps the day or one of those stays. Null while the day has no segment | a window queued over the day and again once worked out (it rewrites its segments with a new `computed_at` and cuts a neighbour's, which moves the sums), a corrected mode (`setSegmentMode` and `clearSegmentMode` set `computed_at`), a new version of the inference |
+| `processed` | `processed2`, device, date, zone; the stored segments of the stays overlapping the day — every part of a stay the timeline serves as one stop (§17.6, `stayPartsSql`), also its parts on other days — count, newest `computed_at`, lowest and highest version, the sums of their starts, ends and points; whether a waiting window (a queue row without missing tiles, as `hasPendingWork`) overlaps the day or one of those stays; the token `rail-off` while `PROCESSING_RAIL_ALIGN` is off (the lines drawn change with no row changing: a flip either way changes every processed stamp, so a browser holding a past day asks again; with the switch on the string is what it was). Null while the day has no segment | a window queued over the day and again once worked out (it rewrites its segments with a new `computed_at` and cuts a neighbour's, which moves the sums), a corrected mode (`setSegmentMode` and `clearSegmentMode` set `computed_at`), a new version of the inference, the rail kill switch |
 
 They are read in one statement (`loadStampedDays`): a range scan each of
 `daily_stats`, `visits`, `trips`, `segments` and `processing_queue` and the
@@ -4968,7 +4968,7 @@ of at most 1.5 (p90 3.0) and 60 m, no more than half of the points matched by
 the mapped level to a street way snapping closer than half their offset from
 the rails (`poor/road`: a car on a road beside the railway, where a mapped
 match exists), and outliers over at most 15 % of the duration. The verdict is `features.railPath`: `status` `aligned|poor|no_rail|
-no_map`, a `reason` (`ok`, `short`, `coverage`, `routes`, `offsets`, `road`, `outliers`, `no_rail`, `waiting`, `outside_regions`, `deferred`), `source` (`cache|region`) and the measures, without
+no_map|skipped`, a `reason` (`ok`, `short`, `coverage`, `routes`, `offsets`, `road`, `outliers`, `no_rail`, `waiting`, `outside_regions`, `deferred`, `not_train`), `source` (`cache|region`) and the measures, without
 coordinates. The tiles are the move's own: read from the tile cache where it
 holds them and from a loaded region wherever its polygon covers them (all
 four corners of the z14 tile inside, whatever the cache holds), so a ride the
@@ -4998,14 +4998,40 @@ jumped onto the parallel line and back): up to three in a row are skipped for
 6 each (below the 10 of a straight leg), their points lying along the leg
 between the steps on either side and counting as outliers in the verdict,
 which also keeps the fastest speed any straight leg of the part implies
-(`bridgedMaxSpeedMs`), for tuning. A move that cannot be a train is not
-aligned and gets no verdict: under 1 km along its chords, or never faster than
-40 km/h (p90 of its kept speeds), so a walk or a bike ride costs no rail read
-and no alignment (a later correction of such a move to train stays recorded).
-A pass reads at most 512 rail-only tiles (the moves a region alone covers; the
-rest of a long backlog is `no_map` with the reason `deferred`, recorded, until
-a later pass over its window judges it again; nothing is queued for it), and
-a read takes the light columns of the tiles' ways first and the nodes and
+(`bridgedMaxSpeedMs`), for tuning. The first and the last steps of a run may be
+outliers the same way (a fix that jumped onto another line at the run's end
+lies at the line's start or end), and a straight leg faster than the fastest
+train (95 m/s) is never drawn: the step it leads to is an outlier, and where no
+leg reaches a step the run ends before it and a new one begins, so a ride with
+a jump of the fix is routed properly or not aligned. A move that cannot be a
+train is not aligned: it covered under 1 km (`minRunM`) at or above 11 m/s, the
+chords measured between kept points at least 20 s apart (so noise does not
+make a walk fast, and a ride whose points mostly lie in stations still adds up
+by its stretches en route), unless a person set its mode to train, which
+always passes. It costs no rail read and no alignment; a segment of it that
+ends up a train (the inference, or the person's later correction) is written
+`skipped/not_train`, so the skipped rides show in the counts rather than as
+silence. A pass reads at most 100 rail-only tiles (the moves a region alone
+covers). Measured on a copy of production data a tile took about 10 ms (133
+tiles in 1.3 s), so a pass's rail-only read stays near one second. The pieces
+are taken in the order of how train-like their moves are (the distance
+covered at or above 11 m/s, a person's train first; ties keep plan order), so
+cars never use the cap up before trains; a move whose pieces do not all fit
+is read in none, and is `no_map` with the reason `deferred`. Deferring queues
+nothing and never replaces a line an earlier pass stored: a deferred part with
+exactly the bounds and point count of a stored `aligned` segment keeps that
+verdict and its rail places (a read of stored rows in the pass, no queue row,
+no processing state). With Overpass on, the window is worked again once its
+mapped tiles arrive, through the cache, which has no cap. With Overpass off
+nothing queues it again: the worker's "processing window done" line has
+`rail.deferredMoves > 0` for each pass that put rides off, the rides are
+`SELECT device_id, min(started_at), max(ended_at) FROM segments WHERE
+features->'railPath'->>'reason' = 'deferred' GROUP BY device_id,
+started_at::date;`, and each listed day is worked again by the operator with
+`trail reprocess --device <id> --from <start> --to <end> --from-level
+inferred` (a foreground command; a day alone stays under the cap unless it has
+more than 100 rail-only tiles of train-like moves, then use narrower ranges,
+keeping in mind that a window always grows to whole segments), and a read takes the light columns of the tiles' ways first and the nodes and
 geometry only of the rail ways. With Overpass off the tiles the cache still
 holds count as rail data too. What the aligner cost is in `WindowOutcome.rail`
 and the worker's "processing window done" line (`rail`: steps, runs, searches,

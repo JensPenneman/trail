@@ -39,7 +39,7 @@ export function processWorld(
   } = {},
 ): WindowResult {
   const config = options.config ?? defaultProcessingConfig;
-  const plan = planWindow(points, options.visits ?? [], config);
+  const plan = planWindow(points, options.visits ?? [], config, options.overrides);
   const withMap = options.withMap ?? true;
   return finishWindow(
     plan,

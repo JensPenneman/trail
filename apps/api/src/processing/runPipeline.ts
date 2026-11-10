@@ -28,6 +28,7 @@ import type {
   RawPoint,
   Span,
   StayBefore,
+  StoredRail,
   VisitSpan,
 } from "./pipelineTypes";
 import { combinePois, PoiIndex } from "./poiIndex";
@@ -35,7 +36,7 @@ import type { ProcessingConfig } from "./processingConfig";
 import { alignToRail, type RailStats } from "./rail/alignToRail";
 import { judgeRailPath } from "./rail/judgeRailPath";
 import { type RailContext, railContext, trainNetwork } from "./rail/railNetwork";
-import { couldBeTrain } from "./rail/trainPlausible";
+import { couldBeTrain, trainLikeM } from "./rail/trainPlausible";
 import { scorePart, splitMove } from "./splitMoves";
 import { continuesStop } from "./stayParts";
 import type { StopShape } from "./stopShape";
@@ -81,6 +82,8 @@ export interface RailInputs {
   stretches: readonly RailStretch[];
   /** The moves (numbers in the plan) whose rail-only read the per-pass cap put off (`planRailReads`). */
   deferred?: ReadonlySet<number>;
+  /** What an earlier pass stored as aligned over the window; read only when a move was deferred (`storedAligned`). */
+  stored?: StoredRail;
   /** Whether Overpass may still bring the tiles a move lacks (`no_map/waiting`); else nothing will (`outside_regions`). */
   waiting: boolean;
 }
@@ -157,6 +160,7 @@ export function planWindow(
   points: readonly RawPoint[],
   visits: readonly VisitSpan[],
   config: ProcessingConfig,
+  overrides: readonly OverrideSpan[] = [],
 ): WindowPlan {
   const raw = [...points].sort((a, b) => a.t - b.t);
   const averaged = averagePoints(raw, config.averaging);
@@ -169,10 +173,30 @@ export function planWindow(
     const points = kept.slice(span.first, span.last + 1);
     const airborne = isAirborne(points, config);
     const needed = airborne ? new Set<TileKey>() : moveTiles(points, config);
-    moves.push({ first: span.first, last: span.last, airborne, tiles: needed });
+    moves.push({
+      first: span.first,
+      last: span.last,
+      airborne,
+      userTrain: setToTrain(overrides, span.startT, span.endT),
+      tiles: needed,
+    });
     for (const tile of needed) tiles.add(tile);
   }
   return { raw, averaged, kept, spans, moves, pieces: planPieces(kept, moves, config), tiles };
+}
+
+/**
+ * Whether a person's correction to train reaches a move: a segment's or toggle's
+ * span overlaps it. Generous by design (an open toggle counts to its end): a
+ * move judged for nothing costs a little, one never judged stays as recorded.
+ */
+function setToTrain(overrides: readonly OverrideSpan[], startT: number, endT: number): boolean {
+  return overrides.some(
+    (override) =>
+      override.mode === "train" &&
+      override.from <= endT &&
+      (override.to ?? override.endsBy ?? Number.POSITIVE_INFINITY) >= startT,
+  );
 }
 
 const covered = (move: PlannedMove, available: ReadonlySet<TileKey>): boolean =>
@@ -213,35 +237,66 @@ export function piecesToAlign(
 }
 
 /** Whether a move of the plan could be a train (`couldBeTrain`); false for a move the plan does not have. */
-function plausibleMove(plan: WindowPlan, move: number, config: ProcessingConfig): boolean {
+export function plausibleMove(plan: WindowPlan, move: number, config: ProcessingConfig): boolean {
   const planned = plan.moves[move];
   return (
     planned !== undefined &&
-    couldBeTrain(plan.kept.slice(planned.first, planned.last + 1), config.rail)
+    couldBeTrain(plan.kept.slice(planned.first, planned.last + 1), config.rail, planned.userTrain)
   );
 }
 
 /**
- * The rail-only reads of a pass within `maxTiles` tiles in all, in the order
- * of the pieces: a piece that would go beyond is not read and its moves are
- * deferred (`no_map/deferred`; they keep their recorded line until a later
- * pass over their window judges them again).
+ * How train-like a move of the plan is, for ranking the rail-only reads: the
+ * distance it covered at or above the minimum train speed, and infinitely so
+ * where a person set it to train.
+ */
+export function trainScore(plan: WindowPlan, move: number, config: ProcessingConfig): number {
+  const planned = plan.moves[move];
+  if (planned === undefined) return 0;
+  return planned.userTrain
+    ? Number.POSITIVE_INFINITY
+    : trainLikeM(plan.kept.slice(planned.first, planned.last + 1), config.rail);
+}
+
+/**
+ * The rail-only reads of a pass within `maxTiles` tiles in all. The pieces are
+ * ranked by how train-like their moves are (`score` of a move, a piece takes
+ * the largest of its moves; ties keep plan order, so the result is
+ * deterministic) and taken in that order, so that cars, which pass the
+ * pre-filter, never use up the cap before the trains. A piece that would go
+ * beyond it is not read and its moves are deferred (`no_map/deferred`); a move
+ * with one piece put off is read whole or not at all (its other pieces are
+ * dropped, or skipped, and the move deferred). Deferral never queues anything
+ * and never replaces a stored aligned line (`inferWindow`); with Overpass off
+ * nothing works a deferred move again but the operator's `trail reprocess`
+ * (docs/architecture.md §17.3).
  */
 export function planRailReads(
   pieces: readonly MapPiece[],
   maxTiles: number,
+  score: (move: number) => number = () => 0,
 ): { reads: MapPiece[]; deferred: Set<number> } {
-  const reads: MapPiece[] = [];
+  const pieceScore = (piece: MapPiece): number =>
+    Math.max(Number.NEGATIVE_INFINITY, ...piece.stretches.map((stretch) => score(stretch.move)));
+  const ranked = pieces
+    .map((piece, order) => ({ piece, order, rank: pieceScore(piece) }))
+    .sort((a, b) => (a.rank === b.rank ? a.order - b.order : b.rank > a.rank ? 1 : -1));
+  const taken = new Set<MapPiece>();
   const deferred = new Set<number>();
   let tiles = 0;
-  for (const piece of pieces) {
-    if (tiles + piece.tiles.size <= maxTiles) {
-      reads.push(piece);
+  for (const { piece } of ranked) {
+    const putOff = piece.stretches.some((stretch) => deferred.has(stretch.move));
+    if (!putOff && tiles + piece.tiles.size <= maxTiles) {
+      taken.add(piece);
       tiles += piece.tiles.size;
     } else {
       for (const stretch of piece.stretches) deferred.add(stretch.move);
     }
   }
+  // A move put off by one of its pieces is read by none: what an earlier piece of it took is given back.
+  const reads = pieces.filter(
+    (piece) => taken.has(piece) && piece.stretches.some((stretch) => !deferred.has(stretch.move)),
+  );
   return { reads, deferred };
 }
 
@@ -306,7 +361,7 @@ export function mapPiece(
       ).slice(stretch.first - stretch.from, stretch.last - stretch.from + 1);
     // A move that cannot be a train (a walk in town) is not aligned: it costs the aligner nothing.
     const aligned =
-      rail === null || !couldBeTrain(points, config.rail)
+      rail === null || !couldBeTrain(points, config.rail, plan.moves[stretch.move]?.userTrain)
         ? null
         : alignStretch(points, stretch, rail, config);
     return {
@@ -464,6 +519,8 @@ export function inferWindow(
     else list.push(stretch);
   }
   const railMoves = new Map<number, RailMove>();
+  // Moves the pre-filter left alone: a segment of one that ends up a train says so (`skipped/not_train`).
+  const notTrain = new Set<number>();
 
   const mapped: (MappedPoint | null)[] = plan.raw.map(() => null);
   if (inputs.mapping) {
@@ -534,7 +591,9 @@ export function inferWindow(
       for (const tile of move.tiles) if (!inputs.available.has(tile)) missing.add(tile);
     }
     // A move that cannot be a train is not aligned and has no verdict, whatever its tiles.
-    if (rail !== null && !move.airborne && couldBeTrain(points, config.rail)) {
+    if (rail !== null && !move.airborne && !couldBeTrain(points, config.rail, move.userTrain)) {
+      notTrain.add(moveNumber);
+    } else if (rail !== null && !move.airborne) {
       const found = railOfMove(
         move,
         moveNumber,
@@ -591,7 +650,23 @@ export function inferWindow(
   const railPlaces: (RailPlace | null)[] = plan.raw.map(() => null);
   const segments = finished.map((draft) => {
     const railMove = draft.kind === "move" ? railMoves.get(draft.move) : undefined;
+    if (draft.kind === "move" && railMove === undefined && notTrain.has(draft.move)) {
+      // Left alone, and a train all the same (the inference, or a person): not silence, a reason.
+      const mode = draft.modeUser ?? draft.part.verdict.mode;
+      const verdict =
+        mode === "train"
+          ? unjudged(kept.slice(draft.first, draft.last + 1), "skipped", "not_train")
+          : undefined;
+      return toSegment(draft, kept, config, verdict);
+    }
     if (draft.kind !== "move" || railMove === undefined) return toSegment(draft, kept, config);
+    if (railMove.places === null && railMove.reason === "deferred" && rail?.stored !== undefined) {
+      const stored = storedAligned(draft, kept, rail.stored);
+      if (stored !== null) {
+        for (const [index, place] of stored.places) railPlaces[index] ??= place;
+        return toSegment(draft, kept, config, stored.verdict);
+      }
+    }
     const verdict = judgePart(
       draft,
       railMove,
@@ -644,6 +719,61 @@ function railOfMove(
   return { places: null, reason: rail.waiting ? "waiting" : "outside_regions" };
 }
 
+/** A verdict with no measurement: the part was not judged, for the reason given. */
+function unjudged(
+  points: readonly KeptPoint[],
+  status: "no_map" | "skipped",
+  reason: RailPathVerdict["reason"],
+): RailPathVerdict {
+  let lengthM = 0;
+  for (const [position, point] of points.entries()) {
+    const before = points[position - 1];
+    if (before !== undefined) lengthM += haversineM(before, point);
+  }
+  return {
+    status,
+    reason,
+    source: null,
+    coveredShare: 0,
+    routedShare: 0,
+    medianZ: 0,
+    p90Z: 0,
+    medianOffsetM: 0,
+    outlierShare: 0,
+    roadShare: 0,
+    bridgedMaxSpeedMs: 0,
+    lengthM: Math.round(lengthM),
+  };
+}
+
+/**
+ * What an earlier pass stored for a part that a deferral would otherwise
+ * blank: an aligned stored segment with exactly the part's bounds and point
+ * count keeps its verdict and the rail places of its points (a deferred part
+ * never replaces an aligned line); null for any other part.
+ */
+function storedAligned(
+  draft: DraftMove,
+  kept: readonly KeptPoint[],
+  stored: StoredRail,
+): { verdict: RailPathVerdict; places: Map<number, RailPlace> } | null {
+  const pointCount = draft.last - draft.first + 1;
+  const match = stored.segments.find(
+    (segment) =>
+      segment.startT === draft.startT &&
+      segment.endT === draft.endT &&
+      segment.pointCount === pointCount,
+  );
+  if (match === undefined) return null;
+  const places = new Map<number, RailPlace>();
+  for (let at = draft.first; at <= draft.last; at += 1) {
+    const point = kept[at];
+    const place = point === undefined ? undefined : stored.places.get(point.t);
+    if (point !== undefined && place !== undefined) places.set(point.index, place);
+  }
+  return { verdict: match.verdict, places };
+}
+
 /**
  * The verdict of one part of a move, and its aligned places taken into
  * `railPlaces`: a part's first point carries no rail path (the leg into it
@@ -660,27 +790,7 @@ function judgePart(
   config: ProcessingConfig,
 ): RailPathVerdict {
   const points = kept.slice(draft.first, draft.last + 1);
-  if (railMove.places === null) {
-    let lengthM = 0;
-    for (const [position, point] of points.entries()) {
-      const before = points[position - 1];
-      if (before !== undefined) lengthM += haversineM(before, point);
-    }
-    return {
-      status: "no_map",
-      reason: railMove.reason,
-      source: null,
-      coveredShare: 0,
-      routedShare: 0,
-      medianZ: 0,
-      p90Z: 0,
-      medianOffsetM: 0,
-      outlierShare: 0,
-      roadShare: 0,
-      bridgedMaxSpeedMs: 0,
-      lengthM: Math.round(lengthM),
-    };
-  }
+  if (railMove.places === null) return unjudged(points, "no_map", railMove.reason);
   const places = railMove.places.slice(draft.first - moveStart, draft.last - moveStart + 1);
   const verdict = judgeRailPath(
     points,
@@ -836,5 +946,5 @@ export function runPipeline(
   inputs: WindowInputs,
   config: ProcessingConfig,
 ): WindowResult {
-  return finishWindow(planWindow(points, visits, config), inputs, config);
+  return finishWindow(planWindow(points, visits, config, inputs.overrides), inputs, config);
 }

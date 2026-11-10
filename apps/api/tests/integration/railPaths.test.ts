@@ -508,6 +508,21 @@ describe("the kill switch PROCESSING_RAIL_ALIGN=false", () => {
     // Nothing was queued or recorded as processing state, and the stored line is as it was.
     expect(await snapshot()).toEqual(before);
     expect(await railVerdict(car.id)).toBe("aligned");
+    // The day stamps carry the switch, so a browser holding the day asks again (they stay the same on a stamp read twice).
+    const range = { from: "2026-10-25", to: "2026-10-28" };
+    await t.ctx.dailyStats.flush();
+    const daysOn = (await owner.get(apiPaths.v1.stats.days).query(range).expect(200)).body.days;
+    const daysOff = (await offOwner.get(apiPaths.v1.stats.days).query(range).expect(200)).body.days;
+    const daysOnAgain = (await owner.get(apiPaths.v1.stats.days).query(range).expect(200)).body
+      .days;
+    expect(daysOn.length).toBeGreaterThan(0);
+    expect(daysOnAgain).toEqual(daysOn);
+    expect(daysOff.length).toBe(daysOn.length);
+    for (const [index, row] of daysOn.entries()) {
+      expect(daysOff[index].stamp.raw).toBe(row.stamp.raw);
+      expect(daysOff[index].stamp.processed).not.toBe(row.stamp.processed);
+    }
+    expect(await snapshot()).toEqual(before);
     // Switching back on brings the line back at once.
     expect((await served(car.id)).segment.points).toEqual(on.segment.points);
     await owner.delete(apiPaths.v1.segments.mode(car.id)).set("Origin", testOrigin).expect(200);
