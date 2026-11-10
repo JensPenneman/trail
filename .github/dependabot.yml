@@ -1,5 +1,9 @@
 version: 2
 updates:
+  # npm. Every update releases: the `deps` prefix makes release-please cut a
+  # patch release for each merged npm update, development dependencies
+  # included (the changelog lists them; nothing in the repo needs a hidden
+  # type for npm).
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -8,12 +12,16 @@ updates:
       time: "07:00"
       timezone: Europe/Brussels
     commit-message:
-      prefix: "chore(deps)"
-    # auto-merge lands minor/patch on green CI; the cooldown is the window in
-    # which a bad release can be yanked before it reaches main (security
-    # updates do not wait for it)
+      prefix: "deps"
+    # Cooldowns apply to version updates only, never to security updates. They
+    # are per entry, not per group: the window in which a bad release can be
+    # yanked before it reaches main. @keelwerk/* is ours and is not held back.
     cooldown:
       default-days: 3
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude: ["@keelwerk/*"]
     ignore:
       # @types/node follows the Node major the project runs on (the current
       # LTS, see .nvmrc); it moves together with the LTS, not on its own
@@ -33,13 +41,16 @@ updates:
     groups:
       # Security updates in a group of their own, so a fix for an alert never
       # waits behind a version update that breaks the build; the group merges
-      # itself once CI is green unless it holds a major, which waits for a
-      # person (dependabot-auto-merge.yml).
+      # itself once CI is green (the merge policy: dependabot-auto-merge.yml
+      # now, Launchway's merge mode later).
       security:
         applies-to: security-updates
         patterns: ["*"]
-      # Tools that change what passes, each alone and merged by hand with the
-      # fixes it asks for, so it never holds back the rest: Biome adds lint
+      # Our own packages, every update type, in one PR.
+      keelwerk:
+        patterns: ["@keelwerk/*"]
+      # Tools that change what passes, each alone, so a change in what
+      # passes never holds back the rest and its fixes land in the same PR: Biome adds lint
       # rules and changes its formatting in minor releases (which is why
       # package.json pins it exactly), TypeScript checks differently.
       biome:
@@ -90,6 +101,8 @@ updates:
         update-types: ["minor", "patch"]
     open-pull-requests-limit: 10
 
+  # Removed together with the workflows (T5, the cutover): until then they
+  # still run and their action pins still need updates.
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -110,30 +123,49 @@ updates:
         patterns: ["*"]
     open-pull-requests-limit: 3
 
-  # Dockerfile: the node:lts-alpine digest. A new digest is the current LTS
-  # with fresh Alpine and Node patches; it auto-merges on green CI and CI then
-  # publishes the image the server picks up. .devcontainer/Dockerfile pins
-  # node:lts-trixie-slim the same way; the next `scripts/devc.sh up` rebuilds.
+  # Dockerfile: the node:lts-alpine digest, the runtime image. A new digest is
+  # the current LTS with fresh Alpine and Node patches, so it ships: `deps`
+  # makes release-please cut a patch release, and the image of that release is
+  # what the server runs. It auto-merges on green CI. Docker supports only
+  # `default-days` for cooldowns.
   - package-ecosystem: docker
-    directories:
-      - /
-      - /.devcontainer
+    directory: /
     schedule:
       interval: weekly
       day: monday
       time: "07:00"
       timezone: Europe/Brussels
     commit-message:
-      prefix: "chore(docker)"
-    open-pull-requests-limit: 3
+      prefix: "deps(docker)"
+    cooldown:
+      default-days: 3
+    open-pull-requests-limit: 1
+
+  # .devcontainer/Dockerfile pins node:lts-trixie-slim the same way, but it is
+  # a development image: hidden type, no release; the next
+  # `scripts/devc.sh up` rebuilds.
+  - package-ecosystem: docker
+    directory: /.devcontainer
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Brussels
+    commit-message:
+      prefix: "chore(devc)"
+    cooldown:
+      default-days: 3
+    open-pull-requests-limit: 1
 
   # Compose files: postgres:18-alpine floats within Postgres 18 (a server
-  # picks up a new 18.x when it pulls the image), so the PRs here are new
-  # major versions, which never auto-merge, and digest updates of the image
-  # check's node probe (.devcontainer/compose.image.yaml). A Postgres major
-  # must also bump the FROM in deploy/compose.yaml's predeploy-dump
-  # dockerfile_inline, which Dependabot cannot see. A Postgres major needs a dump and restore of the
-  # production database first (docs/operations.md, "Postgres major upgrade").
+  # picks up a new 18.x when it pulls the image), so the Postgres PRs here are
+  # new major versions, which are held for a person: a major needs a dump and
+  # restore of the production database first (docs/operations.md, "Postgres
+  # major upgrade"). That upgrade must also bump the FROM in deploy/compose.yaml's
+  # predeploy-dump dockerfile_inline, which Dependabot cannot see. Any other
+  # image pinned in these directories, such as the
+  # node digest of the image check's compose file in /.devcontainer, gets its
+  # own PRs here too, in the same group.
   - package-ecosystem: docker-compose
     directories:
       - /
@@ -146,15 +178,17 @@ updates:
       timezone: Europe/Brussels
     commit-message:
       prefix: "chore(docker)"
+    cooldown:
+      default-days: 7
     groups:
       compose:
         patterns: ["*"]
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 1
 
   # tools/load/compose.load.yaml: k6, the load harness's runner, pinned by
   # digest. A release can change what the scenarios may use, so its update
-  # waits for a person who runs `npm run load -- fleet-10` on it first
-  # (docs/perf/README.md); dependabot-auto-merge.yml leaves the group alone.
+  # is checked with `npm run load -- fleet-10` (docs/perf/README.md) before it
+  # merges.
   - package-ecosystem: docker-compose
     directory: /tools/load
     schedule:
@@ -163,7 +197,7 @@ updates:
       time: "07:00"
       timezone: Europe/Brussels
     commit-message:
-      prefix: "chore(docker)"
+      prefix: "chore(deps-dev)"
     cooldown:
       default-days: 14
     groups:
