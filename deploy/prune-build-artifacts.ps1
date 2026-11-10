@@ -29,8 +29,10 @@
   label. A removal that docker refuses (in use) is logged and skipped. The exit
   code is non-zero when Docker is unreachable, when the list of containers or
   images of a repository cannot be read (nothing is removed then, or nothing of
-  that repository), or when a prune command
-  fails, so Task Scheduler's Last Run Result shows it.
+  that repository), when a prune command fails, or on any unexpected error
+  (every error is terminating and caught once at the top, logged as an ERROR
+  line), so Task Scheduler's Last Run Result shows it. A dry run fails the same
+  way.
 
 .PARAMETER DryRun
   Only lists what would be removed; nothing in Docker is changed.
@@ -49,14 +51,19 @@ param(
   [string]$LogFile = (Join-Path $env:ProgramData 'trail-prune\prune-build-artifacts.log')
 )
 
-# Native commands that fail are handled through $LASTEXITCODE; a non-zero exit
-# or a line on stderr must not abort the script (Windows PowerShell 5.1 turns
-# stderr into an error record under 'Stop').
-$ErrorActionPreference = 'Continue'
+# Every error is terminating, and the whole run is caught once at the bottom:
+# an unexpected failure must end the run with an ERROR line and exit code 1,
+# never with a quiet 0. Native commands report through $LASTEXITCODE, which is
+# checked after each one; their stderr is discarded (2>$null) or, where the
+# output is logged, read with the preference lowered (Invoke-DockerLogged),
+# since Windows PowerShell 5.1 turns redirected stderr into error records.
+# PowerShell variable names ignore case: no two names below may differ only by
+# case (a kept list once overwrote a constant that way).
+$ErrorActionPreference = 'Stop'
 
 $Repositories = @('trail-local', 'trail-local-predeploy-dump')
-$KeepProduction = 2
-$KeepOthers = 4
+$KeepProductionCount = 2
+$KeepOtherCount = 4
 $BuildCacheMax = '3GB'
 # one prune per filter: several --filter label= options are ANDed
 $PruneLabels = @(
@@ -64,59 +71,39 @@ $PruneLabels = @(
   'com.docker.compose.service=predeploy-dump'
 )
 $failed = $false
+$dockerRc = 0
 
 function Write-Log {
   param([string]$Message)
   $line = '{0} {1}' -f (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssK'), $Message
-  Write-Output $line
+  # Write-Host, not Write-Output: the functions' output is their return value
+  Write-Host $line
   if ($LogFile) {
     try {
       $folder = Split-Path -Parent $LogFile
       if ($folder -and -not (Test-Path -LiteralPath $folder)) {
-        $null = New-Item -ItemType Directory -Path $folder -Force -ErrorAction Stop
+        $null = New-Item -ItemType Directory -Path $folder -Force
       }
-      # -ErrorAction Stop: without it a denied write is not terminating and
-      # the catch below would never run
-      Add-Content -LiteralPath $LogFile -Value $line -ErrorAction Stop
+      Add-Content -LiteralPath $LogFile -Value $line
     } catch {
       # the log file is a convenience; the console line above is still written
     }
   }
 }
 
-$mode = if ($DryRun) { 'dry run, nothing is removed' } else { 'live' }
-Write-Log "prune-build-artifacts start ($mode)"
-
-# Docker unreachable (or not on PATH: $LASTEXITCODE stays $null) fails the task.
-$null = & docker info 2>$null
-if ($LASTEXITCODE -ne 0) {
-  Write-Log 'ERROR: Docker is not reachable (docker info failed)'
-  exit 1
-}
-
-# What containers (running or stopped) use, by image name and by image id. If
-# they cannot be read, nothing is removed: an empty set would make every image
-# look unused.
-$usedRefs = @{}
-$usedIds = @{}
-$containerIds = @(& docker ps -a -q 2>$null | Where-Object { $_ })
-if ($LASTEXITCODE -ne 0) {
-  Write-Log 'ERROR: docker ps failed; removing nothing'
-  exit 1
-}
-if ($containerIds.Count -gt 0) {
-  $rows = @(& docker inspect --format '{{.Config.Image}}|{{.Image}}' $containerIds 2>$null)
-  if ($LASTEXITCODE -ne 0 -or $rows.Count -eq 0) {
-    Write-Log 'ERROR: docker inspect of the containers returned nothing; removing nothing'
-    exit 1
+function Invoke-DockerLogged {
+  # runs docker with stderr merged into the output; the exit code is left in
+  # $script:dockerRc; returns the output lines
+  param([string[]]$DockerArgs)
+  $saved = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $lines = @(& docker @DockerArgs 2>&1)
+    $script:dockerRc = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $saved
   }
-  foreach ($row in $rows) {
-    $parts = "$row".Split('|')
-    if ($parts.Count -eq 2) {
-      $usedRefs[$parts[0]] = $true
-      $usedIds[$parts[1]] = $true
-    }
-  }
+  return , $lines
 }
 
 function ConvertFrom-DockerTime {
@@ -131,98 +118,147 @@ function ConvertFrom-DockerTime {
 function Get-ImageRefs {
   # 'repo:tag' of the images matching docker image ls filters; $null on failure
   param([string[]]$Filters)
-  $out = @(& docker image ls @Filters --format '{{.Repository}}|{{.Tag}}' 2>$null)
+  $listed = @(& docker image ls @Filters --format '{{.Repository}}|{{.Tag}}' 2>$null)
   if ($LASTEXITCODE -ne 0) { return $null }
-  $refs = @()
-  foreach ($row in $out) {
+  $found = @()
+  foreach ($row in $listed) {
     $parts = "$row".Split('|')
     if ($parts.Count -ne 2 -or $parts[1] -eq '<none>') { continue }   # dangling: the prune below handles it
-    $refs += ('{0}:{1}' -f $parts[0], $parts[1])
+    $found += ('{0}:{1}' -f $parts[0], $parts[1])
   }
   # the comma keeps an empty list from collapsing to $null (the failure value)
-  return ,$refs
+  return , $found
 }
 
 function Get-ImageInfo {
   # id and creation time of one tag, or $null
-  param([string]$Ref)
-  $info = @(& docker image inspect --format '{{.Id}}|{{.Created}}' $Ref 2>$null)
+  param([string]$TagName)
+  $info = @(& docker image inspect --format '{{.Id}}|{{.Created}}' $TagName 2>$null)
   if ($LASTEXITCODE -ne 0 -or $info.Count -eq 0) { return $null }
-  $f = "$($info[0])".Split('|')
-  if ($f.Count -ne 2) { return $null }
-  return [pscustomobject]@{ Ref = $Ref; Id = $f[0]; Created = ConvertFrom-DockerTime $f[1] }
+  $fields = "$($info[0])".Split('|')
+  if ($fields.Count -ne 2) { return $null }
+  return [pscustomobject]@{ Tag = $TagName; Id = $fields[0]; Created = ConvertFrom-DockerTime $fields[1] }
 }
 
-foreach ($repo in $Repositories) {
-  # exact repository: the reference filter matches whole names, and the
-  # repository is checked again below, so no other image is ever a candidate
-  $all = Get-ImageRefs @('--filter', "reference=${repo}:*")
-  $prod = Get-ImageRefs @('--filter', "reference=${repo}:*", '--filter', "label=com.docker.compose.project=$ProductionProject")
-  if ($null -eq $all -or $null -eq $prod) {
-    Write-Log "ERROR: cannot list the images of ${repo}; removing none of them"
-    $failed = $true
-    continue
+function Invoke-Prune {
+  $mode = if ($DryRun) { 'dry run, nothing is removed' } else { 'live' }
+  # the account is in the line so that a run's log shows who wrote it
+  $account = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+  Write-Log "prune-build-artifacts start ($mode) as $account"
+
+  # Docker unreachable fails the task.
+  $null = & docker info 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    Write-Log 'ERROR: Docker is not reachable (docker info failed)'
+    return 1
   }
-  $images = @()
-  foreach ($ref in @($all | Where-Object { $_.StartsWith("${repo}:") })) {
-    $info = Get-ImageInfo $ref
-    if ($info) { $images += $info }
+
+  # What containers (running or stopped) use, by image name and by image id. If
+  # they cannot be read, nothing is removed: an empty set would make every
+  # image look unused.
+  $usedNames = @{}
+  $usedIds = @{}
+  $containerIds = @(& docker ps -a -q 2>$null | Where-Object { $_ })
+  if ($LASTEXITCODE -ne 0) {
+    Write-Log 'ERROR: docker ps failed; removing nothing'
+    return 1
   }
-  $sorted = @($images | Sort-Object -Property Created, Ref -Descending)
-  $keepProd = @($sorted | Where-Object { $prod -contains $_.Ref } | Select-Object -First $KeepProduction)
-  $rest = @($sorted | Where-Object { $keepProd.Ref -notcontains $_.Ref })
-  $keepOthers = @($rest | Select-Object -First $KeepOthers)
-  Write-Log ('{0}: {1} tag(s); keeping {2} newest of project {3} and {4} newest of the rest' -f $repo, $sorted.Count, $keepProd.Count, $ProductionProject, $keepOthers.Count)
-  foreach ($image in @($rest | Select-Object -Skip $KeepOthers)) {
-    if ($usedRefs.ContainsKey($image.Ref) -or $usedIds.ContainsKey($image.Id)) {
-      Write-Log "keep $($image.Ref): a container uses it"
+  if ($containerIds.Count -gt 0) {
+    $rows = @(& docker inspect --format '{{.Config.Image}}|{{.Image}}' $containerIds 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $rows.Count -eq 0) {
+      Write-Log 'ERROR: docker inspect of the containers returned nothing; removing nothing'
+      return 1
+    }
+    foreach ($row in $rows) {
+      $parts = "$row".Split('|')
+      if ($parts.Count -eq 2) {
+        $usedNames[$parts[0]] = $true
+        $usedIds[$parts[1]] = $true
+      }
+    }
+  }
+
+  foreach ($repo in $Repositories) {
+    # exact repository: the reference filter matches whole names, and the
+    # prefix is checked again below, so no other image is ever a candidate
+    $allTags = Get-ImageRefs @('--filter', "reference=${repo}:*")
+    $prodTags = Get-ImageRefs @('--filter', "reference=${repo}:*", '--filter', "label=com.docker.compose.project=$ProductionProject")
+    if ($null -eq $allTags -or $null -eq $prodTags) {
+      Write-Log "ERROR: cannot list the images of ${repo}; removing none of them"
+      $script:failed = $true
       continue
     }
+    $candidates = @()
+    foreach ($tagRef in @($allTags | Where-Object { $_.StartsWith("${repo}:") })) {
+      $info = Get-ImageInfo $tagRef
+      if ($info) { $candidates += $info }
+    }
+    $sorted = @($candidates | Sort-Object -Property Created, Tag -Descending)
+    $keptProd = @($sorted | Where-Object { $prodTags -contains $_.Tag } | Select-Object -First $KeepProductionCount)
+    $keptProdTags = @($keptProd | ForEach-Object { $_.Tag })
+    $others = @($sorted | Where-Object { $keptProdTags -notcontains $_.Tag })
+    $keptOthers = @($others | Select-Object -First $KeepOtherCount)
+    Write-Log ('{0}: {1} tag(s); keeping {2} newest of project {3} and {4} newest of the rest' -f $repo, $sorted.Count, $keptProd.Count, $ProductionProject, $keptOthers.Count)
+    foreach ($keptImage in $keptProd) { Write-Log "keep $($keptImage.Tag): newest of project $ProductionProject" }
+    foreach ($keptImage in $keptOthers) { Write-Log "keep $($keptImage.Tag): among the $KeepOtherCount newest of the rest" }
+    foreach ($image in @($others | Select-Object -Skip $KeepOtherCount)) {
+      if ($usedNames.ContainsKey($image.Tag) -or $usedIds.ContainsKey($image.Id)) {
+        Write-Log "keep $($image.Tag): a container uses it"
+        continue
+      }
+      if ($DryRun) {
+        Write-Log "would remove $($image.Tag)"
+        continue
+      }
+      # no -f: docker refuses an image that a container still uses
+      $null = & docker rmi $image.Tag 2>$null
+      if ($LASTEXITCODE -eq 0) {
+        Write-Log "removed $($image.Tag)"
+      } else {
+        Write-Log "kept $($image.Tag): docker refused to remove it (in use)"
+      }
+    }
+  }
+
+  # Dangling images of Trail's own, by label; prune spares images in use.
+  foreach ($label in $PruneLabels) {
     if ($DryRun) {
-      Write-Log "would remove $($image.Ref)"
+      $dangling = @(& docker image ls --filter 'dangling=true' --filter "label=$label" --format '{{.ID}}' 2>$null | Where-Object { $_ })
+      Write-Log "would run: docker image prune -f --filter label=$label ($($dangling.Count) dangling image(s) listed now)"
       continue
     }
-    # no -f: docker refuses an image that a container still uses
-    $null = & docker rmi $image.Ref 2>$null
-    if ($LASTEXITCODE -eq 0) {
-      Write-Log "removed $($image.Ref)"
-    } else {
-      Write-Log "kept $($image.Ref): docker refused to remove it (in use)"
+    Write-Log "docker image prune -f --filter label=$label"
+    $output = Invoke-DockerLogged @('image', 'prune', '-f', '--filter', "label=$label")
+    foreach ($outLine in $output) { Write-Log "  $outLine" }
+    if ($script:dockerRc -ne 0) {
+      Write-Log "ERROR: docker image prune exited with $($script:dockerRc)"
+      $script:failed = $true
     }
   }
-}
 
-# Dangling images of Trail's own, by label; prune spares images in use.
-foreach ($label in $PruneLabels) {
+  # Build cache: the whole builder, not Trail's alone (no per-project filter).
   if ($DryRun) {
-    $dangling = @(& docker image ls --filter 'dangling=true' --filter "label=$label" --format '{{.ID}}' 2>$null | Where-Object { $_ })
-    Write-Log "would run: docker image prune -f --filter label=$label ($($dangling.Count) dangling image(s) listed now)"
-    continue
+    Write-Log "would run: docker builder prune -f --max-used-space $BuildCacheMax"
+  } else {
+    Write-Log "docker builder prune -f --max-used-space $BuildCacheMax"
+    $output = Invoke-DockerLogged @('builder', 'prune', '-f', '--max-used-space', $BuildCacheMax)
+    foreach ($outLine in $output) { Write-Log "  $outLine" }
+    if ($script:dockerRc -ne 0) {
+      Write-Log "ERROR: docker builder prune exited with $($script:dockerRc)"
+      $script:failed = $true
+    }
   }
-  Write-Log "docker image prune -f --filter label=$label"
-  $out = @(& docker image prune -f --filter "label=$label" 2>&1)
-  $rc = $LASTEXITCODE
-  foreach ($line in $out) { Write-Log "  $line" }
-  if ($rc -ne 0) {
-    Write-Log "ERROR: docker image prune exited with $rc"
-    $failed = $true
-  }
+
+  Write-Log 'prune-build-artifacts done'
+  if ($script:failed) { return 1 }
+  return 0
 }
 
-# Build cache: the whole builder, not Trail's alone (no per-project filter).
-if ($DryRun) {
-  Write-Log "would run: docker builder prune -f --max-used-space $BuildCacheMax"
-} else {
-  Write-Log "docker builder prune -f --max-used-space $BuildCacheMax"
-  $out = @(& docker builder prune -f --max-used-space $BuildCacheMax 2>&1)
-  $rc = $LASTEXITCODE
-  foreach ($line in $out) { Write-Log "  $line" }
-  if ($rc -ne 0) {
-    Write-Log "ERROR: docker builder prune exited with $rc"
-    $failed = $true
-  }
+$exitCode = 1
+try {
+  $exitCode = Invoke-Prune
+} catch {
+  Write-Log ('ERROR: unexpected: {0} (line {1})' -f $_.Exception.Message, $_.InvocationInfo.ScriptLineNumber)
+  $exitCode = 1
 }
-
-Write-Log 'prune-build-artifacts done'
-if ($failed) { exit 1 }
-exit 0
+exit $exitCode

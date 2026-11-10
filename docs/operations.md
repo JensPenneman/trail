@@ -365,7 +365,8 @@ not part of any deployment. It:
 No volume is ever touched, and no tag other than those two repositories. It
 exits non-zero when Docker is unreachable, when the containers or images
 cannot be listed (nothing is removed, or nothing of the repository whose
-images cannot be listed), or when a prune command fails, so
+images cannot be listed), when a prune command fails, or on any unexpected error (every error ends the
+run with an `ERROR` line and exit code 1, a dry run included), so
 the task's Last Run Result shows it; a removal docker refuses (in use) is only
 logged.
 
@@ -373,11 +374,14 @@ It logs one line per action to the console and to
 `%ProgramData%\trail-prune\prune-build-artifacts.log`; `-DryRun` only lists
 what it would remove. Copy it to a folder outside the checkouts (Launchway
 deletes those) and register it as the account that runs Docker Desktop (which
-only runs while that user is logged on). Do it from a non-elevated PowerShell
-of that account, so that the log folder belongs to it; only when an earlier
-elevated run has already created `%ProgramData%\trail-prune`, grant the
-account Modify on it:
-`icacls "$env:ProgramData\trail-prune" /grant "${env:USERDOMAIN}\${env:USERNAME}:(OI)(CI)M"`.
+only runs while that user is logged on). Registering needs an elevated
+PowerShell, which creates nothing in `%ProgramData%\trail-prune`: the task's
+own account creates the folder and the log on the first run, so they belong to
+it. If an elevated run of the script (or a hand-made folder) created it first,
+the task cannot append, and the account needs Modify on it:
+`icacls "$env:ProgramData\trail-prune" /grant "$($account):(OI)(CI)M"`. What
+proves it is not who owns the log but that the run's start line names the
+task's account.
 
 The order matters: lock the folder, register only the dry-run task, read its
 result, and arm the live task last.
@@ -385,10 +389,13 @@ result, and arm the live task last.
 ```powershell
 New-Item -ItemType Directory -Force C:\ops\trail | Out-Null
 Copy-Item deploy\prune-build-artifacts.ps1 C:\ops\trail\
+# the account that runs Docker Desktop, as `whoami` prints it (DOMAIN\name or
+# COMPUTER\name); do not build it from USERDOMAIN, which over SSH is WORKGROUP
+$account = (whoami)
 # a script that runs daily with Docker access must not be editable by other local accounts
-icacls C:\ops\trail /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" "${env:USERDOMAIN}\${env:USERNAME}:(OI)(CI)RX"
+icacls C:\ops\trail /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" "$($account):(OI)(CI)RX"
 $script = 'C:\ops\trail\prune-build-artifacts.ps1'
-$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
+$principal = New-ScheduledTaskPrincipal -UserId $account -LogonType S4U -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 $dry = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File $script -DryRun"
 Register-ScheduledTask -TaskName 'Trail prune build artifacts (dry run)' -Action $dry -Principal $principal -Settings $settings
@@ -402,7 +409,8 @@ docker system df    # the baseline, before arming
 The dry run passes when all of these hold:
 
 1. `LastTaskResult` is 0.
-2. The log opens and closes cleanly with no `ERROR`, and is owned by the task's account.
+2. The log opens (`start ... as <account>`, the task's account, not an
+   administrator's) and closes (`done`) cleanly with no `ERROR` line.
 3. It has exactly two summary lines, one per repository.
 4. Every "would remove" names a `trail-local` or `trail-local-predeploy-dump`
    tag that no container uses and that is outside the kept sets.
