@@ -300,12 +300,17 @@ stops and moves with their modes — a stop with its place (`centroid`) and its
 points, where the device went within it — and consecutive segments share
 their boundary point, except across a recording gap; at the other levels they
 are pieces of track, split where the recording paused for more than ten
-minutes.
+minutes. A segment's `alignedTo` is `"rail"` when the move is a train ride
+drawn along the railway — every point lying on a track, which Trail checked
+from the points and OpenStreetMap's rails — and `null` otherwise; at
+`inferred` its points are then the places on the rails, and `mapped`,
+`averaged` and `raw` still give the line as recorded. It follows the mode that
+counts, so correcting a move to or from train changes it at once.
 
 `GET /api/v1/segments?from=…&to=…` is the timeline itself: stops (with their
 place, `centroid`, their duration and `spreadM`, how far apart their points
 lie) and moves (with `mode`, `modeInferred`,
-`modeUser`, `confidence`, `needsReview`, distance, duration and speeds), a
+`modeUser`, `confidence`, `needsReview`, `alignedTo`, distance, duration and speeds), a
 page of up to `limit` (500 by default, at most 1000) at a time. `pending` is
 true while points of the range still wait for processing — ask again a little
 later. Transport modes: `stationary`, `walking`, `running`, `cycling`, `car`,

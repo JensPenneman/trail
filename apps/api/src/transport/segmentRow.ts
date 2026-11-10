@@ -28,6 +28,8 @@ export interface SegmentRow extends Record<string, unknown> {
   spread_m: number | null;
   /** A stop's `features.lastPointT` (epoch seconds): its own points end there; null for moves. */
   last_point_t: number | null;
+  /** `features.railPath.status` (§17.3): whether the move's points lie along the railway; null for a stop or no verdict. */
+  rail_status: string | null;
 }
 
 /** The columns of `SegmentRow`, for `SELECT ${segmentColumns} FROM segments s`. */
@@ -35,13 +37,24 @@ export const segmentColumns = sql.raw(`
   s.id, s.device_id, s.kind, s.started_at::text, s.ended_at::text, s.duration_s, s.distance_m,
   s.mode, s.mode_inferred, s.mode_user, s.confidence, s.review, s.max_speed, s.point_count,
   s.start_lat, s.start_lon, s.end_lat, s.end_lon, s.centroid_lat, s.centroid_lon,
-  (s.features->>'spreadM')::float8 AS spread_m, (s.features->>'lastPointT')::float8 AS last_point_t
+  (s.features->>'spreadM')::float8 AS spread_m, (s.features->>'lastPointT')::float8 AS last_point_t,
+  s.features->'railPath'->>'status' AS rail_status
 `);
 
 const round = (value: number, digits: number): number => {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 };
+
+/**
+ * The one gate of the aligned line: the mode that counts (a correction
+ * included) is train and the pass judged the points to lie along the rails.
+ * Read from both at every request, so a correction switches the line at once.
+ */
+function alignedToOf(row: SegmentRow): "rail" | null {
+  const mode = row.mode_user ?? row.mode_inferred;
+  return row.kind === "move" && mode === "train" && row.rail_status === "aligned" ? "rail" : null;
+}
 
 /** A segment as the API shows it: a stop has no mode; review only while nobody set the mode. */
 export function toSegment(row: SegmentRow): Segment {
@@ -70,5 +83,6 @@ export function toSegment(row: SegmentRow): Segment {
     end: { lat: row.end_lat, lon: row.end_lon },
     centroid: { lat: row.centroid_lat, lon: row.centroid_lon },
     spreadM: move || row.spread_m === null ? null : Math.round(row.spread_m),
+    alignedTo: alignedToOf(row),
   };
 }

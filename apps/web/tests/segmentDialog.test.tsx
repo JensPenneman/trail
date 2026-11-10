@@ -123,3 +123,34 @@ describe("SegmentDialog and a move that is still going on", () => {
     expect(calls).toBe(2);
   });
 });
+
+describe("SegmentDialog and a train drawn along the railway", () => {
+  const line = "Drawn along the railway. The Mapped level shows it as recorded.";
+  const aligned = (): Segment => ({ ...ride(31 * 60), modeUser: null, alignedTo: "rail" });
+
+  it("says so for a move aligned to the rails, as one visible line", () => {
+    show(aligned());
+    expect(screen.getByText(line)).toBeVisible();
+    // The accessible name of the picker and the dialog's controls are untouched by the line.
+    expect(picker()).toBeEnabled();
+  });
+
+  it("says nothing for a move drawn as recorded", () => {
+    show({ ...aligned(), alignedTo: null });
+    expect(screen.queryByText(/Drawn along the railway/)).not.toBeInTheDocument();
+  });
+
+  it("says nothing for a stop", () => {
+    const stop: Segment = { ...aligned(), kind: "stop", mode: null, alignedTo: "rail" };
+    show(stop);
+    expect(screen.queryByText(/Drawn along the railway/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the line before the controls and out of the tab order", async () => {
+    show(aligned());
+    const person = userEvent.setup({ advanceTimers: () => undefined });
+    await person.tab();
+    expect(screen.getByText(line)).not.toHaveFocus();
+    expect(document.activeElement?.tagName).not.toBe("P");
+  });
+});

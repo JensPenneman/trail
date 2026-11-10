@@ -55,7 +55,8 @@ function hashOf(body: unknown): string {
   ]);
   const text = JSON.stringify(body, (key, value: unknown) => {
     // `values` echoes the query and is pinned apart: the rest of the answer is what it was.
-    if (key === "stamps" || key === "values") return undefined;
+    // `alignedTo` is named apart (below): left out, the levels the rail line leaves alone keep their hashes.
+    if (key === "stamps" || key === "values" || key === "alignedTo") return undefined;
     if (typeof value === "string" && /^[0-9a-f-]{36}$/.test(value)) {
       if (!names.has(value)) names.set(value, `id${names.size}`);
       return names.get(value);
@@ -98,10 +99,38 @@ describe("the level tracks", () => {
       "averaged 300": "7e204cf31175b678",
       "mapped 8000": "c7ab3abaf1c18dbe",
       "mapped 300": "11ee18dbf0300745",
-      "inferred 8000": "57ad6bacf62ce3ab",
-      "inferred 300": "0a8bc3b61f0030e9",
-      "inferred commute": "90ca9f5ceb00abfd",
+      "inferred 8000": "4b9ad9ff0ed4fc49",
+      "inferred 300": "b244f6d8558b4bda",
+      "inferred commute": "964beb1117c897cd",
     });
+  });
+});
+
+describe("the train drawn along the railway", () => {
+  it("changes the inferred hashes alone, and only for the move it aligned", async () => {
+    // The pinned hashes above: raw, averaged and mapped are the ones from before the rail line;
+    // inferred differs by the train's points, which now lie on the rails.
+    const inferred = await owner
+      .get(apiPaths.v1.tracks)
+      .query({ ...day, level: "inferred", devices: commute })
+      .expect(200);
+    const moves = (inferred.body.segments as { kind: string; mode: string; alignedTo: unknown }[])
+      .filter((segment) => segment.kind === "move")
+      .map((segment) => [segment.mode, segment.alignedTo]);
+    expect(moves).toContainEqual(["train", "rail"]);
+    expect(moves.filter(([mode]) => mode !== "train").every(([, aligned]) => aligned === null)).toBe(
+      true,
+    );
+    for (const level of ["raw", "averaged", "mapped"]) {
+      const answer = await owner
+        .get(apiPaths.v1.tracks)
+        .query({ ...day, level })
+        .expect(200);
+      const aligned = (answer.body.segments as { alignedTo: unknown }[]).map(
+        (segment) => segment.alignedTo,
+      );
+      expect(new Set(aligned), level).toEqual(new Set([null]));
+    }
   });
 });
 

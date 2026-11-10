@@ -132,6 +132,12 @@ export const coordinateSchema = z
   .meta({ id: "Coordinate", description: "A position in WGS84 degrees." });
 export type Coordinate = z.infer<typeof coordinateSchema>;
 
+export const alignedToSchema = z.enum(["rail"]).nullable().meta({
+  description:
+    "`rail`: a train ride drawn along the railway at the Transport level (its points lie on the tracks, checked by Trail); the Mapped level shows it as recorded. Null: drawn as recorded. Follows the mode that counts, so a correction to or from train changes it at once.",
+  example: "rail",
+});
+
 /** A stop or a move of the timeline. */
 export const segmentSchema = z
   .object({
@@ -190,6 +196,7 @@ export const segmentSchema = z
         "For a stop: how far apart its points lie, in metres — the walk within a station, say. Null for a move, and for a stop worked out before Trail kept it.",
       example: 120,
     }),
+    alignedTo: alignedToSchema,
   })
   .meta({
     id: "Segment",
@@ -335,6 +342,7 @@ export const levelTrackSegmentSchema = z
         "For a stop: how far apart its points lie, in metres (the timeline segment's `spreadM`); the map draws its path when it is over 25 m. Null for moves, pieces of track and stops worked out before Trail kept it.",
       example: 60,
     }),
+    alignedTo: alignedToSchema,
     points: z.array(levelPointSchema),
   })
   .meta({ id: "TrackSegment", description: "A drawable piece of a device's track." });
