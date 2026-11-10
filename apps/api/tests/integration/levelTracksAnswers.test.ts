@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Agent } from "../support/authFlows";
-import { signUpWithCookie } from "../support/authFlows";
+import { agentFor, signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
 import { FixtureWaySource } from "../support/fixtureWaySource";
 import { deskJitter, morning, motorwayDrive, walkTrainWalk } from "../support/journeys";
@@ -21,6 +21,7 @@ import { createTestContext, type TestContext } from "../support/testContext";
  */
 let t: TestContext;
 let owner: Agent;
+let ownerCookie = "";
 let commute = "";
 let drive = "";
 
@@ -30,7 +31,7 @@ const day = { from: iso(morning - 6 * 3600), to: iso(morning + 18 * 3600) };
 beforeAll(async () => {
   await resetDatabase();
   t = await createTestContext({ waySource: new FixtureWaySource() });
-  ({ agent: owner } = await signUpWithCookie(t.app, "first@example.com"));
+  ({ agent: owner, cookie: ownerCookie } = await signUpWithCookie(t.app, "first@example.com"));
   const one = await createDevice(owner, { name: "Commute" });
   const two = await createDevice(owner, { name: "Car" });
   commute = one.device.id;
@@ -107,7 +108,7 @@ describe("the level tracks", () => {
 });
 
 describe("the train drawn along the railway", () => {
-  it("changes the inferred hashes alone, and only for the move it aligned", async () => {
+  it("changes the inferred hashes alone: the aligned train and the points it shares with its neighbours", async () => {
     // The pinned hashes above: raw, averaged and mapped are the ones from before the rail line;
     // inferred differs by the train's points, which now lie on the rails, and by the point it shares
     // with its neighbours, drawn at the rail place on both sides.
@@ -132,6 +133,65 @@ describe("the train drawn along the railway", () => {
       );
       expect(new Set(aligned), level).toEqual(new Set([null]));
     }
+  });
+});
+
+describe("the same database with the rail kill switch off", () => {
+  let off: TestContext;
+  beforeAll(async () => {
+    off = await createTestContext({
+      waySource: new FixtureWaySource(),
+      env: { PROCESSING_RAIL_ALIGN: "false" },
+    });
+  });
+  afterAll(async () => {
+    await off.close();
+  });
+
+  type Answer = {
+    segments: { id: string; kind: string; alignedTo: unknown; points: number[][] }[];
+  };
+  const answer = async (agent: Agent): Promise<Answer> =>
+    (
+      await agent
+        .get(apiPaths.v1.tracks)
+        .query({ ...day, level: "inferred", maxPoints: 50_000 })
+        .expect(200)
+    ).body as Answer;
+
+  it("moves no point of a segment that is no aligned train, but the one it shares with a train, at the train's rail end", async () => {
+    const on = await answer(owner);
+    const without = await answer(agentFor(off.app).set("Cookie", ownerCookie));
+    const trains = on.segments.filter((segment) => segment.alignedTo === "rail");
+    expect(trains.length).toBeGreaterThan(0);
+    expect(without.segments.map((segment) => segment.id)).toEqual(
+      on.segments.map((segment) => segment.id),
+    );
+    // Every point of a train that lies at a rail place is the train's first or last of those: where its neighbours share it.
+    const railEnds = new Map<number, number[]>();
+    for (const train of trains) {
+      for (const point of [train.points[0], train.points.at(-1)]) {
+        if (point !== undefined) railEnds.set(point[2] ?? 0, point);
+      }
+    }
+    let shared = 0;
+    for (const [index, segment] of on.segments.entries()) {
+      if (segment.alignedTo === "rail") continue;
+      const other = without.segments[index];
+      expect(other?.points.length, segment.id).toBe(segment.points.length);
+      for (const [at, point] of segment.points.entries()) {
+        const before = other?.points[at];
+        if (JSON.stringify(point) === JSON.stringify(before)) continue;
+        // The only change: the point at the train's end, drawn at the train's place.
+        const end = railEnds.get(point[2] ?? 0);
+        expect(end, `${segment.id} point ${at} moved`).toBeDefined();
+        expect([point[0], point[1]]).toEqual([end?.[0], end?.[1]]);
+        expect(before?.[2]).toBe(point[2]);
+        shared += 1;
+      }
+    }
+    expect(shared).toBeGreaterThan(0);
+    expect(shared).toBeLessThanOrEqual(2 * trains.length);
   });
 });
 

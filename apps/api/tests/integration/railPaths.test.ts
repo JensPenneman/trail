@@ -379,31 +379,37 @@ describe("a correction to or from train", () => {
   });
 });
 
-describe("a verdict that rests on a region's data alone", () => {
-  it("is served recorded while the mode is to review, and along the rails once it is not", async () => {
+describe("a verdict with no mapped match behind it", () => {
+  it("is served recorded while the mode is to review, and along the rails once it is not, whatever its source", async () => {
     const move = await moveOf("dense");
-    const setRail = (source: string, review: boolean) =>
+    const setRail = (mapped: boolean, source: string, review: boolean) =>
       t.ctx.db.execute(sql`
         UPDATE segments SET review = ${review},
-          features = jsonb_set(features, '{railPath,source}', to_jsonb(${source}::text))
+          features = jsonb_set(jsonb_set(features, '{railPath,source}', to_jsonb(${source}::text)),
+            '{railPath,mapped}', to_jsonb(${mapped}::boolean))
         WHERE id = ${move.id}
       `);
     try {
-      await setRail("region", true);
-      expect(await moveOf("dense")).toMatchObject({ needsReview: true, alignedTo: null });
-      expect((await served(move.id)).segment.alignedTo).toBeNull();
-      // The cache's verdict has the mapped evidence beside it: drawn whether or not to review.
-      await setRail("cache", true);
-      expect((await served(move.id)).segment.alignedTo).toBe("rail");
-      // The region's, once nobody has to review the mode.
-      await setRail("region", false);
+      // No mapped match: a car on a road by the rails could not be told, from a region or from the cache.
+      for (const source of ["region", "cache"]) {
+        await setRail(false, source, true);
+        expect(await moveOf("dense"), source).toMatchObject({ needsReview: true, alignedTo: null });
+        expect((await served(move.id)).segment.alignedTo, source).toBeNull();
+      }
+      // The mapped evidence beside it: drawn whether or not to review, whatever the source says.
+      for (const source of ["region", "cache"]) {
+        await setRail(true, source, true);
+        expect((await served(move.id)).segment.alignedTo, source).toBe("rail");
+      }
+      // Without it, once nobody has to review the mode.
+      await setRail(false, "cache", false);
       expect((await served(move.id)).segment.alignedTo).toBe("rail");
       // And once a person has said so, even if it was to review.
-      await setRail("region", true);
+      await setRail(false, "region", true);
       await setMode(move.id, "train").expect(200);
       expect((await served(move.id)).segment.alignedTo).toBe("rail");
     } finally {
-      await setRail("cache", false);
+      await setRail(true, "cache", false);
       await owner.delete(apiPaths.v1.segments.mode(move.id)).set("Origin", testOrigin).expect(200);
       await t.ctx.processing.flush();
     }

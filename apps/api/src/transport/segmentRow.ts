@@ -30,8 +30,8 @@ export interface SegmentRow extends Record<string, unknown> {
   last_point_t: number | null;
   /** `features.railPath.status` (§17.3): whether the move's points lie along the railway; null for a stop or no verdict. */
   rail_status: string | null;
-  /** `features.railPath.source` (`cache`, `region`): which data the verdict rests on; null without a verdict. */
-  rail_source: string | null;
+  /** `features.railPath.mapped`: whether the mapped level matched the move and the judge could check the road (§17.3); null without a verdict. */
+  rail_mapped: boolean | null;
 }
 
 /** The columns of `SegmentRow`, for `SELECT ${segmentColumns} FROM segments s`. */
@@ -40,7 +40,7 @@ export const segmentColumns = sql.raw(`
   s.mode, s.mode_inferred, s.mode_user, s.confidence, s.review, s.max_speed, s.point_count,
   s.start_lat, s.start_lon, s.end_lat, s.end_lon, s.centroid_lat, s.centroid_lon,
   (s.features->>'spreadM')::float8 AS spread_m, (s.features->>'lastPointT')::float8 AS last_point_t,
-  s.features->'railPath'->>'status' AS rail_status, s.features->'railPath'->>'source' AS rail_source
+  s.features->'railPath'->>'status' AS rail_status, (s.features->'railPath'->>'mapped')::boolean AS rail_mapped
 `);
 
 const round = (value: number, digits: number): number => {
@@ -62,9 +62,10 @@ function alignedToOf(row: SegmentRow, railAlign: boolean): "rail" | null {
   if (!railAlign || row.kind !== "move" || mode !== "train" || row.rail_status !== "aligned") {
     return null;
   }
-  // A verdict that rests on a region's data alone has no mapped evidence beside it (a car on a road
-  // by the rails passes the judge there): it is drawn only once nobody has to review the mode.
-  if (row.rail_source === "region" && row.review && row.mode_user === null) return null;
+  // A verdict with no mapped match behind it (read from a region, or from cached tiles with no match)
+  // could not check the road: a car on a road by the rails passes the judge there. It is drawn only
+  // once nobody has to review the mode, whatever data the tiles came from.
+  if (row.rail_mapped !== true && row.review && row.mode_user === null) return null;
   return "rail";
 }
 

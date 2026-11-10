@@ -150,6 +150,7 @@ export function addRailCost(total: RailPassStats, cost: RailCost | null): void {
   total.steps += cost.stats.steps;
   total.runs += cost.stats.runs;
   total.searches += cost.stats.searches;
+  total.skipSearches += cost.stats.skipSearches;
   total.settledNodes += cost.stats.settledNodes;
   total.maxSearchBoundM = Math.max(total.maxSearchBoundM, cost.stats.maxSearchBoundM);
   total.maxSearchHops = Math.max(total.maxSearchHops, cost.stats.maxSearchHops);
@@ -741,6 +742,7 @@ function unjudged(
     medianOffsetM: 0,
     outlierShare: 0,
     roadShare: 0,
+    mapped: false,
     bridgedMaxSpeedMs: 0,
     lengthM: Math.round(lengthM),
   };

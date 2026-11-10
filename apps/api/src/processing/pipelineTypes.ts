@@ -100,6 +100,8 @@ export interface RailPassStats {
   steps: number;
   runs: number;
   searches: number;
+  /** Of the searches, those for steps skipped as outliers. */
+  skipSearches: number;
   settledNodes: number;
   /** The largest bound any search was given, metres, and the most way changes one was allowed. */
   maxSearchBoundM: number;
@@ -120,6 +122,7 @@ export const noRailPassStats = (): RailPassStats => ({
   steps: 0,
   runs: 0,
   searches: 0,
+  skipSearches: 0,
   settledNodes: 0,
   maxSearchBoundM: 0,
   maxSearchHops: 0,
@@ -159,6 +162,8 @@ export interface RailPathVerdict {
   outlierShare: number;
   /** The share of the part's points the mapped level put on a nearer street way; 0 without a mapped match. */
   roadShare: number;
+  /** Whether the mapped level matched the part, so that the road check had evidence; only then is a car on a road beside the rails refused for sure. */
+  mapped: boolean;
   /** The fastest implied speed of any straight leg of the part, m/s, rounded; 0 without one. */
   bridgedMaxSpeedMs: number;
   lengthM: number;

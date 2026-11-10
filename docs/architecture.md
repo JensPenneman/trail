@@ -4968,7 +4968,7 @@ of at most 1.5 (p90 3.0) and 60 m, no more than half of the points matched by
 the mapped level to a street way snapping closer than half their offset from
 the rails (`poor/road`: a car on a road beside the railway, where a mapped
 match exists), and outliers over at most 15 % of the duration. The verdict is `features.railPath`: `status` `aligned|poor|no_rail|
-no_map|skipped`, a `reason` (`ok`, `short`, `coverage`, `routes`, `offsets`, `road`, `outliers`, `no_rail`, `waiting`, `outside_regions`, `deferred`, `not_train`), `source` (`cache|region`) and the measures, without
+no_map|skipped`, a `reason` (`ok`, `short`, `coverage`, `routes`, `offsets`, `road`, `outliers`, `no_rail`, `waiting`, `outside_regions`, `deferred`, `not_train`), `source` (`cache|region`, a tuning figure), `mapped` (whether the mapped level matched the part, which the served gate reads) and the measures, without
 coordinates. The tiles are the move's own: read from the tile cache where it
 holds them and from a loaded region wherever its polygon covers them (all
 four corners of the z14 tile inside, whatever the cache holds), so a ride the
@@ -4998,7 +4998,10 @@ jumped onto the parallel line and back): up to three in a row are skipped for
 6 each (below the 10 of a straight leg), their points lying along the leg
 between the steps on either side and counting as outliers in the verdict,
 which also keeps the fastest speed any straight leg of the part implies
-(`bridgedMaxSpeedMs`), for tuning. The first and the last steps of a run may be
+(`bridgedMaxSpeedMs`), for tuning. A search from a source state is skipped when its cost
+plus the outliers cannot improve any target (costs are never negative, so the
+placed points are the same with or without; `skipSearches` counts the ones
+that did run for skipped steps). The first and the last steps of a run may be
 outliers the same way (a fix that jumped onto another line at the run's end
 lies at the line's start or end), and a straight leg faster than the fastest
 train (95 m/s) is never drawn: the step it leads to is an outlier, and where no
@@ -5034,8 +5037,8 @@ more than 100 rail-only tiles of train-like moves, then use narrower ranges,
 keeping in mind that a window always grows to whole segments), and a read takes the light columns of the tiles' ways first and the nodes and
 geometry only of the rail ways. With Overpass off the tiles the cache still
 holds count as rail data too. What the aligner cost is in `WindowOutcome.rail`
-and the worker's "processing window done" line (`rail`: steps, runs, searches,
-settled nodes, the largest bound and hop limit a search was given, aligned
+and the worker's "processing window done" line (`rail`: steps, runs, searches (and those for
+steps skipped as outliers), settled nodes, the largest bound and hop limit a search was given, aligned
 stretches and their milliseconds, moves left out as no train, deferred moves,
 rail-only tiles, statements and read milliseconds), without coordinates.
 
@@ -5357,12 +5360,13 @@ such a move, at `inferred` alone, the points are the rail places
 (`processed_points.lat_rail`, `lon_rail`, the rail's shape `path_rail` with
 interpolated times, its values as the way's shape has them), a point without
 one falling back to its mapped, else averaged place; the move counts as mapped
-for `level`; a verdict that rests on a region's data alone (`source: region`, so
-no mapped evidence beside it) is drawn only once the mode is not to review (a
-person's word settles it). The point a train shares with the segment before or
+for `level`; a verdict with no mapped match behind it (`features.railPath.mapped` false: a
+region's read, cached tiles read rail-only, or a move the mapped level did not
+match, so the road check had no evidence) is drawn only once the mode is not to
+review (a person's word settles it), whatever its `source`. The point a train shares with the segment before or
 after it is drawn at its rail place on both sides, so the line does not break at
 the boundary. A correction away from train, or to train, therefore changes the
-next read and the ETag with it (`computed_at` moves), with no reprocessing; a
+next read and the ETag with it (`computed_at` moves), with no reprocessing;
 rail columns without a verdict (a write by an older image) are served as
 recorded; in an aligned move, a point without a rail place falls back to its
 mapped, else averaged place. With the kill switch off (`PROCESSING_RAIL_ALIGN=false`)

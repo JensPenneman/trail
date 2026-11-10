@@ -43,11 +43,16 @@ const kept = (raw: readonly RawPoint[]): KeptPoint[] =>
     motion: [],
   }));
 
-function align(raw: readonly RawPoint[], map: MapData = railWorld(), rail: typeof config = config) {
+function align(
+  raw: readonly RawPoint[],
+  map: MapData = railWorld(),
+  rail: typeof config = config,
+  options: { prune?: boolean } = {},
+) {
   const points = kept(raw);
   const index = new WayIndex(map, LocalProjection.around(points));
   const context = railContext(index, trainNetwork);
-  return { kept: points, ...alignToRail(points, context, rail) };
+  return { kept: points, ...alignToRail(points, context, rail, options) };
 }
 
 const railLines = (map: MapData = railWorld()): Vertex[][] =>
@@ -391,6 +396,55 @@ describe("alignToRail", () => {
       for (const vertex of servedVertices(aligned.points)) {
         expect(distanceToRails(vertex)).toBeLessThan(1);
       }
+    });
+  });
+
+  describe("the prune of the searches from skipped steps", () => {
+    const jumpRide = (at: readonly number[], dy: number) =>
+      railRide(subPath(trackA, 11_000, 17_500), {
+        intervalS: 5,
+        noiseM: 3,
+        accuracy: 15,
+        seed: 9,
+      }).map((point, index) => {
+        if (!at.includes(index)) return point;
+        const [x, y] = toXY({ lat: point.lat, lon: point.lon });
+        const [lon, lat] = toLonLat(x, y + dy);
+        return { ...point, lat, lon };
+      });
+    const rides: [string, RawPoint[], MapData][] = [
+      ["a ride without jumps", jumpRide([], 0), railWorld()],
+      ["two fixes jumped 150 m", jumpRide([20, 21], -150), railWorld()],
+      ["a single fix jumped", jumpRide([20], -150), railWorld()],
+      ["jumps at both ends", jumpRide([0, 129], -150), railWorld()],
+      [
+        "a sparse ride with 25 km gaps",
+        railRide(subPath(trackA, 2000, 70_000), { intervalS: 600, speedMs: 41, seed: 22 }),
+        railWorld(),
+      ],
+    ];
+
+    it.each(rides)(
+      "places the same points with the prune and without it: %s",
+      (_name, raw, map) => {
+        const pruned = align(raw, map);
+        const full = align(raw, map, config, { prune: false });
+        expect(pruned.points).toEqual(full.points);
+        expect(pruned.stats.searches).toBeLessThanOrEqual(full.stats.searches);
+      },
+    );
+
+    it("saves searches: fewer with the prune than without on a jump ride", () => {
+      const raw = jumpRide([20, 21], -150);
+      expect(align(raw).stats.searches).toBeLessThan(
+        align(raw, railWorld(), config, { prune: false }).stats.searches,
+      );
+    });
+
+    it("counts the searches from skipped steps apart", () => {
+      const stats = align(jumpRide([20, 21], -150), railWorld(), config, { prune: false }).stats;
+      expect(stats.skipSearches).toBeGreaterThan(0);
+      expect(stats.skipSearches).toBeLessThan(stats.searches);
     });
   });
 

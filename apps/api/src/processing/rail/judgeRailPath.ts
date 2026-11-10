@@ -143,6 +143,7 @@ export function judgeRailPath(
     medianOffsetM: round(medianOffsetM, 1),
     outlierShare: round(outlierShare, 3),
     roadShare: round(roadShare, 3),
+    mapped: matched > 0,
     bridgedMaxSpeedMs: round(bridgedMaxSpeedMs, 1),
     lengthM: Math.round(lengthM),
   };

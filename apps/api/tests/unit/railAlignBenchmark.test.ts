@@ -9,7 +9,7 @@ import { railContext, trainNetwork } from "../../src/processing/rail/railNetwork
 import { WayIndex } from "../../src/processing/wayIndex";
 import { railCorridor } from "../support/railCorridor";
 import { railRide } from "../support/railWorld";
-import type { Vertex } from "../support/syntheticWorld";
+import { toXY, type Vertex } from "../support/syntheticWorld";
 
 const config = defaultProcessingConfig.rail;
 
@@ -86,14 +86,76 @@ describe("rail alignment bounds", () => {
     process.stdout.write(`rail align B3: ${raw.length} points in ${best.toFixed(1)} ms CPU\n`);
     expect(result.stats.runs).toBe(1);
     expect(result.points.every((point) => point.routed || point.legM === 0)).toBe(true);
-    // Every search stays within the 80 km and 400 hops of the config: the stats say what the largest
-    // was given (this ride's gaps are 25 km, so a search did reach out that far).
-    process.stdout.write(
-      `rail align B3: largest search bound ${Math.round(result.stats.maxSearchBoundM)} m, ${result.stats.maxSearchHops} hops, ${result.stats.searches} searches\n`,
+    // The ride's largest gap must have been given the bound the formula gives it: the search reached
+    // out that far (a skipped step's search may have been given more, up to `maxRouteM`).
+    const points = kept(raw);
+    const gapM = Math.max(
+      ...points.slice(1).map((point, index) => {
+        const [x, y] = toXY(point);
+        const [x0, y0] = toXY(points[index] ?? point);
+        return Math.hypot(x - x0, y - y0);
+      }),
     );
-    expect(result.stats.maxSearchBoundM).toBeGreaterThan(20_000);
-    expect(result.stats.maxSearchBoundM).toBeLessThanOrEqual(config.maxRouteM);
-    expect(result.stats.maxSearchHops).toBe(config.maxHops);
+    const gapS = Math.max(
+      ...points.slice(1).map((point, index) => point.t - (points[index]?.t ?? 0)),
+    );
+    const gapBoundM = Math.min(
+      config.maxRouteM,
+      config.routeFactor * gapM + config.routeSlackM,
+      config.maxSpeedMs * gapS + config.routeSlackM,
+    );
+    process.stdout.write(
+      `rail align B3: largest search bound ${Math.round(result.stats.maxSearchBoundM)} m (the largest gap's: ${Math.round(gapBoundM)} m), ${result.stats.searches} searches\n`,
+    );
+    expect(gapBoundM).toBeGreaterThan(20_000);
+    expect(result.stats.maxSearchBoundM).toBeGreaterThanOrEqual(gapBoundM - 1);
     expect(best).toBeLessThan(50);
+  });
+
+  it("the outlier state adds at most twice the searches and settled nodes on rides without jumps", () => {
+    // `maxOutlierSteps: 0` is the outlier cost at infinity: no step is ever skipped.
+    const without = { ...config, maxOutlierSteps: 0 };
+    const rides: [string, MapData, RawPoint[]][] = [
+      [
+        "dense, 5 s",
+        railCorridor(60_000, 10_000),
+        railRide(
+          [
+            [0, 0],
+            [50_000, 0],
+          ],
+          { intervalS: 5, noiseM: 6, accuracy: 10, speedMs: 40, seed: 31 },
+        ),
+      ],
+      [
+        "sparse, 10 min",
+        railCorridor(150_000, 10_000),
+        railRide(
+          [
+            [1000, 0],
+            [60_000, 0],
+          ],
+          { intervalS: 600, speedMs: 41, seed: 22 },
+        ),
+      ],
+    ];
+    for (const [name, map, raw] of rides) {
+      const points = kept(raw);
+      const run = (rail: typeof config) =>
+        alignToRail(
+          points,
+          railContext(new WayIndex(map, LocalProjection.around(points)), trainNetwork),
+          rail,
+        );
+      const [off, on] = [run(without), run(config)];
+      process.stdout.write(
+        `rail align outlier state, ${name}: searches ${off.stats.searches} -> ${on.stats.searches} (${on.stats.skipSearches} for skipped steps), settled nodes ${off.stats.settledNodes} -> ${on.stats.settledNodes}\n`,
+      );
+      expect(off.stats.skipSearches).toBe(0);
+      expect(on.stats.searches).toBeLessThanOrEqual(2 * off.stats.searches);
+      expect(on.stats.settledNodes).toBeLessThanOrEqual(2 * Math.max(1, off.stats.settledNodes));
+      // Nothing is skipped on a clean ride: the same places either way.
+      expect(on.points).toEqual(off.points);
+    }
   });
 });

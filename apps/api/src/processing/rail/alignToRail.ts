@@ -13,11 +13,13 @@ export interface RailStats {
   runs: number;
   /** Route searches (Dijkstra runs). */
   searches: number;
+  /** Of those, the ones from a step before the one just before (steps skipped as outliers). */
+  skipSearches: number;
   /** Nodes those searches settled. */
   settledNodes: number;
   /** The largest distance bound a search was given, metres (never past `maxRouteM`). */
   maxSearchBoundM: number;
-  /** The most way changes a search was allowed (`maxHops`; 0 when none ran). */
+  /** The way changes a search was allowed (`maxHops`, the limit, not what a search used; 0 when none ran). */
   maxSearchHops: number;
 }
 
@@ -91,7 +93,10 @@ export function alignToRail(
   points: readonly KeptPoint[],
   context: RailContext,
   config: RailConfig,
+  /** `prune: false` runs every search: a test's proof that the prune never changes a placed point. */
+  options: { prune?: boolean } = {},
 ): RailAlignment {
+  const prune = options.prune ?? true;
   const { index, network } = context;
   const projection = index.projection;
   const result: RailPoint[] = points.map(unplaced);
@@ -99,6 +104,7 @@ export function alignToRail(
     steps: 0,
     runs: 0,
     searches: 0,
+    skipSearches: 0,
     settledNodes: 0,
     maxSearchBoundM: 0,
     maxSearchHops: 0,
@@ -192,10 +198,17 @@ export function alignToRail(
       config.maxSpeedMs * Math.max(1, to.t - from.t) + config.routeSlackM,
     );
 
-  const search = (source: WayCandidate, targets: WayCandidate[], from: Step, to: Step) => {
+  const search = (
+    source: WayCandidate,
+    targets: WayCandidate[],
+    from: Step,
+    to: Step,
+    skipping = false,
+  ) => {
     const limit = bound(from, to);
     graph.search(source, targets, limit, config.maxHops);
     stats.searches += 1;
+    if (skipping) stats.skipSearches += 1;
     stats.maxSearchBoundM = Math.max(stats.maxSearchBoundM, limit);
     stats.maxSearchHops = config.maxHops;
   };
@@ -249,22 +262,30 @@ export function alignToRail(
         const from = steps[run[k - 1 - skipped] ?? 0];
         if (before === undefined || from === undefined) continue;
         const extra = skipped * config.outlierCost;
-        if (skipped > 0) {
-          // The skip cannot beat what is known when even its cheapest start plus the outliers costs more.
-          let cheapest = Number.POSITIVE_INFINITY;
-          for (const value of before) cheapest = Math.min(cheapest, value);
-          let worst = 0;
-          for (const value of here) worst = Math.max(worst, value);
-          if (cheapest + extra >= worst) continue;
+        // What a source must stay under to improve any target: a transition and an emission are never
+        // negative, so one whose cost plus the outliers reaches the most a target could still be
+        // improved by (what is known there less its emission) can improve none.
+        let ceiling = Number.NEGATIVE_INFINITY;
+        for (const [toIndex, target] of to.states.entries()) {
+          ceiling = Math.max(
+            ceiling,
+            (here[toIndex] ?? Number.POSITIVE_INFINITY) - target.emission,
+          );
         }
         const distance = chord(from, to);
         const beta = Math.max(config.betaMinM, config.betaChordFactor * distance);
         const speed = distance / Math.max(1, to.t - from.t);
         for (const [fromIndex, source] of from.states.entries()) {
           const base = before[fromIndex] ?? Number.POSITIVE_INFINITY;
-          if (!Number.isFinite(base)) continue;
-          search(source.candidate, targets, from, to);
+          if (!Number.isFinite(base) || (prune && base + extra >= ceiling)) continue;
+          search(source.candidate, targets, from, to, skipped > 0);
           for (const [toIndex, target] of to.states.entries()) {
+            if (
+              prune &&
+              base + extra + target.emission >= (here[toIndex] ?? Number.POSITIVE_INFINITY)
+            ) {
+              continue;
+            }
             const route = graph.distanceTo(target.candidate);
             // A straight leg faster than any train goes is a jump of the fix, not a ride: no leg at all.
             const transition = Number.isFinite(route)

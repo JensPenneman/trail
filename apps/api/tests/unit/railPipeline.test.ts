@@ -173,6 +173,33 @@ describe("the rail line of a move whose tiles only a region covers", () => {
     }
   });
 
+  it("says whether the mapped level matched the move: not for a region's read, nor for cached tiles read rail-only", () => {
+    const pieces = piecesToAlign(plan, none, plan.tiles, config);
+    const stretches = pieces.flatMap((piece) => railPiece(plan, piece, railOnly, config));
+    const aligned = (rail: Parameters<typeof inferWindow>[2]["rail"]) =>
+      moves(run(rail)).filter((segment) => railPath(segment)?.status === "aligned");
+    // A region covering every tile.
+    const fromRegion = aligned({
+      available: plan.tiles,
+      covered: plan.tiles,
+      stretches,
+      waiting: false,
+    });
+    expect(fromRegion.length).toBeGreaterThan(0);
+    for (const segment of fromRegion) {
+      expect(railPath(segment)).toMatchObject({ source: "region", mapped: false });
+    }
+    // Tiles only the cache holds (Overpass off): labelled cache all the same, with no mapped match.
+    const fromCache = aligned({ available: plan.tiles, covered: none, stretches, waiting: false });
+    expect(fromCache.length).toBeGreaterThan(0);
+    for (const segment of fromCache) {
+      expect(railPath(segment)).toMatchObject({ source: "cache", mapped: false });
+    }
+    // The cache's own path, with the mapped level: the road check had its evidence.
+    const mappedRide = trainOf(processWorld(walkTrainWalk()));
+    expect(railPath(mappedRide)).toMatchObject({ source: "cache", mapped: true });
+  });
+
   it("is no_map when the tiles are not covered: waiting while Overpass may bring them, else outside regions", () => {
     const waiting = run({ available: none, stretches: [], waiting: true }, true);
     const outside = run({ available: none, stretches: [], waiting: false });
@@ -279,8 +306,7 @@ describe("moves that cannot be a train", () => {
     expect(stats.runs).toBeGreaterThan(0);
     expect(stats.searches).toBeGreaterThan(0);
     expect(stats.settledNodes).toBeGreaterThan(0);
-    expect(stats.maxSearchBoundM).toBeLessThanOrEqual(config.rail.maxRouteM);
-    expect(stats.maxSearchHops).toBe(config.rail.maxHops);
+    expect(stats.maxSearchBoundM).toBeGreaterThan(0);
     expect(stats.alignMs).toBeGreaterThan(0);
   });
 

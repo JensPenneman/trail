@@ -78,6 +78,7 @@ describe("judgeRailPath", () => {
       medianOffsetM: 5,
       outlierShare: 0,
       roadShare: 0,
+      mapped: false,
       bridgedMaxSpeedMs: 0,
       lengthM: 10_000,
     });
@@ -203,7 +204,10 @@ describe("judgeRailPath", () => {
     const verdict = (mapped: (MappedPoint | null)[]) =>
       judgeRailPath(car.points, car.rail, config, "cache", mapped);
     // Without a mapped match there is nothing to compare with: aligned, as the offsets alone say.
-    expect(judge(car)).toMatchObject({ status: "aligned", roadShare: 0 });
+    expect(judge(car)).toMatchObject({ status: "aligned", roadShare: 0, mapped: false });
+    // With one, the road check had its evidence, whatever it found.
+    expect(verdict(car.points.map(() => onStreet(30)))).toMatchObject({ mapped: true });
+    expect(verdict(car.points.map(() => null))).toMatchObject({ mapped: false });
     expect(verdict(car.points.map(() => onStreet(6)))).toMatchObject({
       status: "poor",
       reason: "road",

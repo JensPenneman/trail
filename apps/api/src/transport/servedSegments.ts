@@ -56,7 +56,7 @@ export function servedSegments(deviceIds: readonly string[], range: { from: Date
       max(spread_m) AS spread_m,
       (array_agg(last_point_t ORDER BY started_at DESC))[1] AS last_point_t,
       (array_agg(rail_status ORDER BY started_at))[1] AS rail_status,
-      (array_agg(rail_source ORDER BY started_at))[1] AS rail_source
+      (array_agg(rail_mapped ORDER BY started_at))[1] AS rail_mapped
     FROM ${parts} stays
     GROUP BY device_id, stay
   ) s`;
@@ -67,5 +67,5 @@ export const servedColumns = sql.raw(`
   s.id, s.device_id, s.kind, s.started_at::text, s.ended_at::text, s.duration_s, s.distance_m,
   s.mode, s.mode_inferred, s.mode_user, s.confidence, s.review, s.max_speed, s.point_count,
   s.start_lat, s.start_lon, s.end_lat, s.end_lon, s.centroid_lat, s.centroid_lon, s.spread_m,
-  s.last_point_t, s.rail_status, s.rail_source
+  s.last_point_t, s.rail_status, s.rail_mapped
 `);
