@@ -419,7 +419,8 @@ configs:
       partial="$$file.partial"
 
       # a stop or any error leaves no partial file behind
-      trap 'rm -f "$$partial"' EXIT
+      # the cleanup must never change the exit code: a failing rm would turn a deliberate exit 0 into 1
+      trap 'rm -f "$$partial" 2> /dev/null || true' EXIT
       trap 'exit 1' TERM INT
 
       # pending: the journal of this ref has a migration the database lacks.
