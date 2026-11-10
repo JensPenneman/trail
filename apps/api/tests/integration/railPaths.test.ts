@@ -1,0 +1,373 @@
+import { apiPaths } from "@trail/contracts/apiPaths";
+import type { LevelTracksResponse, Segment } from "@trail/contracts/transport";
+import { sql } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { type Agent, signUpWithCookie } from "../support/authFlows";
+import { createDevice } from "../support/deviceFlows";
+import { FixtureWaySource } from "../support/fixtureWaySource";
+import { uploadJourney } from "../support/overlandPoints";
+import { railTrip } from "../support/railTrips";
+import { railWorld, roadLine, trackA, trackB } from "../support/railWorld";
+import { resetDatabase } from "../support/resetDatabase";
+import { distanceToLine, subPath, toXY, type Vertex } from "../support/syntheticWorld";
+import { createTestContext, type TestContext } from "../support/testContext";
+import { testOrigin } from "../support/testEnvironment";
+
+/*
+ * The train drawn along the railway, through HTTP (docs/architecture.md §17.3 and §17.6): the
+ * Transport level serves the rail places of a move whose mode that counts is train and whose
+ * verdict is `aligned`; the recorded line stays one level away; a correction switches the line
+ * at once. Synthetic rides over `railWorld`, every tile cached by the fixture source.
+ */
+const base = 1_793_000_000;
+const hour = 3600;
+const iso = (epochSeconds: number) => new Date(epochSeconds * 1000).toISOString();
+const day = { from: iso(base - 3 * hour), to: iso(base + 12 * hour) };
+
+/** The trips, two hours apart: a dense train, a sparse one, a car on a road beside the line, a walk far from it. */
+const trips = {
+  dense: railTrip(subPath(trackA, 20_000, 40_000), {
+    startT: base,
+    intervalS: 5,
+    noiseM: 6,
+    accuracy: 10,
+    altitude: 12,
+    seed: 1,
+  }),
+  sparse: railTrip(subPath(trackA, 50_000, 70_000), {
+    startT: base + 2 * hour,
+    intervalS: 60,
+    noiseM: 6,
+    accuracy: 10,
+    altitude: 12,
+    seed: 2,
+  }),
+  // A car whose phone is no better than 30 m: the road 40 m beside the rails is within what the
+  // judge accepts, so its rail line is judged aligned although nobody is on a train.
+  car: railTrip(roadLine, {
+    startT: base + 4 * hour,
+    intervalS: 5,
+    speedMs: 20,
+    noiseM: 6,
+    accuracy: 30,
+    motion: ["driving"],
+    seed: 5,
+  }),
+  walk: railTrip(
+    [
+      [80_000, 3000],
+      [81_500, 3000],
+    ],
+    {
+      startT: base + 6 * hour,
+      intervalS: 2,
+      speedMs: 1.4,
+      noiseM: 3,
+      accuracy: 8,
+      motion: ["walking"],
+      seed: 6,
+    },
+  ),
+};
+
+let t: TestContext;
+let owner: Agent;
+let deviceId = "";
+
+beforeAll(async () => {
+  await resetDatabase();
+  t = await createTestContext({ waySource: new FixtureWaySource(railWorld()) });
+  ({ agent: owner } = await signUpWithCookie(t.app, "first@example.com"));
+  const device = await createDevice(owner, { name: "Rail rides" });
+  deviceId = device.device.id;
+  for (const points of Object.values(trips)) {
+    await uploadJourney(t.app, device.credentials.accessToken, points);
+  }
+  await t.ctx.background.drain(5000);
+  await t.ctx.processing.flush();
+});
+
+afterAll(async () => {
+  await t.close();
+});
+
+const timeline = async (): Promise<Segment[]> =>
+  (await owner.get(apiPaths.v1.segments.root).query(day).expect(200)).body.items as Segment[];
+
+/** The move that starts within a trip's ride. */
+async function moveOf(name: keyof typeof trips): Promise<Segment> {
+  const first = trips[name][0]?.t ?? 0;
+  const last = trips[name].at(-1)?.t ?? 0;
+  const found = (await timeline()).find(
+    (segment) =>
+      segment.kind === "move" &&
+      Date.parse(segment.startedAt) / 1000 >= first &&
+      Date.parse(segment.endedAt) / 1000 <= last + 1,
+  );
+  if (found === undefined) {
+    const all = (await timeline()).map(
+      (segment) => `${segment.kind} ${segment.mode} ${segment.startedAt} ${segment.endedAt}`,
+    );
+    throw new Error(`no move for the ${name} trip (${first}..${last}): ${all.join("; ")}`);
+  }
+  return found;
+}
+
+const tracks = (query: Record<string, string | number> = {}) =>
+  owner.get(apiPaths.v1.tracks).query({ ...day, level: "inferred", maxPoints: 50_000, ...query });
+
+/** The served segment of a move, with the response's ETag. */
+async function served(id: string, query: Record<string, string | number> = {}) {
+  const response = await tracks(query).expect(200);
+  const body = response.body as LevelTracksResponse;
+  const segment = body.segments.find((entry) => entry.id === id);
+  if (segment === undefined) throw new Error("the move is not in the tracks");
+  return { segment, etag: String(response.headers["etag"]) };
+}
+
+type Stored = {
+  t: number;
+  lat_avg: number;
+  lon_avg: number;
+  lat_map: number | null;
+  lon_map: number | null;
+  lat_rail: number | null;
+  lon_rail: number | null;
+};
+
+/** The processed points of a move, oldest first. */
+async function stored(move: Segment): Promise<Stored[]> {
+  const rows = await t.ctx.db.execute<Stored>(sql`
+    SELECT extract(epoch FROM recorded_at)::float8 AS t, lat_avg, lon_avg, lat_map, lon_map,
+      lat_rail, lon_rail
+    FROM processed_points
+    WHERE device_id = ${deviceId} AND kept
+      AND recorded_at >= ${move.startedAt}::timestamptz AND recorded_at <= ${move.endedAt}::timestamptz
+    ORDER BY recorded_at
+  `);
+  return rows.rows;
+}
+
+type Place = (row: Stored) => [number, number] | null;
+const railPlace: Place = (row) =>
+  row.lon_rail === null ? null : [row.lon_rail, row.lat_rail ?? 0];
+const mappedPlace: Place = (row) => (row.lon_map === null ? null : [row.lon_map, row.lat_map ?? 0]);
+const averagedPlace: Place = (row) => [row.lon_avg, row.lat_avg];
+
+type Served = readonly (readonly (number | null)[])[];
+
+/** The served API rounds to 1e-7 degrees. */
+const sameDegrees = (a: number, b: number) => Math.abs(a - b) < 2e-7;
+
+/**
+ * Checks that every processed point is served at its stored place (the first of `places` it has),
+ * and returns the served points that are those: the rest are the way's shape between them.
+ */
+function expectPlaces(
+  segment: { points: Served },
+  rows: Stored[],
+  places: readonly Place[],
+  label: string,
+): Set<readonly (number | null)[]> {
+  expect(rows.length, `${label}: points`).toBeGreaterThan(5);
+  const own = new Set<readonly (number | null)[]>();
+  for (const row of rows) {
+    const expected = places.map((place) => place(row)).find((place) => place !== null);
+    expect(expected, `${label}: a place for ${row.t}`).toBeDefined();
+    const found = segment.points.find(
+      (point) =>
+        point[2] === Math.round(row.t) &&
+        sameDegrees(point[0] ?? 0, expected?.[0] ?? 0) &&
+        sameDegrees(point[1] ?? 0, expected?.[1] ?? 0),
+    );
+    expect(found, `${label}: ${row.t} served at ${expected?.join(",")}`).toBeDefined();
+    if (found !== undefined) own.add(found);
+  }
+  return own;
+}
+
+/** Every served vertex lies on a main track. */
+function expectOnRails(points: Served) {
+  for (const point of points) {
+    const xy = toXY({ lon: point[0] ?? 0, lat: point[1] ?? 0 });
+    const near = Math.min(
+      distanceToLine(xy, trackA as Vertex[]),
+      distanceToLine(xy, trackB as Vertex[]),
+    );
+    expect(near).toBeLessThan(1);
+  }
+}
+
+describe("a train drawn along the railway", () => {
+  it("is served on the rails at the Transport level, with alignedTo rail", async () => {
+    const move = await moveOf("dense");
+    expect(move).toMatchObject({ mode: "train", alignedTo: "rail" });
+    const { segment } = await served(move.id);
+    expect(segment).toMatchObject({ kind: "move", mode: "train", alignedTo: "rail" });
+    expectOnRails(segment.points);
+    expectPlaces(segment, await stored(move), [railPlace], "aligned");
+  });
+
+  it("leaves the recorded line one level away: Mapped, Averaged and Raw carry no alignedTo", async () => {
+    const move = await moveOf("dense");
+    for (const level of ["mapped", "averaged", "raw"] as const) {
+      const response = await owner
+        .get(apiPaths.v1.tracks)
+        .query({ ...day, level, maxPoints: 50_000 })
+        .expect(200);
+      const segments = (response.body as LevelTracksResponse).segments;
+      expect(segments.length, level).toBeGreaterThan(0);
+      expect(
+        segments.every((segment) => segment.alignedTo === null && segment.kind === "track"),
+      ).toBe(true);
+    }
+    // The mapped columns of the move are what they were: the rail places are columns of their own.
+    const rows = await stored(move);
+    expect(rows.every((row) => row.lat_map !== null)).toBe(true);
+    expect(rows.some((row) => row.lat_rail !== null)).toBe(true);
+  });
+
+  it("carries alignedTo in the timeline: only a train move whose points lie on the rails", async () => {
+    const items = await timeline();
+    const aligned = items.filter((segment) => segment.alignedTo === "rail");
+    expect(aligned.map((segment) => segment.mode)).toEqual(["train", "train"]);
+    expect(
+      items
+        .filter((segment) => segment.kind === "stop")
+        .every((segment) => segment.alignedTo === null),
+    ).toBe(true);
+    // The car's rail line was judged aligned too, but the mode that counts is car: recorded.
+    const car = await moveOf("car");
+    expect(car).toMatchObject({ mode: "car", alignedTo: null });
+    expect(await railVerdict(car.id)).toBe("aligned");
+    // A walk far from the tracks has a verdict that is not aligned.
+    const walk = await moveOf("walk");
+    expect(walk.alignedTo).toBeNull();
+    expect(await railVerdict(walk.id)).not.toBe("aligned");
+  });
+
+  it("gives the way's shape between points the speed of the point it leads to and no altitude", async () => {
+    const move = await moveOf("sparse");
+    const { segment } = await served(move.id, { values: "speed,altitude" });
+    expect(segment.alignedTo).toBe("rail");
+    const own = expectPlaces(segment, await stored(move), [railPlace], "sparse");
+    const vertices = segment.points.filter((point) => !own.has(point));
+    expect(vertices.length).toBeGreaterThan(5);
+    expectOnRails(segment.points);
+    for (const [index, point] of segment.points.entries()) {
+      if (own.has(point)) {
+        // The ends are the stops' points, which carry none.
+        if (index > 0 && index < segment.points.length - 1) {
+          expect(point[4], "the fix's own altitude").toBe(12);
+        }
+        continue;
+      }
+      expect(point[4], "a vertex has no altitude").toBeNull();
+      const next = segment.points.slice(index + 1).find((entry) => own.has(entry));
+      expect(point[3], "the speed of the point it leads to").toBe(next?.[3]);
+    }
+  });
+});
+
+/** The stored verdict of a move. */
+async function railVerdict(id: string): Promise<string | null> {
+  const rows = await t.ctx.db.execute<{ status: string | null }>(sql`
+    SELECT features->'railPath'->>'status' AS status FROM segments WHERE id = ${id}
+  `);
+  return rows.rows[0]?.status ?? null;
+}
+
+const setMode = (id: string, mode: string) =>
+  owner.put(apiPaths.v1.segments.mode(id)).set("Origin", testOrigin).send({ mode });
+
+describe("a correction to or from train", () => {
+  it("switches the served line at once, both ways, with a new ETag and no reprocessing", async () => {
+    const move = await moveOf("sparse");
+    const rows = await stored(move);
+    const queueBefore = await t.ctx.db.execute(
+      sql`SELECT count(*)::int AS n FROM processing_queue`,
+    );
+    const aligned = await served(move.id);
+    // Away from train: the answer says so, and the next read draws the recorded places.
+    const toCar = await setMode(move.id, "car").expect(200);
+    expect(toCar.body.segment).toMatchObject({ mode: "car", alignedTo: null });
+    const recorded = await served(move.id);
+    expect(recorded.segment.alignedTo).toBeNull();
+    expect(recorded.etag).not.toBe(aligned.etag);
+    expectPlaces(recorded.segment, rows, [mappedPlace, averagedPlace], "recorded");
+    // And back: aligned again, the same line as before.
+    const toTrain = await setMode(move.id, "train").expect(200);
+    expect(toTrain.body.segment).toMatchObject({ mode: "train", alignedTo: "rail" });
+    const again = await served(move.id);
+    expect(again.segment.alignedTo).toBe("rail");
+    expect(again.segment.points).toEqual(aligned.segment.points);
+    expect(again.etag).not.toBe(recorded.etag);
+    // Nothing was queued for it: the same rows wait as before.
+    const queueAfter = await t.ctx.db.execute(sql`SELECT count(*)::int AS n FROM processing_queue`);
+    expect(queueAfter.rows).toEqual(queueBefore.rows);
+  });
+
+  it("aligns a car whose line was judged along the rails as soon as it is a train", async () => {
+    const car = await moveOf("car");
+    const rows = await stored(car);
+    const road = await served(car.id);
+    expect(road.segment.alignedTo).toBeNull();
+    const toTrain = await setMode(car.id, "train").expect(200);
+    expect(toTrain.body.segment).toMatchObject({ mode: "train", alignedTo: "rail" });
+    const { segment } = await served(car.id);
+    expect(segment.alignedTo).toBe("rail");
+    expectPlaces(segment, rows, [railPlace], "car as train");
+    // The road beside the rails and the rails are 40 m apart: the line the person sees changed.
+    expect(JSON.stringify(segment.points)).not.toBe(JSON.stringify(road.segment.points));
+    expectOnRails(segment.points);
+    // Reset: the car again, recorded.
+    await owner.delete(apiPaths.v1.segments.mode(car.id)).set("Origin", testOrigin).expect(200);
+    await t.ctx.processing.flush();
+    const after = await moveOf("car");
+    expect(after).toMatchObject({ mode: "car", alignedTo: null });
+  });
+
+  it("leaves a walk far from the tracks as recorded when it is called a train", async () => {
+    const walk = await moveOf("walk");
+    const rows = await stored(walk);
+    expect(rows.every((row) => row.lat_rail === null)).toBe(true);
+    const toTrain = await setMode(walk.id, "train").expect(200);
+    expect(toTrain.body.segment).toMatchObject({ mode: "train", alignedTo: null });
+    const { segment } = await served(walk.id);
+    expect(segment.alignedTo).toBeNull();
+    expectPlaces(segment, rows, [mappedPlace, averagedPlace], "walk as train");
+    await owner.delete(apiPaths.v1.segments.mode(walk.id)).set("Origin", testOrigin).expect(200);
+    await t.ctx.processing.flush();
+  });
+
+  it("keeps the inferred train aligned after a reset has been worked out", async () => {
+    const move = await moveOf("dense");
+    await setMode(move.id, "bus").expect(200);
+    expect((await served(move.id)).segment.alignedTo).toBeNull();
+    await owner.delete(apiPaths.v1.segments.mode(move.id)).set("Origin", testOrigin).expect(200);
+    // The reset is worked out as the worker does it: the span queued again, the verdict stored anew.
+    await t.ctx.processing.flush();
+    const after = await moveOf("dense");
+    expect(after).toMatchObject({ mode: "train", modeUser: null, alignedTo: "rail" });
+    const { segment } = await served(after.id);
+    expect(segment.alignedTo).toBe("rail");
+    expectOnRails(segment.points);
+  });
+});
+
+describe("rail columns without a verdict", () => {
+  it("are served as recorded, never half and half", async () => {
+    const move = await moveOf("sparse");
+    expect((await served(move.id)).segment.alignedTo).toBe("rail");
+    // What an older image's write leaves: the points' rail places, no verdict on the segment.
+    await t.ctx.db.execute(
+      sql`UPDATE segments SET features = features - 'railPath' WHERE id = ${move.id}`,
+    );
+    const rows = await stored(move);
+    expect(rows.some((row) => row.lat_rail !== null)).toBe(true);
+    expect((await moveOf("sparse")).alignedTo).toBeNull();
+    const { segment } = await served(move.id);
+    expect(segment.alignedTo).toBeNull();
+    expectPlaces(segment, rows, [mappedPlace, averagedPlace], "no verdict");
+  });
+});
