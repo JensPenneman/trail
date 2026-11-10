@@ -1,0 +1,246 @@
+import { rmSync } from "node:fs";
+import { apiPaths } from "@trail/contracts/apiPaths";
+import type { Segment } from "@trail/contracts/transport";
+import { sql } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createLogger } from "../../src/logging/createLogger";
+import { importRegion } from "../../src/mapdata/importRegion";
+import type { RawPoint } from "../../src/processing/pipelineTypes";
+import { enqueueWindow } from "../../src/processing/processingQueue";
+import { planWindow } from "../../src/processing/runPipeline";
+import { type Agent, signUpWithCookie } from "../support/authFlows";
+import { createDevice } from "../support/deviceFlows";
+import { FixtureWaySource } from "../support/fixtureWaySource";
+import { writeArtefact } from "../support/mapDataArtefact";
+import { uploadJourney } from "../support/overlandPoints";
+import { assertQueueInvariants, assertSegmentInvariants } from "../support/processingInvariants";
+import { railTrip } from "../support/railTrips";
+import { oplLinesOf, railWorld, regionPolyText, trackA } from "../support/railWorld";
+import { resetDatabase } from "../support/resetDatabase";
+import { distanceToLine, subPath, toLonLat, toXY, type Vertex } from "../support/syntheticWorld";
+import { createTestContext, type TestContext } from "../support/testContext";
+import { testOrigin } from "../support/testEnvironment";
+
+/*
+ * The rail network from a loaded region, whatever the tile cache holds (docs/architecture.md
+ * §17.3, "Along the rails"): the rail world is written as a map data artefact whose polygon
+ * covers its western half, imported with `trail map import`'s own function, and the Overpass
+ * cache starts empty. Synthetic rides only.
+ */
+const base = 1_793_000_000;
+const hour = 3600;
+const iso = (epochSeconds: number) => new Date(epochSeconds * 1000).toISOString();
+const day = { from: iso(base - 3 * hour), to: iso(base + 40 * hour) };
+const logger = createLogger({ level: "silent" });
+
+const ride = (from: number, to: number, startT: number, seed: number): RawPoint[] =>
+  railTrip(subPath(trackA, from, to), {
+    startT,
+    intervalS: 5,
+    noiseM: 6,
+    accuracy: 10,
+    seed,
+  });
+
+/** A region of the rail world west of `eastM`, as a build directory. */
+function build(eastM: number, withRails = true): string {
+  const [west] = toLonLat(-10_000, 0);
+  const [east] = toLonLat(eastM, 0);
+  const lines = oplLinesOf(railWorld()).filter((line) => withRails || !line.includes("railway="));
+  return writeArtefact({
+    ways: () => lines,
+    pois: () => [],
+    polygon: regionPolyText("rail-world", [
+      [west, 50.9],
+      [east, 50.9],
+      [east, 51.2],
+      [west, 51.2],
+    ]),
+  });
+}
+
+const directories: string[] = [];
+async function importBuild(eastM: number, withRails = true): Promise<void> {
+  const dir = build(eastM, withRails);
+  directories.push(dir);
+  await importRegion({ db: t.ctx.db, logger, dir, digest: null });
+}
+
+let t: TestContext;
+/** The same database with no Overpass at all: no tile is ever fetched, only regions serve. */
+let off: TestContext;
+const fixture = new FixtureWaySource(railWorld());
+let owner: Agent;
+
+beforeAll(async () => {
+  await resetDatabase();
+  t = await createTestContext({ waySource: fixture });
+  off = await createTestContext({ waySource: null });
+  ({ agent: owner } = await signUpWithCookie(t.app, "first@example.com"));
+  await importBuild(50_000);
+});
+
+afterAll(async () => {
+  await off.close();
+  await t.close();
+  for (const dir of directories) rmSync(dir, { recursive: true, force: true });
+});
+
+async function newDevice(name: string) {
+  const device = await createDevice(owner, { name });
+  return { id: device.device.id, token: device.credentials.accessToken };
+}
+
+async function upload(token: string, points: readonly RawPoint[]) {
+  await uploadJourney(t.app, token, points);
+  await t.ctx.background.drain(5000);
+}
+
+type Move = {
+  mode: string | null;
+  status: string | null;
+  reason: string | null;
+  source: string | null;
+};
+
+/** The device's moves with their verdicts, oldest first. */
+async function moves(deviceId: string): Promise<Move[]> {
+  const rows = await t.ctx.db.execute<Move>(sql`
+    SELECT mode, features->'railPath'->>'status' AS status,
+      features->'railPath'->>'reason' AS reason, features->'railPath'->>'source' AS source
+    FROM segments WHERE device_id = ${deviceId} AND kind = 'move' ORDER BY started_at
+  `);
+  return rows.rows;
+}
+
+const counts = async (deviceId: string) =>
+  (
+    await t.ctx.db.execute<{ mapped: number; railed: number; waiting: number }>(sql`
+      SELECT
+        (SELECT count(*)::int FROM processed_points WHERE device_id = ${deviceId} AND lat_map IS NOT NULL AND way_kind IS NOT NULL) AS mapped,
+        (SELECT count(*)::int FROM processed_points WHERE device_id = ${deviceId} AND lat_rail IS NOT NULL) AS railed,
+        (SELECT count(*)::int FROM processing_queue WHERE device_id = ${deviceId} AND missing_tiles IS NOT NULL) AS waiting
+    `)
+  ).rows[0] ?? { mapped: 0, railed: 0, waiting: 0 };
+
+const timeline = async (deviceId: string): Promise<Segment[]> =>
+  (
+    await owner
+      .get(apiPaths.v1.segments.root)
+      .query({ ...day, devices: deviceId })
+      .expect(200)
+  ).body.items as Segment[];
+
+async function reprocess(context: TestContext, deviceId: string) {
+  await enqueueWindow(context.ctx.db, {
+    deviceId,
+    from: new Date((base - 3 * hour) * 1000),
+    to: new Date((base + 40 * hour) * 1000),
+    reason: "reprocess",
+    fromLevel: "averaged",
+  });
+  await context.ctx.processing.flush();
+}
+
+describe("with Overpass off", () => {
+  it("aligns a train inside the region from it, leaving the mapped level unmapped and queueing nothing", async () => {
+    const device = await newDevice("Inside the region");
+    await upload(device.token, ride(20_000, 40_000, base, 1));
+    await off.ctx.processing.flush();
+    const [train] = await moves(device.id);
+    expect(train).toMatchObject({ status: "aligned", reason: "ok", source: "region" });
+    expect(await counts(device.id)).toMatchObject({ mapped: 0, waiting: 0 });
+    expect((await counts(device.id)).railed).toBeGreaterThan(50);
+    await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
+    await assertQueueInvariants(t.ctx.db, { deviceId: device.id });
+    // Served: whatever mode the weaker evidence of an unmapped ride gave it, once it is a train
+    // (inferred or by the person's word) it is drawn along the rails, region data and nothing else.
+    const [move] = (await timeline(device.id)).filter((segment) => segment.kind === "move");
+    if (move === undefined) throw new Error("no move");
+    await owner
+      .put(apiPaths.v1.segments.mode(move.id))
+      .set("Origin", testOrigin)
+      .send({ mode: "train" })
+      .expect(200);
+    const [corrected] = (await timeline(device.id)).filter((segment) => segment.kind === "move");
+    expect(corrected).toMatchObject({ mode: "train", alignedTo: "rail" });
+    const tracks = await owner
+      .get(apiPaths.v1.tracks)
+      .query({ ...day, devices: device.id, level: "inferred", maxPoints: 50_000 })
+      .expect(200);
+    const line = (tracks.body.segments as { id: string; points: number[][] }[]).find(
+      (segment) => segment.id === move.id,
+    );
+    expect(line?.points.length).toBeGreaterThan(50);
+    for (const point of line?.points ?? []) {
+      expect(
+        distanceToLine(toXY({ lon: point[0] ?? 0, lat: point[1] ?? 0 }), trackA as Vertex[]),
+      ).toBeLessThan(5);
+    }
+  });
+
+  it("calls a train that leaves the region no_map/outside_regions and serves it as recorded", async () => {
+    const device = await newDevice("Leaving the region");
+    await upload(device.token, ride(40_000, 60_000, base + 6 * hour, 2));
+    await off.ctx.processing.flush();
+    const [train] = await moves(device.id);
+    expect(train).toMatchObject({ status: "no_map", reason: "outside_regions", source: null });
+    expect((await counts(device.id)).railed).toBe(0);
+    for (const segment of await timeline(device.id)) expect(segment.alignedTo).toBeNull();
+  });
+});
+
+describe("with Overpass refusing every tile", () => {
+  it("aligns from the region at once while the window waits, and from the cache once it has the tiles", async () => {
+    const device = await newDevice("Waiting for the cache");
+    const points = ride(20_000, 40_000, base + 12 * hour, 3);
+    for (const tile of planWindow(points, [], t.ctx.processing.config).tiles) {
+      fixture.failing.add(tile);
+    }
+    try {
+      await upload(device.token, points);
+      await t.ctx.processing.flush();
+      const [waiting] = await moves(device.id);
+      expect(waiting).toMatchObject({ status: "aligned", source: "region" });
+      expect(await counts(device.id)).toMatchObject({ mapped: 0 });
+      expect((await counts(device.id)).waiting).toBeGreaterThan(0);
+      await assertQueueInvariants(t.ctx.db, { deviceId: device.id });
+    } finally {
+      fixture.failing.clear();
+    }
+    await t.ctx.db.execute(
+      sql`UPDATE osm_tiles SET retry_at = now() - interval '1 minute' WHERE status = 'failed'`,
+    );
+    await t.ctx.processing.flush();
+    const [mapped] = await moves(device.id);
+    expect(mapped).toMatchObject({ status: "aligned", source: "cache" });
+    expect(await counts(device.id)).toMatchObject({ waiting: 0 });
+    expect((await counts(device.id)).mapped).toBeGreaterThan(50);
+    await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
+    await assertQueueInvariants(t.ctx.db, { deviceId: device.id });
+  });
+});
+
+describe("a region swapped between passes", () => {
+  it("aligns from the new build, and draws nothing where the new build has no rail", async () => {
+    const device = await newDevice("Across builds");
+    // Overpass off again: only the region serves, so each answer is the region's.
+    await upload(device.token, ride(55_000, 75_000, base + 18 * hour, 4));
+    await off.ctx.processing.flush();
+    expect((await moves(device.id))[0]).toMatchObject({
+      status: "no_map",
+      reason: "outside_regions",
+    });
+    await importBuild(90_000);
+    await reprocess(off, device.id);
+    expect((await moves(device.id))[0]).toMatchObject({ status: "aligned", source: "region" });
+    // A build of the same extract without railways: the tiles are covered and hold none.
+    await importBuild(90_000, false);
+    await reprocess(off, device.id);
+    // The judge reports a part with no run along rails as too short for a verdict, not as no_rail.
+    const [bare] = await moves(device.id);
+    expect(bare?.status).toBe("poor");
+    expect((await counts(device.id)).railed).toBe(0);
+    await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
+  });
+});
