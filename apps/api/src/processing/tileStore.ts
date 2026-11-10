@@ -156,6 +156,33 @@ export async function loadMapData(
   return { ways, pois };
 }
 
+/** The tiles of a rail-only read in sorted chunks of at most `maxTiles` (`RailConfig.railOnlyMaxTiles`). */
+export function railReadChunks(keys: Iterable<TileKey>, maxTiles: number): TileKey[][] {
+  const sorted = [...new Set(keys)].sort();
+  const chunks: TileKey[][] = [];
+  for (let at = 0; at < sorted.length; at += maxTiles) chunks.push(sorted.slice(at, at + maxTiles));
+  return chunks;
+}
+
+/**
+ * The rail ways of `keys`, read in chunks of at most `maxTiles` tiles, one
+ * statement each, so that no single read of a long ride takes long or holds
+ * much (the cost is about 2.5 ms a tile, `RailConfig.railOnlyMaxTiles`). A way
+ * that reaches into two chunks comes once, from the first.
+ */
+export async function loadRailMapData(
+  db: Executor,
+  keys: Iterable<TileKey>,
+  maxTiles: number,
+): Promise<MapData> {
+  const ways = new Map<number, OsmWay>();
+  for (const chunk of railReadChunks(keys, maxTiles)) {
+    const read = await loadMapData(db, chunk, { kinds: ["rail"], pois: false });
+    for (const way of read.ways) if (!ways.has(way.id)) ways.set(way.id, way);
+  }
+  return { ways: [...ways.values()], pois: [] };
+}
+
 /**
  * Stores a fetched tile in one transaction, in the Overpass cache's partition
  * (`source` overpass): its ways (shared with neighbouring tiles, so upserted)

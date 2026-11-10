@@ -116,19 +116,38 @@ describe("judgeRailPath", () => {
     expect(judge(split)).toMatchObject({ coveredShare: 0.95, status: "aligned" });
   });
 
-  it("flags poor/routes when under 0.9 of the line followed the network, or a straight leg is over 2 km", () => {
+  it("flags poor/routes when under 0.8 of the line followed the network, or a straight leg is over 2 km", () => {
     const unrouted = part(21);
-    lastShare(unrouted, 0.15, (point) => {
+    lastShare(unrouted, 0.25, (point) => {
       point.routed = false;
       point.bridgedLegM = 500;
     });
-    expect(judge(unrouted)).toMatchObject({ status: "poor", reason: "routes", routedShare: 0.85 });
+    expect(judge(unrouted)).toMatchObject({ status: "poor", reason: "routes", routedShare: 0.75 });
+    // 0.85 routed passes at 0.8 (the rehearsal's rides of 0.85 and 0.87 were drawn straight in places the map does not connect).
+    const mostly = part(21);
+    lastShare(mostly, 0.15, (point) => {
+      point.routed = false;
+      point.bridgedLegM = 500;
+    });
+    expect(judge(mostly)).toMatchObject({ status: "aligned", routedShare: 0.85 });
     const long = part(41);
     at(long, 20).routed = false;
     at(long, 20).bridgedLegM = 2500;
     expect(judge(long)).toMatchObject({ status: "poor", reason: "routes" });
     at(long, 20).bridgedLegM = 1900;
     expect(judge(long)).toMatchObject({ status: "aligned" });
+  });
+
+  it("does not count the leg into a part's first point: it belongs to the segment before", () => {
+    const input = part(21);
+    // A move's first point carries the straight leg into it; the part itself is fully routed.
+    at(input, 0).routed = false;
+    at(input, 0).bridgedLegM = 4000;
+    expect(judge(input)).toMatchObject({ status: "aligned", reason: "ok", routedShare: 1 });
+    // The same leg anywhere else in the part does fail it.
+    at(input, 5).routed = false;
+    at(input, 5).bridgedLegM = 4000;
+    expect(judge(input)).toMatchObject({ status: "poor", reason: "routes" });
   });
 
   it("flags poor/offsets on the median z, the p90 z and the median offset", () => {

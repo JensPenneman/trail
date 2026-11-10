@@ -201,6 +201,18 @@ export interface RailConfig {
   readonly wayChangeCost: number;
   /** Cost of a leg without a route within its bound; the leg is then drawn straight ("bridged"). */
   readonly breakCost: number;
+  /**
+   * A rail-only read (a ride that only a loaded region covers) takes at most
+   * this many tiles; a longer piece is read in several, one statement each.
+   * Where the number comes from: the rehearsal on a production dump (WP2b)
+   * read 22 tiles in 138 ms (p50), 49 in 273 ms (p90) and 75 in 471 ms (max),
+   * 2.5 to 6 ms a tile, so the 150 ms for 256 tiles first assumed (an
+   * extrapolation) does not hold: 256 tiles would take 0.6 to 1.5 s in one
+   * statement. At 64 tiles a read stays under about 0.4 s, and a pass's reads
+   * add up linearly with the tiles of its region-only moves, which the pass's
+   * point budget bounds, inside the worker's 5 s bound for a pass.
+   */
+  readonly railOnlyMaxTiles: number;
   readonly judge: RailJudgeConfig;
 }
 
@@ -334,12 +346,13 @@ export const defaultProcessingConfig: ProcessingConfig = {
     betaChordFactor: 0.15,
     wayChangeCost: 0.2,
     breakCost: 10,
+    railOnlyMaxTiles: 64,
     judge: {
       minLengthM: 1000,
       minSteps: 3,
       minCoveredShare: 0.9,
       noRailShare: 0.5,
-      minRoutedShare: 0.9,
+      minRoutedShare: 0.8,
       maxBridgedM: 2000,
       maxMedianZ: 1.5,
       maxP90Z: 3,
