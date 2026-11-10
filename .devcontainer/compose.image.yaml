@@ -1,0 +1,75 @@
+# The `image` check (docs/operations.md, "Checks"): builds the production image
+# from the root Dockerfile, starts it with its own CMD and HEALTHCHECK, and
+# lets `probe` run deploy/verify.json against it. Nothing here overrides the
+# image's command or entrypoint, so what is proven is what production runs.
+#
+#   docker compose -f .devcontainer/compose.image.yaml up --build \
+#     --exit-code-from probe --abort-on-container-exit
+#   docker compose -f .devcontainer/compose.image.yaml down -v
+name: ${COMPOSE_PROJECT_NAME:-trail-image-check}
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: trail
+      POSTGRES_PASSWORD: trail
+      POSTGRES_DB: trail
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8
+    # the image declares a volume; a tmpfs leaves none behind
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trail -d trail"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${LAUNCHWAY_COMMIT_SHA_SHORT:-dev}
+    depends_on:
+      db:
+        condition: service_healthy
+    # The hardening of deploy/compose.yaml's `app`, so an image that only
+    # starts with a writable filesystem or extra capabilities fails here and
+    # not in production.
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - trail-map:/var/lib/trail/map
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # Only what the configuration's validation needs. PUBLIC_URL is http: with
+    # an https address the ingest route would answer 403 to a request over
+    # plain HTTP before it looked at the token. No map regions (a download of
+    # gigabytes) and no Overpass: the check needs no network.
+    environment:
+      DATABASE_URL: postgres://trail:trail@db:5432/trail
+      PUBLIC_URL: http://app:8080
+      PROCESSING_ROLE: api
+      MAP_DATA_REGIONS: ""
+      PROCESSING_OVERPASS_URL: ""
+
+  # A Node image to run scripts/verify.mjs; the digest is its own, not the
+  # Dockerfile's. The checkout is mounted read-only, as in the other checks,
+  # and carries the script and deploy/verify.json.
+  probe:
+    image: node:lts-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94
+    depends_on:
+      app:
+        condition: service_healthy
+    working_dir: /workspaces/trail
+    volumes:
+      - ..:/workspaces/trail:ro
+    environment:
+      GIT_SHA: ${LAUNCHWAY_COMMIT_SHA_SHORT:-dev}
+    command: ["node", "scripts/verify.mjs", "http://app:8080", "deploy/verify.json"]
+
+volumes:
+  trail-map:

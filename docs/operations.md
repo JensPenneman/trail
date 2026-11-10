@@ -389,12 +389,34 @@ status:
 | `launchway/quality` | `npm ci --no-audit --no-fund && npm run check` | 25 min | 2½ min |
 | `launchway/integration` | `npm ci --no-audit --no-fund && npm run test:integration` | 20 min | 3–4 min |
 | `launchway/e2e` | `npm ci --no-audit --no-fund && npm run build && npm run test:e2e` | 60 min | 15–17 min |
+| `launchway/image` | `node scripts/verify.mjs http://app:8080 deploy/verify.json` | 20 min | |
+
+`launchway/image` has a Compose file of its own, `.devcontainer/compose.image.yaml`,
+and runs in its service `probe`. Compose builds the production image from the
+root `Dockerfile`, starts it as `app` with the image's own `CMD` and no
+override of command or entrypoint (only `DATABASE_URL`, `PUBLIC_URL` and no map
+regions), with the hardening of production's `app` (`read_only`, a `tmpfs` at
+`/tmp`, `cap_drop: [ALL]`, `no-new-privileges`, `init`, `PROCESSING_ROLE:
+api`), next to a `postgres:18-alpine`, and starts `probe` once the image's
+own `HEALTHCHECK` reports healthy. `probe` is a Node image of its own digest with
+the checkout mounted read-only; `scripts/verify.mjs` runs the `checks` of
+`deploy/verify.json` against `app` ([Verifying a deployment](#verifying-a-deployment)),
+with the version from `package.json` and the commit from `GIT_SHA`, which the
+file passes as the same value to the build and to `probe`. A broken `CMD` path
+keeps `app` from ever becoming healthy; a wrong expected status fails a check.
+Locally, with Docker (about the cost of an image build):
+
+```sh
+docker compose -f .devcontainer/compose.image.yaml up --build --exit-code-from probe --abort-on-container-exit
+docker compose -f .devcontainer/compose.image.yaml down -v
+```
 
 They are set up in Launchway, Trail → Settings → Checks: checks on, Compose
-files `.devcontainer/compose.yaml`, branches `main`, *Skip bots* off
-(Dependabot's pull requests need them to merge), and the three checks above
-in the service `dev`. The node runs one check at a time, oldest first across
-its apps, so a commit's three take about 25 minutes once their turn comes. A
+files `.devcontainer/compose.yaml` and `.devcontainer/compose.image.yaml`,
+branches `main`, *Skip bots* off (Dependabot's pull requests need them to
+merge), the first three checks in the service `dev` and `image` in the service
+`probe`. The node runs one check at a time, oldest first across its apps, so a
+commit's checks take about 25 minutes once their turn comes. A
 newer push to a branch cancels the queued checks of its older commits; they
 report *error*, "Superseded by a newer commit".
 
