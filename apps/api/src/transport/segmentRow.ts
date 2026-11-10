@@ -30,6 +30,8 @@ export interface SegmentRow extends Record<string, unknown> {
   last_point_t: number | null;
   /** `features.railPath.status` (§17.3): whether the move's points lie along the railway; null for a stop or no verdict. */
   rail_status: string | null;
+  /** `features.railPath.reason`: why a `poor` verdict was given; `road` is the one a person's word overrules. */
+  rail_reason: string | null;
   /** `features.railPath.mapped`: whether the mapped level matched the move and the judge could check the road (§17.3); null without a verdict. */
   rail_mapped: boolean | null;
 }
@@ -40,7 +42,8 @@ export const segmentColumns = sql.raw(`
   s.mode, s.mode_inferred, s.mode_user, s.confidence, s.review, s.max_speed, s.point_count,
   s.start_lat, s.start_lon, s.end_lat, s.end_lon, s.centroid_lat, s.centroid_lon,
   (s.features->>'spreadM')::float8 AS spread_m, (s.features->>'lastPointT')::float8 AS last_point_t,
-  s.features->'railPath'->>'status' AS rail_status, (s.features->'railPath'->>'mapped')::boolean AS rail_mapped
+  s.features->'railPath'->>'status' AS rail_status, s.features->'railPath'->>'reason' AS rail_reason,
+  (s.features->'railPath'->>'mapped')::boolean AS rail_mapped
 `);
 
 const round = (value: number, digits: number): number => {
@@ -59,9 +62,13 @@ const round = (value: number, digits: number): number => {
  */
 function alignedToOf(row: SegmentRow, railAlign: boolean): "rail" | null {
   const mode = row.mode_user ?? row.mode_inferred;
-  if (!railAlign || row.kind !== "move" || mode !== "train" || row.rail_status !== "aligned") {
-    return null;
-  }
+  if (!railAlign || row.kind !== "move" || mode !== "train") return null;
+  // A part refused only because a street lies beside the rails was judged a car by a check that a
+  // person's word overrules: set to train, its stored rail places are drawn.
+  const drawn =
+    row.rail_status === "aligned" ||
+    (row.rail_status === "poor" && row.rail_reason === "road" && row.mode_user === "train");
+  if (!drawn) return null;
   // A verdict with no mapped match behind it (read from a region, or from cached tiles with no match)
   // could not check the road: a car on a road by the rails passes the judge there. It is drawn only
   // once nobody has to review the mode, whatever data the tiles came from.

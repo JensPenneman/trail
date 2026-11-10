@@ -170,6 +170,7 @@ export function stayPartsSql(devices: SQL, from: SQL, to: SQL): SQL {
         (p.features->>'spreadM')::float8 AS spread_m,
         (p.features->>'lastPointT')::float8 AS last_point_t,
         p.features->'railPath'->>'status' AS rail_status,
+        p.features->'railPath'->>'reason' AS rail_reason,
         (p.features->'railPath'->>'mapped')::boolean AS rail_mapped,
         lag(p.kind) OVER w AS before_kind, lag(p.ended_at) OVER w AS before_end,
         lag(p.end_lat) OVER w AS before_end_lat, lag(p.end_lon) OVER w AS before_end_lon,

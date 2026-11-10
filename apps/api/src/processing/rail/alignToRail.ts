@@ -237,6 +237,7 @@ export function alignToRail(
     const jump: Int8Array[] = run.map((stepIndex) =>
       new Int8Array(steps[stepIndex]?.states.length ?? 0).fill(1),
     );
+    let unreached = 0;
     for (let k = 1; k < run.length; k += 1) {
       const to = steps[run[k] ?? 0];
       const here = cost[k];
@@ -303,12 +304,20 @@ export function alignToRail(
           }
         }
       }
-      // No leg reaches this step (every way in is a straight leg no train could ride): the run ends before it.
-      if (!here.some((value) => Number.isFinite(value))) {
-        const rest = run.slice(k);
-        if (runLength(rest) >= config.minRunM) work.splice(runNumber + 1, 0, rest);
-        usable = k;
-        break;
+      // No leg reaches this step (every way in is a straight leg no train could ride): a fix that jumped
+      // far is an outlier the next steps skip, so the run goes on. Only after more such steps in a row
+      // than may be skipped does it end, before the first of them.
+      if (here.some((value) => Number.isFinite(value))) {
+        unreached = 0;
+      } else {
+        unreached += 1;
+        if (unreached > config.maxOutlierSteps) {
+          const cut = k - unreached + 1;
+          const rest = run.slice(cut);
+          if (runLength(rest) >= config.minRunM) work.splice(runNumber + 1, 0, rest);
+          usable = cut;
+          break;
+        }
       }
     }
 

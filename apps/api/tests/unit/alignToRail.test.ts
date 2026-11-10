@@ -399,6 +399,175 @@ describe("alignToRail", () => {
     });
   });
 
+  describe("a fix that jumped far, and the gap between two runs", () => {
+    const judgeOf = (aligned: ReturnType<typeof align>) =>
+      judgeRailPath(aligned.kept, aligned.points, defaultProcessingConfig.rail.judge, "cache");
+    const runsOf = (aligned: ReturnType<typeof align>) =>
+      new Set(aligned.points.filter((point) => point.run >= 0).map((point) => point.run));
+    const mainTracks = [trackA, trackB] as Vertex[][];
+    const distanceToMain = (lonLat: readonly [number, number]): number => {
+      const vertex = toXY({ lon: lonLat[0], lat: lonLat[1] });
+      return Math.min(...mainTracks.map((line) => distanceToLine(vertex, line)));
+    };
+    /** Rail ways along y = 0 with the given x ranges, not joined to each other (a hole in the map). */
+    const separate = (...spans: readonly (readonly [number, number])[]): MapData => ({
+      pois: [],
+      ways: spans.map(([from, to], number) => {
+        const vertices: Vertex[] = Array.from(
+          { length: Math.round((to - from) / 100) + 1 },
+          (_, at) => [from + at * 100, 0],
+        );
+        return {
+          id: 700 + number,
+          kind: "rail" as const,
+          nodes: vertices.map((_, at) => 70_000 + number * 10_000 + at),
+          geometry: vertices.map(([x, y]) => toLonLat(x, y)),
+          name: null,
+        };
+      }),
+    });
+    const along = (from: number, to: number, intervalS: number, startT: number, seed: number) => {
+      const path: Vertex[] = [
+        [from, 0],
+        [to, 0],
+      ];
+      return railRide(path, { intervalS, seed, startT, accuracy: 15, speedMs: 40 });
+    };
+    /** `after` shifted in time so that its first fix comes `seconds` after the last of `before`. */
+    const joined = (before: RawPoint[], after: RawPoint[], seconds: number): RawPoint[] => {
+      const gap = (before.at(-1)?.t ?? 0) + seconds - (after[0]?.t ?? 0);
+      return [...before, ...after.map((point) => ({ ...point, t: point.t + gap }))];
+    };
+
+    it("keeps one run over a single fix that jumped 1 km onto the second line, the fix an outlier", () => {
+      const raw = railRide(subPath(trackA, 12_500, 15_500), {
+        intervalS: 1,
+        noiseM: 3,
+        accuracy: 15,
+        seed: 9,
+      }).map((point, index) => {
+        if (index !== 50) return point;
+        const [x, y] = toXY({ lat: point.lat, lon: point.lon });
+        const [lon, lat] = toLonLat(x + 1000, y - 150);
+        return { ...point, lat, lon };
+      });
+      const aligned = align(raw);
+      expect(aligned.stats.runs).toBe(1);
+      expect(runsOf(aligned).size).toBe(1);
+      expect(aligned.points[50]?.outlier).toBe(true);
+      expect(aligned.points.filter((point) => point.outlier).length).toBe(1);
+      for (const vertex of servedVertices(aligned.points)) {
+        expect(distanceToMain(vertex)).toBeLessThan(1);
+      }
+      expect(judgeOf(aligned)).toMatchObject({ status: "aligned", coveredShare: 1 });
+    });
+
+    it("ends the run only after more unreachable steps in a row than may be skipped", () => {
+      const raw = railRide(subPath(trackA, 12_500, 15_500), {
+        intervalS: 1,
+        noiseM: 3,
+        accuracy: 15,
+        seed: 9,
+      }).map((point, index) => {
+        if (index < 50 || index >= 50 + 4 * 2) return point;
+        const [x, y] = toXY({ lat: point.lat, lon: point.lon });
+        const [lon, lat] = toLonLat(x + 1000, y - 150);
+        return { ...point, lat, lon };
+      });
+      // Eight fixes (four steps at 2 s) on the far line: a second ride, not outliers.
+      expect(runsOf(align(raw)).size).toBeGreaterThan(1);
+    });
+
+    it("splits a 30 km ride at a displacement of 2.5 km in 5 s and refuses it: poor/routes", () => {
+      // At 1 Hz: sparser fixes would let the run skip back over outliers to a leg slow enough to ride.
+      const before = railRide(subPath(trackA, 20_000, 35_000), { intervalS: 1, seed: 3 });
+      const after = railRide(subPath(trackA, 37_500, 52_500), { intervalS: 1, seed: 4 });
+      const aligned = align(joined(before, after, 5));
+      expect(runsOf(aligned).size).toBe(2);
+      const verdict = judgeOf(aligned);
+      expect(verdict).toMatchObject({ status: "poor", reason: "routes" });
+      expect(verdict.bridgedMaxSpeedMs).toBeGreaterThan(400);
+    });
+
+    it("keeps a hole in the map of 0.4 km crossed in 10 s (40 m/s) as one run, a bridged leg of 40 m/s: aligned", () => {
+      const aligned = align(
+        joined(
+          along(20_000, 30_000, 1, 1_800_000_000, 3),
+          along(30_400, 40_400, 1, 1_800_000_000, 4),
+          10,
+        ),
+        separate([19_000, 30_000], [30_400, 41_000]),
+      );
+      expect(runsOf(aligned).size).toBe(1);
+      expect(judgeOf(aligned)).toMatchObject({ status: "aligned", bridgedMaxSpeedMs: 40 });
+    });
+
+    it("splits a hole of 2 km crossed in 10 s (200 m/s) into two runs and refuses it: poor/routes", () => {
+      const aligned = align(
+        joined(
+          along(20_000, 35_000, 1, 1_800_000_000, 3),
+          along(37_000, 52_000, 1, 1_800_000_000, 4),
+          10,
+        ),
+        separate([19_000, 35_000], [37_000, 53_000]),
+      );
+      expect(runsOf(aligned).size).toBe(2);
+      const verdict = judgeOf(aligned);
+      expect(verdict).toMatchObject({ status: "poor", reason: "routes" });
+      expect(verdict.bridgedMaxSpeedMs).toBeGreaterThan(150);
+    });
+  });
+
+  describe("a first point that starts as an outlier", () => {
+    /** A short stub of track near the first fix, not joined to the line the rest of the ride runs on. */
+    const stubAndLine = (): MapData => {
+      const make = (
+        id: number,
+        from: number,
+        to: number,
+        base: number,
+      ): MapData["ways"][number] => {
+        const vertices: Vertex[] = Array.from(
+          { length: Math.round((to - from) / 100) + 1 },
+          (_, at) => [from + at * 100, 0],
+        );
+        return {
+          id,
+          kind: "rail",
+          nodes: vertices.map((_, at) => base + at),
+          geometry: vertices.map(([x, y]) => toLonLat(x, y)),
+          name: null,
+        };
+      };
+      return { pois: [], ways: [make(801, 4000, 4300, 80_000), make(802, 5000, 30_000, 90_000)] };
+    };
+    const ride = (xs: readonly number[], intervalS: number): RawPoint[] =>
+      xs.map((x, index) => {
+        const [lon, lat] = toLonLat(x, index === 0 ? 48 : 0);
+        return { t: 1_800_000_000 + index * intervalS, lat, lon, accuracy: 15 } as RawPoint;
+      });
+    const judgeOf = (aligned: ReturnType<typeof align>) =>
+      judgeRailPath(aligned.kept, aligned.points, defaultProcessingConfig.rail.judge, "cache");
+
+    it("counts the first interval in the outlier share: six fixes two minutes apart, the path starting at the second", () => {
+      const aligned = align(ride([4150, 7750, 11_350, 14_950, 18_550, 22_150], 120), stubAndLine());
+      expect(aligned.points[0]?.outlier).toBe(true);
+      expect(aligned.points[1]?.outlier).toBe(false);
+      expect(judgeOf(aligned)).toMatchObject({
+        status: "poor",
+        reason: "outliers",
+        outlierShare: 0.2,
+      });
+    });
+
+    it("stays aligned at 1 Hz with the same first fix", () => {
+      const xs = [4150, ...Array.from({ length: 200 }, (_, at) => 5000 + at * 30)];
+      const aligned = align(ride(xs, 1), stubAndLine());
+      expect(aligned.points[0]?.outlier).toBe(true);
+      expect(judgeOf(aligned)).toMatchObject({ status: "aligned" });
+    });
+  });
+
   describe("the prune of the searches from skipped steps", () => {
     const jumpRide = (at: readonly number[], dy: number) =>
       railRide(subPath(trackA, 11_000, 17_500), {

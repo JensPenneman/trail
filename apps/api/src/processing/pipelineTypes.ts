@@ -160,8 +160,12 @@ export interface RailPathVerdict {
   p90Z: number;
   medianOffsetM: number;
   outlierShare: number;
-  /** The share of the part's points the mapped level put on a nearer street way; 0 without a mapped match. */
+  /** The share of the part's duration the mapped level placed on street ways; 0 without a mapped match. */
   roadShare: number;
+  /** Median distance (m) of those points to their rail places, to their street places, and the margin the gap had to exceed: the road check's evidence, 0 without one. */
+  roadRailM: number;
+  roadSnapM: number;
+  roadMarginM: number;
   /** Whether the mapped level matched the part, so that the road check had evidence; only then is a car on a road beside the rails refused for sure. */
   mapped: boolean;
   /** The fastest implied speed of any straight leg of the part, m/s, rounded; 0 without one. */

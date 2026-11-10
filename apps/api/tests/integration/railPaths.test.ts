@@ -337,16 +337,36 @@ describe("a correction to or from train", () => {
     expect(queueAfter.rows).toEqual(queueBefore.rows);
   });
 
-  it("leaves a car on a road beside the rails as recorded when it is called a train", async () => {
+  it("serves a car on a road beside the rails as recorded, and along the rails once a person calls it a train, at once", async () => {
     const car = await moveOf("car");
     const rows = await stored(car);
-    expect(rows.every((row) => row.lat_rail === null)).toBe(true);
+    // Refused for the road, its rail places stored all the same, and served as recorded.
+    expect(await railVerdict(car.id)).toBe("poor");
+    expect(rows.some((row) => row.lat_rail !== null)).toBe(true);
+    const recorded = await served(car.id);
+    expect(recorded.segment).toMatchObject({ mode: "car", alignedTo: null });
+    expectPlaces(recorded.segment, rows, [mappedPlace, averagedPlace], "car as recorded");
+
+    const snapshot = async () => ({
+      queue: (
+        await t.ctx.db.execute(sql`SELECT * FROM processing_queue ORDER BY device_id, from_at`)
+      ).rows,
+      state: (await t.ctx.db.execute(sql`SELECT * FROM processing_state ORDER BY key`)).rows,
+    });
+    const before = await snapshot();
     const toTrain = await setMode(car.id, "train").expect(200);
-    expect(toTrain.body.segment).toMatchObject({ mode: "train", alignedTo: null });
-    const { segment } = await served(car.id);
-    expect(segment.alignedTo).toBeNull();
-    expectPlaces(segment, rows, [mappedPlace, averagedPlace], "car as train");
+    expect(toTrain.body.segment).toMatchObject({ mode: "train", alignedTo: "rail" });
+    const drawn = await served(car.id);
+    expect(drawn.segment.alignedTo).toBe("rail");
+    expect(drawn.etag).not.toBe(recorded.etag);
+    expectPlaces(drawn.segment, rows, [railPlace, mappedPlace, averagedPlace], "car as train");
+    expect(await snapshot()).toEqual(before);
+
+    // The correction taken back: recorded again, at once.
     await owner.delete(apiPaths.v1.segments.mode(car.id)).set("Origin", testOrigin).expect(200);
+    const back = await served(car.id);
+    expect(back.segment.alignedTo).toBeNull();
+    expectPlaces(back.segment, rows, [mappedPlace, averagedPlace], "car as recorded again");
     await t.ctx.processing.flush();
     expect(await moveOf("car")).toMatchObject({ mode: "car", alignedTo: null });
   });
@@ -531,6 +551,26 @@ describe("the kill switch PROCESSING_RAIL_ALIGN=false", () => {
     expect(await snapshot()).toEqual(before);
     // Switching back on brings the line back at once.
     expect((await served(car.id)).segment.points).toEqual(on.segment.points);
+    await owner.delete(apiPaths.v1.segments.mode(car.id)).set("Origin", testOrigin).expect(200);
+    await t.ctx.processing.flush();
+  });
+
+  it("serves a car refused for the road as recorded whatever its mode: a person's train is not drawn either", async () => {
+    const car = await moveOf("car");
+    const rows = await stored(car);
+    await setMode(car.id, "train").expect(200);
+    expect((await served(car.id)).segment.alignedTo).toBe("rail");
+    const before = await snapshot();
+    const response = await offOwner
+      .get(apiPaths.v1.tracks)
+      .query({ ...day, level: "inferred", maxPoints: 50_000 })
+      .expect(200);
+    const drawn = (response.body as LevelTracksResponse).segments.find(
+      (segment) => segment.id === car.id,
+    );
+    expect(drawn?.alignedTo).toBeNull();
+    expectPlaces(drawn ?? { points: [] }, rows, [mappedPlace, averagedPlace], "off, car as train");
+    expect(await snapshot()).toEqual(before);
     await owner.delete(apiPaths.v1.segments.mode(car.id)).set("Origin", testOrigin).expect(200);
     await t.ctx.processing.flush();
   });

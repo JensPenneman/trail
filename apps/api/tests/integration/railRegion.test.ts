@@ -369,8 +369,9 @@ describe("the per-pass cap on rail-only reads, with Overpass off", () => {
       reason: "reprocess",
       fromLevel: "inferred",
     });
+    // The ride ranked first is always read; the other is deferred and keeps what an earlier pass stored.
     const deferring = await runner(withCap(0)).drain();
-    expect(deferring.reduce((sum, pass) => sum + pass.outcome.rail.deferredMoves, 0)).toBe(2);
+    expect(deferring.reduce((sum, pass) => sum + pass.outcome.rail.deferredMoves, 0)).toBe(1);
     expect((await moves(device.id)).map((move) => `${move.status}/${move.reason}`)).toEqual([
       "aligned/ok",
       "aligned/ok",
@@ -379,5 +380,51 @@ describe("the per-pass cap on rail-only reads, with Overpass off", () => {
     expect(served).toHaveLength(2);
     for (const segment of served) expect(segment.alignedTo).toBe("rail");
     expect((await counts(device.id)).railed).toBeGreaterThan(100);
+  });
+
+  it("reads a ride whose own tiles exceed the cap in its first pass, and one ride after the other when two do", async () => {
+    // A cap far below one ride's tiles.
+    const small = withCap(1);
+    expect(tilesOf(rideA)).toBeGreaterThan(1);
+    const single = await newDevice("One ride over the cap");
+    await upload(single.token, rideA);
+    await runner(small).drain();
+    expect((await moves(single.id)).map((move) => `${move.status}/${move.reason}`)).toEqual([
+      "aligned/ok",
+    ]);
+
+    const device = await newDevice("Two rides over the cap");
+    await upload(device.token, [...rideA, ...rideB]);
+    const before = await snapshot(device.id);
+    const first = await runner(small).drain();
+    expect(first.reduce((sum, pass) => sum + pass.outcome.rail.deferredMoves, 0)).toBe(1);
+    expect((await moves(device.id)).map((move) => `${move.status}/${move.reason}`).sort()).toEqual([
+      "aligned/ok",
+      "no_map/deferred",
+    ]);
+    expect(await snapshot(device.id)).toEqual({ ...before, queue: [{ n: 0 }] });
+    await assertQueueInvariants(t.ctx.db, { deviceId: device.id });
+
+    // The documented reprocess of the deferred ride's own bounds reads it, whatever the cap.
+    const [deferred] = (
+      await t.ctx.db.execute<{ from: string; to: string }>(sql`
+        SELECT started_at::text AS "from", ended_at::text AS "to" FROM segments
+        WHERE device_id = ${device.id} AND features->'railPath'->>'reason' = 'deferred'
+      `)
+    ).rows;
+    if (deferred === undefined) throw new Error("no deferred ride");
+    await enqueueWindow(t.ctx.db, {
+      deviceId: device.id,
+      from: new Date(deferred.from),
+      to: new Date(deferred.to),
+      reason: "reprocess",
+      fromLevel: "inferred",
+    });
+    await runner(small).drain();
+    expect((await moves(device.id)).map((move) => `${move.status}/${move.reason}`)).toEqual([
+      "aligned/ok",
+      "aligned/ok",
+    ]);
+    expect(await snapshot(device.id)).toEqual({ ...before, queue: [{ n: 0 }] });
   });
 });

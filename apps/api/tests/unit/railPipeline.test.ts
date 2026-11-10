@@ -21,14 +21,24 @@ import {
   piecesToMap,
   planRailReads,
   planWindow,
+  plausibleMove,
   railPiece,
   type WindowResult,
 } from "../../src/processing/runPipeline";
 import { bikeRide, flight, motorwayDrive, walkInTown, walkTrainWalk } from "../support/journeys";
 import { moves, processWorld } from "../support/processWorld";
 import { railTrip } from "../support/railTrips";
-import { railWorld, roadLine } from "../support/railWorld";
-import { distanceToLine, railLine, toXY, worldMap } from "../support/syntheticWorld";
+import { railWorld, roadLine, trackA } from "../support/railWorld";
+import {
+  concat,
+  distanceToLine,
+  lastT,
+  railLine,
+  subPath,
+  toXY,
+  travel,
+  worldMap,
+} from "../support/syntheticWorld";
 
 // The real module, watched: whether the rail network (and with it the graph) is built at all.
 vi.mock("../../src/processing/rail/railNetwork", async (importOriginal) => {
@@ -324,8 +334,10 @@ describe("moves that cannot be a train", () => {
 });
 
 describe("the per-pass cap on rail-only tiles", () => {
-  const piece = (move: number, count: number) => {
-    const tiles = new Set(Array.from({ length: count }, (_, index) => `14/${move}/${index}`));
+  const piece = (move: number, count: number, part = 0) => {
+    const tiles = new Set(
+      Array.from({ length: count }, (_, index) => `14/${move}/${part}/${index}`),
+    );
     return { stretches: [{ move, from: 0, first: 0, last: 1, to: 1, tiles }], tiles };
   };
   const moveOf = (read: { stretches: { move: number }[] }) => read.stretches[0]?.move;
@@ -356,9 +368,47 @@ describe("the per-pass cap on rail-only tiles", () => {
     expect(planRailReads(carFirst, 512).deferred).toEqual(new Set([1]));
   });
 
-  it("reads a move whose second piece does not fit in none of its pieces", () => {
-    const first = piece(0, 300);
-    const second = piece(0, 300);
+  it("reads a single move whose own tiles exceed the cap", () => {
+    const { reads, deferred } = planRailReads([piece(0, 150)], 100);
+    expect(reads.map(moveOf)).toEqual([0]);
+    expect(deferred.size).toBe(0);
+  });
+
+  it("reads the move ranked first whole, and defers a bigger one ranked after a smaller one", () => {
+    const scores = new Map([
+      [0, 9000],
+      [1, 10],
+    ]);
+    const { reads, deferred } = planRailReads(
+      [piece(1, 150), piece(0, 60)],
+      100,
+      (move) => scores.get(move) ?? 0,
+    );
+    expect(reads.map(moveOf)).toEqual([0]);
+    expect([...deferred]).toEqual([1]);
+  });
+
+  it("defers a move of two pieces that does not fit, gives its tiles back, and still reads the next", () => {
+    const scores = new Map([
+      [0, 9000],
+      [1, 500],
+      [2, 10],
+    ]);
+    const first = piece(0, 50);
+    const cut = [piece(1, 30, 0), piece(1, 90, 1)];
+    const third = piece(2, 40);
+    const { reads, deferred } = planRailReads(
+      [first, ...cut, third],
+      100,
+      (move) => scores.get(move) ?? 0,
+    );
+    expect(reads).toEqual([first, third]);
+    expect([...deferred]).toEqual([1]);
+  });
+
+  it("reads a move of several pieces over the cap whole when it ranks first", () => {
+    const first = piece(0, 300, 0);
+    const second = piece(0, 300, 1);
     const other = piece(1, 100);
     const scores = new Map([
       [0, 9000],
@@ -369,8 +419,8 @@ describe("the per-pass cap on rail-only tiles", () => {
       512,
       (move) => scores.get(move) ?? 0,
     );
-    expect(reads).toEqual([other]);
-    expect([...deferred]).toEqual([0]);
+    expect(reads).toEqual([first, second]);
+    expect([...deferred]).toEqual([1]);
   });
 
   it("marks a deferred move no_map/deferred; nothing is stored, so its recorded line stays", () => {
@@ -610,6 +660,74 @@ describe("a move cut into stretches", () => {
   });
 });
 
+describe("a train part inside a move that is mostly walking", () => {
+  /** 30 minutes on foot at 1 Hz to a platform, under three minutes' wait, then 3 minutes of train at 25 m/s (4.5 km). */
+  const journey = (trainIntervalS: number) => {
+    const walk = travel(
+      [
+        [5200, -2530],
+        [5200, -10],
+      ],
+      {
+        startT: 1_793_000_000,
+        speedMs: 1.4,
+        intervalS: 1,
+        noiseM: 3,
+        accuracy: 6,
+        motion: ["walking"],
+        seed: 31,
+      },
+    );
+    const wait = travel(
+      [
+        [5200, -10],
+        [5208, -10],
+      ],
+      {
+        startT: lastT(walk) + 1,
+        speedMs: 0.1,
+        intervalS: 2,
+        noiseM: 2,
+        accuracy: 8,
+        motion: ["stationary"],
+        seed: 32,
+      },
+    );
+    const ride = travel(subPath(trackA, 5200, 9700), {
+      startT: lastT(wait) + 1,
+      speedMs: 25,
+      intervalS: trainIntervalS,
+      noiseM: 3,
+      accuracy: 8,
+      motion: ["driving"],
+      seed: 33,
+    });
+    const points = concat(walk, wait, ride);
+    const plan = planWindow(points, [], defaultProcessingConfig);
+    const result = finishWindow(
+      plan,
+      { trips: [], overrides: [], map: railWorld(), available: plan.tiles },
+      defaultProcessingConfig,
+    );
+    return { plan, result };
+  };
+
+  for (const intervalS of [1, 10]) {
+    it(`judges the train part alone and passes the move through the pre-filter (train fixes every ${intervalS} s)`, () => {
+      const { plan, result } = journey(intervalS);
+      expect(plan.moves).toHaveLength(1);
+      expect(plausibleMove(plan, 0, defaultProcessingConfig)).toBe(true);
+      const parts = moves(result);
+      const train = parts.filter((part) => part.modeInferred === "train");
+      expect(train).toHaveLength(1);
+      expect(railPath(train[0] ?? { features: {} })).toMatchObject({ status: "aligned" });
+      const walks = parts.filter((part) => part.modeInferred === "walking");
+      expect(walks.length).toBeGreaterThan(0);
+      for (const walk of walks) expect(railPath(walk)?.status).not.toBe("aligned");
+    });
+  }
+});
+
 describe("a car on a road beside the rails", () => {
   // The road runs 40 m from track A; a phone no better than 30 m puts it within what the offsets
   // accept, so only the mapped match (on the road, 6 m off) can say it is no train.
@@ -622,21 +740,45 @@ describe("a car on a road beside the rails", () => {
     motion: ["driving"],
     seed: 5,
   });
-
-  it("is not aligned where the mapped level matched it to the road: poor/road", () => {
-    const plan = planWindow(drive, [], defaultProcessingConfig);
-    const result = finishWindow(
+  const run = (
+    config: ProcessingConfig = defaultProcessingConfig,
+    overrides: Parameters<typeof planWindow>[3] = [],
+  ) => {
+    const plan = planWindow(drive, [], config, overrides);
+    return finishWindow(
       plan,
-      { trips: [], overrides: [], map: railWorld(), available: plan.tiles },
-      defaultProcessingConfig,
+      { trips: [], overrides: overrides ?? [], map: railWorld(), available: plan.tiles },
+      config,
     );
+  };
+
+  it("is not aligned where the mapped level matched it to the road: poor/road, its rail places kept for a correction", () => {
+    const result = run();
     const [car] = moves(result);
     expect(railPath(car ?? { features: {} })).toMatchObject({ status: "poor", reason: "road" });
-    expect(result.rail.every((place) => place === null)).toBe(true);
+    // Stored, never served: a correction to train draws them at once (`alignedToOf`).
+    expect(result.rail.some((place) => place !== null)).toBe(true);
+  });
+
+  it("is aligned, with its rail places, once a person set the move to train", () => {
+    const override = {
+      id: "o-1",
+      kind: "segment" as const,
+      mode: "train" as const,
+      from: (drive[0]?.t ?? 0) - 1,
+      to: (drive.at(-1)?.t ?? 0) + 1,
+      endsBy: null,
+      stoppedBefore: false,
+      createdAt: 0,
+      source: "ui" as const,
+    };
+    const result = run(defaultProcessingConfig, [override]);
+    const car = moves(result).find((move) => move.modeUser === "train");
+    expect(railPath(car ?? { features: {} })).toMatchObject({ status: "aligned", reason: "ok" });
+    expect(result.rail.some((place) => place !== null)).toBe(true);
   });
 
   it("would be aligned on the offsets alone: the check is the mapped match", () => {
-    const plan = planWindow(drive, [], defaultProcessingConfig);
     const lenient: ProcessingConfig = {
       ...defaultProcessingConfig,
       rail: {
@@ -644,12 +786,7 @@ describe("a car on a road beside the rails", () => {
         judge: { ...defaultProcessingConfig.rail.judge, maxRoadShare: 1.1 },
       },
     };
-    const result = finishWindow(
-      plan,
-      { trips: [], overrides: [], map: railWorld(), available: plan.tiles },
-      lenient,
-    );
-    const [car] = moves(result);
+    const [car] = moves(run(lenient));
     expect(railPath(car ?? { features: {} })).toMatchObject({ status: "aligned" });
   });
 });

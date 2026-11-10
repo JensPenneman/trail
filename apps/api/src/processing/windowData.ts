@@ -586,7 +586,8 @@ export async function loadStoredRail(
     FROM segments
     WHERE device_id = ${deviceId} AND kind = 'move'
       AND started_at >= to_timestamp(${from}) AND ended_at <= to_timestamp(${to})
-      AND features->'railPath'->>'status' = 'aligned'
+      AND (features->'railPath'->>'status' = 'aligned'
+        OR (features->'railPath'->>'status' = 'poor' AND features->'railPath'->>'reason' = 'road'))
   `);
   const places = new Map<number, RailPlace>();
   if (segments.rows.length > 0) {

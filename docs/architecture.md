@@ -4963,12 +4963,24 @@ gap is routed through the network; where there is none the leg is drawn
 straight and counted as bridged. The judge then decides, per part of a move
 (after the split and the corrections), whether the line may be drawn: at least
 1 km and three steps, 90 % of the length within runs (below half: `no_rail`),
-80 % of it routed with no bridged leg over 2 km, a median offset over accuracy
-of at most 1.5 (p90 3.0) and 60 m, no more than half of the points matched by
-the mapped level to a street way snapping closer than half their offset from
-the rails (`poor/road`: a car on a road beside the railway, where a mapped
-match exists), and outliers over at most 15 % of the duration. The verdict is `features.railPath`: `status` `aligned|poor|no_rail|
-no_map|skipped`, a `reason` (`ok`, `short`, `coverage`, `routes`, `offsets`, `road`, `outliers`, `no_rail`, `waiting`, `outside_regions`, `deferred`, `not_train`), `source` (`cache|region`, a tuning figure), `mapped` (whether the mapped level matched the part, which the served gate reads) and the measures, without
+80 % of it routed with no straight leg over 2 km or faster than 95 m/s (the
+connector between two runs of a part counts as such a leg), a median offset
+over accuracy of at most 1.5 (p90 3.0) and 60 m, and outliers over at most 15 %
+of the duration. The road check (`poor/road`: a car on a road beside the
+railway, where a mapped match exists) compares the part's points after its
+first that the mapped level placed on a street way, time-weighted: `roadShare`
+is their share of the part's duration, `roadRailM` the median distance to their
+rail places, `roadSnapM` the median distance to their street places, and
+`roadMarginM` the larger of 10 m and one median accuracy (accuracy held at 15
+m at least). The part is refused only when `roadShare` is over 0.5 and the rail
+places are farther than the street places by more than the margin, and never
+where a person set it to train. Where road and rails lie within the fixes'
+accuracy of each other either line is drawn within that accuracy and the rail
+one is kept: a car on a road 15 m or less from the rails, with fixes of 15 m
+accuracy, passes. An outlier before the first point the path stands on weighs
+the time to the point after it, so the time a part spent before the line
+begins counts in the outlier share. The verdict is `features.railPath`: `status` `aligned|poor|no_rail|
+no_map|skipped`, a `reason` (`ok`, `short`, `coverage`, `routes`, `offsets`, `road`, `outliers`, `no_rail`, `waiting`, `outside_regions`, `deferred`, `not_train`), `source` (`cache|region`, a tuning figure), `mapped` (whether the mapped level matched the part, which the served gate reads) and the measures (including the road check's `roadShare`, `roadRailM`, `roadSnapM` and `roadMarginM`), without
 coordinates. The tiles are the move's own: read from the tile cache where it
 holds them and from a loaded region wherever its polygon covers them (all
 four corners of the z14 tile inside, whatever the cache holds), so a ride the
@@ -4977,7 +4989,8 @@ level stays as it is (unmapped, the window waiting for the cache); a ride
 with a tile in neither is `no_map` (`waiting` where Overpass may bring it,
 `outside_regions` where nothing will) and keeps its recorded line. The
 verdict is written for every part with rail places whatever its mode, and the
-places (`lat_rail`, `lon_rail`, `path_rail`) for the accepted parts only, so a
+places (`lat_rail`, `lon_rail`, `path_rail`) for the accepted parts and for
+parts refused only for `road` (a person's word overrules that check), so a
 later correction needs no reprocessing. The line is not distance: `distance_m`
 stays what the inference worked out, and `railPath.lengthM` is the length of
 the part's averaged points when it was judged. Nothing of it feeds back: features and
@@ -5005,8 +5018,11 @@ that did run for skipped steps). The first and the last steps of a run may be
 outliers the same way (a fix that jumped onto another line at the run's end
 lies at the line's start or end), and a straight leg faster than the fastest
 train (95 m/s) is never drawn: the step it leads to is an outlier, and where no
-leg reaches a step the run ends before it and a new one begins, so a ride with
-a jump of the fix is routed properly or not aligned. A move that cannot be a
+leg reaches a step the run goes on over it (the fix is an outlier the next
+steps skip), and ends before it only after more such steps in a row than may be
+skipped, a new run beginning there; the judge counts the straight line between
+two runs as a leg, so a ride with a jump of the fix is routed properly or not
+aligned. A move that cannot be a
 train is not aligned: it covered under 1 km (`minRunM`) at or above 11 m/s, the
 chords measured between kept points at least 20 s apart (so noise does not
 make a walk fast, and a ride whose points mostly lie in stations still adds up
@@ -5015,12 +5031,20 @@ always passes. It costs no rail read and no alignment; a segment of it that
 ends up a train (the inference, or the person's later correction) is written
 `skipped/not_train`, so the skipped rides show in the counts rather than as
 silence. A pass reads at most 100 rail-only tiles (the moves a region alone
-covers). Measured on a copy of production data a tile took about 10 ms (133
-tiles in 1.3 s), so a pass's rail-only read stays near one second. The pieces
-are taken in the order of how train-like their moves are (the distance
-covered at or above 11 m/s, a person's train first; ties keep plan order), so
-cars never use the cap up before trains; a move whose pieces do not all fit
-is read in none, and is `no_map` with the reason `deferred`. Deferring queues
+covers), or the tiles of one ride when that is more: the move ranked first is
+read whole even when its own tiles exceed the cap, so every pass makes
+progress and a reprocess of a ride's own bounds always reads it; the cap
+bounds only what comes after it. Measured on a copy of production data a tile
+took 1.4 ms on a lightly loaded machine and 8 to 10 ms in the first, loaded
+runs, so a pass's rail-only read stays near one second, and a 300-tile ride
+costs 0.4 to 3 s, once. The moves are decided in the order of how train-like
+they are (the distance covered at or above 11 m/s, a person's train first;
+ties keep plan order) over the union of the tiles of all their pieces: a
+person's train is read first, then longer and faster moves; a train behind a
+longer drive can be deferred, and is worked again by a reprocess of its own
+bounds. A move that does not fit is read in none of its pieces, is `no_map`
+with the reason `deferred`, and gives its tiles back (it is not counted
+against the cap). Deferring queues
 nothing and never replaces a line an earlier pass stored: a deferred part with
 exactly the bounds and point count of a stored `aligned` segment keeps that
 verdict and its rail places (a read of stored rows in the pass, no queue row,
@@ -5032,9 +5056,9 @@ nothing queues it again: the worker's "processing window done" line has
 features->'railPath'->>'reason' = 'deferred' GROUP BY device_id,
 started_at::date;`, and each listed day is worked again by the operator with
 `trail reprocess --device <id> --from <start> --to <end> --from-level
-inferred` (a foreground command; a day alone stays under the cap unless it has
-more than 100 rail-only tiles of train-like moves, then use narrower ranges,
-keeping in mind that a window always grows to whole segments), and a read takes the light columns of the tiles' ways first and the nodes and
+inferred` (a foreground command; a day whose rides together exceed the cap is
+worked again one ride at a time, over each ride's own bounds, which always
+reads it), and a read takes the light columns of the tiles' ways first and the nodes and
 geometry only of the rail ways. With Overpass off the tiles the cache still
 holds count as rail data too. What the aligner cost is in `WindowOutcome.rail`
 and the worker's "processing window done" line (`rail`: steps, runs, searches (and those for
@@ -5355,7 +5379,9 @@ its last point: the point the phone resumed at is the next move's only.
 (the timeline's segment carries it too, as do the answers of `PUT` and
 `DELETE …/segments/{id}/mode`): the one gate is that the mode that counts,
 a person's correction included, is train and the stored verdict
-(`features.railPath.status`, §17.3) is `aligned`, read at every request. For
+(`features.railPath.status`, §17.3) is `aligned`, or is `poor` with the reason
+`road` and the mode is a person's train (the road check is a guess that a
+person's word overrules; its rail places are stored), read at every request. For
 such a move, at `inferred` alone, the points are the rail places
 (`processed_points.lat_rail`, `lon_rail`, the rail's shape `path_rail` with
 interpolated times, its values as the way's shape has them), a point without

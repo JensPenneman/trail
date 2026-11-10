@@ -168,7 +168,7 @@ export async function assertQueueInvariants(
 
 /**
  * I7, rail consistency (docs/architecture.md §17.3): no point carries a rail place outside a move
- * whose verdict is `aligned` (a boundary point counts as inside), and an aligned move has rail
+ * whose verdict is `aligned` (or `poor/road`, whose places a correction to train draws) (a boundary point counts as inside), and an aligned move has rail
  * places on about its covered share of its kept points, so no line is half drawn.
  */
 export async function assertRailInvariants(db: Executor, deviceId: string): Promise<void> {
@@ -178,7 +178,8 @@ export async function assertRailInvariants(db: Executor, deviceId: string): Prom
       AND NOT EXISTS (
         SELECT 1 FROM segments s
         WHERE s.device_id = p.device_id AND s.kind = 'move'
-          AND s.features->'railPath'->>'status' = 'aligned'
+          AND (s.features->'railPath'->>'status' = 'aligned'
+            OR (s.features->'railPath'->>'status' = 'poor' AND s.features->'railPath'->>'reason' = 'road'))
           AND s.started_at <= p.recorded_at AND s.ended_at >= p.recorded_at)
     LIMIT 5
   `);

@@ -260,44 +260,58 @@ export function trainScore(plan: WindowPlan, move: number, config: ProcessingCon
 }
 
 /**
- * The rail-only reads of a pass within `maxTiles` tiles in all. The pieces are
- * ranked by how train-like their moves are (`score` of a move, a piece takes
- * the largest of its moves; ties keep plan order, so the result is
- * deterministic) and taken in that order, so that cars, which pass the
- * pre-filter, never use up the cap before the trains. A piece that would go
- * beyond it is not read and its moves are deferred (`no_map/deferred`); a move
- * with one piece put off is read whole or not at all (its other pieces are
- * dropped, or skipped, and the move deferred). Deferral never queues anything
- * and never replaces a stored aligned line (`inferWindow`); with Overpass off
- * nothing works a deferred move again but the operator's `trail reprocess`
- * (docs/architecture.md §17.3).
+ * The rail-only reads of a pass. Moves are decided one by one in rank order
+ * (`score` of a move, higher first; ties keep plan order, so the result is
+ * deterministic) over the union of the tiles of all their pieces: a person's
+ * train is read first, then longer and faster moves; a train behind a longer
+ * drive can be deferred, and is worked again by a reprocess of its own bounds.
+ * The first move in rank order is read whole even when its own tiles exceed
+ * `maxTiles`, so every pass makes progress and a reprocess of a ride's own
+ * bounds always reads it; the cap bounds only what comes after it (a pass
+ * reads at most the larger of the cap and the first move's tiles). A move
+ * that does not fit is deferred (`no_map/deferred`) and gives its tiles back:
+ * it is never counted. A move is read whole or not at all. Deferral never
+ * queues anything and never replaces a stored aligned line (`inferWindow`);
+ * with Overpass off a deferred ride is worked again by `trail reprocess` over
+ * its own bounds (docs/architecture.md §17.3).
  */
 export function planRailReads(
   pieces: readonly MapPiece[],
   maxTiles: number,
   score: (move: number) => number = () => 0,
 ): { reads: MapPiece[]; deferred: Set<number> } {
-  const pieceScore = (piece: MapPiece): number =>
-    Math.max(Number.NEGATIVE_INFINITY, ...piece.stretches.map((stretch) => score(stretch.move)));
-  const ranked = pieces
-    .map((piece, order) => ({ piece, order, rank: pieceScore(piece) }))
-    .sort((a, b) => (a.rank === b.rank ? a.order - b.order : b.rank > a.rank ? 1 : -1));
-  const taken = new Set<MapPiece>();
-  const deferred = new Set<number>();
-  let tiles = 0;
-  for (const { piece } of ranked) {
-    const putOff = piece.stretches.some((stretch) => deferred.has(stretch.move));
-    if (!putOff && tiles + piece.tiles.size <= maxTiles) {
-      taken.add(piece);
-      tiles += piece.tiles.size;
-    } else {
-      for (const stretch of piece.stretches) deferred.add(stretch.move);
+  const tilesOf = new Map<number, Set<TileKey>>();
+  for (const piece of pieces) {
+    for (const stretch of piece.stretches) {
+      const tiles = tilesOf.get(stretch.move) ?? new Set<TileKey>();
+      for (const tile of stretch.tiles) tiles.add(tile);
+      tilesOf.set(stretch.move, tiles);
     }
   }
-  // A move put off by one of its pieces is read by none: what an earlier piece of it took is given back.
-  const reads = pieces.filter(
-    (piece) => taken.has(piece) && piece.stretches.some((stretch) => !deferred.has(stretch.move)),
-  );
+  const ranked = [...tilesOf.keys()]
+    .map((move, order) => ({ move, order, rank: score(move) }))
+    .sort((a, b) => (a.rank === b.rank ? a.order - b.order : b.rank > a.rank ? 1 : -1));
+  const taken = new Set<number>();
+  const deferred = new Set<number>();
+  let tiles = 0;
+  for (const { move } of ranked) {
+    const size = tilesOf.get(move)?.size ?? 0;
+    if (taken.size === 0 || tiles + size <= maxTiles) {
+      taken.add(move);
+      tiles += size;
+    } else {
+      deferred.add(move);
+    }
+  }
+  // A piece shared with a deferred move is read for the moves taken only.
+  const reads = pieces.flatMap((piece): MapPiece[] => {
+    const stretches = piece.stretches.filter((stretch) => taken.has(stretch.move));
+    if (stretches.length === piece.stretches.length) return [piece];
+    if (stretches.length === 0) return [];
+    const own = new Set<TileKey>();
+    for (const stretch of stretches) for (const tile of stretch.tiles) own.add(tile);
+    return [{ stretches, tiles: own }];
+  });
   return { reads, deferred };
 }
 
@@ -742,6 +756,9 @@ function unjudged(
     medianOffsetM: 0,
     outlierShare: 0,
     roadShare: 0,
+    roadRailM: 0,
+    roadSnapM: 0,
+    roadMarginM: 0,
     mapped: false,
     bridgedMaxSpeedMs: 0,
     lengthM: Math.round(lengthM),
@@ -800,8 +817,13 @@ function judgePart(
     config.rail.judge,
     railMove.source,
     points.map((point) => mapped[point.index] ?? null),
+    draft.modeUser,
   );
-  if (verdict.status !== "aligned") return verdict;
+  // A part refused only for a road beside the rails keeps its places too: a person's correction to
+  // train draws them at once, with no reprocessing (`alignedToOf`).
+  if (verdict.status !== "aligned" && !(verdict.status === "poor" && verdict.reason === "road")) {
+    return verdict;
+  }
   for (const [position, point] of points.entries()) {
     const place = places[position];
     if (place === undefined || place.run < 0 || place.lat === null || place.lon === null) continue;

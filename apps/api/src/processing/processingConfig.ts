@@ -250,6 +250,8 @@ export interface RailJudgeConfig {
   /** The share of the aligned length that followed the network, and the longest leg that may be drawn straight: else `poor/routes`. */
   readonly minRoutedShare: number;
   readonly maxBridgedM: number;
+  /** A straight leg (inside a run, or the connector between two runs) implying more than this, m/s, is a jump of the fix, not a ride: `poor/routes`. The aligner's `maxSpeedMs`. */
+  readonly maxBridgedSpeedMs: number;
   /** Median and p90 of z (offset over sigma) and the median offset in metres of the points that are not outliers: else `poor/offsets`. */
   readonly maxMedianZ: number;
   readonly maxP90Z: number;
@@ -257,12 +259,17 @@ export interface RailJudgeConfig {
   /** The share of the part's duration spent as outliers: else `poor/outliers`. */
   readonly maxOutlierShare: number;
   /**
-   * Where the mapped level matched the part: the share of its points that the mapped match put on a
-   * street way snapping closer than `roadSnapFactor` × their offset from the rail line; above
-   * `maxRoadShare` the part is a road beside the rails, not a train: `poor/road`.
+   * The road check, where the mapped level matched the part. `maxRoadShare`: the share of the
+   * part's duration the mapped level placed on street ways. With more than that, and the median
+   * rail offset exceeding the median street snap by more than the margin
+   * (max(`roadMinMarginM`, `roadMarginSigmas` × the median of max(accuracy, `roadMinSigmaM`))),
+   * the part is a road beside the rails, not a train: `poor/road`. Never where a person set the
+   * part to train.
    */
   readonly maxRoadShare: number;
-  readonly roadSnapFactor: number;
+  readonly roadMarginSigmas: number;
+  readonly roadMinMarginM: number;
+  readonly roadMinSigmaM: number;
 }
 
 /** The named thresholds of the mode rules (km/h, shares 0–1, counts). */
@@ -389,12 +396,15 @@ export const defaultProcessingConfig: ProcessingConfig = {
       noRailShare: 0.5,
       minRoutedShare: 0.8,
       maxBridgedM: 2000,
+      maxBridgedSpeedMs: 95,
       maxMedianZ: 1.5,
       maxP90Z: 3,
       maxMedianOffsetM: 60,
       maxOutlierShare: 0.15,
       maxRoadShare: 0.5,
-      roadSnapFactor: 0.5,
+      roadMarginSigmas: 1,
+      roadMinMarginM: 10,
+      roadMinSigmaM: 15,
     },
   },
   features: {
