@@ -166,6 +166,41 @@ export async function assertQueueInvariants(
   }
 }
 
+/**
+ * I7, rail consistency (docs/architecture.md §17.3): no point carries a rail place outside a move
+ * whose verdict is `aligned` (a boundary point counts as inside), and an aligned move has rail
+ * places on about its covered share of its kept points, so no line is half drawn.
+ */
+export async function assertRailInvariants(db: Executor, deviceId: string): Promise<void> {
+  const stray = await db.execute(sql`
+    SELECT p.recorded_at::text FROM processed_points p
+    WHERE p.device_id = ${deviceId} AND p.lat_rail IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM segments s
+        WHERE s.device_id = p.device_id AND s.kind = 'move'
+          AND s.features->'railPath'->>'status' = 'aligned'
+          AND s.started_at <= p.recorded_at AND s.ended_at >= p.recorded_at)
+    LIMIT 5
+  `);
+  expect(stray.rows, "I7: rail places outside an aligned move").toEqual([]);
+  const thin = await db.execute(sql`
+    SELECT s.started_at::text, count(*) FILTER (WHERE p.kept)::int AS kept,
+      count(*) FILTER (WHERE p.lat_rail IS NOT NULL)::int AS placed,
+      (s.features->'railPath'->>'coveredShare')::float8 AS covered
+    FROM segments s
+    JOIN processed_points p ON p.device_id = s.device_id
+      AND p.recorded_at >= s.started_at AND p.recorded_at <= s.ended_at
+    WHERE s.device_id = ${deviceId} AND s.kind = 'move'
+      AND s.features->'railPath'->>'status' = 'aligned'
+    GROUP BY s.id, s.started_at, s.features
+    HAVING count(*) FILTER (WHERE p.lat_rail IS NOT NULL)
+      < floor(0.9 * (s.features->'railPath'->>'coveredShare')::float8
+        * count(*) FILTER (WHERE p.kept))
+    LIMIT 5
+  `);
+  expect(thin.rows, "I7: an aligned move with too few rail places").toEqual([]);
+}
+
 /** What a device's derived rows hold, without the times they were written. */
 export async function processingFingerprint(
   db: Executor,
@@ -183,7 +218,7 @@ export async function processingFingerprint(
   `);
   const points = await db.execute(sql`
     SELECT recorded_at::text, kept, lat_avg, lon_avg, speed_avg, lat_map, lon_map, way_id::text,
-      way_kind, snap_m, path_map, version
+      way_kind, snap_m, path_map, lat_rail, lon_rail, path_rail, version
     FROM processed_points
     WHERE device_id = ${deviceId}
       AND recorded_at >= ${iso(range.from)}::timestamptz AND recorded_at <= ${iso(range.to)}::timestamptz

@@ -7,6 +7,7 @@ import {
   takeNextWindow,
 } from "../../src/processing/processingQueue";
 import { processWindow, type WindowOutcome } from "../../src/processing/processWindow";
+import type { RegionCoverageStore } from "../../src/processing/regionCoverageStore";
 
 /** One pass: the queue rows it took, what it worked out and how long it took. */
 export interface Pass {
@@ -28,6 +29,7 @@ export class PassRunner {
   readonly #db: Database;
   readonly #config: ProcessingConfig;
   readonly #mapping: boolean;
+  readonly #regions: RegionCoverageStore | null;
   readonly #after: (pass: Pass) => Promise<void>;
   #lastPriority: number | null = null;
 
@@ -35,11 +37,14 @@ export class PassRunner {
     db: Database;
     config: ProcessingConfig;
     mapping: boolean;
+    /** The loaded regions, as the worker passes them (a rail line from a region the cache lacks). */
+    regions?: RegionCoverageStore;
     after?: (pass: Pass) => Promise<void>;
   }) {
     this.#db = input.db;
     this.#config = input.config;
     this.#mapping = input.mapping;
+    this.#regions = input.regions ?? null;
     this.#after = input.after ?? (async () => {});
   }
 
@@ -56,6 +61,7 @@ export class PassRunner {
     const outcome = await processWindow(this.#db, rows, {
       config: this.#config,
       mapping: this.#mapping,
+      regions: this.#regions,
       now: new Date(),
     });
     if (outcome === null) throw new Error("The device of a queued window is gone");

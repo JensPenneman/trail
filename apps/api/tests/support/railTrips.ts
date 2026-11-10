@@ -13,6 +13,8 @@ export interface RailTripOptions {
   accuracy?: number;
   /** CoreMotion activities of the ride's points. */
   motion?: readonly string[];
+  /** Seconds the phone lies still before and after the ride (1400 by default). */
+  dwellS?: number;
   /** The fix's own altitude, so that `values=altitude` has something to give. */
   altitude?: number;
   seed?: number;
@@ -28,6 +30,7 @@ export function railTrip(path: readonly Vertex[], options: RailTripOptions): Raw
   const last = path.at(-1);
   if (first === undefined || last === undefined) throw new Error("a trip needs a path");
   const seed = options.seed ?? 1;
+  const dwell = options.dwellS ?? dwellS;
   const ride = travel(path, {
     startT: options.startT,
     speedMs: options.speedMs ?? 30,
@@ -41,12 +44,12 @@ export function railTrip(path: readonly Vertex[], options: RailTripOptions): Raw
   });
   return concat(
     stay(first, {
-      startT: options.startT - dwellS - 100,
-      durationS: dwellS,
+      startT: options.startT - dwell - 100,
+      durationS: dwell,
       intervalS: 20,
       seed: seed + 100,
     }),
     ride,
-    stay(last, { startT: lastT(ride) + 20, durationS: dwellS, intervalS: 20, seed: seed + 200 }),
+    stay(last, { startT: lastT(ride) + 20, durationS: dwell, intervalS: 20, seed: seed + 200 }),
   );
 }

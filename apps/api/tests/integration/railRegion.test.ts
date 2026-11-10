@@ -1,23 +1,20 @@
-import { rmSync } from "node:fs";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import type { Segment } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createLogger } from "../../src/logging/createLogger";
-import { importRegion } from "../../src/mapdata/importRegion";
 import type { RawPoint } from "../../src/processing/pipelineTypes";
 import { enqueueWindow } from "../../src/processing/processingQueue";
 import { planWindow } from "../../src/processing/runPipeline";
 import { type Agent, signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
 import { FixtureWaySource } from "../support/fixtureWaySource";
-import { writeArtefact } from "../support/mapDataArtefact";
 import { uploadJourney } from "../support/overlandPoints";
 import { assertQueueInvariants, assertSegmentInvariants } from "../support/processingInvariants";
+import { importRailRegion, removeRailRegionBuilds } from "../support/railRegionBuild";
 import { railTrip } from "../support/railTrips";
-import { oplLinesOf, railWorld, regionPolyText, trackA } from "../support/railWorld";
+import { railWorld, trackA } from "../support/railWorld";
 import { resetDatabase } from "../support/resetDatabase";
-import { distanceToLine, subPath, toLonLat, toXY, type Vertex } from "../support/syntheticWorld";
+import { distanceToLine, subPath, toXY, type Vertex } from "../support/syntheticWorld";
 import { createTestContext, type TestContext } from "../support/testContext";
 import { testOrigin } from "../support/testEnvironment";
 
@@ -31,7 +28,6 @@ const base = 1_793_000_000;
 const hour = 3600;
 const iso = (epochSeconds: number) => new Date(epochSeconds * 1000).toISOString();
 const day = { from: iso(base - 3 * hour), to: iso(base + 40 * hour) };
-const logger = createLogger({ level: "silent" });
 
 const ride = (from: number, to: number, startT: number, seed: number): RawPoint[] =>
   railTrip(subPath(trackA, from, to), {
@@ -42,29 +38,8 @@ const ride = (from: number, to: number, startT: number, seed: number): RawPoint[
     seed,
   });
 
-/** A region of the rail world west of `eastM`, as a build directory. */
-function build(eastM: number, withRails = true): string {
-  const [west] = toLonLat(-10_000, 0);
-  const [east] = toLonLat(eastM, 0);
-  const lines = oplLinesOf(railWorld()).filter((line) => withRails || !line.includes("railway="));
-  return writeArtefact({
-    ways: () => lines,
-    pois: () => [],
-    polygon: regionPolyText("rail-world", [
-      [west, 50.9],
-      [east, 50.9],
-      [east, 51.2],
-      [west, 51.2],
-    ]),
-  });
-}
-
-const directories: string[] = [];
-async function importBuild(eastM: number, withRails = true): Promise<void> {
-  const dir = build(eastM, withRails);
-  directories.push(dir);
-  await importRegion({ db: t.ctx.db, logger, dir, digest: null });
-}
+const importBuild = (eastM: number, withRails = true) =>
+  importRailRegion(t.ctx.db, { westM: -10_000, eastM }, withRails);
 
 let t: TestContext;
 /** The same database with no Overpass at all: no tile is ever fetched, only regions serve. */
@@ -83,7 +58,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await off.close();
   await t.close();
-  for (const dir of directories) rmSync(dir, { recursive: true, force: true });
+  removeRailRegionBuilds();
 });
 
 async function newDevice(name: string) {

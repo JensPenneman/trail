@@ -118,9 +118,9 @@ describe("the train drawn along the railway", () => {
       .filter((segment) => segment.kind === "move")
       .map((segment) => [segment.mode, segment.alignedTo]);
     expect(moves).toContainEqual(["train", "rail"]);
-    expect(moves.filter(([mode]) => mode !== "train").every(([, aligned]) => aligned === null)).toBe(
-      true,
-    );
+    expect(
+      moves.filter(([mode]) => mode !== "train").every(([, aligned]) => aligned === null),
+    ).toBe(true);
     for (const level of ["raw", "averaged", "mapped"]) {
       const answer = await owner
         .get(apiPaths.v1.tracks)
