@@ -27,8 +27,12 @@ import type { FromLevel } from "./processingQueue";
  *   last of its own was (`features.spreadM`, `features.lastPointT`), and a
  *   quick toggle runs until the first stop of ten minutes or more, or the
  *   first move of another kind of travel (on foot, by bike, by vehicle).
+ * - inferred 4: train moves drawn along the railway: `features.railPath`, the verdict on the
+ *   rail line of every move over the rail ways of its tiles, and `processed_points.lat_rail`,
+ *   `lon_rail`, `path_rail`, the places of the accepted ones. Derived data of its own; the
+ *   mapped level keeps its version, and the stored mapping a later pass reuses is `lat_map`.
  */
-export const processingVersions = { averaged: 1, mapped: 1, inferred: 3 } as const;
+export const processingVersions = { averaged: 1, mapped: 1, inferred: 4 } as const;
 
 /** A version per level, as `processing_state` records them. */
 export type ProcessingVersions = Readonly<Record<FromLevel, number>>;

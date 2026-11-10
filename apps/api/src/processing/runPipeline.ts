@@ -1,3 +1,4 @@
+import { haversineM } from "../tracks/haversine";
 import { applyOverrides, type Draft, type DraftMove } from "./applyOverrides";
 import { averagePoints } from "./averagePoints";
 import { centroidOf, detectStops, spreadOf } from "./detectStops";
@@ -20,6 +21,9 @@ import type {
   ManualTrip,
   MappedPoint,
   OverrideSpan,
+  RailPathVerdict,
+  RailPlace,
+  RailPoint,
   RawPoint,
   Span,
   StayBefore,
@@ -27,6 +31,9 @@ import type {
 } from "./pipelineTypes";
 import { combinePois, PoiIndex } from "./poiIndex";
 import type { ProcessingConfig } from "./processingConfig";
+import { alignToRail } from "./rail/alignToRail";
+import { judgeRailPath } from "./rail/judgeRailPath";
+import { type RailContext, railContext, trainNetwork } from "./rail/railNetwork";
 import { scorePart, splitMove } from "./splitMoves";
 import { continuesStop, type StopShape } from "./stayParts";
 import { isAirborne, moveTiles, type TileKey } from "./tileCover";
@@ -57,6 +64,18 @@ export interface InferInputs {
   available: ReadonlySet<TileKey>;
   /** The stored stop the window begins in or right after, for the stay of its first stop. */
   stayBefore?: StayBefore | null | undefined;
+  /** The rail data at hand; absent: no rail line is judged (no map data at all, or the aligner is off). */
+  rail?: RailInputs | null | undefined;
+}
+
+/** What the rail alignment needs besides the stretches mapped from the cache (docs/architecture.md §17.3). */
+export interface RailInputs {
+  /** Tiles whose rail ways are at hand: the cache's, and those a ready region covers. */
+  available: ReadonlySet<TileKey>;
+  /** The rail places of moves whose tiles only a region covers, read rail-only (`railPiece`). */
+  stretches: readonly RailStretch[];
+  /** Whether Overpass may still bring the tiles a move lacks (`no_map/waiting`); else nothing will (`outside_regions`). */
+  waiting: boolean;
 }
 
 /** What finishing a window needs in one go, its map data included (tests, the benchmark). */
@@ -78,6 +97,12 @@ export interface WindowResult {
   /** Per raw point; null where nothing was mapped (no map data, dropped points). */
   mapped: (MappedPoint | null)[];
   segments: InferredSegment[];
+  /**
+   * Per raw point: where it lies on the railway, for the points of a part of a
+   * move whose rail line the judge accepted; null elsewhere. Derived data of
+   * its own (`processed_points.lat_rail` …): nothing of it feeds the inference.
+   */
+  rail: (RailPlace | null)[];
   /** Tiles some move needed but did not have, sorted. */
   missingTiles: TileKey[];
 }
@@ -88,6 +113,14 @@ export interface StretchMapping {
   mapped: MappedPoint[];
   ways: WaySamples;
   pois: PoiIndex;
+  /** The stretch's points on the railway (`first..last`); null with the aligner off. */
+  rail: RailPoint[] | null;
+}
+
+/** The rail places of one stretch, read from a rail-only piece. */
+export interface RailStretch {
+  stretch: Stretch;
+  rail: RailPoint[];
 }
 
 /** Averaged level, stops and moves, and the tiles the moves need, piece by piece. */
@@ -121,7 +154,33 @@ const covered = (move: PlannedMove, available: ReadonlySet<TileKey>): boolean =>
  * (the others are stored unmapped and wait for theirs).
  */
 export function piecesToMap(plan: WindowPlan, available: ReadonlySet<TileKey>): MapPiece[] {
-  const ready = plan.moves.map((move) => covered(move, available));
+  return piecesOfMoves(
+    plan,
+    plan.moves.map((move) => covered(move, available)),
+  );
+}
+
+/**
+ * The pieces of the moves only a region covers: not all their tiles cached,
+ * all of them rail-available (cache or region). Their rail ways are read
+ * rail-only and aligned (`railPiece`); their mapped level stays as it is.
+ */
+export function piecesToAlign(
+  plan: WindowPlan,
+  available: ReadonlySet<TileKey>,
+  railAvailable: ReadonlySet<TileKey>,
+): MapPiece[] {
+  return piecesOfMoves(
+    plan,
+    plan.moves.map((move) => !covered(move, available) && railCovered(move, railAvailable)),
+  );
+}
+
+const railCovered = (move: PlannedMove, railAvailable: ReadonlySet<TileKey>): boolean =>
+  !move.airborne && [...move.tiles].every((tile) => railAvailable.has(tile));
+
+/** The plan's pieces cut down to the stretches of the moves marked `ready`. */
+function piecesOfMoves(plan: WindowPlan, ready: readonly boolean[]): MapPiece[] {
   return plan.pieces.flatMap((piece) => {
     const stretches = piece.stretches.filter((stretch) => ready[stretch.move] === true);
     if (stretches.length === piece.stretches.length) return [piece];
@@ -158,19 +217,14 @@ export function mapPiece(
   storedMapping: readonly (MappedPoint | null)[] | undefined,
   config: ProcessingConfig,
 ): StretchMapping[] {
-  const movePoints = (stretch: Stretch): KeptPoint[] => {
-    const move = plan.moves[stretch.move];
-    if (move === undefined) throw new Error(`No move ${stretch.move} in this window`);
-    return plan.kept.slice(move.first, move.last + 1);
-  };
-  const projection = LocalProjection.around(
-    piece.stretches.flatMap((stretch) => movePoints(stretch).slice(stretch.from, stretch.to + 1)),
-  );
-  const index = new WayIndex(map, projection);
+  const movePoints = (stretch: Stretch) => stretchMovePoints(plan, stretch);
+  const index = new WayIndex(map, pieceProjection(plan, piece));
   const graphs = Object.fromEntries(
     wayClasses.map((wayClass) => [wayClass, new WayGraph(index, wayClass)]),
   ) as Record<WayClass, WayGraph>;
   const pois = new PoiIndex(map.pois);
+  // The rail graph is built when a stretch has a run, so a piece without one never pays for it.
+  const rail = config.rail.enabled ? railContext(index, trainNetwork) : null;
   return piece.stretches.map((stretch) => {
     const points = movePoints(stretch);
     const stored = storedMoveMapping(points, storedMapping);
@@ -181,8 +235,70 @@ export function mapPiece(
         { index, graphs },
         config.mapping,
       ).slice(stretch.first - stretch.from, stretch.last - stretch.from + 1);
-    return { stretch, mapped, ways: sampleWays(points, stretch, index, config.features), pois };
+    return {
+      stretch,
+      mapped,
+      ways: sampleWays(points, stretch, index, config.features),
+      pois,
+      rail: rail === null ? null : alignStretch(points, stretch, rail, config),
+    };
   });
+}
+
+function stretchMovePoints(plan: WindowPlan, stretch: Stretch): KeptPoint[] {
+  const move = plan.moves[stretch.move];
+  if (move === undefined) throw new Error(`No move ${stretch.move} in this window`);
+  return plan.kept.slice(move.first, move.last + 1);
+}
+
+const pieceProjection = (plan: WindowPlan, piece: MapPiece): LocalProjection =>
+  LocalProjection.around(
+    piece.stretches.flatMap((stretch) =>
+      stretchMovePoints(plan, stretch).slice(stretch.from, stretch.to + 1),
+    ),
+  );
+
+/** A stretch's points on the railway, matched over `from..to` like the mapped level and cut to `first..last`. */
+const alignStretch = (
+  points: readonly KeptPoint[],
+  stretch: Stretch,
+  rail: RailContext,
+  config: ProcessingConfig,
+): RailPoint[] =>
+  alignToRail(points.slice(stretch.from, stretch.to + 1), rail, config.rail).points.slice(
+    stretch.first - stretch.from,
+    stretch.last - stretch.from + 1,
+  );
+
+/**
+ * The rail places of a piece of moves only a region covers, over their rail
+ * ways alone (`loadRailMapData`): the same alignment as in `mapPiece`, without
+ * the mapped level, the evidence or the stops.
+ */
+export function railPiece(
+  plan: WindowPlan,
+  piece: MapPiece,
+  map: MapData,
+  config: ProcessingConfig,
+): RailStretch[] {
+  const rail = railContext(new WayIndex(map, pieceProjection(plan, piece)), trainNetwork);
+  return piece.stretches.map((stretch) => ({
+    stretch,
+    rail: alignStretch(stretchMovePoints(plan, stretch), stretch, rail, config),
+  }));
+}
+
+/** A move's rail places put together from its stretches; null when a stretch is missing. */
+function assembleRail(
+  count: number,
+  parts: readonly { stretch: Stretch; rail: RailPoint[] | null }[],
+): RailPoint[] | null {
+  const places: RailPoint[] = [];
+  for (const part of [...parts].sort((a, b) => a.stretch.first - b.stretch.first)) {
+    if (part.rail === null || part.stretch.first !== places.length) return null;
+    for (const place of part.rail) places.push(place);
+  }
+  return places.length === count ? places : null;
 }
 
 /** A move's mapped points and map evidence, put together from its stretches. */
@@ -247,6 +363,15 @@ export function inferWindow(
     if (list === undefined) byMove.set(mapping.stretch.move, [mapping]);
     else list.push(mapping);
   }
+  // The rail line is derived data of its own: nothing below reads it before the segments are built.
+  const rail = config.rail.enabled ? (inputs.rail ?? null) : null;
+  const railByMove = new Map<number, RailStretch[]>();
+  for (const stretch of rail?.stretches ?? []) {
+    const list = railByMove.get(stretch.stretch.move);
+    if (list === undefined) railByMove.set(stretch.stretch.move, [stretch]);
+    else list.push(stretch);
+  }
+  const railMoves = new Map<number, RailMove>();
 
   const mapped: (MappedPoint | null)[] = plan.raw.map(() => null);
   if (inputs.mapping) {
@@ -316,6 +441,17 @@ export function inferWindow(
     } else if (inputs.mapping) {
       for (const tile of move.tiles) if (!inputs.available.has(tile)) missing.add(tile);
     }
+    if (rail !== null && !move.airborne) {
+      const found = railOfMove(
+        move,
+        points.length,
+        inputs.mapping && covered(move, inputs.available)
+          ? { from: "cache", parts: byMove.get(moveNumber) ?? [] }
+          : { from: "region", parts: railByMove.get(moveNumber) ?? [] },
+        rail,
+      );
+      if (found !== null) railMoves.set(moveNumber, found);
+    }
     if (moveMapped !== null) {
       for (const [position, point] of points.entries()) {
         mapped[point.index] = moveMapped[position] ?? null;
@@ -357,12 +493,92 @@ export function inferWindow(
     overrides: config.overrides,
   });
 
+  // The judge, per part, over the rail places of its move; the aligned parts' places are kept.
+  const railPlaces: (RailPlace | null)[] = plan.raw.map(() => null);
+  const segments = finished.map((draft) => {
+    const railMove = draft.kind === "move" ? railMoves.get(draft.move) : undefined;
+    if (draft.kind !== "move" || railMove === undefined) return toSegment(draft, kept, config);
+    const verdict = judgePart(draft, railMove, offsets[draft.move] ?? 0, kept, railPlaces, config);
+    return toSegment(draft, kept, config, verdict);
+  });
+
   return {
     averaged: plan.averaged,
     mapped,
-    segments: finished.map((draft) => toSegment(draft, kept, config)),
+    segments,
+    rail: railPlaces,
     missingTiles: [...missing].sort(),
   };
+}
+
+/** What a move's rail line rests on: places read from the cache's or a region's rail ways, or no data. */
+type RailMove =
+  | { places: RailPoint[]; source: "cache" | "region" }
+  | { places: null; reason: "waiting" | "outside_regions" };
+
+function railOfMove(
+  move: PlannedMove,
+  count: number,
+  read: {
+    from: "cache" | "region";
+    parts: readonly { stretch: Stretch; rail: RailPoint[] | null }[];
+  },
+  rail: RailInputs,
+): RailMove | null {
+  if (read.from === "cache" || railCovered(move, rail.available)) {
+    const places = assembleRail(count, read.parts);
+    return places === null ? null : { places, source: read.from };
+  }
+  return { places: null, reason: rail.waiting ? "waiting" : "outside_regions" };
+}
+
+/**
+ * The verdict of one part of a move, and its aligned places taken into
+ * `railPlaces`: a part's first point carries no rail path (the leg into it
+ * belongs to the segment before), and a point two parts share keeps the place
+ * the first of them gave it.
+ */
+function judgePart(
+  draft: DraftMove,
+  railMove: RailMove,
+  moveStart: number,
+  kept: readonly KeptPoint[],
+  railPlaces: (RailPlace | null)[],
+  config: ProcessingConfig,
+): RailPathVerdict {
+  const points = kept.slice(draft.first, draft.last + 1);
+  if (railMove.places === null) {
+    let lengthM = 0;
+    for (const [position, point] of points.entries()) {
+      const before = points[position - 1];
+      if (before !== undefined) lengthM += haversineM(before, point);
+    }
+    return {
+      status: "no_map",
+      reason: railMove.reason,
+      source: null,
+      coveredShare: 0,
+      routedShare: 0,
+      medianZ: 0,
+      p90Z: 0,
+      medianOffsetM: 0,
+      outlierShare: 0,
+      lengthM: Math.round(lengthM),
+    };
+  }
+  const places = railMove.places.slice(draft.first - moveStart, draft.last - moveStart + 1);
+  const verdict = judgeRailPath(points, places, config.rail.judge, railMove.source);
+  if (verdict.status !== "aligned") return verdict;
+  for (const [position, point] of points.entries()) {
+    const place = places[position];
+    if (place === undefined || place.run < 0 || place.lat === null || place.lon === null) continue;
+    railPlaces[point.index] ??= {
+      lat: place.lat,
+      lon: place.lon,
+      path: position === 0 ? null : place.path,
+    };
+  }
+  return verdict;
 }
 
 /** Map matching, features, modes, splitting and overrides with all the map data at hand. */
@@ -387,6 +603,8 @@ export function finishWindow(
       mapping: map !== null,
       available: inputs.available,
       stayBefore: inputs.stayBefore,
+      // Only the cache's data here: a move it does not hold waits for it (the server's pass also reads regions).
+      rail: map === null ? null : { available: inputs.available, stretches: [], waiting: true },
     },
     config,
   );
@@ -412,6 +630,7 @@ function toSegment(
   draft: Draft,
   kept: readonly KeptPoint[],
   config: ProcessingConfig,
+  railPath?: RailPathVerdict,
 ): InferredSegment {
   const first = kept[draft.first];
   const last = kept[draft.last];
@@ -441,7 +660,7 @@ function toSegment(
       },
     };
   }
-  return moveSegment(draft, kept, pointCount, config);
+  return moveSegment(draft, kept, pointCount, config, railPath);
 }
 
 function moveSegment(
@@ -449,6 +668,7 @@ function moveSegment(
   kept: readonly KeptPoint[],
   pointCount: number,
   config: ProcessingConfig,
+  railPath: RailPathVerdict | undefined,
 ): InferredSegment {
   const { features, verdict } = draft.part;
   let lat = 0;
@@ -482,6 +702,8 @@ function moveSegment(
         draft.override === null
           ? null
           : { id: draft.override.id, kind: draft.override.kind, source: draft.override.source },
+      // Absent with the aligner off, for a flight and with no map data at all.
+      ...(railPath === undefined ? {} : { railPath }),
     },
   };
 }

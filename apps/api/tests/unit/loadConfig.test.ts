@@ -140,8 +140,18 @@ describe("loadConfig", () => {
       stopMinS: 300,
       passMaxPoints: 20_000,
       passMaxSpanHours: 12,
+      railAlign: true,
       correctionWaitMs: 10_000,
     });
+    // The kill switch of the rail alignment is on unless switched off.
+    expect(
+      loadConfig({ ...minimal, PROCESSING_RAIL_ALIGN: "false" }, defaults).processing,
+    ).toMatchObject({
+      railAlign: false,
+    });
+    expect(
+      loadConfig({ ...minimal, PROCESSING_RAIL_ALIGN: "" }, defaults).processing.railAlign,
+    ).toBe(true);
     expect(
       issuesOf({ ...minimal, PROCESSING_ENABLED: "yes", PROCESSING_OVERPASS_URL: "ftp://x" }),
     ).toEqual([

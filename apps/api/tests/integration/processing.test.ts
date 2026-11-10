@@ -1108,6 +1108,7 @@ describe("the edges of a window", () => {
           features: { spreadM: 0, lastPointT: last.t },
         },
       ],
+      rail: [],
       missingTiles: [],
     };
     const persist = () =>

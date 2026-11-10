@@ -36,6 +36,15 @@ export const processedPoints = pgTable(
     snapM: real("snap_m"),
     /** The way's shape since the previous point of its move: `[[lon, lat], …]`, both ends excluded. */
     pathMap: jsonb("path_map").$type<[number, number][]>(),
+    /**
+     * Where the point lies on the railway, for the points of a part of a move whose rail line
+     * was accepted (`features.railPath`); null everywhere else. Derived data of its own: the
+     * mapped level is untouched and nothing reads these back into the inference.
+     */
+    latRail: doublePrecision("lat_rail"),
+    lonRail: doublePrecision("lon_rail"),
+    /** The rail's shape since the previous point, as `pathMap`; null for a part's first point. */
+    pathRail: jsonb("path_rail").$type<[number, number][]>(),
     version: smallint("version").notNull(),
     processedAt: timestamptz("processed_at").notNull().defaultNow(),
   },

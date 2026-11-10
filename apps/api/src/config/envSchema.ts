@@ -234,6 +234,8 @@ export const envSchema = z
     // split first (docs/architecture.md §17.4). A very large value restores unbounded passes.
     PROCESSING_PASS_MAX_POINTS: env(intSchema(1000, 100_000_000).default(60_000)),
     PROCESSING_PASS_MAX_SPAN_HOURS: env(intSchema(1, 87_600).default(36)),
+    // The kill switch of the rail alignment (docs/architecture.md §17.3).
+    PROCESSING_RAIL_ALIGN: env(booleanSchema.default(true)),
     // How long a person's correction (a move's mode) waits for a pass over the device's data
     // before it answers 409 to be tried again (docs/architecture.md §17.4).
     PROCESSING_CORRECTION_WAIT_MS: env(intSchema(50, 120_000).default(10_000)),

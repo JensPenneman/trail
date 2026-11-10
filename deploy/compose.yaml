@@ -88,6 +88,7 @@ x-app-environment: &app-environment
   PROCESSING_STOP_MIN_S:
   PROCESSING_PASS_MAX_POINTS:
   PROCESSING_PASS_MAX_SPAN_HOURS:
+  PROCESSING_RAIL_ALIGN:
   # map data from the registry (docs/operations.md, "Map data"), which `app`
   # pulls into trail-map; an empty MAP_DATA_REGIONS (set in .env) means none,
   # an unset one Belgium. MAP_DATA_DIR stays the image's default, the mount.

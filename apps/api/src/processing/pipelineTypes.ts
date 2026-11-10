@@ -76,6 +76,18 @@ export interface RailPoint {
   path: readonly (readonly [number, number])[] | null;
 }
 
+/**
+ * The rail level of one point (`processed_points.lat_rail` …): where a point of
+ * an aligned part of a move lies on the railway. Derived data of its own: it
+ * never feeds the inference and the mapped level stays as it was.
+ */
+export interface RailPlace {
+  lat: number;
+  lon: number;
+  /** The rail's shape since the previous point, `[lon, lat]`, both ends excluded; null for a part's first point. */
+  path: readonly (readonly [number, number])[] | null;
+}
+
 /** What the judge made of the rail line of a part of a move (`segments.features.railPath`); no coordinates. */
 export interface RailPathVerdict {
   /** `aligned`: draw it; `poor`: a track was found but the match is not good enough; `no_rail`: no railway there; `no_map`: no rail data. */

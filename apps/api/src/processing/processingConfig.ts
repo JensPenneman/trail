@@ -169,6 +169,8 @@ export interface ProcessingConfig {
 
 /** The thresholds of `alignToRail` and of `judgeRailPath` (`ProcessingConfig.rail`). */
 export interface RailConfig {
+  /** The kill switch (`PROCESSING_RAIL_ALIGN`): off, the aligner never runs and no verdict is written. */
+  readonly enabled: boolean;
   /** Only points this far apart from the previous step enter the model; the ones between are projected onto its line. */
   readonly stepM: number;
   /** Emission sigma: max(accuracy, this). */
@@ -327,6 +329,7 @@ export const defaultProcessingConfig: ProcessingConfig = {
     tileMaxAgeDays: 90,
   },
   rail: {
+    enabled: true,
     stepM: 50,
     minSigmaM: 15,
     radiusSigmas: 3,
@@ -431,6 +434,8 @@ export function processingConfigWith(settings: {
   osmTtlDays: number;
   passMaxPoints?: number;
   passMaxSpanHours?: number;
+  /** `PROCESSING_RAIL_ALIGN`; on when not given. */
+  railAlign?: boolean;
 }): ProcessingConfig {
   const { passes } = defaultProcessingConfig;
   return {
@@ -445,5 +450,6 @@ export function processingConfigWith(settings: {
     averaging: { ...defaultProcessingConfig.averaging, maxAccuracyM: settings.maxAccuracyM },
     stops: { ...defaultProcessingConfig.stops, minDurationS: settings.stopMinS },
     mapping: { ...defaultProcessingConfig.mapping, tileMaxAgeDays: settings.osmTtlDays },
+    rail: { ...defaultProcessingConfig.rail, enabled: settings.railAlign ?? true },
   };
 }

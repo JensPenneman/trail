@@ -924,6 +924,7 @@ function oneStop(points: readonly RawPoint[]): WindowResult {
         features: { spreadM: 10 },
       },
     ],
+    rail: [],
     missingTiles: [],
   };
 }

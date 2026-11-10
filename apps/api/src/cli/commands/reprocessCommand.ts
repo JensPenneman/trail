@@ -5,6 +5,7 @@ import { isUuid } from "../../lib/isUuid";
 import { processingConfigWith } from "../../processing/processingConfig";
 import { enqueueWindow, type FromLevel, takeDeviceWindows } from "../../processing/processingQueue";
 import { processWindow } from "../../processing/processWindow";
+import { RegionCoverageStore } from "../../processing/regionCoverageStore";
 import type { CliContext } from "../cliContext";
 import { UsageError } from "../usageError";
 
@@ -65,6 +66,7 @@ export async function reprocessCommand(ctx: CliContext, options: ReprocessOption
     throw new Error("processing is switched off (PROCESSING_ENABLED=false)");
   }
   const config = processingConfigWith(settings);
+  const regions = new RegionCoverageStore();
   const query = ctx.db.select({ id: devices.id, name: devices.name }).from(devices);
   const targets = await (parsed.device === undefined
     ? query.orderBy(asc(devices.createdAt))
@@ -108,6 +110,7 @@ export async function reprocessCommand(ctx: CliContext, options: ReprocessOption
       const outcome = await processWindow(ctx.db, rows, {
         config,
         mapping: settings.overpassUrl !== null,
+        regions,
         now: new Date(),
       });
       if (outcome === null) break;

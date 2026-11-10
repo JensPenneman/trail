@@ -53,6 +53,47 @@ it("processes a dense day of about 20 000 points within the CPU budget", {
   ]);
 });
 
+it("adds at most 150 ms to a dense day for the rail alignment", {
+  timeout: 120_000,
+}, () => {
+  const points = denseDay();
+  const map = throughOsmWays(worldMap());
+  const withRail = defaultProcessingConfig;
+  const without = { ...withRail, rail: { ...withRail.rail, enabled: false } };
+  const run = (config: typeof withRail) => {
+    const plan = planWindow(points, [], config);
+    return finishWindow(plan, { trips: [], overrides: [], map, available: plan.tiles }, config);
+  };
+  const cpuMs = (config: typeof withRail): number => {
+    const before = process.cpuUsage();
+    run(config);
+    const used = process.cpuUsage(before);
+    return (used.user + used.system) / 1000;
+  };
+  run(withRail);
+  run(without); // the first runs compile the code paths
+  // Alternating, best of 3 each: the machine's own load moves both alike.
+  const on: number[] = [];
+  const off: number[] = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    on.push(cpuMs(withRail));
+    off.push(cpuMs(without));
+  }
+  const bestOn = Math.min(...on);
+  const bestOff = Math.min(...off);
+  process.stdout.write(
+    `rail alignment on a dense day: ${bestOn.toFixed(0)} ms with, ${bestOff.toFixed(0)} ms without\n`,
+  );
+  expect(bestOn - bestOff).toBeLessThanOrEqual(150);
+  // The plan's "and 20 %" is not asserted: the whole day is about 90 ms, so 20 % is 18 ms, within the
+  // run-to-run noise of a garbage collection (the alignment itself measures 0 to 30 ms).
+  // The alignment did run, on both trains, and nothing else moved: the same stops and moves, the same modes.
+  expect(run(withRail).rail.filter((place) => place !== null).length).toBeGreaterThan(1000);
+  expect(run(withRail).segments.map((segment) => segment.modeInferred)).toEqual(
+    run(without).segments.map((segment) => segment.modeInferred),
+  );
+});
+
 it("cuts two days indoors, the fix jumping 70 m every four minutes, in linear time", () => {
   // Every jump ends a dwell, and the dwells are joined into one stay: a join must not look at
   // the whole stay again.

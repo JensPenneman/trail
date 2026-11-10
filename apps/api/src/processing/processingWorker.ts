@@ -16,6 +16,7 @@ import {
 } from "./processingQueue";
 import { processingVersions } from "./processingVersion";
 import { processWindow } from "./processWindow";
+import { RegionCoverageStore } from "./regionCoverageStore";
 import type { TileFetcher } from "./tileFetcher";
 import { staleBefore } from "./tileStore";
 
@@ -44,6 +45,8 @@ export class ProcessingWorker {
   readonly #delayMs: number;
   readonly #abort = new AbortController();
   readonly #heatDays: HeatDaysScheduler;
+  /** The ready regions, one small query per pass and their polygons only when that changes. */
+  readonly #regions = new RegionCoverageStore();
   #timer: NodeJS.Timeout | undefined;
   #poll: NodeJS.Timeout | undefined;
   #mapPass: NodeJS.Timeout | undefined;
@@ -194,6 +197,7 @@ export class ProcessingWorker {
         const outcome = await processWindow(this.#db, rows, {
           config: this.#config,
           mapping: this.#fetcher !== null,
+          regions: this.#regions,
           now: new Date(),
         });
         if (outcome !== null) {

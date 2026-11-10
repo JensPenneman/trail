@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import type { Database } from "../db/database";
+import type { Database, Executor } from "../db/database";
 import { devices } from "../db/schema/devices";
 import { users } from "../db/schema/users";
 import { notifySegments } from "../events/processingNotify";
@@ -17,10 +17,22 @@ import {
   queuePriority,
 } from "./processingQueue";
 import { processingVersions } from "./processingVersion";
-import { inferWindow, mapPiece, piecesToMap, planWindow, type StretchMapping } from "./runPipeline";
+import type { RegionCoverageStore } from "./regionCoverageStore";
+import {
+  inferWindow,
+  mapPiece,
+  piecesToAlign,
+  piecesToMap,
+  planWindow,
+  type RailInputs,
+  type RailStretch,
+  railPiece,
+  type StretchMapping,
+  type WindowPlan,
+} from "./runPipeline";
 import { splitJob } from "./splitJob";
 import type { TileKey } from "./tileCover";
-import { cachedTiles, loadMapData, staleBefore } from "./tileStore";
+import { cachedTiles, loadMapData, loadRailMapData, staleBefore } from "./tileStore";
 import {
   extendWindow,
   loadOverrides,
@@ -74,7 +86,13 @@ const levels: readonly FromLevel[] = ["averaged", "mapped", "inferred"];
 export async function processWindow(
   db: Database,
   rows: readonly QueueRow[],
-  options: { config: ProcessingConfig; mapping: boolean; now: Date },
+  options: {
+    config: ProcessingConfig;
+    mapping: boolean;
+    now: Date;
+    /** The loaded regions, which give a train its rail ways when the tile cache does not hold them (§17.3). */
+    regions?: RegionCoverageStore | null;
+  },
 ): Promise<WindowOutcome | null> {
   const [first] = rows;
   if (first === undefined) return null;
@@ -137,10 +155,11 @@ export async function processWindow(
         mappings.push(...mapPiece(plan, piece, map, storedMapping, config));
       }
     }
+    const rail = await railInputs(tx, plan, available, options);
     const result = inferWindow(
       plan,
       mappings,
-      { trips, overrides, mapping: options.mapping, available, stayBefore },
+      { trips, overrides, mapping: options.mapping, available, stayBefore, rail },
       config,
     );
 
@@ -199,4 +218,31 @@ export async function processWindow(
       heatDays,
     };
   });
+}
+
+/**
+ * The rail ways the aligner has beside the cache's: a move whose tiles are not
+ * all cached but all covered by a ready region is read rail-only and aligned,
+ * a piece at a time (docs/architecture.md §17.3); the mapped level stays as it
+ * is. Null, nothing judged, with the aligner off or without any map data (no
+ * Overpass and no ready region). One small query per pass.
+ */
+async function railInputs(
+  tx: Executor,
+  plan: WindowPlan,
+  available: ReadonlySet<TileKey>,
+  options: { config: ProcessingConfig; mapping: boolean; regions?: RegionCoverageStore | null },
+): Promise<RailInputs | null> {
+  const { config, regions } = options;
+  if (!config.rail.enabled) return null;
+  const coverage = regions === null || regions === undefined ? null : await regions.current(tx);
+  if (!options.mapping && regions?.ready !== true) return null;
+  const railAvailable = new Set(available);
+  for (const tile of coverage?.covered(plan.tiles) ?? []) railAvailable.add(tile);
+  const stretches: RailStretch[] = [];
+  for (const piece of piecesToAlign(plan, available, railAvailable)) {
+    const map = await loadRailMapData(tx, piece.tiles, config.rail.railOnlyMaxTiles);
+    stretches.push(...railPiece(plan, piece, map, config));
+  }
+  return { available: railAvailable, stretches, waiting: options.mapping };
 }

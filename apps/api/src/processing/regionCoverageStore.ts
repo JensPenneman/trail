@@ -22,6 +22,11 @@ export class RegionCoverageStore {
   #state = "";
   #coverage: RegionCoverage = regionCoverage([]);
 
+  /** Whether any region was ready when `current` last looked. */
+  get ready(): boolean {
+    return this.#state !== "";
+  }
+
   async current(db: Executor): Promise<RegionCoverage> {
     const ready = await db.execute<StateRow>(
       sql`SELECT source, updated_at::text AS updated_at FROM osm_regions WHERE status = 'ready' ORDER BY source`,
