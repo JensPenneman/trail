@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/JensPenneman/trail/compare/v0.10.0...v0.10.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **web:** take the Vite config helper from vitest so its types stay in step ([#145](https://github.com/JensPenneman/trail/issues/145)) ([1a8a3a3](https://github.com/JensPenneman/trail/commit/1a8a3a3c491beb9013a2d112cf60020aa19126e3))
+
 ## [0.10.0](https://github.com/JensPenneman/trail/compare/v0.9.0...v0.10.0) (2026-11-05)
 
 
