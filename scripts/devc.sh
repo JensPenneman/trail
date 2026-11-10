@@ -5,8 +5,8 @@
 # worktrees run side by side. Works from any directory; POSIX sh (macOS bash
 # 3.2, dash).
 #
-#   scripts/devc.sh up [--web]     build when needed, start, install the modules;
-#                                  --web publishes the web app on a free host port
+#   scripts/devc.sh up [--web]     build when needed, start, install the modules and
+#                                  the host's git hooks; --web publishes the web app on a free host port
 #   scripts/devc.sh <command...>   runs the command in the container (npm test)
 #   scripts/devc.sh shell          a shell in the container
 #   scripts/devc.sh ps             this worktree's containers
@@ -94,6 +94,17 @@ up() {
     printf 'devc: %s is up; the web app (scripts/devc.sh npm run dev) is on %s\n' "$COMPOSE_PROJECT_NAME" "$url"
   else
     printf 'devc: %s is up\n' "$COMPOSE_PROJECT_NAME"
+  fi
+}
+
+# The git hooks belong to the host's git, and `.npmrc` (ignore-scripts) keeps
+# `npm ci` from installing them as a side effect, so `devc.sh up` does it: from
+# the host's modules when there are any, otherwise it says what to run.
+install_hooks() {
+  if [ -x "$root/node_modules/.bin/lefthook" ] && command -v node >/dev/null 2>&1; then
+    (cd "$root" && node scripts/hooks.mjs) >&2 || printf 'devc: git hooks not installed; run `npm run hooks` on the host\n' >&2
+  else
+    printf 'devc: git hooks not installed (no host modules); run `npm ci && npm run hooks` on the host\n' >&2
   fi
 }
 
@@ -189,6 +200,7 @@ case $1 in
   up)
     shift
     up "$@"
+    install_hooks
     ;;
   shell)
     shift

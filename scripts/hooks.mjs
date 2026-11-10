@@ -1,4 +1,6 @@
-/* Installs the lefthook git hooks for local development. Skipped in CI, in
+/* Installs the lefthook git hooks for local development: `npm run hooks`, and
+ * `scripts/devc.sh up` runs it on the host (.npmrc's ignore-scripts keeps
+ * `npm ci` from doing it). Skipped in CI, in
  * container builds and in the development container (.devcontainer): hooks
  * are pointless there or belong to the host's git, and git may refuse a
  * workspace owned by another user or, in the development container, find no

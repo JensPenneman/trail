@@ -4022,7 +4022,7 @@ the commit and empty module volumes, so every command starts with
 
 | Commit status | Command after `npm ci` | Timeout |
 |---|---|---|
-| `launchway/quality` | `npm run check` (Biome, typecheck, knip, unit tests) | 25 min |
+| `launchway/quality` | `npm run check` (Biome, typecheck, knip, supply-chain lint and signatures, unit tests) | 25 min |
 | `launchway/integration` | `npm run test:integration` (`TEST_DATABASE_URL` → `trail_test`) | 20 min |
 | `launchway/e2e` | `npm run build && npm run test:e2e` (`E2E_DATABASE_URL` → `trail_e2e`, one worker; the build fetches the basemap's pinned fonts and sprites, 62 MB, the module volumes being fresh) | 60 min |
 
