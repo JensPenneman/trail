@@ -6,6 +6,7 @@ import { notifySegments } from "../events/processingNotify";
 import { heatDaysOf } from "../heatmap/heatDaysOf";
 import { lockDeviceProcessing } from "./deviceLock";
 import { persistWindow } from "./persistWindow";
+import { noRailPassStats, type RailPassStats } from "./pipelineTypes";
 import type { ProcessingConfig } from "./processingConfig";
 import {
   awaitTiles,
@@ -17,12 +18,15 @@ import {
   queuePriority,
 } from "./processingQueue";
 import { processingVersions } from "./processingVersion";
+import { couldBeTrain } from "./rail/trainPlausible";
 import type { RegionCoverageStore } from "./regionCoverageStore";
 import {
+  addRailCost,
   inferWindow,
   mapPiece,
   piecesToAlign,
   piecesToMap,
+  planRailReads,
   planWindow,
   type RailInputs,
   type RailStretch,
@@ -32,7 +36,13 @@ import {
 } from "./runPipeline";
 import { splitJob } from "./splitJob";
 import type { TileKey } from "./tileCover";
-import { cachedTiles, loadMapData, loadRailMapData, staleBefore } from "./tileStore";
+import {
+  cachedTiles,
+  loadMapData,
+  loadRailMapData,
+  railReadChunks,
+  staleBefore,
+} from "./tileStore";
 import {
   extendWindow,
   loadOverrides,
@@ -59,6 +69,8 @@ export interface WindowOutcome {
   missingTiles: readonly TileKey[];
   /** The local days (in the owner's zone) the pass touched, whose per-day heat cells are to be rebuilt. */
   heatDays: string[];
+  /** What the rail alignment cost in this pass (docs/architecture.md §17.3); all zero with it off. */
+  rail: RailPassStats;
 }
 
 const levels: readonly FromLevel[] = ["averaged", "mapped", "inferred"];
@@ -149,13 +161,16 @@ export async function processWindow(
         : undefined;
     // The map data a piece at a time: a long window never holds all of it.
     const mappings: StretchMapping[] = [];
+    const railStats = noRailPassStats();
     if (options.mapping) {
       for (const piece of piecesToMap(plan, available)) {
         const map = await loadMapData(tx, piece.tiles);
-        mappings.push(...mapPiece(plan, piece, map, storedMapping, config));
+        const stretches = mapPiece(plan, piece, map, storedMapping, config);
+        for (const mapping of stretches) addRailCost(railStats, mapping.railCost);
+        mappings.push(...stretches);
       }
     }
-    const rail = await railInputs(tx, plan, available, options);
+    const rail = await railInputs(tx, plan, available, options, railStats);
     const result = inferWindow(
       plan,
       mappings,
@@ -216,33 +231,83 @@ export async function processWindow(
       segments: result.segments.length,
       missingTiles: waitFor,
       heatDays,
+      rail: railStats,
     };
   });
 }
 
 /**
  * The rail ways the aligner has beside the cache's: a move whose tiles are not
- * all cached but all covered by a ready region is read rail-only and aligned,
- * a piece at a time (docs/architecture.md §17.3); the mapped level stays as it
- * is. Null, nothing judged, with the aligner off or without any map data (no
- * Overpass and no ready region). One small query per pass.
+ * all cached for the mapped level but all rail-available (covered by a ready
+ * region, or cached while Overpass is off) is read rail-only and aligned, a
+ * piece at a time (docs/architecture.md §17.3); the mapped level stays as it
+ * is. A move that cannot be a train is left out, and a pass reads at most
+ * `railOnlyMaxTilesPerPass` tiles. Null, nothing judged, with the aligner off
+ * or without any map data (no Overpass and no ready region). One small query
+ * per pass, and the cache's tiles when Overpass is off.
  */
 async function railInputs(
   tx: Executor,
   plan: WindowPlan,
   available: ReadonlySet<TileKey>,
-  options: { config: ProcessingConfig; mapping: boolean; regions?: RegionCoverageStore | null },
+  options: {
+    config: ProcessingConfig;
+    mapping: boolean;
+    now: Date;
+    regions?: RegionCoverageStore | null;
+  },
+  stats: RailPassStats,
 ): Promise<RailInputs | null> {
   const { config, regions } = options;
   if (!config.rail.enabled) return null;
   const coverage = regions === null || regions === undefined ? null : await regions.current(tx);
-  if (!options.mapping && regions?.ready !== true) return null;
   const railAvailable = new Set(available);
-  for (const tile of coverage?.covered(plan.tiles) ?? []) railAvailable.add(tile);
-  const stretches: RailStretch[] = [];
-  for (const piece of piecesToAlign(plan, available, railAvailable)) {
-    const map = await loadRailMapData(tx, piece.tiles, config.rail.railOnlyMaxTiles);
-    stretches.push(...railPiece(plan, piece, map, config));
+  if (!options.mapping) {
+    // Mapping is off, so `available` is empty: the tiles the cache still holds (an earlier install
+    // with Overpass on) are rail data all the same.
+    const held = await cachedTiles(
+      tx,
+      plan.tiles,
+      staleBefore(config.mapping.tileMaxAgeDays, options.now),
+    );
+    for (const tile of held.available) railAvailable.add(tile);
+    if (regions?.ready !== true && railAvailable.size === 0) return null;
   }
-  return { available: railAvailable, stretches, waiting: options.mapping };
+  const covered = new Set(coverage?.covered(plan.tiles) ?? []);
+  for (const tile of covered) railAvailable.add(tile);
+  return alignFrom(tx, plan, available, railAvailable, covered, config, stats, options.mapping);
+}
+
+async function alignFrom(
+  tx: Executor,
+  plan: WindowPlan,
+  available: ReadonlySet<TileKey>,
+  railAvailable: ReadonlySet<TileKey>,
+  covered: ReadonlySet<TileKey>,
+  config: ProcessingConfig,
+  stats: RailPassStats,
+  waiting: boolean,
+): Promise<RailInputs> {
+  for (const move of plan.moves) {
+    if (!move.airborne && !couldBeTrain(plan.kept.slice(move.first, move.last + 1), config.rail)) {
+      stats.notTrainMoves += 1;
+    }
+  }
+  const { reads, deferred } = planRailReads(
+    piecesToAlign(plan, available, railAvailable, config),
+    config.rail.railOnlyMaxTilesPerPass,
+  );
+  stats.deferredMoves += deferred.size;
+  const stretches: RailStretch[] = [];
+  for (const piece of reads) {
+    const started = performance.now();
+    const map = await loadRailMapData(tx, piece.tiles, config.rail.railOnlyMaxTiles);
+    stats.railOnlyReadMs += performance.now() - started;
+    stats.railOnlyTiles += piece.tiles.size;
+    stats.railOnlyStatements += railReadChunks(piece.tiles, config.rail.railOnlyMaxTiles).length;
+    const aligned = railPiece(plan, piece, map, config);
+    for (const stretch of aligned) addRailCost(stats, stretch.railCost);
+    stretches.push(...aligned);
+  }
+  return { available: railAvailable, covered, stretches, deferred, waiting };
 }

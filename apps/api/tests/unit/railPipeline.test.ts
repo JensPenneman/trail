@@ -1,19 +1,23 @@
 import { describe, expect, it } from "vitest";
 import type { MapData } from "../../src/processing/mapData";
-import type { RailPathVerdict } from "../../src/processing/pipelineTypes";
+import { noRailPassStats, type RailPathVerdict } from "../../src/processing/pipelineTypes";
 import {
   defaultProcessingConfig,
   type ProcessingConfig,
 } from "../../src/processing/processingConfig";
 import {
+  addRailCost,
   finishWindow,
   inferWindow,
+  mapPiece,
   piecesToAlign,
+  piecesToMap,
+  planRailReads,
   planWindow,
   railPiece,
   type WindowResult,
 } from "../../src/processing/runPipeline";
-import { flight, motorwayDrive, walkTrainWalk } from "../support/journeys";
+import { bikeRide, flight, motorwayDrive, walkInTown, walkTrainWalk } from "../support/journeys";
 import { moves, processWorld } from "../support/processWorld";
 import { distanceToLine, railLine, toXY, worldMap } from "../support/syntheticWorld";
 
@@ -132,7 +136,7 @@ describe("the rail line of a move whose tiles only a region covers", () => {
     inferWindow(plan, [], { trips: [], overrides: [], mapping, available: none, rail }, config);
 
   it("is aligned from the rail ways alone, the mapped level staying unmapped", () => {
-    const pieces = piecesToAlign(plan, none, plan.tiles);
+    const pieces = piecesToAlign(plan, none, plan.tiles, config);
     expect(pieces.length).toBeGreaterThan(0);
     const stretches = pieces.flatMap((piece) => railPiece(plan, piece, railOnly, config));
     const region = run({ available: plan.tiles, stretches, waiting: false });
@@ -165,7 +169,7 @@ describe("the rail line of a move whose tiles only a region covers", () => {
 
   it("writes no verdict without rail inputs, and none with the aligner off", () => {
     expect(moves(run(null)).every((segment) => railPath(segment) === undefined)).toBe(true);
-    const stretches = piecesToAlign(plan, none, plan.tiles).flatMap((piece) =>
+    const stretches = piecesToAlign(plan, none, plan.tiles, config).flatMap((piece) =>
       railPiece(plan, piece, railOnly, config),
     );
     const switchedOff = inferWindow(
@@ -185,6 +189,134 @@ describe("the rail line of a move whose tiles only a region covers", () => {
   });
 
   it("reads no rail-only piece for a move whose tiles the cache holds", () => {
-    expect(piecesToAlign(plan, plan.tiles, plan.tiles)).toEqual([]);
+    expect(piecesToAlign(plan, plan.tiles, plan.tiles, config)).toEqual([]);
+  });
+});
+
+describe("moves that cannot be a train", () => {
+  const config = defaultProcessingConfig;
+  const none = new Set<string>();
+  const cases = [
+    ["a walk in town", walkInTown()],
+    ["a bike ride", bikeRide()],
+  ] as const;
+
+  it.each(cases)(
+    "%s whose tiles only a region covers is read for no rail-only piece, and has no verdict",
+    (_name, points) => {
+      const plan = planWindow(points, [], config);
+      expect(plan.moves.length).toBeGreaterThan(0);
+      expect(piecesToAlign(plan, none, plan.tiles, config)).toEqual([]);
+      // A train over the same tiles is a piece: the check is the move, not the tiles.
+      const train = planWindow(walkTrainWalk(), [], config);
+      expect(piecesToAlign(train, none, train.tiles, config).length).toBeGreaterThan(0);
+      // Whatever its tiles say, no verdict: not waiting, not outside the regions, not aligned.
+      for (const waiting of [true, false]) {
+        const result = inferWindow(
+          plan,
+          [],
+          {
+            trips: [],
+            overrides: [],
+            mapping: waiting,
+            available: none,
+            rail: { available: plan.tiles, stretches: [], waiting },
+          },
+          config,
+        );
+        expect(moves(result).every((segment) => railPath(segment) === undefined)).toBe(true);
+        expect(result.rail.every((place) => place === null)).toBe(true);
+      }
+    },
+  );
+
+  it.each(cases)(
+    "%s whose tiles the cache holds gets no aligner call and no cost",
+    (_name, points) => {
+      const plan = planWindow(points, [], config);
+      for (const piece of piecesToMap(plan, plan.tiles)) {
+        for (const mapping of mapPiece(plan, piece, worldMap(), undefined, config)) {
+          expect(mapping.rail).toBeNull();
+          expect(mapping.railCost).toBeNull();
+        }
+      }
+      const stats = noRailPassStats();
+      expect(stats.alignedStretches).toBe(0);
+    },
+  );
+
+  it("a train over the cache's tiles is aligned, and its cost adds up in the pass's statistics", () => {
+    const points = walkTrainWalk();
+    const plan = planWindow(points, [], config);
+    const stats = noRailPassStats();
+    for (const piece of piecesToMap(plan, plan.tiles)) {
+      for (const mapping of mapPiece(plan, piece, worldMap(), undefined, config)) {
+        addRailCost(stats, mapping.railCost);
+      }
+    }
+    expect(stats.alignedStretches).toBeGreaterThan(0);
+    expect(stats.steps).toBeGreaterThan(10);
+    expect(stats.runs).toBeGreaterThan(0);
+    expect(stats.searches).toBeGreaterThan(0);
+    expect(stats.settledNodes).toBeGreaterThan(0);
+    expect(stats.maxSearchBoundM).toBeLessThanOrEqual(config.rail.maxRouteM);
+    expect(stats.maxSearchHops).toBe(config.rail.maxHops);
+    expect(stats.alignMs).toBeGreaterThan(0);
+  });
+
+  it("with the aligner off no stretch costs anything", () => {
+    const plan = planWindow(walkTrainWalk(), [], off);
+    const stats = noRailPassStats();
+    for (const piece of piecesToMap(plan, plan.tiles)) {
+      for (const mapping of mapPiece(plan, piece, worldMap(), undefined, off)) {
+        expect(mapping.rail).toBeNull();
+        addRailCost(stats, mapping.railCost);
+      }
+    }
+    expect(stats).toEqual(noRailPassStats());
+  });
+});
+
+describe("the per-pass cap on rail-only tiles", () => {
+  const piece = (move: number, count: number) => {
+    const tiles = new Set(Array.from({ length: count }, (_, index) => `14/${move}/${index}`));
+    return { stretches: [{ move, from: 0, first: 0, last: 1, to: 1, tiles }], tiles };
+  };
+
+  it("reads pieces within the cap and defers the moves of the rest, which a later pass judges again", () => {
+    const { reads, deferred } = planRailReads([piece(0, 300), piece(1, 300), piece(2, 100)], 512);
+    expect(reads.map((read) => read.stretches[0]?.move)).toEqual([0, 2]);
+    expect([...deferred]).toEqual([1]);
+    expect(reads.reduce((sum, read) => sum + read.tiles.size, 0)).toBeLessThanOrEqual(512);
+  });
+
+  it("reads everything within the cap, and nothing is deferred", () => {
+    const { reads, deferred } = planRailReads([piece(0, 256), piece(1, 256)], 512);
+    expect(reads).toHaveLength(2);
+    expect(deferred.size).toBe(0);
+  });
+
+  it("marks a deferred move no_map/deferred and leaves its recorded line", () => {
+    const points = walkTrainWalk();
+    const config = defaultProcessingConfig;
+    const plan = planWindow(points, [], config);
+    const deferred = new Set(plan.moves.map((_move, number) => number));
+    const result = inferWindow(
+      plan,
+      [],
+      {
+        trips: [],
+        overrides: [],
+        mapping: false,
+        available: new Set(),
+        rail: { available: plan.tiles, stretches: [], waiting: false, deferred },
+      },
+      config,
+    );
+    expect(moves(result).length).toBeGreaterThan(0);
+    for (const move of moves(result)) {
+      expect(railPath(move)).toMatchObject({ status: "no_map", reason: "deferred", source: null });
+    }
+    expect(result.rail.every((place) => place === null)).toBe(true);
   });
 });

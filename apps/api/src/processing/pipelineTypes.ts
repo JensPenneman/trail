@@ -72,6 +72,8 @@ export interface RailPoint {
   legM: number;
   /** Length of the whole straight leg the point lies on, metres; 0 when its leg was routed. */
   bridgedLegM: number;
+  /** For a point on a straight leg: the speed that leg's chord implies, m/s (0 on a routed leg); kept in the verdict for tuning. */
+  bridgedSpeedMs: number;
   /** The rail's shape between the previous point of the run and this one, `[lon, lat]`, both ends excluded. */
   path: readonly (readonly [number, number])[] | null;
 }
@@ -88,6 +90,48 @@ export interface RailPlace {
   path: readonly (readonly [number, number])[] | null;
 }
 
+/**
+ * What the aligner cost in a pass (`WindowOutcome.rail`), summed over its
+ * stretches: for the performance bounds of docs/architecture.md §17.3 and the
+ * worker's pass line. All zero with the aligner off.
+ */
+export interface RailPassStats {
+  /** Points that entered the model, runs kept, route searches, nodes they settled. */
+  steps: number;
+  runs: number;
+  searches: number;
+  settledNodes: number;
+  /** The largest bound any search was given, metres, and the most way changes one was allowed. */
+  maxSearchBoundM: number;
+  maxSearchHops: number;
+  /** Stretches the aligner ran on, and the milliseconds it took (measured in the adapter). */
+  alignedStretches: number;
+  alignMs: number;
+  /** Moves left alone because they cannot be a train (too short or too slow), and moves deferred by the per-pass cap. */
+  notTrainMoves: number;
+  deferredMoves: number;
+  /** Rail-only reads (a region's moves): tiles, statements and milliseconds. */
+  railOnlyTiles: number;
+  railOnlyStatements: number;
+  railOnlyReadMs: number;
+}
+
+export const noRailPassStats = (): RailPassStats => ({
+  steps: 0,
+  runs: 0,
+  searches: 0,
+  settledNodes: 0,
+  maxSearchBoundM: 0,
+  maxSearchHops: 0,
+  alignedStretches: 0,
+  alignMs: 0,
+  notTrainMoves: 0,
+  deferredMoves: 0,
+  railOnlyTiles: 0,
+  railOnlyStatements: 0,
+  railOnlyReadMs: 0,
+});
+
 /** What the judge made of the rail line of a part of a move (`segments.features.railPath`); no coordinates. */
 export interface RailPathVerdict {
   /** `aligned`: draw it; `poor`: a track was found but the match is not good enough; `no_rail`: no railway there; `no_map`: no rail data. */
@@ -101,7 +145,8 @@ export interface RailPathVerdict {
     | "outliers"
     | "no_rail"
     | "waiting"
-    | "outside_regions";
+    | "outside_regions"
+    | "deferred";
   /** Which source made the move's last tile available; null when not known (no map). */
   source: "cache" | "region" | null;
   coveredShare: number;
@@ -110,6 +155,8 @@ export interface RailPathVerdict {
   p90Z: number;
   medianOffsetM: number;
   outlierShare: number;
+  /** The fastest implied speed of any straight leg of the part, m/s, rounded; 0 without one. */
+  bridgedMaxSpeedMs: number;
   lengthM: number;
 }
 

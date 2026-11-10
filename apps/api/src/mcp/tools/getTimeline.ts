@@ -37,6 +37,8 @@ export const getTimeline = defineTool({
             from: range.from,
             to: range.to,
             limit: mcpLimits.maxItems,
+            // No tool serves lines: `alignedTo` is not read here.
+            railAlign: false,
           });
     const truncated = timeline.nextCursor !== null;
     const zoned = (value: string) => formatInZone(new Date(value), timeZone);

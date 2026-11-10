@@ -5,6 +5,7 @@ import type { MapData } from "../../src/processing/mapData";
 import type { RailPoint, RawPoint } from "../../src/processing/pipelineTypes";
 import { defaultProcessingConfig } from "../../src/processing/processingConfig";
 import { alignToRail } from "../../src/processing/rail/alignToRail";
+import { judgeRailPath } from "../../src/processing/rail/judgeRailPath";
 import { railContext, trainNetwork } from "../../src/processing/rail/railNetwork";
 import { WayIndex } from "../../src/processing/wayIndex";
 import {
@@ -14,6 +15,7 @@ import {
   railWorld,
   roadLine,
   trackA,
+  trackB,
 } from "../support/railWorld";
 import {
   distanceToLine,
@@ -230,6 +232,71 @@ describe("alignToRail", () => {
     }
   });
 
+  describe("a fix that jumps near another track and back", () => {
+    /** The ride on the main line past the parallel line (12 to 16 km), the fixes at `at` shifted by `dy` metres. */
+    const jumped = (at: readonly number[], dy: number) =>
+      align(
+        railRide(subPath(trackA, 11_000, 17_500), {
+          intervalS: 5,
+          noiseM: 3,
+          accuracy: 15,
+          seed: 9,
+        }).map((point, index) => {
+          if (!at.includes(index)) return point;
+          const [x, y] = toXY({ lat: point.lat, lon: point.lon });
+          const [lon, lat] = toLonLat(x, y + dy);
+          return { ...point, lat, lon };
+        }),
+      );
+    const mainTracks = [trackA, trackB] as Vertex[][];
+    const distanceToMain = (lonLat: readonly [number, number]): number => {
+      const vertex = toXY({ lon: lonLat[0], lat: lonLat[1] });
+      return Math.min(...mainTracks.map((line) => distanceToLine(vertex, line)));
+    };
+
+    it("passes two fixes that jumped 150 m onto the second line as outliers, the line staying on the main tracks", () => {
+      const aligned = jumped([20, 21], -150);
+      expect(aligned.stats.runs).toBe(1);
+      expect(aligned.points[20]?.outlier).toBe(true);
+      expect(aligned.points[21]?.outlier).toBe(true);
+      expect(aligned.points.filter((point) => point.outlier).length).toBe(2);
+      for (const vertex of servedVertices(aligned.points)) {
+        expect(distanceToMain(vertex)).toBeLessThan(1);
+      }
+      // Not even a short straight leg: the jump is no longer followed there and back.
+      for (const point of aligned.points) expect(point.bridgedLegM).toBeLessThanOrEqual(4.5);
+      expect(aligned.points.every((point) => !point.outlier || point.run === 0)).toBe(true);
+    });
+
+    it("counts the outliers the jump forced in the verdict's outlier share, and the part stays aligned", () => {
+      const aligned = jumped([20, 21], -150);
+      const verdict = judgeRailPath(
+        aligned.kept,
+        aligned.points,
+        defaultProcessingConfig.rail.judge,
+        "cache",
+      );
+      expect(verdict.outlierShare).toBeGreaterThan(0.005);
+      expect(verdict.outlierShare).toBeLessThan(0.15);
+      expect(verdict).toMatchObject({ status: "aligned", bridgedMaxSpeedMs: 0 });
+    });
+
+    it("passes a single fix that jumped as an outlier", () => {
+      const aligned = jumped([20], -150);
+      expect(aligned.points[20]?.outlier).toBe(true);
+      expect(aligned.points.filter((point) => point.outlier).length).toBe(1);
+      for (const point of aligned.points) expect(point.bridgedLegM).toBe(0);
+    });
+
+    it("may take a jump onto track B of the double track, 4.5 m away: it is within the noise", () => {
+      const aligned = jumped([20, 21], 4.5);
+      for (const vertex of servedVertices(aligned.points)) {
+        expect(distanceToMain(vertex)).toBeLessThan(1);
+      }
+      for (const point of aligned.points) expect(point.bridgedLegM).toBe(0);
+    });
+  });
+
   it("passes a wrong jump of two points along the rails as outliers", () => {
     const raw = railRide(subPath(trackA, 20_000, 28_000), { intervalS: 5, noiseM: 3, seed: 6 }).map(
       (point, index) => {
@@ -282,6 +349,10 @@ describe("alignToRail", () => {
     expect(bridged?.routed).toBe(false);
     expect(bridged?.bridgedLegM).toBeGreaterThan(90_000);
     expect(bridged?.path).toBeNull();
+    // Kept for tuning: the speed the straight leg implies (97.5 km in 3250 s).
+    expect(bridged?.bridgedSpeedMs).toBeGreaterThan(29);
+    expect(bridged?.bridgedSpeedMs).toBeLessThan(31);
+    expect(near.points.every((point) => point.bridgedSpeedMs === 0)).toBe(true);
     expect(far.stats.runs).toBe(1);
   });
 
@@ -321,6 +392,13 @@ describe("alignToRail", () => {
     expect(aligned.stats.searches).toBe(0);
     expect(aligned.points.every((point) => point.lat === null && point.run === -1)).toBe(true);
     expect(graph).not.toHaveBeenCalled();
+    // The points that entered the model are marked whether or not a run took them in, so the
+    // judge sees a part of enough steps with no rail in reach: no_rail, not "too short".
+    expect(aligned.stats.steps).toBeGreaterThan(3);
+    expect(aligned.points.filter((point) => point.step).length).toBe(aligned.stats.steps);
+    expect(
+      judgeRailPath(points, aligned.points, defaultProcessingConfig.rail.judge, "cache"),
+    ).toMatchObject({ status: "no_rail", reason: "no_rail", coveredShare: 0 });
   });
 
   it("gives the same answer whatever order the map data comes in", () => {

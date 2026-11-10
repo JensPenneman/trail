@@ -21,6 +21,7 @@ import type {
   ManualTrip,
   MappedPoint,
   OverrideSpan,
+  RailPassStats,
   RailPathVerdict,
   RailPlace,
   RailPoint,
@@ -31,9 +32,10 @@ import type {
 } from "./pipelineTypes";
 import { combinePois, PoiIndex } from "./poiIndex";
 import type { ProcessingConfig } from "./processingConfig";
-import { alignToRail } from "./rail/alignToRail";
+import { alignToRail, type RailStats } from "./rail/alignToRail";
 import { judgeRailPath } from "./rail/judgeRailPath";
 import { type RailContext, railContext, trainNetwork } from "./rail/railNetwork";
+import { couldBeTrain } from "./rail/trainPlausible";
 import { scorePart, splitMove } from "./splitMoves";
 import { continuesStop, type StopShape } from "./stayParts";
 import { isAirborne, moveTiles, type TileKey } from "./tileCover";
@@ -72,8 +74,12 @@ export interface InferInputs {
 export interface RailInputs {
   /** Tiles whose rail ways are at hand: the cache's, and those a ready region covers. */
   available: ReadonlySet<TileKey>;
+  /** The tiles a ready region covers (a move with every tile among them counts as read from the region). */
+  covered?: ReadonlySet<TileKey>;
   /** The rail places of moves whose tiles only a region covers, read rail-only (`railPiece`). */
   stretches: readonly RailStretch[];
+  /** The moves (numbers in the plan) whose rail-only read the per-pass cap put off (`planRailReads`). */
+  deferred?: ReadonlySet<number>;
   /** Whether Overpass may still bring the tiles a move lacks (`no_map/waiting`); else nothing will (`outside_regions`). */
   waiting: boolean;
 }
@@ -113,14 +119,36 @@ export interface StretchMapping {
   mapped: MappedPoint[];
   ways: WaySamples;
   pois: PoiIndex;
-  /** The stretch's points on the railway (`first..last`); null with the aligner off. */
+  /** The stretch's points on the railway (`first..last`); null with the aligner off or for a move that cannot be a train. */
   rail: RailPoint[] | null;
+  /** What aligning it cost; null when it did not run. */
+  railCost: RailCost | null;
+}
+
+/** The work of one alignment: the core's statistics and the milliseconds it took. */
+export interface RailCost {
+  stats: RailStats;
+  ms: number;
 }
 
 /** The rail places of one stretch, read from a rail-only piece. */
 export interface RailStretch {
   stretch: Stretch;
-  rail: RailPoint[];
+  rail: RailPoint[] | null;
+  railCost: RailCost | null;
+}
+
+/** Adds the cost of one alignment to a pass's statistics. */
+export function addRailCost(total: RailPassStats, cost: RailCost | null): void {
+  if (cost === null) return;
+  total.alignedStretches += 1;
+  total.alignMs += cost.ms;
+  total.steps += cost.stats.steps;
+  total.runs += cost.stats.runs;
+  total.searches += cost.stats.searches;
+  total.settledNodes += cost.stats.settledNodes;
+  total.maxSearchBoundM = Math.max(total.maxSearchBoundM, cost.stats.maxSearchBoundM);
+  total.maxSearchHops = Math.max(total.maxSearchHops, cost.stats.maxSearchHops);
 }
 
 /** Averaged level, stops and moves, and the tiles the moves need, piece by piece. */
@@ -161,19 +189,59 @@ export function piecesToMap(plan: WindowPlan, available: ReadonlySet<TileKey>): 
 }
 
 /**
- * The pieces of the moves only a region covers: not all their tiles cached,
- * all of them rail-available (cache or region). Their rail ways are read
- * rail-only and aligned (`railPiece`); their mapped level stays as it is.
+ * The pieces of the moves only a region (or the cache, with Overpass off)
+ * covers: not all their tiles cached for the mapped level, all of them
+ * rail-available, and the move could be a train at all. Their rail ways are
+ * read rail-only and aligned (`railPiece`); their mapped level stays as it is.
  */
 export function piecesToAlign(
   plan: WindowPlan,
   available: ReadonlySet<TileKey>,
   railAvailable: ReadonlySet<TileKey>,
+  config: ProcessingConfig,
 ): MapPiece[] {
   return piecesOfMoves(
     plan,
-    plan.moves.map((move) => !covered(move, available) && railCovered(move, railAvailable)),
+    plan.moves.map(
+      (move, number) =>
+        !covered(move, available) &&
+        railCovered(move, railAvailable) &&
+        plausibleMove(plan, number, config),
+    ),
   );
+}
+
+/** Whether a move of the plan could be a train (`couldBeTrain`); false for a move the plan does not have. */
+function plausibleMove(plan: WindowPlan, move: number, config: ProcessingConfig): boolean {
+  const planned = plan.moves[move];
+  return (
+    planned !== undefined &&
+    couldBeTrain(plan.kept.slice(planned.first, planned.last + 1), config.rail)
+  );
+}
+
+/**
+ * The rail-only reads of a pass within `maxTiles` tiles in all, in the order
+ * of the pieces: a piece that would go beyond is not read and its moves are
+ * deferred (`no_map/deferred`; they keep their recorded line until a later
+ * pass over their window judges them again).
+ */
+export function planRailReads(
+  pieces: readonly MapPiece[],
+  maxTiles: number,
+): { reads: MapPiece[]; deferred: Set<number> } {
+  const reads: MapPiece[] = [];
+  const deferred = new Set<number>();
+  let tiles = 0;
+  for (const piece of pieces) {
+    if (tiles + piece.tiles.size <= maxTiles) {
+      reads.push(piece);
+      tiles += piece.tiles.size;
+    } else {
+      for (const stretch of piece.stretches) deferred.add(stretch.move);
+    }
+  }
+  return { reads, deferred };
 }
 
 const railCovered = (move: PlannedMove, railAvailable: ReadonlySet<TileKey>): boolean =>
@@ -235,12 +303,18 @@ export function mapPiece(
         { index, graphs },
         config.mapping,
       ).slice(stretch.first - stretch.from, stretch.last - stretch.from + 1);
+    // A move that cannot be a train (a walk in town) is not aligned: it costs the aligner nothing.
+    const aligned =
+      rail === null || !couldBeTrain(points, config.rail)
+        ? null
+        : alignStretch(points, stretch, rail, config);
     return {
       stretch,
       mapped,
       ways: sampleWays(points, stretch, index, config.features),
       pois,
-      rail: rail === null ? null : alignStretch(points, stretch, rail, config),
+      rail: aligned?.points ?? null,
+      railCost: aligned?.cost ?? null,
     };
   });
 }
@@ -259,16 +333,19 @@ const pieceProjection = (plan: WindowPlan, piece: MapPiece): LocalProjection =>
   );
 
 /** A stretch's points on the railway, matched over `from..to` like the mapped level and cut to `first..last`. */
-const alignStretch = (
+function alignStretch(
   points: readonly KeptPoint[],
   stretch: Stretch,
   rail: RailContext,
   config: ProcessingConfig,
-): RailPoint[] =>
-  alignToRail(points.slice(stretch.from, stretch.to + 1), rail, config.rail).points.slice(
-    stretch.first - stretch.from,
-    stretch.last - stretch.from + 1,
-  );
+): { points: RailPoint[]; cost: RailCost } {
+  const started = performance.now();
+  const aligned = alignToRail(points.slice(stretch.from, stretch.to + 1), rail, config.rail);
+  return {
+    points: aligned.points.slice(stretch.first - stretch.from, stretch.last - stretch.from + 1),
+    cost: { stats: aligned.stats, ms: performance.now() - started },
+  };
+}
 
 /**
  * The rail places of a piece of moves only a region covers, over their rail
@@ -282,21 +359,35 @@ export function railPiece(
   config: ProcessingConfig,
 ): RailStretch[] {
   const rail = railContext(new WayIndex(map, pieceProjection(plan, piece)), trainNetwork);
-  return piece.stretches.map((stretch) => ({
-    stretch,
-    rail: alignStretch(stretchMovePoints(plan, stretch), stretch, rail, config),
-  }));
+  return piece.stretches.map((stretch) => {
+    const aligned = alignStretch(stretchMovePoints(plan, stretch), stretch, rail, config);
+    return { stretch, rail: aligned.points, railCost: aligned.cost };
+  });
 }
 
-/** A move's rail places put together from its stretches; null when a stretch is missing. */
+/**
+ * A move's rail places put together from its stretches; null when a stretch is
+ * missing. Each stretch numbers its runs from 0: a stretch's are shifted by
+ * the highest number before it, so that the run a seam cuts through keeps one
+ * number across it and runs further on never clash (the judge compares them).
+ */
 function assembleRail(
   count: number,
   parts: readonly { stretch: Stretch; rail: RailPoint[] | null }[],
 ): RailPoint[] | null {
   const places: RailPoint[] = [];
+  let highest = 0;
   for (const part of [...parts].sort((a, b) => a.stretch.first - b.stretch.first)) {
     if (part.rail === null || part.stretch.first !== places.length) return null;
-    for (const place of part.rail) places.push(place);
+    const shift = highest;
+    for (const place of part.rail) {
+      if (place.run < 0) {
+        places.push(place);
+        continue;
+      }
+      highest = Math.max(highest, place.run + shift);
+      places.push(shift === 0 ? place : { ...place, run: place.run + shift });
+    }
   }
   return places.length === count ? places : null;
 }
@@ -441,9 +532,11 @@ export function inferWindow(
     } else if (inputs.mapping) {
       for (const tile of move.tiles) if (!inputs.available.has(tile)) missing.add(tile);
     }
-    if (rail !== null && !move.airborne) {
+    // A move that cannot be a train is not aligned and has no verdict, whatever its tiles.
+    if (rail !== null && !move.airborne && couldBeTrain(points, config.rail)) {
       const found = railOfMove(
         move,
+        moveNumber,
         points.length,
         inputs.mapping && covered(move, inputs.available)
           ? { from: "cache", parts: byMove.get(moveNumber) ?? [] }
@@ -514,10 +607,11 @@ export function inferWindow(
 /** What a move's rail line rests on: places read from the cache's or a region's rail ways, or no data. */
 type RailMove =
   | { places: RailPoint[]; source: "cache" | "region" }
-  | { places: null; reason: "waiting" | "outside_regions" };
+  | { places: null; reason: "waiting" | "outside_regions" | "deferred" };
 
 function railOfMove(
   move: PlannedMove,
+  moveNumber: number,
   count: number,
   read: {
     from: "cache" | "region";
@@ -525,9 +619,18 @@ function railOfMove(
   },
   rail: RailInputs,
 ): RailMove | null {
+  if (read.from === "region" && rail.deferred?.has(moveNumber) === true) {
+    return { places: null, reason: "deferred" };
+  }
   if (read.from === "cache" || railCovered(move, rail.available)) {
     const places = assembleRail(count, read.parts);
-    return places === null ? null : { places, source: read.from };
+    if (places === null) return null;
+    // Read from a region wherever it covers every tile; a tile only the cache holds makes it the cache's.
+    const source =
+      read.from === "region" && rail.covered !== undefined && !railCovered(move, rail.covered)
+        ? "cache"
+        : read.from;
+    return { places, source };
   }
   return { places: null, reason: rail.waiting ? "waiting" : "outside_regions" };
 }
@@ -563,6 +666,7 @@ function judgePart(
       p90Z: 0,
       medianOffsetM: 0,
       outlierShare: 0,
+      bridgedMaxSpeedMs: 0,
       lengthM: Math.round(lengthM),
     };
   }

@@ -6,7 +6,7 @@ import type { WayCandidate } from "../wayIndex";
 import type { RailContext } from "./railNetwork";
 
 /** What the alignment did, for the performance bounds and the logs. */
-interface RailStats {
+export interface RailStats {
   /** Points that entered the model. */
   steps: number;
   /** Runs kept (long enough). */
@@ -15,6 +15,10 @@ interface RailStats {
   searches: number;
   /** Nodes those searches settled. */
   settledNodes: number;
+  /** The largest distance bound a search was given, metres (never past `maxRouteM`). */
+  maxSearchBoundM: number;
+  /** The most way changes a search was allowed (`maxHops`; 0 when none ran). */
+  maxSearchHops: number;
 }
 
 export interface RailAlignment {
@@ -50,6 +54,7 @@ const unplaced = (): RailPoint => ({
   routed: false,
   legM: 0,
   bridgedLegM: 0,
+  bridgedSpeedMs: 0,
   path: null,
 });
 
@@ -68,7 +73,11 @@ const unplaced = (): RailPoint => ({
  *    without one while that stretch lasts at most `maxOutlierS` and
  *    `maxOutlierM`; a run shorter than `minRunM` is dropped. A walk far from
  *    any track has no run and costs a grid lookup per step.
- * 3. Viterbi per run. A transition is a route on the rail graph within
+ * 3. Viterbi per run. Every step may also be an outlier (a fix that jumped
+ *    onto another track or line and back): up to `maxOutlierSteps` in a row
+ *    are skipped for `outlierCost` each, and their points lie along the leg
+ *    between the steps on either side, as the points of a gap do. A
+ *    transition is a route on the rail graph within
  *    min(maxRouteM, routeFactor × chord + slack, maxSpeedMs × seconds + slack)
  *    and `maxHops` way changes; its cost grows with |route − chord| and a
  *    little with a change of way. Without a route the leg costs `breakCost`
@@ -86,7 +95,14 @@ export function alignToRail(
   const { index, network } = context;
   const projection = index.projection;
   const result: RailPoint[] = points.map(unplaced);
-  const stats: RailStats = { steps: 0, runs: 0, searches: 0, settledNodes: 0 };
+  const stats: RailStats = {
+    steps: 0,
+    runs: 0,
+    searches: 0,
+    settledNodes: 0,
+    maxSearchBoundM: 0,
+    maxSearchHops: 0,
+  };
   if (points.length < 2) return { points: result, stats };
   const xs = points.map((point) => projection.x(point.lon));
   const ys = points.map((point) => projection.y(point.lat));
@@ -110,6 +126,11 @@ export function alignToRail(
   }
   stats.steps = chosen.length;
   const isStep = new Set(chosen);
+  // Whether a point entered the model does not depend on a run: a part without one is short of steps no more than of rail.
+  for (const position of chosen) {
+    const entry = result[position];
+    if (entry !== undefined) entry.step = true;
+  }
   const sideServices = new Set(network.sideServices);
   const steps: Step[] = chosen.map((position) => {
     const sigma = sigmaOf(position);
@@ -170,6 +191,14 @@ export function alignToRail(
       config.maxSpeedMs * Math.max(1, to.t - from.t) + config.routeSlackM,
     );
 
+  const search = (source: WayCandidate, targets: WayCandidate[], from: Step, to: Step) => {
+    const limit = bound(from, to);
+    graph.search(source, targets, limit, config.maxHops);
+    stats.searches += 1;
+    stats.maxSearchBoundM = Math.max(stats.maxSearchBoundM, limit);
+    stats.maxSearchHops = config.maxHops;
+  };
+
   for (const [runNumber, run] of runs.entries()) {
     // Viterbi, forward, over the run's steps.
     const cost: Float64Array[] = run.map(
@@ -184,57 +213,70 @@ export function alignToRail(
       for (const [stateIndex, state] of firstStep.states.entries())
         firstCost[stateIndex] = state.emission;
     }
+    // How many steps back the best way into a state came from: 1, or more when steps were skipped as outliers.
+    const jump: Int8Array[] = run.map((stepIndex) =>
+      new Int8Array(steps[stepIndex]?.states.length ?? 0).fill(1),
+    );
     for (let k = 1; k < run.length; k += 1) {
-      const from = steps[run[k - 1] ?? 0];
       const to = steps[run[k] ?? 0];
       const here = cost[k];
-      const before = cost[k - 1];
       const pointers = back[k];
-      if (
-        from === undefined ||
-        to === undefined ||
-        here === undefined ||
-        before === undefined ||
-        pointers === undefined
-      )
+      const jumps = jump[k];
+      if (to === undefined || here === undefined || pointers === undefined || jumps === undefined)
         continue;
       here.fill(Number.POSITIVE_INFINITY);
-      const distance = chord(from, to);
-      const beta = Math.max(config.betaMinM, config.betaChordFactor * distance);
-      const limit = bound(from, to);
       const targets = to.states.map((state) => state.candidate);
-      for (const [fromIndex, source] of from.states.entries()) {
-        const base = before[fromIndex] ?? Number.POSITIVE_INFINITY;
-        if (!Number.isFinite(base)) continue;
-        graph.search(source.candidate, targets, limit, config.maxHops);
-        stats.searches += 1;
-        for (const [toIndex, target] of to.states.entries()) {
-          const route = graph.distanceTo(target.candidate);
-          const transition = Number.isFinite(route)
-            ? Math.abs(route - distance) / beta +
-              (source.candidate.way === target.candidate.way ? 0 : config.wayChangeCost)
-            : config.breakCost;
-          const total = base + transition + target.emission;
-          if (total < (here[toIndex] ?? Number.POSITIVE_INFINITY)) {
-            here[toIndex] = total;
-            pointers[toIndex] = fromIndex;
+      for (let skipped = 0; skipped <= config.maxOutlierSteps && skipped < k; skipped += 1) {
+        const before = cost[k - 1 - skipped];
+        const from = steps[run[k - 1 - skipped] ?? 0];
+        if (before === undefined || from === undefined) continue;
+        const extra = skipped * config.outlierCost;
+        if (skipped > 0) {
+          // The skip cannot beat what is known when even its cheapest start plus the outliers costs more.
+          let cheapest = Number.POSITIVE_INFINITY;
+          for (const value of before) cheapest = Math.min(cheapest, value);
+          let worst = 0;
+          for (const value of here) worst = Math.max(worst, value);
+          if (cheapest + extra >= worst) continue;
+        }
+        const distance = chord(from, to);
+        const beta = Math.max(config.betaMinM, config.betaChordFactor * distance);
+        for (const [fromIndex, source] of from.states.entries()) {
+          const base = before[fromIndex] ?? Number.POSITIVE_INFINITY;
+          if (!Number.isFinite(base)) continue;
+          search(source.candidate, targets, from, to);
+          for (const [toIndex, target] of to.states.entries()) {
+            const route = graph.distanceTo(target.candidate);
+            const transition = Number.isFinite(route)
+              ? Math.abs(route - distance) / beta +
+                (source.candidate.way === target.candidate.way ? 0 : config.wayChangeCost)
+              : config.breakCost;
+            const total = base + extra + transition + target.emission;
+            if (total < (here[toIndex] ?? Number.POSITIVE_INFINITY)) {
+              here[toIndex] = total;
+              pointers[toIndex] = fromIndex;
+              jumps[toIndex] = skipped + 1;
+            }
           }
         }
       }
     }
 
-    // Backtrack.
-    const chosenState = new Int32Array(run.length);
+    // Backtrack: the steps the best path stands on, the ones it skipped left out.
     const lastCost = cost.at(-1);
     if (lastCost === undefined) continue;
     let best = 0;
     for (let stateIndex = 1; stateIndex < lastCost.length; stateIndex += 1) {
       if ((lastCost[stateIndex] ?? 0) < (lastCost[best] ?? 0)) best = stateIndex;
     }
-    chosenState[run.length - 1] = best;
-    for (let k = run.length - 1; k > 0; k -= 1) {
-      chosenState[k - 1] = back[k]?.[chosenState[k] ?? 0] ?? 0;
+    const path: { k: number; state: number }[] = [{ k: run.length - 1, state: best }];
+    for (;;) {
+      const here = path[path.length - 1];
+      if (here === undefined || here.k === 0) break;
+      const hop = jump[here.k]?.[here.state] ?? 1;
+      path.push({ k: here.k - hop, state: back[here.k]?.[here.state] ?? 0 });
     }
+    path.reverse();
 
     // Placement.
     const place = (
@@ -255,25 +297,28 @@ export function alignToRail(
       Object.assign(entry, extra);
     };
     const first = steps[run[0] ?? 0];
-    const firstState = first?.states[chosenState[0] ?? 0]?.candidate;
+    const firstState = first?.states[path[0]?.state ?? 0]?.candidate;
     if (first === undefined || firstState === undefined) continue;
     place(first.position, firstState, {});
-    for (let k = 1; k < run.length; k += 1) {
-      const from = steps[run[k - 1] ?? 0];
-      const to = steps[run[k] ?? 0];
-      const source = from?.states[chosenState[k - 1] ?? 0]?.candidate;
-      const target = to?.states[chosenState[k] ?? 0]?.candidate;
+    for (let at = 1; at < path.length; at += 1) {
+      const before = path[at - 1];
+      const here = path[at];
+      const from = steps[run[before?.k ?? 0] ?? 0];
+      const to = steps[run[here?.k ?? 0] ?? 0];
+      const source = from?.states[before?.state ?? 0]?.candidate;
+      const target = to?.states[here?.state ?? 0]?.candidate;
       if (from === undefined || to === undefined || source === undefined || target === undefined)
         continue;
-      graph.search(source, [target], bound(from, to), config.maxHops);
-      stats.searches += 1;
+      search(source, [target], from, to);
       const route = graph.pathTo(target);
       // A leg without a route is drawn straight between the two places.
       const leg = legOf(route, source, target);
       const legEnd = leg.along.at(-1) ?? 0;
       const routed = route !== null;
       const bridgedLegM = routed ? 0 : legEnd;
-      const hasOutliers = (run[k] ?? 0) - (run[k - 1] ?? 0) > 1;
+      // For tuning: how fast the straight leg would have been travelled.
+      const bridgedSpeedMs = routed ? 0 : chord(from, to) / Math.max(1, to.t - from.t);
+      const hasOutliers = (run[here?.k ?? 0] ?? 0) - (run[before?.k ?? 0] ?? 0) > 1;
       const seconds = to.t - from.t;
       let along = 0;
       for (let position = from.position + 1; position <= to.position; position += 1) {
@@ -295,6 +340,7 @@ export function alignToRail(
           routed,
           legM: spot.along - along,
           bridgedLegM,
+          bridgedSpeedMs,
           path:
             between.length === 0
               ? null

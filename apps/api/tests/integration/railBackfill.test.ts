@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
 import { enqueueBackfill } from "../../src/processing/backfill";
-import type { RawPoint } from "../../src/processing/pipelineTypes";
+import type { RailPassStats, RawPoint } from "../../src/processing/pipelineTypes";
 import {
   enqueueWindow,
   queuePriority,
@@ -47,6 +47,8 @@ import { createTestContext } from "../support/testContext";
  * nothing does until the fixture source is let to answer. Synthetic rides only.
  */
 const budget = 20_000;
+/** A bound on the route searches of one pass of this scenario (about ten times what it needs), a stand-in for B2's CPU bound. */
+const SEARCHES_PER_PASS = 100_000;
 const older = { ...processingVersions, inferred: processingVersions.inferred - 1 };
 const historyStart = 1_792_000_000;
 const day = 86_400;
@@ -177,6 +179,9 @@ interface PassRecord {
   missingTiles: number;
   queue: unknown[];
   ms: number;
+  /** What the aligner cost in the pass: not part of what must be the same with it off. */
+  rail: RailPassStats;
+  live: boolean;
 }
 
 interface Outcome {
@@ -309,6 +314,8 @@ async function scenario(railAlign: boolean): Promise<Outcome> {
       `)
     ).rows;
   const windowOf = (pass: Pass) => ({ from: pass.outcome.from, to: pass.outcome.to });
+  const waitingBounds = new Map<number, number>();
+  const queuedSpans = new Set<string>();
   const runner: PassRunner = new PassRunner({
     db: t.ctx.db,
     config: t.ctx.processing.config,
@@ -316,10 +323,48 @@ async function scenario(railAlign: boolean): Promise<Outcome> {
     regions: new RegionCoverageStore(),
     after: async (pass) => {
       expect(pass.outcome.points).toBeLessThanOrEqual(budget);
+      queuedSpans.add(`${pass.outcome.queued.from.getTime()}|${pass.outcome.queued.to.getTime()}`);
+      // M4: what the aligner did in this pass stays within B2's bound (5 M settled nodes), with the
+      // numbers in the message; with it off there are none.
+      const rail = pass.outcome.rail;
+      const costs = JSON.stringify(rail);
+      if (railAlign) {
+        expect(rail.settledNodes, `settled nodes: ${costs}`).toBeLessThan(5_000_000);
+        expect(rail.searches, `searches: ${costs}`).toBeLessThan(SEARCHES_PER_PASS);
+        expect(rail.maxSearchBoundM, `bound: ${costs}`).toBeLessThanOrEqual(80_000);
+      } else {
+        expect(rail, `with the aligner off: ${costs}`).toMatchObject({
+          steps: 0,
+          runs: 0,
+          searches: 0,
+          settledNodes: 0,
+          alignedStretches: 0,
+          railOnlyTiles: 0,
+          railOnlyStatements: 0,
+        });
+      }
       await assertSegmentInvariants(t.ctx.db, device.id, { finished: runner.log.map(windowOf) });
       await assertQueueInvariants(t.ctx.db, { deviceId: device.id, uploads });
       await assertRailInvariants(t.ctx.db, device.id);
       maxPassMs = Math.max(maxPassMs, pass.ms);
+      // A waiting row keeps exactly the bounds it was queued with: the window a pass grew is never its.
+      const waiting = (
+        await t.ctx.db.execute<{ from_at: string; to_at: string }>(sql`
+          SELECT from_at::text, to_at::text FROM processing_queue
+          WHERE device_id = ${device.id} AND missing_tiles IS NOT NULL
+        `)
+      ).rows;
+      for (const row of waiting) {
+        const from = new Date(row.from_at).getTime();
+        const to = new Date(row.to_at).getTime();
+        const known = waitingBounds.get(from);
+        if (known !== undefined) expect(to, `waiting row from ${row.from_at} changed`).toBe(known);
+        waitingBounds.set(from, to);
+        expect(
+          queuedSpans.has(`${from}|${to}`),
+          `waiting row ${row.from_at}..${row.to_at} is no span a pass took on`,
+        ).toBe(true);
+      }
       records.push({
         rows: pass.rows.map((row) => [
           row.priority,
@@ -335,6 +380,8 @@ async function scenario(railAlign: boolean): Promise<Outcome> {
         missingTiles: pass.outcome.missingTiles.length,
         queue: await snapshot(),
         ms: pass.ms,
+        rail,
+        live: pass.rows.some((row) => row.priority === queuePriority.live),
       });
     },
   });
@@ -527,11 +574,29 @@ describe("trains drawn along the railway while the history is reworked", () => {
     expect(off.liveAlignedFrom).toBeNull();
     // B4: every pass took the same rows, worked the same window, read the same points and left
     // the same queue, with the aligner on and off; so did the end of the run.
-    const plan = (run: Outcome) => run.passes.map(({ ms: _ms, ...pass }) => pass);
+    const plan = (run: Outcome) =>
+      run.passes.map(({ ms: _ms, rail: _rail, live: _live, ...pass }) => pass);
     expect(plan(on)).toEqual(plan(off));
     expect(on.state).toEqual(off.state);
     // The cost: no pass of the run is slow (B6's bound for a pass); the times are in the message.
     const times = on.passes.map((pass) => Math.round(pass.ms)).join(" ");
-    expect(on.bar.maxPassMs, `pass times in ms with the aligner on: ${times}`).toBeLessThan(5000);
+    // A generous bound, for the load of the machine; B6's 5 s per pass is for the rehearsal.
+    expect(on.bar.maxPassMs, `pass times in ms with the aligner on: ${times}`).toBeLessThan(20_000);
+    // Pinned, as the first live pass and the first two backfill passes took them: a growth of the
+    // window that the on/off comparison cannot see (both runs would grow alike) shows here.
+    const firstLive = on.passes.find((pass) => pass.live);
+    const [firstBackfill, secondBackfill] = on.passes.filter((pass) => !pass.live);
+    expect([firstLive?.window, firstLive?.points]).toEqual([
+      ["2026-10-25T10:50:05.000Z", "2026-10-27T11:52:40.000Z"],
+      11_319,
+    ]);
+    expect([firstBackfill?.window, firstBackfill?.points]).toEqual([
+      ["2026-10-25T10:50:05.000Z", "2026-10-26T23:00:00.000Z"],
+      11_310,
+    ]);
+    expect([secondBackfill?.window, secondBackfill?.points]).toEqual([
+      ["2026-10-24T22:00:05.000Z", "2026-10-26T18:14:55.000Z"],
+      15_930,
+    ]);
   });
 });

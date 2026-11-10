@@ -125,16 +125,19 @@ async function processedRows(
   deviceId: string,
   page: readonly LocationRow[],
   level: ProcessingLevel,
+  railAlign: boolean,
 ): Promise<ProcessedRow[]> {
   const first = page[0];
   const last = page.at(-1);
   if (level === "raw" || first === undefined || last === undefined) return [];
+  // With the kill switch off the rail places are not even read (docs/architecture.md §17.3).
+  const withRail = level === "inferred" && railAlign;
   const rows = await db.execute<ProcessedRow>(sql`
     SELECT extract(epoch FROM recorded_at)::float8 AS t, kept, lat_avg, lon_avg, lat_map, lon_map,
       speed_avg, ${level === "averaged" ? sql`NULL::jsonb` : sql`path_map`} AS path_map,
-      ${level === "inferred" ? sql`lat_rail` : sql`NULL::float8`} AS lat_rail,
-      ${level === "inferred" ? sql`lon_rail` : sql`NULL::float8`} AS lon_rail,
-      ${level === "inferred" ? sql`path_rail` : sql`NULL::jsonb`} AS path_rail
+      ${withRail ? sql`lat_rail` : sql`NULL::float8`} AS lat_rail,
+      ${withRail ? sql`lon_rail` : sql`NULL::float8`} AS lon_rail,
+      ${withRail ? sql`path_rail` : sql`NULL::jsonb`} AS path_rail
     FROM processed_points
     WHERE device_id = ${deviceId}
       AND recorded_at >= ${first.recorded_at}::timestamptz
@@ -156,6 +159,7 @@ async function servedPoints(
   level: ProcessingLevel,
   ends: ReadonlySet<number>,
   values: readonly LevelValue[],
+  railAlign: boolean,
 ): Promise<Served[]> {
   const count = await db.execute<{ count: number }>(sql`
     SELECT count(*)::int AS count FROM locations
@@ -183,7 +187,7 @@ async function servedPoints(
       ORDER BY recorded_at
       LIMIT ${pageSize}
     `);
-    const processed = await processedRows(db, deviceId, page.rows, level);
+    const processed = await processedRows(db, deviceId, page.rows, level, railAlign);
     // Both ordered by time, every processed point one of the page's: they merge in one pass.
     let next = 0;
     for (const row of page.rows) {
@@ -331,6 +335,7 @@ function piecesOfSegments(
   deviceId: string,
   served: Served[],
   rows: readonly SegmentRow[],
+  railAlign: boolean,
 ): Piece[] {
   const pieces: Piece[] = [];
   let loose: Served[] = [];
@@ -346,7 +351,7 @@ function piecesOfSegments(
   };
   let index = 0;
   for (const row of rows) {
-    const segment = toSegment(row);
+    const segment = toSegment(row, railAlign);
     const start = Date.parse(segment.startedAt) / 1000;
     const end = Date.parse(segment.endedAt) / 1000;
     while (index < served.length && (served[index]?.t ?? 0) < start) {
@@ -456,6 +461,8 @@ export async function loadLevelTracks(
     level: ProcessingLevel;
     maxPoints: number;
     values?: readonly LevelValue[];
+    /** `PROCESSING_RAIL_ALIGN`: off, no line is drawn along the rails, whatever is stored. */
+    railAlign: boolean;
   },
 ): Promise<LevelTracksResponse> {
   const values = query.values ?? [];
@@ -482,12 +489,20 @@ export async function loadLevelTracks(
         ends.add(Math.round(Date.parse(toIso(row.ended_at)) / 1000));
         ends.add(Math.round(ownEndOf(row)));
       }
-      const served = await servedPoints(db, device.id, query, query.level, ends, values);
-      pieces = piecesOfSegments(device.id, served, rows.rows);
+      const served = await servedPoints(
+        db,
+        device.id,
+        query,
+        query.level,
+        ends,
+        values,
+        query.railAlign,
+      );
+      pieces = piecesOfSegments(device.id, served, rows.rows, query.railAlign);
     } else {
       pieces = splitAtGaps(
         device.id,
-        await servedPoints(db, device.id, query, query.level, new Set(), values),
+        await servedPoints(db, device.id, query, query.level, new Set(), values, query.railAlign),
       );
     }
     const lines = pieces.map(lineOf);

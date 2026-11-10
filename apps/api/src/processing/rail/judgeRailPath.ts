@@ -41,6 +41,7 @@ export function judgeRailPath(
   let alignedM = 0;
   let routedM = 0;
   let longestBridgedM = 0;
+  let bridgedMaxSpeedMs = 0;
   let steps = 0;
   let totalS = 0;
   let outlierS = 0;
@@ -63,7 +64,10 @@ export function judgeRailPath(
       if (place.routed) routedM += place.legM;
     }
     // The leg into the part's first point belongs to the segment before it: it is no leg of this part.
-    if (before !== undefined) longestBridgedM = Math.max(longestBridgedM, place.bridgedLegM);
+    if (before !== undefined) {
+      longestBridgedM = Math.max(longestBridgedM, place.bridgedLegM);
+      bridgedMaxSpeedMs = Math.max(bridgedMaxSpeedMs, place.bridgedSpeedMs);
+    }
     totalS += seconds;
     if (place.run >= 0 && place.outlier) outlierS += seconds;
     if (place.run >= 0 && !place.outlier && place.z !== null && place.offsetM !== null) {
@@ -116,6 +120,7 @@ export function judgeRailPath(
     p90Z: round(p90Z, 2),
     medianOffsetM: round(medianOffsetM, 1),
     outlierShare: round(outlierShare, 3),
+    bridgedMaxSpeedMs: round(bridgedMaxSpeedMs, 1),
     lengthM: Math.round(lengthM),
   };
 }

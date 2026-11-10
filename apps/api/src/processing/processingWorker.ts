@@ -215,6 +215,12 @@ export class ProcessingWorker {
               reason: rows[0]?.reason,
               priority: this.#lastPriority,
               split: outcome.split,
+              // What the aligner cost, without coordinates (docs/architecture.md §17.3).
+              rail: {
+                ...outcome.rail,
+                alignMs: Math.round(outcome.rail.alignMs),
+                railOnlyReadMs: Math.round(outcome.rail.railOnlyReadMs),
+              },
               ms: Math.round(performance.now() - started),
             },
             "processing window done",

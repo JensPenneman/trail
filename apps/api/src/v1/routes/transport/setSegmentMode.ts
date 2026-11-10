@@ -31,6 +31,7 @@ export const setSegmentMode = defineRoute(
       body.mode,
       principalSource(auth),
       ctx.config.processing.correctionWaitMs,
+      ctx.config.processing.railAlign,
     );
     ctx.bus.publish(auth.user.id, {
       type: "segments",

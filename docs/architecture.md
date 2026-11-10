@@ -303,7 +303,7 @@ All configuration is environment variables, validated at boot with zod
 | `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Map data for the mapped level; set but empty: none (§17.3) |
 | `PROCESSING_OVERPASS_DAILY_MB` | `300` | Map download budget per UTC day |
 | `PROCESSING_OSM_TTL_DAYS` | `90` | Map tiles are refreshed after this many days |
-| `PROCESSING_RAIL_ALIGN` | `true` | Train rides are drawn along the railway where the map data has it; `false` switches it off (§17.3, §17.7) |
+| `PROCESSING_RAIL_ALIGN` | `true` | Train rides are drawn along the railway where the map data has it; `false` hides the rail lines at once and stops the aligner (§17.3, §17.7) |
 | `PROCESSING_MAX_ACCURACY_M` | `150` | Less accurate points are dropped from the averaged level on |
 | `PROCESSING_STOP_MIN_S` | `180` | The shortest stop |
 | `PROCESSING_PASS_MAX_POINTS` | `60000` | A processing pass reads at most this many points (1 000 or more); bigger work is split first (§17.4) |
@@ -4984,7 +4984,28 @@ and the mapped and averaged levels are never altered. A move cut at a pass's
 edge keeps the `railPath` it had (`pieceValues` leaves it alone): only its
 `lengthM` is then that of the whole part judged, a figure for tuning that
 nothing serves; the line served is the stored points', cut where the move is.
-`PROCESSING_RAIL_ALIGN=false` stops it (§17.7). Metro and tram are not aligned.
+`PROCESSING_RAIL_ALIGN=false` stops it and hides what is stored at once, on the
+serving side alone (§17.7). Metro and tram are not aligned.
+
+Every step may also be an outlier, though a track is in reach (a fix that
+jumped onto the parallel line and back): up to three in a row are skipped for
+6 each (below the 10 of a straight leg), their points lying along the leg
+between the steps on either side and counting as outliers in the verdict,
+which also keeps the fastest speed any straight leg of the part implies
+(`bridgedMaxSpeedMs`), for tuning. A move that cannot be a train is not
+aligned and gets no verdict: under 1 km along its chords, or never faster than
+40 km/h (p90 of its kept speeds), so a walk or a bike ride costs no rail read
+and no alignment (a later correction of such a move to train stays recorded).
+A pass reads at most 512 rail-only tiles (the moves a region alone covers; the
+rest of a long backlog is `no_map` with the reason `deferred`, recorded, until
+a later pass over its window judges it again; nothing is queued for it), and
+a read takes the light columns of the tiles' ways first and the nodes and
+geometry only of the rail ways. With Overpass off the tiles the cache still
+holds count as rail data too. What the aligner cost is in `WindowOutcome.rail`
+and the worker's "processing window done" line (`rail`: steps, runs, searches,
+settled nodes, the largest bound and hop limit a search was given, aligned
+stretches and their milliseconds, moves left out as no train, deferred moves,
+rail-only tiles, statements and read milliseconds), without coordinates.
 
 **Features** of a move (`moveSeries`, `extractFeatures`), from its intervals:
 time-weighted median, p85 and p98 (top) speed — the points' own speeds for
@@ -5306,8 +5327,13 @@ interpolated times, its values as the way's shape has them), a point without
 one falling back to its mapped, else averaged place; the move counts as mapped
 for `level`. A correction away from train, or to train, therefore changes the
 next read and the ETag with it (`computed_at` moves), with no reprocessing; a
-verdict with no matching rail columns (a write by an older image) is served as
-recorded, never half and half. `mapped`, `averaged` and `raw`, `distanceM`,
+rail columns without a verdict (a write by an older image) are served as
+recorded; in an aligned move, a point without a rail place falls back to its
+mapped, else averaged place. With the kill switch off (`PROCESSING_RAIL_ALIGN=false`)
+`alignedTo` is null in every answer (the timeline, the tracks, the answers of
+`PUT` and `DELETE …/segments/{id}/mode`) and the rail columns are not read; the
+switch is part of the validator of the tracks' and the timeline's ETags, so a
+flip is never answered with `304`. `mapped`, `averaged` and `raw`, `distanceM`,
 the exports and the MCP tools are untouched: the recorded line is one click
 away (the Mapped level), and no MCP tool serves lines. Each
 device is simplified to `maxPoints` with one RDP tolerance over its pieces
@@ -5393,7 +5419,7 @@ also a past day's, which the calendar's digest no longer vouches for.
 | `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Overpass interpreter for map data; set but empty: no map data (mapped degrades to averaged) |
 | `PROCESSING_OVERPASS_DAILY_MB` | `300` | Map download budget per UTC day |
 | `PROCESSING_OSM_TTL_DAYS` | `90` | Map tiles are refreshed after this many days |
-| `PROCESSING_RAIL_ALIGN` | `true` | Train rides are drawn along the railway (§17.3, "Along the rails"). `false` is the kill switch: the aligner does not run and no verdict is written, so nothing is served aligned once windows are worked out again (`trail reprocess --from-level inferred` does that at once, and fills the history again after switching on) |
+| `PROCESSING_RAIL_ALIGN` | `true` | Train rides are drawn along the railway (§17.3, "Along the rails"). `false` is the kill switch: the API serves no line along the rails (`alignedTo` is null everywhere, the points are the mapped or averaged ones, the ETags change) as soon as it has restarted, and the aligner does not run and writes no verdict from then on. Switching it queues nothing and changes no processing state, and it does not stop this release's inferred-4 backfill (which then works without the aligner). History worked out while it was off gets its rail line only through an explicit `trail reprocess --from-level inferred`; switching back on shows what is stored at once |
 | `PROCESSING_MAX_ACCURACY_M` | `150` | Points less accurate than this are left out from the averaged level on |
 | `PROCESSING_STOP_MIN_S` | `180` | A stop lasts at least this long |
 | `PROCESSING_PASS_MAX_POINTS` | `60000` | A pass reads at most this many raw points (at least 1 000): a bigger job is split first, and growth to whole segments stops at it (§17.4). A very large value restores unbounded passes |

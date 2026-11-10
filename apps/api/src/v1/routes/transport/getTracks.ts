@@ -39,7 +39,13 @@ export const getTracks = defineRoute(
     };
     // The raw level needs nothing of processing.
     const parts = query.level === "raw" ? "raw" : "processed";
-    const etag = weakEtag(auth.user.id, "getTracks", [asked, dayValidator(days, parts)]);
+    // The kill switch is part of the validator: flipping it changes the body without moving a day stamp.
+    const railAlign = ctx.config.processing.railAlign;
+    const etag = weakEtag(auth.user.id, "getTracks", [
+      asked,
+      dayValidator(days, parts),
+      { railAlign: query.level === "inferred" ? railAlign : null },
+    ]);
     if (etagMatches(ifNoneMatch, etag)) return { status: 304, etag };
     const tracks = await loadLevelTracks(ctx.db, auth, {
       devices: deviceIds,
@@ -48,6 +54,7 @@ export const getTracks = defineRoute(
       level: query.level,
       maxPoints: query.maxPoints,
       values: query.values ?? [],
+      railAlign,
     });
     return { status: 200, body: { ...tracks, stamps: dayStampsOf(days) }, etag };
   },

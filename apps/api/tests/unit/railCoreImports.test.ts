@@ -22,7 +22,12 @@ describe("the rail core", () => {
   const files = readdirSync(dir).filter((name) => name.endsWith(".ts"));
 
   it("has the files of the plan", () => {
-    expect(files.sort()).toEqual(["alignToRail.ts", "judgeRailPath.ts", "railNetwork.ts"]);
+    expect(files.sort()).toEqual([
+      "alignToRail.ts",
+      "judgeRailPath.ts",
+      "railNetwork.ts",
+      "trainPlausible.ts",
+    ]);
   });
 
   it.each(files)(

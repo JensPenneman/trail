@@ -14,6 +14,7 @@ import { importRailRegion, removeRailRegionBuilds } from "../support/railRegionB
 import { railTrip } from "../support/railTrips";
 import { railWorld, trackA } from "../support/railWorld";
 import { resetDatabase } from "../support/resetDatabase";
+import { watchStatements } from "../support/statementCounter";
 import { distanceToLine, subPath, toXY, type Vertex } from "../support/syntheticWorld";
 import { createTestContext, type TestContext } from "../support/testContext";
 import { testOrigin } from "../support/testEnvironment";
@@ -154,6 +155,46 @@ describe("with Overpass off", () => {
     }
   });
 
+  it("reads rail ways for a train and for no walk or bike: walks add no rail-only statement", async () => {
+    const walker = await newDevice("Walking in the region");
+    const cyclist = await newDevice("Cycling in the region");
+    const rider = await newDevice("Riding in the region");
+    const walk = railTrip(
+      [
+        [20_000, 3000],
+        [21_500, 3000],
+      ],
+      { startT: base + 20 * hour, intervalS: 2, speedMs: 1.4, noiseM: 3, accuracy: 8, seed: 7 },
+    );
+    const bike = railTrip(
+      [
+        [22_000, 3000],
+        [26_500, 3000],
+      ],
+      { startT: base + 22 * hour, intervalS: 2, speedMs: 5, noiseM: 3, accuracy: 8, seed: 8 },
+    );
+    const watch = watchStatements(off.ctx.pool);
+    // The rail-only read is the one statement with the light first pass over the ways.
+    const railReads = () => watch.texts.filter((text) => /newest AS/.test(text)).length;
+    try {
+      await upload(walker.token, walk);
+      await upload(cyclist.token, bike);
+      watch.reset();
+      await off.ctx.processing.flush();
+      expect(railReads(), "walks and bikes read no rail ways").toBe(0);
+      for (const device of [walker, cyclist]) {
+        for (const move of await moves(device.id)) expect(move.status).toBeNull();
+        expect((await counts(device.id)).railed).toBe(0);
+      }
+      await upload(rider.token, ride(30_000, 40_000, base + 24 * hour, 9));
+      watch.reset();
+      await off.ctx.processing.flush();
+      expect(railReads(), "a train reads its rail ways").toBeGreaterThan(0);
+    } finally {
+      watch.stop();
+    }
+  });
+
   it("calls a train that leaves the region no_map/outside_regions and serves it as recorded", async () => {
     const device = await newDevice("Leaving the region");
     await upload(device.token, ride(40_000, 60_000, base + 6 * hour, 2));
@@ -212,9 +253,9 @@ describe("a region swapped between passes", () => {
     // A build of the same extract without railways: the tiles are covered and hold none.
     await importBuild(90_000, false);
     await reprocess(off, device.id);
-    // The judge reports a part with no run along rails as too short for a verdict, not as no_rail.
+    // A part with no run along rails is no_rail, not too short for a verdict.
     const [bare] = await moves(device.id);
-    expect(bare?.status).toBe("poor");
+    expect(bare).toMatchObject({ status: "no_rail", reason: "no_rail" });
     expect((await counts(device.id)).railed).toBe(0);
     await assertSegmentInvariants(t.ctx.db, device.id, { current: true });
   });

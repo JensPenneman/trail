@@ -50,14 +50,19 @@ const round = (value: number, digits: number): number => {
  * The one gate of the aligned line: the mode that counts (a correction
  * included) is train and the pass judged the points to lie along the rails.
  * Read from both at every request, so a correction switches the line at once.
+ * With the kill switch off (`railAlign` false, `PROCESSING_RAIL_ALIGN`) no
+ * line is drawn along the rails whatever is stored; flipping it changes
+ * nothing in the database.
  */
-function alignedToOf(row: SegmentRow): "rail" | null {
+function alignedToOf(row: SegmentRow, railAlign: boolean): "rail" | null {
   const mode = row.mode_user ?? row.mode_inferred;
-  return row.kind === "move" && mode === "train" && row.rail_status === "aligned" ? "rail" : null;
+  return railAlign && row.kind === "move" && mode === "train" && row.rail_status === "aligned"
+    ? "rail"
+    : null;
 }
 
 /** A segment as the API shows it: a stop has no mode; review only while nobody set the mode. */
-export function toSegment(row: SegmentRow): Segment {
+export function toSegment(row: SegmentRow, railAlign: boolean): Segment {
   const move = row.kind === "move";
   return {
     id: row.id,
@@ -83,6 +88,6 @@ export function toSegment(row: SegmentRow): Segment {
     end: { lat: row.end_lat, lon: row.end_lon },
     centroid: { lat: row.centroid_lat, lon: row.centroid_lon },
     spreadM: move || row.spread_m === null ? null : Math.round(row.spread_m),
-    alignedTo: alignedToOf(row),
+    alignedTo: alignedToOf(row, railAlign),
   };
 }

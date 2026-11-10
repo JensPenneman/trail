@@ -2,7 +2,7 @@ import { apiPaths } from "@trail/contracts/apiPaths";
 import type { LevelTracksResponse, Segment } from "@trail/contracts/transport";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type Agent, signUpWithCookie } from "../support/authFlows";
+import { type Agent, agentFor, signUpWithCookie } from "../support/authFlows";
 import { createDevice } from "../support/deviceFlows";
 import { FixtureWaySource } from "../support/fixtureWaySource";
 import { uploadJourney } from "../support/overlandPoints";
@@ -72,12 +72,13 @@ const trips = {
 
 let t: TestContext;
 let owner: Agent;
+let ownerCookie = "";
 let deviceId = "";
 
 beforeAll(async () => {
   await resetDatabase();
   t = await createTestContext({ waySource: new FixtureWaySource(railWorld()) });
-  ({ agent: owner } = await signUpWithCookie(t.app, "first@example.com"));
+  ({ agent: owner, cookie: ownerCookie } = await signUpWithCookie(t.app, "first@example.com"));
   const device = await createDevice(owner, { name: "Rail rides" });
   deviceId = device.device.id;
   for (const points of Object.values(trips)) {
@@ -369,5 +370,89 @@ describe("rail columns without a verdict", () => {
     const { segment } = await served(move.id);
     expect(segment.alignedTo).toBeNull();
     expectPlaces(segment, rows, [mappedPlace, averagedPlace], "no verdict");
+  });
+});
+
+describe("the kill switch PROCESSING_RAIL_ALIGN=false", () => {
+  let off: TestContext;
+  let offOwner: Agent;
+  beforeAll(async () => {
+    // The same database, another process as it were: the app restarted with the switch off.
+    off = await createTestContext({
+      waySource: new FixtureWaySource(railWorld()),
+      env: { PROCESSING_RAIL_ALIGN: "false" },
+    });
+    offOwner = agentFor(off.app).set("Cookie", ownerCookie);
+  });
+  afterAll(async () => {
+    await off.close();
+  });
+
+  const snapshot = async () => {
+    const queue = await t.ctx.db.execute(
+      sql`SELECT * FROM processing_queue ORDER BY device_id, from_at`,
+    );
+    const state = await t.ctx.db.execute(sql`SELECT * FROM processing_state ORDER BY key`);
+    return { queue: queue.rows, state: state.rows };
+  };
+
+  it("hides every rail line at once, moves the ETags and changes nothing in the database", async () => {
+    // A car called a train: its rail line (on the rails) differs from the recorded one (the road).
+    const car = await moveOf("car");
+    await setMode(car.id, "train").expect(200);
+    const on = await served(car.id);
+    expect(on.segment.alignedTo).toBe("rail");
+    expectOnRails(on.segment.points);
+    const before = await snapshot();
+
+    const response = await offOwner
+      .get(apiPaths.v1.tracks)
+      .query({ ...day, level: "inferred", maxPoints: 50_000 })
+      .expect(200);
+    const body = response.body as LevelTracksResponse;
+    expect(body.segments.every((segment) => segment.alignedTo === null)).toBe(true);
+    const drawn = body.segments.find((segment) => segment.id === car.id);
+    // Drawn at its mapped (else averaged) places, as when it was never aligned.
+    expectPlaces(drawn ?? { points: [] }, await stored(car), [mappedPlace, averagedPlace], "off");
+    expect(JSON.stringify(drawn?.points)).not.toBe(JSON.stringify(on.segment.points));
+
+    // The ETag moved, and the old one is no longer good for a 304.
+    expect(String(response.headers["etag"])).not.toBe(on.etag);
+    await offOwner
+      .get(apiPaths.v1.tracks)
+      .set("If-None-Match", on.etag)
+      .query({ ...day, level: "inferred", maxPoints: 50_000 })
+      .expect(200);
+
+    // The timeline says the same, with an ETag of its own for each setting.
+    const timelineOn = await owner.get(apiPaths.v1.segments.root).query(day).expect(200);
+    const timelineOff = await offOwner.get(apiPaths.v1.segments.root).query(day).expect(200);
+    expect((timelineOn.body.items as Segment[]).some((item) => item.alignedTo === "rail")).toBe(
+      true,
+    );
+    expect((timelineOff.body.items as Segment[]).every((item) => item.alignedTo === null)).toBe(
+      true,
+    );
+    expect(String(timelineOff.headers["etag"])).not.toBe(String(timelineOn.headers["etag"]));
+    await offOwner
+      .get(apiPaths.v1.segments.root)
+      .set("If-None-Match", String(timelineOn.headers["etag"]))
+      .query(day)
+      .expect(200);
+    // The answer of a correction: the move is a train already, the line is not drawn.
+    const put = await offOwner
+      .put(apiPaths.v1.segments.mode(car.id))
+      .set("Origin", testOrigin)
+      .send({ mode: "train" })
+      .expect(200);
+    expect(put.body.segment).toMatchObject({ mode: "train", alignedTo: null });
+
+    // Nothing was queued or recorded as processing state, and the stored line is as it was.
+    expect(await snapshot()).toEqual(before);
+    expect(await railVerdict(car.id)).toBe("aligned");
+    // Switching back on brings the line back at once.
+    expect((await served(car.id)).segment.points).toEqual(on.segment.points);
+    await owner.delete(apiPaths.v1.segments.mode(car.id)).set("Origin", testOrigin).expect(200);
+    await t.ctx.processing.flush();
   });
 });

@@ -23,7 +23,7 @@ export async function clearSegmentMode(
   db: Database,
   access: DeviceAccess,
   segmentId: string,
-  options: { queue: boolean; lockWaitMs: number },
+  options: { queue: boolean; lockWaitMs: number; railAlign: boolean },
 ): Promise<{ segment: Segment; revoked: { from: Date; to: Date }[] }> {
   const found = await findSegment(db, access, segmentId);
   return correctionTransaction(db, found.device_id, options.lockWaitMs, async (tx) => {
@@ -46,7 +46,7 @@ export async function clearSegmentMode(
       RETURNING from_at::text, coalesce(to_at, greatest(now(), ${segment.ended_at}::timestamptz))::text AS to_at
     `);
     if (segment.mode_user === null && revoked.rows.length === 0) {
-      return { segment: toSegment(segment), revoked: [] };
+      return { segment: toSegment(segment, options.railAlign), revoked: [] };
     }
     // `computed_at` moves with the mode, so the day's processed stamp does (docs/architecture.md §8.9).
     const updated = await tx.execute<SegmentRow>(sql`
@@ -74,6 +74,6 @@ export async function clearSegmentMode(
     if (row === undefined) throw new Error("The segment vanished under its lock");
     // The time on the move by mode: the days the move spans (docs/architecture.md §8.2).
     await rebuildSegmentHeatDays(tx, segment.device_id, segment);
-    return { segment: toSegment(row), revoked: spans };
+    return { segment: toSegment(row, options.railAlign), revoked: spans };
   });
 }

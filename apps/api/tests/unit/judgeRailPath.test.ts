@@ -34,6 +34,7 @@ function part(count: number, spacingM = 500, seconds = 20) {
     routed: true,
     legM: index === 0 ? 0 : spacingM,
     bridgedLegM: 0,
+    bridgedSpeedMs: 0,
     path: null,
   }));
   return { points, rail };
@@ -76,6 +77,7 @@ describe("judgeRailPath", () => {
       p90Z: 0.5,
       medianOffsetM: 5,
       outlierShare: 0,
+      bridgedMaxSpeedMs: 0,
       lengthM: 10_000,
     });
     expect(Object.keys(verdict)).not.toContain("lat");

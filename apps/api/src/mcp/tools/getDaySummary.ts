@@ -56,6 +56,8 @@ export const getDaySummary = defineTool({
       from: bounds.start,
       to: bounds.end,
       limit: 1000,
+      // No tool serves lines: `alignedTo` is not read here.
+      railAlign: false,
     });
     const modes = stats.days
       .filter((stat) => stat.date === input.date)

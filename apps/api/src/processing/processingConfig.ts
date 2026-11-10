@@ -204,17 +204,33 @@ export interface RailConfig {
   /** Cost of a leg without a route within its bound; the leg is then drawn straight ("bridged"). */
   readonly breakCost: number;
   /**
+   * Cost of a step taken as an outlier although a track is in reach (a fix that
+   * jumped onto another line and back), and how many in a row may be: below
+   * two straight legs (`2 × breakCost`), so a jump is passed along the rails.
+   */
+  readonly outlierCost: number;
+  readonly maxOutlierSteps: number;
+  /** A move that never goes faster than this (its p90 kept speed, m/s) or is shorter than `minRunM` is no train: it is not aligned and gets no verdict. */
+  readonly minTrainSpeedMs: number;
+  /**
    * A rail-only read (a ride that only a loaded region covers) takes at most
    * this many tiles; a longer piece is read in several, one statement each.
    * Where the number comes from: the rehearsal on a production dump (WP2b)
    * read 22 tiles in 138 ms (p50), 49 in 273 ms (p90) and 75 in 471 ms (max),
    * 2.5 to 6 ms a tile, so the 150 ms for 256 tiles first assumed (an
    * extrapolation) does not hold: 256 tiles would take 0.6 to 1.5 s in one
-   * statement. At 64 tiles a read stays under about 0.4 s, and a pass's reads
-   * add up linearly with the tiles of its region-only moves, which the pass's
-   * point budget bounds, inside the worker's 5 s bound for a pass.
+   * statement. At 64 tiles a read stays under about 0.4 s. A pass's reads add
+   * up linearly with the tiles of its region-only moves, which only
+   * `railOnlyMaxTilesPerPass` bounds.
    */
   readonly railOnlyMaxTiles: number;
+  /**
+   * Rail-only tiles read in one pass at most (about 1.3 s at the measured
+   * 2.5 ms a tile, 3 s at 6 ms). A move whose pieces would go beyond it is
+   * judged `no_map/deferred` and keeps its recorded line until a later pass
+   * over its window judges it again; nothing is queued for that.
+   */
+  readonly railOnlyMaxTilesPerPass: number;
   readonly judge: RailJudgeConfig;
 }
 
@@ -349,7 +365,11 @@ export const defaultProcessingConfig: ProcessingConfig = {
     betaChordFactor: 0.15,
     wayChangeCost: 0.2,
     breakCost: 10,
+    outlierCost: 6,
+    maxOutlierSteps: 3,
+    minTrainSpeedMs: 11,
     railOnlyMaxTiles: 64,
+    railOnlyMaxTilesPerPass: 512,
     judge: {
       minLengthM: 1000,
       minSteps: 3,

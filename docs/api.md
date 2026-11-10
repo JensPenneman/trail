@@ -305,7 +305,8 @@ drawn along the railway — every point lying on a track, which Trail checked
 from the points and OpenStreetMap's rails — and `null` otherwise; at
 `inferred` its points are then the places on the rails, and `mapped`,
 `averaged` and `raw` still give the line as recorded. It follows the mode that
-counts, so correcting a move to or from train changes it at once.
+counts, so correcting a move to or from train changes it at once. An operator who
+switches the aligner off (`PROCESSING_RAIL_ALIGN=false`) makes it `null` everywhere at once.
 
 `GET /api/v1/segments?from=…&to=…` is the timeline itself: stops (with their
 place, `centroid`, their duration and `spreadM`, how far apart their points

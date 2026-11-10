@@ -90,7 +90,8 @@ export async function cachedTiles(
  * `options.kinds` keeps only ways of those kinds and `options.pois: false`
  * skips the stops: the rail-only read of a move whose tiles a region covers
  * (docs/architecture.md §17.3). The kind is judged on the way's newest row, so
- * a way reclassified in a newer source is not found by its old kind.
+ * a way reclassified in a newer source is not found by its old kind; only the
+ * ways that pass read their nodes and geometry, which is what a read costs.
  */
 export async function loadMapData(
   db: Executor,
@@ -99,10 +100,34 @@ export async function loadMapData(
 ): Promise<MapData> {
   const tiles = addresses(keys);
   if (tiles.length === 0) return { ways: [], pois: [] };
-  const kindFilter =
+  // With kinds: the newest row of each way is found on its light columns first, and only the ways
+  // of those kinds are read in full (the heavy columns are what a statement spends its time on).
+  const waysCte =
     options.kinds === undefined
-      ? sql``
-      : sql`WHERE kind = ANY (${`{${options.kinds.join(",")}}`}::text[])`;
+      ? sql`ways AS (
+      SELECT DISTINCT ON (w.id) w.id, w.kind, w.nodes, w.geometry, w.tags->>'name' AS name,
+        w.tags->>'service' AS service
+      FROM tiles r
+      JOIN osm_tile_ways tw ON tw.z = r.z AND tw.x = r.x AND tw.y = r.y
+        AND tw.source = ANY (ARRAY(SELECT source FROM serving))
+      JOIN osm_ways w ON w.id = tw.way_id AND w.source = tw.source
+      ORDER BY w.id, w.fetched_at DESC, w.source DESC
+    )`
+      : sql`newest AS (
+      SELECT DISTINCT ON (w.id) w.id, w.source, w.kind
+      FROM tiles r
+      JOIN osm_tile_ways tw ON tw.z = r.z AND tw.x = r.x AND tw.y = r.y
+        AND tw.source = ANY (ARRAY(SELECT source FROM serving))
+      JOIN osm_ways w ON w.id = tw.way_id AND w.source = tw.source
+      ORDER BY w.id, w.fetched_at DESC, w.source DESC
+    ),
+    ways AS (
+      SELECT w.id, w.kind, w.nodes, w.geometry, w.tags->>'name' AS name,
+        w.tags->>'service' AS service
+      FROM newest n
+      JOIN osm_ways w ON w.id = n.id AND w.source = n.source
+      WHERE n.kind = ANY (${`{${options.kinds.join(",")}}`}::text[])
+    )`;
   const poiFilter = options.pois === false ? sql`AND false` : sql``;
   const result = await db.execute<MapRow & Record<string, unknown>>(sql`
     WITH tiles AS MATERIALIZED (
@@ -113,15 +138,7 @@ export async function loadMapData(
       UNION ALL
       SELECT source FROM osm_regions WHERE status = 'ready'
     ),
-    ways AS (
-      SELECT DISTINCT ON (w.id) w.id, w.kind, w.nodes, w.geometry, w.tags->>'name' AS name,
-        w.tags->>'service' AS service
-      FROM tiles r
-      JOIN osm_tile_ways tw ON tw.z = r.z AND tw.x = r.x AND tw.y = r.y
-        AND tw.source = ANY (ARRAY(SELECT source FROM serving))
-      JOIN osm_ways w ON w.id = tw.way_id AND w.source = tw.source
-      ORDER BY w.id, w.fetched_at DESC, w.source DESC
-    ),
+    ${waysCte},
     pois AS (
       SELECT DISTINCT ON (p.id) p.id, p.kind, p.lat, p.lon, p.name
       FROM tiles r
@@ -133,7 +150,6 @@ export async function loadMapData(
     SELECT 'way' AS element, id::text AS id, kind, nodes::text[] AS nodes, geometry, name, service,
       NULL::double precision AS lat, NULL::double precision AS lon
     FROM ways
-    ${kindFilter}
     UNION ALL
     SELECT 'poi', id, kind, NULL, NULL, name, NULL, lat, lon FROM pois
   `);
