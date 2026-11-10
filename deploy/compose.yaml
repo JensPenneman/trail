@@ -107,8 +107,10 @@ services:
   app:
     # Built from the checked-out ref on the server; no registry is involved,
     # and a local tag cannot be pulled, so there is no pull_policy. The tag
-    # carries the commit, so every deployment has an image of its own and a
-    # rollback finds the old one again. GIT_SHA is what /api/config reports.
+    # carries the commit, so every deployment has an image of its own.
+    # Launchway builds with `--pull` on every deployment, so a rollback is a
+    # rebuild (helped by the cache) that needs Docker Hub, npm and the
+    # map-asset downloads to be reachable. GIT_SHA is what /api/config reports.
     # TRAIL_IMAGE replaces the tag for local runs (compose.dev.yaml);
     # Launchway leaves it unset.
     build: &build
@@ -227,6 +229,8 @@ services:
     logging: *logging
 
   db:
+    # a new major: bump `backup` and the FROM of `predeploy-dump`'s
+    # dockerfile_inline in the same PR (docs/operations.md, "Postgres major upgrade")
     image: postgres:18-alpine
     restart: unless-stopped
     environment:
@@ -257,6 +261,7 @@ services:
     logging: *logging
 
   backup:
+    # bumped together with `db` and `predeploy-dump`'s FROM
     image: postgres:18-alpine
     # production only: previews keep no backups and need no host folder
     profiles: ["production"]
@@ -324,8 +329,13 @@ services:
     build:
       context: ..
       dockerfile_inline: |
+        # keep this FROM in step with `db` and `backup`: Dependabot cannot see
+        # it, and pg_dump refuses a server of another major version
         FROM postgres:18-alpine
         COPY apps/api/drizzle/meta/_journal.json /etc/trail-journal.json
+    # the journal in the image must match the ref being deployed, whatever the
+    # tag says: rebuilding is a single COPY, so every `up` does it
+    pull_policy: build
     image: trail-local-predeploy-dump:${LAUNCHWAY_COMMIT_SHA_SHORT:-dev}
     restart: "no"
     entrypoint: ["/bin/sh", "/etc/trail-predeploy-dump.sh"]
@@ -335,7 +345,9 @@ services:
     environment:
       LAUNCHWAY_COMMIT_SHA_SHORT: ${LAUNCHWAY_COMMIT_SHA_SHORT:-unknown}
       LAUNCHWAY_ENVIRONMENT: ${LAUNCHWAY_ENVIRONMENT:-}
-      PREDEPLOY_DUMP: ${PREDEPLOY_DUMP:-}
+      # tells the script whether BACKUP_DIR is set (/backups is the scratch
+      # volume when it is not); the value itself is never passed on
+      BACKUP_DIR_SET: ${BACKUP_DIR:+yes}
       PGHOST: db
       PGUSER: trail
       PGDATABASE: trail
@@ -393,8 +405,12 @@ configs:
       # Order: skip in a preview or when PREDEPLOY_DUMP=skip; refuse unless
       # /backups already holds a dump of `backup`'s (or the marker file
       # .trail-backup-dir, created once by hand), since a mistyped BACKUP_DIR
-      # is created empty; keep the newest 3 dumps; refuse under twice the
-      # newest dump's size in free space; dump.
+      # is created empty; keep the newest 3 dumps (those taken while a
+      # migration is pending are named -migrate and kept by age, by `backup`);
+      # refuse under twice the newest dump's size in free space; dump.
+      #
+      # Only compose.dev.yaml sets PREDEPLOY_DUMP=skip; .env cannot, so a
+      # forgotten setting there never skips the dump of a production update.
       #
       # A failure (or a refusal) stops the update (exit 1) only when the
       # target ref ships a migration the database has not applied: that is the
@@ -415,8 +431,9 @@ configs:
       dir=/backups/pre-update
       sha=$$(printf '%.7s' "$${LAUNCHWAY_COMMIT_SHA_SHORT:-unknown}")
       stamp=$$(date -u +%Y%m%dT%H%M%SZ)
-      file="$$dir/trail-$$stamp-$$sha.dump"
-      partial="$$file.partial"
+      # named once it is known whether a migration is pending
+      file=
+      partial=
 
       # a stop or any error leaves no partial file behind
       # the cleanup must never change the exit code: a failing rm would turn a deliberate exit 0 into 1
@@ -429,7 +446,11 @@ configs:
         want=$$(grep -o '"when": *[0-9]*' /etc/trail-journal.json 2> /dev/null | grep -o '[0-9]*$' | sort -n | tail -n 1) || return 0
         have=$$(psql -Atc 'select coalesce(max(created_at), 0) from drizzle.__drizzle_migrations' 2> /dev/null) || return 0
         [ -n "$$want" ] && [ -n "$$have" ] || return 0
-        [ "$$want" -gt "$$have" ]
+        # the test's status 1 is the only "not pending"; an error (a value that
+        # is not a number, an overflow) counts as pending
+        rc=0
+        [ "$$want" -gt "$$have" ] 2> /dev/null || rc=$$?
+        [ "$$rc" -ne 1 ]
       }
 
       # giveup REASON: the dump did not happen
@@ -448,33 +469,55 @@ configs:
         ls -1t "$$@" 2> /dev/null | head -n 1 || true
       }
 
+      if [ "$${LAUNCHWAY_ENVIRONMENT:-}" = production ] && [ -z "$${BACKUP_DIR_SET:-}" ]; then
+        giveup "BACKUP_DIR is empty in production: /backups is the scratch volume"
+      fi
+
       if [ -z "$$(find /backups -maxdepth 1 -type f \( -name 'trail-*.dump' -o -name '.trail-backup-dir' \) | head -n 1)" ]; then
         giveup "/backups holds no daily dump and no .trail-backup-dir marker: is BACKUP_DIR the folder of the backups?"
       fi
 
       mkdir -p "$$dir" || giveup "cannot create $$dir"
-      find "$$dir" -maxdepth 1 -type f -name 'trail-*.dump.partial' -exec rm -f {} +
-      # keep the newest 3, before anything is written
-      ls -1t "$$dir"/trail-*.dump 2> /dev/null | tail -n +4 | while read -r old; do
-        rm -f "$$old"
-      done
+      find "$$dir" -maxdepth 1 -type f -name 'trail-*.dump.partial' -exec rm -f {} + || log "WARNING: cannot delete the partial dumps of an earlier run"
+
+      # keep_newest_3: the dumps of ordinary updates beyond the newest 3 go. The
+      # -migrate ones (taken while a migration was pending, the restore point
+      # of that release) are not counted; `backup` expires them by age. A file
+      # that cannot be deleted (a lock on Windows) is a warning, never a
+      # reason to stop an update.
+      keep_newest_3() {
+        ls -1t "$$dir"/trail-*.dump 2> /dev/null | grep -v -e '-migrate\.dump$$' | tail -n +4 | while read -r old; do
+          rm -f "$$old" || log "WARNING: cannot delete $$old"
+        done
+      }
+      # before anything is written
+      keep_newest_3
 
       last=$$(newest "$$dir"/trail-*.dump)
       [ -n "$$last" ] || last=$$(newest /backups/trail-*.dump)
       if [ -n "$$last" ]; then
-        need=$$(($$(du -k "$$last" | cut -f1) * 2))
+        size=$$(du -k "$$last" 2> /dev/null | cut -f1)
+        case $$size in
+          '' | *[!0-9]*) giveup "cannot size $$last" ;;
+        esac
+        need=$$(($$size * 2))
         free=$$(df -Pk "$$dir" | awk 'NR == 2 { print $$4 }')
         [ "$$free" -ge "$$need" ] || giveup "$$free KiB free, $$need KiB needed (twice $${last##*/})"
       fi
 
+      if pending; then
+        kind=-migrate
+      else
+        kind=
+      fi
+      file="$$dir/trail-$$stamp-$$sha$$kind.dump"
+      partial="$$file.partial"
       log "dumping database $${PGDATABASE:-} before the update to $$sha"
       pg_dump --format=custom --file="$$partial" || giveup "pg_dump failed"
       # a dump only counts once it can be read back
       pg_restore --list "$$partial" > /dev/null || giveup "the dump cannot be read back"
       mv "$$partial" "$$file" || giveup "cannot rename the dump"
-      ls -1t "$$dir"/trail-*.dump 2> /dev/null | tail -n +4 | while read -r old; do
-        rm -f "$$old"
-      done
+      keep_newest_3
       log "pre-update dump complete: $${file##*/}, $$(du -k "$$file" | cut -f1) KiB"
 
   backup-script:
@@ -515,13 +558,25 @@ configs:
         [ -n "$$(find "$$dir" -maxdepth 1 -type f -name 'trail-*.dump' -mmin "-$$1" | head -n 1)" ]
       }
 
-      # prune DIR DAYS: deletes the dumps in DIR older than DAYS days
+      # prune DIR DAYS [keep-newest]: deletes the dumps in DIR older than DAYS
+      # days. With keep-newest the newest dump stays however old: while backups
+      # keep failing, the last good one is the restore point, and
+      # `predeploy-dump` needs a daily dump to exist. A file that cannot be
+      # deleted is a warning, not a failure of the backup.
       prune() {
         [ -d "$$1" ] || return 0
+        spare=
+        if [ "$${3:-}" = keep-newest ]; then
+          spare=$$(ls -1t "$$1"/trail-*.dump 2> /dev/null | head -n 1 || true)
+        fi
         find "$$1" -maxdepth 1 -type f -name 'trail-*.dump' -mmin "+$$(($$2 * 1440))" |
           while read -r old; do
-            rm -f "$$old"
-            log "deleted $${old#"$$dir"/} (older than $$2 days)"
+            [ "$$old" != "$$spare" ] || continue
+            if rm -f "$$old"; then
+              log "deleted $${old#"$$dir"/} (older than $$2 days)"
+            else
+              log "WARNING: cannot delete $${old#"$$dir"/}"
+            fi
           done
       }
 
@@ -545,7 +600,7 @@ configs:
         partial="$$dir/.trail-$$stamp.dump.partial"
         started=$$(date +%s)
         # before the dump: on a full disk the pruning is what makes room
-        prune "$$dir" "$$keep_days"
+        prune "$$dir" "$$keep_days" keep-newest
         prune "$$dir/pre-update" "$$keep_days"
         if [ "$$keep_months" -gt 0 ]; then
           prune "$$dir/monthly" "$$((keep_months * 31))"

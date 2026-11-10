@@ -129,12 +129,17 @@ folder that holds no daily `trail-*.dump` of `backup`'s. On a first install
 (no daily dump yet) create the marker file once: `touch
 $BACKUP_DIR/.trail-backup-dir`.
 
-Launchway adds its own variables to the `.env` it writes. Trail uses two:
-`LAUNCHWAY_COMMIT_SHA_SHORT` (the image tag `trail-local:<commit>` and the commit `/api/config` reports) and
+Launchway adds its own variables to the `.env` it writes. Trail uses three:
+`LAUNCHWAY_COMMIT_SHA_SHORT` (the image tag `trail-local:<commit>` and the commit `/api/config` reports),
 `LAUNCHWAY_PUBLIC_URL` (the https address of the deployment's host name, used
 when `PUBLIC_URL` is empty; Launchway leaves it empty for an app without a
-public route, which then needs `PUBLIC_URL` set). `LAUNCHWAY_ENVIRONMENT` (`production` or
-`preview`) and `LAUNCHWAY_PREVIEW_NUMBER` are available but unused.
+public route, which then needs `PUBLIC_URL` set) and `LAUNCHWAY_ENVIRONMENT`
+(`production` or `preview`), which `predeploy-dump` uses to skip in a preview
+(and to refuse an empty `BACKUP_DIR` in production) and `trail load-fleet` uses
+to refuse anywhere but in a preview. `LAUNCHWAY_PREVIEW_NUMBER` is available
+but unused. `PREDEPLOY_DUMP` is not a production variable: only
+`deploy/compose.dev.yaml` sets it, so a forgotten value in `.env` can never
+skip the dump of an update.
 
 ### Preview variables
 
@@ -318,12 +323,49 @@ pull --ignore-buildable` has nothing to fetch for Trail (`db` and the dump
 service's `postgres:18-alpine` still come from Docker Hub). The commit is the
 `GIT_SHA` build argument; `APP_VERSION` is not passed, so `/api/config`
 reports the version of `package.json` at that commit. Each commit has its own
-tag, and nothing removes them: every production deployment and every
-preview push leaves a `trail-local:<commit>` image and build cache on the
-server, so a schedule has to prune the `trail-local` images except the running
-and the previous production tag, and run `docker builder prune
---keep-storage`. The tag is also what makes a rollback to an older ref find its image again (or
-build it) instead of reusing the newest.
+tag, and Launchway removes none of them: every production deployment and every
+preview push leaves a `trail-local:<commit>` and a
+`trail-local-predeploy-dump:<commit>` image and build cache on the server, on
+the same Docker disk as the `trail-db` volume. [Pruning build
+leftovers](#pruning-build-leftovers) says what removes them. Launchway builds
+with `--pull` on every deployment, so a rollback to an older ref is always a
+rebuild (helped by the cache) that needs Docker Hub, npm and the map-asset
+downloads to be reachable, never a reuse of an old image.
+
+### Pruning build leftovers
+
+`deploy/prune-build-artifacts.ps1` (Windows PowerShell 5.1) removes what the
+source builds leave behind. It must be running before the first deployment
+that builds from source (the merge of the change that introduced it), and the
+conductor installs it on the deploy host (LVJ) and registers the task; it is
+not part of any deployment. It:
+
+- removes `trail-local:*` and `trail-local-predeploy-dump:*` tags that no
+  container uses, keeping the four newest tags of each (by creation time), and
+  never forcing: an image a container uses survives;
+- removes dangling images with `docker image prune -f`, which spares images
+  in use;
+- caps the build cache with `docker builder prune -f --keep-storage 3GB`,
+  which leaves room for a fast rebuild of the previous production ref;
+- touches no other image, no volume and nothing named `zeus*`, and exits
+  non-zero only when Docker is unreachable (a removal that fails is logged and
+  skipped).
+
+It logs one line per action to the console and to
+`%ProgramData%\trail-prune\prune-build-artifacts.log`. `-DryRun` only lists what it
+would remove. Copy it to a folder outside the checkouts (Launchway deletes
+those) and register it once, daily at night, in an elevated PowerShell, as the
+account that runs Docker Desktop:
+
+```powershell
+New-Item -ItemType Directory -Force C:\ops\trail | Out-Null
+Copy-Item deploy\prune-build-artifacts.ps1 C:\ops\trail\
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\ops\trail\prune-build-artifacts.ps1'
+$trigger = New-ScheduledTaskTrigger -Daily -At 4:15am
+$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
+Register-ScheduledTask -TaskName 'Trail prune build artifacts' -Action $action -Trigger $trigger -Principal $principal
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\ops\trail\prune-build-artifacts.ps1 -DryRun   # list first
+```
 
 To prove a build without deploying:
 
@@ -411,11 +453,15 @@ docker compose -f .devcontainer/compose.image.yaml up --build --exit-code-from p
 docker compose -f .devcontainer/compose.image.yaml down -v
 ```
 
-They are set up in Launchway, Trail → Settings → Checks: checks on, Compose
-files `.devcontainer/compose.yaml` and `.devcontainer/compose.image.yaml`,
-branches `main`, *Skip bots* off (Dependabot's pull requests need them to
-merge), the first three checks in the service `dev` and `image` in the service
-`probe`. The node runs one check at a time, oldest first across its apps, so a
+They are set up in Launchway, Trail → Settings → Checks: checks on, the
+shared Compose file `.devcontainer/compose.yaml` only, branches `main`, *Skip
+bots* off (Dependabot's pull requests need them to merge), the first three
+checks in the service `dev`, and the `image` check with its own Compose file
+`.devcontainer/compose.image.yaml` and the service `probe`. Never list
+`compose.image.yaml` among the shared files: both files define `db`, and the
+merged project does not resolve (`target /var/lib/postgresql already mounted as
+tmpfs`), which would fail all four checks. Launchway runs a check that has a
+Compose file of its own with that file only. The node runs one check at a time, oldest first across its apps, so a
 commit's checks take about 25 minutes once their turn comes. A
 newer push to a branch cancels the queued checks of its older commits; they
 report *error*, "Superseded by a newer commit".
@@ -461,8 +507,10 @@ runs the checks and can merge.
 ## Rollback
 
 Redeploy an older release in Launchway (the app's deployments list): it
-builds that release's commit again (or finds its image `trail-local:<commit>`
-still on the server), with that release's `compose.yaml`. The deployment takes a dump first
+builds that release's commit again (Launchway builds with `--pull`, so it is
+always a rebuild, helped by the cache, that needs Docker Hub, npm and the
+map-asset downloads to be reachable, also on the way back after a failed
+dump), with that release's `compose.yaml`. The deployment takes a dump first
 like any other ([the dump before an update](#the-dump-before-an-update)), of
 the database as the newer release left it; a rollback has no newer migration,
 so a failing dump cannot keep it from coming up. Migrations only move forward, so an older image runs against
@@ -519,7 +567,12 @@ back. Layout and retention:
 | (top) `trail-<timestamp>.dump` | every daily dump | `BACKUP_KEEP_DAYS` (14) |
 | `monthly/trail-<YYYY-MM>.dump` | the first dump of each month | `BACKUP_KEEP_MONTHS` (12; 0 = forever) |
 | `yearly/trail-<YYYY>.dump` | the first dump of each year | `BACKUP_KEEP_YEARS` (0 = forever) |
-| `pre-update/` | `trail-<UTC timestamp>-<commit>.dump`, one before every deployment ([below](#the-dump-before-an-update)), and those of the former standalone stack | `BACKUP_KEEP_DAYS` |
+| `pre-update/` | `trail-<UTC timestamp>-<commit>.dump`, one before every deployment ([below](#the-dump-before-an-update)), and those of the former standalone stack | the newest 3 (by `predeploy-dump`); `trail-<UTC timestamp>-<commit>-migrate.dump`, taken while a migration was pending, `BACKUP_KEEP_DAYS` |
+
+Before every dump, `backup` deletes what is past its retention, except the
+newest daily dump: while backups keep failing, the last good one stays (and
+`predeploy-dump` needs a daily dump to exist). A file it cannot delete is
+logged as a warning and skipped.
 
 Every dump holds the whole history, so the newest one is all a restore needs.
 It also dumps right after starting when the newest dump is more than a day
@@ -537,26 +590,35 @@ The one-shot service `predeploy-dump` runs before `app` and `worker` on every
 `docker compose up`, so a deployment has a restore point from just before it.
 In order, it:
 
-1. skips (exit 0) only when `LAUNCHWAY_ENVIRONMENT` is `preview`, or
-   `PREDEPLOY_DUMP=skip` (set by `deploy/compose.dev.yaml` for local runs);
-   anything else dumps, a missing `COMPOSE_PROFILES` included;
-2. refuses unless `/backups` already holds a daily `trail-*.dump` of
-   `backup`'s or the marker file `.trail-backup-dir`, so a mistyped
-   `BACKUP_DIR` is not filled (production's `D:\Backups\trail` holds daily
-   dumps, so it needs no marker);
-3. keeps the newest 3 files of `pre-update/` and refuses when the free space
-   is under twice the size of the newest dump (`backup` prunes before it dumps
-   too, so a full disk is never what stops the pruning);
+1. skips (exit 0) only when `LAUNCHWAY_ENVIRONMENT` is `preview`, or when
+   `deploy/compose.dev.yaml` has set `PREDEPLOY_DUMP=skip` for a local run
+   (`.env` cannot set it); anything else dumps, a missing `COMPOSE_PROFILES`
+   included;
+2. refuses when `BACKUP_DIR` is empty in production (`/backups` is then the
+   scratch volume), and unless `/backups` already holds a daily
+   `trail-*.dump` of `backup`'s or the marker file `.trail-backup-dir`, so a
+   mistyped `BACKUP_DIR` is not filled (production's `D:\Backups\trail` holds
+   daily dumps, so it needs no marker);
+3. keeps the newest 3 files of `pre-update/` (the `-migrate` ones are not
+   counted, see below) and refuses when the free space is under twice the size
+   of the newest dump (`backup` prunes before it dumps too, so a full disk is
+   never what stops the pruning); a file it cannot delete, or one it cannot
+   size, never stops an update by itself: the first is a warning, the second
+   a refusal like any other;
 4. writes `BACKUP_DIR/pre-update/trail-<UTC timestamp>-<commit>.dump.partial`,
    checks it with `pg_restore --list` and only then renames it to `.dump`.
+   While a migration is pending the name ends in `-migrate.dump`: that is the
+   restore point of the release that migrates, so later deployments do not
+   count it among the newest 3, and `backup` expires it with
+   `BACKUP_KEEP_DAYS`.
 
 **When a failed or refused dump stops the update.** Only when the target ref
 ships a migration the database has not applied: the script compares the
 largest `"when"` of `apps/api/drizzle/meta/_journal.json` (copied into the
 dump image when it is built, so nothing from the checkout is bind-mounted)
 with `select
-max(created_at) from drizzle.__drizzle_migrations` (a failed query or an empty
-journal counts as pending). Then it exits 1, Compose does not start `app` and
+max(created_at) from drizzle.__drizzle_migrations` (a failed query, an empty
+journal, or a comparison that errors counts as pending). Then it exits 1, Compose does not start `app` and
 `worker`, and the deployment fails at `up` with *service "predeploy-dump"
 didn't complete successfully*. Without a pending migration, a rollback or an
 update of dependencies only, it logs `WARNING: pre-update dump failed; no
@@ -606,11 +668,16 @@ major exists; it never merges itself. Postgres 18+ images keep the cluster in
 data in the same volume, empty. Move the data with a dump:
 
 1. `docker stop launchway-trail-app-1`, then [dump now](#backups).
-2. Merge the pull request and release it; the deployment starts the new,
+2. In the pull request, also bump the `FROM` of `predeploy-dump`'s
+   `dockerfile_inline` in `deploy/compose.yaml` and `backup`'s image:
+   Dependabot only sees `db`, and a `pg_dump` of the old major refuses the new
+   server, which would fail the deployment at `up` (the new, empty database
+   counts as a pending migration) until the rollback.
+3. Merge the pull request and release it; the deployment starts the new,
    empty database, and the app creates an empty schema in it.
-3. Restore the dump into it as under "Restore" in [Backups](#backups), which
+4. Restore the dump into it as under "Restore" in [Backups](#backups), which
    stops the app first and starts it again afterwards.
-4. Once everything checks out, remove the old cluster:
+5. Once everything checks out, remove the old cluster:
    `docker exec launchway-trail-db-1 rm -rf /var/lib/postgresql/18`.
 
 ## Change the database password

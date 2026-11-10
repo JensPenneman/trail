@@ -128,8 +128,11 @@ updates:
     open-pull-requests-limit: 3
 
   # Compose files: postgres:18-alpine floats within Postgres 18 (a server
-  # picks up a new 18.x when it pulls the image), so the only PRs here are new
-  # major versions, which never auto-merge. A Postgres major needs a dump and restore of the
+  # picks up a new 18.x when it pulls the image), so the PRs here are new
+  # major versions, which never auto-merge, and digest updates of the image
+  # check's node probe (.devcontainer/compose.image.yaml). A Postgres major
+  # must also bump the FROM in deploy/compose.yaml's predeploy-dump
+  # dockerfile_inline, which Dependabot cannot see. A Postgres major needs a dump and restore of the
   # production database first (docs/operations.md, "Postgres major upgrade").
   - package-ecosystem: docker-compose
     directories:
