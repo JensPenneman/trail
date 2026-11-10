@@ -161,7 +161,9 @@ updates:
   # picks up a new 18.x when it pulls the image), so the Postgres PRs here are
   # new major versions, which are held for a person: a major needs a dump and
   # restore of the production database first (docs/operations.md, "Postgres
-  # major upgrade"). Any other image pinned in these directories, such as the
+  # major upgrade"). That upgrade must also bump the FROM in deploy/compose.yaml's
+  # predeploy-dump dockerfile_inline, which Dependabot cannot see. Any other
+  # image pinned in these directories, such as the
   # node digest of the image check's compose file in /.devcontainer, gets its
   # own PRs here too, in the same group.
   - package-ecosystem: docker-compose
