@@ -235,9 +235,13 @@ Please workflow, then run the script again.
 Two fallbacks keep a release from getting stuck:
 
 - **Merged on GitHub** (not the normal path): release-please creates the draft
-  release itself (`"draft": true` in `release-please-config.json`); its
-  workflow creates the tag and starts CI on it, which publishes the draft once
-  the checks of the merge commit have passed.
+  release itself (`"draft": true` in `release-please-config.json`). A draft has
+  no tag of its own, so `"force-tag-creation": true` makes release-please
+  create the `vX.Y.Z` tag on the merge commit first (it skips a tag that
+  exists), and the workflow starts CI on it, which publishes the draft once
+  the checks of the merge commit have passed. The tag is what release-please
+  looks for as the previous release, so the next changelog starts at the right
+  commit even while a draft is unpublished.
 - **A tag pushed by hand** without a release: CI creates and publishes the
   release once the images exist and the checks have passed, with the
   `CHANGELOG.md` section (or generated notes) as text. A commit that was
