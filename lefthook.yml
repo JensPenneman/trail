@@ -1,4 +1,4 @@
-# Git hooks (installed by `npm run prepare`).
+# Git hooks (installed by `npm run hooks`, or by `scripts/devc.sh up`).
 pre-commit:
   parallel: true
   jobs:

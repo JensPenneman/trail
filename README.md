@@ -151,6 +151,7 @@ the development database.
 
 ```sh
 npm ci
+npm run hooks   # the git hooks; `npm ci` runs no install scripts (.npmrc)
 cp .env.example .env
 npm run dev
 ```
@@ -206,7 +207,13 @@ the other, since it overrides that too.
 
 Git hooks (lefthook) run Biome and the type check before a commit, commitlint
 on the message ([Conventional Commits](https://www.conventionalcommits.org))
-and the unit tests before a push.
+and the unit tests before a push. `npm run hooks` installs them (so does
+`scripts/devc.sh up`, on the host when its modules are installed): `.npmrc` sets
+`ignore-scripts=true`, so `npm ci` runs no dependency's install script and no
+`prepare` hook. `npm run check:supply` (part of `npm run check`) lints
+`package-lock.json` (every package from `registry.npmjs.org`, with an integrity
+hash; `scripts/check-lockfile.mjs`) and runs `npm audit signatures`, which needs
+network access to the registry.
 
 ### Develop in a container
 

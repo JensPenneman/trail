@@ -26,8 +26,9 @@
     "test:load": "node --test \"tools/load/test/*.test.mjs\"",
     "load": "node tools/load/run.mjs",
     "knip": "knip",
-    "check": "npm run lint && npm run typecheck && npm run knip && npm run test",
-    "prepare": "node scripts/hooks.mjs"
+    "check:supply": "node scripts/check-lockfile.mjs && npm audit signatures",
+    "check": "npm run lint && npm run typecheck && npm run knip && npm run check:supply && npm run test",
+    "hooks": "node scripts/hooks.mjs"
   },
   "engines": {
     "node": ">=24"
