@@ -1,6 +1,6 @@
-/// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import type { Plugin } from "vite";
+import { defineConfig } from "vitest/config";
 import { unitTestOptions } from "../../vitest.shared.ts";
 
 const maplibreWorkerModule = "maplibre-gl/dist/maplibre-gl-worker.mjs";
