@@ -351,7 +351,9 @@ not part of any deployment. It:
   label filter, `org.opencontainers.image.title=Trail` (the images of `app` and
   `worker`) and `com.docker.compose.service=predeploy-dump` (the dump image),
   which spares images in use. Images built before these labels existed are
-  not matched;
+  not matched, and neither is an older `postgres:18-alpine` left dangling
+  after a patch pull (it carries neither label): accepted, remove it by hand
+  when it matters;
 - caps the build cache with `docker builder prune -f --max-used-space 3GB`
   (`--keep-storage` is a deprecated alias of buildx's `--reserved-space`).
   This is the one step that is not scoped to Trail: the cache cannot be limited
@@ -362,36 +364,61 @@ not part of any deployment. It:
 
 No volume is ever touched, and no tag other than those two repositories. It
 exits non-zero when Docker is unreachable, when the containers or images
-cannot be listed (nothing is removed then), or when a prune command fails, so
+cannot be listed (nothing is removed, or nothing of the repository whose
+images cannot be listed), or when a prune command fails, so
 the task's Last Run Result shows it; a removal docker refuses (in use) is only
 logged.
 
 It logs one line per action to the console and to
 `%ProgramData%\trail-prune\prune-build-artifacts.log`; `-DryRun` only lists
 what it would remove. Copy it to a folder outside the checkouts (Launchway
-deletes those) and register it once, daily at night, as the account that runs
-Docker Desktop (which only runs while that user is logged on). Run the
-registration from a non-elevated PowerShell of that account, so that the log
-folder belongs to it; from an elevated one, grant the account Modify first:
+deletes those) and register it as the account that runs Docker Desktop (which
+only runs while that user is logged on). Do it from a non-elevated PowerShell
+of that account, so that the log folder belongs to it; only when an earlier
+elevated run has already created `%ProgramData%\trail-prune`, grant the
+account Modify on it:
 `icacls "$env:ProgramData\trail-prune" /grant "${env:USERDOMAIN}\${env:USERNAME}:(OI)(CI)M"`.
-The task runs without elevation, and an elevated console would not prove that
-it reaches Docker Desktop's pipe, so try it as a second task, with `-DryRun`:
+
+The order matters: lock the folder, register only the dry-run task, read its
+result, and arm the live task last.
 
 ```powershell
 New-Item -ItemType Directory -Force C:\ops\trail | Out-Null
 Copy-Item deploy\prune-build-artifacts.ps1 C:\ops\trail\
+# a script that runs daily with Docker access must not be editable by other local accounts
+icacls C:\ops\trail /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" "${env:USERDOMAIN}\${env:USERNAME}:(OI)(CI)RX"
 $script = 'C:\ops\trail\prune-build-artifacts.ps1'
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
-$trigger = New-ScheduledTaskTrigger -Daily -At 4:15am
-$live = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File $script"
 $dry = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File $script -DryRun"
-Register-ScheduledTask -TaskName 'Trail prune build artifacts' -Action $live -Trigger $trigger -Principal $principal -Settings $settings
 Register-ScheduledTask -TaskName 'Trail prune build artifacts (dry run)' -Action $dry -Principal $principal -Settings $settings
 Start-ScheduledTask -TaskName 'Trail prune build artifacts (dry run)'
-# once it has finished: LastTaskResult must be 0, and the log lists only trail-local tags
+# once it has finished:
 (Get-ScheduledTaskInfo -TaskName 'Trail prune build artifacts (dry run)').LastTaskResult
 Get-Content "$env:ProgramData\trail-prune\prune-build-artifacts.log" -Tail 40
+docker system df    # the baseline, before arming
+```
+
+The dry run passes when all of these hold:
+
+1. `LastTaskResult` is 0.
+2. The log opens and closes cleanly with no `ERROR`, and is owned by the task's account.
+3. It has exactly two summary lines, one per repository.
+4. Every "would remove" names a `trail-local` or `trail-local-predeploy-dump`
+   tag that no container uses and that is outside the kept sets.
+5. The tags of running production and preview containers show as kept.
+6. The two label-scoped image-prune lines have counts that match a manual
+   `docker image ls --filter dangling=true --filter label=<label>`.
+7. The builder-prune line is there, `docker builder prune --help` lists
+   `--max-used-space`, and the engine API is 1.48 or later
+   (`docker version --format '{{.Server.APIVersion}}'`).
+8. Then arm the live task, and check its first run (result 0, a log with the
+   removals, `docker system df` against the baseline):
+
+```powershell
+$live = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File $script"
+$trigger = New-ScheduledTaskTrigger -Daily -At 4:15am
+Register-ScheduledTask -TaskName 'Trail prune build artifacts' -Action $live -Trigger $trigger -Principal $principal -Settings $settings
 ```
 
 The dry-run task has no trigger and stays registered for later checks.
@@ -699,8 +726,7 @@ data in the same volume, empty. Move the data with a dump:
 
 1. `docker stop launchway-trail-app-1`, then [dump now](#backups).
 2. In the pull request, also bump the `FROM` of `predeploy-dump`'s
-   `dockerfile_inline` in `deploy/compose.yaml` and `backup`'s image:
-   Dependabot bumps `db` and `backup` but cannot see the `FROM` of
+   `dockerfile_inline` in `deploy/compose.yaml`: Dependabot bumps `db` and `backup` but cannot see the `FROM` of
    `predeploy-dump`'s `dockerfile_inline`, and a `pg_dump` of the old major refuses the new
    server, which would fail the deployment at `up` (the new, empty database
    counts as a pending migration) until the rollback.

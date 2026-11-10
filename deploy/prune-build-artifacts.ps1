@@ -28,7 +28,8 @@
   zeus*: tags are matched by exact repository name, and prunes are filtered by
   label. A removal that docker refuses (in use) is logged and skipped. The exit
   code is non-zero when Docker is unreachable, when the list of containers or
-  images cannot be read (nothing is removed then), or when a prune command
+  images of a repository cannot be read (nothing is removed then, or nothing of
+  that repository), or when a prune command
   fails, so Task Scheduler's Last Run Result shows it.
 
 .PARAMETER DryRun
