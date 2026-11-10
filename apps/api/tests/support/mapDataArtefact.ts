@@ -10,6 +10,8 @@ export interface ArtefactChanges {
   ways?: (lines: string[]) => string[];
   /** The lines of pois.geojsonseq.gz, changed. */
   pois?: (lines: string[]) => string[];
+  /** The text of region.poly (Osmosis polygon filter format), instead of Monaco's. */
+  polygon?: string;
   /** Bytes for ways.opl.gz as they are (a damaged or hostile file). */
   waysFile?: Buffer;
   /** The manifest, changed after its files and counts were brought up to date. */
@@ -50,6 +52,7 @@ export function writeArtefact(changes: ArtefactChanges = {}): string {
         ? readFileSync(join(monacoDir, "pois.geojsonseq.gz"))
         : gzipLines(poiLines),
   };
+  if (changes.polygon !== undefined) files["region.poly"] = Buffer.from(changes.polygon);
   for (const [name, bytes] of Object.entries(files)) writeFileSync(join(dir, name), bytes);
   const manifest = JSON.parse(readFileSync(join(monacoDir, "manifest.json"), "utf8")) as Record<
     string,

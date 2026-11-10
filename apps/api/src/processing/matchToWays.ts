@@ -1,8 +1,8 @@
 import type { KeptPoint } from "./keptPoint";
 import type { WayClass } from "./mapData";
+import { legOf, placeOnLeg, verticesBetween } from "./matchLegs";
 import type { MappedPoint } from "./pipelineTypes";
 import type { ProcessingConfig } from "./processingConfig";
-import { projectOntoSegment } from "./segmentGeometry";
 import type { RoutePath, WayGraph } from "./wayGraph";
 import type { WayCandidate, WayIndex } from "./wayIndex";
 
@@ -26,87 +26,6 @@ interface Step {
   x: number;
   y: number;
   states: State[];
-}
-
-/** A piece of the matched line between two HMM points, as a polyline with a way per piece (-1: none). */
-interface Leg {
-  xs: number[];
-  ys: number[];
-  ways: number[];
-  /** Arc length at each vertex. */
-  along: number[];
-}
-
-function legOf(
-  path: RoutePath | null,
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-): Leg {
-  const xs = path?.xs ?? [from.x, to.x];
-  const ys = path?.ys ?? [from.y, to.y];
-  const ways = path?.ways ?? [-1];
-  const along = [0];
-  for (let vertex = 1; vertex < xs.length; vertex += 1) {
-    along.push(
-      (along[vertex - 1] ?? 0) +
-        Math.hypot(
-          (xs[vertex] ?? 0) - (xs[vertex - 1] ?? 0),
-          (ys[vertex] ?? 0) - (ys[vertex - 1] ?? 0),
-        ),
-    );
-  }
-  return { xs, ys, ways, along };
-}
-
-/** Where a point lands on a leg, never behind `minAlong`: points follow the line forward. */
-function placeOnLeg(
-  leg: Leg,
-  x: number,
-  y: number,
-  minAlong: number,
-): { x: number; y: number; along: number; way: number } {
-  let best = { x: leg.xs[0] ?? x, y: leg.ys[0] ?? y, along: 0, way: leg.ways[0] ?? -1 };
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (let piece = 0; piece < leg.xs.length - 1; piece += 1) {
-    const end = leg.along[piece + 1] ?? 0;
-    if (end < minAlong) continue;
-    const projection = projectOntoSegment(
-      x,
-      y,
-      leg.xs[piece] ?? 0,
-      leg.ys[piece] ?? 0,
-      leg.xs[piece + 1] ?? 0,
-      leg.ys[piece + 1] ?? 0,
-    );
-    const start = leg.along[piece] ?? 0;
-    let along = start + projection.t * (end - start);
-    let px = projection.x;
-    let py = projection.y;
-    if (along < minAlong) {
-      // Clamp to the earliest allowed position on this piece.
-      const t = end === start ? 0 : (minAlong - start) / (end - start);
-      along = minAlong;
-      px = (leg.xs[piece] ?? 0) + t * ((leg.xs[piece + 1] ?? 0) - (leg.xs[piece] ?? 0));
-      py = (leg.ys[piece] ?? 0) + t * ((leg.ys[piece + 1] ?? 0) - (leg.ys[piece] ?? 0));
-    }
-    const distance = Math.hypot(px - x, py - y);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = { x: px, y: py, along, way: leg.ways[piece] ?? -1 };
-    }
-  }
-  return best;
-}
-
-/** The vertices of a leg strictly between two arc lengths. */
-function verticesBetween(leg: Leg, from: number, to: number): [number, number][] {
-  const vertices: [number, number][] = [];
-  for (let vertex = 1; vertex < leg.xs.length - 1; vertex += 1) {
-    const along = leg.along[vertex] ?? 0;
-    if (along > from + 0.01 && along < to - 0.01)
-      vertices.push([leg.xs[vertex] ?? 0, leg.ys[vertex] ?? 0]);
-  }
-  return vertices;
 }
 
 /**

@@ -24,6 +24,7 @@ type MapRow =
       nodes: string[];
       geometry: Buffer;
       name: string | null;
+      service: string | null;
       lat: null;
       lon: null;
     }
@@ -34,6 +35,7 @@ type MapRow =
       nodes: null;
       geometry: null;
       name: string | null;
+      service: null;
       lat: number;
       lon: number;
     };
@@ -84,10 +86,24 @@ export async function cachedTiles(
  * region's extract; then the source), so the answer never depends on the
  * order of the rows. One statement, so one moment: a region's build swapped
  * meanwhile is read old or new, never both or neither (importRegion.ts).
+ *
+ * `options.kinds` keeps only ways of those kinds and `options.pois: false`
+ * skips the stops: the rail-only read of a move whose tiles a region covers
+ * (docs/architecture.md §17.3). The kind is judged on the way's newest row, so
+ * a way reclassified in a newer source is not found by its old kind.
  */
-export async function loadMapData(db: Executor, keys: Iterable<TileKey>): Promise<MapData> {
+export async function loadMapData(
+  db: Executor,
+  keys: Iterable<TileKey>,
+  options: { kinds?: readonly WayKind[]; pois?: boolean } = {},
+): Promise<MapData> {
   const tiles = addresses(keys);
   if (tiles.length === 0) return { ways: [], pois: [] };
+  const kindFilter =
+    options.kinds === undefined
+      ? sql``
+      : sql`WHERE kind = ANY (${`{${options.kinds.join(",")}}`}::text[])`;
+  const poiFilter = options.pois === false ? sql`AND false` : sql``;
   const result = await db.execute<MapRow & Record<string, unknown>>(sql`
     WITH tiles AS MATERIALIZED (
       SELECT * FROM jsonb_to_recordset(${JSON.stringify(tiles)}::jsonb) AS r(z smallint, x integer, y integer)
@@ -98,7 +114,8 @@ export async function loadMapData(db: Executor, keys: Iterable<TileKey>): Promis
       SELECT source FROM osm_regions WHERE status = 'ready'
     ),
     ways AS (
-      SELECT DISTINCT ON (w.id) w.id, w.kind, w.nodes, w.geometry, w.tags->>'name' AS name
+      SELECT DISTINCT ON (w.id) w.id, w.kind, w.nodes, w.geometry, w.tags->>'name' AS name,
+        w.tags->>'service' AS service
       FROM tiles r
       JOIN osm_tile_ways tw ON tw.z = r.z AND tw.x = r.x AND tw.y = r.y
         AND tw.source = ANY (ARRAY(SELECT source FROM serving))
@@ -110,13 +127,15 @@ export async function loadMapData(db: Executor, keys: Iterable<TileKey>): Promis
       FROM tiles r
       JOIN osm_pois p ON p.z = r.z AND p.x = r.x AND p.y = r.y
         AND p.source = ANY (ARRAY(SELECT source FROM serving))
+        ${poiFilter}
       ORDER BY p.id, p.fetched_at DESC, p.source DESC
     )
-    SELECT 'way' AS element, id::text AS id, kind, nodes::text[] AS nodes, geometry, name,
+    SELECT 'way' AS element, id::text AS id, kind, nodes::text[] AS nodes, geometry, name, service,
       NULL::double precision AS lat, NULL::double precision AS lon
     FROM ways
+    ${kindFilter}
     UNION ALL
-    SELECT 'poi', id, kind, NULL, NULL, name, lat, lon FROM pois
+    SELECT 'poi', id, kind, NULL, NULL, name, NULL, lat, lon FROM pois
   `);
   const ways: OsmWay[] = [];
   const pois: OsmPoi[] = [];
@@ -128,6 +147,7 @@ export async function loadMapData(db: Executor, keys: Iterable<TileKey>): Promis
         nodes: row.nodes.map(Number),
         geometry: decodeGeometry(row.geometry),
         name: row.name,
+        ...(row.service === null ? {} : { service: row.service }),
       });
     } else {
       pois.push({ id: row.id, kind: row.kind, lat: row.lat, lon: row.lon, name: row.name });

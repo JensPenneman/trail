@@ -245,6 +245,21 @@ describe("trail map import", () => {
     expect(all.pois).toHaveLength(manifest.counts.pois.features);
   });
 
+  it("reads the rail ways alone, with their service tag, when asked for the kind", async () => {
+    const rail = await loadMapData(t.ctx.db, monacoTiles, { kinds: ["rail"], pois: false });
+    expect(rail.pois).toEqual([]);
+    expect(rail.ways).toHaveLength(11);
+    expect(new Set(rail.ways.map((way) => way.kind))).toEqual(new Set(["rail"]));
+    expect(
+      rail.ways.flatMap((way) => (way.service === undefined ? [] : [way.service])).sort(),
+    ).toEqual(["crossover", "crossover", "siding"]);
+    // Without options the answer is what it was: every way and stop, `service` only where tagged.
+    const all = await loadMapData(t.ctx.db, monacoTiles);
+    expect(all.ways).toHaveLength(manifest.counts.ways);
+    expect(all.pois).toHaveLength(manifest.counts.pois.features);
+    expect(all.ways.filter((way) => way.service !== undefined).length).toBeGreaterThanOrEqual(3);
+  });
+
   it("lists the builds with trail map status, after the volume's", async () => {
     expect(await run("map", "status")).toBe(0);
     // No MAP_DATA_REGIONS in the tests: the volume's part says so, the tables' follows.

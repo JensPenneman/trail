@@ -10,6 +10,8 @@ export interface IndexedWay {
   kind: WayKind;
   wayClass: WayClass;
   nodes: readonly number[];
+  /** OSM `service` tag (`siding`, `yard` …), null when untagged. */
+  service: string | null;
   xs: Float64Array;
   ys: Float64Array;
   /** Distance along the way at each vertex. */
@@ -35,6 +37,9 @@ export interface WayCandidate {
 export const kindBits = Object.fromEntries(
   wayKinds.map((kind, position) => [kind, 1 << position]),
 ) as Readonly<Record<WayKind, number>>;
+
+/** Every kind: the default of `candidates`' mask. */
+export const allKinds = (1 << wayKinds.length) - 1;
 
 const cellSizeM = 100;
 /** Segments per way stay far below this (OSM allows 2000 nodes per way). */
@@ -83,6 +88,7 @@ export class WayIndex {
         kind: way.kind,
         wayClass: wayClassOf(way.kind),
         nodes: way.nodes,
+        service: way.service ?? null,
         xs,
         ys,
         offsets,
@@ -125,14 +131,25 @@ export class WayIndex {
     }
   }
 
-  /** The nearest point of each way within `radius`, nearest first (then by way id), at most `limit`. */
-  candidates(x: number, y: number, radius: number, limit: number): WayCandidate[] {
+  /**
+   * The nearest point of each way within `radius`, nearest first (then by way
+   * id), at most `limit`. With `kindMask` (bits of `kindBits`) only ways of
+   * those kinds count: the rail alignment looks at tracks alone, however many
+   * roads and platforms lie nearer.
+   */
+  candidates(
+    x: number,
+    y: number,
+    radius: number,
+    limit: number,
+    kindMask = allKinds,
+  ): WayCandidate[] {
     const best = new Map<number, WayCandidate>();
     this.#forEachSegmentNear(x, y, radius, (code) => {
       const wayIndex = Math.floor(code / segmentSlots);
       const segment = code % segmentSlots;
       const way = this.ways[wayIndex];
-      if (way === undefined) return;
+      if (way === undefined || (kindBits[way.kind] & kindMask) === 0) return;
       const projection = projectOntoSegment(
         x,
         y,
