@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/JensPenneman/trail/compare/v0.10.1...v0.11.0) (2026-11-11)
+
+
+### Features
+
+* **api:** draw train rides along the railway ([80d0cd4](https://github.com/JensPenneman/trail/commit/80d0cd4b1af402a7f188014709e715d79107f865))
+* **deploy:** build production from source and dump the database before each update ([ac29b26](https://github.com/JensPenneman/trail/commit/ac29b26f2a8020b1183a4db881b0f9166c75b274))
+
+
+### Dependencies
+
+* bump @biomejs/biome from 2.6.5 to 2.6.6 in the biome group ([8d24ecc](https://github.com/JensPenneman/trail/commit/8d24ecc4c9708bda0b626a4a9fbf92e8bd15e221))
+
 ## [0.10.1](https://github.com/JensPenneman/trail/compare/v0.10.0...v0.10.1) (2026-11-10)
 
 
