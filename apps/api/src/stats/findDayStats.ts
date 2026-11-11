@@ -16,6 +16,7 @@ export async function findDayStats(
   db: Database,
   access: DeviceAccess & { user: { timezone: string } },
   query: { from: string; to: string; deviceIds?: readonly string[] | undefined },
+  railAlign: boolean,
 ): Promise<DayStat[]> {
   const ids = (await resolveDeviceIds(db, access, query.deviceIds)).map((device) => device.id);
   const dates: string[] = [];
@@ -24,6 +25,7 @@ export async function findDayStats(
     deviceIds: ids,
     timezone: access.user.timezone,
     dates,
+    railAlign,
   });
   return days.flatMap((day) => (day.stat === null ? [] : [{ ...day.stat, stamp: day.stamp }]));
 }

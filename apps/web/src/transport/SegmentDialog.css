@@ -33,6 +33,11 @@
   font-weight: 600;
 }
 
+.segment-dialog__rail {
+  color: var(--color-text-2);
+  font-size: var(--text-s);
+}
+
 .segment-dialog__change {
   display: grid;
   gap: var(--space-3);

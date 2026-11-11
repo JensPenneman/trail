@@ -20,7 +20,11 @@ options on a phone):
   straight across the fields. A flight stays as averaged: no road explains
   it.
 - **Transport**: your day as stops and moves, each move coloured by how you
-  travelled, with a legend. A dashed outline marks a move Trail is unsure of.
+  travelled, with a legend. A train ride is drawn along the railway when
+  Trail can check that your points lie on the tracks (a wandering fix in a
+  station or a tunnel is put back on the rails); the move's dialog says
+  "Drawn along the railway", the Mapped level shows the ride as recorded, and
+  setting a move to or from train switches the line at once. A dashed outline marks a move Trail is unsure of.
   A stop is a dot where you were; when you moved around within it without
   walking anywhere — along the platform, about the house — those points are
   drawn as a dotted line. Where your phone recorded nothing for a while and

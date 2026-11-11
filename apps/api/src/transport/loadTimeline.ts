@@ -24,6 +24,8 @@ export async function loadTimeline(
     to: Date;
     cursor?: string | undefined;
     limit: number;
+    /** `PROCESSING_RAIL_ALIGN`: off, no segment is `alignedTo` the rails. */
+    railAlign: boolean;
   },
 ): Promise<TimelineResponse> {
   const owned = await resolveDeviceIds(db, access, query.devices);
@@ -49,10 +51,13 @@ export async function loadTimeline(
   const page = rows.rows.slice(0, query.limit);
   const last = page.at(-1);
   return {
-    items: page.map(toSegment),
+    items: page.map((row) => toSegment(row, query.railAlign)),
     nextCursor:
       rows.rows.length > query.limit && last !== undefined
-        ? encodeTimelineCursor({ startedAt: toSegment(last).startedAt, deviceId: last.device_id })
+        ? encodeTimelineCursor({
+            startedAt: toSegment(last, query.railAlign).startedAt,
+            deviceId: last.device_id,
+          })
         : null,
     pending: await hasPendingWork(db, ids, query.from, query.to),
   };

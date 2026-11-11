@@ -1,3 +1,4 @@
+import type { WayKind } from "@trail/contracts/transport";
 import type { WayClass } from "./mapData";
 import { MinHeap } from "./minHeap";
 import type { WayCandidate, WayIndex } from "./wayIndex";
@@ -13,7 +14,9 @@ export interface RoutePath {
  * The network of one way class (rail, tram, street or ferry) as a graph of OSM
  * nodes, for routes between map-matching candidates: ways that share a node
  * are connected there. Searches are bounded by distance and by way changes
- * (docs/architecture.md §17.3) and reuse their arrays between runs.
+ * (docs/architecture.md §17.3) and reuse their arrays between runs. With
+ * `kinds` only ways of those kinds are in the graph (rail without metro and
+ * light rail, for a train).
  */
 export class WayGraph {
   readonly #index: WayIndex;
@@ -34,17 +37,19 @@ export class WayGraph {
   readonly #seen: Int32Array;
   readonly #settled: Int32Array;
   #epoch = 0;
+  #settledCount = 0;
   readonly #heap = new MinHeap();
   #source: WayCandidate | null = null;
 
-  constructor(index: WayIndex, wayClass: WayClass) {
+  constructor(index: WayIndex, wayClass: WayClass, kinds?: readonly WayKind[]) {
     this.#index = index;
     this.#wayClass = wayClass;
     const nodeOf = new Map<number, number>();
     const xs: number[] = [];
     const ys: number[] = [];
     this.#vertexNodes = index.ways.map((way) => {
-      if (way.wayClass !== wayClass) return new Int32Array(0);
+      if (way.wayClass !== wayClass || (kinds !== undefined && !kinds.includes(way.kind)))
+        return new Int32Array(0);
       const vertices = new Int32Array(way.nodes.length);
       for (const [vertex, nodeId] of way.nodes.entries()) {
         let node = nodeOf.get(nodeId);
@@ -109,6 +114,11 @@ export class WayGraph {
     this.#settled = new Int32Array(nodeCount);
   }
 
+  /** Nodes settled by every search so far: the work the searches did. */
+  get settledCount(): number {
+    return this.#settledCount;
+  }
+
   get wayClass(): WayClass {
     return this.#wayClass;
   }
@@ -161,6 +171,7 @@ export class WayGraph {
       const node = this.#heap.pop();
       if (this.#settled[node] === this.#epoch) continue;
       this.#settled[node] = this.#epoch;
+      this.#settledCount += 1;
       pending.delete(node);
       const distance = this.#distance[node] ?? 0;
       const hops = this.#hops[node] ?? 0;

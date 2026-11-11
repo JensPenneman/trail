@@ -23,6 +23,7 @@ export async function setSegmentMode(
   mode: ChosenMode,
   source: ModeOverrideSource,
   lockWaitMs: number,
+  railAlign: boolean,
 ): Promise<Segment> {
   const found = await findSegment(db, access, segmentId);
   if (found.kind === "stop") {
@@ -39,7 +40,7 @@ export async function setSegmentMode(
       ORDER BY created_at DESC
     `);
     const same = existing.rows.find((row) => row.mode === mode);
-    if (same !== undefined && segment.mode_user === mode) return toSegment(segment);
+    if (same !== undefined && segment.mode_user === mode) return toSegment(segment, railAlign);
     await tx.execute(sql`
       UPDATE mode_overrides SET revoked_at = now()
       WHERE device_id = ${segment.device_id} AND kind = 'segment' AND revoked_at IS NULL
@@ -64,6 +65,6 @@ export async function setSegmentMode(
     if (row === undefined) throw new Error("The segment vanished under its lock");
     // The time on the move by mode: the days the move spans (docs/architecture.md §8.2).
     await rebuildSegmentHeatDays(tx, segment.device_id, segment);
-    return toSegment(row);
+    return toSegment(row, railAlign);
   });
 }

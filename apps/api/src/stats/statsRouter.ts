@@ -29,7 +29,7 @@ export function statsRouter(ctx: AppContext): Router {
     const query = parseQuery(daysQuerySchema, req);
     const body: DaysResponse = {
       timezone: auth.user.timezone,
-      days: await findDayStats(db, auth, query),
+      days: await findDayStats(db, auth, query, ctx.config.processing.railAlign),
     };
     // A few hundred small rows: their hash is the validator (docs/architecture.md §8.9).
     const etag = weakEtag(auth.user.id, apiPaths.statsDays, body);

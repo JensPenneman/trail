@@ -1,0 +1,382 @@
+import { describe, expect, it } from "vitest";
+import type { KeptPoint } from "../../src/processing/keptPoint";
+import type { MappedPoint, RailPoint } from "../../src/processing/pipelineTypes";
+import { defaultProcessingConfig } from "../../src/processing/processingConfig";
+import { judgeRailPath } from "../../src/processing/rail/judgeRailPath";
+
+const config = defaultProcessingConfig.rail.judge;
+const metresPerDegreeLon = 111_195 * Math.cos((51 * Math.PI) / 180);
+
+/** `count` points `spacingM` apart eastwards, `seconds` apart. */
+function part(count: number, spacingM = 500, seconds = 20) {
+  const points: KeptPoint[] = Array.from({ length: count }, (_, index) => ({
+    index,
+    t: 1_800_000_000 + index * seconds,
+    lat: 51,
+    lon: 3.7 + (index * spacingM) / metresPerDegreeLon,
+    speed: spacingM / seconds,
+    accuracy: 10,
+    stationary: false,
+    reportedSpeed: null,
+    altitude: null,
+    verticalAccuracy: null,
+    motion: [],
+  }));
+  const rail: RailPoint[] = points.map((point, index) => ({
+    lat: point.lat,
+    lon: point.lon,
+    wayId: 1,
+    run: 0,
+    step: true,
+    outlier: false,
+    offsetM: 5,
+    z: 0.5,
+    routed: true,
+    legM: index === 0 ? 0 : spacingM,
+    bridgedLegM: 0,
+    bridgedSpeedMs: 0,
+    path: null,
+  }));
+  return { points, rail };
+}
+
+const judge = (
+  input: ReturnType<typeof part>,
+  override: Partial<typeof config> = {},
+  source: "cache" | "region" | null = "cache",
+) => judgeRailPath(input.points, input.rail, { ...config, ...override }, source);
+
+/** The rail point at `index`. */
+function at(input: ReturnType<typeof part>, index: number): RailPoint {
+  const point = input.rail[index];
+  if (point === undefined) throw new Error(`no point ${index}`);
+  return point;
+}
+
+/** Applies `change` to the points of a share of the part, counted from its end. */
+function lastShare(
+  input: ReturnType<typeof part>,
+  share: number,
+  change: (point: RailPoint) => void,
+) {
+  const from = Math.ceil(input.rail.length * (1 - share));
+  for (const point of input.rail.slice(from)) change(point);
+  return input;
+}
+
+describe("judgeRailPath", () => {
+  it("accepts a long part that lies on the rails", () => {
+    const verdict = judge(part(21), {}, "region");
+    expect(verdict).toEqual({
+      status: "aligned",
+      reason: "ok",
+      source: "region",
+      coveredShare: 1,
+      routedShare: 1,
+      medianZ: 0.5,
+      p90Z: 0.5,
+      medianOffsetM: 5,
+      outlierShare: 0,
+      roadShare: 0,
+      roadRailM: 0,
+      roadSnapM: 0,
+      roadMarginM: 10,
+      mapped: false,
+      bridgedMaxSpeedMs: 0,
+      lengthM: 10_000,
+    });
+    expect(Object.keys(verdict)).not.toContain("lat");
+  });
+
+  it("calls a part under a kilometre, or under three steps, short", () => {
+    expect(judge(part(2, 400))).toMatchObject({ status: "poor", reason: "short", lengthM: 400 });
+    const short = part(21, 400);
+    for (const point of short.rail.slice(2)) point.step = false;
+    expect(judge(short)).toMatchObject({ status: "poor", reason: "short" });
+  });
+
+  it("says no_rail when under half of the length is inside a run, poor/coverage under 0.9", () => {
+    const some = part(21);
+    lastShare(some, 0.15, (point) => {
+      point.run = -1;
+      point.lat = null;
+      point.lon = null;
+      point.offsetM = null;
+      point.z = null;
+      point.legM = 0;
+    });
+    expect(judge(some)).toMatchObject({ status: "poor", reason: "coverage", coveredShare: 0.85 });
+    const little = part(21);
+    lastShare(little, 0.6, (point) => {
+      point.run = -1;
+      point.legM = 0;
+    });
+    expect(judge(little)).toMatchObject({ status: "no_rail", reason: "no_rail" });
+    const none = part(21);
+    for (const point of none.rail) point.run = -1;
+    expect(judge(none)).toMatchObject({ status: "no_rail", coveredShare: 0 });
+  });
+
+  it("counts a change of run as uncovered ground between them", () => {
+    const split = part(21);
+    for (const point of split.rail.slice(10)) point.run = 1;
+    expect(judge(split)).toMatchObject({ coveredShare: 0.95, status: "aligned" });
+  });
+
+  it("flags poor/routes when under 0.8 of the line followed the network, or a straight leg is over 2 km", () => {
+    const unrouted = part(21);
+    lastShare(unrouted, 0.25, (point) => {
+      point.routed = false;
+      point.bridgedLegM = 500;
+    });
+    expect(judge(unrouted)).toMatchObject({ status: "poor", reason: "routes", routedShare: 0.75 });
+    // 0.85 routed passes at 0.8 (the rehearsal's rides of 0.85 and 0.87 were drawn straight in places the map does not connect).
+    const mostly = part(21);
+    lastShare(mostly, 0.15, (point) => {
+      point.routed = false;
+      point.bridgedLegM = 500;
+    });
+    expect(judge(mostly)).toMatchObject({ status: "aligned", routedShare: 0.85 });
+    const long = part(41);
+    at(long, 20).routed = false;
+    at(long, 20).bridgedLegM = 2500;
+    expect(judge(long)).toMatchObject({ status: "poor", reason: "routes" });
+    at(long, 20).bridgedLegM = 1900;
+    expect(judge(long)).toMatchObject({ status: "aligned" });
+  });
+
+  it("does not count the leg into a part's first point: it belongs to the segment before", () => {
+    const input = part(21);
+    // A move's first point carries the straight leg into it; the part itself is fully routed.
+    at(input, 0).routed = false;
+    at(input, 0).bridgedLegM = 4000;
+    expect(judge(input)).toMatchObject({ status: "aligned", reason: "ok", routedShare: 1 });
+    // The same leg anywhere else in the part does fail it.
+    at(input, 5).routed = false;
+    at(input, 5).bridgedLegM = 4000;
+    expect(judge(input)).toMatchObject({ status: "poor", reason: "routes" });
+  });
+
+  it("flags poor/offsets on the median z, the p90 z and the median offset", () => {
+    const median = part(21);
+    for (const point of median.rail) point.z = 1.6;
+    expect(judge(median)).toMatchObject({ status: "poor", reason: "offsets", medianZ: 1.6 });
+
+    const tail = part(21);
+    lastShare(tail, 0.25, (point) => {
+      point.z = 3.5;
+    });
+    expect(judge(tail)).toMatchObject({
+      status: "poor",
+      reason: "offsets",
+      p90Z: 3.5,
+      medianZ: 0.5,
+    });
+
+    const far = part(21);
+    for (const point of far.rail) point.offsetM = 61;
+    expect(judge(far)).toMatchObject({ status: "poor", reason: "offsets", medianOffsetM: 61 });
+  });
+
+  it("does not align a car on a motorway 300 m from the rails: poor/offsets", () => {
+    const car = part(21);
+    for (const point of car.rail) {
+      point.offsetM = 300;
+      point.z = 300 / 15;
+    }
+    expect(judge(car)).toMatchObject({ status: "poor", reason: "offsets" });
+  });
+
+  describe("the road check", () => {
+    /** +noise, 0, -noise in turn: a median that is the stated distance. */
+    const wiggle = (index: number, noise: number): number =>
+      index % 3 === 0 ? noise : index % 3 === 1 ? 0 : -noise;
+    const onStreet = (
+      snapM: number,
+      wayKind: MappedPoint["wayKind"] = "secondary",
+    ): MappedPoint => ({
+      lat: 51,
+      lon: 3.7,
+      wayId: 7,
+      wayKind,
+      snapM,
+      path: null,
+    });
+    /** A part `offsetM` from the rails (±`noise`), with fixes of `accuracy`, and its mapped places 'snapM' from a road. */
+    const beside = (offsetM: number, accuracy: number, noise: number) => {
+      const input = part(21);
+      for (const point of input.points) point.accuracy = accuracy;
+      for (const [index, place] of input.rail.entries()) {
+        place.offsetM = offsetM + wiggle(index, noise);
+        place.z = place.offsetM / Math.max(accuracy, 15);
+      }
+      return input;
+    };
+    const verdict = (
+      input: ReturnType<typeof part>,
+      mapped: (MappedPoint | null)[],
+      modeUser: "train" | null = null,
+    ) => judgeRailPath(input.points, input.rail, config, "cache", mapped, modeUser);
+    const allOn = (input: ReturnType<typeof part>, snapM: number, noise = 0) =>
+      input.points.map((_, index) => onStreet(snapM + wiggle(index, noise)));
+
+    it("refuses a car on a road 40 m from the rails, fixes of 30 m accuracy; a person's train is aligned", () => {
+      const car = beside(40, 30, 0);
+      const mapped = allOn(car, 4, 1);
+      const refused = verdict(car, mapped);
+      expect(refused).toMatchObject({
+        status: "poor",
+        reason: "road",
+        roadShare: 1,
+        roadRailM: 40,
+        roadSnapM: 4,
+        roadMarginM: 30,
+        mapped: true,
+      });
+      expect(verdict(car, mapped, "train")).toMatchObject({ status: "aligned", reason: "ok" });
+    });
+
+    it("does not refuse a train 12 m off its track beside a road, where the old rule would have", () => {
+      const train = beside(12, 12, 3);
+      const mapped = allOn(train, 3);
+      // A fifth of the part is away from the road.
+      for (let index = 4; index < mapped.length; index += 5) mapped[index] = onStreet(3, "rail");
+      const result = verdict(train, mapped);
+      expect(result.roadShare).toBeGreaterThan(0.5);
+      // The retired rule: a street snap under half the rail offset counted a point as on the road.
+      const old = train.points.filter((_, index) => {
+        const place = train.rail[index];
+        const match = mapped[index];
+        return match?.wayKind !== "rail" && (match?.snapM ?? 99) < 0.5 * (place?.offsetM ?? 0);
+      }).length;
+      expect(old / train.points.length).toBeGreaterThan(0.5);
+      // The gap of 9 m is under the margin of 15 m (one sigma, held at 15 m).
+      expect(result).toMatchObject({
+        status: "aligned",
+        roadRailM: 12,
+        roadSnapM: 3,
+        roadMarginM: 15,
+      });
+    });
+
+    it("refuses a car on a road 20 m from the rails with accurate fixes: the margin is held at 15 m", () => {
+      const car = beside(20, 5, 3);
+      expect(verdict(car, allOn(car, 2))).toMatchObject({
+        status: "poor",
+        reason: "road",
+        roadMarginM: 15,
+      });
+    });
+
+    it("never refuses a part placed on street ways for under half its duration", () => {
+      const car = beside(40, 30, 0);
+      const mapped = car.points.map((_, index) =>
+        index % 10 < 4 ? onStreet(4) : onStreet(2, "rail"),
+      );
+      const result = verdict(car, mapped);
+      expect(result.roadShare).toBeLessThan(0.5);
+      expect(result).toMatchObject({ status: "aligned", mapped: true });
+    });
+
+    it("has no evidence without a mapped match, or on the rails themselves", () => {
+      const car = beside(40, 30, 0);
+      expect(
+        verdict(
+          car,
+          car.points.map(() => null),
+        ),
+      ).toMatchObject({
+        status: "aligned",
+        roadShare: 0,
+        mapped: false,
+      });
+      expect(
+        verdict(
+          car,
+          car.points.map(() => onStreet(3, "rail")),
+        ),
+      ).toMatchObject({
+        status: "aligned",
+        roadShare: 0,
+        mapped: true,
+      });
+      expect(judge(car)).toMatchObject({ status: "aligned", mapped: false });
+    });
+  });
+
+  it("treats the connector between two runs of a part as a straight leg", () => {
+    // 20 km in 41 points; the second run starts after a displacement of 400 m in 10 s (40 m/s).
+    const slow = part(41, 500, 20);
+    for (const point of slow.rail.slice(20)) point.run = 1;
+    for (const point of slow.points.slice(20)) point.t -= 10;
+    expect(judge(slow)).toMatchObject({ status: "aligned" });
+    const glitch = part(41, 500, 20);
+    for (const point of glitch.rail.slice(20)) point.run = 1;
+    // 500 m in 2 s is 250 m/s: the connector is a jump of the fix.
+    for (const point of glitch.points.slice(20)) point.t -= 18;
+    expect(judge(glitch)).toMatchObject({
+      status: "poor",
+      reason: "routes",
+      bridgedMaxSpeedMs: 250,
+    });
+    // Unplaced points between the runs belong to the connector: from the last place of one run to the first of the next.
+    const gap = part(41, 500, 20);
+    for (const point of gap.rail.slice(21)) point.run = 1;
+    at(gap, 20).run = -1;
+    expect(judge(gap)).toMatchObject({ status: "aligned", bridgedMaxSpeedMs: 25 });
+    for (const point of gap.points.slice(21)) point.t -= 38;
+    expect(judge(gap)).toMatchObject({ status: "poor", reason: "routes", bridgedMaxSpeedMs: 500 });
+    // A connector over 2 km is refused whatever its speed.
+    const far = part(81, 500, 100);
+    for (const point of far.rail.slice(40)) point.run = 1;
+    for (const point of far.points.slice(40)) point.lon += 2500 / metresPerDegreeLon;
+    expect(judge(far)).toMatchObject({ status: "poor", reason: "routes" });
+  });
+
+  it("counts the time before the line begins when the first point is an outlier", () => {
+    const six = part(6, 600, 120);
+    const first = at(six, 0);
+    first.outlier = true;
+    first.run = 0;
+    first.offsetM = 48;
+    first.z = 3.2;
+    const verdict = judge(six);
+    // The first interval of 120 s of 600 is the part's, not nothing.
+    expect(verdict).toMatchObject({ outlierShare: 0.2, status: "poor", reason: "outliers" });
+    // A part at 1 Hz with the same first fix stays aligned.
+    const dense = part(1201, 10, 1);
+    const start = at(dense, 0);
+    start.outlier = true;
+    start.offsetM = 48;
+    start.z = 3.2;
+    expect(judge(dense)).toMatchObject({ status: "aligned", outlierShare: 0.001 });
+  });
+
+  it("leaves the outliers out of the offsets and flags poor/outliers over 0.15 of the duration", () => {
+    const wobbly = part(21);
+    for (const index of [5, 6]) {
+      const point = at(wobbly, index);
+      point.outlier = true;
+      point.offsetM = 1500;
+      point.z = 100;
+    }
+    expect(judge(wobbly)).toMatchObject({ status: "aligned", outlierShare: 0.1, p90Z: 0.5 });
+    const many = part(21);
+    for (const index of [4, 5, 6, 7]) at(many, index).outlier = true;
+    expect(judge(many)).toMatchObject({ status: "poor", reason: "outliers", outlierShare: 0.2 });
+  });
+
+  it("weighs by time: a long stop with a large offset counts for its duration", () => {
+    const input = part(21, 500, 20);
+    // One interval of 10 minutes at a bad offset, among 19 of 20 s.
+    for (const point of input.points.slice(10)) point.t += 580;
+    at(input, 10).z = 4;
+    expect(judge(input)).toMatchObject({ status: "poor", reason: "offsets", p90Z: 4 });
+  });
+
+  it("is a pure function of its input, whatever the source label", () => {
+    const input = part(21);
+    expect(judge(input, {}, null)).toEqual({ ...judge(input, {}, "cache"), source: null });
+    expect(judge(input)).toEqual(judge(input));
+  });
+});

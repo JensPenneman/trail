@@ -48,17 +48,38 @@ interface ProcessedRow extends Record<string, unknown> {
   lat_map: number | null;
   lon_map: number | null;
   path_map: [number, number][] | null;
+  lat_rail: number | null;
+  lon_rail: number | null;
+  path_rail: [number, number][] | null;
   speed_avg: number | null;
 }
 
-/** One served point and the level it reached; `vertices` are the way's shape before it. */
+/** A point's place along the railway and the rail's shape before it (§17.3, "Along the rails"). */
+interface RailPlace {
+  vertices: readonly LevelPoint[];
+  point: LevelPoint;
+}
+
+/**
+ * One served point and the level it reached; `vertices` are the way's shape
+ * before it. `rail` is its place along the railway, taken only for a move
+ * whose line is drawn along the rails (`alignedToOf`): the stored columns say
+ * where the points lie, the segment's verdict and mode say whether to show it.
+ */
 interface Served {
   t: number;
   level: ProcessingLevel;
   vertices: readonly LevelPoint[];
   point: LevelPoint;
   accuracy: number | null;
+  rail?: RailPlace;
 }
+
+/** The entry as drawn along the railway, where it has a place there; the mapped level counts. */
+const alongRail = (entry: Served): Served =>
+  entry.rail === undefined
+    ? entry
+    : { ...entry, level: "mapped", vertices: entry.rail.vertices, point: entry.rail.point };
 
 /* The vertices of every point without a way's shape before it: one array for all of them, as a
  * day of 1 Hz points would otherwise allocate 86 400 empty ones. Never changed. */
@@ -104,13 +125,19 @@ async function processedRows(
   deviceId: string,
   page: readonly LocationRow[],
   level: ProcessingLevel,
+  railAlign: boolean,
 ): Promise<ProcessedRow[]> {
   const first = page[0];
   const last = page.at(-1);
   if (level === "raw" || first === undefined || last === undefined) return [];
+  // With the kill switch off the rail places are not even read (docs/architecture.md §17.3).
+  const withRail = level === "inferred" && railAlign;
   const rows = await db.execute<ProcessedRow>(sql`
     SELECT extract(epoch FROM recorded_at)::float8 AS t, kept, lat_avg, lon_avg, lat_map, lon_map,
-      speed_avg, ${level === "averaged" ? sql`NULL::jsonb` : sql`path_map`} AS path_map
+      speed_avg, ${level === "averaged" ? sql`NULL::jsonb` : sql`path_map`} AS path_map,
+      ${withRail ? sql`lat_rail` : sql`NULL::float8`} AS lat_rail,
+      ${withRail ? sql`lon_rail` : sql`NULL::float8`} AS lon_rail,
+      ${withRail ? sql`path_rail` : sql`NULL::jsonb`} AS path_rail
     FROM processed_points
     WHERE device_id = ${deviceId}
       AND recorded_at >= ${first.recorded_at}::timestamptz
@@ -132,6 +159,7 @@ async function servedPoints(
   level: ProcessingLevel,
   ends: ReadonlySet<number>,
   values: readonly LevelValue[],
+  railAlign: boolean,
 ): Promise<Served[]> {
   const count = await db.execute<{ count: number }>(sql`
     SELECT count(*)::int AS count FROM locations
@@ -141,6 +169,8 @@ async function servedPoints(
   const stride = Math.max(1, Math.ceil((count.rows[0]?.count ?? 0) / holdLimit));
   const served: Served[] = [];
   let previous: LevelPoint | null = null;
+  // Where the rail's shape starts from: the previous point's place along the railway, else its own.
+  let previousRail: LevelPoint | null = null;
   let cursor: string | null = null;
   let seen = 0;
   for (;;) {
@@ -157,7 +187,7 @@ async function servedPoints(
       ORDER BY recorded_at
       LIMIT ${pageSize}
     `);
-    const processed = await processedRows(db, deviceId, page.rows, level);
+    const processed = await processedRows(db, deviceId, page.rows, level, railAlign);
     // Both ordered by time, every processed point one of the page's: they merge in one pass.
     let next = 0;
     for (const row of page.rows) {
@@ -217,11 +247,25 @@ async function servedPoints(
             accuracy: null,
           };
         }
+        if (level === "inferred" && done.lat_rail !== null && done.lon_rail !== null) {
+          const there: LevelPoint = [done.lon_rail, done.lat_rail, t, ...valuesOf(done.speed_avg)];
+          entry.rail = {
+            vertices: withTimes(
+              previousRail,
+              done.path_rail ?? [],
+              there,
+              valuesOf(done.speed_avg, false),
+            ),
+            point: there,
+          };
+        }
       }
       if (entry === null) continue;
       previous = entry.point;
+      previousRail = entry.rail?.point ?? entry.point;
       // Every k-th point when there are too many to hold; the way's shape and the ends always stay.
-      if (stride > 1 && seen % stride !== 0 && entry.vertices.length === 0 && !ends.has(t)) {
+      const shaped = entry.vertices.length > 0 || (entry.rail?.vertices.length ?? 0) > 0;
+      if (stride > 1 && seen % stride !== 0 && !shaped && !ends.has(t)) {
         continue;
       }
       served.push(entry);
@@ -253,6 +297,7 @@ const trackPiece = (deviceId: string, served: Served[]): Piece => ({
     distanceM: null,
     centroid: null,
     spreadM: null,
+    alignedTo: null,
   },
   served,
 });
@@ -290,6 +335,7 @@ function piecesOfSegments(
   deviceId: string,
   served: Served[],
   rows: readonly SegmentRow[],
+  railAlign: boolean,
 ): Piece[] {
   const pieces: Piece[] = [];
   let loose: Served[] = [];
@@ -304,10 +350,23 @@ function piecesOfSegments(
     loose = [];
   };
   let index = 0;
-  for (const row of rows) {
-    const segment = toSegment(row);
+  const alignedRows = rows.map((row) => toSegment(row, railAlign).alignedTo === "rail");
+  for (const [rowIndex, row] of rows.entries()) {
+    const segment = toSegment(row, railAlign);
     const start = Date.parse(segment.startedAt) / 1000;
     const end = Date.parse(segment.endedAt) / 1000;
+    // The point shared with a neighbour drawn along the rails is drawn at its rail place on both
+    // sides, so the line does not break at the boundary.
+    const before = rows[rowIndex - 1];
+    const after = rows[rowIndex + 1];
+    const sharesRailStart =
+      alignedRows[rowIndex - 1] === true &&
+      before !== undefined &&
+      Date.parse(toIso(before.ended_at)) / 1000 === start;
+    const sharesRailEnd =
+      alignedRows[rowIndex + 1] === true &&
+      after !== undefined &&
+      Date.parse(toIso(after.started_at)) / 1000 === end;
     while (index < served.length && (served[index]?.t ?? 0) < start) {
       const entry = served[index];
       if (entry !== undefined) takeLoose(entry);
@@ -316,12 +375,21 @@ function piecesOfSegments(
     flushLoose();
     const own = ownEndOf(row);
     const inside: Served[] = [];
+    const rail = segment.alignedTo === "rail";
     let cursor = index;
     while (cursor < served.length && (served[cursor]?.t ?? 0) <= end) {
       const entry = served[cursor];
       // A segment's line starts at its first point: the way's shape before it is the one before's.
       if (entry !== undefined && entry.t <= own) {
-        inside.push(inside.length === 0 ? { ...entry, vertices: noVertices } : entry);
+        const atRailBoundary =
+          entry.rail !== undefined &&
+          ((sharesRailStart && entry.t === start) || (sharesRailEnd && entry.t === end));
+        const drawn = rail
+          ? alongRail(entry)
+          : atRailBoundary && entry.rail !== undefined
+            ? { ...entry, point: entry.rail.point }
+            : entry;
+        inside.push(inside.length === 0 ? { ...drawn, vertices: noVertices } : drawn);
       }
       cursor += 1;
     }
@@ -343,6 +411,7 @@ function piecesOfSegments(
         distanceM: segment.distanceM,
         centroid: segment.kind === "stop" ? segment.centroid : null,
         spreadM: segment.spreadM,
+        alignedTo: segment.alignedTo,
       },
       served: inside,
     });
@@ -412,6 +481,8 @@ export async function loadLevelTracks(
     level: ProcessingLevel;
     maxPoints: number;
     values?: readonly LevelValue[];
+    /** `PROCESSING_RAIL_ALIGN`: off, no line is drawn along the rails, whatever is stored. */
+    railAlign: boolean;
   },
 ): Promise<LevelTracksResponse> {
   const values = query.values ?? [];
@@ -438,12 +509,20 @@ export async function loadLevelTracks(
         ends.add(Math.round(Date.parse(toIso(row.ended_at)) / 1000));
         ends.add(Math.round(ownEndOf(row)));
       }
-      const served = await servedPoints(db, device.id, query, query.level, ends, values);
-      pieces = piecesOfSegments(device.id, served, rows.rows);
+      const served = await servedPoints(
+        db,
+        device.id,
+        query,
+        query.level,
+        ends,
+        values,
+        query.railAlign,
+      );
+      pieces = piecesOfSegments(device.id, served, rows.rows, query.railAlign);
     } else {
       pieces = splitAtGaps(
         device.id,
-        await servedPoints(db, device.id, query, query.level, new Set(), values),
+        await servedPoints(db, device.id, query, query.level, new Set(), values, query.railAlign),
       );
     }
     const lines = pieces.map(lineOf);

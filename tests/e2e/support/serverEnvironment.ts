@@ -88,6 +88,7 @@ export function e2eServerEnvironment(databaseUrl: string): Record<string, string
     PROCESSING_OSM_TTL_DAYS: "",
     PROCESSING_MAX_ACCURACY_M: "",
     PROCESSING_STOP_MIN_S: "",
+    PROCESSING_RAIL_ALIGN: "",
     // Empty is "no region" here: the suite never pulls map data from the registry.
     MAP_DATA_REGIONS: "",
     MAP_DATA_REGISTRY: "",

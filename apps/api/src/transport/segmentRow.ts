@@ -28,6 +28,12 @@ export interface SegmentRow extends Record<string, unknown> {
   spread_m: number | null;
   /** A stop's `features.lastPointT` (epoch seconds): its own points end there; null for moves. */
   last_point_t: number | null;
+  /** `features.railPath.status` (§17.3): whether the move's points lie along the railway; null for a stop or no verdict. */
+  rail_status: string | null;
+  /** `features.railPath.reason`: why a `poor` verdict was given; `road` is the one a person's word overrules. */
+  rail_reason: string | null;
+  /** `features.railPath.mapped`: whether the mapped level matched the move and the judge could check the road (§17.3); null without a verdict. */
+  rail_mapped: boolean | null;
 }
 
 /** The columns of `SegmentRow`, for `SELECT ${segmentColumns} FROM segments s`. */
@@ -35,7 +41,9 @@ export const segmentColumns = sql.raw(`
   s.id, s.device_id, s.kind, s.started_at::text, s.ended_at::text, s.duration_s, s.distance_m,
   s.mode, s.mode_inferred, s.mode_user, s.confidence, s.review, s.max_speed, s.point_count,
   s.start_lat, s.start_lon, s.end_lat, s.end_lon, s.centroid_lat, s.centroid_lon,
-  (s.features->>'spreadM')::float8 AS spread_m, (s.features->>'lastPointT')::float8 AS last_point_t
+  (s.features->>'spreadM')::float8 AS spread_m, (s.features->>'lastPointT')::float8 AS last_point_t,
+  s.features->'railPath'->>'status' AS rail_status, s.features->'railPath'->>'reason' AS rail_reason,
+  (s.features->'railPath'->>'mapped')::boolean AS rail_mapped
 `);
 
 const round = (value: number, digits: number): number => {
@@ -43,8 +51,33 @@ const round = (value: number, digits: number): number => {
   return Math.round(value * factor) / factor;
 };
 
+/**
+ * The one gate of the aligned line: the mode that counts (a correction
+ * included) is train and the pass judged the points to lie along the rails.
+ * Read from both at every request, so a correction switches the line at once;
+ * a person's word also settles a mode that was to review.
+ * With the kill switch off (`railAlign` false, `PROCESSING_RAIL_ALIGN`) no
+ * line is drawn along the rails whatever is stored; flipping it changes
+ * nothing in the database.
+ */
+function alignedToOf(row: SegmentRow, railAlign: boolean): "rail" | null {
+  const mode = row.mode_user ?? row.mode_inferred;
+  if (!railAlign || row.kind !== "move" || mode !== "train") return null;
+  // A part refused only because a street lies beside the rails was judged a car by a check that a
+  // person's word overrules: set to train, its stored rail places are drawn.
+  const drawn =
+    row.rail_status === "aligned" ||
+    (row.rail_status === "poor" && row.rail_reason === "road" && row.mode_user === "train");
+  if (!drawn) return null;
+  // A verdict with no mapped match behind it (read from a region, or from cached tiles with no match)
+  // could not check the road: a car on a road by the rails passes the judge there. It is drawn only
+  // once nobody has to review the mode, whatever data the tiles came from.
+  if (row.rail_mapped !== true && row.review && row.mode_user === null) return null;
+  return "rail";
+}
+
 /** A segment as the API shows it: a stop has no mode; review only while nobody set the mode. */
-export function toSegment(row: SegmentRow): Segment {
+export function toSegment(row: SegmentRow, railAlign: boolean): Segment {
   const move = row.kind === "move";
   return {
     id: row.id,
@@ -70,5 +103,6 @@ export function toSegment(row: SegmentRow): Segment {
     end: { lat: row.end_lat, lon: row.end_lon },
     centroid: { lat: row.centroid_lat, lon: row.centroid_lon },
     spreadM: move || row.spread_m === null ? null : Math.round(row.spread_m),
+    alignedTo: alignedToOf(row, railAlign),
   };
 }

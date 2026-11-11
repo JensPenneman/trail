@@ -131,6 +131,7 @@ export async function persistWindow(
   const rows = raw.map((point, index) => {
     const averaged = result.averaged[index];
     const mapped = result.mapped[index] ?? null;
+    const railed = result.rail[index] ?? null;
     return {
       recorded_at: iso(point.t),
       kept: averaged?.kept ?? false,
@@ -146,26 +147,32 @@ export async function persistWindow(
           ? null
           : Math.round(mapped.snapM * 10) / 10,
       path_map: mapped?.path ?? null,
+      lat_rail: railed?.lat ?? null,
+      lon_rail: railed?.lon ?? null,
+      path_rail: railed?.path ?? null,
     };
   });
   for (let start = 0; start < rows.length; start += chunkSize) {
     const chunk = JSON.stringify(rows.slice(start, start + chunkSize));
     await tx.execute(sql`
       INSERT INTO processed_points (device_id, recorded_at, kept, lat_avg, lon_avg, speed_avg, lat_map,
-        lon_map, way_id, way_kind, snap_m, path_map, version, processed_at)
+        lon_map, way_id, way_kind, snap_m, path_map, lat_rail, lon_rail, path_rail, version, processed_at)
       SELECT ${deviceId}::uuid, r.recorded_at, r.kept, r.lat_avg, r.lon_avg, r.speed_avg, r.lat_map,
-        r.lon_map, r.way_id, r.way_kind, r.snap_m, r.path_map, ${versions.mapped}, now()
+        r.lon_map, r.way_id, r.way_kind, r.snap_m, r.path_map, r.lat_rail, r.lon_rail, r.path_rail,
+        ${versions.mapped}, now()
       FROM jsonb_to_recordset(${chunk}::jsonb) AS r(
         recorded_at timestamptz, kept boolean, lat_avg double precision, lon_avg double precision,
         speed_avg real, lat_map double precision, lon_map double precision, way_id bigint,
-        way_kind text, snap_m real, path_map jsonb
+        way_kind text, snap_m real, path_map jsonb, lat_rail double precision,
+        lon_rail double precision, path_rail jsonb
       )
       JOIN locations l ON l.device_id = ${deviceId}::uuid AND l.recorded_at = r.recorded_at
       ON CONFLICT (device_id, recorded_at) DO UPDATE SET
         kept = excluded.kept, lat_avg = excluded.lat_avg, lon_avg = excluded.lon_avg,
         speed_avg = excluded.speed_avg, lat_map = excluded.lat_map, lon_map = excluded.lon_map,
         way_id = excluded.way_id, way_kind = excluded.way_kind, snap_m = excluded.snap_m,
-        path_map = excluded.path_map, version = excluded.version, processed_at = excluded.processed_at
+        path_map = excluded.path_map, lat_rail = excluded.lat_rail, lon_rail = excluded.lon_rail,
+        path_rail = excluded.path_rail, version = excluded.version, processed_at = excluded.processed_at
       WHERE NOT (
         processed_points.recorded_at = ${firstAt}::timestamptz
         AND processed_points.version = ${versions.mapped}

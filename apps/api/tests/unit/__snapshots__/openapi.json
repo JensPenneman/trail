@@ -5218,6 +5218,21 @@
             "description": "For a stop: how far apart its points lie, in metres (the timeline segment's `spreadM`); the map draws its path when it is over 25 m. Null for moves, pieces of track and stops worked out before Trail kept it.",
             "example": 60
           },
+          "alignedTo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "rail"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`rail`: a train ride drawn along the railway at the Transport level (its points lie on the tracks, checked by Trail); the Mapped level shows it as recorded. Null: drawn as recorded. Follows the mode that counts, so a correction to or from train changes it at once.",
+            "example": "rail"
+          },
           "points": {
             "type": "array",
             "items": {
@@ -5240,6 +5255,7 @@
           "distanceM",
           "centroid",
           "spreadM",
+          "alignedTo",
           "points"
         ],
         "additionalProperties": false,
@@ -5535,6 +5551,21 @@
             ],
             "description": "For a stop: how far apart its points lie, in metres — the walk within a station, say. Null for a move, and for a stop worked out before Trail kept it.",
             "example": 120
+          },
+          "alignedTo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "rail"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`rail`: a train ride drawn along the railway at the Transport level (its points lie on the tracks, checked by Trail); the Mapped level shows it as recorded. Null: drawn as recorded. Follows the mode that counts, so a correction to or from train changes it at once.",
+            "example": "rail"
           }
         },
         "required": [
@@ -5556,7 +5587,8 @@
           "start",
           "end",
           "centroid",
-          "spreadM"
+          "spreadM",
+          "alignedTo"
         ],
         "additionalProperties": false,
         "description": "A stop or a move. Stops and moves follow each other without overlap. A recording gap the phone lay still through is a stop; a gap with travel leaves a gap between them."

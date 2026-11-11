@@ -67,6 +67,8 @@ interface ProcessingSettings {
   passMaxPoints: number;
   /** The points a pass reads span at most this long. */
   passMaxSpanHours: number;
+  /** Train rides are drawn along the railway (`PROCESSING_RAIL_ALIGN`); false is the kill switch. */
+  railAlign: boolean;
   /** A correction waits this long for a pass over the device before it answers 409 (retryable). */
   correctionWaitMs: number;
 }

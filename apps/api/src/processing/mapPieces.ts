@@ -9,6 +9,8 @@ export interface PlannedMove {
   last: number;
   /** Faster than anything on the ground: no map data, off the network. */
   airborne: boolean;
+  /** A person set the mode of travel of (a part of) it to train: it is always judged for a rail line. */
+  userTrain: boolean;
   /** The tiles it needs (none when airborne). */
   tiles: Set<TileKey>;
 }

@@ -123,3 +123,53 @@ describe("SegmentDialog and a move that is still going on", () => {
     expect(calls).toBe(2);
   });
 });
+
+describe("SegmentDialog and a train drawn along the railway", () => {
+  const line = "Drawn along the railway. The Mapped level shows it as recorded.";
+  const aligned = (): Segment => ({ ...ride(31 * 60), modeUser: null, alignedTo: "rail" });
+
+  it("says so for a move aligned to the rails, as one visible line", () => {
+    show(aligned());
+    expect(screen.getByText(line)).toBeVisible();
+    // The accessible name of the picker and the dialog's controls are untouched by the line.
+    expect(picker()).toBeEnabled();
+  });
+
+  it("says nothing for a move drawn as recorded", () => {
+    show({ ...aligned(), alignedTo: null });
+    expect(screen.queryByText(/Drawn along the railway/)).not.toBeInTheDocument();
+  });
+
+  it("says nothing for a stop", () => {
+    const stop: Segment = { ...aligned(), kind: "stop", mode: null, alignedTo: "rail" };
+    show(stop);
+    expect(screen.queryByText(/Drawn along the railway/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the line before the controls, and the first Tab lands where it did without the line", async () => {
+    const first = async (segment: Segment) => {
+      const view = show(segment);
+      const person = userEvent.setup({ advanceTimers: () => undefined });
+      await person.tab();
+      const landed = document.activeElement;
+      const name = landed?.textContent ?? "";
+      const label = landed?.getAttribute("aria-label") ?? "";
+      const line = screen.queryByText(/Drawn along the railway/);
+      const picked = picker();
+      const before =
+        line !== null && picked !== null
+          ? Boolean(line.compareDocumentPosition(picked) & Node.DOCUMENT_POSITION_FOLLOWING)
+          : null;
+      const tag = landed?.tagName ?? "";
+      view.unmount();
+      return { name, label, before, tag };
+    };
+    const without = await first({ ...aligned(), alignedTo: null });
+    const withLine = await first(aligned());
+    expect(withLine.before, "the line comes before the mode picker in the page").toBe(true);
+    expect(withLine.tag).not.toBe("P");
+    expect(withLine.name).toBe(without.name);
+    expect(withLine.label).toBe(without.label);
+    expect(withLine.tag).toBe(without.tag);
+  });
+});

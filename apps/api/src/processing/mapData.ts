@@ -22,6 +22,11 @@ export interface OsmWay {
   /** `[lon, lat]` of each node. */
   geometry: readonly (readonly [number, number])[];
   name: string | null;
+  /**
+   * OSM `service` (`siding`, `yard`, `spur`, `crossover` on rail): kept in both
+   * sources' tags, read by the rail alignment. Absent or null: untagged.
+   */
+  service?: string | null;
 }
 
 export interface OsmPoi {

@@ -39,8 +39,8 @@ const row = (changes: Partial<DayStampRow> = {}): DayStampRow => ({
   ...changes,
 });
 
-const stampOf = (changes: Partial<DayStampRow> = {}, timezone = zone) =>
-  stampDay(row(changes), timezone);
+const stampOf = (changes: Partial<DayStampRow> = {}, timezone = zone, railAlign = true) =>
+  stampDay(row(changes), timezone, railAlign);
 
 describe("stampDay", () => {
   it("gives two opaque 22-character hashes the contract accepts", () => {
@@ -48,6 +48,20 @@ describe("stampDay", () => {
     expect(cacheStampSchema.parse(stamp)).toEqual(stamp);
     expect(stamp.raw).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(stamp.processed).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  });
+
+  it("carries the rail kill switch in the processed stamp only while it is off, never in the raw one", () => {
+    const on = stampOf();
+    const off = stampOf({}, zone, false);
+    // With the switch on the stamp is what it was before the switch existed: no cache is invalidated by the deploy.
+    expect(on.canonical.processed).not.toContain("rail-off");
+    expect(off.canonical.processed).toBe(`${on.canonical.processed}|rail-off`);
+    expect(off.stamp.processed).not.toBeNull();
+    expect(off.stamp.processed).not.toBe(on.stamp.processed);
+    expect(off.stamp.raw).toBe(on.stamp.raw);
+    expect(off.canonical.raw).toBe(on.canonical.raw);
+    // A day without a segment has no processed stamp either way.
+    expect(stampOf({ segments: 0 }, zone, false).stamp.processed).toBeNull();
   });
 
   it("is the same for the same day, whenever and wherever it is computed", () => {

@@ -22,11 +22,16 @@ export const listDayStats = defineRoute(
   async ({ ctx, auth, query }) => {
     const body = {
       timezone: auth.user.timezone,
-      days: await findDayStats(ctx.db, auth, {
-        from: query.from,
-        to: query.to,
-        deviceIds: query.devices,
-      }),
+      days: await findDayStats(
+        ctx.db,
+        auth,
+        {
+          from: query.from,
+          to: query.to,
+          deviceIds: query.devices,
+        },
+        ctx.config.processing.railAlign,
+      ),
     };
     // A few hundred small rows: their hash is the validator (docs/architecture.md §8.9).
     return { status: 200, body, etag: weakEtag(auth.user.id, "listDayStats", body) };

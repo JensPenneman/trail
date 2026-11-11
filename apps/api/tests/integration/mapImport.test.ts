@@ -19,7 +19,7 @@ import { MapDataError } from "../../src/mapdata/mapDataError";
 import { listRegionRows } from "../../src/mapdata/regionRows";
 import { sweepMapBuilds } from "../../src/mapdata/sweepMapBuilds";
 import type { MapData } from "../../src/processing/mapData";
-import { loadMapData, saveTile } from "../../src/processing/tileStore";
+import { loadMapData, loadRailMapData, saveTile } from "../../src/processing/tileStore";
 import { manifestDigest, writeArtefact } from "../support/mapDataArtefact";
 import { cruiseTerminal, monacoDir, monacoManifest, papalins } from "../support/mapDataFixture";
 import { resetDatabase } from "../support/resetDatabase";
@@ -243,6 +243,30 @@ describe("trail map import", () => {
     expect(all.ways).toHaveLength(manifest.counts.ways);
     expect(new Set(all.ways.map((way) => way.id)).size).toBe(manifest.counts.ways);
     expect(all.pois).toHaveLength(manifest.counts.pois.features);
+  });
+
+  it("reads the rail ways alone, with their service tag, when asked for the kind", async () => {
+    const rail = await loadMapData(t.ctx.db, monacoTiles, { kinds: ["rail"], pois: false });
+    expect(rail.pois).toEqual([]);
+    expect(rail.ways).toHaveLength(11);
+    expect(new Set(rail.ways.map((way) => way.kind))).toEqual(new Set(["rail"]));
+    expect(
+      rail.ways.flatMap((way) => (way.service === undefined ? [] : [way.service])).sort(),
+    ).toEqual(["crossover", "crossover", "siding"]);
+    // Without options the answer is what it was: every way and stop, `service` only where tagged.
+    const all = await loadMapData(t.ctx.db, monacoTiles);
+    expect(all.ways).toHaveLength(manifest.counts.ways);
+    expect(all.pois).toHaveLength(manifest.counts.pois.features);
+    expect(all.ways.filter((way) => way.service !== undefined).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("reads the rail ways in chunks of at most the cap, the same ways as one read", async () => {
+    const whole = await loadMapData(t.ctx.db, monacoTiles, { kinds: ["rail"], pois: false });
+    const chunked = await loadRailMapData(t.ctx.db, monacoTiles, 1);
+    expect(chunked.pois).toEqual([]);
+    expect(chunked.ways.map((way) => way.id).sort()).toEqual(
+      whole.ways.map((way) => way.id).sort(),
+    );
   });
 
   it("lists the builds with trail map status, after the volume's", async () => {

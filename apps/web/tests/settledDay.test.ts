@@ -3,7 +3,7 @@ import type { DaysResponse } from "@trail/contracts/stats";
 import { describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../src/api/queryKeys";
 import { settleDay, settledStaleTime } from "../src/cache/settledDay";
-import { dayStamp, ids, tracks, user } from "./support/fixtures";
+import { dayStamp, ids, levelTracks, tracks, user } from "./support/fixtures";
 
 const from = "2026-10-25T23:00:00.000Z";
 const to = "2026-10-26T23:00:00.000Z";
@@ -52,6 +52,29 @@ describe("a settled past day", () => {
     expect(staleTimeOf(queryClient)).toBe(30_000);
     queryClient.setQueryData(monthKey, digest("r1"), { updatedAt: Date.now() - 61_000 });
     expect(staleTimeOf(queryClient)).toBe(30_000);
+  });
+
+  it("does not settle a level answer stamped before the rail kill switch flipped, against the digest after it", () => {
+    // The server adds a token to every processed stamp while the switch is off: the raw stamp stays.
+    const inferred = {
+      ...levelTracks(from, to, "inferred"),
+      stamps: [dayStamp(ids.phone, "2026-10-26", "r1", "p1")],
+    };
+    const key = queryKeys.levelTracks({ ...day, level: "inferred" });
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(queryKeys.session, user);
+    queryClient.setQueryData(key, inferred);
+    const staleTime = () => {
+      const query = queryClient.getQueryCache().find({ queryKey: key });
+      if (query === undefined) throw new Error("no query");
+      return settledStaleTime(queryClient, "levelTracks")(query);
+    };
+    queryClient.setQueryData(monthKey, digest("r1"));
+    expect(staleTime()).toBe(Number.POSITIVE_INFINITY);
+    const flipped = digest("r1");
+    for (const row of flipped.days) row.stamp = { raw: "r1", processed: "p1-rail-off" };
+    queryClient.setQueryData(monthKey, flipped);
+    expect(staleTime()).toBe(30_000);
   });
 
   it("is not settled by a digest of other devices, of another zone, or without one", () => {

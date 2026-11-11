@@ -108,6 +108,13 @@ export interface ProcessingConfig {
     /** A cached tile older than this keeps serving and is fetched again when a window needs it (PROCESSING_OSM_TTL_DAYS). */
     readonly tileMaxAgeDays: number;
   };
+  /**
+   * The rail alignment (docs/architecture.md §17.3, "Along the rails"): the
+   * second matcher that lays a train's points on the railway, and the judge
+   * that says whether its result may be drawn. Inferred level. Every number
+   * is a first-principles default to be tuned against real rides.
+   */
+  readonly rail: RailConfig;
   readonly features: {
     /** Interval speeds from pairs at most this far apart; sparser pairs use the distance along the track. */
     readonly pairMaxGapS: number;
@@ -158,6 +165,111 @@ export interface ProcessingConfig {
     /** … and below this one it is flagged for review. */
     readonly reviewBelow: number;
   };
+}
+
+/** The thresholds of `alignToRail` and of `judgeRailPath` (`ProcessingConfig.rail`). */
+export interface RailConfig {
+  /** The kill switch (`PROCESSING_RAIL_ALIGN`): off, the aligner never runs and no verdict is written. */
+  readonly enabled: boolean;
+  /** Only points this far apart from the previous step enter the model; the ones between are projected onto its line. */
+  readonly stepM: number;
+  /** Emission sigma: max(accuracy, this). */
+  readonly minSigmaM: number;
+  /** Candidate radius: clamp(radiusSigmas × sigma, minRadiusM, maxRadiusM). */
+  readonly radiusSigmas: number;
+  readonly minRadiusM: number;
+  readonly maxRadiusM: number;
+  /** Tracks offered per step at most (a station has many side by side). */
+  readonly maxCandidates: number;
+  /** Added to the emission cost of a yard, siding or spur track: the main track wins in a station. */
+  readonly servicePenalty: number;
+  /** A run carries on across steps without a track in reach (a wrong fix, a cell tower, garbage in a tunnel) for at most this long … */
+  readonly maxOutlierS: number;
+  /** … and this far between the steps on either side. */
+  readonly maxOutlierM: number;
+  /** A run shorter than this (along the chords) is dropped: a walk past a station is not a train. */
+  readonly minRunM: number;
+  /** Route search bound: min(maxRouteM, routeFactor × chord + routeSlackM, maxSpeedMs × seconds + routeSlackM) and at most maxHops way changes. */
+  readonly maxRouteM: number;
+  readonly routeFactor: number;
+  readonly routeSlackM: number;
+  /** The fastest a train goes (high-speed lines stay below this), m/s: bounds the route by the time between two steps. */
+  readonly maxSpeedMs: number;
+  readonly maxHops: number;
+  /** Transition cost |route − chord| / β with β = max(betaMinM, betaChordFactor × chord). */
+  readonly betaMinM: number;
+  readonly betaChordFactor: number;
+  /** Extra cost of moving onto another way (rail ways are cut at every switch and bridge). */
+  readonly wayChangeCost: number;
+  /** Cost of a leg without a route within its bound; the leg is then drawn straight ("bridged"). */
+  readonly breakCost: number;
+  /**
+   * Cost of a step taken as an outlier although a track is in reach (a fix that
+   * jumped onto another line and back), and how many in a row may be: below
+   * two straight legs (`2 × breakCost`), so a jump is passed along the rails.
+   */
+  readonly outlierCost: number;
+  readonly maxOutlierSteps: number;
+  /** A move that covers less than `minRunM` at or above this speed (m/s; chords between kept points) is no train, unless a person set it to train: it is not aligned and a segment of it that ends up a train is written `skipped/not_train`. */
+  readonly minTrainSpeedMs: number;
+  /**
+   * A rail-only read (a ride that only a loaded region covers) takes at most
+   * this many tiles; a longer piece is read in several, one statement each.
+   * Where the number comes from: the rehearsal on a production dump (WP2b)
+   * read 22 tiles in 138 ms (p50), 49 in 273 ms (p90) and 75 in 471 ms (max),
+   * 2.5 to 6 ms a tile, so the 150 ms for 256 tiles first assumed (an
+   * extrapolation) does not hold: 256 tiles would take 0.6 to 1.5 s in one
+   * statement. At 64 tiles a read stays under about 0.4 s. A pass's reads add
+   * up linearly with the tiles of its region-only moves, which only
+   * `railOnlyMaxTilesPerPass` bounds.
+   */
+  readonly railOnlyMaxTiles: number;
+  /**
+   * Rail-only tiles read in one pass at most. Measured on a copy of production
+   * data (rehearsal 2, a loaded laptop): 133 tiles in 1.3 s, about 10 ms a tile
+   * (63 ms p50 and 1.2 s p95 a pass; the earlier 2.5 ms was an underestimate),
+   * so 100 tiles read in about one second. Pieces are taken by how train-like
+   * their moves are, and a move whose pieces would go beyond the cap is judged
+   * `no_map/deferred`: it keeps its recorded line, never replaces a stored
+   * aligned one, and nothing is queued. With Overpass on the window is worked
+   * again once its mapped tiles arrive; with it off the operator reworks the
+   * day (`trail reprocess`, docs/architecture.md §17.3).
+   */
+  readonly railOnlyMaxTilesPerPass: number;
+  readonly judge: RailJudgeConfig;
+}
+
+/** What a part of a move must show for its rail line to be drawn (`judgeRailPath`). */
+export interface RailJudgeConfig {
+  /** A shorter part (chords of its averaged points), or one with fewer model steps, is too short to judge: `poor/short`. */
+  readonly minLengthM: number;
+  readonly minSteps: number;
+  /** The share of the length within rail runs: below `noRailShare` there is no railway there (`no_rail`), below `minCoveredShare` it is `poor/coverage`. */
+  readonly minCoveredShare: number;
+  readonly noRailShare: number;
+  /** The share of the aligned length that followed the network, and the longest leg that may be drawn straight: else `poor/routes`. */
+  readonly minRoutedShare: number;
+  readonly maxBridgedM: number;
+  /** A straight leg (inside a run, or the connector between two runs) implying more than this, m/s, is a jump of the fix, not a ride: `poor/routes`. The aligner's `maxSpeedMs`. */
+  readonly maxBridgedSpeedMs: number;
+  /** Median and p90 of z (offset over sigma) and the median offset in metres of the points that are not outliers: else `poor/offsets`. */
+  readonly maxMedianZ: number;
+  readonly maxP90Z: number;
+  readonly maxMedianOffsetM: number;
+  /** The share of the part's duration spent as outliers: else `poor/outliers`. */
+  readonly maxOutlierShare: number;
+  /**
+   * The road check, where the mapped level matched the part. `maxRoadShare`: the share of the
+   * part's duration the mapped level placed on street ways. With more than that, and the median
+   * rail offset exceeding the median street snap by more than the margin
+   * (max(`roadMinMarginM`, `roadMarginSigmas` × the median of max(accuracy, `roadMinSigmaM`))),
+   * the part is a road beside the rails, not a train: `poor/road`. Never where a person set the
+   * part to train.
+   */
+  readonly maxRoadShare: number;
+  readonly roadMarginSigmas: number;
+  readonly roadMinMarginM: number;
+  readonly roadMinSigmaM: number;
 }
 
 /** The named thresholds of the mode rules (km/h, shares 0–1, counts). */
@@ -251,6 +363,50 @@ export const defaultProcessingConfig: ProcessingConfig = {
     seamMarginM: 1500,
     tileMaxAgeDays: 90,
   },
+  rail: {
+    enabled: true,
+    stepM: 50,
+    minSigmaM: 15,
+    radiusSigmas: 3,
+    minRadiusM: 50,
+    maxRadiusM: 200,
+    maxCandidates: 6,
+    servicePenalty: 1,
+    maxOutlierS: 300,
+    maxOutlierM: 5000,
+    minRunM: 1000,
+    maxRouteM: 80_000,
+    routeFactor: 1.5,
+    routeSlackM: 500,
+    maxSpeedMs: 95,
+    maxHops: 400,
+    betaMinM: 30,
+    betaChordFactor: 0.15,
+    wayChangeCost: 0.2,
+    breakCost: 10,
+    outlierCost: 6,
+    maxOutlierSteps: 3,
+    minTrainSpeedMs: 11,
+    railOnlyMaxTiles: 64,
+    railOnlyMaxTilesPerPass: 100,
+    judge: {
+      minLengthM: 1000,
+      minSteps: 3,
+      minCoveredShare: 0.9,
+      noRailShare: 0.5,
+      minRoutedShare: 0.8,
+      maxBridgedM: 2000,
+      maxBridgedSpeedMs: 95,
+      maxMedianZ: 1.5,
+      maxP90Z: 3,
+      maxMedianOffsetM: 60,
+      maxOutlierShare: 0.15,
+      maxRoadShare: 0.5,
+      roadMarginSigmas: 1,
+      roadMinMarginM: 10,
+      roadMinSigmaM: 15,
+    },
+  },
   features: {
     pairMaxGapS: 600,
     denseIntervalS: 30,
@@ -322,6 +478,8 @@ export function processingConfigWith(settings: {
   osmTtlDays: number;
   passMaxPoints?: number;
   passMaxSpanHours?: number;
+  /** `PROCESSING_RAIL_ALIGN`; on when not given. */
+  railAlign?: boolean;
 }): ProcessingConfig {
   const { passes } = defaultProcessingConfig;
   return {
@@ -336,5 +494,6 @@ export function processingConfigWith(settings: {
     averaging: { ...defaultProcessingConfig.averaging, maxAccuracyM: settings.maxAccuracyM },
     stops: { ...defaultProcessingConfig.stops, minDurationS: settings.stopMinS },
     mapping: { ...defaultProcessingConfig.mapping, tileMaxAgeDays: settings.osmTtlDays },
+    rail: { ...defaultProcessingConfig.rail, enabled: settings.railAlign ?? true },
   };
 }

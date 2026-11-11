@@ -24,11 +24,16 @@ export const listSegments = defineRoute(
     const from = new Date(query.from);
     const to = new Date(query.to);
     // The stamps before the segments (docs/architecture.md §8.9).
-    const { deviceIds, days } = await stampRange(ctx.db, auth, {
-      deviceIds: query.devices,
-      from,
-      to,
-    });
+    const { deviceIds, days } = await stampRange(
+      ctx.db,
+      auth,
+      {
+        deviceIds: query.devices,
+        from,
+        to,
+      },
+      ctx.config.processing.railAlign,
+    );
     const asked = {
       from: from.toISOString(),
       to: to.toISOString(),
@@ -36,7 +41,13 @@ export const listSegments = defineRoute(
       cursor: query.cursor ?? null,
       limit: query.limit,
     };
-    const etag = weakEtag(auth.user.id, "listSegments", [asked, dayValidator(days, "processed")]);
+    // `alignedTo` is part of the body, so the kill switch is part of the validator.
+    const railAlign = ctx.config.processing.railAlign;
+    const etag = weakEtag(auth.user.id, "listSegments", [
+      asked,
+      dayValidator(days, "processed"),
+      { railAlign },
+    ]);
     if (etagMatches(ifNoneMatch, etag)) return { status: 304, etag };
     const timeline = await loadTimeline(ctx.db, auth, {
       devices: deviceIds,
@@ -44,6 +55,7 @@ export const listSegments = defineRoute(
       to,
       cursor: query.cursor,
       limit: query.limit,
+      railAlign,
     });
     return { status: 200, body: { ...timeline, stamps: dayStampsOf(days) }, etag };
   },

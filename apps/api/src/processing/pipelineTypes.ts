@@ -1,5 +1,5 @@
 import type { ChosenMode, TransportMode, WayKind } from "@trail/contracts/transport";
-import type { StopShape } from "./stayParts";
+import type { StopShape } from "./stopShape";
 
 /** A recorded point as the pipeline reads it from `locations`, oldest first. */
 export interface RawPoint {
@@ -46,6 +46,133 @@ export interface MappedPoint {
   path: readonly (readonly [number, number])[] | null;
 }
 
+/**
+ * The rail line of one point (`alignToRail`): where the point lies on the
+ * railway, or nothing for a point outside every run of the stretch.
+ */
+export interface RailPoint {
+  /** Null: no rail place (the point is outside every run). */
+  lat: number | null;
+  lon: number | null;
+  /** OSM way id of the track; null without a place or on a straight leg. */
+  wayId: number | null;
+  /** The run (of the stretch) the point belongs to, -1 outside every run. */
+  run: number;
+  /** The point entered the model (the first, every `stepM`, the last). */
+  step: boolean;
+  /** Inside a run, but no track in reach: placed along the leg by its time share. */
+  outlier: boolean;
+  /** Distance between the averaged position and the rail place, metres; null without a place. */
+  offsetM: number | null;
+  /** The offset over the point's sigma; null without a place. */
+  z: number | null;
+  /** The leg into the point followed the rail network (false: the first point of a run, or a leg drawn straight). */
+  routed: boolean;
+  /** Length of the line drawn into the point from the one before in its run, metres. */
+  legM: number;
+  /** Length of the whole straight leg the point lies on, metres; 0 when its leg was routed. */
+  bridgedLegM: number;
+  /** For a point on a straight leg: the speed that leg's chord implies, m/s (0 on a routed leg); kept in the verdict for tuning. */
+  bridgedSpeedMs: number;
+  /** The rail's shape between the previous point of the run and this one, `[lon, lat]`, both ends excluded. */
+  path: readonly (readonly [number, number])[] | null;
+}
+
+/**
+ * The rail level of one point (`processed_points.lat_rail` …): where a point of
+ * an aligned part of a move lies on the railway. Derived data of its own: it
+ * never feeds the inference and the mapped level stays as it was.
+ */
+export interface RailPlace {
+  lat: number;
+  lon: number;
+  /** The rail's shape since the previous point, `[lon, lat]`, both ends excluded; null for a part's first point. */
+  path: readonly (readonly [number, number])[] | null;
+}
+
+/**
+ * What the aligner cost in a pass (`WindowOutcome.rail`), summed over its
+ * stretches: for the performance bounds of docs/architecture.md §17.3 and the
+ * worker's pass line. All zero with the aligner off.
+ */
+export interface RailPassStats {
+  /** Points that entered the model, runs kept, route searches, nodes they settled. */
+  steps: number;
+  runs: number;
+  searches: number;
+  /** Of the searches, those for steps skipped as outliers. */
+  skipSearches: number;
+  settledNodes: number;
+  /** The largest bound any search was given, metres, and the most way changes one was allowed. */
+  maxSearchBoundM: number;
+  maxSearchHops: number;
+  /** Stretches the aligner ran on, and the milliseconds it took (measured in the adapter). */
+  alignedStretches: number;
+  alignMs: number;
+  /** Moves left alone because they cannot be a train (too short or too slow), and moves deferred by the per-pass cap. */
+  notTrainMoves: number;
+  deferredMoves: number;
+  /** Rail-only reads (a region's moves): tiles, statements and milliseconds. */
+  railOnlyTiles: number;
+  railOnlyStatements: number;
+  railOnlyReadMs: number;
+}
+
+export const noRailPassStats = (): RailPassStats => ({
+  steps: 0,
+  runs: 0,
+  searches: 0,
+  skipSearches: 0,
+  settledNodes: 0,
+  maxSearchBoundM: 0,
+  maxSearchHops: 0,
+  alignedStretches: 0,
+  alignMs: 0,
+  notTrainMoves: 0,
+  deferredMoves: 0,
+  railOnlyTiles: 0,
+  railOnlyStatements: 0,
+  railOnlyReadMs: 0,
+});
+
+/** What the judge made of the rail line of a part of a move (`segments.features.railPath`); no coordinates. */
+export interface RailPathVerdict {
+  /** `aligned`: draw it; `poor`: a track was found but the match is not good enough; `no_rail`: no railway there; `no_map`: no rail data; `skipped`: left alone, the move could not be a train (a segment that ends up a train says so). */
+  status: "aligned" | "poor" | "no_rail" | "no_map" | "skipped";
+  reason:
+    | "ok"
+    | "short"
+    | "coverage"
+    | "routes"
+    | "offsets"
+    | "outliers"
+    | "road"
+    | "no_rail"
+    | "waiting"
+    | "outside_regions"
+    | "deferred"
+    | "not_train";
+  /** Which source made the move's last tile available; null when not known (no map). */
+  source: "cache" | "region" | null;
+  coveredShare: number;
+  routedShare: number;
+  medianZ: number;
+  p90Z: number;
+  medianOffsetM: number;
+  outlierShare: number;
+  /** The share of the part's duration the mapped level placed on street ways; 0 without a mapped match. */
+  roadShare: number;
+  /** Median distance (m) of those points to their rail places, to their street places, and the margin the gap had to exceed: the road check's evidence, 0 without one. */
+  roadRailM: number;
+  roadSnapM: number;
+  roadMarginM: number;
+  /** Whether the mapped level matched the part, so that the road check had evidence; only then is a car on a road beside the rails refused for sure. */
+  mapped: boolean;
+  /** The fastest implied speed of any straight leg of the part, m/s, rounded; 0 without one. */
+  bridgedMaxSpeedMs: number;
+  lengthM: number;
+}
+
 /** An iOS visit (CLVisit) as stops use it. */
 export interface VisitSpan {
   arrivedAt: number;
@@ -64,6 +191,17 @@ export interface ManualTrip {
   endedAt: number;
   /** Overland's trip mode (`walk`, `bicycle`, `train` …). */
   mode: string;
+}
+
+/** The aligned lines stored over a window: the move segments and the rail places of their points, by time. */
+export interface StoredRail {
+  segments: readonly {
+    startT: number;
+    endT: number;
+    pointCount: number;
+    verdict: RailPathVerdict;
+  }[];
+  places: ReadonlyMap<number, RailPlace>;
 }
 
 /** An active correction (`mode_overrides`), in creation order. */

@@ -149,6 +149,7 @@ const answers: Answer[] = [
           distanceM: 120,
           centroid: null,
           spreadM: null,
+          alignedTo: null,
           points: [
             [3.7104, 51.0362, 1_792_995_160],
             [3.7114, 51.0369, 1_792_995_280],
@@ -183,6 +184,7 @@ const answers: Answer[] = [
           end: { lat: 51.0363, lon: 3.7105 },
           centroid: { lat: 51.0362, lon: 3.7104 },
           spreadM: 20,
+          alignedTo: null,
         },
       ],
       nextCursor: null,

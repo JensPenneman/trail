@@ -303,6 +303,7 @@ All configuration is environment variables, validated at boot with zod
 | `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Map data for the mapped level; set but empty: none (§17.3) |
 | `PROCESSING_OVERPASS_DAILY_MB` | `300` | Map download budget per UTC day |
 | `PROCESSING_OSM_TTL_DAYS` | `90` | Map tiles are refreshed after this many days |
+| `PROCESSING_RAIL_ALIGN` | `true` | Train rides are drawn along the railway where the map data has it; `false` hides the rail lines at once and stops the aligner (§17.3, §17.7) |
 | `PROCESSING_MAX_ACCURACY_M` | `150` | Less accurate points are dropped from the averaged level on |
 | `PROCESSING_STOP_MIN_S` | `180` | The shortest stop |
 | `PROCESSING_PASS_MAX_POINTS` | `60000` | A processing pass reads at most this many points (1 000 or more); bigger work is split first (§17.4) |
@@ -2128,7 +2129,7 @@ parse them:
 | Stamp | Canonical string | Moves with |
 |---|---|---|
 | `raw` | `raw1`, device, date, zone; `daily_stats` (points, distance, first and last point); the visits touching the day (`visitTouches`, the finders' rule) — their count and the sum of their recorded times; the trips touching it (`tripTouches`) — count and sum of their starts; on the owner's current day the device's counter and newest point | an upload of the day's points (today at once, a past day once its statistics ran after their 10-s debounce), a deletion, a new visit or trip; never a re-sent upload of duplicates |
-| `processed` | `processed2`, device, date, zone; the stored segments of the stays overlapping the day — every part of a stay the timeline serves as one stop (§17.6, `stayPartsSql`), also its parts on other days — count, newest `computed_at`, lowest and highest version, the sums of their starts, ends and points; whether a waiting window (a queue row without missing tiles, as `hasPendingWork`) overlaps the day or one of those stays. Null while the day has no segment | a window queued over the day and again once worked out (it rewrites its segments with a new `computed_at` and cuts a neighbour's, which moves the sums), a corrected mode (`setSegmentMode` and `clearSegmentMode` set `computed_at`), a new version of the inference |
+| `processed` | `processed2`, device, date, zone; the stored segments of the stays overlapping the day — every part of a stay the timeline serves as one stop (§17.6, `stayPartsSql`), also its parts on other days — count, newest `computed_at`, lowest and highest version, the sums of their starts, ends and points; whether a waiting window (a queue row without missing tiles, as `hasPendingWork`) overlaps the day or one of those stays; the token `rail-off` while `PROCESSING_RAIL_ALIGN` is off (the lines drawn change with no row changing: a flip either way changes every processed stamp, so a browser holding a past day asks again; with the switch on the string is what it was). Null while the day has no segment | a window queued over the day and again once worked out (it rewrites its segments with a new `computed_at` and cuts a neighbour's, which moves the sums), a corrected mode (`setSegmentMode` and `clearSegmentMode` set `computed_at`), a new version of the inference, the rail kill switch |
 
 They are read in one statement (`loadStampedDays`): a range scan each of
 `daily_stats`, `visits`, `trips`, `segments` and `processing_queue` and the
@@ -4658,7 +4659,7 @@ segments and the corrections people made.
 | `raw` | the points as received | `locations` |
 | `averaged` | outliers dropped, GPS noise smoothed | `processed_points.kept`, `lat_avg`, `lon_avg`, `speed_avg` |
 | `mapped` | averaged points snapped to OpenStreetMap roads and railways, with the way's shape between consecutive points | `processed_points.lat_map`, `lon_map`, `way_id`, `way_kind`, `snap_m`, `path_map` |
-| `inferred` | stops and moves; every move with a transport mode and a confidence, the person's corrections applied | `segments` |
+| `inferred` | stops and moves; every move with a transport mode and a confidence, the person's corrections applied; a train's line along the railway (§17.3, "Along the rails") | `segments`, and the rail places in `processed_points.lat_rail`, `lon_rail`, `path_rail` |
 
 A point that has not reached a level is served at the best one below it
 (`GET /api/v1/tracks` says which in `availableLevel`): not processed yet →
@@ -4676,7 +4677,10 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   `kept`, `lat_avg`, `lon_avg`, `speed_avg`, `lat_map`/`lon_map` (null: not
   mapped), `way_id`, `way_kind` (null for stop points, `other` off every
   way), `snap_m`, `path_map` (jsonb `[[lon, lat], …]`: the way's shape since
-  the move's previous point, both ends excluded), `version` (the mapped
+  the move's previous point, both ends excluded), `lat_rail`/`lon_rail`/
+  `path_rail` (the same for the line along the railway: set only for the
+  points of a part of a move the judge accepted, null everywhere else; the
+  part's first point has a place and no path; §17.3), `version` (the mapped
   level's: the row holds the averaged and mapped levels), `processed_at`.
 - **segments** — `id` (uuidv7, kept while a segment keeps its start),
   `device_id` → devices (cascade), `started_at`, `ended_at`, `kind`
@@ -4693,7 +4697,9 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   next move starts at the point after it; a recording gap the phone lay still
   through is a stop, one with travel lies outside every segment. A stop's
   `features` hold `spreadM`, how far apart its points lie, and `lastPointT`,
-  when the last point of its own was recorded (§17.3).
+  when the last point of its own was recorded (§17.3). A move's `features`
+  hold `railPath`, the verdict on its line along the railway (§17.3); no
+  coordinates.
 - **mode_overrides** — user data, part of the migration-upgrade fingerprint:
   `id`, `device_id` (cascade), `kind` `segment|toggle`, `from_at`, `to_at`
   (null: until the first stop of ten minutes or more, or move of another kind
@@ -4720,7 +4726,7 @@ Modes: `stationary`, `walking`, `running`, `cycling`, `car`, `bus`, `tram`,
   `source`: `overpass`, and a source per imported region build, whose builds
   **osm_regions** lists.
 - **processing_state** — key/value: `backfill` holds the versions the history
-  was backfilled for, `{ "versions": { "averaged": 1, "mapped": 1, "inferred": 3 } }`
+  was backfilled for, `{ "versions": { "averaged": 1, "mapped": 1, "inferred": 4 } }`
   (`{ "version": n }`, from before the levels had versions of their own, means
   n for every level).
 - **processing_workers** — one row per worker process (§3), its heartbeat:
@@ -4941,6 +4947,125 @@ the source). Which tiles a window may use is still the cache's alone
 available without a fetch, and the fallback to Overpass outside them come
 with docs/design/self-hosted-maps.md §2.5.
 
+**Along the rails** (`alignToRail`, `judgeRailPath`, `processing/rail/`; inferred
+level). Recorded train rides go wrong in stations, tunnels and where the
+signal is poor, and the mapped level chooses among roads, platforms and rails
+before any mode is known. So a second matcher looks at rails alone. Per stretch
+of a move's kept points it runs a hidden Markov model over the `rail` ways
+within max(3 × accuracy) of a point (50 to 200 m, at most six candidates; a
+`service=yard|siding|spur` track costs more, so the main track wins in a
+station), on a step every 50 m; a stretch with no track in reach for up to
+five minutes and 5 km is an outlier passed along the rails (a wrong jump, a
+fix from a cell tower), and a run shorter than 1 km is dropped, which is also
+what keeps a walk in town cheap. A transition is the route on the rail graph
+(bounded by the chord, the train's top speed and 80 km), so a tunnel or a long
+gap is routed through the network; where there is none the leg is drawn
+straight and counted as bridged. The judge then decides, per part of a move
+(after the split and the corrections), whether the line may be drawn: at least
+1 km and three steps, 90 % of the length within runs (below half: `no_rail`),
+80 % of it routed with no straight leg over 2 km or faster than 95 m/s (the
+connector between two runs of a part counts as such a leg), a median offset
+over accuracy of at most 1.5 (p90 3.0) and 60 m, and outliers over at most 15 %
+of the duration. The road check (`poor/road`: a car on a road beside the
+railway, where a mapped match exists) compares the part's points after its
+first that the mapped level placed on a street way, time-weighted: `roadShare`
+is their share of the part's duration, `roadRailM` the median distance to their
+rail places, `roadSnapM` the median distance to their street places, and
+`roadMarginM` the larger of 10 m and one median accuracy (accuracy held at 15
+m at least). The part is refused only when `roadShare` is over 0.5 and the rail
+places are farther than the street places by more than the margin, and never
+where a person set it to train. Where road and rails lie within the fixes'
+accuracy of each other either line is drawn within that accuracy and the rail
+one is kept: a car on a road 15 m or less from the rails, with fixes of 15 m
+accuracy, passes. An outlier before the first point the path stands on weighs
+the time to the point after it, so the time a part spent before the line
+begins counts in the outlier share. The verdict is `features.railPath`: `status` `aligned|poor|no_rail|
+no_map|skipped`, a `reason` (`ok`, `short`, `coverage`, `routes`, `offsets`, `road`, `outliers`, `no_rail`, `waiting`, `outside_regions`, `deferred`, `not_train`), `source` (`cache|region`, a tuning figure), `mapped` (whether the mapped level matched the part, which the served gate reads) and the measures (including the road check's `roadShare`, `roadRailM`, `roadSnapM` and `roadMarginM`), without
+coordinates. The tiles are the move's own: read from the tile cache where it
+holds them and from a loaded region wherever its polygon covers them (all
+four corners of the z14 tile inside, whatever the cache holds), so a ride the
+cache lacks tiles for is aligned from the region at once, while its mapped
+level stays as it is (unmapped, the window waiting for the cache); a ride
+with a tile in neither is `no_map` (`waiting` where Overpass may bring it,
+`outside_regions` where nothing will) and keeps its recorded line. The
+verdict is written for every part with rail places whatever its mode, and the
+places (`lat_rail`, `lon_rail`, `path_rail`) for the accepted parts and for
+parts refused only for `road` (a person's word overrules that check), so a
+later correction needs no reprocessing. The line is not distance: `distance_m`
+stays what the inference worked out, and `railPath.lengthM` is the length of
+the part's averaged points when it was judged. Nothing of it feeds back: features and
+scores are computed first, a later pass reuses the stored mapping (`lat_map`),
+and the mapped and averaged levels are never altered. A move cut at a pass's
+edge keeps the `railPath` it had (`pieceValues` leaves it alone): only its
+`lengthM` is then that of the whole part judged, a figure for tuning that
+nothing serves; the line served is the stored points', cut where the move is.
+The columns arrive by one `ALTER TABLE … ADD COLUMN` that waits for its lock at
+most 5 s (`lock_timeout`): behind an old worker's long pass a boot fails and
+the container restarts until it gets the lock, instead of holding up every
+reader of `processed_points` meanwhile.
+`PROCESSING_RAIL_ALIGN=false` stops it and hides what is stored at once, on the
+serving side alone (§17.7). Metro and tram are not aligned.
+
+Every step may also be an outlier, though a track is in reach (a fix that
+jumped onto the parallel line and back): up to three in a row are skipped for
+6 each (below the 10 of a straight leg), their points lying along the leg
+between the steps on either side and counting as outliers in the verdict,
+which also keeps the fastest speed any straight leg of the part implies
+(`bridgedMaxSpeedMs`), for tuning. A search from a source state is skipped when its cost
+plus the outliers cannot improve any target (costs are never negative, so the
+placed points are the same with or without; `skipSearches` counts the ones
+that did run for skipped steps). The first and the last steps of a run may be
+outliers the same way (a fix that jumped onto another line at the run's end
+lies at the line's start or end), and a straight leg faster than the fastest
+train (95 m/s) is never drawn: the step it leads to is an outlier, and where no
+leg reaches a step the run goes on over it (the fix is an outlier the next
+steps skip), and ends before it only after more such steps in a row than may be
+skipped, a new run beginning there; the judge counts the straight line between
+two runs as a leg, so a ride with a jump of the fix is routed properly or not
+aligned. A move that cannot be a
+train is not aligned: it covered under 1 km (`minRunM`) at or above 11 m/s, the
+chords measured between kept points at least 20 s apart (so noise does not
+make a walk fast, and a ride whose points mostly lie in stations still adds up
+by its stretches en route), unless a person set its mode to train, which
+always passes. It costs no rail read and no alignment; a segment of it that
+ends up a train (the inference, or the person's later correction) is written
+`skipped/not_train`, so the skipped rides show in the counts rather than as
+silence. A pass reads at most 100 rail-only tiles (the moves a region alone
+covers), or the tiles of one ride when that is more: the move ranked first is
+read whole even when its own tiles exceed the cap, so every pass makes
+progress and a reprocess of a ride's own bounds always reads it; the cap
+bounds only what comes after it. Measured on a copy of production data a tile
+took 1.4 ms on a lightly loaded machine and 8 to 10 ms in the first, loaded
+runs, so a pass's rail-only read stays near one second, and a 300-tile ride
+costs 0.4 to 3 s, once. The moves are decided in the order of how train-like
+they are (the distance covered at or above 11 m/s, a person's train first;
+ties keep plan order) over the union of the tiles of all their pieces: a
+person's train is read first, then longer and faster moves; a train behind a
+longer drive can be deferred, and is worked again by a reprocess of its own
+bounds. A move that does not fit is read in none of its pieces, is `no_map`
+with the reason `deferred`, and gives its tiles back (it is not counted
+against the cap). Deferring queues
+nothing and never replaces a line an earlier pass stored: a deferred part with
+exactly the bounds and point count of a stored `aligned` segment keeps that
+verdict and its rail places (a read of stored rows in the pass, no queue row,
+no processing state). With Overpass on, the window is worked again once its
+mapped tiles arrive, through the cache, which has no cap. With Overpass off
+nothing queues it again: the worker's "processing window done" line has
+`rail.deferredMoves > 0` for each pass that put rides off, the rides are
+`SELECT device_id, min(started_at), max(ended_at) FROM segments WHERE
+features->'railPath'->>'reason' = 'deferred' GROUP BY device_id,
+started_at::date;`, and each listed day is worked again by the operator with
+`trail reprocess --device <id> --from <start> --to <end> --from-level
+inferred` (a foreground command; a day whose rides together exceed the cap is
+worked again one ride at a time, over each ride's own bounds, which always
+reads it), and a read takes the light columns of the tiles' ways first and the nodes and
+geometry only of the rail ways. With Overpass off the tiles the cache still
+holds count as rail data too. What the aligner cost is in `WindowOutcome.rail`
+and the worker's "processing window done" line (`rail`: steps, runs, searches (and those for
+steps skipped as outliers), settled nodes, the largest bound and hop limit a search was given, aligned
+stretches and their milliseconds, moves left out as no train, deferred moves,
+rail-only tiles, statements and read milliseconds), without coordinates.
+
 **Features** of a move (`moveSeries`, `extractFeatures`), from its intervals:
 time-weighted median, p85 and p98 (top) speed — the points' own speeds for
 intervals up to 30 s, distance along the track over time beyond that — the
@@ -5120,7 +5245,11 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
   point that was part of a stop before (stops are not matched: no way kind)
   is matched with the cached map data, or waits for its tiles. So a change
   that turns points of stops into moves (inferred version 3: stops that end
-  when the phone leaves) needs the inferred level alone.
+  when the phone leaves) needs the inferred level alone, and so does version 4,
+  the rail line (§17.3): stored mappings are kept, the aligner runs on the map
+  data each piece loads anyway, and no window, priority or queue row differs
+  from what it would be without it. Rolling back to the release before it
+  leaves the rail columns unread; upgrading again backfills at 4 again.
 - **Feature backfill.** A feature that can be derived from rows already stored
   needs no new level: `processingFeatureVersions` (`processingVersion.ts`)
   lists them, `processing_state` key `features` records the version each was
@@ -5231,7 +5360,7 @@ data at hand (`processingBenchmark.test.ts`, bound 3 s).
 days) answers `{ level, availableLevel, from, to, simplified, segments }`;
 a segment is `{ id, deviceId, kind, level, mode, modeInferred, modeUser,
 confidence, needsReview, startedAt, endedAt, distanceM, centroid, spreadM,
-points }` with points `[lon, lat, epochSeconds]` (the way's shape between
+alignedTo, points }` with points `[lon, lat, epochSeconds]` (the way's shape between
 mapped points carries interpolated times), and, for `values=speed,altitude,
 accuracy` (at most three, in the order asked; `values` is echoed, and left out when none were asked),
 `[lon, lat, epochSeconds, …values]` with null where unknown: the speed is the
@@ -5245,7 +5374,34 @@ moves — a stop with its place (`centroid`), its spread (`spreadM`, as in the
 timeline) and its own points, where the device went within it, served and
 simplified like a move's — and points outside every segment as track.
 Consecutive segments share their boundary point, unless a stop lasted beyond
-its last point: the point the phone resumed at is the next move's only. Each
+its last point: the point the phone resumed at is the next move's only.
+`alignedTo` is `rail` for a move drawn along the railway and null otherwise
+(the timeline's segment carries it too, as do the answers of `PUT` and
+`DELETE …/segments/{id}/mode`): the one gate is that the mode that counts,
+a person's correction included, is train and the stored verdict
+(`features.railPath.status`, §17.3) is `aligned`, or is `poor` with the reason
+`road` and the mode is a person's train (the road check is a guess that a
+person's word overrules; its rail places are stored), read at every request. For
+such a move, at `inferred` alone, the points are the rail places
+(`processed_points.lat_rail`, `lon_rail`, the rail's shape `path_rail` with
+interpolated times, its values as the way's shape has them), a point without
+one falling back to its mapped, else averaged place; the move counts as mapped
+for `level`; a verdict with no mapped match behind it (`features.railPath.mapped` false: a
+region's read, cached tiles read rail-only, or a move the mapped level did not
+match, so the road check had no evidence) is drawn only once the mode is not to
+review (a person's word settles it), whatever its `source`. The point a train shares with the segment before or
+after it is drawn at its rail place on both sides, so the line does not break at
+the boundary. A correction away from train, or to train, therefore changes the
+next read and the ETag with it (`computed_at` moves), with no reprocessing;
+rail columns without a verdict (a write by an older image) are served as
+recorded; in an aligned move, a point without a rail place falls back to its
+mapped, else averaged place. With the kill switch off (`PROCESSING_RAIL_ALIGN=false`)
+`alignedTo` is null in every answer (the timeline, the tracks, the answers of
+`PUT` and `DELETE …/segments/{id}/mode`) and the rail columns are not read; the
+switch is part of the validator of the tracks' and the timeline's ETags, so a
+flip is never answered with `304`. `mapped`, `averaged` and `raw`, `distanceM`,
+the exports and the MCP tools are untouched: the recorded line is one click
+away (the Mapped level), and no MCP tool serves lines. Each
 device is simplified to `maxPoints` with one RDP tolerance over its pieces
 (their ends always kept); over 200 000 points a device's points are thinned
 first, keeping the segments' ends. A page of 20 000 points and the processed
@@ -5310,7 +5466,9 @@ and duration, "Was this …?" for moves to review, Change mode and Reset to
 detected ("Still under way" in their place for a move that is not over,
 §17.5); a stop's says how long it lasted, where, and, when it spread
 (`spreadM` of the timeline's segment over 25 m), how far one moved within it.
-Nothing changes at the other levels. The toggle ("from now on", §17.5) is
+A move drawn along the railway (`alignedTo` `rail`) says "Drawn along the
+railway. The Mapped level shows it as recorded." in its dialog. Nothing
+changes at the other levels. The toggle ("from now on", §17.5) is
 the API's and the MCP tool's; the web app shows what it sets in Me's row but
 has no control for it.
 `segments` events refetch the tracks at their level, the timeline and the
@@ -5327,6 +5485,7 @@ also a past day's, which the calendar's digest no longer vouches for.
 | `PROCESSING_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Overpass interpreter for map data; set but empty: no map data (mapped degrades to averaged) |
 | `PROCESSING_OVERPASS_DAILY_MB` | `300` | Map download budget per UTC day |
 | `PROCESSING_OSM_TTL_DAYS` | `90` | Map tiles are refreshed after this many days |
+| `PROCESSING_RAIL_ALIGN` | `true` | Train rides are drawn along the railway (§17.3, "Along the rails"). `false` is the kill switch: the API serves no line along the rails (`alignedTo` is null everywhere, the points are the mapped or averaged ones, the ETags change) as soon as it has restarted, and the aligner does not run and writes no verdict from then on. Switching it queues nothing and changes no processing state, and it does not stop this release's inferred-4 backfill (which then works without the aligner). History worked out while it was off gets its rail line only through an explicit `trail reprocess --from-level inferred`; switching back on shows what is stored at once |
 | `PROCESSING_MAX_ACCURACY_M` | `150` | Points less accurate than this are left out from the averaged level on |
 | `PROCESSING_STOP_MIN_S` | `180` | A stop lasts at least this long |
 | `PROCESSING_PASS_MAX_POINTS` | `60000` | A pass reads at most this many raw points (at least 1 000): a bigger job is split first, and growth to whole segments stops at it (§17.4). A very large value restores unbounded passes |

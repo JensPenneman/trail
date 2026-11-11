@@ -135,6 +135,12 @@ export function SegmentDialog({ segment, deviceName, onClose }: SegmentDialogPro
           )}
         </dl>
 
+        {move && segment.alignedTo === "rail" ? (
+          <p className="segment-dialog__rail">
+            Drawn along the railway. The Mapped level shows it as recorded.
+          </p>
+        ) : null}
+
         {move ? (
           <>
             {segment.needsReview && !underWay && inferred !== null && confirmable !== null ? (
