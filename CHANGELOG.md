@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.1](https://github.com/JensPenneman/trail/compare/v0.11.0...v0.11.1) (2026-11-17)
+
+
+### Dependencies
+
+* bump @biomejs/biome from 2.6.6 to 2.6.7 in the biome group ([098ff6c](https://github.com/JensPenneman/trail/commit/098ff6cee33427e8e1185a1599d2a1d0a1cd2e0b))
+* bump @hono/node-server ([b80e2eb](https://github.com/JensPenneman/trail/commit/b80e2eb26616a18e03f83a902a076ef3b2d7ddf6))
+* bump @simplewebauthn/server ([2e00f69](https://github.com/JensPenneman/trail/commit/2e00f69dcc92bcf4a512cfaf9a7cad5a8b813f57))
+* bump @testing-library/user-event ([172d970](https://github.com/JensPenneman/trail/commit/172d9707f5074c5fb97404f990078d3293fd1fec))
+* bump hono ([4154a56](https://github.com/JensPenneman/trail/commit/4154a5671d2ce32e3f1e99b63a756790671243e6))
+* bump the minor-and-patch group with 5 updates ([8dfd82f](https://github.com/JensPenneman/trail/commit/8dfd82f2b67164730482219f493c5099a8f3ce22))
+* bump the tanstack group across 1 directory with 2 updates ([9d11b11](https://github.com/JensPenneman/trail/commit/9d11b11005fc509b2eb09aa2573f0c248d15505c))
+* **docker:** bump node from `8996bb5` to `6bd9ab4` ([726264a](https://github.com/JensPenneman/trail/commit/726264a02b7eab149a35dab9e579ecca5d23d91a))
+
 ## [0.11.0](https://github.com/JensPenneman/trail/compare/v0.10.1...v0.11.0) (2026-11-11)
 
 
