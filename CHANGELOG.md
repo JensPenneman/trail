@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/JensPenneman/trail/compare/v0.11.1...v0.11.2) (2026-11-18)
+
+
+### Bug Fixes
+
+* **api:** report the build time of a deployment built from source ([513af58](https://github.com/JensPenneman/trail/commit/513af581f344405c06b261d69e5bb02b35696104))
+
 ## [0.11.1](https://github.com/JensPenneman/trail/compare/v0.11.0...v0.11.1) (2026-11-17)
 
 
