@@ -286,7 +286,7 @@ All configuration is environment variables, validated at boot with zod
 | `MAP_CONNECT_SRC` | unset: `https://tiles.openfreemap.org` while the map uses the external styles | Extra CSP `connect-src`/`img-src` origins for the map (comma-separated), for a satellite style or external styles that load from more hosts; when set, always (§12) |
 | `WEB_DIST_DIR` | `apps/web/dist` (`../../web/dist` from the bundle in `apps/api/dist`) | Built SPA to serve; missing `index.html` = API only |
 | `LOG_LEVEL` | `info` | pino level |
-| `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` | root package.json version / `dev` / null | Baked into the image by the Dockerfile |
+| `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` | root package.json version / `dev` / null | Baked into the image by the Dockerfile; an empty `BUILD_TIME` is replaced by the time of the build, stamped in `apps/api/dist/build-time`, which the API reads |
 | `RATE_LIMIT_AUTH_PER_MINUTE` | `20` | Auth routes, per IP (§12) |
 | `RATE_LIMIT_API_PER_MINUTE` | `600` | Every other `/api` request (dashboard and v1) and `/docs`, per IP |
 | `RATE_LIMIT_INGEST_PER_MINUTE` | `300` | Accepted Overland uploads (batches), per device token |
@@ -2742,7 +2742,8 @@ port at 0 has no probe); OCI labels
 (`org.opencontainers.image.source` links the GHCR package to the repo);
 build args `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` → env (CI sets the
 package.json or tag version, the 7-character commit that matches the
-`sha-<short>` tag, and an ISO UTC time; empty means unset).
+`sha-<short>` tag, and an ISO UTC time; empty means unset, except that an
+empty `BUILD_TIME` makes the image stamp its own build time).
 
 ### 13.2 Images and releases
 

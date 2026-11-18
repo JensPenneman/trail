@@ -16,7 +16,10 @@ export async function workerCommand(entryUrl: string): Promise<number> {
   const paths = runtimePaths(entryUrl);
   let config: Config;
   try {
-    config = loadConfig(process.env, { webDistDir: paths.webDistDir });
+    config = loadConfig(process.env, {
+      webDistDir: paths.webDistDir,
+      buildTimeFile: paths.buildTimeFile,
+    });
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error;
     console.error(`trail: ${error.message}`);

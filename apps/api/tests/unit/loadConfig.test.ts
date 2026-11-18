@@ -1,5 +1,7 @@
-import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import { ConfigError, loadConfig } from "../../src/config/loadConfig";
 import { parseTrustProxy } from "../../src/config/parseTrustProxy";
 
@@ -230,6 +232,41 @@ describe("loadConfig", () => {
     });
     expect(config.alerts).toEqual({ url: "https://ntfy.sh/trail-alerts", token: null });
     expect(config.build.builtAt).toBe("2026-09-30T19:41:07.000Z");
+  });
+
+  describe("build time", () => {
+    const dir = mkdtempSync(join(tmpdir(), "trail-build-time-"));
+    afterAll(() => rmSync(dir, { recursive: true, force: true }));
+    const stamp = (text: string) => {
+      const file = join(dir, `stamp-${Math.random().toString(36).slice(2)}`);
+      writeFileSync(file, text);
+      return file;
+    };
+
+    it("reads the time the image stamped when BUILD_TIME is empty", () => {
+      const buildTimeFile = stamp("2026-11-18T09:30:00Z\n");
+      const config = loadConfig({ ...minimal, BUILD_TIME: "" }, { ...defaults, buildTimeFile });
+      expect(config.build.builtAt).toBe("2026-11-18T09:30:00.000Z");
+    });
+
+    it("lets BUILD_TIME win over the stamp", () => {
+      const buildTimeFile = stamp("2026-11-18T09:30:00Z");
+      const config = loadConfig(
+        { ...minimal, BUILD_TIME: "2026-09-30T19:41:07Z" },
+        { ...defaults, buildTimeFile },
+      );
+      expect(config.build.builtAt).toBe("2026-09-30T19:41:07.000Z");
+    });
+
+    it("has no build time without a readable, valid stamp", () => {
+      expect(loadConfig(minimal, defaults).build.builtAt).toBeNull();
+      expect(
+        loadConfig(minimal, { ...defaults, buildTimeFile: join(dir, "missing") }).build.builtAt,
+      ).toBeNull();
+      expect(
+        loadConfig(minimal, { ...defaults, buildTimeFile: stamp("not a time") }).build.builtAt,
+      ).toBeNull();
+    });
   });
 
   it("offers satellite imagery as a style or as raster tiles, and lets the CSP reach it", () => {

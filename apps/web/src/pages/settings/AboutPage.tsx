@@ -24,9 +24,11 @@ export function AboutPage() {
             <span className="mono">{config.data.commit}</span>
           </SettingsFact>
           <SettingsFact label="Built">
-            {config.data.builtAt === null
-              ? "Development build"
-              : format.dateTime(config.data.builtAt)}
+            {config.data.builtAt !== null
+              ? format.dateTime(config.data.builtAt)
+              : config.data.commit === "dev"
+                ? "Development build"
+                : "Not recorded"}
           </SettingsFact>
           <SettingsFact label="Overland endpoint">
             <span className="mono">{config.data.ingestUrls.overland}</span>
