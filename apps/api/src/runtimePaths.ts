@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 export interface RuntimePaths {
   migrationsFolder: string;
   webDistDir: string;
+  buildTimeFile: string;
 }
 
 /**
@@ -14,5 +15,6 @@ export function runtimePaths(entryUrl: string): RuntimePaths {
   return {
     migrationsFolder: fileURLToPath(new URL("../drizzle", entryUrl)),
     webDistDir: fileURLToPath(new URL("../../web/dist", entryUrl)),
+    buildTimeFile: fileURLToPath(new URL("./build-time", entryUrl)),
   };
 }

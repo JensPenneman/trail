@@ -32,7 +32,10 @@ export async function openCliContext(
   } = {},
 ): Promise<CliContext> {
   const paths = runtimePaths(entryUrl);
-  const config = loadConfig(process.env, { webDistDir: paths.webDistDir });
+  const config = loadConfig(process.env, {
+    webDistDir: paths.webDistDir,
+    buildTimeFile: paths.buildTimeFile,
+  });
   checks.preflight?.(config);
   const verbose = config.logLevel === "debug" || config.logLevel === "trace";
   const logger = createLogger({

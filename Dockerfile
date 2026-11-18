@@ -50,6 +50,29 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     && rm -rf node_modules/@trail \
     && find node_modules -name '*.node' -exec sh -c 'printf "native addon in the runtime dependencies: %s\n" "$@" >&2; exit 1' sh {} +
 
+# A build without BUILD_TIME (from source, as Launchway does it) stamps its own
+# time; the API reads apps/api/dist/build-time when BUILD_TIME is empty. A stage
+# of its own, on the build platform, so the final stage keeps no RUN step and
+# both platforms still build without emulation. The step mounts everything the
+# final stage ships (the built API and SPA, the production node_modules, the
+# migrations and the package.json files), so its cache key follows the shipped
+# content: a change of any of it gets a new stamp, and an edit that changes
+# nothing shipped keeps the stamp. GIT_SHA is part of the key as well, so a
+# commit that changes no shipped file still gets a new stamp on the server.
+# The stamp goes into a directory of its own, so nothing else reaches dist.
+FROM --platform=$BUILDPLATFORM node:lts-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS build-time
+ARG GIT_SHA=""
+ARG BUILD_TIME=""
+RUN --mount=type=bind,from=build,source=/app/apps/api/dist,target=/shipped/api-dist \
+    --mount=type=bind,from=build,source=/app/apps/web/dist,target=/shipped/web-dist \
+    --mount=type=bind,from=build,source=/app/apps/api/drizzle,target=/shipped/drizzle \
+    --mount=type=bind,from=build,source=/app/package.json,target=/shipped/package.json \
+    --mount=type=bind,from=build,source=/app/apps/api/package.json,target=/shipped/api-package.json \
+    --mount=type=bind,from=runtime-deps,source=/app/node_modules,target=/shipped/node_modules \
+    mkdir /stamp \
+    && : "commit ${GIT_SHA}" \
+    && if [ -z "$BUILD_TIME" ]; then date -u +%Y-%m-%dT%H:%M:%SZ > /stamp/build-time; fi
+
 FROM node:lts-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS runtime
 ENV NODE_ENV=production \
     PORT=8080
@@ -92,7 +115,8 @@ CMD ["node", "--enable-source-maps", "apps/api/dist/main.mjs"]
 # and an unset APP_VERSION (a build from source, as Launchway does it, passes
 # only GIT_SHA) reports the package.json version the build stage bundled into
 # the API (apps/api/src/config/buildDefaults.ts), so /api/config names the
-# version of the checked-out ref. The image label stays empty then.
+# version of the checked-out ref. The image label stays empty then. An empty
+# BUILD_TIME is replaced by the time of the build (the build-time stage).
 ARG APP_VERSION=""
 ARG GIT_SHA=""
 ARG BUILD_TIME=""
@@ -108,3 +132,7 @@ LABEL org.opencontainers.image.title="Trail" \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.created="${BUILD_TIME}"
+# The build time stamped by the build-time stage (nothing when BUILD_TIME was
+# passed); it is last, so only this layer changes between builds, and it stays
+# owned by root like the rest of the code.
+COPY --from=build-time /stamp/ ./apps/api/dist/

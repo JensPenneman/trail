@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { apiPaths } from "@trail/contracts/apiPaths";
 import type { z } from "zod";
@@ -27,12 +28,27 @@ const originOf = (url: string): string => new URL(url).origin;
 const openFreeMapOrigin = "https://tiles.openfreemap.org";
 
 /**
+ * The build time an image stamped into `buildTimeFile` when its build got no
+ * BUILD_TIME (a build from source, as Launchway does it); null when the file
+ * is missing or holds no valid time, as in a development run.
+ */
+const readStampedBuildTime = (file: string | undefined): string | null => {
+  if (file === undefined) return null;
+  try {
+    const time = new Date(readFileSync(file, "utf8").trim());
+    return Number.isNaN(time.getTime()) ? null : time.toISOString();
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Validates the environment (docs/architecture.md §4). `defaultWebDistDir` is
  * resolved by the entry point, relative to the running bundle.
  */
 export function loadConfig(
   environment: NodeJS.ProcessEnv,
-  defaults: { webDistDir: string },
+  defaults: { webDistDir: string; buildTimeFile?: string },
 ): Config {
   const parsed = envSchema.safeParse(environment);
   if (!parsed.success) throw new ConfigError(parsed.error.issues.map(describeIssue));
@@ -104,7 +120,10 @@ export function loadConfig(
     build: {
       version: env.APP_VERSION ?? defaultAppVersion,
       commit: env.GIT_SHA ?? defaultCommit,
-      builtAt: env.BUILD_TIME === undefined ? null : new Date(env.BUILD_TIME).toISOString(),
+      builtAt:
+        env.BUILD_TIME === undefined
+          ? readStampedBuildTime(defaults.buildTimeFile)
+          : new Date(env.BUILD_TIME).toISOString(),
     },
     rateLimits: {
       authPerMinute: env.RATE_LIMIT_AUTH_PER_MINUTE,

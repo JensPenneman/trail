@@ -91,7 +91,11 @@ async function start(config: Config, logger: Logger): Promise<void> {
 
 let config: Config;
 try {
-  config = loadConfig(process.env, { webDistDir: runtimePaths(import.meta.url).webDistDir });
+  const runtime = runtimePaths(import.meta.url);
+  config = loadConfig(process.env, {
+    webDistDir: runtime.webDistDir,
+    buildTimeFile: runtime.buildTimeFile,
+  });
 } catch (error) {
   const logger = createLogger({ level: "info" });
   if (error instanceof ConfigError) logger.fatal({ issues: error.issues }, "invalid configuration");

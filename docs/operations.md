@@ -322,7 +322,9 @@ run, [Local run](#local-run)). No registry is involved, so `docker compose
 pull --ignore-buildable` has nothing to fetch for Trail (`db` and the dump
 service's `postgres:18-alpine` still come from Docker Hub). The commit is the
 `GIT_SHA` build argument; `APP_VERSION` is not passed, so `/api/config`
-reports the version of `package.json` at that commit. Each commit has its own
+reports the version of `package.json` at that commit. `BUILD_TIME` is not
+passed either, so the image stamps the time of its build in
+`apps/api/dist/build-time`, which the API reads. Each commit has its own
 tag, and Launchway removes none of them: every production deployment and every
 preview push leaves a `trail-local:<commit>` and a
 `trail-local-predeploy-dump:<commit>` image and build cache on the server, on
@@ -465,8 +467,12 @@ What is running: Settings > About in the dashboard, or
 curl -s https://trail.jenspenneman.com/api/config   # version, commit
 ```
 
-The commit is the short SHA Launchway built from. `builtAt` is empty for an
-image built on the server.
+The commit is the short SHA Launchway built from. An image built on the server
+stamps its own build time (`BUILD_TIME` still wins when a build passes it, as CI
+does). `builtAt` is therefore the time of the build that made the stamp: a
+redeploy or a way back that hits the build cache keeps it, and a cold rebuild
+(a new commit, or a changed shipped file) gives a new time. A run of the source
+tree without an image has none.
 
 ### Verifying a deployment
 
