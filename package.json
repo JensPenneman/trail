@@ -39,7 +39,7 @@
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.3",
     "@commitlint/types": "^21.2.3",
-    "@playwright/test": "^1.65.0",
+    "@playwright/test": "^1.65.1",
     "@trail/contracts": "*",
     "@types/node": "^24.19.0",
     "@vitest/coverage-v8": "^5.1.0",
